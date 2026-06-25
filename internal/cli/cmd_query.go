@@ -78,7 +78,8 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 			// "nothing actionable" is the empty arm of the contract -> exit 1.
-			return emitTasks(tasks, true)
+			// --json/--ndjson attach a reason per task (why it is actionable).
+			return emitActionable(tasks)
 		},
 	}
 	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label")
