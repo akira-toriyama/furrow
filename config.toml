@@ -9,13 +9,15 @@
 # The status enum AND the top->bottom sort rank. Mirrors GitHub Projects #5.
 # Editing this list is how you rename or reorder statuses. A task whose status
 # is not in this list sorts last and is flagged by `furrow lint`.
-order = ["inbox", "backlog", "ready", "in-progress", "done", "icebox"]
+# "waiting" is the GTD Waiting-For lane (delegated / blocked on someone else).
+order = ["inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"]
 # Lane assigned by `furrow add` when --status is omitted.
 default = "inbox"
 # Lane `furrow done` moves a task into (and where Closed is stamped).
 done = "done"
-# Lanes whose tasks are NOT actionable for `furrow next` (done + parked).
-terminal = ["done", "icebox"]
+# Lanes whose tasks are NOT actionable for `furrow next` (done, parked,
+# and waiting-for — the last two are parked, so they never stamp Closed).
+terminal = ["done", "icebox", "waiting"]
 
 [next]
 # Lanes `furrow next` considers "ready to work" (besides the deps-done

@@ -144,7 +144,7 @@ func TestTUIQuit(t *testing.T) {
 func TestCycleLane(t *testing.T) {
 	a := newTestApp(t)
 	m, _ := newModel(a)
-	lanes := a.Cfg.Lanes // inbox backlog ready in-progress done icebox
+	lanes := a.Cfg.Lanes // inbox backlog ready in-progress waiting done icebox
 	if got := m.cycleLane("backlog", +1); got != "ready" {
 		t.Errorf("cycleLane(backlog,+1) = %q, want ready", got)
 	}

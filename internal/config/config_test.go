@@ -110,6 +110,30 @@ terminal = ["done"]
 	}
 }
 
+func TestWaitingLaneDefault(t *testing.T) {
+	c := Default()
+	if !c.IsLane("waiting") {
+		t.Fatal("default config should include a waiting lane")
+	}
+	if !c.IsTerminal("waiting") {
+		t.Error("waiting should be terminal (excluded from next, parked not done)")
+	}
+	if c.IsNextLane("waiting") {
+		t.Error("waiting must not be a next-lane")
+	}
+	// it sorts between in-progress and done.
+	inProg, _ := c.LaneRank("in-progress")
+	wait, _ := c.LaneRank("waiting")
+	done, _ := c.LaneRank("done")
+	if inProg >= wait || wait >= done {
+		t.Errorf("waiting should sort between in-progress and done, got %d/%d/%d", inProg, wait, done)
+	}
+	// adding it must not change the default next set.
+	if !c.IsNextLane("ready") || !c.IsNextLane("in-progress") {
+		t.Error("default next should remain ready + in-progress")
+	}
+}
+
 func anyHas(ss []string, sub string) bool {
 	for _, s := range ss {
 		if strings.Contains(s, sub) {

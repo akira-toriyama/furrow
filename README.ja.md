@@ -161,7 +161,7 @@ furrow は **非対話がデフォルト**。プロンプトは出さない（TT
 - **エラー出力** — 非ゼロ時は stderr に次の形を出す（stdout を `jq` に流していても汚染しない）。
 
   ```json
-  {"error":{"code":2,"id":"t-0042","message":"unknown lane \"foo\" (configured: inbox, backlog, ready, in-progress, done, icebox)"}}
+  {"error":{"code":2,"id":"t-0042","message":"unknown lane \"foo\" (configured: inbox, backlog, ready, in-progress, waiting, done, icebox)"}}
   ```
 
 JSON 出力例:
