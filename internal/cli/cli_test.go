@@ -135,6 +135,49 @@ func TestCLINextEmptyExit1(t *testing.T) {
 	}
 }
 
+func TestCLINextReasons(t *testing.T) {
+	initStore(t)
+	run(t, "add", "base", "-s", "ready")                      // t-0001
+	run(t, "add", "follow", "-s", "ready", "--dep", "t-0001") // t-0002
+	run(t, "done", "t-0001")                                  // t-0001 leaves next; t-0002 becomes actionable
+
+	out, code := run(t, "--json", "next")
+	if code != 0 {
+		t.Fatalf("next --json exit = %d:\n%s", code, out)
+	}
+	var views []struct {
+		ID     string `json:"id"`
+		Reason struct {
+			InNextLane    string   `json:"in_next_lane"`
+			DepsSatisfied []string `json:"deps_satisfied"`
+		} `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(out), &views); err != nil {
+		t.Fatalf("next --json should be an array with reasons, got %v:\n%s", err, out)
+	}
+	var got *struct {
+		ID     string `json:"id"`
+		Reason struct {
+			InNextLane    string   `json:"in_next_lane"`
+			DepsSatisfied []string `json:"deps_satisfied"`
+		} `json:"reason"`
+	}
+	for i := range views {
+		if views[i].ID == "t-0002" {
+			got = &views[i]
+		}
+	}
+	if got == nil {
+		t.Fatalf("t-0002 should be actionable after its dep is done:\n%s", out)
+	}
+	if got.Reason.InNextLane != "ready" {
+		t.Errorf("reason.in_next_lane = %q, want ready", got.Reason.InNextLane)
+	}
+	if len(got.Reason.DepsSatisfied) != 1 || got.Reason.DepsSatisfied[0] != "t-0001" {
+		t.Errorf("reason.deps_satisfied = %v, want [t-0001]", got.Reason.DepsSatisfied)
+	}
+}
+
 func TestCLIDoneAndNextFlow(t *testing.T) {
 	initStore(t)
 	run(t, "add", "base", "-s", "ready")

@@ -113,7 +113,7 @@ furrow done t-0001
 | `add <title>...` | タスクを追加（`--stdin` で標準入力から1行1タスクを一括作成）。id を自動採番し `bodies/<id>.md` を作る |
 | `ls`（別名 `list`） | タスクを正準順で一覧 |
 | `show <id>` | タスクを markdown 本文付きで表示 |
-| `next` | 着手可能なタスク（非 terminal・依存が全部 done）を表示 |
+| `next` | 着手可能なタスク（非 terminal・依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
 | `edit <id>` | `bodies/<id>.md` を `$EDITOR` で開く（非対話ならパスを出力） |
 | `done <id>` | done レーンへ移動し `closed` を打刻 |
 | `move <id> <lane>` | 任意のレーンへ移動 |

@@ -36,14 +36,19 @@ func printJSON(v any) {
 	fmt.Fprintln(out, string(mustJSON(v)))
 }
 
+// printNDJSONValue writes one value as a compact JSON line (Encode adds the \n).
+func printNDJSONValue(v any) {
+	var b bytes.Buffer
+	e := json.NewEncoder(&b)
+	e.SetEscapeHTML(false)
+	_ = e.Encode(v)
+	fmt.Fprint(out, b.String())
+}
+
 // printNDJSON writes one compact JSON object per line.
 func printNDJSON(tasks []core.Task) {
 	for _, t := range tasks {
-		var b bytes.Buffer
-		e := json.NewEncoder(&b)
-		e.SetEscapeHTML(false)
-		_ = e.Encode(t) // Encode adds the newline
-		fmt.Fprint(out, b.String())
+		printNDJSONValue(t)
 	}
 }
 
@@ -97,6 +102,54 @@ func emitTasks(tasks []core.Task, emptyIsNotFound bool) error {
 	}
 	if emptyIsNotFound && len(tasks) == 0 {
 		return &core.Error{Code: core.CodeNotFound, Msg: "no matching tasks"}
+	}
+	return nil
+}
+
+// actionReason explains, for an agent, WHY a task is in `next`: the next-lane it
+// sits in, and the dependencies it satisfied (all already done — that is what
+// made it actionable). deps_satisfied is [] when the task had no dependencies.
+type actionReason struct {
+	InNextLane    string   `json:"in_next_lane"`
+	DepsSatisfied []string `json:"deps_satisfied"`
+}
+
+// actionableView is a `next` task plus its reason (JSON/NDJSON output only).
+type actionableView struct {
+	core.Task
+	Reason actionReason `json:"reason"`
+}
+
+func reasonFor(t core.Task) actionReason {
+	deps := t.Deps
+	if deps == nil {
+		deps = []string{}
+	}
+	// A task is in `next` only when its status is a next-lane and every dep is
+	// done, so the lane qualifies it and its deps are exactly what it satisfied.
+	return actionReason{InNextLane: t.Status, DepsSatisfied: deps}
+}
+
+// emitActionable renders `next` results. In --json / --ndjson it attaches a
+// reason to each task so an agent sees why it is actionable; the human table is
+// unchanged. An empty result is the "nothing actionable" miss (exit 1).
+func emitActionable(tasks []core.Task) error {
+	switch {
+	case flagNDJSON:
+		for _, t := range tasks {
+			printNDJSONValue(actionableView{Task: t, Reason: reasonFor(t)})
+		}
+	case flagJSON:
+		views := make([]actionableView, 0, len(tasks))
+		for _, t := range tasks {
+			views = append(views, actionableView{Task: t, Reason: reasonFor(t)})
+		}
+		printJSON(views)
+	default:
+		printTaskTable(tasks)
+	}
+	if len(tasks) == 0 {
+		return &core.Error{Code: core.CodeNotFound, Msg: "no actionable tasks"}
 	}
 	return nil
 }
