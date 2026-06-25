@@ -29,7 +29,7 @@ jobs:
           cache: true
 
       - name: generate release notes (git-cliff)
-        uses: orhun/git-cliff-action@v3
+        uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
           args: --latest --strip header
