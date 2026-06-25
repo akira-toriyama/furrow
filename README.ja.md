@@ -105,7 +105,7 @@ furrow done t-0001
 
 ## コマンド
 
-今日時点で**実装済み**のコマンド（`ui` を除き全て動作する）。
+今日時点で**実装済み**のコマンド（全て動作する）。
 
 | コマンド | 説明 |
 |---|---|
@@ -123,11 +123,8 @@ furrow done t-0001
 | `lint` | index↔body の整合・レーン・依存・config を検査 |
 | `schema` | `.furrow/index.json` の JSON Schema を出力 |
 | `version` | furrow のバージョンを出力 |
-| `ui` | 対話 TUI を起動（**Phase 6 のスタブ。未実装で、実行するとエラーになる**） |
-
-> **未実装の予定機能**:
-> - `furrow ui`（TUI、bubbletea v1）は **ROADMAP Phase 6** で、まだ配線されていない。現状はコマンドだけ存在し、実行すると「未実装」のエラー（exit 2）を返す。
-> - `furrow migrate`（Task.md などの取り込み）は **ROADMAP Phase 5** で、**まだ実装していない**。
+| `ui` | 対話 TUI を起動（一覧＋詳細ペイン：移動・フィルタ・done・レーン移動・並べ替え（`K`/`J`）・チェックリストトグル・本文編集） |
+| `migrate <file>` | 既存の `Task.md` などを取り込む（dry-run 既定／`--write` で作成・未対応の見出しや `[[wikilink]]` は破棄せず報告） |
 
 ### 主なフラグ
 
@@ -223,7 +220,7 @@ ports & adapters。依存は内向きにのみ流れる。詳細図は `docs/arc
 ```
 cmd/furrow/main.go                 = os.Exit(cli.Execute()) のみ
   └─ internal/cli   (cobra アダプタ)        ┐
-     internal/tui   (bubbletea v1・Phase 6・未配線) ┘ presentation
+     internal/tui   (bubbletea v1・対話 UI)         ┘ presentation
         └─ internal/app   (唯一の mutation funnel・CLI/TUI 共通)
               ├─ internal/config        (config.toml ロード・clamp-don't-reject)
               ├─ internal/store/fsstore (FS に触る唯一の package)
@@ -237,7 +234,7 @@ cmd/furrow/main.go                 = os.Exit(cli.Execute()) のみ
 - **`internal/store/memstore`** — in-memory の fake（テスト・dry-run 用）。
 - **`internal/app`** — **唯一の mutation funnel**。CLI も TUI も必ずここを経由する。frozen id・正準順・closed 打刻・body↔index の対応をここで一括管理する。
 - **`internal/cli`** — cobra アダプタ。
-- **`internal/tui`** — bubbletea v1（Phase 6、未配線）。
+- **`internal/tui`** — bubbletea v1 の対話 UI（`furrow ui`）。CLI と同じく presentation 層で、mutation は必ず `internal/app` 経由。
 - **`internal/schema`** — JSON Schema のソース。`internal/version` — ビルドバージョン（リンカ注入。from-source は `dev`）。
 
 ---
@@ -316,7 +313,7 @@ gitmoji + Conventional Commits。形式は次のとおり（gitmoji は `:code:`
 
 ## ステータス
 
-実装は core・config・store・app・CLI が動作する段階にある。TUI（`furrow ui`）は Phase 6 のスタブ、`migrate` は Phase 5 で未実装。詳細なフェーズ進捗は [`ROADMAP.md`](ROADMAP.md) を参照。
+core・config・store・app・CLI・TUI（`furrow ui`）・`migrate` が動作する。残りは Phase 7（パッケージング）と Phase 8（Web）。詳細なフェーズ進捗は [`ROADMAP.md`](ROADMAP.md) を参照。
 
 ## ライセンス
 

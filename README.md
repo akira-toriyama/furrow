@@ -115,7 +115,7 @@ Notes on the fields: `id` is frozen and is the stem of the body file (`bodies/t-
 
 ## Command reference
 
-All commands are real today except `ui`, which is a Phase 6 stub. `migrate` is planned (Phase 5) and not built yet.
+All commands below are implemented and working today, including the `ui` TUI and `migrate`. (The remaining roadmap work is Phase 7 packaging and Phase 8 web — see [Status](#status).)
 
 | Command | What it does | Key flags / args |
 |---|---|---|
@@ -133,7 +133,8 @@ All commands are real today except `ui`, which is a Phase 6 stub. `migrate` is p
 | `lint` | Check index↔body 1:1, id shape, lanes, deps/parent refs, config clamp warnings | — |
 | `schema` | Print the JSON Schema for `index.json` (matches the committed copy) | — |
 | `version` | Print the furrow version | — |
-| `ui` | Launch the TUI — **stub, not implemented yet (Phase 6)** | — |
+| `ui` | Launch the interactive TUI (list + detail panes): navigate, filter, done, move lane, reorder (`K`/`J`), toggle checklist, edit body | — |
+| `migrate <file>` | Import an existing `Task.md` etc. (dry-run by default; unmapped headings & `[[wikilink]]`s reported, never dropped) | `--write`, `-l/--label` |
 
 Global flags (read/list commands): `--json` and `--ndjson`. `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
 
