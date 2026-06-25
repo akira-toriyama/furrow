@@ -99,14 +99,82 @@ MVP（core + CLI + migrate + TUI + CLAUDE.md）で **~2-4 日 / ~1,800-2,800 LOC
 
 ---
 
-## 8. 環境メモ
+## 8. study-engine（emmett-lathrop-brown）— 非 TUI UI / スキーマ駆動の参考
 
-- workspace: `/Volumes/workspace/github.com/akira-toriyama/`（facet 等と並ぶ）。furrow clone 済み。
-- toolchain: **Go 1.23.3 darwin/arm64**・**Homebrew 6.0.3** あり・**nix 未導入**（nix flake は用意するがローカル検証不可 → CI/別環境）。
-- Projects #5 = "roadmap"・**private**・106 items。Status = `📥 Inbox / 📋 Backlog / ✅ Ready / 🔨 In Progress / ✔️ Done / 🧊 Icebox`。本文は長文 markdown（例 issue #227）→ ハイブリッド方針の妥当性を裏付け。
+トミー提供（2026-06-25）。**TS + Electron + React + Vite** の Claude Code 駆動アプリ（SM-2 間隔反復）。furrow に直結する学び:
+
+- **mechanism(public) / data(private) 分離**：`study-engine`（仕組み）と `study-log`（個人データ）を repo で分ける。furrow は「データは利用者の repo の `.furrow/`」なので構造は違うが、「素の JSON+md・ビューアロックインなし」の哲学は同じ。
+- **JSON(構造化) + md(人の散文) の使い分け**：「問題は構造化が要る→1問1JSON、`learned/` は散文→md」。furrow の `index.json` + `bodies/<id>.md` と同一思想で裏取り。
+- **履歴(事実・追記 JSONL) vs 状態(計算結果・再構築可能キャッシュ)**：`reviews.jsonl`（SoT）→ `state.json`（キャッシュ）を `rebuild-state`（既定 dry-run・smoke で往復検証）で再生。furrow には決定論 golden 往復テスト（write→read→write が byte 一致）として写経。
+- **JSON Schema 同梱（study-engine は draft-07・`additionalProperties:false`・pattern/required）**：`schema/*.schema.json`。furrow も `docs/schema/furrow.index.v1.json` を同梱し `furrow schema` で emit + CI drift guard。**furrow は draft 2020-12 を採用**（`internal/schema/schema.go` が正本）。
+- **store がパス構築を集約（`domainDir()`）**：呼び出し側は `subjects/` を直書きしない。furrow も `fsstore` が `.furrow/bodies/<id>.md` を一手に組む（呼び出し側ハードコード禁止）。
+- **`types.ts` は runtime import ゼロ → renderer が `import type` で共有**：Go では `internal/core` を純粋に保ち CLI/TUI 両アダプタが依存、と等価。
+- **不正ファイルは graceful skip + 決定論 sort**：furrow lint は crash でなく報告。
+- **非 TUI UI（トミーの主眼）**：React renderer（`App/Session/Summary/Heatmap/Markdown(react-markdown+remark-gfm)/ChatPanel`）+ 薄い `api.ts` 境界（`window.api`）。furrow の Phase 8 web/React UI は **この component 構成（board/list→detail→md レンダ→stats）を写経**し `index.json` を読む。
+  - ⚠️ **host の決定は Phase 8 で再検討**：study-engine は **Electron**。MEMO §5 は furrow 用に Electron を却下し **Go `net/http`+`embed.FS` 静的 SPA**（単一バイナリ維持）を推した。トミーが study-engine を「非 TUI UI の参考」として再提示したので、**React の中身は写経・host(Electron vs Go 静的)は Phase 8 の論点**として明示保留。`react-markdown`+`remark-gfm` での本文レンダは host 非依存で採用。
 
 ---
 
-## 9. 追記ログ
+## 9. 環境メモ
 
-- 2026-06-25: 初版。build-vs-buy / 命名 / ストレージ / 連携 / UI / 参考リポ / 工数を記録。Phase 1（参考リポの clone & 学び）の詳細を次に追記予定。
+- workspace: `/Volumes/workspace/github.com/akira-toriyama/`（facet 等と並ぶ）。furrow clone 済み。
+- toolchain: **Go 1.23.3 darwin/arm64**・**Homebrew 6.0.3** あり・**nix 未導入**（nix flake は用意するがローカル検証不可 → CI/別環境）。**goreleaser / git-cliff も未導入**（Phase 7 で brew 導入）。`GOTOOLCHAIN=local` で固定（go.mod は `go 1.23`・deps は cobra v1.8.1 / x/term v0.27.0 等 1.23 互換に pin）。
+- git remote は SSH host alias `github.com.akira-toriyama`（複数アカウント設定）。gh は `akira-toriyama` で認証済。
+- **`akira-toriyama/homebrew-tap` 既存**（`Formula/` に CLI＝jig 等・`Casks/` にアプリ）。方式は各 repo の `packaging/homebrew/<name>.rb` + `.github/workflows/update-tap.yml` で release 時に url/sha256 自動更新。**furrow は Go ＝ GoReleaser の `brews:` ブロックで tap に formula を push する方が綺麗**（手 sed-bump 不要）。
+- Projects #5 = "roadmap"・**private**・106 items。Status = `📥 Inbox / 📋 Backlog / ✅ Ready / 🔨 In Progress / ✔️ Done / 🧊 Icebox`。本文は長文 markdown（例 issue #227）→ ハイブリッド方針の妥当性を裏付け。
+- facet `Task.md`（169 行）を実読＝**migrate の仕様確定**（§10）。
+
+---
+
+## 10. Phase 1 調査の結論（家風リポ → Go 移植・2026-06-25 workflow）
+
+chord / facet / atelier / jig / perch を並列解析。トミーの repo は **Swift だが meta-pattern は Go に綺麗に転用可**。確定した移植方針:
+
+### アーキテクチャ（hexagonal の背骨）
+chord の `ChordCore`(純) / `ChordAdapterMacOS`(OSの唯一の置き場) / `ChordAdapterTest`(非 testTarget の fake) / `ChordApp`(@main) を Go に写像:
+- **`internal/core`** = 純ドメイン（`encoding/json`・`sort`・`time`・`errors` のみ。cobra/bubbletea/os/filepath 禁止）。** port は core 内の interface**（`Store`/`Clock`/`IDGen`）。「レイヤを跨ぐ＝interface が足りない合図」。
+- **`internal/store/fsstore`** = FS に触る唯一の package（atomic tmp+rename・lazy body・`.furrow/seq` 採番）。`internal/store/memstore` = test/非test 兼用の in-memory fake（chord の AdapterTest を非 testTarget にした作法）。
+- **`internal/config`** = `.furrow/config.toml` を読むだけ（clamp-don't-reject・`Effective*` accessor）。
+- **`internal/app`** = coordinator（Store+Config 保持・**唯一の mutation funnel**）。CLI/TUI は必ずここ経由。
+- **`internal/cli`**(cobra) / **`internal/tui`**(bubbletea v1) = presentation。TUI はファイルを直接書かない。
+- `cmd/furrow/main.go` = `os.Exit(cli.Execute())` のみ。
+- `docs/architecture.md` に ASCII レイヤ図 + 「What's NOT in scope」（chord/facet 作法）。
+
+### 依存（proxy で解決確認・bubbletea は v1 系で固定）
+`cobra` / `bubbletea v1.3.10`+`bubbles v1.0.0`+`lipgloss`+`glamour`（bubbles v1.0.0 の go.mod 自体が bubbletea v1.3.10 要求＝v2/charm.land 経路を踏まず綺麗に揃う）/ `pelletier/go-toml/v2`（TOML は 1 ライブラリのみ・unknown key 無視＝clamp 可能）/ `golang.org/x/term`（TTY 検出）。**index は stdlib `encoding/json` のみ**（第三者 JSON 禁止＝決定論経路を 1 本に）。
+
+### 決定論（load-bearing invariant）
+`core.Marshal(*Index)` を **唯一のシリアライズ経路**に：struct field 順＝JSON key 順 / 2-space / `SetEscapeHTML(false)`（CJK そのまま）/ `[] not null`（Canonicalize で nil slice を `[]` に）/ sort `lane→priority→id` / 末尾改行。`json.Marshal(Index)` を他所で呼ばない。**golden 往復テスト** + `scripts/check-marshal-singlepath.sh`（grep guard）+ schema drift test（`furrow schema` 出力 == `docs/schema/...`）で守る。time は **UTC・ナノ秒0**（RFC3339 で `...Z` 安定）。
+
+### 家風ガバナンス（ほぼ verbatim 移植）
+- **verbatim**: `cliff.toml`（gitmoji strip preprocessor + 非 bump type skip・rolling-draft・CHANGELOG 非コミット）/ `scripts/hooks/commit-msg`（`<:gitmoji:> <type>(<scope>)<!>: <subject>` の POSIX-sh 検証）/ `docs/commit-convention.md` / `docs/plans/README.md`（1 タスク 1 ファイルの multi-session 運用）/ `.github/dependabot.yml`（gomod+actions・`:arrow_up: chore` prefix）/ `.editorconfig`。
+- **adapt to Go**: `run.sh`/`build.sh`/`install.sh`（daemon/pkill/codesign は **skip**＝furrow は CLI）/ `.github/workflows/{build,commit-lint,release}.yml`（GoReleaser 化）/ `CLAUDE.md`（家風スケルトン: What this is → Build/run → 参照(glossary/non-goals) → **Non-obvious constraints — read before editing**（layer rules・single marshaller・frozen id）→ Conventions → References(`(reviewed YYYY-MM-DD)`) → multi-session policy）。
+- **skip**: macOS `.app`/codesign/TCC/launchd/`package.sh`/`setup-signing-cert.sh`/`stop.sh`（CLI には不要）・MCP/plugin（§4）。
+- config 駆動: chord は `config.toml`（`#:schema ./config.schema.json` 行・全項目コメントアウトで「何も発火しない」既定）+ `config.schema.json`（draft-07・コード内 descriptor が authority・`chord config --emit-schema` で生成・drift test）+ swift-toml-edit を 1 shim 経由。furrow は `config.toml` テンプレ（repo root・read-only）+ `furrow schema` で index schema emit。
+
+詳細な生成コード（marshal.go / task.go / fsstore.go / cliff.toml / commit-msg / run.sh / build.sh / .goreleaser.yaml / config.toml / CLAUDE.md / dependabot.yml / .editorconfig / furrow.index.v1.json）は workflow 出力に保存済（`tasks/w53x32tmg.output`）。実装の青写真として使用。
+
+---
+
+## 11. migrate の仕様（facet Task.md 169 行を実読・2026-06-25）
+
+facet `Task.md` は **1 ファイルに [Open 優先順リスト + 要設計/triage + 温存 + Done 折りたたみ + 設計付録 A/B + プロセス規則 + [[wikilink]] + file:line refs] が同居** ＝ furrow が解消する痛みそのもの。`furrow migrate ./Task.md` のパース規則:
+
+- **`## <emoji> <Lane>`** → status レーン（絵文字→status は config で写像。`🎯 Open`→ready/in-progress・`🔬 要設計/triage`→backlog・`🧊 温存`→icebox・`✅ Done`→done）。
+- **`### N. title （…annotations）`**（Open 節）→ task。先頭 `N.` ＝ **priority 順**（`N×step`）。`（旧 R13）` 等は legacy alias（refs か body に温存）。
+- **`- **R7. title** — body`**（triage/温存 節の箇条書き）→ task（別書式）。
+- **`<details><summary>` 内の `- **title**（PR/commit）— #334`**（Done アーカイブ）→ done task。
+- **`## 📎 付録 A/B`** → 該当 task の **body**（`bodies/<id>.md`）へ（名前一致で紐付け）か `docs/` へ。
+- **`[[wikilink]]`** → 凍結 id へ解決（未解決はそのまま温存し lint で報告）。
+- **`[file.swift:115](path#L115)` / URL** → `refs`。
+- **`📌 …（暗黙にしない）`** callout → follow-up task or checklist item。
+- 冒頭の `> 正本… 進め方…` プロセス規則 → tasks でなく CLAUDE.md / docs へ。
+- `--dry-run` 既定（差分プレビュー）。**Phase 5 は最難関**（MEMO §7 既述）。
+
+---
+
+## 12. 追記ログ
+
+- 2026-06-25: 初版。build-vs-buy / 命名 / ストレージ / 連携 / UI / 参考リポ / 工数を記録。
+- 2026-06-25: Phase 1 完了。study-engine（§8）追加。家風リポ並列解析の結論（§10）・migrate 仕様（§11）を確定。実装に着手。
+- 2026-06-25: Phase 0/2/3/4 実装。core（決定論マーシャラ・golden）・config（clamp）・store（fsstore/memstore）・app（coordinator）・CLI（15 コマンド）・schema・家風 scaffolding（cliff/commit-msg/CI/GoReleaser/flake/docs/CLAUDE.md）。`go test ./...` green。残: Phase 5 migrate・Phase 6 TUI・Phase 7 nix 検証・Phase 8 web。

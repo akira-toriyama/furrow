@@ -1,0 +1,44 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: furrow
+    main: ./cmd/furrow
+    binary: furrow
+    env: [CGO_ENABLED=0]
+    ldflags:
+      - -s -w -X github.com/akira-toriyama/furrow/internal/version.Version={{.Version}}
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksums:
+  name_template: checksums.txt
+
+# Homebrew formula pushed to the family tap on release (binary-based; the live
+# Formula/furrow.rb in akira-toriyama/homebrew-tap is regenerated each release).
+brews:
+  - repository:
+      owner: akira-toriyama
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/akira-toriyama/furrow
+    description: "Repo-local plain-text task tracker (JSON index + per-task markdown bodies)"
+    license: MIT
+    test: |
+      system "#{bin}/furrow", "version"
+
+release:
+  # Rolling-draft: pushes refresh a draft; publish (or tag) cuts the release.
+  draft: true
+
+# Nix: the primary nix story is the in-repo flake.nix (`nix run
+# github:akira-toriyama/furrow`). A GoReleaser nix block (push to a NUR repo)
+# is deferred until that repo + NUR_TOKEN exist — see ROADMAP Phase 7.

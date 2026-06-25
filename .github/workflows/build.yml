@@ -1,0 +1,59 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+
+      # fast-fail guard before the toolchain: the index must be single-path.
+      - name: marshaller single-path guard
+        run: sh scripts/check-marshal-singlepath.sh
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+      - name: build the binary (for drift + smoke checks)
+        run: go build -o /tmp/furrow ./cmd/furrow
+
+      - name: schema drift guard
+        run: |
+          /tmp/furrow schema > /tmp/index.schema.json
+          diff -u docs/schema/furrow.index.v1.json /tmp/index.schema.json
+
+      - name: config template drift guard
+        run: |
+          tmp="$(mktemp -d)"
+          ( cd "$tmp" && /tmp/furrow init >/dev/null )
+          diff -u config.toml "$tmp/.furrow/config.toml"
+
+      - name: smoke test
+        run: |
+          /tmp/furrow version
+          sb="$(mktemp -d)"; cd "$sb"
+          /tmp/furrow init
+          /tmp/furrow add "smoke task" -s ready
+          /tmp/furrow ls --json | grep -q '"smoke task"'
+          /tmp/furrow lint
