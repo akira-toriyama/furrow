@@ -32,6 +32,9 @@ type raw struct {
 	UI struct {
 		Theme string `toml:"theme"`
 	} `toml:"ui"`
+	Next struct {
+		Lanes []string `toml:"lanes"`
+	} `toml:"next"`
 }
 
 // Load reads config.toml at path and returns the effective config plus any
@@ -101,6 +104,25 @@ func fromRaw(r raw) (*Config, []string, error) {
 			}
 		}
 		c.Terminal = setOf(keep)
+	}
+
+	// next lanes: keep only real lanes; empty/absent -> sensible default.
+	if r.Next.Lanes != nil {
+		var keep []string
+		for _, l := range r.Next.Lanes {
+			if contains(c.Lanes, l) {
+				keep = append(keep, l)
+			} else {
+				warn = append(warn, fmt.Sprintf("next.lanes entry %q is not a lane; ignored", l))
+			}
+		}
+		if len(keep) == 0 {
+			keep = defaultNextLanes(c.Lanes, c.Terminal)
+			warn = append(warn, "next.lanes was empty after cleaning; using the default actionable lanes")
+		}
+		c.NextLanes = keep
+	} else {
+		c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)
 	}
 
 	c.PriorityStep = clampPositive(r.Priority.Step, DefaultPriorityStep, "priority.step", &warn)

@@ -14,7 +14,13 @@ var (
 	DefaultLanes    = []string{"inbox", "backlog", "ready", "in-progress", "done", "icebox"}
 	DefaultLane     = "inbox"                    // lane assigned by `furrow add`
 	DefaultDoneLane = "done"                     // lane `furrow done` moves a task into
-	DefaultTerminal = []string{"done", "icebox"} // lanes a task in is not "actionable" for `next`
+	DefaultTerminal = []string{"done", "icebox"} // lanes whose tasks `next` excludes outright
+
+	// DefaultNextLanes is the "actionable now" set `furrow next` considers (in
+	// addition to the deps-satisfied check). Intake/planning lanes are excluded
+	// so next stays focused on what's ready to work. Falls back to all
+	// non-terminal lanes for a custom lane scheme that has neither of these.
+	DefaultNextLanes = []string{"ready", "in-progress"}
 
 	DefaultPriorityStep    = 10
 	DefaultPriorityDefault = 100
@@ -37,6 +43,7 @@ type Config struct {
 	DefaultLane string
 	DoneLane    string
 	Terminal    map[string]bool // membership set built from the terminal lane list
+	NextLanes   []string        // lanes `furrow next` considers (besides deps-done)
 
 	PriorityStep    int
 	PriorityDefault int
@@ -47,7 +54,8 @@ type Config struct {
 	ArchiveOlderThanDays int
 	UITheme              string
 
-	idPattern *regexp.Regexp // compiled from IDPrefix, cached
+	idPattern *regexp.Regexp  // compiled from IDPrefix, cached
+	nextSet   map[string]bool // membership set built from NextLanes
 }
 
 // Default returns the built-in configuration used when .furrow/config.toml is
@@ -65,9 +73,32 @@ func Default() *Config {
 		ArchiveOlderThanDays: DefaultArchiveOlderThanDays,
 		UITheme:              DefaultUITheme,
 	}
+	c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)
 	c.compile()
 	return c
 }
+
+// defaultNextLanes is the fallback `next` lane set: ready+in-progress if present,
+// else every non-terminal lane (for a custom lane scheme).
+func defaultNextLanes(lanes []string, terminal map[string]bool) []string {
+	var out []string
+	for _, l := range DefaultNextLanes {
+		if contains(lanes, l) {
+			out = append(out, l)
+		}
+	}
+	if len(out) == 0 {
+		for _, l := range lanes {
+			if !terminal[l] {
+				out = append(out, l)
+			}
+		}
+	}
+	return out
+}
+
+// IsNextLane reports whether tasks in lane are considered by `furrow next`.
+func (c *Config) IsNextLane(lane string) bool { return c.nextSet[lane] }
 
 // LaneRank returns a lane's position in the order, or false if it is unknown.
 func (c *Config) LaneRank(lane string) (int, bool) {
@@ -94,6 +125,7 @@ func (c *Config) IDPattern() *regexp.Regexp { return c.idPattern }
 
 func (c *Config) compile() {
 	c.idPattern = regexp.MustCompile("^" + regexp.QuoteMeta(c.IDPrefix) + `[0-9]+$`)
+	c.nextSet = setOf(c.NextLanes)
 }
 
 func setOf(ss []string) map[string]bool {

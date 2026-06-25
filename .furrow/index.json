@@ -2,22 +2,6 @@
   "schema_version": 1,
   "tasks": [
     {
-      "id": "t-0010",
-      "title": "decide: next semantics — include intake lanes or only ready/in-progress? (see ROADMAP Open questions)",
-      "status": "inbox",
-      "priority": 100,
-      "labels": [
-        "design"
-      ],
-      "deps": [],
-      "refs": [],
-      "checklist": [],
-      "created": "2026-06-25T01:54:54Z",
-      "updated": "2026-06-25T01:54:54Z",
-      "closed": null,
-      "body": "bodies/t-0010.md"
-    },
-    {
       "id": "t-0011",
       "title": "decide: short alias fw? --field flag? (ROADMAP Open questions)",
       "status": "inbox",
@@ -113,6 +97,22 @@
       "updated": "2026-06-25T01:54:53Z",
       "closed": null,
       "body": "bodies/t-0001.md"
+    },
+    {
+      "id": "t-0010",
+      "title": "decide: next semantics — include intake lanes or only ready/in-progress? (see ROADMAP Open questions)",
+      "status": "done",
+      "priority": 100,
+      "labels": [
+        "design"
+      ],
+      "deps": [],
+      "refs": [],
+      "checklist": [],
+      "created": "2026-06-25T01:54:54Z",
+      "updated": "2026-06-25T02:39:45Z",
+      "closed": "2026-06-25T02:39:45Z",
+      "body": "bodies/t-0010.md"
     },
     {
       "id": "t-0005",

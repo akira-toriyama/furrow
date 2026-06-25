@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -70,6 +71,52 @@ theme = "dark"
 	if !c.IDPattern().MatchString("F-007") || c.IDPattern().MatchString("t-007") {
 		t.Errorf("id pattern wrong for prefix %q", c.IDPrefix)
 	}
+}
+
+func TestNextLanes(t *testing.T) {
+	// default (no [next]) -> ready + in-progress.
+	c, _, _ := Load(filepath.Join(t.TempDir(), "absent.toml"))
+	if !c.IsNextLane("ready") || !c.IsNextLane("in-progress") {
+		t.Errorf("default next lanes should be ready+in-progress, got %v", c.NextLanes)
+	}
+	if c.IsNextLane("inbox") || c.IsNextLane("backlog") {
+		t.Errorf("default next lanes must exclude inbox/backlog, got %v", c.NextLanes)
+	}
+
+	// explicit [next].lanes, with a bogus entry dropped + a warning.
+	p := writeTOML(t, `
+[lanes]
+order = ["inbox", "ready", "done"]
+[next]
+lanes = ["ready", "ghost"]
+`)
+	c, warn, _ := Load(p)
+	if len(c.NextLanes) != 1 || c.NextLanes[0] != "ready" {
+		t.Errorf("next.lanes should keep only real lanes, got %v", c.NextLanes)
+	}
+	if !anyHas(warn, "ghost") {
+		t.Errorf("expected a warning about the bogus next lane, got %v", warn)
+	}
+
+	// custom scheme without ready/in-progress -> falls back to all non-terminal.
+	p2 := writeTOML(t, `
+[lanes]
+order = ["todo", "doing", "done"]
+terminal = ["done"]
+`)
+	c2, _, _ := Load(p2)
+	if !c2.IsNextLane("todo") || !c2.IsNextLane("doing") || c2.IsNextLane("done") {
+		t.Errorf("custom-scheme next fallback should be all non-terminal lanes, got %v", c2.NextLanes)
+	}
+}
+
+func anyHas(ss []string, sub string) bool {
+	for _, s := range ss {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestClampDontReject(t *testing.T) {
