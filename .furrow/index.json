@@ -66,6 +66,22 @@
       "body": "bodies/t-0011.md"
     },
     {
+      "id": "t-0012",
+      "title": "deploy: create akira-toriyama/projects repo + init furrow store (config/index/bodies) and run furrow for real",
+      "status": "done",
+      "priority": 110,
+      "labels": [
+        "deploy"
+      ],
+      "deps": [],
+      "refs": [],
+      "checklist": [],
+      "created": "2026-06-25T02:49:02Z",
+      "updated": "2026-06-25T02:59:38Z",
+      "closed": "2026-06-25T02:59:38Z",
+      "body": "bodies/t-0012.md"
+    },
+    {
       "id": "t-0002",
       "title": "Phase 7: install nix and finalize flake.nix vendorHash (currently lib.fakeHash placeholder)",
       "status": "icebox",
