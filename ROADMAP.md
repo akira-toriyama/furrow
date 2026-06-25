@@ -119,13 +119,14 @@ Projects #5 の実フィールド（`Status: 📥 Inbox / 📋 Backlog / ✅ Rea
 - [x] `--json`/`--ndjson`/`--status`/`--label`/`--limit`・非対話デフォルト・`edit` は非 TTY で path 出力・`archive` は `--yes` ガード・STDERR エラーオブジェクト
 - [ ] `migrate` は Phase 5 へ。`--field` は未実装（jq で代替可・必要なら後日）
 
-### Phase 5 — migrate（取り込み） ⏳ **未着手**
-- [ ] `furrow migrate ./Task.md --dry-run`（レーン→status・`## 付録`→body・プロセス→CLAUDE.md・経緯→docs/・[[wikilink]]→凍結 id）。仕様は `MEMO.md §11` に確定済
+### Phase 5 — migrate（取り込み） ✅（first cut）
+- [x] `furrow migrate ./Task.md`（dry-run 既定・`--write` で適用）：`## emoji/keyword`→lane・`###`/list-style bold-bullet→task（`###` 配下の bold 詳細 bullet は body 維持）・`<details>` Done→done・file:line/URL→refs。`## 📎 付録` は **skip+warn**・`[[wikilink]]` は body 温存+warn（黙って捨てない）。実 facet `Task.md` から 22 tasks が lint green で取り込めることを確認（`internal/migrate` pure parser + 実フィクスチャテスト）
+- [ ] **未**: 付録の親 task body への自動 fold・`[[wikilink]]`→凍結 id 解決・`## プロセス`→CLAUDE.md 分離（現状は手作業 fold を warn で促す）
 - [ ] （任意）`furrow import --from-gh-project 5`（Projects #5 を初期投入）
 
-### Phase 6 — TUI（bubbletea） ⏳ **stub のみ**
-- [ ] `furrow ui`：現状は「未実装」を明示して exit 2 する stub（`internal/cli/ui.go`）。`internal/tui` package は未作成
-- [ ] list（レーン+fuzzy）+ detail viewport（glamour で本文）+ status/priority/reorder キー + `$EDITOR` shell-out + checklist toggle・bubbletea **v1 固定**
+### Phase 6 — TUI（bubbletea v1） ✅（first cut）
+- [x] `furrow ui`（TTY ガード）：filterable list（左）+ glamour 本文 detail（右）・lipgloss 2-pane・help footer。キー: navigate / `/` fuzzy / `d` done / `]`,`[` lane 移動 / `e` `$EDITOR` shell-out（suspend/resume）/ `r` reload / `?` help / `q` quit。mutation は `internal/app` 経由。model 駆動テスト（window-size+key）で load/done/move/quit を検証
+- [ ] **未**: checklist toggle の TUI 操作・reorder（priority 直接編集）キー・実端末での見た目の作り込み（unit test 済だが目視は要 `furrow ui`）・bubbles は v0.20（charm.land の v1.0.0 系へは将来移行可）
 
 ### Phase 7 — Packaging 🟡 **設定済・未検証**
 - [x] GoReleaser（`.goreleaser.yaml`・`brews:` → `akira-toriyama/homebrew-tap`）・`release.yml`・`packaging/homebrew/furrow.rb`（参考コピー）
