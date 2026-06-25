@@ -32,7 +32,7 @@ jobs:
       - run: go test ./...
 
       # v8 installs golangci-lint v2 (our .golangci.yml is v2 format); v6 ships v1.
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
 
