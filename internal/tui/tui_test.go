@@ -131,6 +131,49 @@ func TestCycleLane(t *testing.T) {
 	_ = core.SchemaVersion
 }
 
+// TestTUIDetailCaching locks the navigation-lag fix: the glamour renderer is
+// built once and reused across cursor moves (rebuilt only on width change), and
+// bodies are cached so moving the cursor doesn't re-read files every keystroke.
+func TestTUIDetailCaching(t *testing.T) {
+	a := newTestApp(t)
+	m, err := newModel(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = sizeMsg(m)
+
+	if m.renderer == nil {
+		t.Fatal("renderer should be built after the first render")
+	}
+	r1, w1 := m.renderer, m.rendererWidth
+	if sel, ok := m.selected(); ok {
+		if _, cached := m.bodies[sel.ID]; !cached {
+			t.Errorf("body for %s should be cached after render", sel.ID)
+		}
+	}
+
+	// Navigate to the other task and back: the renderer must be the SAME
+	// instance (reused, not rebuilt per move — that reuse is the fix).
+	m = send(m, keyMsg("j"))
+	m = send(m, keyMsg("k"))
+	if m.renderer != r1 {
+		t.Error("renderer was rebuilt during navigation; it should be cached")
+	}
+	if m.rendererWidth != w1 {
+		t.Errorf("rendererWidth changed during navigation: %d -> %d", w1, m.rendererWidth)
+	}
+	if len(m.bodies) < 2 {
+		t.Errorf("both visited bodies should be cached, got %d", len(m.bodies))
+	}
+
+	// A width change must rebuild the renderer so content re-wraps.
+	mm, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+	m = mm.(model)
+	if m.renderer == r1 {
+		t.Error("renderer should be rebuilt when the width changes")
+	}
+}
+
 // TestDumpView writes a rendered frame to a file when TUI_DUMP is set, for
 // eyeballing the layout during development (no-op in normal CI runs).
 func TestDumpView(t *testing.T) {
