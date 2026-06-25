@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,6 +146,48 @@ func TestCheckTogglesChecklist(t *testing.T) {
 		t.Errorf("check should toggle only item 1: %+v", got.Checklist)
 	}
 }
+
+func TestLabelsRequiredEnforced(t *testing.T) {
+	cfg := config.Default()
+	cfg.LabelsRequired = true
+	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	a := NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
+
+	// add without a label -> validation error.
+	if _, err := a.Add("no label", AddOpts{Status: "ready"}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("add without a label should be a validation error when required, got %v", err)
+	}
+	// add with a label -> ok.
+	if _, err := a.Add("with label", AddOpts{Status: "ready", Labels: []string{"furrow"}}); err != nil {
+		t.Errorf("add with a label should succeed, got %v", err)
+	}
+
+	// lint flags a label-less task (injected directly, with a body so the only
+	// problem is the missing label).
+	idx, _ := a.Store.Load()
+	idx.Add(core.Task{ID: "t-0099", Title: "ghost", Status: "ready", Body: core.BodyPath("t-0099")})
+	a.Store.Save(idx)
+	a.Store.SaveBody("t-0099", "# ghost\n")
+	ps, _ := a.Lint()
+	var found bool
+	for _, p := range ps {
+		if p.ID == "t-0099" && p.Severity == core.SevError && contains2(p.Msg, "label") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("lint should flag t-0099 as label-less, got %+v", ps)
+	}
+
+	// default config (not required) accepts a label-less add.
+	cfg2 := config.Default()
+	a2 := NewWithStore(memstore.New(cfg2.IDPrefix, cfg2.IDWidth), cfg2, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
+	if _, err := a2.Add("fine", AddOpts{Status: "ready"}); err != nil {
+		t.Errorf("label-less add should succeed when not required, got %v", err)
+	}
+}
+
+func contains2(s, sub string) bool { return strings.Contains(s, sub) }
 
 func TestCheckOutOfRangeIsValidationError(t *testing.T) {
 	a := newApp()

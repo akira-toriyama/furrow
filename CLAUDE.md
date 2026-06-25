@@ -92,7 +92,10 @@ field, not a renumber.
 ### Configuration
 `.furrow/config.toml` is **read-only from the app** and **clamp-don't-reject**:
 unknown keys and out-of-range values fall back to defaults with a warning that
-`furrow lint` surfaces. Read it through `internal/config`.
+`furrow lint` surfaces. Read it through `internal/config`. Two additive,
+off-by-default switches: `[next].lanes` (which lanes `furrow next` shows;
+default ready+in-progress) and `[labels].required` (a label-less task errors on
+`add` and in `lint`; default false).
 
 ### Schema
 `internal/schema.IndexV1` is the source of the JSON Schema; `furrow schema`

@@ -119,6 +119,23 @@ func anyHas(ss []string, sub string) bool {
 	return false
 }
 
+func TestLabelsRequired(t *testing.T) {
+	// default: not required.
+	c, _, _ := Load(filepath.Join(t.TempDir(), "absent.toml"))
+	if c.LabelsRequired {
+		t.Error("labels.required should default to false")
+	}
+	// explicit true.
+	p := writeTOML(t, "[labels]\nrequired = true\n")
+	c, _, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.LabelsRequired {
+		t.Error("labels.required = true should parse as true")
+	}
+}
+
 func TestClampDontReject(t *testing.T) {
 	p := writeTOML(t, `
 [lanes]

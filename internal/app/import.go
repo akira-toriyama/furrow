@@ -39,6 +39,9 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		if !a.Cfg.IsLane(lane) {
 			return nil, core.Validationf("", "spec %d (%q): unknown lane %q", i, s.Title, lane)
 		}
+		if a.Cfg.LabelsRequired && len(s.Labels) == 0 {
+			return nil, core.Validationf("", "spec %d (%q): a label is required ([labels].required)", i, s.Title)
+		}
 	}
 
 	now := a.Clock.Now()

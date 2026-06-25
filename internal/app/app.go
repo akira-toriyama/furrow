@@ -158,6 +158,9 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	if !a.Cfg.IsLane(status) {
 		return nil, core.Validationf("", "unknown lane %q (configured: %s)", status, strings.Join(a.Cfg.Lanes, ", "))
 	}
+	if a.Cfg.LabelsRequired && len(o.Labels) == 0 {
+		return nil, core.Validationf("", "a label is required ([labels].required); add -l <label>")
+	}
 
 	idx, err := a.load()
 	if err != nil {

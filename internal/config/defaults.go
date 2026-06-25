@@ -54,6 +54,8 @@ type Config struct {
 	ArchiveOlderThanDays int
 	UITheme              string
 
+	LabelsRequired bool // when true, a task with zero labels is rejected/flagged
+
 	idPattern *regexp.Regexp  // compiled from IDPrefix, cached
 	nextSet   map[string]bool // membership set built from NextLanes
 }
