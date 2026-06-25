@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,12 +21,16 @@ func newAddCmd() *cobra.Command {
 		deps     []string
 		refs     []string
 		body     string
+		stdin    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "add <title>...",
-		Short: "Add a task",
-		Long:  "Add a task. The id is assigned automatically (frozen, never reused) and a\nbodies/<id>.md file is created, seeded with the title as a heading.",
-		Args:  cobra.MinimumNArgs(1),
+		Short: "Add a task (or many with --stdin)",
+		Long: "Add a task. The id is assigned automatically (frozen, never reused) and a\n" +
+			"bodies/<id>.md file is created, seeded with the title as a heading.\n\n" +
+			"With --stdin, read one title per line from stdin and create them all in a\n" +
+			"single write (blank lines skipped); the shared flags apply to every task.",
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -38,6 +43,16 @@ func newAddCmd() *cobra.Command {
 			if cmd.Flags().Changed("priority") {
 				p := priority
 				opts.Priority = &p
+			}
+
+			if stdin {
+				if len(args) > 0 {
+					return core.Validationf("", "cannot combine --stdin with title arguments")
+				}
+				return addFromStdin(cmd, a, opts)
+			}
+			if len(args) == 0 {
+				return core.Validationf("", "provide a title, or --stdin to read titles from stdin")
 			}
 			t, err := a.Add(strings.Join(args, " "), opts)
 			if err != nil {
@@ -58,7 +73,34 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
 	cmd.Flags().StringSliceVar(&refs, "ref", nil, "reference (file:line or URL, repeatable)")
 	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (default: a heading from the title)")
+	cmd.Flags().BoolVar(&stdin, "stdin", false, "read one task title per line from stdin; create all in one write")
 	return cmd
+}
+
+// addFromStdin bulk-creates one task per non-blank stdin line via a single
+// atomic write (app.AddMany). The command's shared flags apply to every task.
+func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
+	var specs []app.AddSpec
+	sc := bufio.NewScanner(cmd.InOrStdin())
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // tolerate long title lines
+	for sc.Scan() {
+		title := strings.TrimSpace(sc.Text())
+		if title == "" {
+			continue
+		}
+		specs = append(specs, app.AddSpec{Title: title, AddOpts: opts})
+	}
+	if err := sc.Err(); err != nil {
+		return core.Internalf("", "reading stdin: %v", err)
+	}
+	if len(specs) == 0 {
+		return core.Validationf("", "no task titles on stdin")
+	}
+	created, err := a.AddMany(specs)
+	if err != nil {
+		return err
+	}
+	return emitTasks(created, false)
 }
 
 func newEditCmd() *cobra.Command {

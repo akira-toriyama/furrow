@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,30 @@ func run(t *testing.T, args ...string) (string, int) {
 	root.SetArgs(args)
 	root.SetOut(&buf)
 	root.SetErr(&buf)
+	err := root.Execute()
+	code := int(core.CodeOK)
+	if err != nil {
+		fe := core.AsError(err)
+		if fe == nil {
+			fe = &core.Error{Code: core.CodeValidation, Msg: err.Error()}
+		}
+		code = int(fe.Code)
+	}
+	return buf.String(), code
+}
+
+// runIn is run() with stdin wired from s (for commands that read stdin).
+func runIn(t *testing.T, s string, args ...string) (string, int) {
+	t.Helper()
+	var buf bytes.Buffer
+	out = &buf
+	defer func() { out = nil }()
+
+	root := newRootCmd()
+	root.SetArgs(args)
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetIn(strings.NewReader(s))
 	err := root.Execute()
 	code := int(core.CodeOK)
 	if err != nil {
@@ -191,6 +216,76 @@ func TestCLIDepAddRemove(t *testing.T) {
 	// removing a non-existent dep is a validation error.
 	if _, code := run(t, "dep", "t-0002", "t-0001", "--rm"); code != int(core.CodeValidation) {
 		t.Errorf("removing a non-dependency should exit 2, got %d", code)
+	}
+}
+
+func TestCLIBatchAddStdin(t *testing.T) {
+	initStore(t)
+	out, code := runIn(t, "alpha\nbeta\n\ngamma\n", "--ndjson", "add", "--stdin", "-s", "ready")
+	if code != 0 {
+		t.Fatalf("batch add exit = %d:\n%s", code, out)
+	}
+	// the blank line is skipped -> exactly 3 created tasks (one NDJSON line each).
+	lines := 0
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.TrimSpace(l) != "" {
+			lines++
+		}
+	}
+	if lines != 3 {
+		t.Errorf("expected 3 created tasks, got %d:\n%s", lines, out)
+	}
+	ls, _ := run(t, "--ndjson", "ls", "-s", "ready")
+	for _, want := range []string{"alpha", "beta", "gamma"} {
+		if !strings.Contains(ls, want) {
+			t.Errorf("ready lane should contain %q:\n%s", want, ls)
+		}
+	}
+	// --stdin combined with positional args is a usage error.
+	if _, code := runIn(t, "x\n", "add", "--stdin", "extra"); code != int(core.CodeValidation) {
+		t.Errorf("--stdin with title args should exit 2, got %d", code)
+	}
+}
+
+func TestCLIMutationJSONDiff(t *testing.T) {
+	initStore(t)
+	run(t, "add", "task", "-s", "ready")
+
+	out, code := run(t, "--json", "done", "t-0001")
+	if code != 0 {
+		t.Fatalf("done --json exit = %d:\n%s", code, out)
+	}
+	var res struct {
+		Before  *core.Task `json:"before"`
+		After   *core.Task `json:"after"`
+		Changed []string   `json:"changed"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("mutation --json should be an object, got error %v:\n%s", err, out)
+	}
+	if res.Before == nil || res.After == nil {
+		t.Fatalf("mutation --json must carry before+after:\n%s", out)
+	}
+	if res.Before.Status != "ready" || res.After.Status != "done" {
+		t.Errorf("before/after status wrong: %q -> %q", res.Before.Status, res.After.Status)
+	}
+	// done flips status and stamps closed.
+	has := func(f string) bool {
+		for _, c := range res.Changed {
+			if c == f {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("status") || !has("closed") {
+		t.Errorf("changed should list status+closed, got %v", res.Changed)
+	}
+
+	// human mode stays the terse verb line (no before/after).
+	hout, _ := run(t, "done", "t-0001")
+	if strings.Contains(hout, "before") {
+		t.Errorf("human mutation output must stay terse:\n%s", hout)
 	}
 }
 

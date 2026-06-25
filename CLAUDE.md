@@ -15,6 +15,8 @@ furrow is the task store for THIS repo, living in `.furrow/`. When you work here
 - `--json` is available on read commands; **JSON goes to stdout only** (logs and
   errors go to stderr). Use `--ndjson` for one task per line and
   `--status/-s`, `--label/-l`, `--limit/-n` to filter — so you rarely need jq.
+  Mutations (`done|move|reorder|check|dep`) with `--json` emit
+  `{before, after, changed}`; `add --stdin` bulk-creates one task per stdin line.
 - `furrow edit <id>` with no TTY **prints the body file path** instead of opening
   an editor — read/edit that file directly.
 - Exit codes: `0` ok / `1` not-found|empty / `2` bad-usage|validation / `3+`

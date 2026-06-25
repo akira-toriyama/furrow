@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 	"golang.org/x/term"
@@ -152,6 +153,94 @@ func printOK(verb string, t *core.Task) {
 		return
 	}
 	fmt.Fprintf(out, "%s %s  %s\n", verb, t.ID, t.Title)
+}
+
+// printMutation reports a single-task edit. In --json mode it emits
+// {before, after, changed} so an agent sees the effect of a mutation inline,
+// without a follow-up `show`. In human mode it prints the short verb line.
+func printMutation(verb string, before, after *core.Task) {
+	if flagJSON {
+		printJSON(map[string]any{
+			"before":  before,
+			"after":   after,
+			"changed": changedFields(before, after),
+		})
+		return
+	}
+	fmt.Fprintf(out, "%s %s  %s\n", verb, after.ID, after.Title)
+}
+
+// changedFields lists the task fields that differ between before and after
+// (json field names), so an agent need not diff the two objects itself. The
+// always-bumped `updated` stamp and the immutable `created`/`body` are omitted.
+// An empty result is [] (never null), and a nil before yields [].
+func changedFields(before, after *core.Task) []string {
+	ch := []string{}
+	if before == nil {
+		return ch
+	}
+	if before.Status != after.Status {
+		ch = append(ch, "status")
+	}
+	if before.Priority != after.Priority {
+		ch = append(ch, "priority")
+	}
+	if before.Title != after.Title {
+		ch = append(ch, "title")
+	}
+	if before.Parent != after.Parent {
+		ch = append(ch, "parent")
+	}
+	if !strsEq(before.Labels, after.Labels) {
+		ch = append(ch, "labels")
+	}
+	if !strsEq(before.Deps, after.Deps) {
+		ch = append(ch, "deps")
+	}
+	if !strsEq(before.Refs, after.Refs) {
+		ch = append(ch, "refs")
+	}
+	if !checklistEq(before.Checklist, after.Checklist) {
+		ch = append(ch, "checklist")
+	}
+	if !timeEq(before.Closed, after.Closed) {
+		ch = append(ch, "closed")
+	}
+	return ch
+}
+
+// strsEq compares two string slices; nil and empty compare equal.
+func strsEq(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// checklistEq compares two checklists (ChecklistItem is comparable).
+func checklistEq(a, b []core.ChecklistItem) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// timeEq compares optional timestamps: both nil is equal; one nil is not.
+func timeEq(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
 }
 
 // atoiArg parses a CLI integer argument into a validation error on failure.

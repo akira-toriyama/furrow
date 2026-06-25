@@ -1,9 +1,30 @@
 package cli
 
 import (
+	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
 )
+
+// emitMutation runs a single-task edit on id and reports it. In --json mode it
+// snapshots the task before the change and prints {before, after, changed}, so
+// an agent sees the effect inline without a follow-up `show`. The pre-fetch is
+// skipped (and harmless) outside --json; the mutate closure is the authoritative
+// source of any not-found / validation error.
+func emitMutation(a *app.App, verb, id string, mutate func() (*core.Task, error)) error {
+	var before *core.Task
+	if flagJSON {
+		if b, _, err := a.Get(id); err == nil {
+			before = b
+		}
+	}
+	after, err := mutate()
+	if err != nil {
+		return err
+	}
+	printMutation(verb, before, after)
+	return nil
+}
 
 func newDoneCmd() *cobra.Command {
 	return &cobra.Command{
@@ -15,12 +36,7 @@ func newDoneCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := a.Done(args[0])
-			if err != nil {
-				return err
-			}
-			printOK("done", t)
-			return nil
+			return emitMutation(a, "done", args[0], func() (*core.Task, error) { return a.Done(args[0]) })
 		},
 	}
 }
@@ -35,12 +51,7 @@ func newMoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := a.Move(args[0], args[1])
-			if err != nil {
-				return err
-			}
-			printOK("moved", t)
-			return nil
+			return emitMutation(a, "moved", args[0], func() (*core.Task, error) { return a.Move(args[0], args[1]) })
 		},
 	}
 }
@@ -59,12 +70,7 @@ func newReorderCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := a.Reorder(args[0], prio)
-			if err != nil {
-				return err
-			}
-			printOK("reordered", t)
-			return nil
+			return emitMutation(a, "reordered", args[0], func() (*core.Task, error) { return a.Reorder(args[0], prio) })
 		},
 	}
 }
@@ -85,27 +91,24 @@ func newCheckCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if add != "" {
-				t, err := a.AddCheck(args[0], add)
-				if err != nil {
-					return err
+			verb := "checked"
+			mutate := func() (*core.Task, error) {
+				if add != "" {
+					return a.AddCheck(args[0], add)
 				}
-				printOK("checklist+", t)
-				return nil
+				if len(args) != 2 {
+					return nil, core.Validationf(args[0], "provide an item index to toggle, or --add to append")
+				}
+				idx, err := atoiArg("item-index", args[1])
+				if err != nil {
+					return nil, err
+				}
+				return a.Check(args[0], idx, !off)
 			}
-			if len(args) != 2 {
-				return core.Validationf(args[0], "provide an item index to toggle, or --add to append")
+			if add != "" {
+				verb = "checklist+"
 			}
-			idx, err := atoiArg("item-index", args[1])
-			if err != nil {
-				return err
-			}
-			t, err := a.Check(args[0], idx, !off)
-			if err != nil {
-				return err
-			}
-			printOK("checked", t)
-			return nil
+			return emitMutation(a, verb, args[0], mutate)
 		},
 	}
 	cmd.Flags().StringVar(&add, "add", "", "append a checklist item with this text")
@@ -126,20 +129,13 @@ func newDepCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			verb := "dep+"
+			mutate := func() (*core.Task, error) { return a.AddDep(args[0], args[1]) }
 			if rm {
-				t, err := a.RemoveDep(args[0], args[1])
-				if err != nil {
-					return err
-				}
-				printOK("dep-", t)
-				return nil
+				verb = "dep-"
+				mutate = func() (*core.Task, error) { return a.RemoveDep(args[0], args[1]) }
 			}
-			t, err := a.AddDep(args[0], args[1])
-			if err != nil {
-				return err
-			}
-			printOK("dep+", t)
-			return nil
+			return emitMutation(a, verb, args[0], mutate)
 		},
 	}
 	cmd.Flags().BoolVar(&rm, "rm", false, "remove the dependency instead of adding it")

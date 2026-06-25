@@ -120,7 +120,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | Command | What it does | Key flags / args |
 |---|---|---|
 | `init` | Create a `.furrow/` store (config + empty index + `bodies/`) in the current directory | — |
-| `add <title>...` | Add a task; assigns a frozen id and seeds `bodies/<id>.md` | `-s/--status`, `-p/--priority`, `-l/--label`, `--parent`, `--dep`, `--ref`, `--body` |
+| `add <title>...` | Add a task (or many from stdin with `--stdin`); assigns frozen ids and seeds `bodies/<id>.md` | `--stdin`, `-s/--status`, `-p/--priority`, `-l/--label`, `--parent`, `--dep`, `--ref`, `--body` |
 | `ls` (alias `list`) | List tasks in canonical `lane -> priority -> id` order | `-s/--status`, `-l/--label`, `-n/--limit` |
 | `show <id>` | Show one task plus its Markdown body | — |
 | `next` | Show actionable tasks (non-terminal lane, all deps done) | `-n/--limit` (use `-n1` for just the top) |
@@ -137,7 +137,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `ui` | Launch the interactive TUI (list + detail panes): navigate, filter, done, move lane, reorder (`K`/`J`), toggle checklist, edit body | — |
 | `migrate <file>` | Import an existing `Task.md` etc. (dry-run by default; unmapped headings & `[[wikilink]]`s reported, never dropped) | `--write`, `-l/--label` |
 
-Global flags (read/list commands): `--json` and `--ndjson`. `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
+Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `move`, `reorder`, `check`, `dep`) also accept `--json`, emitting `{before, after, changed}` so a caller sees the effect without a follow-up `show`. `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
 
 ---
 
