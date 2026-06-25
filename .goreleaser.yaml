@@ -18,22 +18,29 @@ archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
-checksums:
+checksum:
   name_template: checksums.txt
 
-# Homebrew formula pushed to the family tap on release (binary-based; the live
-# Formula/furrow.rb in akira-toriyama/homebrew-tap is regenerated each release).
-brews:
+# Homebrew cask pushed to the family tap on release. GoReleaser v2 ships
+# prebuilt binaries as CASKS (the old `brews:` formula path is deprecated); the
+# live Casks/furrow.rb in akira-toriyama/homebrew-tap is regenerated each
+# release. Install: brew install akira-toriyama/tap/furrow.
+homebrew_casks:
   - repository:
       owner: akira-toriyama
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: https://github.com/akira-toriyama/furrow
     description: "Repo-local plain-text task tracker (JSON index + per-task markdown bodies)"
-    license: MIT
-    test: |
-      system "#{bin}/furrow", "version"
+    # The binary is unsigned; strip the quarantine xattr on macOS so Gatekeeper
+    # allows launch (same pattern as the family's other casks).
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/furrow"]
+          end
 
 release:
   # Rolling-draft: pushes refresh a draft; publish (or tag) cuts the release.
