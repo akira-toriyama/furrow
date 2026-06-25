@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -12,13 +13,16 @@ import (
 
 func newMigrateCmd() *cobra.Command {
 	var write bool
+	var labels []string
 	cmd := &cobra.Command{
 		Use:   "migrate <task-file.md>",
 		Short: "Import a Task.md-style tracker into furrow (preview unless --write)",
 		Long: "Parse a hand-maintained Task.md (## emoji lanes, ### / bold-bullet items,\n" +
 			"a Done <details> archive, file:line + URL refs) into furrow tasks. Defaults\n" +
 			"to a dry-run preview; pass --write to actually create the tasks. Unmapped\n" +
-			"headings and unresolved [[wikilinks]] are reported, never silently dropped.",
+			"headings and unresolved [[wikilinks]] are reported, never silently dropped.\n" +
+			"Use --label to stamp every imported task with one or more labels (required\n" +
+			"when the store sets [labels].required, e.g. a central cross-repo tracker).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -32,16 +36,17 @@ func newMigrateCmd() *cobra.Command {
 			res := migrate.Parse(string(data), a.Cfg.Lanes, a.Cfg.DefaultLane, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
 
 			if !write {
-				return previewMigrate(args[0], res)
+				return previewMigrate(args[0], res, labels)
 			}
-			return applyMigrate(a, res)
+			return applyMigrate(a, res, labels)
 		},
 	}
 	cmd.Flags().BoolVar(&write, "write", false, "actually create the tasks (default: dry-run preview)")
+	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label applied to every imported task (repeatable)")
 	return cmd
 }
 
-func previewMigrate(path string, res migrate.Result) error {
+func previewMigrate(path string, res migrate.Result, labels []string) error {
 	if flagJSON {
 		tasks, warnings := res.Tasks, res.Warnings
 		if tasks == nil {
@@ -50,10 +55,16 @@ func previewMigrate(path string, res migrate.Result) error {
 		if warnings == nil {
 			warnings = []string{}
 		}
-		printJSON(map[string]any{"dry_run": true, "source": path, "tasks": tasks, "warnings": warnings})
+		if labels == nil {
+			labels = []string{}
+		}
+		printJSON(map[string]any{"dry_run": true, "source": path, "labels": labels, "tasks": tasks, "warnings": warnings})
 		return nil
 	}
 	fmt.Fprintf(out, "migrate %s — %d task(s) (dry-run)\n\n", path, len(res.Tasks))
+	if len(labels) > 0 {
+		fmt.Fprintf(out, "labels (applied to every task): %s\n\n", strings.Join(labels, ", "))
+	}
 	wLane := len("LANE")
 	for _, t := range res.Tasks {
 		if len(t.Status) > wLane {
@@ -76,7 +87,7 @@ func previewMigrate(path string, res migrate.Result) error {
 	return nil
 }
 
-func applyMigrate(a *app.App, res migrate.Result) error {
+func applyMigrate(a *app.App, res migrate.Result, labels []string) error {
 	specs := make([]app.AddSpec, 0, len(res.Tasks))
 	for _, t := range res.Tasks {
 		p := t.Priority
@@ -85,6 +96,7 @@ func applyMigrate(a *app.App, res migrate.Result) error {
 			AddOpts: app.AddOpts{
 				Status:   t.Status,
 				Priority: &p,
+				Labels:   labels,
 				Refs:     t.Refs,
 				Body:     t.Body,
 			},
