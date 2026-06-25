@@ -177,4 +177,6 @@ facet `Task.md` は **1 ファイルに [Open 優先順リスト + 要設計/tri
 
 - 2026-06-25: 初版。build-vs-buy / 命名 / ストレージ / 連携 / UI / 参考リポ / 工数を記録。
 - 2026-06-25: Phase 1 完了。study-engine（§8）追加。家風リポ並列解析の結論（§10）・migrate 仕様（§11）を確定。実装に着手。
-- 2026-06-25: Phase 0/2/3/4 実装。core（決定論マーシャラ・golden）・config（clamp）・store（fsstore/memstore）・app（coordinator）・CLI（15 コマンド）・schema・家風 scaffolding（cliff/commit-msg/CI/GoReleaser/flake/docs/CLAUDE.md）。`go test ./...` green。残: Phase 5 migrate・Phase 6 TUI・Phase 7 nix 検証・Phase 8 web。
+- 2026-06-25: Phase 0/2/3/4 実装。core（決定論マーシャラ・golden）・config（clamp）・store（fsstore/memstore）・app（coordinator）・CLI（15 コマンド）・schema・家風 scaffolding（cliff/commit-msg/CI/GoReleaser/flake/docs/CLAUDE.md）。`go test ./...` green。
+- 2026-06-25: Phase 5 migrate（facet Task.md → 22 tasks・dry-run 既定・付録 skip・wikilink 温存）・Phase 6 TUI（bubbletea v1・list+glamour detail・done/move/edit/filter）実装＆merge。Phase 7 packaging を goreleaser/git-cliff 導入で検証（`brews`→`homebrew_casks`・`checksums`→`checksum` の設定バグ修正）。
+- 2026-06-25: 全コードを **adversarial review workflow**（6 次元 reviewer → 独立 verify）に通し、確認された **10 件の実バグを修正**（Labels/Deps 非 dedup・laneRank sentinel 衝突・check 範囲外が exit 0・archive が index commit 前に body 削除・archive/migrate `--json` の null・bare-URL が CJK を飲む・md-link title 属性重複・list 節内 `###` が task を飲む・TUI reload の list blank/選択喪失）。各々に回帰テスト追加。`go test ./...` + golangci v2 = 0 issues。残: Phase 7 実リリース+nix vendorHash・Phase 8 web・migrate 付録 fold/wikilink 解決・TUI checklist/reorder。
