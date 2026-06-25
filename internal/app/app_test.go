@@ -100,6 +100,41 @@ func TestNextSkipsBlockedAndTerminal(t *testing.T) {
 	}
 }
 
+func TestNextOnlyConsidersNextLanes(t *testing.T) {
+	a := newApp() // default next-lanes = ready + in-progress
+	a.Add("intake", AddOpts{Status: "inbox"})
+	a.Add("planned", AddOpts{Status: "backlog"})
+	r, _ := a.Add("ready one", AddOpts{Status: "ready"})
+	a.Add("doing", AddOpts{Status: "in-progress"})
+
+	next, err := a.Next(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, tk := range next {
+		got[tk.Status] = true
+	}
+	if got["inbox"] || got["backlog"] {
+		t.Errorf("next must exclude inbox/backlog by default, got %+v", titlesOf(next))
+	}
+	if !got["ready"] || !got["in-progress"] {
+		t.Errorf("next must include ready + in-progress, got %+v", titlesOf(next))
+	}
+	if len(next) != 2 {
+		t.Errorf("expected 2 actionable tasks, got %d", len(next))
+	}
+	_ = r
+}
+
+func titlesOf(ts []core.Task) []string {
+	var out []string
+	for _, t := range ts {
+		out = append(out, t.Status+":"+t.Title)
+	}
+	return out
+}
+
 func TestCheckTogglesChecklist(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("with steps", AddOpts{})

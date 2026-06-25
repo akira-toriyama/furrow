@@ -25,6 +25,12 @@ done = "done"
 # Lanes whose tasks are NOT actionable for ` + "`furrow next`" + ` (done + parked).
 terminal = ["done", "icebox"]
 
+[next]
+# Lanes ` + "`furrow next`" + ` considers "ready to work" (besides the deps-done
+# check). Intake/planning lanes are excluded so next stays focused. Set to all
+# non-terminal lanes if you want next to show everything actionable.
+lanes = ["ready", "in-progress"]
+
 [priority]
 # Sparse integer step so reordering edits one field instead of renumbering.
 step = 10

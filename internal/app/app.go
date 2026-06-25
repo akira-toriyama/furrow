@@ -244,8 +244,9 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 	return out, nil
 }
 
-// Next returns the actionable tasks (non-terminal, all deps done) in canonical
-// order — the work that is ready to pick up.
+// Next returns the actionable tasks in canonical order — the work that is ready
+// to pick up: status in the configured next-lanes ([next].lanes, default
+// ready+in-progress) AND every dependency already done.
 func (a *App) Next(limit int) ([]core.Task, error) {
 	idx, err := a.load()
 	if err != nil {
@@ -260,7 +261,7 @@ func (a *App) Next(limit int) ([]core.Task, error) {
 	var out []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if idx.Actionable(t, a.Cfg.Terminal, doneIDs) {
+		if a.Cfg.IsNextLane(t.Status) && idx.Actionable(t, a.Cfg.Terminal, doneIDs) {
 			out = append(out, *t)
 			if limit > 0 && len(out) >= limit {
 				break

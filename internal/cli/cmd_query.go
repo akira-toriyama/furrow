@@ -59,9 +59,11 @@ func newNextCmd() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "next",
-		Short: "Show actionable tasks (non-terminal, all deps done)",
-		Long:  "List the tasks ready to pick up: not in a terminal lane and with every\ndependency already in the done lane, in canonical order.",
-		Args:  cobra.NoArgs,
+		Short: "Show actionable tasks (in the next-lanes, all deps done)",
+		Long: "List the tasks ready to pick up: status in the configured next-lanes\n" +
+			"([next].lanes in config.toml, default ready + in-progress) and with every\n" +
+			"dependency already in the done lane, in canonical order.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {

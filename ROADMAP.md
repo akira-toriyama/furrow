@@ -147,6 +147,6 @@ Projects #5 の実フィールド（`Status: 📥 Inbox / 📋 Backlog / ✅ Rea
 - コマンドのタイプ数（`furrow` は 6 文字）：短いエイリアス（例 `fw`）を用意する？ → `config.toml` か brew formula で。**現状**：`ls` に `list` alias のみ。`fw` は未提供（要望あれば brew formula で symlink）。
 - 既定 status レーンは Projects #5 の 6 段（inbox/backlog/ready/in-progress/done/icebox）でよい？ → **採用済**（`config.toml [lanes].order`・切替可能）。
 - `furrow import --from-gh-project 5` を初期移行で使うか（106 items の取り込み）。→ Phase 5 で判断。
-- **`next` の意味（要トミー判断）**：現状 `next` = 「terminal でない（done/icebox 以外）レーン ＋ deps が全部 done」を canonical 順（lane→priority）で列挙。**inbox/backlog も含む**ため、canonical 順だと intake が先に並ぶ。「next＝着手可能」をより厳密にするなら ① ready/in-progress のみ対象 ② `next` 専用に in-progress→ready→… の逆順表示、等が考えられる。今は単純・明確な定義を採用し保留。
+- ~~**`next` の意味**~~ → **決定（2026-06-25・B 採用）**：`config.toml [next].lanes` で対象レーンを指定可に。既定 `["ready","in-progress"]`（intake/planning を除外）。カスタムlane構成で両方無ければ非 terminal 全レーンにフォールバック。deps-done チェックは従来通り。実装済（`internal/config` + `app.Next`）。
 - **`--field`**（MEMO §4 で言及）は未実装。jq で代替可能なため後回し（要望あれば read コマンドに追加）。
 - **time 表示**：index は RFC3339 UTC（決定論）。`show` の人間向け表示はローカル整形でなく UTC `2006-01-02 15:04`。TZ 表示が要るか要確認。
