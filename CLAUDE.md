@@ -28,7 +28,7 @@ furrow is the task store for THIS repo, living in `.furrow/`. When you work here
 furrow — a repo-local, plain-text task tracker. Structured metadata lives in
 `.furrow/index.json` (deterministic, machine-written); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
-`.furrow/config.toml`. A cobra CLI and (Phase 6) a bubbletea TUI drive it. Go,
+`.furrow/config.toml`. A cobra CLI and a bubbletea TUI drive it. Go,
 cross-platform, brew/nix packaged. Background and decisions: [ROADMAP.md](ROADMAP.md);
 research log: [MEMO.md](MEMO.md).
 
@@ -36,11 +36,28 @@ research log: [MEMO.md](MEMO.md).
 
 ```sh
 go build ./...                          # compile (use GOTOOLCHAIN=local on Go 1.23)
-go test ./...                           # core + store contract + golden + CLI
-go vet ./... && golangci-lint run       # static checks
-sh scripts/check-marshal-singlepath.sh  # index single-marshaller guard
+go test ./...                           # all packages (see Verify for the TUI)
 ./run.sh ls --json                      # build + run a subcommand
+./run.sh ui                             # build + launch the TUI (needs a TTY)
 ```
+
+## Verify (how to confirm a change works — runnable headless)
+
+```sh
+sh scripts/check.sh   # the one command: marshaller guard + build/vet/test +
+                      # golangci + schema/config drift + a CLI smoke. Green here
+                      # == green CI. Run this before finishing a turn.
+```
+
+Everything is verifiable without a terminal, including the interactive UI:
+- **CLI**: directly runnable headless (`init/add/ls --json/next/done/migrate/lint`).
+- **TUI**: do NOT need a real terminal to verify it. `internal/tui` has model-level
+  tests (send key messages, assert state) AND a **teatest** end-to-end test that
+  boots the real `tea.Program` in a simulated terminal, sends keys, and asserts
+  both the rendered frame and the persisted mutation. A raw PTY is flaky on macOS —
+  use teatest. Only the visual *aesthetics* need a human eye (`./run.sh ui`).
+- **Determinism / drift**: the golden round-trip test, `scripts/check-marshal-singlepath.sh`,
+  and the schema/config drift diffs (in `check.sh`) guard the load-bearing invariants.
 
 ## Source-of-truth references
 
