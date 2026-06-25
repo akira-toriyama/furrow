@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "id": "t-0002",
+      "title": "ready task",
+      "status": "in-progress",
+      "priority": 100,
+      "labels": [],
+      "deps": [],
+      "refs": [],
+      "checklist": [],
+      "created": "2026-06-03T01:02:03Z",
+      "updated": "2026-06-03T01:02:03Z",
+      "closed": null,
+      "body": "bodies/t-0002.md"
+    },
+    {
+      "id": "t-0001",
+      "title": "畝を一本進める",
+      "status": "in-progress",
+      "priority": 110,
+      "labels": [
+        "canon",
+        "zmk"
+      ],
+      "deps": [
+        "t-0002"
+      ],
+      "refs": [
+        "docs/x.md#L10",
+        "https://example.com"
+      ],
+      "checklist": [
+        {
+          "text": "design",
+          "done": true
+        },
+        {
+          "text": "ship",
+          "done": false
+        }
+      ],
+      "created": "2026-06-02T01:02:03Z",
+      "updated": "2026-06-21T01:02:03Z",
+      "closed": null,
+      "body": "bodies/t-0001.md"
+    },
+    {
+      "id": "t-0003",
+      "title": "done item <b>&amp;</b> 完了",
+      "status": "done",
+      "priority": 100,
+      "labels": [],
+      "deps": [],
+      "refs": [],
+      "checklist": [],
+      "created": "2026-06-01T01:02:03Z",
+      "updated": "2026-06-20T01:02:03Z",
+      "closed": "2026-06-20T01:02:03Z",
+      "body": "bodies/t-0003.md"
+    }
+  ]
+}
