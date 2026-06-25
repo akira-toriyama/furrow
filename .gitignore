@@ -1,5 +1,6 @@
 # Go build artifacts
 /furrow
+/bin/
 /dist/
 *.exe
 *.test
