@@ -1,11 +1,11 @@
 name: release
 
-# Rolling-draft model (family convention): every push to main refreshes a DRAFT
-# release with git-cliff notes + GoReleaser artifacts. Publishing the draft (or
-# pushing a vX.Y.Z tag) cuts the real release and updates the Homebrew tap.
+# Tag-driven release: pushing a vX.Y.Z tag runs git-cliff + GoReleaser (binaries,
+# checksums, Homebrew cask). Deliberately NOT on every main push — that would run
+# GoReleaser with no tag (and before HOMEBREW_TAP_TOKEN exists) and fail. Use
+# workflow_dispatch for a manual dry run.
 on:
   push:
-    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
