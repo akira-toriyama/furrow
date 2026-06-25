@@ -1,154 +1,58 @@
-# furrow — ROADMAP
+# furrow — ROADMAP（設計・決定の正典）
 
-> **furrow** = repo の中に住むプレーンテキスト・タスクトラッカー。**JSON index + 1 タスク 1 markdown 本文**を、CLI と bubbletea TUI から操作する。あなた（トミー）と Claude Code の両方が編集できることを最優先に設計する。畝（furrow）を一本ずつ進めるように、レーンを消化していく。
+> **furrow** = repo の中に住むプレーンテキスト・タスクトラッカー。JSON index + 1 タスク 1 markdown 本文を、CLI と bubbletea TUI から操作する。私（トミー）と Claude Code の両方が編集できることを最優先に設計する。畝（furrow）を一本ずつ進めるようにレーンを消化する。
 >
-> **正本（single source of truth）。** セッション跨ぎの引き継ぎはこの `ROADMAP.md` と [`MEMO.md`](MEMO.md) に集約する（**未達成を暗黙にしない**）。`ROADMAP.md` = 要件・決定・フェーズ計画の正典。`MEMO.md` = 調査ログ・参考リポからの学び・根拠の蓄積。
->
-> **運用タスクは projects に一本化（2026-06-25）。** furrow 自身の残作業は private な `akira-toriyama/projects` リポ（furrow 運用・label `furrow`）で追跡する。この repo の自前 `.furrow/` board は廃止（二重管理回避）。ここ（ROADMAP/MEMO）は設計・決定・研究の記録として維持。
+> **このファイルの役割** = 要件・確定した設計判断・フェーズの現況。調査の根拠は [`MEMO.md`](MEMO.md)、実装の作法・不変条件は [`CLAUDE.md`](CLAUDE.md)。**運用タスクは private な `akira-toriyama/projects` リポ（label `furrow`）に一本化**（この repo の自前 `.furrow/` board は廃止＝二重管理回避）。**未達成を暗黙にしない**。
 
 ---
 
-## 🎯 なぜ作るか（背景）
+## 背景と要件
 
-現状は **GitHub Projects #5（roadmap・106 items）+ Issues** と、facet の手管理 `Task.md`（300 行超）でタスクを追っている。痛み:
+GitHub Projects #5（private・106 items）+ Issues + facet の手管理 `Task.md`（169 行）でタスクを追う痛み——Issue は public で私的メモを置きづらく他人の issue と混ざる、`Task.md` は 1 ファイルに一覧+設計付録+プロセス規則+経緯が同居し優先度の手リナンバリング/手アーカイブが苦行——を、**ローカル・プレーンテキスト・自分仕様**の Go ツールで解消する。build-vs-buy の調査結論と却下理由は [`MEMO.md §1`](MEMO.md)。
 
-- Issue は **public**（私的メモを置きづらい）・**他人の issue と混ざる**・ローカルのプレーンテキストに対して **ラグ／わずかな剥離**がある。
-- `Task.md` は 1 ファイルに *タスク一覧 + 設計付録 + プロセス規則 + 経緯* が同居 → **煩雑でしんどい**。優先度の手リナンバリング、Open→Done の手アーカイブが苦行。
-
-→ **ローカル・プレーンテキスト・自分仕様**のツールを Go で自作する。買う側（Backlog.md 等）の調査結論と却下理由は [`MEMO.md`](MEMO.md) に記録済み。
+**ハード要件（トミー指定）**: Claude Code / CLI フレンドリー・TUI 必須・**非バイナリで git-diff 可能**（GitHub Issue 連携は不要）・構造化メタ=JSON / 長文=Markdown / 設定=TOML・データ量は Projects #5 程度・完了は残す→後で archive・優先度は CLI/TUI 高 / web 低（将来 React）・brew/nix 配布。**進め方**: 1 セッションで完了しなくてよい / 破壊的変更OK / 品質重視 / 未達成を暗黙にしない。
 
 ---
 
-## 🧱 ハード要件（トミー指定）
+## 確定した設計判断（根拠は MEMO.md）
 
-- **Claude Code フレンドリー** / **CLI フレンドリー** / **TUI 欲しい**。
-- **GitHub フレンドリー = 非バイナリならOK**（repo に commit して綺麗に git-diff できればよい）。**Issue 連携は不要**。
-- **保存はプレーンテキスト**：構造化メタ = **JSON**、長文詳細 = **Markdown**。
-- 扱うデータ量は **Projects #5 程度**で十分（JSON で足りる）。
-- **完了済みは残すのが理想**だが、しばらくしたら **Archive もOK**（それで軽さをキープ）。
-- 優先度：**CLI・TUI が高**、**web UI / (React + Electron) は低**（将来は React 系 UI が欲しい）。
-- Go の TUI は **おすすめのでOK・見た目が良いこと**。
-- **brew / nix でインストール**できること。
-- 調査した **CLI 系 TODO アプリを全部 clone してよい**。**良いところを採り、不満を改善して実装する（重要）**。
-- **Go の有名リポ**を確認し良い所を参考に（何個か clone OK）。**Go ベストプラクティス**を確認する。
-- **私のリポジトリも何個か参考に**する（hexagonal・config.toml 駆動・atelier/sill の家風）。
+1. **ストレージ=ハイブリッド**：`.furrow/index.json`（構造化メタ・機械が書く）+ `.furrow/bodies/<id>.md`（長文 prose・手/Claude 編集可）。純 JSON 単一 / JSONL は長文を 1 行エスケープに潰し git が全行 churn＝痛みの再現。（MEMO §3）
+2. **index=JSON / 設定=TOML（`config.toml` 駆動の家風）/ 本文=Markdown**。YAML 却下（空白依存で編集が壊れる）・SQLite 却下（バイナリ・非 diff）。
+3. **ID 凍結**（`t-0042`・`.furrow/seq` 採番）：再利用・リナンバリングしない。
+4. **priority=独立した疎な整数**（10 刻み）：並べ替え=1 フィールド編集＝手リナンバリング消滅。
+5. **status=フィールド**（レーン定義は `config.toml` 駆動）：Open→Done は値変更＝手アーカイブ消滅。
+6. **決定論シリアライズ**：`core.Marshal` を唯一の経路に。キー順固定・2-space・`SetEscapeHTML(false)`・`[]` not null・`lane→priority→id` sort・UTC 秒・末尾改行。アプリ書き込み＝手/Claude 編集が byte 一致＝git churn ゼロ。（MEMO §10 / CLAUDE.md）
+7. **Claude 連携=MCP も plugin も作らない**（solo には過剰）。`CLAUDE.md` の連携ブロック＋全 read コマンドに `--json` が連携層。（MEMO §4）
+8. **非対話デフォルト**（TTY 検出・TUI は `furrow ui` のみ・破壊操作は `--yes`）＋ **exit code 契約**（0 ok / 1 not-found・empty / 2 bad-usage・validation / 3+ 内部・IO、エラーは stderr の `{"error":{"code","id","message"}}`）。
+9. **アーカイブ**：done はホット index に残し、`furrow archive --older-than 30d` で `.furrow/archive/` へ退避し軽さを保つ。
 
-### 進め方
-
-- **1 セッションで完了しなくてよい** / **破壊的変更OK** / **品質重視** / **時間かけてOK** / **未達成を暗黙にしない**。
+**スキーマ**：`schema_version:1`・フィールドは id/title/status/priority/labels/parent/deps/refs/checklist/created/updated/closed/body。正本は **`internal/schema.IndexV1`**（`furrow schema` で emit、`docs/schema/furrow.index.v1.json` に committed、CI が drift 検出）。不変条件：index の id ⇔ `bodies/<id>.md` が 1:1（`furrow lint` で検証）。
 
 ---
 
-## 🔑 確定した設計判断（詳細根拠は MEMO.md）
+## フェーズ現況
 
-1. **ストレージ = ハイブリッド**。`.furrow/index.json`（構造化メタのみ）+ `.furrow/bodies/<id>.md`（長文 prose）。
-   - 純 JSON 単一ファイルや JSONL は **長文 prose を 1 行エスケープ文字列に潰す** → git diff が全行 churn ＝ Task.md の痛みを JSON で再現、かつ Claude が編集で壊す。だから本文は md に分離する。
-2. **「JSON 以外の推奨は？」への回答**：
-   - **index（機械が書く・手編集しない）= JSON** が最適（`jq`・Claude・決定論シリアライズ）。
-   - **human が触る設定 = TOML**（`.furrow/config.toml`）＝ あなたの **config.toml 駆動の家風**に合わせる（perch/chord/wand/canon と同様）。
-   - **本文 = Markdown**。
-   - YAML は却下（空白依存で Claude 編集が壊れやすい）。SQLite は却下（バイナリ）。
-3. **ID は凍結**（`t-0042`・ファイル名の語幹）。**再利用・リナンバリングしない**。
-4. **priority は独立した疎な整数フィールド**（10 刻み: 100,110,120）。並べ替え = 1 フィールド編集 → **手リナンバリング消滅**。
-5. **status はフィールド**。Open→Done は値の変更（1 文字 diff）→ **手アーカイブ消滅**。レーン定義は `config.toml` 駆動。
-6. **決定論シリアライズ**：キー順固定・2-space・`SetEscapeHTML(false)`（CJK/記号そのまま）・`[]` not null・lane→priority→id でソート・末尾改行。アプリ書き込みと手/Claude 編集が **byte 一致** → 無駄な git churn ゼロ。
-7. **Claude Code 連携 = MCP も plugin も作らない**（solo には過剰）。**~15 行の CLAUDE.md ブロック**＋ `--json` を全 read コマンドに、が連携層。
-8. **非対話デフォルト**（TTY 検出・`furrow ui` のみ TUI 起動・破壊操作は `--yes`）。**exit code 契約**（0/1/2/3+）。
-9. **アーカイブ**：done はホット index に残す。`furrow archive --older-than 30d` で `.furrow/archive/` へ退避し軽さを保つ。
+| Phase | 内容 | 状態 |
+|---|---|---|
+| 0 Setup | repo / CI / commit 規約 / 家風 scaffolding | ✅ |
+| 1 Study | 参考リポ調査・study-engine・migrate 仕様確定 | ✅（MEMO §8 / §10 / §11） |
+| 2 Design lock | スキーマ・`config.toml`・determinism・hexagonal | ✅（[docs/architecture.md](docs/architecture.md)） |
+| 3 Core lib | core / store / config / app・golden 往復テスト | ✅ |
+| 4 CLI | add/ls/show/next/edit/done/move/reorder/check/archive/lint/init/schema/version/migrate/ui | ✅ |
+| 5 migrate | `furrow migrate`（dry-run 既定・付録 skip+warn・`[[wikilink]]` 温存） | ✅（付録 fold / wikilink 解決は **won't-do**＝skip+warn が最終仕様） |
+| 6 TUI | bubbletea v1・list + glamour detail・done/move/edit/filter・レンダラ/本文キャッシュ | ✅（checklist toggle / reorder キーは projects **t-0002**） |
+| 7 Packaging | GoReleaser / brew cask / nix flake を設定 | 🟡 実リリース検証=projects **t-0001**・nix vendorHash=**t-0005** |
+| 8 Web/React | read-only ビューア → React UI（host は Electron vs Go 静的を再検討） | 🧊 projects **t-0006 / t-0007** |
 
----
-
-## 🗂 スキーマ（Projects #5 を土台に）
-
-Projects #5 の実フィールド（`Status: 📥 Inbox / 📋 Backlog / ✅ Ready / 🔨 In Progress / ✔️ Done / 🧊 Icebox`, Labels, Parent issue, Sub-issues progress, Created/Updated/Closed）を写し取る。
-
-```jsonc
-// .furrow/index.json
-{
-  "schema_version": 1,
-  "tasks": [
-    {
-      "id": "t-0042",                 // 凍結・bodies/<id>.md の語幹
-      "title": "…",                   // 一行サマリ
-      "status": "in-progress",        // config.toml のレーン enum（既定: inbox/backlog/ready/in-progress/done/icebox）
-      "priority": 100,                 // 疎な整数・並べ替えはこれだけ
-      "labels": ["canon", "zmk"],     // = Projects "Labels"
-      "parent": "t-0001",             // = Parent issue（任意）
-      "deps": ["t-0003"],             // 依存（task next が ready 判定に使う）
-      "refs": ["docs/x.md#L10", "https://…"], // file:line / URL
-      "checklist": [ { "text": "…", "done": false } ], // = Sub-issues progress 相当
-      "created": "2026-06-25T00:00:00Z",
-      "updated": "2026-06-25T00:00:00Z",
-      "closed": null,
-      "body": "bodies/t-0042.md"
-    }
-  ]
-}
-```
-
-不変条件：`index` の id ⇔ `bodies/<id>.md` が 1:1（`furrow lint` で検証）。
+**残作業・新規アイデアは全て `akira-toriyama/projects`（label `furrow`）で追跡**（TUIラグ修正・エージェント機能・GTDレビュー・看板TUI・waiting レーン・スケジューラ・charm v1 移行・メタ情報設計 = t-0010〜t-0017 ほか）。このファイルは設計記録として維持する。
 
 ---
 
-## 🛠 フェーズ計画（未達成を暗黙にしない）
+## 決定ログ（解決済みの論点）
 
-> 各フェーズは独立に build/test green を保つ。1 セッションで終えなくてよい。進捗はこのチェックボックスで管理。
-
-### Phase 0 — Setup ✅
-- [x] 空 repo 作成（public・`akira-toriyama/furrow`）
-- [x] `ROADMAP.md` / `MEMO.md` 初版
-- [x] `go.mod`（module path `github.com/akira-toriyama/furrow`・Go 1.23・`GOTOOLCHAIN=local`）・`.gitignore`・`LICENSE`(MIT)
-- [x] CI（`build.yml`/`commit-lint.yml`/`release.yml`）・commit 規約（`scripts/hooks/commit-msg`・`docs/commit-convention.md`）・`cliff.toml`・`.golangci.yml`(v2)・`.editorconfig`・`dependabot.yml`・PR テンプレ を家風に寄せた
-- [x] 参考リポの clone & 学び（Phase 1 workflow）を `MEMO.md §8-11` に統合
-
-### Phase 1 — Study（重要） ✅
-- [x] study-engine（非 TUI UI / スキーマ駆動）を実読 → `MEMO.md §8`
-- [x] 家風 repo（chord/facet/atelier/jig/perch）を並列解析し hexagonal・config.toml 駆動・cliff/commit-msg/CI/packaging の移植方針を抽出 → `MEMO.md §10`
-- [x] facet `Task.md` を実読し migrate 仕様を確定 → `MEMO.md §11`
-- [~] 調査済み TODO CLI（Backlog.md/taskmd/dstask/…）の「採る長所/直す不満」は MEMO §1/§6 の調査時サマリで代替（個別 clone は未実施・Phase 5 migrate 設計時に taskmd を参照予定）
-
-### Phase 2 — Design lock ✅
-- [x] スキーマ確定（`internal/schema.IndexV1` = 正本・`docs/schema/furrow.index.v1.json` に committed・`furrow schema` で emit・CI drift guard）・`config.toml` 仕様（clamp-don't-reject）・determinism 規則（single marshaller）
-- [x] アーキテクチャ確定（hexagonal・`internal/core` 純粋・`internal/app` が唯一の mutation funnel・CLI/TUI が共有）→ `docs/architecture.md`
-- [x] CLI コマンド面確定（`--json` 全 read 対応・exit code 契約 0/1/2/3+）
-
-### Phase 3 — Core lib（`internal/core` + `store` + `config` + `app`）✅
-- [x] Index/Task struct・決定論マーシャラ（`core.Marshal` 単一経路）・atomic write（tmp+rename・`fsstore`）・id 採番（`.furrow/seq`）・body lazy load
-- [x] golden-file テスト（決定論・往復 byte 一致）・table-driven テスト・`memstore` fake・`scripts/check-marshal-singlepath.sh` guard
-
-### Phase 4 — CLI ✅（`migrate` を除く）
-- [x] `add / ls / show / next / edit / done / move / reorder / check / archive / lint / init / schema / version / ui(stub)`
-- [x] `--json`/`--ndjson`/`--status`/`--label`/`--limit`・非対話デフォルト・`edit` は非 TTY で path 出力・`archive` は `--yes` ガード・STDERR エラーオブジェクト
-- [ ] `migrate` は Phase 5 へ。`--field` は未実装（jq で代替可・必要なら後日）
-
-### Phase 5 — migrate（取り込み） ✅（first cut）
-- [x] `furrow migrate ./Task.md`（dry-run 既定・`--write` で適用）：`## emoji/keyword`→lane・`###`/list-style bold-bullet→task（`###` 配下の bold 詳細 bullet は body 維持）・`<details>` Done→done・file:line/URL→refs。`## 📎 付録` は **skip+warn**・`[[wikilink]]` は body 温存+warn（黙って捨てない）。実 facet `Task.md` から 22 tasks が lint green で取り込めることを確認（`internal/migrate` pure parser + 実フィクスチャテスト）
-- [ ] **未**: 付録の親 task body への自動 fold・`[[wikilink]]`→凍結 id 解決・`## プロセス`→CLAUDE.md 分離（現状は手作業 fold を warn で促す）
-- [ ] （任意）`furrow import --from-gh-project 5`（Projects #5 を初期投入）
-
-### Phase 6 — TUI（bubbletea v1） ✅（first cut）
-- [x] `furrow ui`（TTY ガード）：filterable list（左）+ glamour 本文 detail（右）・lipgloss 2-pane・help footer。キー: navigate / `/` fuzzy / `d` done / `]`,`[` lane 移動 / `e` `$EDITOR` shell-out（suspend/resume）/ `r` reload / `?` help / `q` quit。mutation は `internal/app` 経由。model 駆動テスト（window-size+key）で load/done/move/quit を検証
-- [ ] **未**: checklist toggle の TUI 操作・reorder（priority 直接編集）キー・実端末での見た目の作り込み（unit test 済だが目視は要 `furrow ui`）・bubbles は v0.20（charm.land の v1.0.0 系へは将来移行可）
-
-### Phase 7 — Packaging 🟡 **設定済・未検証**
-- [x] GoReleaser（`.goreleaser.yaml`・`brews:` → `akira-toriyama/homebrew-tap`）・`release.yml`・`packaging/homebrew/furrow.rb`（参考コピー）
-- [x] Nix flake（`flake.nix`・`nix run`/`nix profile install`）— ※`vendorHash` は placeholder（nix 未導入＝ローカル検証不可・CI/別環境で確定要）
-- [ ] 実際の release 実行（タグ push）と tap/nix の動作確認は未
-
-### Phase 8 — Web / React UI（優先度低・将来） 🧊
-- [ ] まず Go `net/http` + `embed.FS` で `index.json` を読む静的ビューア（read-only）
-- [ ] 将来 React 系 UI（study-engine の renderer 構成を写経・host は Electron vs Go 静的を再検討＝MEMO §8）
-
-### CLAUDE.md 連携ブロック（Phase 4 と同時）✅
-- [x] store は CLI 管理・`index.json` 手編集禁止・`bodies/*.md` は編集可・正準コマンド列・exit code・`--json` 必須、を `CLAUDE.md` 冒頭ブロックに明記
-
----
-
-## ❓ Open questions
-
-- ~~短いエイリアス `fw`~~ → **決定（2026-06-25・不要）**：furrow 側では提供しない。欲しければ shell alias（`alias fw=furrow`）で。`ls`→`list` の alias のみ維持。
-- 既定 status レーンは Projects #5 の 6 段（inbox/backlog/ready/in-progress/done/icebox）でよい？ → **採用済**（`config.toml [lanes].order`・切替可能）。
-- `furrow import --from-gh-project 5` を初期移行で使うか（106 items の取り込み）。→ Phase 5 で判断。
-- ~~**`next` の意味**~~ → **決定（2026-06-25・B 採用）**：`config.toml [next].lanes` で対象レーンを指定可に。既定 `["ready","in-progress"]`（intake/planning を除外）。カスタムlane構成で両方無ければ非 terminal 全レーンにフォールバック。deps-done チェックは従来通り。実装済（`internal/config` + `app.Next`）。
-- ~~**`--field`**（MEMO §4 で言及）~~ → **決定（2026-06-25・不要）**：`--json` + jq（例 `furrow ls --json | jq -r '.[].id'`）で代替。read コマンドに追加しない。
-- **time 表示**：index は RFC3339 UTC（決定論）。`show` の人間向け表示はローカル整形でなく UTC `2006-01-02 15:04`。TZ 表示が要るか要確認。
+- 短い alias `fw`：**不要**（2026-06-25）。欲しければ shell alias。`ls`→`list` の alias のみ維持。
+- 既定レーン：Projects #5 の 6 段 `inbox/backlog/ready/in-progress/done/icebox` を採用。`config.toml [lanes].order` で切替可。※GTD の Waiting-For 用 `waiting` レーン追加を projects **t-0014** で検討中。
+- `next` の意味：`config.toml [next].lanes` で対象レーン指定可（既定 `ready`+`in-progress`、両方無ければ非 terminal 全レーンにフォールバック）。deps-done 判定は従来通り。（実装済）
+- `--field`：**不要**。`--json` + jq（例 `furrow ls --json | jq -r '.[].id'`）で代替。
+- time 表示：index は RFC3339 UTC（決定論）。`show` の人間向け表示も UTC `2006-01-02 15:04`。
+- `[labels].required`：任意・既定 off。on で label 無しタスクは `add` / `lint` でエラー（projects は on 運用）。
