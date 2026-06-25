@@ -124,6 +124,8 @@ struct → update the schema const, the committed file, and the golden together.
 ## Multi-session work policy
 
 `docs/plans/` holds one file per in-flight task (delete on merge); `ROADMAP.md` =
-decisions/phase plan; `MEMO.md` = research log. **Never leave unfinished work
-implicit** (未達成を暗黙にしない) — every in-flight task has a plan file or a
-ROADMAP checkbox.
+design decisions + phase status; `MEMO.md` = research log. furrow's own backlog
+lives in the private `akira-toriyama/projects` repo (label `furrow`) — don't add
+a `.furrow/` board to this repo. **Never leave unfinished work implicit**
+(未達成を暗黙にしない) — every in-flight task is a `projects` task, a plan file,
+or a ROADMAP note.
