@@ -2,38 +2,6 @@
   "schema_version": 1,
   "tasks": [
     {
-      "id": "t-0003",
-      "title": "migrate: fold ## 付録 appendices into the related task body (currently skipped+warned)",
-      "status": "backlog",
-      "priority": 110,
-      "labels": [
-        "migrate"
-      ],
-      "deps": [],
-      "refs": [],
-      "checklist": [],
-      "created": "2026-06-25T01:54:53Z",
-      "updated": "2026-06-25T01:54:53Z",
-      "closed": null,
-      "body": "bodies/t-0003.md"
-    },
-    {
-      "id": "t-0004",
-      "title": "migrate: resolve [[wikilinks]] to frozen ids (currently left in body+warned)",
-      "status": "backlog",
-      "priority": 120,
-      "labels": [
-        "migrate"
-      ],
-      "deps": [],
-      "refs": [],
-      "checklist": [],
-      "created": "2026-06-25T01:54:53Z",
-      "updated": "2026-06-25T01:54:53Z",
-      "closed": null,
-      "body": "bodies/t-0004.md"
-    },
-    {
       "id": "t-0006",
       "title": "TUI: checklist toggle + reorder (priority edit) keybindings",
       "status": "backlog",
@@ -131,6 +99,22 @@
       "body": "bodies/t-0005.md"
     },
     {
+      "id": "t-0003",
+      "title": "migrate: fold ## 付録 appendices into the related task body (currently skipped+warned)",
+      "status": "icebox",
+      "priority": 110,
+      "labels": [
+        "migrate"
+      ],
+      "deps": [],
+      "refs": [],
+      "checklist": [],
+      "created": "2026-06-25T01:54:53Z",
+      "updated": "2026-06-25T02:46:13Z",
+      "closed": null,
+      "body": "bodies/t-0003.md"
+    },
+    {
       "id": "t-0007",
       "title": "TUI: polish visuals in a real terminal; consider bubbles charm.land v1.0 migration",
       "status": "icebox",
@@ -145,6 +129,22 @@
       "updated": "2026-06-25T01:54:54Z",
       "closed": null,
       "body": "bodies/t-0007.md"
+    },
+    {
+      "id": "t-0004",
+      "title": "migrate: resolve [[wikilinks]] to frozen ids (currently left in body+warned)",
+      "status": "icebox",
+      "priority": 120,
+      "labels": [
+        "migrate"
+      ],
+      "deps": [],
+      "refs": [],
+      "checklist": [],
+      "created": "2026-06-25T01:54:53Z",
+      "updated": "2026-06-25T02:46:13Z",
+      "closed": null,
+      "body": "bodies/t-0004.md"
     },
     {
       "id": "t-0008",
