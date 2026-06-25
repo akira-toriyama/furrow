@@ -3,6 +3,8 @@
 > **furrow** = repo の中に住むプレーンテキスト・タスクトラッカー。**JSON index + 1 タスク 1 markdown 本文**を、CLI と bubbletea TUI から操作する。あなた（トミー）と Claude Code の両方が編集できることを最優先に設計する。畝（furrow）を一本ずつ進めるように、レーンを消化していく。
 >
 > **正本（single source of truth）。** セッション跨ぎの引き継ぎはこの `ROADMAP.md` と [`MEMO.md`](MEMO.md) に集約する（**未達成を暗黙にしない**）。`ROADMAP.md` = 要件・決定・フェーズ計画の正典。`MEMO.md` = 調査ログ・参考リポからの学び・根拠の蓄積。
+>
+> **運用タスクは projects に一本化（2026-06-25）。** furrow 自身の残作業は private な `akira-toriyama/projects` リポ（furrow 運用・label `furrow`）で追跡する。この repo の自前 `.furrow/` board は廃止（二重管理回避）。ここ（ROADMAP/MEMO）は設計・決定・研究の記録として維持。
 
 ---
 

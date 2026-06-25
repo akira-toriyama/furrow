@@ -6,7 +6,12 @@
 
 Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.23). No database, no daemon, no cloud.
 
-> **Status:** the core library and CLI are working. The TUI (`furrow ui`) is a stub (ROADMAP Phase 6) and `migrate` is not built yet (ROADMAP Phase 5). See [Status](#status) and [`ROADMAP.md`](ROADMAP.md).
+> **Status:** core, CLI, the bubbletea TUI (`furrow ui`), and `migrate` all work
+> (`go test ./...` + golangci green). Packaging (brew/nix release) is configured
+> but not yet published. See [Status](#status) and [`ROADMAP.md`](ROADMAP.md).
+>
+> furrow's own tasks are tracked with furrow, in the private
+> `akira-toriyama/projects` repo (label `furrow`) — not in this repo.
 
 [日本語版 README →](README.ja.md)
 
@@ -200,13 +205,20 @@ furrow's write path is byte-stable on purpose. Every index write goes through on
 
 ## Status
 
-Honestly: not everything in the roadmap is built.
+- **Working:** the core domain (`internal/core`), config loader, filesystem store,
+  app coordinator, the full CLI, the bubbletea **TUI** (`furrow ui`), and
+  **`migrate`** (importing a legacy `Task.md`). `go test ./...` + golangci clean;
+  `sh scripts/check.sh` runs the full verification (incl. a teatest TUI e2e).
+- **Configured, not yet published:** the brew/nix release (Phase 7) — GoReleaser
+  config validated, but `v0.1.0` isn't tagged yet. nix `flake.nix` carries a
+  placeholder `vendorHash`.
+- **Future (low priority):** a read-only web viewer / React UI over `index.json`
+  (Phase 8).
 
-- **Working:** the core domain (`internal/core`), the config loader, the filesystem store, the app coordinator, and the full CLI listed above.
-- **Stub:** `furrow ui` — the bubbletea TUI is **ROADMAP Phase 6** and not wired up yet; the command exists but returns a "not implemented" message.
-- **Not built:** `furrow migrate` (importing a legacy `Task.md`) is **ROADMAP Phase 5**.
-
-For the full plan and rationale see [`ROADMAP.md`](ROADMAP.md) (requirements + phase plan) and [`MEMO.md`](MEMO.md) (the research/decision log). Architecture and glossary notes are planned under `docs/architecture.md` and `docs/glossary.md`.
+Tracking: furrow's remaining work lives in the private `akira-toriyama/projects`
+repo (label `furrow`). For the plan and rationale see [`ROADMAP.md`](ROADMAP.md)
+and [`MEMO.md`](MEMO.md); architecture in [`docs/architecture.md`](docs/architecture.md),
+terms in [`docs/glossary.md`](docs/glossary.md).
 
 ---
 
