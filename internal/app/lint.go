@@ -42,6 +42,15 @@ func (a *App) Lint() ([]core.Problem, error) {
 		}
 	}
 
+	// required-label rule (config [labels].required).
+	if a.Cfg.LabelsRequired {
+		for _, t := range idx.Tasks {
+			if len(t.Labels) == 0 {
+				ps = append(ps, core.Problem{Severity: core.SevError, ID: t.ID, Msg: "task has no label ([labels].required)"})
+			}
+		}
+	}
+
 	// surface config clamp warnings as lint warns.
 	for _, w := range a.Warnings {
 		ps = append(ps, core.Problem{Severity: core.SevWarn, ID: "config", Msg: w})

@@ -35,6 +35,9 @@ type raw struct {
 	Next struct {
 		Lanes []string `toml:"lanes"`
 	} `toml:"next"`
+	Labels struct {
+		Required *bool `toml:"required"`
+	} `toml:"labels"`
 }
 
 // Load reads config.toml at path and returns the effective config plus any
@@ -139,6 +142,10 @@ func fromRaw(r raw) (*Config, []string, error) {
 		} else {
 			c.ArchiveOlderThanDays = *r.Archive.OlderThanDays
 		}
+	}
+
+	if r.Labels.Required != nil {
+		c.LabelsRequired = *r.Labels.Required
 	}
 
 	if r.UI.Theme != "" {

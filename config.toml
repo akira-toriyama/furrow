@@ -33,6 +33,12 @@ default = 100
 prefix = "t-"
 width = 4 # t-0042
 
+[labels]
+# When true, every task must carry at least one label — `furrow add` rejects a
+# label-less task and `furrow lint` flags one. Handy when labels mean something
+# mandatory (e.g. a central tracker where the label is the owning repo).
+# required = false
+
 [archive]
 # Default window for `furrow archive --older-than` (days; done tasks only).
 older_than_days = 30
