@@ -333,6 +333,59 @@ func (a *App) Check(id string, item int, done bool) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) { t.Checklist[item].Done = done })
 }
 
+// AddDep makes `id` depend on `dep` (id waits on dep). Both ids must exist, a
+// task may not depend on itself, and the edge must not create a cycle (dep must
+// not already depend on id, directly or transitively). Re-adding an existing
+// dep is a no-op; the marshaller keeps the dep list sorted and de-duplicated.
+func (a *App) AddDep(id, dep string) (*core.Task, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	if !idx.Has(id) {
+		return nil, core.NotFound(id)
+	}
+	if id == dep {
+		return nil, core.Validationf(id, "a task cannot depend on itself")
+	}
+	if !idx.Has(dep) {
+		return nil, core.Validationf(id, "dependency %q does not exist", dep)
+	}
+	if idx.DependsOn(dep, id) {
+		return nil, core.Validationf(id, "adding dep %q would create a cycle (%s already depends on %s)", dep, dep, id)
+	}
+	return a.mutate(id, func(t *core.Task) {
+		if !contains(t.Deps, dep) {
+			t.Deps = append(t.Deps, dep)
+		}
+	})
+}
+
+// RemoveDep drops `dep` from `id`'s dependency list. It is a validation error
+// when id has no such dependency, so the result is never a silent no-op.
+func (a *App) RemoveDep(id, dep string) (*core.Task, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	if !contains(t.Deps, dep) {
+		return nil, core.Validationf(id, "%q is not a dependency of %s", dep, id)
+	}
+	return a.mutate(id, func(t *core.Task) {
+		kept := make([]string, 0, len(t.Deps))
+		for _, d := range t.Deps {
+			if d != dep {
+				kept = append(kept, d)
+			}
+		}
+		t.Deps = kept
+	})
+}
+
 // AddCheck appends a checklist item.
 func (a *App) AddCheck(id, text string) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) {

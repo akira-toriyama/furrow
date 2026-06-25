@@ -129,6 +129,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `move <id> <lane>` | Move a task to a lane (clears `closed` when leaving done) | — |
 | `reorder <id> <priority>` | Set a task's priority (sparse integer; lower sorts higher) | — |
 | `check <id> [index]` | Toggle a checklist item by zero-based index, or append one | `--add <text>`, `--off` |
+| `dep <id> <dep-id>` | Add a dependency (id waits on dep-id), or remove it with `--rm`; acyclic & idempotent | `--rm` |
 | `archive` | Move aged done tasks to `.furrow/archive/` (preview unless `--yes`) | `--older-than <days>`, `--yes` |
 | `lint` | Check index↔body 1:1, id shape, lanes, deps/parent refs, config clamp warnings | — |
 | `schema` | Print the JSON Schema for `index.json` (matches the committed copy) | — |

@@ -220,6 +220,41 @@ func TestNextPriority(t *testing.T) {
 	}
 }
 
+func TestDependsOn(t *testing.T) {
+	// chain: t-1 -> t-2 -> t-3 (t-1 depends on t-2 depends on t-3).
+	idx := &Index{Tasks: []Task{
+		{ID: "t-1", Deps: []string{"t-2"}},
+		{ID: "t-2", Deps: []string{"t-3"}},
+		{ID: "t-3"},
+		{ID: "t-4"}, // isolated
+	}}
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"t-1", "t-2", true},  // direct
+		{"t-1", "t-3", true},  // transitive
+		{"t-3", "t-1", false}, // reverse direction
+		{"t-1", "t-1", false}, // no self-edge present
+		{"t-1", "t-4", false}, // unrelated
+		{"t-9", "t-1", false}, // unknown source has no out-edges
+	}
+	for _, c := range cases {
+		if got := idx.DependsOn(c.a, c.b); got != c.want {
+			t.Errorf("DependsOn(%s,%s) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+
+	// A pre-existing cycle must not hang the walk.
+	cyc := &Index{Tasks: []Task{
+		{ID: "a", Deps: []string{"b"}},
+		{ID: "b", Deps: []string{"a"}},
+	}}
+	if !cyc.DependsOn("a", "b") {
+		t.Error("DependsOn should still resolve within a cyclic graph")
+	}
+}
+
 func TestActionable(t *testing.T) {
 	idx := &Index{Tasks: []Task{
 		{ID: "t-1", Status: "ready", Deps: []string{"t-2"}},

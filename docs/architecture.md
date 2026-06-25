@@ -285,14 +285,16 @@ Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
 except where noted:
 
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `edit`, `done`, `move`,
-`reorder`, `check`, `archive`, `lint`, `schema`, `version`, `ui`.
+`reorder`, `check`, `dep`, `archive`, `lint`, `schema`, `version`, `ui`,
+`migrate`.
 
-- **`ui`** is a stub: it returns a validation error pointing at ROADMAP Phase 6
-  ("the TUI is not implemented yet … use the CLI for now"). The command is kept
-  present and honest rather than hidden.
-- **`migrate`** (ROADMAP Phase 5) is **not built**. The only trace in code is an
-  unused `parseSeqFromID` helper in `internal/app/app.go`, kept for when migrate
-  lands.
+- **`dep`** adds or removes a dependency edge on an existing task (`--rm`).
+  Adding is acyclic (rejects self- and cycle-creating edges) and idempotent.
+- **`ui`** launches the bubbletea TUI (`internal/tui`): list + glamour detail,
+  navigate / filter / done / move lane / reorder (`K`/`J`) / checklist toggle /
+  edit body.
+- **`migrate`** parses a hand-maintained `Task.md` into furrow tasks (dry-run by
+  default; `--write` to apply; `--label` to stamp imported tasks).
 
 ### Output, errors, and exit codes
 

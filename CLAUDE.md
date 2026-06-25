@@ -11,7 +11,7 @@ furrow is the task store for THIS repo, living in `.furrow/`. When you work here
   write and churn git. Mutate tasks via commands, not the file.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with the index.
-- Canonical commands: `furrow add|ls|show|next|edit|done|move|reorder|check|archive|lint|init`.
+- Canonical commands: `furrow add|ls|show|next|edit|done|move|reorder|check|dep|archive|lint|init`.
 - `--json` is available on read commands; **JSON goes to stdout only** (logs and
   errors go to stderr). Use `--ndjson` for one task per line and
   `--status/-s`, `--label/-l`, `--limit/-n` to filter — so you rarely need jq.

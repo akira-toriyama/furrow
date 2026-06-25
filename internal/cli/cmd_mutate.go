@@ -112,3 +112,36 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&off, "off", false, "uncheck instead of check")
 	return cmd
 }
+
+func newDepCmd() *cobra.Command {
+	var rm bool
+	cmd := &cobra.Command{
+		Use:   "dep <id> <dep-id>",
+		Short: "Add a dependency to a task (or remove it with --rm)",
+		Long: "Make <id> depend on <dep-id> (id waits on dep-id). With --rm, remove that\n" +
+			"dependency instead. Both ids must exist; adding is acyclic and idempotent.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			if rm {
+				t, err := a.RemoveDep(args[0], args[1])
+				if err != nil {
+					return err
+				}
+				printOK("dep-", t)
+				return nil
+			}
+			t, err := a.AddDep(args[0], args[1])
+			if err != nil {
+				return err
+			}
+			printOK("dep+", t)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&rm, "rm", false, "remove the dependency instead of adding it")
+	return cmd
+}

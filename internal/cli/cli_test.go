@@ -158,6 +158,42 @@ func TestCLICheckOutOfRangeExit2(t *testing.T) {
 	}
 }
 
+func TestCLIDepAddRemove(t *testing.T) {
+	initStore(t)
+	run(t, "add", "base", "-s", "ready")      // t-0001
+	run(t, "add", "dependent", "-s", "ready") // t-0002
+
+	// add a dep, then confirm `next` blocks the dependent until base is done.
+	if _, code := run(t, "dep", "t-0002", "t-0001"); code != 0 {
+		t.Fatalf("dep add exit = %d", code)
+	}
+	out, _ := run(t, "next", "--ndjson")
+	if strings.Contains(out, "dependent") {
+		t.Errorf("dependent should be blocked after `dep` wired the edge:\n%s", out)
+	}
+
+	// self-dep and cycle are validation errors (exit 2).
+	if _, code := run(t, "dep", "t-0001", "t-0001"); code != int(core.CodeValidation) {
+		t.Errorf("self-dep should exit 2, got %d", code)
+	}
+	if _, code := run(t, "dep", "t-0001", "t-0002"); code != int(core.CodeValidation) {
+		t.Errorf("cycle-creating dep should exit 2, got %d", code)
+	}
+
+	// remove it; the dependent becomes actionable again.
+	if _, code := run(t, "dep", "t-0002", "t-0001", "--rm"); code != 0 {
+		t.Fatalf("dep --rm exit = %d", code)
+	}
+	out, _ = run(t, "next", "--ndjson")
+	if !strings.Contains(out, "dependent") {
+		t.Errorf("dependent should be actionable after the dep was removed:\n%s", out)
+	}
+	// removing a non-existent dep is a validation error.
+	if _, code := run(t, "dep", "t-0002", "t-0001", "--rm"); code != int(core.CodeValidation) {
+		t.Errorf("removing a non-dependency should exit 2, got %d", code)
+	}
+}
+
 func TestCLISchemaMatchesPackage(t *testing.T) {
 	out, code := run(t, "schema")
 	if code != 0 {

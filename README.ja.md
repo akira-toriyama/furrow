@@ -119,6 +119,7 @@ furrow done t-0001
 | `move <id> <lane>` | 任意のレーンへ移動 |
 | `reorder <id> <priority>` | priority（疎な整数）を設定 |
 | `check <id> [index]` | チェックリスト項目をトグル（`--add` で追加・`--off` で外す） |
+| `dep <id> <dep-id>` | 依存を追加（id が dep-id を待つ）。`--rm` で削除。循環防止・冪等 |
 | `archive` | 古い done タスクを `.furrow/archive/` へ退避（`--yes` なしはプレビュー） |
 | `lint` | index↔body の整合・レーン・依存・config を検査 |
 | `schema` | `.furrow/index.json` の JSON Schema を出力 |
