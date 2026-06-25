@@ -56,20 +56,24 @@ func newShowCmd() *cobra.Command {
 }
 
 func newNextCmd() *cobra.Command {
-	var limit int
+	var (
+		label string
+		limit int
+	)
 	cmd := &cobra.Command{
 		Use:   "next",
 		Short: "Show actionable tasks (in the next-lanes, all deps done)",
 		Long: "List the tasks ready to pick up: status in the configured next-lanes\n" +
 			"([next].lanes in config.toml, default ready + in-progress) and with every\n" +
-			"dependency already in the done lane, in canonical order.",
+			"dependency already in the done lane, in canonical order. Use --label to\n" +
+			"restrict to a single label (e.g. a repo name in a shared tracker).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			tasks, err := a.Next(limit)
+			tasks, err := a.Next(label, limit)
 			if err != nil {
 				return err
 			}
@@ -77,6 +81,7 @@ func newNextCmd() *cobra.Command {
 			return emitTasks(tasks, true)
 		},
 	}
+	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; use -n1 for just the top)")
 	return cmd
 }

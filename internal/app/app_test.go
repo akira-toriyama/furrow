@@ -84,7 +84,7 @@ func TestNextSkipsBlockedAndTerminal(t *testing.T) {
 	a.Add("blocked", AddOpts{Status: "ready", Deps: []string{base.ID}})
 	a.Add("parked", AddOpts{Status: "icebox"})
 
-	next, err := a.Next(0)
+	next, err := a.Next("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestNextSkipsBlockedAndTerminal(t *testing.T) {
 
 	// finishing base unblocks the dependent task.
 	a.Done(base.ID)
-	next, _ = a.Next(0)
+	next, _ = a.Next("", 0)
 	if len(next) != 1 || next[0].Title != "blocked" {
 		t.Errorf("after base done, next should be [blocked], got %+v", next)
 	}
@@ -108,7 +108,7 @@ func TestNextOnlyConsidersNextLanes(t *testing.T) {
 	r, _ := a.Add("ready one", AddOpts{Status: "ready"})
 	a.Add("doing", AddOpts{Status: "in-progress"})
 
-	next, err := a.Next(0)
+	next, err := a.Next("", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +126,34 @@ func TestNextOnlyConsidersNextLanes(t *testing.T) {
 		t.Errorf("expected 2 actionable tasks, got %d", len(next))
 	}
 	_ = r
+}
+
+func TestNextFiltersByLabel(t *testing.T) {
+	a := newApp() // default next-lanes = ready + in-progress
+	a.Add("furrow task", AddOpts{Status: "ready", Labels: []string{"furrow"}})
+	a.Add("facet task", AddOpts{Status: "ready", Labels: []string{"facet"}})
+	a.Add("both", AddOpts{Status: "in-progress", Labels: []string{"furrow", "facet"}})
+
+	if all, _ := a.Next("", 0); len(all) != 3 {
+		t.Fatalf("no label filter should return all 3 actionable, got %d", len(all))
+	}
+
+	furrowOnly, err := a.Next("furrow", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(furrowOnly) != 2 {
+		t.Fatalf("--label furrow should return 2 (furrow task + both), got %+v", titlesOf(furrowOnly))
+	}
+	for _, tk := range furrowOnly {
+		if !contains(tk.Labels, "furrow") {
+			t.Errorf("filtered task %q lacks the furrow label", tk.Title)
+		}
+	}
+
+	if none, _ := a.Next("nope", 0); len(none) != 0 {
+		t.Errorf("unknown label should return no tasks, got %d", len(none))
+	}
 }
 
 func titlesOf(ts []core.Task) []string {
