@@ -144,9 +144,9 @@ Projects #5 の実フィールド（`Status: 📥 Inbox / 📋 Backlog / ✅ Rea
 
 ## ❓ Open questions
 
-- コマンドのタイプ数（`furrow` は 6 文字）：短いエイリアス（例 `fw`）を用意する？ → `config.toml` か brew formula で。**現状**：`ls` に `list` alias のみ。`fw` は未提供（要望あれば brew formula で symlink）。
+- ~~短いエイリアス `fw`~~ → **決定（2026-06-25・不要）**：furrow 側では提供しない。欲しければ shell alias（`alias fw=furrow`）で。`ls`→`list` の alias のみ維持。
 - 既定 status レーンは Projects #5 の 6 段（inbox/backlog/ready/in-progress/done/icebox）でよい？ → **採用済**（`config.toml [lanes].order`・切替可能）。
 - `furrow import --from-gh-project 5` を初期移行で使うか（106 items の取り込み）。→ Phase 5 で判断。
 - ~~**`next` の意味**~~ → **決定（2026-06-25・B 採用）**：`config.toml [next].lanes` で対象レーンを指定可に。既定 `["ready","in-progress"]`（intake/planning を除外）。カスタムlane構成で両方無ければ非 terminal 全レーンにフォールバック。deps-done チェックは従来通り。実装済（`internal/config` + `app.Next`）。
-- **`--field`**（MEMO §4 で言及）は未実装。jq で代替可能なため後回し（要望あれば read コマンドに追加）。
+- ~~**`--field`**（MEMO §4 で言及）~~ → **決定（2026-06-25・不要）**：`--json` + jq（例 `furrow ls --json | jq -r '.[].id'`）で代替。read コマンドに追加しない。
 - **time 表示**：index は RFC3339 UTC（決定論）。`show` の人間向け表示はローカル整形でなく UTC `2006-01-02 15:04`。TZ 表示が要るか要確認。
