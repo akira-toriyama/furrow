@@ -2,23 +2,6 @@
   "schema_version": 1,
   "tasks": [
     {
-      "id": "t-0002",
-      "title": "Phase 7: install nix and finalize flake.nix vendorHash (currently lib.fakeHash placeholder)",
-      "status": "backlog",
-      "priority": 100,
-      "labels": [
-        "nix",
-        "packaging"
-      ],
-      "deps": [],
-      "refs": [],
-      "checklist": [],
-      "created": "2026-06-25T01:54:53Z",
-      "updated": "2026-06-25T01:54:53Z",
-      "closed": null,
-      "body": "bodies/t-0002.md"
-    },
-    {
       "id": "t-0003",
       "title": "migrate: fold ## 付録 appendices into the related task body (currently skipped+warned)",
       "status": "backlog",
@@ -113,6 +96,23 @@
       "updated": "2026-06-25T02:42:07Z",
       "closed": "2026-06-25T02:42:07Z",
       "body": "bodies/t-0011.md"
+    },
+    {
+      "id": "t-0002",
+      "title": "Phase 7: install nix and finalize flake.nix vendorHash (currently lib.fakeHash placeholder)",
+      "status": "icebox",
+      "priority": 100,
+      "labels": [
+        "nix",
+        "packaging"
+      ],
+      "deps": [],
+      "refs": [],
+      "checklist": [],
+      "created": "2026-06-25T01:54:53Z",
+      "updated": "2026-06-25T02:43:08Z",
+      "closed": null,
+      "body": "bodies/t-0002.md"
     },
     {
       "id": "t-0005",
