@@ -40,6 +40,15 @@ type model struct {
 	help help.Model
 	keys keyMap
 
+	// renderer is cached and rebuilt only when the detail pane width changes —
+	// constructing a glamour renderer on every cursor move was the main source
+	// of navigation lag (it re-detects the color profile and compiles styles).
+	renderer      *glamour.TermRenderer
+	rendererWidth int
+	// bodies caches loaded body markdown by id so moving the cursor doesn't
+	// re-read the file from disk on every keystroke. Invalidated on edit/reload.
+	bodies map[string]string
+
 	width, height int
 	ready         bool
 	focusDetail   bool
@@ -61,11 +70,12 @@ func newModel(a *app.App) (model, error) {
 	l.SetStatusBarItemName("task", "tasks")
 
 	m := model{
-		app:  a,
-		list: l,
-		vp:   viewport.New(0, 0),
-		help: help.New(),
-		keys: defaultKeys(),
+		app:    a,
+		list:   l,
+		vp:     viewport.New(0, 0),
+		help:   help.New(),
+		keys:   defaultKeys(),
+		bodies: map[string]string{},
 	}
 	if _, err := m.reload(); err != nil {
 		return m, err
@@ -116,6 +126,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
 		m.ready = true
+		m.shownID = "" // width changed — force a re-render (and renderer rebuild)
 		m.refreshDetail()
 		return m, nil
 
@@ -124,6 +135,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "editor: " + msg.err.Error()
 		} else {
 			m.status = "edited " + msg.id
+			delete(m.bodies, msg.id) // body changed on disk — drop the cached copy
 		}
 		cmd, _ := m.reload()
 		m.refreshDetail()
@@ -146,6 +158,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusDetail = !m.focusDetail
 			return m, nil
 		case key.Matches(msg, m.keys.Reload):
+			m.bodies = map[string]string{} // explicit reload — drop all cached bodies
 			cmd, _ := m.reload()
 			m.refreshDetail()
 			m.status = "reloaded"
@@ -268,9 +281,15 @@ func (m *model) refreshDetail() {
 	}
 	m.shownID = t.ID
 
-	body, err := m.app.Store.LoadBody(t.ID)
-	if err != nil {
-		body = "_could not load body: " + err.Error() + "_"
+	body, ok := m.bodies[t.ID]
+	if !ok {
+		b, err := m.app.Store.LoadBody(t.ID)
+		if err != nil {
+			body = "_could not load body: " + err.Error() + "_"
+		} else {
+			m.bodies[t.ID] = b // cache successful loads only, so errors retry
+			body = b
+		}
 	}
 	md := m.detailMarkdown(t, body)
 
@@ -279,13 +298,28 @@ func (m *model) refreshDetail() {
 		width = 80
 	}
 	rendered := md
-	if r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(width)); err == nil {
+	if r := m.ensureRenderer(width); r != nil {
 		if s, err := r.Render(md); err == nil {
 			rendered = s
 		}
 	}
 	m.vp.SetContent(rendered)
 	m.vp.GotoTop()
+}
+
+// ensureRenderer returns a glamour renderer for the given width, rebuilding it
+// only when the width changes. Building one per cursor move was the dominant
+// cost behind the navigation lag.
+func (m *model) ensureRenderer(width int) *glamour.TermRenderer {
+	if m.renderer != nil && m.rendererWidth == width {
+		return m.renderer
+	}
+	r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(width))
+	if err != nil {
+		return nil
+	}
+	m.renderer, m.rendererWidth = r, width
+	return r
 }
 
 // detailMarkdown composes the metadata header + body for the detail pane.
