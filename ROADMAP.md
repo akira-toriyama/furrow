@@ -92,55 +92,60 @@ Projects #5 の実フィールド（`Status: 📥 Inbox / 📋 Backlog / ✅ Rea
 
 > 各フェーズは独立に build/test green を保つ。1 セッションで終えなくてよい。進捗はこのチェックボックスで管理。
 
-### Phase 0 — Setup ⏳
+### Phase 0 — Setup ✅
 - [x] 空 repo 作成（public・`akira-toriyama/furrow`）
 - [x] `ROADMAP.md` / `MEMO.md` 初版
-- [ ] `go.mod`（module path `github.com/akira-toriyama/furrow`・Go 1.23）・`.gitignore`・`LICENSE`(MIT)
-- [ ] CI / commit 規約 / cliff.toml を家風（atelier）に寄せる
-- [ ] 参考リポの clone & 学び（→ Phase 1 workflow）を MEMO.md に追記
+- [x] `go.mod`（module path `github.com/akira-toriyama/furrow`・Go 1.23・`GOTOOLCHAIN=local`）・`.gitignore`・`LICENSE`(MIT)
+- [x] CI（`build.yml`/`commit-lint.yml`/`release.yml`）・commit 規約（`scripts/hooks/commit-msg`・`docs/commit-convention.md`）・`cliff.toml`・`.golangci.yml`(v2)・`.editorconfig`・`dependabot.yml`・PR テンプレ を家風に寄せた
+- [x] 参考リポの clone & 学び（Phase 1 workflow）を `MEMO.md §8-11` に統合
 
-### Phase 1 — Study（重要） ⏳
-- [ ] 調査済み TODO CLI を全 clone し「採る長所 / 直す不満」を抽出（Backlog.md / taskmd / dstask / todo.txt-cli / topydo / ultralist / git-bug）
-- [ ] Go 有名リポ（charmbracelet/* / cobra / fzf / lazygit / gh …）の良い所と Go ベストプラクティスを抽出
-- [ ] 自分の repo（chord / perch / canon の hexagonal・config.toml 駆動）から家風を抽出
-- [ ] → すべて `MEMO.md` に統合
+### Phase 1 — Study（重要） ✅
+- [x] study-engine（非 TUI UI / スキーマ駆動）を実読 → `MEMO.md §8`
+- [x] 家風 repo（chord/facet/atelier/jig/perch）を並列解析し hexagonal・config.toml 駆動・cliff/commit-msg/CI/packaging の移植方針を抽出 → `MEMO.md §10`
+- [x] facet `Task.md` を実読し migrate 仕様を確定 → `MEMO.md §11`
+- [~] 調査済み TODO CLI（Backlog.md/taskmd/dstask/…）の「採る長所/直す不満」は MEMO §1/§6 の調査時サマリで代替（個別 clone は未実施・Phase 5 migrate 設計時に taskmd を参照予定）
 
-### Phase 2 — Design lock ⏳
-- [ ] スキーマ確定（上記）・`config.toml` 仕様・determinism 規則
-- [ ] アーキテクチャ確定（hexagonal 寄り・`taskstore` core lib を CLI/TUI が共有）
-- [ ] CLI コマンド面確定（`--json` 全対応・exit code 契約）
+### Phase 2 — Design lock ✅
+- [x] スキーマ確定（`internal/schema.IndexV1` = 正本・`docs/schema/furrow.index.v1.json` に committed・`furrow schema` で emit・CI drift guard）・`config.toml` 仕様（clamp-don't-reject）・determinism 規則（single marshaller）
+- [x] アーキテクチャ確定（hexagonal・`internal/core` 純粋・`internal/app` が唯一の mutation funnel・CLI/TUI が共有）→ `docs/architecture.md`
+- [x] CLI コマンド面確定（`--json` 全 read 対応・exit code 契約 0/1/2/3+）
 
-### Phase 3 — Core lib `taskstore` ⏳
-- [ ] Index/Task struct・決定論マーシャラ・atomic write（tmp+rename）・id 採番（`.furrow/seq`）・body lazy load
-- [ ] golden-file テスト（決定論）・table-driven テスト
+### Phase 3 — Core lib（`internal/core` + `store` + `config` + `app`）✅
+- [x] Index/Task struct・決定論マーシャラ（`core.Marshal` 単一経路）・atomic write（tmp+rename・`fsstore`）・id 採番（`.furrow/seq`）・body lazy load
+- [x] golden-file テスト（決定論・往復 byte 一致）・table-driven テスト・`memstore` fake・`scripts/check-marshal-singlepath.sh` guard
 
-### Phase 4 — CLI ⏳
-- [ ] `add / ls / show / next / edit / done / move / reorder / check / archive / lint / migrate`
-- [ ] `--json`/`--ndjson`/`--field`/`--status`/`--limit`・非対話ガード・STDERR エラーオブジェクト
+### Phase 4 — CLI ✅（`migrate` を除く）
+- [x] `add / ls / show / next / edit / done / move / reorder / check / archive / lint / init / schema / version / ui(stub)`
+- [x] `--json`/`--ndjson`/`--status`/`--label`/`--limit`・非対話デフォルト・`edit` は非 TTY で path 出力・`archive` は `--yes` ガード・STDERR エラーオブジェクト
+- [ ] `migrate` は Phase 5 へ。`--field` は未実装（jq で代替可・必要なら後日）
 
-### Phase 5 — migrate（取り込み） ⏳
-- [ ] `furrow migrate ./Task.md --dry-run`（レーン→status・`## 付録`→body・プロセス→CLAUDE.md・経緯→docs/・[[wikilink]]→凍結 id）
+### Phase 5 — migrate（取り込み） ⏳ **未着手**
+- [ ] `furrow migrate ./Task.md --dry-run`（レーン→status・`## 付録`→body・プロセス→CLAUDE.md・経緯→docs/・[[wikilink]]→凍結 id）。仕様は `MEMO.md §11` に確定済
 - [ ] （任意）`furrow import --from-gh-project 5`（Projects #5 を初期投入）
 
-### Phase 6 — TUI（bubbletea） ⏳
-- [ ] `furrow ui`：list（レーン+fuzzy）+ detail viewport（glamour で本文）+ status/priority/reorder キー + `$EDITOR` shell-out + checklist toggle
-- [ ] bubbletea **v1 固定**・見た目（lipgloss）を整える
+### Phase 6 — TUI（bubbletea） ⏳ **stub のみ**
+- [ ] `furrow ui`：現状は「未実装」を明示して exit 2 する stub（`internal/cli/ui.go`）。`internal/tui` package は未作成
+- [ ] list（レーン+fuzzy）+ detail viewport（glamour で本文）+ status/priority/reorder キー + `$EDITOR` shell-out + checklist toggle・bubbletea **v1 固定**
 
-### Phase 7 — Packaging ⏳
-- [ ] GoReleaser → `akira-toriyama/homebrew-tap` に formula
-- [ ] Nix flake（`nix run`/`nix profile install`）— ※ローカルに nix 未導入のため CI/別環境で検証
+### Phase 7 — Packaging 🟡 **設定済・未検証**
+- [x] GoReleaser（`.goreleaser.yaml`・`brews:` → `akira-toriyama/homebrew-tap`）・`release.yml`・`packaging/homebrew/furrow.rb`（参考コピー）
+- [x] Nix flake（`flake.nix`・`nix run`/`nix profile install`）— ※`vendorHash` は placeholder（nix 未導入＝ローカル検証不可・CI/別環境で確定要）
+- [ ] 実際の release 実行（タグ push）と tap/nix の動作確認は未
 
 ### Phase 8 — Web / React UI（優先度低・将来） 🧊
 - [ ] まず Go `net/http` + `embed.FS` で `index.json` を読む静的ビューア（read-only）
-- [ ] 将来 React 系 UI（必要になったら）
+- [ ] 将来 React 系 UI（study-engine の renderer 構成を写経・host は Electron vs Go 静的を再検討＝MEMO §8）
 
-### CLAUDE.md 連携ブロック（Phase 4 と同時）
-- [ ] store は CLI 管理・`index.json` 手編集禁止・`bodies/*.md` は編集可・正準コマンド列・exit code・`--json` 必須、を ~15 行で明記
+### CLAUDE.md 連携ブロック（Phase 4 と同時）✅
+- [x] store は CLI 管理・`index.json` 手編集禁止・`bodies/*.md` は編集可・正準コマンド列・exit code・`--json` 必須、を `CLAUDE.md` 冒頭ブロックに明記
 
 ---
 
 ## ❓ Open questions
 
-- コマンドのタイプ数（`furrow` は 6 文字）：短いエイリアス（例 `fw`）を用意する？ → `config.toml` か brew formula で。
-- 既定 status レーンは Projects #5 の 6 段（inbox/backlog/ready/in-progress/done/icebox）でよい？ それとも Task.md 寄り（open/design/hold/done）も既定に含める？ → `config.toml` で切替可能にする方針。
-- `furrow import --from-gh-project 5` を初期移行で使うか（106 items の取り込み）。
+- コマンドのタイプ数（`furrow` は 6 文字）：短いエイリアス（例 `fw`）を用意する？ → `config.toml` か brew formula で。**現状**：`ls` に `list` alias のみ。`fw` は未提供（要望あれば brew formula で symlink）。
+- 既定 status レーンは Projects #5 の 6 段（inbox/backlog/ready/in-progress/done/icebox）でよい？ → **採用済**（`config.toml [lanes].order`・切替可能）。
+- `furrow import --from-gh-project 5` を初期移行で使うか（106 items の取り込み）。→ Phase 5 で判断。
+- **`next` の意味（要トミー判断）**：現状 `next` = 「terminal でない（done/icebox 以外）レーン ＋ deps が全部 done」を canonical 順（lane→priority）で列挙。**inbox/backlog も含む**ため、canonical 順だと intake が先に並ぶ。「next＝着手可能」をより厳密にするなら ① ready/in-progress のみ対象 ② `next` 専用に in-progress→ready→… の逆順表示、等が考えられる。今は単純・明確な定義を採用し保留。
+- **`--field`**（MEMO §4 で言及）は未実装。jq で代替可能なため後回し（要望あれば read コマンドに追加）。
+- **time 表示**：index は RFC3339 UTC（決定論）。`show` の人間向け表示はローカル整形でなく UTC `2006-01-02 15:04`。TZ 表示が要るか要確認。
