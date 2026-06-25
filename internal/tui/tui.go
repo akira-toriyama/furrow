@@ -3,7 +3,8 @@
 // internal/app.App (the single funnel), and it never writes files itself.
 //
 // Layout: a filterable task list (left) + a glamour-rendered body/detail pane
-// (right). Keys: navigate, done, move lane, edit body in $EDITOR, reload, quit.
+// (right). Keys: navigate, done, move lane, reorder within a lane (K/J), edit
+// body in $EDITOR, reload, quit.
 package tui
 
 import (
@@ -167,6 +168,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		// Reorder within a lane (list focus only): K/J swap the selected task's
+		// priority with its same-lane neighbor above/below in canonical order.
+		// In the detail pane these fall through (the viewport ignores them).
+		if !m.focusDetail {
+			switch {
+			case key.Matches(msg, m.keys.MoveUp):
+				return m, m.reorderSelected(-1)
+			case key.Matches(msg, m.keys.MoveDown):
+				return m, m.reorderSelected(+1)
+			}
+		}
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -291,6 +303,49 @@ func (m model) cycleLane(cur string, dir int) string {
 		}
 	}
 	return lanes[((idx+dir)%len(lanes)+len(lanes))%len(lanes)]
+}
+
+// reorderSelected swaps the selected task's priority with its same-lane neighbor
+// one row up (dir=-1) or down (dir=+1), then reloads so the list re-sorts and
+// the cursor follows the moved task by id. Neighbors come from the canonical
+// task list (not the possibly-filtered visible rows), so a swap always targets
+// the true adjacent task. Swapping the two priority *values* keeps the lane's
+// exact set of priorities, so the sparse spacing is never disturbed. It is a
+// no-op at a lane boundary (the neighbor is in another lane, or there is none).
+func (m *model) reorderSelected(dir int) tea.Cmd {
+	cur, ok := m.selected()
+	if !ok {
+		return nil
+	}
+	tasks, err := m.app.List(app.QueryOpts{})
+	if err != nil {
+		m.status = err.Error()
+		return nil
+	}
+	idx := -1
+	for i, t := range tasks {
+		if t.ID == cur.ID {
+			idx = i
+			break
+		}
+	}
+	nb := idx + dir
+	if idx < 0 || nb < 0 || nb >= len(tasks) || tasks[nb].Status != cur.Status {
+		return nil // lane boundary — nothing to swap with
+	}
+	neighbor := tasks[nb]
+	if _, err := m.app.Reorder(cur.ID, neighbor.Priority); err != nil {
+		m.status = err.Error()
+		return nil
+	}
+	if _, err := m.app.Reorder(neighbor.ID, cur.Priority); err != nil {
+		m.status = err.Error()
+		return nil
+	}
+	m.status = "reordered " + cur.ID
+	cmd, _ := m.reload()
+	m.refreshDetail()
+	return cmd
 }
 
 // editSelected suspends the TUI and opens the body in $EDITOR.

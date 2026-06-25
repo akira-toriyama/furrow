@@ -40,7 +40,7 @@ GitHub Projects #5（private・106 items）+ Issues + facet の手管理 `Task.m
 | 3 Core lib | core / store / config / app・golden 往復テスト | ✅ |
 | 4 CLI | add/ls/show/next/edit/done/move/reorder/check/archive/lint/init/schema/version/migrate/ui | ✅ |
 | 5 migrate | `furrow migrate`（dry-run 既定・付録 skip+warn・`[[wikilink]]` 温存） | ✅（付録 fold / wikilink 解決は **won't-do**＝skip+warn が最終仕様） |
-| 6 TUI | bubbletea v1・list + glamour detail・done/move/edit/filter・レンダラ/本文キャッシュ | ✅（checklist toggle / reorder キーは projects **t-0002**） |
+| 6 TUI | bubbletea v1・list + glamour detail・done/move/edit/filter・レンダラ/本文キャッシュ・checklist toggle（space）・reorder（K/J） | ✅（projects **t-0002** 完了＝checklist toggle / reorder の両方） |
 | 7 Packaging | GoReleaser / brew cask / nix flake を設定 | 🟡 実リリース検証=projects **t-0001**・nix vendorHash=**t-0005** |
 | 8 Web/React | read-only ビューア → React UI（host は Electron vs Go 静的を再検討） | 🧊 projects **t-0006 / t-0007** |
 
