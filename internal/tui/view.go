@@ -75,7 +75,7 @@ func (m model) View() string {
 
 	status := m.status
 	if status == "" {
-		status = dimStyle.Render("↑/↓ navigate · enter filter · d done · ] move · e edit · ? help · q quit")
+		status = dimStyle.Render("↑/↓ navigate · / filter · d done · ] lane · K/J reorder · e edit · ? help · q quit")
 	}
 	footer := m.help.View(m.keys)
 
