@@ -9,6 +9,7 @@ type keyMap struct {
 	Down   key.Binding
 	Filter key.Binding
 	Detail key.Binding
+	Toggle key.Binding
 	Done   key.Binding
 	LaneFw key.Binding
 	LaneBw key.Binding
@@ -24,6 +25,7 @@ func defaultKeys() keyMap {
 		Down:   key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
 		Filter: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
 		Detail: key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus body")),
+		Toggle: key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle ✓ (in body)")),
 		Done:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "done")),
 		LaneFw: key.NewBinding(key.WithKeys("]", "L"), key.WithHelp("]", "lane →")),
 		LaneBw: key.NewBinding(key.WithKeys("[", "H"), key.WithHelp("[", "lane ←")),
@@ -43,6 +45,6 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Filter, k.Detail},
 		{k.Done, k.LaneFw, k.LaneBw, k.Edit},
-		{k.Reload, k.Help, k.Quit},
+		{k.Toggle, k.Reload, k.Help, k.Quit},
 	}
 }

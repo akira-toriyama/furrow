@@ -174,6 +174,52 @@ func TestTUIDetailCaching(t *testing.T) {
 	}
 }
 
+// TestTUIChecklistToggle: tab into the detail pane, move the checklist cursor,
+// space toggles the focused item, and the cursor stays put across the reload.
+func TestTUIChecklistToggle(t *testing.T) {
+	a := newTestApp(t)
+	if _, err := a.AddCheck("t-0001", "step one"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.AddCheck("t-0001", "step two"); err != nil {
+		t.Fatal(err)
+	}
+	m, err := newModel(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = sizeMsg(m)
+
+	for i, it := range m.list.Items() {
+		if it.(taskItem).t.ID == "t-0001" {
+			m.list.Select(i)
+		}
+	}
+	m = send(m, tea.KeyMsg{Type: tea.KeyTab}) // focus the detail pane
+	if !m.focusDetail {
+		t.Fatal("tab should focus the detail pane")
+	}
+	m = send(m, keyMsg("j")) // checklist cursor: item 1 -> 2
+	if m.checkIdx != 1 {
+		t.Fatalf("down should move the checklist cursor to index 1, got %d", m.checkIdx)
+	}
+	m = send(m, keyMsg(" ")) // space toggles item 2
+
+	tk, _, err := a.Get("t-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tk.Checklist[1].Done {
+		t.Errorf("space should mark checklist item 2 done, got %+v", tk.Checklist)
+	}
+	if tk.Checklist[0].Done {
+		t.Errorf("item 1 must be untouched, got %+v", tk.Checklist)
+	}
+	if m.checkIdx != 1 {
+		t.Errorf("cursor should stay on index 1 after toggle, got %d", m.checkIdx)
+	}
+}
+
 // TestDumpView writes a rendered frame to a file when TUI_DUMP is set, for
 // eyeballing the layout during development (no-op in normal CI runs).
 func TestDumpView(t *testing.T) {
