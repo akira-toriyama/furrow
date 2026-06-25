@@ -129,3 +129,12 @@ lives in the private `akira-toriyama/projects` repo (label `furrow`) — don't a
 a `.furrow/` board to this repo. **Never leave unfinished work implicit**
 (未達成を暗黙にしない) — every in-flight task is a `projects` task, a plan file,
 or a ROADMAP note.
+
+**Multi-operator (shared checkout).** This repo is sometimes worked on by several
+people/agents at once. A checkout has one shared HEAD/index/working tree, so two
+operators running git in the same directory corrupt each other (orphaned commits,
+commits on the wrong branch). **Each operator/session works in its own `git
+worktree` (`git worktree add ../furrow-<topic> -b <branch> origin/main`) or a
+separate clone — never share one checkout for concurrent git.** Commit + push
+often and `git pull --rebase` before pushing. (Canonical statement of this rule:
+the `projects` tracker's CLAUDE.md.)
