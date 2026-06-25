@@ -127,6 +127,57 @@ func TestParseSynthetic(t *testing.T) {
 	}
 }
 
+func TestRefExtractionCJKAndTitleAttr(t *testing.T) {
+	md := "## 🎯 Open\n" +
+		"### only task\n" +
+		"参照（https://example.com/spec）して直す。\n" +
+		"see [doc](https://example.com/x \"a title\") and [code](Sources/Foo.swift#L10)。\n"
+	res := Parse(md, lanes, "inbox", 100, 10)
+	if len(res.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(res.Tasks))
+	}
+	refs := res.Tasks[0].Refs
+	// fullwidth paren + trailing Japanese must be trimmed off the URL.
+	if !hasRef(refs, "https://example.com/spec") {
+		t.Errorf("CJK-abutting URL not cleaned: %v", refs)
+	}
+	for _, r := range refs {
+		if strings.ContainsAny(r, "（）。\" ") {
+			t.Errorf("ref %q still carries CJK/title/space junk: %v", r, refs)
+		}
+	}
+	// title attr collapsed so it does not double with the bare-URL pass.
+	if !hasRef(refs, "https://example.com/x") {
+		t.Errorf("title-attr URL not cleaned to bare url: %v", refs)
+	}
+	if !hasRef(refs, "Sources/Foo.swift#L10") {
+		t.Errorf("file:line ref missing: %v", refs)
+	}
+}
+
+func TestEmbeddedHeadingInListSectionKeepsTasks(t *testing.T) {
+	// A list-style section that grows a stray ### must NOT swallow the bold
+	// bullets that follow it.
+	md := "## 🔬 triage\n" +
+		"- **R1. first** — a.\n" +
+		"### a sub-heading that is really detail\n" +
+		"- **R2. second** — b.\n" +
+		"- **R3. third** — c.\n"
+	res := Parse(md, lanes, "inbox", 100, 10)
+	titlesSeen := map[string]bool{}
+	for _, tk := range res.Tasks {
+		titlesSeen[tk.Title] = true
+	}
+	for _, want := range []string{"R1. first", "R2. second", "R3. third"} {
+		if !titlesSeen[want] {
+			t.Errorf("task %q was swallowed by an embedded ###; got %v", want, titles(res.Tasks))
+		}
+	}
+	if len(res.Tasks) != 3 {
+		t.Errorf("expected 3 tasks, got %d: %v", len(res.Tasks), titles(res.Tasks))
+	}
+}
+
 // The real facet Task.md must parse without panicking and produce sane output.
 func TestParseRealFacetTaskMd(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("testdata", "facet-task.md"))

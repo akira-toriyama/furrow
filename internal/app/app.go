@@ -307,13 +307,22 @@ func (a *App) SetTitle(id, title string) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) { t.Title = title })
 }
 
-// Check toggles (or sets) a checklist item by zero-based index.
+// Check sets a checklist item's done state by zero-based index. An out-of-range
+// index is a validation error (not a silent no-op), so the CLI exit code and
+// the {"error":...} envelope honor the contract.
 func (a *App) Check(id string, item int, done bool) (*core.Task, error) {
-	return a.mutate(id, func(t *core.Task) {
-		if item >= 0 && item < len(t.Checklist) {
-			t.Checklist[item].Done = done
-		}
-	})
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	if item < 0 || item >= len(t.Checklist) {
+		return nil, core.Validationf(id, "checklist index %d out of range (have %d item(s))", item, len(t.Checklist))
+	}
+	return a.mutate(id, func(t *core.Task) { t.Checklist[item].Done = done })
 }
 
 // AddCheck appends a checklist item.

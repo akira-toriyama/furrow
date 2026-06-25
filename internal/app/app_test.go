@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -106,6 +108,75 @@ func TestCheckTogglesChecklist(t *testing.T) {
 	got, _ := a.Check(tk.ID, 1, true)
 	if len(got.Checklist) != 2 || !got.Checklist[1].Done || got.Checklist[0].Done {
 		t.Errorf("check should toggle only item 1: %+v", got.Checklist)
+	}
+}
+
+func TestCheckOutOfRangeIsValidationError(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("steps", AddOpts{})
+	a.AddCheck(tk.ID, "only item") // index 0 valid; 1+ and negatives invalid
+	if _, err := a.Check(tk.ID, 5, true); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("out-of-range index should be a validation error, got %v", err)
+	}
+	if _, err := a.Check(tk.ID, -1, true); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("negative index should be a validation error, got %v", err)
+	}
+	// a missing id is still NotFound, not validation.
+	if _, err := a.Check("t-9999", 0, true); core.ExitCode(err) != int(core.CodeNotFound) {
+		t.Errorf("missing id should be not-found, got %v", err)
+	}
+	// in-range still works.
+	if _, err := a.Check(tk.ID, 0, true); err != nil {
+		t.Errorf("in-range check should succeed, got %v", err)
+	}
+}
+
+func TestArchiveCommitsBeforeDeletingBodies(t *testing.T) {
+	// End-to-end archive against a real fsstore: aged done task moves to
+	// .furrow/archive/, hot body is gone, archive body+index present, hot lint clean.
+	dir := t.TempDir()
+	ia, err := Init(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// fix the clock far in the future so the task is "old".
+	ia.Clock = &fixedClock{t: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}
+
+	// create a done task closed long ago by injecting via the store.
+	old := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	idx, _ := ia.Store.Load()
+	idx.Add(core.Task{ID: "t-0001", Title: "old done", Status: "done", Priority: 100,
+		Created: old, Updated: old, Closed: &old, Body: core.BodyPath("t-0001")})
+	ia.Store.Save(idx)
+	ia.Store.SaveBody("t-0001", "# old done\n")
+
+	moved, err := ia.Archive(30, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(moved) != 1 || moved[0].ID != "t-0001" {
+		t.Fatalf("expected to archive t-0001, got %+v", moved)
+	}
+	// hot store: task gone from index AND body deleted.
+	hot, _ := ia.Store.Load()
+	if hot.Has("t-0001") {
+		t.Error("archived task should be removed from the hot index")
+	}
+	if ia.Store.BodyExists("t-0001") {
+		t.Error("archived task's hot body should be deleted")
+	}
+	// archive store: index + body present.
+	arcIdxPath := filepath.Join(ia.Dir, "archive", "index.json")
+	if _, err := os.Stat(arcIdxPath); err != nil {
+		t.Errorf("archive index.json should exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ia.Dir, "archive", "bodies", "t-0001.md")); err != nil {
+		t.Errorf("archive body should exist: %v", err)
+	}
+	// hot store is consistent.
+	ps, _ := ia.Lint()
+	if core.HasErrors(ps) {
+		t.Errorf("hot store should lint clean after archive, got %+v", ps)
 	}
 }
 

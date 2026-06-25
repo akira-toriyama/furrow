@@ -34,12 +34,15 @@ type Result struct {
 }
 
 var (
-	reHeading2  = regexp.MustCompile(`^##\s+(.+?)\s*$`)                 // "## 🎯 Open"
-	reHeading3  = regexp.MustCompile(`^#{3,6}\s+(.+?)\s*$`)             // "### 1. Title"
-	reLeadNum   = regexp.MustCompile(`^\d+\.\s+`)                       // "1. " prefix on a heading
-	reBoldItem  = regexp.MustCompile(`^-\s+\*\*(.+?)\*\*\s*(.*)$`)      // "- **Title** rest" (top-level)
-	reMDLink    = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)           // [text](target)
-	reBareURL   = regexp.MustCompile(`https?://[^\s)>\]]+`)             // bare http(s) URL
+	reHeading2 = regexp.MustCompile(`^##\s+(.+?)\s*$`)            // "## 🎯 Open"
+	reHeading3 = regexp.MustCompile(`^#{3,6}\s+(.+?)\s*$`)        // "### 1. Title"
+	reLeadNum  = regexp.MustCompile(`^\d+\.\s+`)                  // "1. " prefix on a heading
+	reBoldItem = regexp.MustCompile(`^-\s+\*\*(.+?)\*\*\s*(.*)$`) // "- **Title** rest" (top-level)
+	reMDLink   = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)      // [text](target)
+	// Positive ASCII URL-char class (RE2 \w is ASCII-only), so the match stops
+	// at the first CJK/fullwidth char — e.g. a URL wrapped in fullwidth parens
+	// （…）in Japanese prose won't swallow the trailing sentence.
+	reBareURL   = regexp.MustCompile(`https?://[\w.~:/?#\[\]@!$&'()*+,;=%-]+`)
 	reWikiLink  = regexp.MustCompile(`\[\[([^\]]+)\]\]`)                // [[wikilink]]
 	reHTMLAside = regexp.MustCompile(`^</?(details|summary)[^>]*>\s*$`) // <details>/<summary> wrappers
 )
@@ -136,8 +139,11 @@ func Parse(md string, laneOrder []string, defaultLane string, priorityBase, prio
 			continue
 		}
 
-		// Task heading: "### [N.] Title"
-		if m := reHeading3.FindStringSubmatch(line); m != nil {
+		// Task heading: "### [N.] Title". In a section already established as
+		// list-style (bold-bullet tasks), an embedded "###" is detail, NOT a new
+		// task — otherwise it would flip the section and silently swallow every
+		// following bold-bullet task (violating the LOUD-not-silent contract).
+		if m := reHeading3.FindStringSubmatch(line); m != nil && sectionStyle != "list" {
 			lane := curLane
 			if !sawSection {
 				lane = defaultLane
@@ -211,7 +217,7 @@ func extractRefs(text string) []string {
 	seen := map[string]bool{}
 	var refs []string
 	add := func(r string) {
-		r = strings.TrimSpace(r)
+		r = cleanRef(r)
 		if r == "" || seen[r] {
 			return
 		}
@@ -225,6 +231,18 @@ func extractRefs(text string) []string {
 		add(u)
 	}
 	return refs
+}
+
+// cleanRef normalizes a captured ref target: drop a markdown title attribute
+// (`url "title"` -> `url`, also collapsing the duplicate the bare-URL pass would
+// otherwise add) and trim trailing ASCII/CJK punctuation the URL regex's
+// ASCII-only stop-set leaves attached when a URL abuts Japanese text.
+func cleanRef(r string) string {
+	r = strings.TrimSpace(r)
+	if i := strings.IndexAny(r, " \t"); i >= 0 { // a real URL/path has no spaces
+		r = r[:i]
+	}
+	return strings.TrimRight(r, ".,;:!?。、）」』】〉》｝)]}")
 }
 
 func countWikilinks(tasks []Task) int {

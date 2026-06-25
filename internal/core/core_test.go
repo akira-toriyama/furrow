@@ -178,6 +178,34 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeDedupesSets(t *testing.T) {
+	idx := &Index{Tasks: []Task{
+		{ID: "t-0001", Status: "ready", Body: BodyPath("t-0001"),
+			Labels: []string{"x", "x", "a", "x"}, Deps: []string{"t-2", "t-2"}},
+	}}
+	Canonicalize(idx, testLanes)
+	got := idx.Tasks[0]
+	if len(got.Labels) != 2 || got.Labels[0] != "a" || got.Labels[1] != "x" {
+		t.Errorf("labels should be sorted+deduped to [a x], got %v", got.Labels)
+	}
+	if len(got.Deps) != 1 || got.Deps[0] != "t-2" {
+		t.Errorf("deps should dedupe to [t-2], got %v", got.Deps)
+	}
+}
+
+func TestLaneRankNoSentinelCollisionWithDuplicateLanes(t *testing.T) {
+	// A duplicate-containing lane order must not let a real lane share the
+	// unknown-lane sentinel rank.
+	rank := laneRank([]string{"a", "a", "a", "b"})
+	if laneRankOf(rank, "b") == laneRankOf(rank, "zzz") {
+		t.Errorf("real lane b collides with unknown sentinel: b=%d unknown=%d",
+			laneRankOf(rank, "b"), laneRankOf(rank, "zzz"))
+	}
+	if laneRankOf(rank, "a") != 0 || laneRankOf(rank, "b") != 1 {
+		t.Errorf("first-occurrence ranks wrong: a=%d b=%d", laneRankOf(rank, "a"), laneRankOf(rank, "b"))
+	}
+}
+
 func TestNextPriority(t *testing.T) {
 	idx := &Index{Tasks: []Task{
 		{ID: "t-1", Status: "ready", Priority: 100},

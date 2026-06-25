@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
 )
 
@@ -33,6 +34,9 @@ func newArchiveCmd() *cobra.Command {
 				return err
 			}
 			if flagJSON {
+				if moved == nil {
+					moved = []core.Task{} // array shape, never null
+				}
 				printJSON(map[string]any{"dry_run": dry, "older_than_days": days, "tasks": moved})
 				return nil
 			}

@@ -71,10 +71,12 @@ func Canonicalize(idx *Index, laneOrder []string) {
 		if t.Checklist == nil {
 			t.Checklist = []ChecklistItem{}
 		}
-		// Labels and deps are sets — sort them so reordering inputs can't churn
-		// the diff. Refs and checklist are ordered by the user, so leave them.
-		sort.Strings(t.Labels)
-		sort.Strings(t.Deps)
+		// Labels and deps are sets — sort AND dedupe them so reordering or
+		// repeating inputs (e.g. `add -l x -l x`) can't churn the diff and a
+		// furrow-written set equals a hand-written one byte-for-byte. Refs and
+		// checklist are user-ordered sequences, so leave them.
+		t.Labels = sortDedup(t.Labels)
+		t.Deps = sortDedup(t.Deps)
 
 		t.Created = normTime(t.Created)
 		t.Updated = normTime(t.Updated)
@@ -100,11 +102,18 @@ func Canonicalize(idx *Index, laneOrder []string) {
 // zero time stays zero (encoding/json emits "0001-01-01T00:00:00Z").
 func normTime(t time.Time) time.Time { return t.UTC().Truncate(time.Second) }
 
-// laneRank maps each lane to its position in the configured order.
+// laneRank maps each lane to its rank by FIRST occurrence (0,1,2,…), not by raw
+// slice index. This keeps ranks contiguous in 0..len(unique)-1 even if laneOrder
+// contains duplicates, so the unknown-lane sentinel (len(rank)+1 in laneRankOf)
+// can never collide with a real lane's rank.
 func laneRank(laneOrder []string) map[string]int {
 	rank := make(map[string]int, len(laneOrder))
-	for i, l := range laneOrder {
-		rank[l] = i
+	next := 0
+	for _, l := range laneOrder {
+		if _, ok := rank[l]; !ok {
+			rank[l] = next
+			next++
+		}
 	}
 	return rank
 }
@@ -116,4 +125,21 @@ func laneRankOf(rank map[string]int, lane string) int {
 		return r
 	}
 	return len(rank) + 1
+}
+
+// sortDedup returns the input sorted with duplicates removed. nil-safe; returns
+// a non-nil empty slice for an empty/nil input so the marshaller's [] invariant
+// holds.
+func sortDedup(ss []string) []string {
+	if len(ss) == 0 {
+		return []string{}
+	}
+	sort.Strings(ss)
+	out := ss[:1]
+	for _, s := range ss[1:] {
+		if s != out[len(out)-1] {
+			out = append(out, s)
+		}
+	}
+	return out
 }

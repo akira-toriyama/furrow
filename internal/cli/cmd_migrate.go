@@ -43,7 +43,14 @@ func newMigrateCmd() *cobra.Command {
 
 func previewMigrate(path string, res migrate.Result) error {
 	if flagJSON {
-		printJSON(map[string]any{"dry_run": true, "source": path, "tasks": res.Tasks, "warnings": res.Warnings})
+		tasks, warnings := res.Tasks, res.Warnings
+		if tasks == nil {
+			tasks = []migrate.Task{}
+		}
+		if warnings == nil {
+			warnings = []string{}
+		}
+		printJSON(map[string]any{"dry_run": true, "source": path, "tasks": tasks, "warnings": warnings})
 		return nil
 	}
 	fmt.Fprintf(out, "migrate %s — %d task(s) (dry-run)\n\n", path, len(res.Tasks))
@@ -88,7 +95,14 @@ func applyMigrate(a *app.App, res migrate.Result) error {
 		return err
 	}
 	if flagJSON {
-		printJSON(map[string]any{"created": len(created), "tasks": created, "warnings": res.Warnings})
+		if created == nil {
+			created = []core.Task{}
+		}
+		warnings := res.Warnings
+		if warnings == nil {
+			warnings = []string{}
+		}
+		printJSON(map[string]any{"created": len(created), "tasks": created, "warnings": warnings})
 		return nil
 	}
 	fmt.Fprintf(out, "imported %d task(s)\n", len(created))

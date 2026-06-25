@@ -67,7 +67,7 @@ func newModel(a *app.App) (model, error) {
 		help: help.New(),
 		keys: defaultKeys(),
 	}
-	if err := m.reload(); err != nil {
+	if _, err := m.reload(); err != nil {
 		return m, err
 	}
 	return m, nil
@@ -76,26 +76,36 @@ func newModel(a *app.App) (model, error) {
 func (m model) Init() tea.Cmd { return nil }
 
 // reload pulls the current tasks from the store into the list, preserving the
-// selected index where possible.
-func (m *model) reload() error {
+// selection by TASK ID (not raw index, which is a filtered-view index when a
+// filter is applied and would point at the wrong row after a re-sort). It
+// returns the tea.Cmd from SetItems — which re-runs the fuzzy filter when one
+// is applied — and that cmd MUST be scheduled by the caller, or the list blanks.
+func (m *model) reload() (tea.Cmd, error) {
+	curID := ""
+	if t, ok := m.selected(); ok {
+		curID = t.ID
+	}
 	tasks, err := m.app.List(app.QueryOpts{})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	items := make([]list.Item, len(tasks))
+	sel := -1
 	for i, t := range tasks {
 		items[i] = taskItem{t: t}
+		if t.ID == curID {
+			sel = i
+		}
 	}
-	idx := m.list.Index()
-	m.list.SetItems(items)
-	if idx >= len(items) {
-		idx = len(items) - 1
-	}
-	if idx >= 0 {
-		m.list.Select(idx)
+	cmd := m.list.SetItems(items)
+	switch {
+	case sel >= 0:
+		m.list.Select(sel)
+	case len(items) > 0:
+		m.list.Select(0)
 	}
 	m.shownID = "" // force detail re-render
-	return nil
+	return cmd, nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -115,9 +125,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "edited " + msg.id
 		}
-		_ = m.reload()
+		cmd, _ := m.reload()
 		m.refreshDetail()
-		return m, nil
+		return m, cmd
 
 	case tea.KeyMsg:
 		// While the list's fuzzy filter is open, every key belongs to it
@@ -136,10 +146,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusDetail = !m.focusDetail
 			return m, nil
 		case key.Matches(msg, m.keys.Reload):
-			_ = m.reload()
+			cmd, _ := m.reload()
 			m.refreshDetail()
 			m.status = "reloaded"
-			return m, nil
+			return m, cmd
 		case key.Matches(msg, m.keys.Done):
 			return m, m.mutateSelected(func(id string) (string, error) {
 				t, err := m.app.Done(id)
@@ -190,9 +200,9 @@ func (m *model) mutateSelected(fn func(id string) (string, error)) tea.Cmd {
 		return nil
 	}
 	m.status = status
-	_ = m.reload()
+	cmd, _ := m.reload()
 	m.refreshDetail()
-	return nil
+	return cmd
 }
 
 // moveSelected cycles the selected task through the configured lanes.

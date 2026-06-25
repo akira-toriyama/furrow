@@ -55,6 +55,11 @@ func (a *App) Archive(olderThanDays int, dryRun bool) ([]core.Task, error) {
 		return nil, err
 	}
 
+	// Commit the destination BEFORE destroying the source: copy every body into
+	// the archive and update both in-memory indexes, then persist both indexes,
+	// and only after BOTH succeed delete the hot bodies. An interrupted run then
+	// leaves at worst a harmless duplicate body in archive/ (lint-visible) — it
+	// never deletes a hot body while the hot index still references it.
 	for _, t := range moved {
 		body, err := a.Store.LoadBody(t.ID)
 		if err != nil {
@@ -63,17 +68,21 @@ func (a *App) Archive(olderThanDays int, dryRun bool) ([]core.Task, error) {
 		if err := arc.SaveBody(t.ID, body); err != nil {
 			return nil, err
 		}
-		arcIdx.Add(t)
-		idx.Remove(t.ID)
-		if err := a.Store.DeleteBody(t.ID); err != nil {
-			return nil, err
+		if !arcIdx.Has(t.ID) { // idempotent: a retry won't double-add
+			arcIdx.Add(t)
 		}
+		idx.Remove(t.ID)
 	}
 	if err := arc.Save(arcIdx); err != nil {
 		return nil, err
 	}
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
+	}
+	for _, t := range moved { // both indexes are durable now — safe to delete
+		if err := a.Store.DeleteBody(t.ID); err != nil {
+			return nil, err
+		}
 	}
 	return moved, nil
 }

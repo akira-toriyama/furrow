@@ -128,6 +128,35 @@ func TestCLIDoneAndNextFlow(t *testing.T) {
 	}
 }
 
+func TestCLIArchiveJSONIsArrayNotNull(t *testing.T) {
+	initStore(t)
+	// nothing to archive -> tasks must be [] (array shape), not null.
+	out, code := run(t, "--json", "archive")
+	if code != 0 {
+		t.Fatalf("archive --json exit = %d", code)
+	}
+	if !strings.Contains(out, `"tasks": []`) {
+		t.Errorf("empty archive --json should emit \"tasks\": [], got:\n%s", out)
+	}
+	if strings.Contains(out, `"tasks": null`) {
+		t.Errorf("archive --json must never emit null tasks:\n%s", out)
+	}
+}
+
+func TestCLICheckOutOfRangeExit2(t *testing.T) {
+	initStore(t)
+	run(t, "add", "task", "-s", "ready")
+	run(t, "check", "t-0001", "--add", "step one")
+	// index 5 is out of range -> validation error exit 2 (not a silent exit 0).
+	if _, code := run(t, "check", "t-0001", "5"); code != int(core.CodeValidation) {
+		t.Errorf("out-of-range check should exit 2, got %d", code)
+	}
+	// index 0 is valid.
+	if _, code := run(t, "check", "t-0001", "0"); code != 0 {
+		t.Errorf("in-range check should exit 0, got %d", code)
+	}
+}
+
 func TestCLISchemaMatchesPackage(t *testing.T) {
 	out, code := run(t, "schema")
 	if code != 0 {
