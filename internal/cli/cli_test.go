@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -164,5 +165,34 @@ func TestCLISchemaMatchesPackage(t *testing.T) {
 	}
 	if !strings.Contains(out, `"furrow index v1"`) || !strings.Contains(out, `"schema_version"`) {
 		t.Errorf("schema output looks wrong:\n%s", out)
+	}
+}
+
+// TestCLIMigrateAppliesLabel pins that `migrate --label` stamps the label on
+// every imported task (the unblocker for importing into a label-required
+// cross-repo store). Verified via the label filter: `ls -l facet` must return
+// every migrated task, and a different label must match nothing.
+func TestCLIMigrateAppliesLabel(t *testing.T) {
+	initStore(t)
+	src := filepath.Join(t.TempDir(), "Task.md")
+	md := "# Demo\n\n## 🎯 Open\n\n### 1. First task\nDetail one.\n\n### 2. Second task\nDetail two.\n"
+	if err := os.WriteFile(src, []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := run(t, "migrate", src, "--label", "facet", "--write"); code != 0 {
+		t.Fatalf("migrate --write exit = %d", code)
+	}
+	// Filtering by the applied label returns every imported task.
+	out, code := run(t, "ls", "-l", "facet", "--json")
+	if code != 0 {
+		t.Fatalf("ls -l facet exit = %d", code)
+	}
+	if !strings.Contains(out, "First task") || !strings.Contains(out, "Second task") {
+		t.Errorf("facet-labeled ls missing migrated tasks:\n%s", out)
+	}
+	// A different label matches nothing (the label is specifically facet).
+	out, _ = run(t, "ls", "-l", "other", "--json")
+	if strings.Contains(out, "First task") || strings.Contains(out, "Second task") {
+		t.Errorf("ls -l other should not return the facet tasks:\n%s", out)
 	}
 }
