@@ -71,3 +71,31 @@ func (idx *Index) Actionable(t *Task, terminal map[string]bool, doneIDs map[stri
 	}
 	return true
 }
+
+// DependsOn reports whether task `a` reaches task `b` by following dependency
+// edges transitively (a depends on b, directly or indirectly). It underpins
+// acyclic dep edits: adding a->b is safe only when b does not already depend on
+// a. Unknown ids contribute no out-edges; a visited set keeps the walk finite
+// even if the index already contains a cycle.
+func (idx *Index) DependsOn(a, b string) bool {
+	visited := map[string]bool{}
+	var stack []string
+	if t, i := idx.Find(a); i >= 0 {
+		stack = append(stack, t.Deps...)
+	}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if cur == b {
+			return true
+		}
+		if visited[cur] {
+			continue
+		}
+		visited[cur] = true
+		if t, i := idx.Find(cur); i >= 0 {
+			stack = append(stack, t.Deps...)
+		}
+	}
+	return false
+}

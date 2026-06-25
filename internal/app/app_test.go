@@ -56,6 +56,60 @@ func TestAddRejectsUnknownLaneAndEmptyTitle(t *testing.T) {
 	}
 }
 
+func TestAddDepAndRemoveDep(t *testing.T) {
+	a := newApp()
+	_, _ = a.Add("a", AddOpts{}) // t-0001
+	_, _ = a.Add("b", AddOpts{}) // t-0002
+	_, _ = a.Add("c", AddOpts{}) // t-0003
+
+	// b depends on a; c depends on b.
+	if _, err := a.AddDep("t-0002", "t-0001"); err != nil {
+		t.Fatalf("AddDep b->a: %v", err)
+	}
+	if _, err := a.AddDep("t-0003", "t-0002"); err != nil {
+		t.Fatalf("AddDep c->b: %v", err)
+	}
+
+	// Re-adding is idempotent (no duplicate dep).
+	t2, err := a.AddDep("t-0002", "t-0001")
+	if err != nil {
+		t.Fatalf("idempotent AddDep: %v", err)
+	}
+	if len(t2.Deps) != 1 || t2.Deps[0] != "t-0001" {
+		t.Errorf("re-adding a dep must not duplicate it, got %v", t2.Deps)
+	}
+
+	// Self-dependency is rejected.
+	if _, err := a.AddDep("t-0001", "t-0001"); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("self-dep should be a validation error, got %v", err)
+	}
+	// Unknown dependency is rejected.
+	if _, err := a.AddDep("t-0002", "t-9999"); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("unknown dep should be a validation error, got %v", err)
+	}
+	// Cycle is rejected: a->c would close the c->b->a chain.
+	if _, err := a.AddDep("t-0001", "t-0003"); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("cycle-creating dep should be a validation error, got %v", err)
+	}
+
+	// Remove a real dep.
+	rt, err := a.RemoveDep("t-0002", "t-0001")
+	if err != nil {
+		t.Fatalf("RemoveDep: %v", err)
+	}
+	if len(rt.Deps) != 0 {
+		t.Errorf("dep should be removed, got %v", rt.Deps)
+	}
+	// Removing a non-existent dep is a validation error (not a silent no-op).
+	if _, err := a.RemoveDep("t-0002", "t-0001"); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("removing a non-dependency should be a validation error, got %v", err)
+	}
+	// Unknown task id is NotFound.
+	if _, err := a.AddDep("t-9999", "t-0001"); core.ExitCode(err) != int(core.CodeNotFound) {
+		t.Errorf("AddDep on unknown id should be NotFound, got %v", err)
+	}
+}
+
 func TestDoneStampsClosedAndMoveClears(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("ship it", AddOpts{Status: "ready"})

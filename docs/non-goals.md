@@ -113,9 +113,10 @@ index — which is itself an argument for keeping the index as plain JSON.
 To keep this list honest about today's reality (not aspirations):
 
 - **Built and real today** (`internal/cli`): `init`, `add`, `ls` (alias
-  `list`), `show`, `next`, `edit`, `done`, `move`, `reorder`, `check`,
-  `archive`, `lint`, `schema`, `version`. Read commands honor `--json` /
-  `--ndjson`; `ls` supports `--status`/`-s`, `--label`/`-l`, `--limit`/`-n`.
+  `list`), `show`, `next`, `edit`, `done`, `move`, `reorder`, `check`, `dep`,
+  `migrate`, `archive`, `lint`, `schema`, `version`, `ui`. Read commands honor
+  `--json` / `--ndjson`; `ls` supports `--status`/`-s`, `--label`/`-l`,
+  `--limit`/`-n`.
   Destructive ops are guarded: `archive` previews unless `--yes`. Exit-code
   contract: `0` ok / `1` not-found|empty / `2` bad-usage|validation / `3+`
   internal|IO, with `{"error":{"code","id","message"}}` to stderr
