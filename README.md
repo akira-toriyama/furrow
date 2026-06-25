@@ -175,10 +175,10 @@ On a non-zero exit, furrow prints a structured error object to stderr:
 ```toml
 [lanes]
 # The status enum AND the top->bottom sort rank.
-order   = ["inbox", "backlog", "ready", "in-progress", "done", "icebox"]
+order   = ["inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"]
 default = "inbox"                 # lane `furrow add` uses when --status is omitted
 done    = "done"                  # lane `furrow done` moves into (where `closed` is stamped)
-terminal = ["done", "icebox"]     # lanes NOT actionable for `furrow next`
+terminal = ["done", "icebox", "waiting"]  # lanes NOT actionable for `furrow next`
 
 [priority]
 step    = 10                      # sparse step so reordering edits one field
@@ -195,7 +195,7 @@ older_than_days = 30              # default window for `furrow archive --older-t
 theme = "auto"                    # auto | dark | light (NO_COLOR is always respected)
 ```
 
-`done` stamps `closed`; moving a task *out* of the done lane clears it. Other terminal lanes (e.g. `icebox` — parked, not finished) do **not** stamp `closed`, which is why parked tasks are never archived.
+`done` stamps `closed`; moving a task *out* of the done lane clears it. Other terminal lanes (e.g. `icebox` — parked, not finished; `waiting` — the GTD *Waiting-For* lane for work delegated or blocked on someone external) do **not** stamp `closed`, which is why parked tasks are never archived.
 
 ---
 

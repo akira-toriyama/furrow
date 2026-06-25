@@ -11,10 +11,13 @@ import "regexp"
 // Editing the template changes a user's config; editing these changes the
 // fallback when a key is absent or invalid.
 var (
-	DefaultLanes    = []string{"inbox", "backlog", "ready", "in-progress", "done", "icebox"}
-	DefaultLane     = "inbox"                    // lane assigned by `furrow add`
-	DefaultDoneLane = "done"                     // lane `furrow done` moves a task into
-	DefaultTerminal = []string{"done", "icebox"} // lanes whose tasks `next` excludes outright
+	DefaultLanes    = []string{"inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"}
+	DefaultLane     = "inbox" // lane assigned by `furrow add`
+	DefaultDoneLane = "done"  // lane `furrow done` moves a task into
+	// DefaultTerminal lanes are excluded from `furrow next`. "waiting" is the GTD
+	// Waiting-For lane (delegated / blocked on someone else): parked like icebox,
+	// not finished — so it never stamps `closed` and is never archived.
+	DefaultTerminal = []string{"done", "icebox", "waiting"}
 
 	// DefaultNextLanes is the "actionable now" set `furrow next` considers (in
 	// addition to the deps-satisfied check). Intake/planning lanes are excluded
