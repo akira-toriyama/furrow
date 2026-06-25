@@ -54,6 +54,7 @@ type model struct {
 	focusDetail   bool
 	status        string
 	shownID       string // id whose body is currently rendered in vp
+	checkIdx      int    // focused checklist item in the detail pane
 }
 
 // editedMsg is returned after the $EDITOR subprocess exits.
@@ -147,6 +148,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.list.FilterState() == list.Filtering {
 			break
 		}
+		// Checklist interaction in the focused detail pane: up/down move a
+		// cursor over the items, space toggles. At the ends, up/down fall
+		// through to the viewport so a long body still scrolls.
+		if m.focusDetail {
+			if t, ok := m.selected(); ok && len(t.Checklist) > 0 {
+				switch {
+				case key.Matches(msg, m.keys.Toggle):
+					return m, m.toggleCheck(t)
+				case key.Matches(msg, m.keys.Up) && m.checkIdx > 0:
+					m.checkIdx--
+					m.renderDetail()
+					return m, nil
+				case key.Matches(msg, m.keys.Down) && m.checkIdx < len(t.Checklist)-1:
+					m.checkIdx++
+					m.renderDetail()
+					return m, nil
+				}
+			}
+		}
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -218,6 +238,30 @@ func (m *model) mutateSelected(fn func(id string) (string, error)) tea.Cmd {
 	return cmd
 }
 
+// toggleCheck flips the checklist item under the detail-pane cursor, preserving
+// the cursor position across the reload so repeated toggles stay put. t is the
+// pre-reload task; after reload the same id is reselected with its new state.
+func (m *model) toggleCheck(t core.Task) tea.Cmd {
+	idx := m.checkIdx
+	if idx < 0 || idx >= len(t.Checklist) {
+		return nil
+	}
+	cur := t.Checklist[idx]
+	if _, err := m.app.Check(t.ID, idx, !cur.Done); err != nil {
+		m.status = err.Error()
+		return nil
+	}
+	mark := "✓"
+	if cur.Done {
+		mark = "○"
+	}
+	m.status = fmt.Sprintf("checklist #%d %s", idx+1, mark)
+	cmd, _ := m.reload() // reload sets shownID="" and reselects the same id
+	m.renderDetail()     // repaint with the same checkIdx (no reset)
+	m.shownID = t.ID     // keep the refreshDetail guard consistent
+	return cmd
+}
+
 // moveSelected cycles the selected task through the configured lanes.
 func (m *model) moveSelected(dir int) tea.Cmd {
 	return m.mutateSelected(func(id string) (string, error) {
@@ -280,7 +324,19 @@ func (m *model) refreshDetail() {
 		return
 	}
 	m.shownID = t.ID
+	m.checkIdx = 0 // new task — reset the checklist cursor
+	m.renderDetail()
+	m.vp.GotoTop()
+}
 
+// renderDetail (re)builds and paints the selected task's detail into the
+// viewport. Unlike refreshDetail it has no shownID guard, so it repaints the
+// same task after a checklist cursor move or toggle. It does not reset scroll.
+func (m *model) renderDetail() {
+	t, ok := m.selected()
+	if !ok {
+		return
+	}
 	body, ok := m.bodies[t.ID]
 	if !ok {
 		b, err := m.app.Store.LoadBody(t.ID)
@@ -304,7 +360,6 @@ func (m *model) refreshDetail() {
 		}
 	}
 	m.vp.SetContent(rendered)
-	m.vp.GotoTop()
 }
 
 // ensureRenderer returns a glamour renderer for the given width, rebuilding it
@@ -332,12 +387,16 @@ func (m model) detailMarkdown(t core.Task, body string) string {
 	if len(t.Deps) > 0 {
 		fmt.Fprintf(&b, "deps: %s\n\n", strings.Join(t.Deps, ", "))
 	}
-	for _, c := range t.Checklist {
+	for i, c := range t.Checklist {
 		box := "[ ]"
 		if c.Done {
 			box = "[x]"
 		}
-		fmt.Fprintf(&b, "- %s %s\n", box, c.Text)
+		text := c.Text
+		if m.focusDetail && i == m.checkIdx {
+			text = "**" + text + "**  ◂" // cursor highlight while the detail pane is focused
+		}
+		fmt.Fprintf(&b, "- %s %s\n", box, text)
 	}
 	if len(t.Checklist) > 0 {
 		b.WriteString("\n")
