@@ -293,6 +293,21 @@ Claude（やエージェント）に守らせるルール:
 - **`bodies/*.md` は編集してよい。** 長文の散文はここに置く。
 - 状態変更は必ずコマンド経由。出力を機械処理するなら `--json` / `--ndjson` を使う。
 
+### CI: PR から tracker を自動更新
+
+`furrow apply` はマージされた PR を status 更新に変える（furrow tracker 版の `Closes #N`）。
+PR 本文にタスク本文ファイルを指す footer を 1 行入れる:
+
+```
+SetStatus-task: https://github.com/<owner>/<tracker>/blob/main/.furrow/bodies/<id>.md done
+```
+
+PR **open**（draft 含む）でタスクは in-progress に寄り、**merge** で指定 lane が適用される
+（lane 省略なら本文に追記のみ）。`apply` は `--body-file` か stdin からテキストを読む CI/VCS
+非依存の設計なので、薄い CI ジョブ（このリポジトリの
+[`.github/workflows/task-status.yml`](.github/workflows/task-status.yml) が共有 reusable
+workflow を呼ぶ）だけで配線できる。検証は非ブロッキング: 不正な id/lane は報告されるが merge は止めない。
+
 ---
 
 ## 開発
