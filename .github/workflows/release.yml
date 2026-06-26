@@ -34,13 +34,17 @@ jobs:
           config: cliff.toml
           args: --latest --strip header
         env:
-          OUTPUT: CHANGELOG.md
+          # Write OUTSIDE the work tree: a CHANGELOG.md in the repo root leaves an
+          # untracked file, and GoReleaser's git-state check then aborts with
+          # "git is in a dirty state". runner.temp is off-tree, so the release
+          # notes are generated without dirtying the checkout.
+          OUTPUT: ${{ runner.temp }}/CHANGELOG.md
 
       - name: GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
-          args: release --clean --release-notes CHANGELOG.md
+          args: release --clean --release-notes ${{ runner.temp }}/CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # PAT with write access to akira-toriyama/homebrew-tap (and nur-packages).
