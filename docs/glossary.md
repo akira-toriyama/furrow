@@ -63,23 +63,18 @@ Non-canonical synonyms, mapped to the term to use. Prefer the right word.
 | delete, purge, close out, trash | **archive** | `archive` *moves* aged done tasks to `.furrow/archive/`; it doesn't delete them, and it previews unless `--yes`. |
 | `.furrow` repo, the database, the project file | **the store** | The `.furrow/` directory; "repo" is your git repository, which contains the store. |
 
-## What's built vs. planned
+## What's built
 
 Every term above is backed by shipped code (`internal/core`, `internal/app`,
-`internal/cli`) **except** the two interactive/migration surfaces:
-
-- **TUI** (`furrow ui`) — ROADMAP **Phase 6**, not yet wired. The `ui` command
-  exists but is an honest stub: it returns "the TUI (furrow ui) is not
-  implemented yet — see ROADMAP Phase 6; use the CLI for now". `[ui].theme`
-  in `config.toml` is read and validated today but has no renderer to act on it.
-- **migrate** — ROADMAP **Phase 5**, not built. There is no `furrow migrate`
-  command yet (the `internal/migrate` package is an empty placeholder).
+`internal/cli`, `internal/tui`) — including the interactive TUI (`furrow ui`)
+and `furrow migrate` (importing a legacy `Task.md`). `[ui].theme` in
+`config.toml` drives the TUI's colour scheme (`auto`/`dark`/`light`, with
+`NO_COLOR` always honoured).
 
 ---
 
 References (reviewed 2026-06-25): [`internal/core/task.go`](../internal/core/task.go),
 [`internal/core/marshal.go`](../internal/core/marshal.go),
 [`internal/config/defaults.go`](../internal/config/defaults.go),
-[`internal/app/app.go`](../internal/app/app.go),
-[`ROADMAP.md`](../ROADMAP.md), [`MEMO.md`](../MEMO.md). See also
+[`internal/app/app.go`](../internal/app/app.go). See also
 [`docs/architecture.md`](architecture.md) and [`docs/non-goals.md`](non-goals.md).

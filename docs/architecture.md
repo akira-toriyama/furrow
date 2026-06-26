@@ -4,12 +4,10 @@ furrow is a repo-local, plain-text task tracker written in Go (module
 `github.com/akira-toriyama/furrow`, Go 1.23). This document describes how the
 code is organized, why the layers are shaped the way they are, and which
 invariants hold the design together. It is the canonical reference for the
-package layout; the storage *rationale* lives in [`../MEMO.md`](../MEMO.md) and
-the phase plan in [`../ROADMAP.md`](../ROADMAP.md).
+package layout; the storage *rationale* lives in [`non-goals.md`](non-goals.md).
 
 For terms, see [`glossary.md`](glossary.md); for explicit non-goals, see
-[`non-goals.md`](non-goals.md). *(Both are planned companion docs — see "What's
-NOT in scope" below.)*
+[`non-goals.md`](non-goals.md).
 
 ---
 
@@ -28,8 +26,8 @@ library.
               |                                     |
               v                                     v
      internal/cli (cobra)                  internal/tui (bubbletea v1)
-     command/flag parsing,                 interactive UI
-     human/JSON rendering                  -- Phase 6: NOT wired yet --
+     command/flag parsing,                 interactive UI (furrow ui)
+     human/JSON rendering
               |                                     |
               +------------------+------------------+
                                  |  (every mutation & query)
@@ -72,11 +70,11 @@ directly for mutation — they go through `internal/app`.
 |---|---|
 | `cmd/furrow/main.go` | Entry point. Just `os.Exit(cli.Execute())` — no logic. |
 | `internal/cli` | cobra adapter: parse flags, call `app`, render (human table or `--json`/`--ndjson`), map errors to exit codes. Holds no task logic. |
-| `internal/tui` | bubbletea v1 interactive UI. **Phase 6 — not built.** `furrow ui` is a stub today (see below). |
+| `internal/tui` | bubbletea v1 interactive UI (`furrow ui`): list + glamour detail, navigate / filter / done / move / reorder (`K`/`J`) / checklist toggle / edit body. |
 | `internal/app` | Coordinator. Wires a `Store` + `Config` + `Clock`; exposes every mutation/query as a method. The **only** place that mutates state. |
 | `internal/config` | Loads `.furrow/config.toml` (read-only, clamp-don't-reject). Produces an effective `Config`. |
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
-| `internal/store/memstore` | In-memory `core.Store` for tests and (future) `migrate --dry-run`. A normal non-test package. |
+| `internal/store/memstore` | In-memory `core.Store` for tests and `migrate --dry-run`. A normal non-test package. |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the single `Marshal` serializer, the `Store`/`Clock` ports, `Validate`, and in-memory index ops. |
 | `internal/schema` | The JSON Schema for `index.json` as a Go constant; emitted by `furrow schema`. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |
@@ -127,8 +125,7 @@ shell-out); both adapters satisfy it.
 The design heuristic: if a layer finds itself wanting to reach across to
 something it should not import, the answer is **not** to add the import — it is
 to add (or widen) a port. The core never grows an `os` import to "just read a
-file"; it grows a `Store` method instead, implemented by the adapter. This is
-the chord/facet house pattern (MEMO §9) carried into Go.
+file"; it grows a `Store` method instead, implemented by the adapter.
 
 ---
 
@@ -136,9 +133,8 @@ the chord/facet house pattern (MEMO §9) carried into Go.
 
 `core.Marshal(*Index, laneOrder []string) ([]byte, error)` in
 [`internal/core/marshal.go`](../internal/core/marshal.go) is the **one and only**
-path that serializes an `Index` to bytes. Every writer — `fsstore.Save`, and (in
-future) `migrate` — goes through it. No other code calls `json.Marshal` on an
-`Index`.
+path that serializes an `Index` to bytes. Every writer — `fsstore.Save`, and
+`migrate` — goes through it. No other code calls `json.Marshal` on an `Index`.
 
 Why one path: the byte layout of `index.json` is a contract, not an
 implementation detail. If two code paths could serialize the index, they could
@@ -182,12 +178,9 @@ error (the file is malformed input), not an internal fault.
 - **Schema drift test.** `furrow schema` prints `internal/schema.IndexV1`
   (JSON Schema draft 2020-12); `docs/schema/furrow.index.v1.json` is a committed
   copy of the same bytes, and CI diffs the two so they cannot drift.
-- **Single-path grep guard.** A `scripts/check-marshal-singlepath.sh` is intended
-  to grep for stray `json.Marshal(Index)` calls outside `core.Marshal` and fail
-  CI if any appear. **Status: planned — the script is referenced in the `Marshal`
-  doc comment and MEMO §9 but is not present in `scripts/` yet** (only
-  `scripts/hooks/` exists). Until it lands, the convention is enforced by review
-  and the doc comment.
+- **Single-path grep guard.** `scripts/check-marshal-singlepath.sh` greps for
+  stray `json.Marshal(Index)` calls outside `core.Marshal` and fails CI if any
+  appear; it runs as part of `scripts/check.sh`.
 
 ---
 
@@ -222,7 +215,7 @@ The `Index` holds only metadata; `Task.Body` is a *relative path*
 (`bodies/t-0042.md`), never the prose itself. Body text is read on demand via
 `LoadBody` (returning `""` when the file is absent — a task may legitimately have
 no body yet) and written via `SaveBody`. This split is the whole point of the
-hybrid store (MEMO §3): metadata diffs per field, prose diffs per task, and long
+hybrid store: metadata diffs per field, prose diffs per task, and long
 markdown never collapses into a one-line escaped JSON string.
 
 `core.BodyPath(id)` is the single source of the `bodies/<id>.md` path; both the
@@ -249,8 +242,7 @@ on day one before `init` has written anything.
 
 `internal/store/memstore` is a parallel `core.Store` kept entirely in memory. It
 is a **normal package, not a test helper**, so both unit tests and runtime
-dry-run code can use it (mirroring chord's "AdapterTest as a real target"
-convention, MEMO §9). Its `BodyFile` returns `""` because an in-memory store is
+dry-run code can use it. Its `BodyFile` returns `""` because an in-memory store is
 not file-backed — so `$EDITOR` shell-out is unsupported against it, which the
 `app` layer detects and reports.
 
@@ -347,11 +339,10 @@ status enum and the top-to-bottom sort rank.
 ## What's NOT in scope
 
 This document covers the *built* architecture. Several things are deliberately
-**out of scope** for furrow's design; the full rationale belongs in
-[`non-goals.md`](non-goals.md) *(a planned companion doc — not yet present)*.
-The headline non-goals, drawn from ROADMAP §7 and MEMO §4–5:
+**out of scope** for furrow's design; the full rationale lives in
+[`non-goals.md`](non-goals.md). The headline non-goals:
 
-- **No MCP server, no Claude Code plugin.** For a solo tool these are overkill.
+- **No MCP server, no Claude Code plugin.** For a repo-local tool these are overkill.
   The integration layer is a short `CLAUDE.md` block plus `--json` on read
   commands. The rules that block belongs to: never hand-edit `index.json` (the
   single marshaller owns it; manual edits churn git), `bodies/*.md` *are*
@@ -361,10 +352,9 @@ The headline non-goals, drawn from ROADMAP §7 and MEMO §4–5:
 - **No GitHub Issues coupling.** furrow is repo-local plain text; "GitHub
   friendly" means "diffs cleanly", not "syncs to Issues".
 - **No interactive prompting from the CLI.** Interactivity is confined to
-  `furrow ui` (Phase 6).
-- **Web / React UI is out of scope for now** (ROADMAP Phase 8, parked): a future
-  read-only viewer would simply read `index.json`, which is exactly why a clean
-  JSON index matters.
+  `furrow ui`.
+- **Web / React UI is out of scope for now** (parked): a future read-only viewer
+  would simply read `index.json`, which is exactly why a clean JSON index matters.
 
 ### Built vs. planned — honest status
 
@@ -374,15 +364,14 @@ The headline non-goals, drawn from ROADMAP §7 and MEMO §4–5:
 | `internal/config` (TOML load, clamp) | **Built** |
 | `internal/store/fsstore`, `internal/store/memstore` | **Built** |
 | `internal/app` (mutation funnel, archive, lint) | **Built** |
-| `internal/cli` (cobra: all commands above except `ui`/`migrate`) | **Built** |
+| `internal/cli` (cobra: all commands above, including `ui` and `migrate`) | **Built** |
+| `internal/tui` (bubbletea v1, `furrow ui`) | **Built** |
 | `internal/schema` + `docs/schema/furrow.index.v1.json` | **Built** |
 | Golden round-trip + schema drift tests | **Built** |
-| `furrow ui` / `internal/tui` (bubbletea v1) | **Phase 6 — stub only, not wired** |
-| `furrow migrate` | **Phase 5 — not built** (only an unused helper exists) |
-| `scripts/check-marshal-singlepath.sh` | **Referenced, not present yet** |
-| `CLAUDE.md`, `README*.md`, `docs/glossary.md`, `docs/non-goals.md` | **Not present yet** |
-| Packaging (GoReleaser → Homebrew tap, nix) | **Phase 7 — planned** |
+| `scripts/check-marshal-singlepath.sh` | **Built** |
+| Packaging (GoReleaser → Homebrew tap, nix) | **Configured; release not yet tagged** |
+| Read-only web / React viewer | **Future, low priority** |
 
 ---
 
-*Author/owner: akira-toriyama (Tommy). (reviewed 2026-06-25)*
+*(reviewed 2026-06-25)*

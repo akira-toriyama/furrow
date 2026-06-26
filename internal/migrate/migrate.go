@@ -2,7 +2,7 @@
 // (the thing furrow replaces) into furrow tasks. The canonical pain it untangles
 // is one file holding: an Open priority list, a needs-design/triage list, a
 // parked list, a Done archive (often in <details>), plus design appendices and
-// process prose — see MEMO §11 for the facet Task.md study this targets.
+// process prose.
 //
 // Parse is pure (string in, structured result out) so it is fully testable
 // against a real fixture; the CLI wires it to the store. It is intentionally

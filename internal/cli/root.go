@@ -20,7 +20,7 @@ var (
 )
 
 // Execute builds the root command, runs it, and maps the result to furrow's
-// exit-code contract (MEMO §4):
+// exit-code contract:
 //
 //	0 ok / 1 not-found|empty / 2 bad-usage|validation / 3+ internal|IO
 //

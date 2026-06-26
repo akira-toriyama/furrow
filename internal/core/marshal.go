@@ -11,7 +11,7 @@ import (
 // TUI, migrate — MUST go through it; never call json.Marshal on an Index
 // anywhere else (scripts/check-marshal-singlepath.sh enforces this in CI).
 //
-// DO NOT regress the determinism contract (ROADMAP §6 / MEMO §3):
+// DO NOT regress the determinism contract:
 //   - key order        = struct field order (encoding/json guarantees this)
 //   - indent           = 2 spaces
 //   - SetEscapeHTML(false) so CJK and < > & survive verbatim
