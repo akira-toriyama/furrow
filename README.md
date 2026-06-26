@@ -177,6 +177,22 @@ On a non-zero exit, furrow prints a structured error object to stderr:
 {"error":{"code":2,"id":"t-0001","message":"unknown lane \"backlogg\""}}
 ```
 
+### CI: auto-update a tracker from PRs
+
+`furrow apply` turns a PR into a status update — the `Closes #N` idea, for a
+furrow tracker. Add a footer to the PR body pointing at a task's body file:
+
+```
+SetStatus-task: https://github.com/<owner>/<tracker>/blob/main/.furrow/bodies/<id>.md done
+```
+
+On PR **open** (incl. draft) the task is nudged to in-progress; on **merge** the
+named lane is applied (omit the lane to only annotate the body). `apply` reads the
+text from `--body-file` or stdin and is CI/VCS-agnostic, so a thin CI job — see
+this repo's [`.github/workflows/task-status.yml`](.github/workflows/task-status.yml),
+which calls a shared reusable workflow — is all the wiring it needs. Validation is
+non-blocking: an unknown id or lane is reported, never a merge blocker.
+
 ---
 
 ## Configuration
