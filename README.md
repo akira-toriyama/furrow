@@ -140,6 +140,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `reorder <id> <priority>` | Set a task's priority (sparse integer; lower sorts higher) | — |
 | `check <id> [index]` | Toggle a checklist item by zero-based index, or append one | `--add <text>`, `--off` |
 | `dep <id> <dep-id>` | Add a dependency (id waits on dep-id), or remove it with `--rm`; acyclic & idempotent | `--rm` |
+| `apply` | Apply `SetStatus-task: <body-link> [<lane>]` directives parsed from PR/commit text (stdin or `--body-file`) — the CI hook for auto status updates. `--on open` nudges to in-progress; `--on merge` applies the lane. Validation is non-blocking | `--on open\|merge`, `--ref`, `--body-file`, `--open-lane` |
 | `archive` | Move aged done tasks to `.furrow/archive/` (preview unless `--yes`) | `--older-than <days>`, `--yes` |
 | `lint` | Check index↔body 1:1, id shape, lanes, deps/parent refs, config clamp warnings | — |
 | `schema` | Print the JSON Schema for `index.json` (matches the committed copy) | — |
@@ -147,7 +148,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `ui` | Launch the interactive TUI (list + detail panes): navigate, filter, done, move lane, reorder (`K`/`J`), toggle checklist, edit body | — |
 | `migrate <file>` | Import an existing `Task.md` etc. (dry-run by default; unmapped headings & `[[wikilink]]`s reported, never dropped) | `--write`, `-l/--label` |
 
-Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `move`, `reorder`, `check`, `dep`) also accept `--json`, emitting `{before, after, changed}` so a caller sees the effect without a follow-up `show`. `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
+Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `move`, `reorder`, `check`, `dep`) also accept `--json`, emitting `{before, after, changed}` so a caller sees the effect without a follow-up `show`. `apply --json` emits a per-directive report (`{on, ref, outcomes}`). `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
 
 ---
 
