@@ -90,7 +90,7 @@ round-trip test and `scripts/check-marshal-singlepath.sh` guard it.
 ### Frozen, collision-free ids & sparse priority
 ids (`t-k3m9p`) are **frozen**: never reused, never renumbered. They are
 **random** (prefix + a random Crockford-base32 suffix, `[ids].width` chars),
-generated locally — no shared `.furrow/seq` counter — so concurrent `furrow add`
+generated locally with no shared counter, so concurrent `furrow add`
 from separate worktrees/PRs won't collide (the app retries on the rare in-store
 clash; `furrow lint` flags any duplicate as a backstop). Legacy numeric ids
 (`t-0042`) stay valid and coexist. Reorder by editing the sparse integer

@@ -18,7 +18,7 @@ GitHub Projects #5（private・106 items）+ Issues + facet の手管理 `Task.m
 
 1. **ストレージ=ハイブリッド**：`.furrow/index.json`（構造化メタ・機械が書く）+ `.furrow/bodies/<id>.md`（長文 prose・手/Claude 編集可）。純 JSON 単一 / JSONL は長文を 1 行エスケープに潰し git が全行 churn＝痛みの再現。（MEMO §3）
 2. **index=JSON / 設定=TOML（`config.toml` 駆動の家風）/ 本文=Markdown**。YAML 却下（空白依存で編集が壊れる）・SQLite 却下（バイナリ・非 diff）。
-3. **ID 凍結**（`t-0042`・`.furrow/seq` 採番）：再利用・リナンバリングしない。
+3. **ID 凍結**（`t-k3m9p`・ローカル乱数 / 共有カウンタなし＝並行 add でも衝突しない）：再利用・リナンバリングしない。旧 numeric id（`t-0042`）も共存。
 4. **priority=独立した疎な整数**（10 刻み）：並べ替え=1 フィールド編集＝手リナンバリング消滅。
 5. **status=フィールド**（レーン定義は `config.toml` 駆動）：Open→Done は値変更＝手アーカイブ消滅。
 6. **決定論シリアライズ**：`core.Marshal` を唯一の経路に。キー順固定・2-space・`SetEscapeHTML(false)`・`[]` not null・`lane→priority→id` sort・UTC 秒・末尾改行。アプリ書き込み＝手/Claude 編集が byte 一致＝git churn ゼロ。（MEMO §10 / CLAUDE.md）

@@ -133,7 +133,7 @@ chord / facet / atelier / jig / perch を並列解析。トミーの repo は **
 ### アーキテクチャ（hexagonal の背骨）
 chord の `ChordCore`(純) / `ChordAdapterMacOS`(OSの唯一の置き場) / `ChordAdapterTest`(非 testTarget の fake) / `ChordApp`(@main) を Go に写像:
 - **`internal/core`** = 純ドメイン（`encoding/json`・`sort`・`time`・`errors` のみ。cobra/bubbletea/os/filepath 禁止）。** port は core 内の interface**（`Store`/`Clock`/`IDGen`）。「レイヤを跨ぐ＝interface が足りない合図」。
-- **`internal/store/fsstore`** = FS に触る唯一の package（atomic tmp+rename・lazy body・`.furrow/seq` 採番）。`internal/store/memstore` = test/非test 兼用の in-memory fake（chord の AdapterTest を非 testTarget にした作法）。
+- **`internal/store/fsstore`** = FS に触る唯一の package（atomic tmp+rename・lazy body・ランダム id 生成 / 共有カウンタなし）。`internal/store/memstore` = test/非test 兼用の in-memory fake（chord の AdapterTest を非 testTarget にした作法）。
 - **`internal/config`** = `.furrow/config.toml` を読むだけ（clamp-don't-reject・`Effective*` accessor）。
 - **`internal/app`** = coordinator（Store+Config 保持・**唯一の mutation funnel**）。CLI/TUI は必ずここ経由。
 - **`internal/cli`**(cobra) / **`internal/tui`**(bubbletea v1) = presentation。TUI はファイルを直接書かない。

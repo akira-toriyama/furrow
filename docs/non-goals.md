@@ -47,7 +47,7 @@ not an ongoing sync.
 
 The storage model is a hybrid: `.furrow/index.json` (structured metadata,
 machine-written) + `.furrow/bodies/<id>.md` (long-form prose, hand/agent
-editable) + `.furrow/config.toml` (human config) + `.furrow/seq` (id counter) +
+editable) + `.furrow/config.toml` (human config) +
 `.furrow/archive/` (aged done tasks). The rejected alternatives below are *not*
 shortcuts we skipped — they are formats we evaluated and ruled out (MEMO §3).
 

@@ -113,7 +113,8 @@ func TestNextIDRandom(t *testing.T) {
 	re := regexp.MustCompile(`^t-[0-9a-z]{5}$`)
 	// NextID is random + stateless (uniqueness is the app's job). Assert the
 	// shape always, and that a small batch is distinct — birthday collision over
-	// this few ids in a 32^5 (~33.5M) space is ~1e-4, so a dup here is a real bug.
+	// 64 ids in a 32^5 (~33.5M) space is ~6e-5 (≈1 in 16,000), so a dup here is a
+	// real bug, not flake.
 	seen := map[string]bool{}
 	for i := 0; i < 64; i++ {
 		id, err := s.NextID()

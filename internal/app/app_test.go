@@ -77,6 +77,32 @@ func TestAddGeneratesUniqueRandomIDs(t *testing.T) {
 	}
 }
 
+func TestAddManyGeneratesUniqueIDs(t *testing.T) {
+	a := newApp() // random (unseeded) memstore
+	specs := make([]AddSpec, 300)
+	for i := range specs {
+		specs[i] = AddSpec{Title: "batch", AddOpts: AddOpts{Status: "ready"}}
+	}
+	created, err := a.AddMany(specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != len(specs) {
+		t.Fatalf("AddMany created %d tasks, want %d", len(created), len(specs))
+	}
+	// every id in one batch must be distinct (uniqueID checks the accumulating index).
+	seen := map[string]bool{}
+	for _, tk := range created {
+		if !idRe.MatchString(tk.ID) {
+			t.Errorf("id %q does not match the random pattern", tk.ID)
+		}
+		if seen[tk.ID] {
+			t.Fatalf("AddMany produced a duplicate id within one batch: %q", tk.ID)
+		}
+		seen[tk.ID] = true
+	}
+}
+
 func TestAddRejectsUnknownLaneAndEmptyTitle(t *testing.T) {
 	a := newApp()
 	if _, err := a.Add("x", AddOpts{Status: "ghost"}); core.ExitCode(err) != int(core.CodeValidation) {
