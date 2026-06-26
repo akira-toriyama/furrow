@@ -2,7 +2,7 @@
 
 > A repo-local, plain-text task tracker you and your coding agent can both edit cleanly.
 
-**furrow** keeps your tasks *inside the repo* as plain text: structured metadata in a deterministic JSON index, long-form prose in per-task Markdown files. It replaces the friction of GitHub Projects / a single `Task.md` — public issues you can't keep private notes in, one giant file that mixes tasks + design + process, manual priority renumbering, manual done-archiving — with a small CLI whose writes are byte-stable, so `git diff` only ever shows what actually changed.
+**furrow** keeps your tasks *inside the repo* as plain text: structured metadata in a deterministic JSON index, long-form prose in per-task Markdown files. It replaces the friction of GitHub Projects / a single `Task.md` with a small CLI whose writes are byte-stable, so `git diff` only ever shows what actually changed.
 
 Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.23). No database, no daemon, no cloud.
 
