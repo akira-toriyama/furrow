@@ -1,0 +1,22 @@
+name: task-status
+
+# Trigger stub — the brain is the reusable workflow in akira-toriyama/.github.
+# On a PR open/merge, it applies any `SetStatus-task:` footer to the furrow task
+# tracker (akira-toriyama/projects). Auth uses a GitHub App; set its credentials
+# as repo secrets PROJECTS_APP_ID and PROJECTS_APP_PRIVATE_KEY.
+#
+# Non-blocking by design: an invalid directive comments on the PR and fails this
+# workflow, but does not block the merge — do NOT add it to required checks.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  sync:
+    uses: akira-toriyama/.github/.github/workflows/sync-task-status.yml@main
+    secrets: inherit
