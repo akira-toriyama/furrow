@@ -71,21 +71,39 @@ func initStore(t *testing.T) {
 	t.Setenv(app.EnvDir, filepath.Join(dir, app.DirName))
 }
 
+// addTask runs `add --json` and returns the created task's id. Ids are random,
+// so tests capture them rather than hardcoding t-0001.
+func addTask(t *testing.T, args ...string) string {
+	t.Helper()
+	out, code := run(t, append([]string{"--json", "add"}, args...)...)
+	if code != 0 {
+		t.Fatalf("add exit = %d:\n%s", code, out)
+	}
+	var task struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(out), &task); err != nil {
+		t.Fatalf("parse add --json: %v\n%s", err, out)
+	}
+	if task.ID == "" {
+		t.Fatalf("add --json returned no id:\n%s", out)
+	}
+	return task.ID
+}
+
 func TestCLIAddLsShow(t *testing.T) {
 	initStore(t)
 
-	if _, code := run(t, "add", "first task", "-s", "ready"); code != 0 {
-		t.Fatalf("add exit = %d", code)
-	}
+	id := addTask(t, "first task", "-s", "ready")
 	out, code := run(t, "ls", "--json")
 	if code != 0 {
 		t.Fatalf("ls exit = %d", code)
 	}
-	if !strings.Contains(out, `"id": "t-0001"`) || !strings.Contains(out, "first task") {
+	if !strings.Contains(out, `"id": "`+id+`"`) || !strings.Contains(out, "first task") {
 		t.Errorf("ls --json missing task:\n%s", out)
 	}
 
-	out, code = run(t, "show", "t-0001")
+	out, code = run(t, "show", id)
 	if code != 0 || !strings.Contains(out, "first task") {
 		t.Errorf("show failed: code=%d out=%s", code, out)
 	}
@@ -137,9 +155,9 @@ func TestCLINextEmptyExit1(t *testing.T) {
 
 func TestCLINextReasons(t *testing.T) {
 	initStore(t)
-	run(t, "add", "base", "-s", "ready")                      // t-0001
-	run(t, "add", "follow", "-s", "ready", "--dep", "t-0001") // t-0002
-	run(t, "done", "t-0001")                                  // t-0001 leaves next; t-0002 becomes actionable
+	base := addTask(t, "base", "-s", "ready")
+	follow := addTask(t, "follow", "-s", "ready", "--dep", base)
+	run(t, "done", base) // base leaves next; follow becomes actionable
 
 	out, code := run(t, "--json", "next")
 	if code != 0 {
@@ -163,32 +181,32 @@ func TestCLINextReasons(t *testing.T) {
 		} `json:"reason"`
 	}
 	for i := range views {
-		if views[i].ID == "t-0002" {
+		if views[i].ID == follow {
 			got = &views[i]
 		}
 	}
 	if got == nil {
-		t.Fatalf("t-0002 should be actionable after its dep is done:\n%s", out)
+		t.Fatalf("%s (follow) should be actionable after its dep is done:\n%s", follow, out)
 	}
 	if got.Reason.InNextLane != "ready" {
 		t.Errorf("reason.in_next_lane = %q, want ready", got.Reason.InNextLane)
 	}
-	if len(got.Reason.DepsSatisfied) != 1 || got.Reason.DepsSatisfied[0] != "t-0001" {
-		t.Errorf("reason.deps_satisfied = %v, want [t-0001]", got.Reason.DepsSatisfied)
+	if len(got.Reason.DepsSatisfied) != 1 || got.Reason.DepsSatisfied[0] != base {
+		t.Errorf("reason.deps_satisfied = %v, want [%s]", got.Reason.DepsSatisfied, base)
 	}
 }
 
 func TestCLIDoneAndNextFlow(t *testing.T) {
 	initStore(t)
-	run(t, "add", "base", "-s", "ready")
-	run(t, "add", "dependent", "-s", "ready", "--dep", "t-0001")
+	base := addTask(t, "base", "-s", "ready")
+	addTask(t, "dependent", "-s", "ready", "--dep", base)
 
 	// dependent is blocked while base is open.
 	out, _ := run(t, "next", "--ndjson")
 	if strings.Contains(out, "dependent") {
 		t.Errorf("dependent should be blocked before base is done:\n%s", out)
 	}
-	if _, code := run(t, "done", "t-0001"); code != 0 {
+	if _, code := run(t, "done", base); code != 0 {
 		t.Fatalf("done exit = %d", code)
 	}
 	out, _ = run(t, "next", "--ndjson")
@@ -214,25 +232,25 @@ func TestCLIArchiveJSONIsArrayNotNull(t *testing.T) {
 
 func TestCLICheckOutOfRangeExit2(t *testing.T) {
 	initStore(t)
-	run(t, "add", "task", "-s", "ready")
-	run(t, "check", "t-0001", "--add", "step one")
+	id := addTask(t, "task", "-s", "ready")
+	run(t, "check", id, "--add", "step one")
 	// index 5 is out of range -> validation error exit 2 (not a silent exit 0).
-	if _, code := run(t, "check", "t-0001", "5"); code != int(core.CodeValidation) {
+	if _, code := run(t, "check", id, "5"); code != int(core.CodeValidation) {
 		t.Errorf("out-of-range check should exit 2, got %d", code)
 	}
 	// index 0 is valid.
-	if _, code := run(t, "check", "t-0001", "0"); code != 0 {
+	if _, code := run(t, "check", id, "0"); code != 0 {
 		t.Errorf("in-range check should exit 0, got %d", code)
 	}
 }
 
 func TestCLIDepAddRemove(t *testing.T) {
 	initStore(t)
-	run(t, "add", "base", "-s", "ready")      // t-0001
-	run(t, "add", "dependent", "-s", "ready") // t-0002
+	base := addTask(t, "base", "-s", "ready")
+	dependent := addTask(t, "dependent", "-s", "ready")
 
 	// add a dep, then confirm `next` blocks the dependent until base is done.
-	if _, code := run(t, "dep", "t-0002", "t-0001"); code != 0 {
+	if _, code := run(t, "dep", dependent, base); code != 0 {
 		t.Fatalf("dep add exit = %d", code)
 	}
 	out, _ := run(t, "next", "--ndjson")
@@ -241,15 +259,15 @@ func TestCLIDepAddRemove(t *testing.T) {
 	}
 
 	// self-dep and cycle are validation errors (exit 2).
-	if _, code := run(t, "dep", "t-0001", "t-0001"); code != int(core.CodeValidation) {
+	if _, code := run(t, "dep", base, base); code != int(core.CodeValidation) {
 		t.Errorf("self-dep should exit 2, got %d", code)
 	}
-	if _, code := run(t, "dep", "t-0001", "t-0002"); code != int(core.CodeValidation) {
+	if _, code := run(t, "dep", base, dependent); code != int(core.CodeValidation) {
 		t.Errorf("cycle-creating dep should exit 2, got %d", code)
 	}
 
 	// remove it; the dependent becomes actionable again.
-	if _, code := run(t, "dep", "t-0002", "t-0001", "--rm"); code != 0 {
+	if _, code := run(t, "dep", dependent, base, "--rm"); code != 0 {
 		t.Fatalf("dep --rm exit = %d", code)
 	}
 	out, _ = run(t, "next", "--ndjson")
@@ -257,7 +275,7 @@ func TestCLIDepAddRemove(t *testing.T) {
 		t.Errorf("dependent should be actionable after the dep was removed:\n%s", out)
 	}
 	// removing a non-existent dep is a validation error.
-	if _, code := run(t, "dep", "t-0002", "t-0001", "--rm"); code != int(core.CodeValidation) {
+	if _, code := run(t, "dep", dependent, base, "--rm"); code != int(core.CodeValidation) {
 		t.Errorf("removing a non-dependency should exit 2, got %d", code)
 	}
 }
@@ -292,9 +310,9 @@ func TestCLIBatchAddStdin(t *testing.T) {
 
 func TestCLIMutationJSONDiff(t *testing.T) {
 	initStore(t)
-	run(t, "add", "task", "-s", "ready")
+	id := addTask(t, "task", "-s", "ready")
 
-	out, code := run(t, "--json", "done", "t-0001")
+	out, code := run(t, "--json", "done", id)
 	if code != 0 {
 		t.Fatalf("done --json exit = %d:\n%s", code, out)
 	}
@@ -326,7 +344,7 @@ func TestCLIMutationJSONDiff(t *testing.T) {
 	}
 
 	// human mode stays the terse verb line (no before/after).
-	hout, _ := run(t, "done", "t-0001")
+	hout, _ := run(t, "done", id)
 	if strings.Contains(hout, "before") {
 		t.Errorf("human mutation output must stay terse:\n%s", hout)
 	}

@@ -5,6 +5,7 @@
 package memstore
 
 import (
+	"crypto/rand"
 	"fmt"
 	"sort"
 	"strings"
@@ -17,22 +18,24 @@ import (
 type Store struct {
 	idx      *core.Index
 	bodies   map[string]string
-	seq      int
 	idPrefix string
-	idWidth  int
+	idLen    int
+	nextID   func() (string, error) // id generator; random by default
 }
 
 // compile-time proof memstore satisfies the port.
 var _ core.Store = (*Store)(nil)
 
 // New returns an empty in-memory store with the given id formatting.
-func New(idPrefix string, idWidth int) *Store {
-	return &Store{
+func New(idPrefix string, idLen int) *Store {
+	s := &Store{
 		idx:      &core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{}},
 		bodies:   map[string]string{},
 		idPrefix: idPrefix,
-		idWidth:  idWidth,
+		idLen:    idLen,
 	}
+	s.nextID = s.randomID
+	return s
 }
 
 // Load returns a deep-enough copy so callers mutating the result do not alter
@@ -77,17 +80,28 @@ func (s *Store) ListBodyIDs() ([]string, error) {
 	return ids, nil
 }
 
-func (s *Store) NextID() (string, error) {
-	s.seq++
-	return fmt.Sprintf("%s%0*d", s.idPrefix, s.idWidth, s.seq), nil
+// NextID returns a fresh id via the configured generator (random by default,
+// matching fsstore). No shared counter, so it is collision-resistant; the app
+// verifies uniqueness against the index.
+func (s *Store) NextID() (string, error) { return s.nextID() }
+
+func (s *Store) randomID() (string, error) {
+	suffix, err := core.RandomIDSuffix(s.idLen, rand.Reader)
+	if err != nil {
+		return "", err
+	}
+	return s.idPrefix + suffix, nil
 }
 
-// BumpSeqTo mirrors fsstore so the app layer can treat both stores uniformly.
-func (s *Store) BumpSeqTo(n int) error {
-	if n > s.seq {
-		s.seq = n
+// SeedSequentialIDs switches NextID to deterministic, zero-padded sequential ids
+// (t-00001, t-00002, …) so tests can assert on specific ids. Production never
+// calls this — real stores keep the random generator.
+func (s *Store) SeedSequentialIDs() {
+	n := 0
+	s.nextID = func() (string, error) {
+		n++
+		return fmt.Sprintf("%s%0*d", s.idPrefix, s.idLen, n), nil
 	}
-	return nil
 }
 
 // Dump returns the current canonical index bytes — convenient for tests that

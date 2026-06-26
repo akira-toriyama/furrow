@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
+
+var idRe = regexp.MustCompile(`^t-[0-9a-z]{5}$`)
 
 // fixedClock is a deterministic Clock for tests.
 type fixedClock struct{ t time.Time }
@@ -24,25 +27,79 @@ func newApp() *App {
 	return NewWithStore(st, cfg, clk)
 }
 
-func TestAddAssignsFrozenIDAndSparsePriority(t *testing.T) {
+func TestAddAssignsRandomIDAndSparsePriority(t *testing.T) {
 	a := newApp()
 	t1, err := a.Add("first", AddOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if t1.ID != "t-0001" || t1.Status != "inbox" || t1.Priority != 100 {
+	if !idRe.MatchString(t1.ID) || t1.Status != "inbox" || t1.Priority != 100 {
 		t.Errorf("first task wrong: %+v", t1)
 	}
 	t2, _ := a.Add("second", AddOpts{})
-	if t2.ID != "t-0002" || t2.Priority != 110 { // same lane -> +step
-		t.Errorf("second task should get id t-0002 priority 110: %+v", t2)
+	if t2.ID == t1.ID || t2.Priority != 110 { // distinct id, same lane -> +step
+		t.Errorf("second task should get a distinct id + priority 110: %+v", t2)
 	}
-	if t2.Body != "bodies/t-0002.md" {
-		t.Errorf("body path wrong: %q", t2.Body)
+	if t2.Body != "bodies/"+t2.ID+".md" {
+		t.Errorf("body path should match the id: %q", t2.Body)
 	}
 	// body file seeded from the title
-	if body, _ := a.Store.LoadBody("t-0002"); body != "# second\n" {
+	if body, _ := a.Store.LoadBody(t2.ID); body != "# second\n" {
 		t.Errorf("body should seed a heading, got %q", body)
+	}
+}
+
+func TestAddGeneratesUniqueRandomIDs(t *testing.T) {
+	a := newApp() // random (unseeded) memstore
+	seen := map[string]bool{}
+	for i := 0; i < 500; i++ {
+		tk, err := a.Add("task", AddOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !idRe.MatchString(tk.ID) {
+			t.Fatalf("id %q does not match the random pattern", tk.ID)
+		}
+		if seen[tk.ID] {
+			t.Fatalf("Add produced a duplicate id: %q (uniqueID retry should prevent this)", tk.ID)
+		}
+		seen[tk.ID] = true
+	}
+	// the whole index is internally consistent (no duplicate-id lint error).
+	probs, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range probs {
+		if strings.Contains(p.Msg, "duplicate id") {
+			t.Errorf("unexpected duplicate-id problem: %+v", p)
+		}
+	}
+}
+
+func TestAddManyGeneratesUniqueIDs(t *testing.T) {
+	a := newApp() // random (unseeded) memstore
+	specs := make([]AddSpec, 300)
+	for i := range specs {
+		specs[i] = AddSpec{Title: "batch", AddOpts: AddOpts{Status: "ready"}}
+	}
+	created, err := a.AddMany(specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != len(specs) {
+		t.Fatalf("AddMany created %d tasks, want %d", len(created), len(specs))
+	}
+	// every id in one batch must be distinct (uniqueID checks the accumulating index).
+	seen := map[string]bool{}
+	for _, tk := range created {
+		if !idRe.MatchString(tk.ID) {
+			t.Errorf("id %q does not match the random pattern", tk.ID)
+		}
+		if seen[tk.ID] {
+			t.Fatalf("AddMany produced a duplicate id within one batch: %q", tk.ID)
+		}
+		seen[tk.ID] = true
 	}
 }
 
@@ -58,42 +115,42 @@ func TestAddRejectsUnknownLaneAndEmptyTitle(t *testing.T) {
 
 func TestAddDepAndRemoveDep(t *testing.T) {
 	a := newApp()
-	_, _ = a.Add("a", AddOpts{}) // t-0001
-	_, _ = a.Add("b", AddOpts{}) // t-0002
-	_, _ = a.Add("c", AddOpts{}) // t-0003
+	ta, _ := a.Add("a", AddOpts{})
+	tb, _ := a.Add("b", AddOpts{})
+	tc, _ := a.Add("c", AddOpts{})
 
 	// b depends on a; c depends on b.
-	if _, err := a.AddDep("t-0002", "t-0001"); err != nil {
+	if _, err := a.AddDep(tb.ID, ta.ID); err != nil {
 		t.Fatalf("AddDep b->a: %v", err)
 	}
-	if _, err := a.AddDep("t-0003", "t-0002"); err != nil {
+	if _, err := a.AddDep(tc.ID, tb.ID); err != nil {
 		t.Fatalf("AddDep c->b: %v", err)
 	}
 
 	// Re-adding is idempotent (no duplicate dep).
-	t2, err := a.AddDep("t-0002", "t-0001")
+	t2, err := a.AddDep(tb.ID, ta.ID)
 	if err != nil {
 		t.Fatalf("idempotent AddDep: %v", err)
 	}
-	if len(t2.Deps) != 1 || t2.Deps[0] != "t-0001" {
+	if len(t2.Deps) != 1 || t2.Deps[0] != ta.ID {
 		t.Errorf("re-adding a dep must not duplicate it, got %v", t2.Deps)
 	}
 
 	// Self-dependency is rejected.
-	if _, err := a.AddDep("t-0001", "t-0001"); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, err := a.AddDep(ta.ID, ta.ID); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("self-dep should be a validation error, got %v", err)
 	}
 	// Unknown dependency is rejected.
-	if _, err := a.AddDep("t-0002", "t-9999"); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, err := a.AddDep(tb.ID, "t-9999"); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("unknown dep should be a validation error, got %v", err)
 	}
 	// Cycle is rejected: a->c would close the c->b->a chain.
-	if _, err := a.AddDep("t-0001", "t-0003"); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, err := a.AddDep(ta.ID, tc.ID); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("cycle-creating dep should be a validation error, got %v", err)
 	}
 
 	// Remove a real dep.
-	rt, err := a.RemoveDep("t-0002", "t-0001")
+	rt, err := a.RemoveDep(tb.ID, ta.ID)
 	if err != nil {
 		t.Fatalf("RemoveDep: %v", err)
 	}
@@ -101,11 +158,11 @@ func TestAddDepAndRemoveDep(t *testing.T) {
 		t.Errorf("dep should be removed, got %v", rt.Deps)
 	}
 	// Removing a non-existent dep is a validation error (not a silent no-op).
-	if _, err := a.RemoveDep("t-0002", "t-0001"); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, err := a.RemoveDep(tb.ID, ta.ID); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("removing a non-dependency should be a validation error, got %v", err)
 	}
 	// Unknown task id is NotFound.
-	if _, err := a.AddDep("t-9999", "t-0001"); core.ExitCode(err) != int(core.CodeNotFound) {
+	if _, err := a.AddDep("t-9999", ta.ID); core.ExitCode(err) != int(core.CodeNotFound) {
 		t.Errorf("AddDep on unknown id should be NotFound, got %v", err)
 	}
 }

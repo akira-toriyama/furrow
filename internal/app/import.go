@@ -51,7 +51,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		if lane == "" {
 			lane = a.Cfg.DefaultLane
 		}
-		id, err := a.Store.NextID()
+		id, err := a.uniqueID(idx)
 		if err != nil {
 			return nil, err
 		}

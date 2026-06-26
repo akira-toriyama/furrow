@@ -42,10 +42,10 @@ echo "→ smoke: init / add / ls --json / next / done / lint"
 sb="$(mktemp -d)"
 ( cd "$sb"
   "$BIN" init >/dev/null
-  "$BIN" add "smoke" -s ready >/dev/null
+  id="$("$BIN" --json add "smoke" -s ready | sed -n 's/.*"id": "\([^"]*\)".*/\1/p' | head -1)"
   "$BIN" ls --json | grep -q '"smoke"'
   "$BIN" next --json | grep -q '"smoke"'
-  "$BIN" done t-0001 >/dev/null
+  "$BIN" done "$id" >/dev/null
   "$BIN" lint
 )
 echo "✓ all checks passed"

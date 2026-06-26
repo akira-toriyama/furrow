@@ -26,7 +26,6 @@ const EnvDir = "FURROW_DIR"
 type Store interface {
 	core.Store
 	DeleteBody(id string) error
-	BumpSeqTo(n int) error
 	BodyFile(id string) string // absolute path for $EDITOR; "" if not file-backed
 }
 
@@ -167,7 +166,7 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 		return nil, err
 	}
 
-	id, err := a.Store.NextID()
+	id, err := a.uniqueID(idx)
 	if err != nil {
 		return nil, err
 	}
@@ -199,6 +198,24 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	}
 	saved, _ := idx.Find(id)
 	return saved, nil
+}
+
+// uniqueID draws random ids from the store until one is not already present in
+// idx. AddMany appends each created task to idx before the next call, so this
+// also keeps a batch internally unique. Ids are random, so the first draw almost
+// always wins; the cap turns a pathological store into a loud error rather than
+// an infinite loop.
+func (a *App) uniqueID(idx *core.Index) (string, error) {
+	for i := 0; i < 100; i++ {
+		id, err := a.Store.NextID()
+		if err != nil {
+			return "", err
+		}
+		if !idx.Has(id) {
+			return id, nil
+		}
+	}
+	return "", core.Internalf("", "could not generate a unique id after 100 attempts")
 }
 
 // Get returns a task and its body. NotFound when the id is unknown.

@@ -29,7 +29,7 @@ var (
 	DefaultPriorityDefault = 100
 
 	DefaultIDPrefix = "t-"
-	DefaultIDWidth  = 4
+	DefaultIDWidth  = 5 // number of random suffix chars in a new id (e.g. t-k3m9p)
 
 	DefaultArchiveOlderThanDays = 30
 	DefaultUITheme              = "auto"
@@ -125,11 +125,13 @@ func (c *Config) IsLane(lane string) bool {
 func (c *Config) IsTerminal(lane string) bool { return c.Terminal[lane] }
 
 // IDPattern is the regexp a frozen id must match: the configured prefix
-// followed by one or more digits.
+// followed by one or more lowercase base32 chars. It is intentionally permissive
+// so legacy zero-padded numeric ids (t-0042) and new random ids (t-k3m9p) both
+// validate.
 func (c *Config) IDPattern() *regexp.Regexp { return c.idPattern }
 
 func (c *Config) compile() {
-	c.idPattern = regexp.MustCompile("^" + regexp.QuoteMeta(c.IDPrefix) + `[0-9]+$`)
+	c.idPattern = regexp.MustCompile("^" + regexp.QuoteMeta(c.IDPrefix) + `[0-9a-z]+$`)
 	c.nextSet = setOf(c.NextLanes)
 }
 

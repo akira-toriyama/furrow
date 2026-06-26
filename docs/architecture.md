@@ -43,8 +43,9 @@ library.
               v                  v                  v
      internal/config   internal/store/fsstore  internal/store/memstore
      read config.toml  the ONLY FS package      in-memory fake
-     (clamp, no write) (atomic write, seq,      (tests, dry-runs)
-                         lazy body load)
+     (clamp, no write) (atomic write,           (tests, dry-runs)
+                         lazy body load,
+                         random ids)
               |                  |                  |
               +------------------+------------------+
                                  |  (implement core ports)
@@ -74,7 +75,7 @@ directly for mutation — they go through `internal/app`.
 | `internal/tui` | bubbletea v1 interactive UI. **Phase 6 — not built.** `furrow ui` is a stub today (see below). |
 | `internal/app` | Coordinator. Wires a `Store` + `Config` + `Clock`; exposes every mutation/query as a method. The **only** place that mutates state. |
 | `internal/config` | Loads `.furrow/config.toml` (read-only, clamp-don't-reject). Produces an effective `Config`. |
-| `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, `.furrow/seq` id counter. |
+| `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
 | `internal/store/memstore` | In-memory `core.Store` for tests and (future) `migrate --dry-run`. A normal non-test package. |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the single `Marshal` serializer, the `Store`/`Clock` ports, `Validate`, and in-memory index ops. |
 | `internal/schema` | The JSON Schema for `index.json` as a Go constant; emitted by `furrow schema`. |
@@ -204,13 +205,12 @@ A `.furrow/` store directory contains:
   index.json          structured metadata — written ONLY via core.Marshal
   bodies/<id>.md       long-form prose, one file per task (hand/agent editable)
   config.toml          human config (read-only from furrow's side)
-  seq                  the monotonic id counter
   archive/             a sibling store: aged done tasks moved out of the hot index
 ```
 
 ### Atomic writes (tmp + rename)
 
-Every write — `index.json`, each `bodies/<id>.md`, and `seq` — goes through
+Every write — `index.json` and each `bodies/<id>.md` — goes through
 `atomicWrite`: create a temp file (`.tmp-*`) in the **destination directory**,
 write, `fsync`, `close`, then `os.Rename` over the target. Rename is atomic on a
 single filesystem, so a crash never leaves a half-written `index.json`. The temp
@@ -228,15 +228,18 @@ markdown never collapses into a one-line escaped JSON string.
 `core.BodyPath(id)` is the single source of the `bodies/<id>.md` path; both the
 store and the marshaller use it so the `Body` field is never hand-assembled.
 
-### Frozen ids via `.furrow/seq`
+### Frozen, collision-free random ids
 
-`NextID` reads the integer in `.furrow/seq`, increments it, writes it back
-(atomically), and formats the id as `prefix + zero-padded counter` (default
-`t-0042`, from `[ids].prefix` / `[ids].width`). The counter is **monotonic and
-never decremented**, so ids are never reused or renumbered, even after a task is
-removed or archived. A missing `seq` reads as `0`, so a fresh repo starts at
-`t-0001`. `BumpSeqTo` lets a future bulk import (migrate) advance the counter
-past any injected ids so the next `NextID` cannot collide.
+`NextID` returns a **random** id: `prefix` + a random Crockford-base32 suffix
+(lowercase `0-9a-z` minus the ambiguous `i,l,o,u` = 32 symbols, masked from
+`crypto/rand` low-5 bits, `[ids].width` chars, default 5 → e.g. `t-k3m9p`).
+There is **no shared counter** — nothing on disk to coordinate — so two
+operators running `furrow add` in separate worktrees/PRs won't mint the same id.
+The app draws ids until one is not already in the index (a retry loop; the first
+draw almost always wins at 32^5 ≈ 33.5M), and `core.Validate`/`furrow lint`
+flags any duplicate as a cross-branch backstop. Ids are still **frozen** (never
+reused or renumbered); legacy zero-padded numeric ids (`t-0042`) remain valid
+and coexist with new random ones.
 
 `Load` on a missing `index.json` returns an empty, well-formed `Index`
 (`schema_version` set, `tasks: []`) rather than an error, so `furrow add` works

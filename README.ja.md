@@ -27,7 +27,6 @@ GitHub Issues は public で私的メモを置きづらく、他人の issue と
   index.json        # 構造化メタデータ（機械が書く・決定論シリアライズ）
   bodies/<id>.md    # 1 タスク 1 つの長文 markdown 本文（人/エージェントが編集可）
   config.toml       # 人が編集する設定（furrow からは READ のみ）
-  seq               # 凍結 id のカウンタ
   archive/          # 退避した古い done タスク（index.json + bodies/）
 ```
 
@@ -36,7 +35,6 @@ GitHub Issues は public で私的メモを置きづらく、他人の issue と
 - **`index.json`** = 構造化メタデータだけ。小さく、`jq` や Go で即クエリでき、フィールド単位で diff できる。**唯一の決定論マーシャラ（`core.Marshal`）からしか書かれない。**
 - **`bodies/<id>.md`** = 素の markdown。エスケープなし、タスク単位で diff できる。**手でも Claude でも自由に編集してよい。**
 - **`config.toml`** = 人が編集する設定。furrow は書き換えず、READ するだけ。
-- **`seq`** = 凍結 id の単調増加カウンタ。
 - **`archive/`** = 古くなった done タスクの退避先（独自の `index.json` + `bodies/`）。
 
 長文を 1 行のエスケープ文字列に潰す純 JSON 単一ファイルや JSONL を避け、メタと本文を分離するのがこの設計の肝である（根拠は [`MEMO.md`](MEMO.md) §3）。
@@ -178,7 +176,7 @@ furrow show t-0001 --json   # task + body_text
 
 ## 設計の不変条件
 
-- **id は凍結**。`t-0042` 形式（prefix + ゼロ詰めカウンタ、`.furrow/seq` 由来）。**再利用も再採番もしない**。`bodies/<id>.md` のファイル名語幹と 1:1 に対応する。
+- **id は凍結**。`t-k3m9p` 形式（prefix + ランダムな Crockford base32 サフィックス、`[ids].width` 文字）。共有カウンタを持たずローカル生成するので、並行 `furrow add` でも衝突しない。**再利用も再採番もしない**。旧来の連番 id（`t-0042`）も有効で共存。`bodies/<id>.md` のファイル名語幹と 1:1 に対応する。
 - **priority は疎な整数**（10 刻みが既定）。並べ替えは `reorder` で 1 フィールドを書き換えるだけ。手リナンバリングは消える。
 - **status は `config.toml` のレーン**。Open→Done は値の変更（1 文字 diff）。
 - **`done` への移動は `closed` を打刻**。done から外へ移動すると `closed` をクリアする。icebox（温存）のような他の terminal レーンは `closed` を打刻しない（parked と closed は別物）。
@@ -231,7 +229,7 @@ cmd/furrow/main.go                 = os.Exit(cli.Execute()) のみ
 
 - **`internal/core`** — 純ドメイン。`Index` / `Task` 構造体、唯一の `core.Marshal` 経路、`Store` / `Clock` などの port（interface）、validate、index 操作を持つ。**標準ライブラリしか import しない**（cobra・bubbletea・os・filepath は禁止）。
 - **`internal/config`** — `config.toml` を読むだけ。clamp-don't-reject。
-- **`internal/store/fsstore`** — **FS に触る唯一の package**。atomic write（同一ディレクトリの tmp + rename）、本文の lazy load、`.furrow/seq` による `NextID`。
+- **`internal/store/fsstore`** — **FS に触る唯一の package**。atomic write（同一ディレクトリの tmp + rename）、本文の lazy load、ランダム id 生成（`NextID`、共有カウンタなし）。
 - **`internal/store/memstore`** — in-memory の fake（テスト・dry-run 用）。
 - **`internal/app`** — **唯一の mutation funnel**。CLI も TUI も必ずここを経由する。frozen id・正準順・closed 打刻・body↔index の対応をここで一括管理する。
 - **`internal/cli`** — cobra アダプタ。
@@ -257,7 +255,7 @@ default = 100
 
 [ids]
 prefix = "t-"
-width = 4                   # t-0042
+width = 5                   # ランダムサフィックスの文字数（例: t-k3m9p）
 
 [archive]
 older_than_days = 30

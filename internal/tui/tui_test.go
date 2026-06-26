@@ -20,6 +20,7 @@ func newTestApp(t *testing.T) *app.App {
 	t.Helper()
 	cfg := config.Default()
 	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st.SeedSequentialIDs() // deterministic ids (t-00001, …) so tests can assert on them
 	a := app.NewWithStore(st, cfg, fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
 	if _, err := a.Add("first", app.AddOpts{Status: "ready"}); err != nil {
 		t.Fatal(err)
@@ -90,20 +91,20 @@ func TestTUIDoneKey(t *testing.T) {
 	m = sizeMsg(m)
 
 	// canonical order: backlog(second) before ready(first). Select the ready one.
-	// Find index of t-0001 and select it.
+	// Find index of t-00001 and select it.
 	for i, it := range m.list.Items() {
-		if it.(taskItem).t.ID == "t-0001" {
+		if it.(taskItem).t.ID == "t-00001" {
 			m.list.Select(i)
 		}
 	}
 	m = send(m, keyMsg("d"))
 
-	tk, _, err := a.Get("t-0001")
+	tk, _, err := a.Get("t-00001")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tk.Status != "done" || tk.Closed == nil {
-		t.Errorf("pressing d should mark t-0001 done+closed, got %+v", tk)
+		t.Errorf("pressing d should mark t-00001 done+closed, got %+v", tk)
 	}
 }
 
@@ -112,17 +113,17 @@ func TestTUIMoveLaneKey(t *testing.T) {
 	m, _ := newModel(a)
 	m = sizeMsg(m)
 
-	// select t-0002 (backlog) and move lane forward: backlog -> ready.
+	// select t-00002 (backlog) and move lane forward: backlog -> ready.
 	for i, it := range m.list.Items() {
-		if it.(taskItem).t.ID == "t-0002" {
+		if it.(taskItem).t.ID == "t-00002" {
 			m.list.Select(i)
 		}
 	}
 	m = send(m, keyMsg("]"))
 
-	tk, _, _ := a.Get("t-0002")
+	tk, _, _ := a.Get("t-00002")
 	if tk.Status != "ready" {
-		t.Errorf("] should move t-0002 backlog -> ready, got %q", tk.Status)
+		t.Errorf("] should move t-00002 backlog -> ready, got %q", tk.Status)
 	}
 	_ = m
 }
@@ -201,10 +202,10 @@ func TestTUIDetailCaching(t *testing.T) {
 // space toggles the focused item, and the cursor stays put across the reload.
 func TestTUIChecklistToggle(t *testing.T) {
 	a := newTestApp(t)
-	if _, err := a.AddCheck("t-0001", "step one"); err != nil {
+	if _, err := a.AddCheck("t-00001", "step one"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.AddCheck("t-0001", "step two"); err != nil {
+	if _, err := a.AddCheck("t-00001", "step two"); err != nil {
 		t.Fatal(err)
 	}
 	m, err := newModel(a)
@@ -214,7 +215,7 @@ func TestTUIChecklistToggle(t *testing.T) {
 	m = sizeMsg(m)
 
 	for i, it := range m.list.Items() {
-		if it.(taskItem).t.ID == "t-0001" {
+		if it.(taskItem).t.ID == "t-00001" {
 			m.list.Select(i)
 		}
 	}
@@ -228,7 +229,7 @@ func TestTUIChecklistToggle(t *testing.T) {
 	}
 	m = send(m, keyMsg(" ")) // space toggles item 2
 
-	tk, _, err := a.Get("t-0001")
+	tk, _, err := a.Get("t-00001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,64 +248,64 @@ func TestTUIChecklistToggle(t *testing.T) {
 // priority with its same-lane neighbor, the cursor follows the moved task, and K
 // at the top of a lane is a no-op that never reaches across the lane boundary.
 func TestTUIReorderKeys(t *testing.T) {
-	a := newTestApp(t) // t-0001 (ready), t-0002 (backlog)
+	a := newTestApp(t) // t-00001 (ready), t-00002 (backlog)
 	if _, err := a.Add("third", app.AddOpts{Status: "ready"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.Add("fourth", app.AddOpts{Status: "in-progress"}); err != nil {
 		t.Fatal(err)
 	}
-	// canonical order: t-0002 (backlog), t-0001 (ready p100), t-0003 (ready
-	// p110), t-0004 (in-progress) — reorder must stay inside the ready lane.
+	// canonical order: t-00002 (backlog), t-00001 (ready p100), t-00003 (ready
+	// p110), t-00004 (in-progress) — reorder must stay inside the ready lane.
 	m, err := newModel(a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	m = sizeMsg(m)
 
-	p1, p3 := prio(t, a, "t-0001"), prio(t, a, "t-0003")
+	p1, p3 := prio(t, a, "t-00001"), prio(t, a, "t-00003")
 	if p1 == p3 {
 		t.Fatalf("test needs distinct priorities, both are %d", p1)
 	}
 
-	selectID(t, &m, "t-0001")
-	m = send(m, keyMsg("J")) // push t-0001 below t-0003
+	selectID(t, &m, "t-00001")
+	m = send(m, keyMsg("J")) // push t-00001 below t-00003
 
-	if got := prio(t, a, "t-0001"); got != p3 {
-		t.Errorf("after J, t-0001 priority = %d, want %d (swapped with t-0003)", got, p3)
+	if got := prio(t, a, "t-00001"); got != p3 {
+		t.Errorf("after J, t-00001 priority = %d, want %d (swapped with t-00003)", got, p3)
 	}
-	if got := prio(t, a, "t-0003"); got != p1 {
-		t.Errorf("after J, t-0003 priority = %d, want %d (swapped with t-0001)", got, p1)
+	if got := prio(t, a, "t-00003"); got != p1 {
+		t.Errorf("after J, t-00003 priority = %d, want %d (swapped with t-00001)", got, p1)
 	}
-	if sel, _ := m.selected(); sel.ID != "t-0001" {
+	if sel, _ := m.selected(); sel.ID != "t-00001" {
 		t.Errorf("the cursor should follow the moved task, got %q", sel.ID)
 	}
 
-	m = send(m, keyMsg("K")) // bring t-0001 back up
-	if got := prio(t, a, "t-0001"); got != p1 {
-		t.Errorf("after K, t-0001 priority = %d, want %d (swapped back)", got, p1)
+	m = send(m, keyMsg("K")) // bring t-00001 back up
+	if got := prio(t, a, "t-00001"); got != p1 {
+		t.Errorf("after K, t-00001 priority = %d, want %d (swapped back)", got, p1)
 	}
-	if got := prio(t, a, "t-0003"); got != p3 {
-		t.Errorf("after K, t-0003 priority = %d, want %d (swapped back)", got, p3)
+	if got := prio(t, a, "t-00003"); got != p3 {
+		t.Errorf("after K, t-00003 priority = %d, want %d (swapped back)", got, p3)
 	}
 
-	// t-0001 is now at the top of the ready lane. K must be a no-op — it must
-	// not swap across the boundary into the backlog task t-0002.
-	before1, before2 := prio(t, a, "t-0001"), prio(t, a, "t-0002")
+	// t-00001 is now at the top of the ready lane. K must be a no-op — it must
+	// not swap across the boundary into the backlog task t-00002.
+	before1, before2 := prio(t, a, "t-00001"), prio(t, a, "t-00002")
 	m = send(m, keyMsg("K"))
-	if prio(t, a, "t-0001") != before1 || prio(t, a, "t-0002") != before2 {
-		t.Errorf("K at the lane top must be a no-op, got t-0001=%d (want %d) t-0002=%d (want %d)",
-			prio(t, a, "t-0001"), before1, prio(t, a, "t-0002"), before2)
+	if prio(t, a, "t-00001") != before1 || prio(t, a, "t-00002") != before2 {
+		t.Errorf("K at the lane top must be a no-op, got t-00001=%d (want %d) t-00002=%d (want %d)",
+			prio(t, a, "t-00001"), before1, prio(t, a, "t-00002"), before2)
 	}
 
-	// Symmetric boundary: t-0003 is the bottom of the ready lane. J must be a
-	// no-op — it must not reach across into the in-progress task t-0004.
-	selectID(t, &m, "t-0003")
-	before3, before4 := prio(t, a, "t-0003"), prio(t, a, "t-0004")
+	// Symmetric boundary: t-00003 is the bottom of the ready lane. J must be a
+	// no-op — it must not reach across into the in-progress task t-00004.
+	selectID(t, &m, "t-00003")
+	before3, before4 := prio(t, a, "t-00003"), prio(t, a, "t-00004")
 	m = send(m, keyMsg("J"))
-	if prio(t, a, "t-0003") != before3 || prio(t, a, "t-0004") != before4 {
-		t.Errorf("J at the lane bottom must be a no-op, got t-0003=%d (want %d) t-0004=%d (want %d)",
-			prio(t, a, "t-0003"), before3, prio(t, a, "t-0004"), before4)
+	if prio(t, a, "t-00003") != before3 || prio(t, a, "t-00004") != before4 {
+		t.Errorf("J at the lane bottom must be a no-op, got t-00003=%d (want %d) t-00004=%d (want %d)",
+			prio(t, a, "t-00003"), before3, prio(t, a, "t-00004"), before4)
 	}
 }
 
@@ -321,8 +322,8 @@ func TestTUIReorderDetailFocus(t *testing.T) {
 	}
 	m = sizeMsg(m)
 
-	selectID(t, &m, "t-0001")
-	p1, p3 := prio(t, a, "t-0001"), prio(t, a, "t-0003")
+	selectID(t, &m, "t-00001")
+	p1, p3 := prio(t, a, "t-00001"), prio(t, a, "t-00003")
 
 	m = send(m, tea.KeyMsg{Type: tea.KeyTab}) // focus the detail pane
 	if !m.focusDetail {
@@ -330,9 +331,9 @@ func TestTUIReorderDetailFocus(t *testing.T) {
 	}
 	m = send(m, keyMsg("J")) // must NOT reorder while the detail pane is focused
 
-	if prio(t, a, "t-0001") != p1 || prio(t, a, "t-0003") != p3 {
-		t.Errorf("J in detail focus must not reorder, got t-0001=%d (want %d) t-0003=%d (want %d)",
-			prio(t, a, "t-0001"), p1, prio(t, a, "t-0003"), p3)
+	if prio(t, a, "t-00001") != p1 || prio(t, a, "t-00003") != p3 {
+		t.Errorf("J in detail focus must not reorder, got t-00001=%d (want %d) t-00003=%d (want %d)",
+			prio(t, a, "t-00001"), p1, prio(t, a, "t-00003"), p3)
 	}
 }
 

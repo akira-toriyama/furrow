@@ -87,10 +87,14 @@ sort lane→priority→id, UTC whole-second timestamps, trailing newline. This i
 what makes app-writes equal hand-edits byte-for-byte (zero git churn). A golden
 round-trip test and `scripts/check-marshal-singlepath.sh` guard it.
 
-### Frozen ids & sparse priority
-ids (`t-0042`) are **frozen**: never reused, never renumbered (counter in
-`.furrow/seq`). Reorder by editing the sparse integer `priority` (10-step) — one
-field, not a renumber.
+### Frozen, collision-free ids & sparse priority
+ids (`t-k3m9p`) are **frozen**: never reused, never renumbered. They are
+**random** (prefix + a random Crockford-base32 suffix, `[ids].width` chars),
+generated locally with no shared counter, so concurrent `furrow add`
+from separate worktrees/PRs won't collide (the app retries on the rare in-store
+clash; `furrow lint` flags any duplicate as a backstop). Legacy numeric ids
+(`t-0042`) stay valid and coexist. Reorder by editing the sparse integer
+`priority` (10-step) — one field, not a renumber.
 
 ### Configuration
 `.furrow/config.toml` is **read-only from the app** and **clamp-don't-reject**:
