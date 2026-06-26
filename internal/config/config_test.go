@@ -73,6 +73,21 @@ theme = "dark"
 	}
 }
 
+func TestIDPatternAcceptsLegacyAndRandom(t *testing.T) {
+	c, _, _ := Load(filepath.Join(t.TempDir(), "absent.toml")) // default prefix "t-"
+	re := c.IDPattern()
+	for _, ok := range []string{"t-0042", "t-0001", "t-k3m9p"} { // legacy numeric + new random
+		if !re.MatchString(ok) {
+			t.Errorf("%q should match the id pattern", ok)
+		}
+	}
+	for _, bad := range []string{"t-K3M9P", "x-0042", "t-", "t-ab cd"} {
+		if re.MatchString(bad) {
+			t.Errorf("%q should NOT match the id pattern", bad)
+		}
+	}
+}
+
 func TestNextLanes(t *testing.T) {
 	// default (no [next]) -> ready + in-progress.
 	c, _, _ := Load(filepath.Join(t.TempDir(), "absent.toml"))

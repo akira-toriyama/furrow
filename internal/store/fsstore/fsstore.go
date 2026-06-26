@@ -5,33 +5,31 @@
 package fsstore
 
 import (
-	"fmt"
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// Store reads and writes a .furrow directory: index.json, bodies/<id>.md, and
-// the seq counter. It is constructed with the few config-derived values it
-// needs (lane order for the marshaller's sort, id prefix/width for NextID) so
-// it never imports the config package.
+// Store reads and writes a .furrow directory: index.json and bodies/<id>.md. It
+// is constructed with the few config-derived values it needs (lane order for the
+// marshaller's sort, id prefix/length for NextID) so it never imports config.
 type Store struct {
 	root      string // absolute path to the .furrow directory
 	laneOrder []string
 	idPrefix  string
-	idWidth   int
+	idLen     int
 }
 
 // compile-time proof fsstore satisfies the port.
 var _ core.Store = (*Store)(nil)
 
 // New builds a Store rooted at the given .furrow directory.
-func New(root string, laneOrder []string, idPrefix string, idWidth int) *Store {
-	return &Store{root: root, laneOrder: laneOrder, idPrefix: idPrefix, idWidth: idWidth}
+func New(root string, laneOrder []string, idPrefix string, idLen int) *Store {
+	return &Store{root: root, laneOrder: laneOrder, idPrefix: idPrefix, idLen: idLen}
 }
 
 // Root returns the .furrow directory path (handy for the CLI to print paths).
@@ -39,7 +37,6 @@ func (s *Store) Root() string { return s.root }
 
 func (s *Store) indexPath() string { return filepath.Join(s.root, "index.json") }
 func (s *Store) bodiesDir() string { return filepath.Join(s.root, "bodies") }
-func (s *Store) seqPath() string   { return filepath.Join(s.root, "seq") }
 func (s *Store) bodyPath(id string) string {
 	return filepath.Join(s.bodiesDir(), id+".md")
 }
@@ -137,59 +134,18 @@ func (s *Store) ListBodyIDs() ([]string, error) {
 	return ids, nil
 }
 
-// NextID reserves the next frozen id. The monotonic counter lives in
-// .furrow/seq; ids are never reused. All id creation (add, migrate) must go
-// through here so the counter and the index stay consistent.
+// NextID returns a fresh random id: the configured prefix plus a random
+// Crockford-base32 suffix (idLen chars), e.g. "t-k3m9p". There is no shared
+// counter, so concurrent `furrow add` from separate operators/worktrees won't
+// collide; the app verifies the id isn't already in the index, and `furrow lint`
+// flags any duplicate as a backstop. Existing numeric ids (t-0042) stay frozen
+// and coexist.
 func (s *Store) NextID() (string, error) {
-	n, err := s.readSeq()
+	suffix, err := core.RandomIDSuffix(s.idLen, rand.Reader)
 	if err != nil {
 		return "", err
 	}
-	n++
-	if err := s.writeSeq(n); err != nil {
-		return "", err
-	}
-	return s.formatID(n), nil
-}
-
-// formatID renders a counter as prefix + zero-padded number, e.g. "t-0042".
-func (s *Store) formatID(n int) string {
-	return fmt.Sprintf("%s%0*d", s.idPrefix, s.idWidth, n)
-}
-
-func (s *Store) readSeq() (int, error) {
-	b, err := os.ReadFile(s.seqPath())
-	if os.IsNotExist(err) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, core.Internalf("seq", "read seq: %v", err)
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil {
-		return 0, core.Validationf("seq", ".furrow/seq is not an integer: %v", err)
-	}
-	return n, nil
-}
-
-func (s *Store) writeSeq(n int) error {
-	if err := os.MkdirAll(s.root, 0o755); err != nil {
-		return core.Internalf("seq", "create .furrow: %v", err)
-	}
-	return s.atomicWrite(s.seqPath(), []byte(strconv.Itoa(n)+"\n"))
-}
-
-// BumpSeqTo advances the counter so it is at least n. Used after a bulk import
-// (migrate) that injected ids, so the next NextID never collides.
-func (s *Store) BumpSeqTo(n int) error {
-	cur, err := s.readSeq()
-	if err != nil {
-		return err
-	}
-	if n > cur {
-		return s.writeSeq(n)
-	}
-	return nil
+	return s.idPrefix + suffix, nil
 }
 
 // atomicWrite writes data to a temp file in the destination directory, fsyncs,

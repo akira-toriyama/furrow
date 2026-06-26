@@ -73,7 +73,6 @@ furrow uses a **hybrid** layout: a single machine-written JSON index for structu
 .furrow/
 ├── config.toml          # human config (furrow only READS this; never rewrites it)
 ├── index.json           # structured metadata — written ONLY by the single core.Marshal path
-├── seq                  # monotonic id counter (frozen ids, never reused)
 ├── bodies/
 │   ├── t-0001.md        # long-form prose for t-0001 (hand/agent editable)
 │   └── t-0002.md
@@ -185,8 +184,8 @@ step    = 10                      # sparse step so reordering edits one field
 default = 100
 
 [ids]
-prefix = "t-"                     # frozen id format: prefix + zero-padded counter
-width  = 4                        # t-0042
+prefix = "t-"                     # frozen id: prefix + random base32 suffix (collision-free)
+width  = 5                        # number of random suffix chars, e.g. t-k3m9p
 
 [archive]
 older_than_days = 30              # default window for `furrow archive --older-than`

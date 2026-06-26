@@ -3,6 +3,7 @@ package fsstore
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ var lanes = []string{"inbox", "backlog", "ready", "in-progress", "done", "icebox
 
 func newStore(t *testing.T) *Store {
 	t.Helper()
-	return New(filepath.Join(t.TempDir(), ".furrow"), lanes, "t-", 4)
+	return New(filepath.Join(t.TempDir(), ".furrow"), lanes, "t-", 5)
 }
 
 func TestLoadMissingIndexIsEmpty(t *testing.T) {
@@ -107,41 +108,28 @@ func TestBodyLazyAndExists(t *testing.T) {
 	}
 }
 
-func TestNextIDMonotonic(t *testing.T) {
+func TestNextIDRandom(t *testing.T) {
 	s := newStore(t)
-	var got []string
-	for i := 0; i < 3; i++ {
+	re := regexp.MustCompile(`^t-[0-9a-z]{5}$`)
+	// NextID is random + stateless (uniqueness is the app's job). Assert the
+	// shape always, and that a small batch is distinct — birthday collision over
+	// this few ids in a 32^5 (~33.5M) space is ~1e-4, so a dup here is a real bug.
+	seen := map[string]bool{}
+	for i := 0; i < 64; i++ {
 		id, err := s.NextID()
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, id)
-	}
-	want := []string{"t-0001", "t-0002", "t-0003"}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("NextID[%d] = %q, want %q", i, got[i], want[i])
+		if !re.MatchString(id) {
+			t.Fatalf("id %q does not match the random id pattern", id)
 		}
+		if seen[id] {
+			t.Fatalf("NextID returned a duplicate within a small batch: %q", id)
+		}
+		seen[id] = true
 	}
-
-	// a fresh Store over the same root continues the sequence (seq persisted).
-	s2 := New(s.root, lanes, "t-", 4)
-	id, _ := s2.NextID()
-	if id != "t-0004" {
-		t.Errorf("seq did not persist across stores: got %q, want t-0004", id)
-	}
-
-	// BumpSeqTo advances but never rewinds.
-	if err := s2.BumpSeqTo(100); err != nil {
-		t.Fatal(err)
-	}
-	if id, _ := s2.NextID(); id != "t-0101" {
-		t.Errorf("after BumpSeqTo(100), NextID = %q, want t-0101", id)
-	}
-	if err := s2.BumpSeqTo(5); err != nil { // lower -> no-op
-		t.Fatal(err)
-	}
-	if id, _ := s2.NextID(); id != "t-0102" {
-		t.Errorf("BumpSeqTo with a lower value should not rewind: got %q", id)
+	// the legacy counter file is gone: NextID must not create .furrow/seq.
+	if _, err := os.Stat(filepath.Join(s.root, "seq")); !os.IsNotExist(err) {
+		t.Errorf("NextID must not create .furrow/seq (stat err = %v)", err)
 	}
 }

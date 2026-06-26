@@ -220,6 +220,39 @@ func TestNextPriority(t *testing.T) {
 	}
 }
 
+func TestRandomIDSuffix(t *testing.T) {
+	// Each byte is masked to its low 5 bits and indexes the 32-char alphabet.
+	in := []byte{0, 1, 2, 31, 32, 33} // 32&31=0, 33&31=1
+	suf, err := RandomIDSuffix(len(in), bytes.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "012z01"; suf != want {
+		t.Errorf("byte->charset mapping = %q, want %q", suf, want)
+	}
+	// length matches n and every char is in the alphabet.
+	long := make([]byte, 64)
+	for i := range long {
+		long[i] = byte(i * 7)
+	}
+	s2, err := RandomIDSuffix(64, bytes.NewReader(long))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s2) != 64 {
+		t.Fatalf("length = %d, want 64", len(s2))
+	}
+	for _, c := range s2 {
+		if !bytes.ContainsRune([]byte(idAlphabet), c) {
+			t.Errorf("char %q is not in the id alphabet", c)
+		}
+	}
+	// a short read is an error, not a silent partial id.
+	if _, err := RandomIDSuffix(4, bytes.NewReader([]byte{1, 2})); err == nil {
+		t.Error("expected an error on short read")
+	}
+}
+
 func TestDependsOn(t *testing.T) {
 	// chain: t-1 -> t-2 -> t-3 (t-1 depends on t-2 depends on t-3).
 	idx := &Index{Tasks: []Task{

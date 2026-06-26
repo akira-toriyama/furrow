@@ -30,8 +30,10 @@ type Store interface {
 	// index<->body 1:1 lint check.
 	ListBodyIDs() ([]string, error)
 
-	// NextID reserves and returns the next frozen id (e.g. "t-0043"). It is
-	// monotonic and never reuses a retired id — see .furrow/seq.
+	// NextID returns a fresh, random, collision-resistant id (e.g. "t-k3m9p":
+	// prefix + a random Crockford-base32 suffix). There is no shared counter, so
+	// concurrent adds in separate worktrees won't collide. The caller (app) is
+	// responsible for ensuring the id is not already present in the index.
 	NextID() (string, error)
 }
 
