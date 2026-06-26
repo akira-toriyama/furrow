@@ -107,6 +107,20 @@ A minimal `index.json`:
 
 Notes on the fields: `id` is frozen and is the stem of the body file (`bodies/t-0001.md`); `priority` is a sparse 10-step integer so reordering edits one field instead of renumbering; `status` is a lane defined in `config.toml`; `closed` is `null` while open and stamped when a task enters the done lane; empty collections serialize as `[]`, never `null`. The JSON Schema for the index lives at [`docs/schema/furrow.index.v1.json`](docs/schema/furrow.index.v1.json) and is emitted by `furrow schema`.
 
+### Attaching images and media
+
+A task body is plain Markdown, so you can attach a screenshot or diagram by committing the file alongside the bodies and linking it with a **relative path**:
+
+```markdown
+![repro](assets/t-0001-bug.png)
+```
+
+It renders wherever Markdown does (GitHub, Obsidian, an editor preview) — but **not in the terminal** (`furrow ui`/`show` print the text, not the picture). furrow itself does nothing special with these files; they are just part of your repo. A few practical notes:
+
+- Keep screenshots small and scrub anything secret — git history is permanent.
+- On a **private** repo, committing the image in-repo and linking it relatively is the reliable option; external/raw image URLs typically need auth and expire. On a public repo you can also link an external host.
+- For large media such as videos, track them with **Git LFS** (a `.gitattributes` rule) *before* committing the first one, so they never bloat the plain history (adding LFS afterwards only helps new files; cleaning existing blobs needs a history rewrite).
+
 ---
 
 ## Command reference
