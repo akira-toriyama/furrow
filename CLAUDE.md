@@ -32,8 +32,7 @@ furrow — a repo-local, plain-text task tracker. Structured metadata lives in
 `.furrow/index.json` (deterministic, machine-written); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI and a bubbletea TUI drive it. Go,
-cross-platform, brew/nix packaged. Background and decisions: [ROADMAP.md](ROADMAP.md);
-research log: [MEMO.md](MEMO.md).
+cross-platform, brew/nix packaged.
 
 ## Build / run
 
@@ -117,7 +116,7 @@ struct → update the schema const, the committed file, and the golden together.
 - `go build ./...` and `go test ./...` must pass before finishing a turn.
 - Keep [README.md](README.md) / [README.ja.md](README.ja.md) in sync on any
   user-visible change (bilingual is the house style).
-- **Don't push without explicit OK.** 1 item = 1 PR (squash); update ROADMAP/docs
+- **Don't push without explicit OK.** 1 item = 1 PR (squash); update docs
   in the same PR.
 
 ## References
@@ -130,12 +129,10 @@ struct → update the schema const, the committed file, and the golden together.
 
 ## Multi-session work policy
 
-`docs/plans/` holds one file per in-flight task (delete on merge); `ROADMAP.md` =
-design decisions + phase status; `MEMO.md` = research log. furrow's own backlog
-lives in the private `akira-toriyama/projects` repo (label `furrow`) — don't add
-a `.furrow/` board to this repo. **Never leave unfinished work implicit**
-(未達成を暗黙にしない) — every in-flight task is a `projects` task, a plan file,
-or a ROADMAP note.
+`docs/plans/` holds one file per in-flight task (delete on merge). **Never leave
+unfinished work implicit** (未達成を暗黙にしない) — every in-flight task is a plan
+file, a tracked issue, or an explicit note; nothing important lives only in a
+chat transcript.
 
 **Multi-operator (shared checkout).** This repo is sometimes worked on by several
 people/agents at once. A checkout has one shared HEAD/index/working tree, so two
@@ -143,5 +140,4 @@ operators running git in the same directory corrupt each other (orphaned commits
 commits on the wrong branch). **Each operator/session works in its own `git
 worktree` (`git worktree add ../furrow-<topic> -b <branch> origin/main`) or a
 separate clone — never share one checkout for concurrent git.** Commit + push
-often and `git pull --rebase` before pushing. (Canonical statement of this rule:
-the `projects` tracker's CLAUDE.md.)
+often and `git pull --rebase` before pushing.

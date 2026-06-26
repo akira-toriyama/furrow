@@ -2,7 +2,7 @@
 # check-marshal-singlepath.sh — guard the determinism invariant: core.Marshal is
 # the ONLY place an *Index is serialized to JSON. Any other json.Marshal /
 # json.NewEncoder on the index would bypass the canonical-sort + escape rules and
-# reintroduce git churn (ROADMAP §6 / MEMO §3). CI runs this before the build.
+# reintroduce git churn. CI runs this before the build.
 set -eu
 cd "$(dirname "$0")/.."
 

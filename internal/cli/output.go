@@ -14,7 +14,7 @@ import (
 	"golang.org/x/term"
 )
 
-// JSON goes to stdout ONLY; logs, spinners, and errors go to stderr (MEMO §4).
+// JSON goes to stdout ONLY; logs, spinners, and errors go to stderr.
 // These helpers are the single funnel for that rule.
 
 // out is stdout; overridable in tests.

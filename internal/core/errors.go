@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// Code is furrow's process exit-code contract (MEMO §4 / ROADMAP §8). The CLI
+// Code is furrow's process exit-code contract. The CLI
 // maps a returned error to one of these on the way out. Keep the meanings
 // stable — scripts and Claude Code branch on them.
 type Code int
@@ -19,7 +19,7 @@ const (
 
 // Error is furrow's structured error. On a non-zero exit the CLI prints it to
 // stderr as {"error":{"code","id","message"}} so callers get a machine-readable
-// failure (MEMO §4). Plain (non-*Error) errors are treated as CodeInternal.
+// failure. Plain (non-*Error) errors are treated as CodeInternal.
 type Error struct {
 	Code Code
 	ID   string // the offending task id, "index", or "" when not applicable

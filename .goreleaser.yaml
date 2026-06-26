@@ -48,4 +48,4 @@ release:
 
 # Nix: the primary nix story is the in-repo flake.nix (`nix run
 # github:akira-toriyama/furrow`). A GoReleaser nix block (push to a NUR repo)
-# is deferred until that repo + NUR_TOKEN exist — see ROADMAP Phase 7.
+# is deferred until that repo + NUR_TOKEN exist.

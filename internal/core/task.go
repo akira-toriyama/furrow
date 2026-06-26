@@ -27,10 +27,10 @@ type Index struct {
 
 // Task is one tracked item. Metadata only: the long-form prose lives in
 // .furrow/bodies/<id>.md and is addressed by Body (a relative path, never the
-// content). This split is the whole point of the hybrid store — see MEMO §3.
+// content). This split is the whole point of the hybrid store.
 //
 // Field order == JSON key order (see Index). `closed` is a pointer so it
-// serializes to null while a task is open (ROADMAP schema shows "closed": null).
+// serializes to null while a task is open.
 // `parent` is omitempty because most tasks have no parent and an empty string
 // key would be noise; both states (absent / present) are deterministic.
 type Task struct {

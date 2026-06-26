@@ -8,10 +8,7 @@ Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.23). No database,
 
 > **Status:** core, CLI, the bubbletea TUI (`furrow ui`), and `migrate` all work
 > (`go test ./...` + golangci green). Packaging (brew/nix release) is configured
-> but not yet published. See [Status](#status) and [`ROADMAP.md`](ROADMAP.md).
->
-> furrow's own tasks are tracked with furrow, in the private
-> `akira-toriyama/projects` repo (label `furrow`) — not in this repo.
+> but not yet published — see [Status](#status).
 
 [日本語版 README →](README.ja.md)
 
@@ -114,7 +111,7 @@ Notes on the fields: `id` is frozen and is the stem of the body file (`bodies/t-
 
 ## Command reference
 
-All commands below are implemented and working today, including the `ui` TUI and `migrate`. (The remaining roadmap work is Phase 7 packaging and Phase 8 web — see [Status](#status).)
+All commands below are implemented and working today, including the `ui` TUI and `migrate`. (Packaging and a future web viewer are the remaining work — see [Status](#status).)
 
 | Command | What it does | Key flags / args |
 |---|---|---|
@@ -142,7 +139,7 @@ Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `
 
 ## Claude Code / agent integration
 
-furrow needs no MCP server and no plugin — for a solo repo that is overkill. The integration is just a small `CLAUDE.md` block plus the `--json` flag. The rules:
+furrow needs no MCP server and no plugin — for a repo-local tool that is overkill. The integration is just a small `CLAUDE.md` block plus the `--json` flag. The rules:
 
 - **Never hand-edit `index.json`.** A single deterministic marshaller owns that file; a manual edit will churn the diff (and likely lose the canonical ordering). Mutate it through the commands above.
 - **`bodies/*.md` are yours to edit.** Prose lives there and is plain Markdown — edit it directly, or via `furrow edit <id>` (which prints the absolute path in a non-interactive context).
@@ -210,19 +207,17 @@ furrow's write path is byte-stable on purpose. Every index write goes through on
   app coordinator, the full CLI, the bubbletea **TUI** (`furrow ui`), and
   **`migrate`** (importing a legacy `Task.md`). `go test ./...` + golangci clean;
   `sh scripts/check.sh` runs the full verification (incl. a teatest TUI e2e).
-- **Configured, not yet published:** the brew/nix release (Phase 7) — GoReleaser
+- **Configured, not yet published:** the brew/nix release — GoReleaser
   config validated, but `v0.1.0` isn't tagged yet. nix `flake.nix` carries a
   placeholder `vendorHash`.
-- **Future (low priority):** a read-only web viewer / React UI over `index.json`
-  (Phase 8).
+- **Future (low priority):** a read-only web viewer / React UI over `index.json`.
 
-Tracking: furrow's remaining work lives in the private `akira-toriyama/projects`
-repo (label `furrow`). For the plan and rationale see [`ROADMAP.md`](ROADMAP.md)
-and [`MEMO.md`](MEMO.md); architecture in [`docs/architecture.md`](docs/architecture.md),
-terms in [`docs/glossary.md`](docs/glossary.md).
+Design notes: architecture in [`docs/architecture.md`](docs/architecture.md),
+terms in [`docs/glossary.md`](docs/glossary.md), and what furrow deliberately
+doesn't do (with rationale) in [`docs/non-goals.md`](docs/non-goals.md).
 
 ---
 
 ## License
 
-MIT © akira-toriyama (Tommy)
+MIT © akira-toriyama

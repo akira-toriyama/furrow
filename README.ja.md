@@ -2,19 +2,18 @@
 
 > English: [README.md](README.md)
 
-**furrow** は、repo の中に住むプレーンテキスト・タスクトラッカー。Go 製の単一バイナリで、構造化メタデータを `.furrow/index.json` に、長文の散文を `.furrow/bodies/<id>.md` に分けて持つ。あなたと Claude Code の両方が、git で綺麗に diff できる素のテキストとしてストアを編集できることを最優先に設計している。畝（furrow）を一本ずつ進めるように、レーンを消化していく。
+**furrow** は、repo の中に住むプレーンテキスト・タスクトラッカー。Go 製の単一バイナリで、構造化メタデータを `.furrow/index.json` に、長文の散文を `.furrow/bodies/<id>.md` に分けて持つ。ユーザとコーディングエージェントの両方が、git で綺麗に diff できる素のテキストとしてストアを編集できることを最優先に設計している。畝（furrow）を一本ずつ進めるように、レーンを消化していく。
 
 - **module**: `github.com/akira-toriyama/furrow`
 - **Go**: 1.23
-- **作者 / オーナー**: akira-toriyama (Tommy)
 
 ---
 
 ## なぜ作るか
 
-GitHub Issues は public で私的メモを置きづらく、他人の issue と混ざり、ローカルのプレーンテキストに対してわずかな剥離がある。一方で「1 ファイルに全部」型の手管理 Task.md は、タスク一覧・設計付録・プロセス規則・経緯が同居して煩雑になり、優先度の手リナンバリングや Open→Done の手アーカイブが苦行になる。
+GitHub Issues は public が前提でローカルの素のテキストとは別物になりがちで、他人の issue とも混ざる。一方で「1 ファイルに全部」型の手管理 Task.md は、タスク一覧・設計付録・プロセス規則・経緯が同居して煩雑になり、優先度の手リナンバリングや Open→Done の手アーカイブが苦行になる。
 
-そこで furrow は、**ローカル・プレーンテキスト・自分仕様**のタスク管理を Go で実装する。Issue 連携は持たない。repo に commit して綺麗に git-diff できれば十分、という割り切りである。設計判断の全文は [`ROADMAP.md`](ROADMAP.md)、その根拠は [`MEMO.md`](MEMO.md) にある。
+そこで furrow は、**リポローカルなプレーンテキスト**のタスク管理を Go で実装する。外部サービス連携は持たず、repo に commit して綺麗に git-diff できれば十分、という割り切りである。furrow が意図的に「やらないこと」とその理由は [`docs/non-goals.md`](docs/non-goals.md) にまとめてある。
 
 ---
 
@@ -37,7 +36,7 @@ GitHub Issues は public で私的メモを置きづらく、他人の issue と
 - **`config.toml`** = 人が編集する設定。furrow は書き換えず、READ するだけ。
 - **`archive/`** = 古くなった done タスクの退避先（独自の `index.json` + `bodies/`）。
 
-長文を 1 行のエスケープ文字列に潰す純 JSON 単一ファイルや JSONL を避け、メタと本文を分離するのがこの設計の肝である（根拠は [`MEMO.md`](MEMO.md) §3）。
+長文を 1 行のエスケープ文字列に潰す純 JSON 単一ファイルや JSONL を避け、メタと本文を分離するのがこの設計の肝である（詳しい理由は [`docs/non-goals.md`](docs/non-goals.md)）。
 
 ### 決定論（生命線）
 
@@ -68,7 +67,7 @@ go install github.com/akira-toriyama/furrow/cmd/furrow@latest
 nix run github:akira-toriyama/furrow
 ```
 
-配布は GoReleaser から Homebrew tap（`akira-toriyama/homebrew-tap`）と nix flake へ流す（ROADMAP Phase 7）。
+配布は GoReleaser から Homebrew tap（`akira-toriyama/homebrew-tap`）と nix flake へ流す。
 
 ---
 
@@ -214,7 +213,7 @@ furrow show t-0001 --json   # task + body_text
 
 ## アーキテクチャ（hexagonal）
 
-ports & adapters。依存は内向きにのみ流れる。詳細図は `docs/architecture.md`（家風どおり整備予定）。
+ports & adapters。依存は内向きにのみ流れる。詳細図は [`docs/architecture.md`](docs/architecture.md)。
 
 ```
 cmd/furrow/main.go                 = os.Exit(cli.Execute()) のみ
@@ -270,7 +269,7 @@ theme = "auto"              # auto | dark | light
 
 ## Claude Code 連携
 
-furrow の連携層は意図的に薄い。**MCP も plugin も作らない**（solo には過剰）。`CLAUDE.md` の短いブロックと、全 read コマンドの `--json` だけが連携面である（根拠は [`MEMO.md`](MEMO.md) §4）。
+furrow の連携層は意図的に薄い。**MCP も plugin も作らない**（リポローカルなツールには過剰）。`CLAUDE.md` の短いブロックと、全 read コマンドの `--json` だけが連携面である（詳しい理由は [`docs/non-goals.md`](docs/non-goals.md)）。
 
 Claude（やエージェント）に守らせるルール:
 
@@ -306,14 +305,12 @@ gitmoji + Conventional Commits。形式は次のとおり（gitmoji は `:code:`
 - `docs/` に architecture / glossary / non-goals を置く。
 - 外部参照には `(reviewed YYYY-MM-DD)` の鮮度タグを付ける。
 
-> 上記の `docs/`・`CLAUDE.md`・`scripts/hooks`・CI ワークフローは家風として整備していく方針で、一部はまだ追加されていない。実装の現況とフェーズ計画は [`ROADMAP.md`](ROADMAP.md) を正本とする。
-
 ---
 
 ## ステータス
 
-core・config・store・app・CLI・TUI（`furrow ui`）・`migrate` が動作する。残りは Phase 7（パッケージング）と Phase 8（Web）。詳細なフェーズ進捗は [`ROADMAP.md`](ROADMAP.md) を参照。
+core・config・store・app・CLI・TUI（`furrow ui`）・`migrate` が動作する。残りはパッケージング（brew/nix リリース）と、将来の Web ビューア。
 
 ## ライセンス
 
-MIT（予定）。作者 akira-toriyama (Tommy)。
+MIT © akira-toriyama
