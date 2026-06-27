@@ -1,12 +1,7 @@
+# Canonical standard file managed by fleet-sync (.github/workflows/fleet-sync.yml).
+# Do NOT edit per-repo copies — edit THIS file; fleet-sync propagates it to every
+# owned, non-fork, non-archived repo. Synced to: .github/workflows/task-status.yml
 name: task-status
-
-# Trigger stub — the brain is the reusable workflow in akira-toriyama/.github.
-# On a PR open/merge, it applies any `SetStatus-task:` footer to the furrow task
-# tracker (akira-toriyama/projects). Auth uses a GitHub App; set its credentials
-# as repo secrets PROJECTS_APP_ID and PROJECTS_APP_PRIVATE_KEY.
-#
-# Non-blocking by design: an invalid directive comments on the PR and fails this
-# workflow, but does not block the merge — do NOT add it to required checks.
 
 on:
   pull_request:
