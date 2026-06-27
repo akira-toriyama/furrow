@@ -140,28 +140,36 @@ func (a *App) ApplyDirectives(text, ref string, mode ApplyMode, openLane string)
 // an IO failure (which aborts the whole run); per-directive validation problems
 // are recorded in out, not returned.
 func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMode, openLane string) error {
+	// Fetch once: needed for the terminal check (open) and the no-op skip below.
+	t, _, err := a.Get(d.ID)
+	if err != nil {
+		return err
+	}
+
 	// Pick the lane to set for THIS event.
 	target := ""
 	switch mode {
 	case OnMerge:
 		target = d.Lane // empty => annotate only
 	case OnOpen:
-		if d.Lane != "" {
-			t, _, err := a.Get(d.ID)
-			if err != nil {
-				return err
+		if d.Lane != "" && !a.Cfg.IsTerminal(t.Status) {
+			if !a.Cfg.IsLane(openLane) {
+				fail(out, core.Validationf(d.ID, "--open-lane %q is not a configured lane", openLane))
+				return nil
 			}
-			if !a.Cfg.IsTerminal(t.Status) {
-				if !a.Cfg.IsLane(openLane) {
-					fail(out, core.Validationf(d.ID, "--open-lane %q is not a configured lane", openLane))
-					return nil
-				}
-				target = openLane
-			}
+			target = openLane
 		}
 	}
 
-	if target != "" {
+	switch {
+	case target == "" || t.Status == target:
+		// No lane change needed. When already in the target lane, skip the move
+		// so a re-run (or a no-op event) doesn't churn the `updated` stamp or the
+		// tracker's git history — keeping `apply` truly idempotent.
+		if target != "" {
+			out.To = t.Status
+		}
+	default:
 		moved, err := a.Move(d.ID, target)
 		if err != nil {
 			if core.ExitCode(err) >= int(core.CodeInternal) {
