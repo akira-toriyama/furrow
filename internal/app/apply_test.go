@@ -178,7 +178,11 @@ func TestApplyIsIdempotent(t *testing.T) {
 	if body1 != body2 {
 		t.Errorf("re-running the same merge must not duplicate the annotation:\n1: %q\n2: %q", body1, body2)
 	}
-	// second run is a no-op move (already done) and the annotation already exists.
+	// Second run: already in the target lane → no move (no `updated` churn) and
+	// the annotation already exists → a true no-op reported as "skipped".
+	if res2.Outcomes[0].Action != "skipped" {
+		t.Errorf("idempotent re-run should skip the move, got action=%q (%+v)", res2.Outcomes[0].Action, res2.Outcomes[0])
+	}
 	if res2.Outcomes[0].Note != "" {
 		t.Errorf("idempotent re-run should add no new note, got %+v", res2.Outcomes[0])
 	}
