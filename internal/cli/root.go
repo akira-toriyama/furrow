@@ -70,6 +70,7 @@ func newRootCmd() *cobra.Command {
 		newReorderCmd(),
 		newCheckCmd(),
 		newDepCmd(),
+		newLabelCmd(),
 		newApplyCmd(),
 		newArchiveCmd(),
 		newMigrateCmd(),
