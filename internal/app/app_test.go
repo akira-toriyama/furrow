@@ -436,3 +436,70 @@ func TestLintFlagsMissingBody(t *testing.T) {
 	}
 	_ = tk
 }
+
+func TestRelabelAddsRemovesIdempotently(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("x", AddOpts{Labels: []string{"chord", "shared"}})
+
+	// Add one label, remove another in a single call.
+	got, err := a.Relabel(tk.ID, []string{"sill"}, []string{"chord"})
+	if err != nil {
+		t.Fatalf("Relabel: %v", err)
+	}
+	if join := strings.Join(got.Labels, ","); join != "shared,sill" {
+		t.Errorf("labels = %q, want %q", join, "shared,sill")
+	}
+
+	// Adding an existing label is a no-op (no duplicate).
+	got, err = a.Relabel(tk.ID, []string{"sill"}, nil)
+	if err != nil {
+		t.Fatalf("idempotent add: %v", err)
+	}
+	if join := strings.Join(got.Labels, ","); join != "shared,sill" {
+		t.Errorf("idempotent add changed labels: %q", join)
+	}
+
+	// Removing an absent label is a no-op (not an error).
+	got, err = a.Relabel(tk.ID, nil, []string{"nope"})
+	if err != nil {
+		t.Fatalf("removing an absent label should be a no-op, got %v", err)
+	}
+	if join := strings.Join(got.Labels, ","); join != "shared,sill" {
+		t.Errorf("absent remove changed labels: %q", join)
+	}
+
+	// No flags at all is a bad-usage validation error (never a silent no-op).
+	if _, err := a.Relabel(tk.ID, nil, nil); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("relabel with no add/remove should be a validation error, got %v", err)
+	}
+
+	// Unknown id is NotFound.
+	if _, err := a.Relabel("t-9999", []string{"x"}, nil); core.ExitCode(err) != int(core.CodeNotFound) {
+		t.Errorf("relabel on unknown id should be NotFound, got %v", err)
+	}
+}
+
+func TestRelabelRespectsLabelsRequired(t *testing.T) {
+	cfg := config.Default()
+	cfg.LabelsRequired = true
+	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	a := NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
+	tk, err := a.Add("x", AddOpts{Labels: []string{"only"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Removing the last label is rejected when labels are required.
+	if _, err := a.Relabel(tk.ID, nil, []string{"only"}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("removing the last required label should be a validation error, got %v", err)
+	}
+
+	// Swapping (add a new one while removing the old) is fine: the result is non-empty.
+	got, err := a.Relabel(tk.ID, []string{"new"}, []string{"only"})
+	if err != nil {
+		t.Fatalf("swap relabel: %v", err)
+	}
+	if join := strings.Join(got.Labels, ","); join != "new" {
+		t.Errorf("labels = %q, want %q", join, "new")
+	}
+}

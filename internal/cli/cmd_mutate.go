@@ -141,3 +141,27 @@ func newDepCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&rm, "rm", false, "remove the dependency instead of adding it")
 	return cmd
 }
+
+func newLabelCmd() *cobra.Command {
+	var add, remove []string
+	cmd := &cobra.Command{
+		Use:   "label <id>",
+		Short: "Add and/or remove labels on a task",
+		Long: "Add labels with --add and remove them with --remove (both repeatable and\n" +
+			"combinable in one call). Adding a label already present, or removing one\n" +
+			"already absent, is a no-op. Provide at least one --add or --remove.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			return emitMutation(a, "labeled", args[0], func() (*core.Task, error) {
+				return a.Relabel(args[0], add, remove)
+			})
+		},
+	}
+	cmd.Flags().StringSliceVar(&add, "add", nil, "label to add (repeatable)")
+	cmd.Flags().StringSliceVar(&remove, "remove", nil, "label to remove (repeatable)")
+	return cmd
+}

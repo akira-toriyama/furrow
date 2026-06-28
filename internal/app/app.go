@@ -403,6 +403,45 @@ func (a *App) RemoveDep(id, dep string) (*core.Task, error) {
 	})
 }
 
+// Relabel adds and/or removes labels on a task. Adding a label already present,
+// and removing one already absent, are both no-ops (idempotent) so re-runs don't
+// churn the diff. A call with neither --add nor --remove is a bad-usage error
+// rather than a silent no-op. When [labels].required is set, a relabel that would
+// leave the task with zero labels is rejected. The marshaller keeps the stored
+// label set sorted and de-duplicated, so the in-memory order here doesn't matter.
+func (a *App) Relabel(id string, add, remove []string) (*core.Task, error) {
+	if len(add) == 0 && len(remove) == 0 {
+		return nil, core.Validationf(id, "provide at least one --add or --remove label")
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	rm := make(map[string]bool, len(remove))
+	for _, l := range remove {
+		rm[l] = true
+	}
+	next := make([]string, 0, len(t.Labels)+len(add))
+	for _, l := range t.Labels {
+		if !rm[l] {
+			next = append(next, l)
+		}
+	}
+	for _, l := range add {
+		if !contains(next, l) {
+			next = append(next, l)
+		}
+	}
+	if a.Cfg.LabelsRequired && len(next) == 0 {
+		return nil, core.Validationf(id, "a label is required ([labels].required); this relabel would remove the last one")
+	}
+	return a.mutate(id, func(t *core.Task) { t.Labels = next })
+}
+
 // AddCheck appends a checklist item.
 func (a *App) AddCheck(id, text string) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) {

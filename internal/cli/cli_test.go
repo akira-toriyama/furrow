@@ -280,6 +280,48 @@ func TestCLIDepAddRemove(t *testing.T) {
 	}
 }
 
+func TestCLILabelAddRemove(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "task", "-s", "ready", "-l", "chord", "-l", "shared")
+
+	out, code := run(t, "--json", "label", id, "--add", "sill", "--remove", "chord")
+	if code != 0 {
+		t.Fatalf("label --json exit = %d:\n%s", code, out)
+	}
+	var res struct {
+		Before  *core.Task `json:"before"`
+		After   *core.Task `json:"after"`
+		Changed []string   `json:"changed"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("label --json should be an object: %v\n%s", err, out)
+	}
+	if res.Before == nil || res.After == nil {
+		t.Fatalf("label --json must carry before+after:\n%s", out)
+	}
+	if got := strings.Join(res.After.Labels, ","); got != "shared,sill" {
+		t.Errorf("after labels = %q, want %q", got, "shared,sill")
+	}
+	has := false
+	for _, c := range res.Changed {
+		if c == "labels" {
+			has = true
+		}
+	}
+	if !has {
+		t.Errorf("changed should include \"labels\": %v", res.Changed)
+	}
+
+	// no --add/--remove is a bad-usage error (exit 2).
+	if _, code := run(t, "label", id); code != int(core.CodeValidation) {
+		t.Errorf("label with no flags should exit 2, got %d", code)
+	}
+	// unknown id is not-found (exit 1).
+	if _, code := run(t, "label", "t-9999", "--add", "x"); code != int(core.CodeNotFound) {
+		t.Errorf("label on unknown id should exit 1, got %d", code)
+	}
+}
+
 func TestCLIBatchAddStdin(t *testing.T) {
 	initStore(t)
 	out, code := runIn(t, "alpha\nbeta\n\ngamma\n", "--ndjson", "add", "--stdin", "-s", "ready")

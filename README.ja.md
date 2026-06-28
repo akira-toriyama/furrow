@@ -131,6 +131,7 @@ furrow done t-0001
 | `reorder <id> <priority>` | priority（疎な整数）を設定 |
 | `check <id> [index]` | チェックリスト項目をトグル（`--add` で追加・`--off` で外す） |
 | `dep <id> <dep-id>` | 依存を追加（id が dep-id を待つ）。`--rm` で削除。循環防止・冪等 |
+| `label <id>` | ラベルを追加／削除（`--add`・`--remove`、いずれも反復可・併用可）。冪等 |
 | `apply` | PR/コミット本文から `SetStatus-task: <body-link> [<lane>]` ディレクティブを解析して適用（stdin または `--body-file`）。status 自動更新の CI フック。`--on open` は in-progress へ寄せ、`--on merge` は lane を適用。検証は非ブロッキング |
 | `archive` | 古い done タスクを `.furrow/archive/` へ退避（`--yes` なしはプレビュー） |
 | `lint` | index↔body の整合・レーン・依存・config を検査 |

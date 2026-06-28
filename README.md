@@ -140,6 +140,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `reorder <id> <priority>` | Set a task's priority (sparse integer; lower sorts higher) | — |
 | `check <id> [index]` | Toggle a checklist item by zero-based index, or append one | `--add <text>`, `--off` |
 | `dep <id> <dep-id>` | Add a dependency (id waits on dep-id), or remove it with `--rm`; acyclic & idempotent | `--rm` |
+| `label <id>` | Add and/or remove labels on a task (both repeatable, combinable); idempotent | `--add <label>`, `--remove <label>` |
 | `apply` | Apply `SetStatus-task: <body-link> [<lane>]` directives parsed from PR/commit text (stdin or `--body-file`) — the CI hook for auto status updates. `--on open` nudges to in-progress; `--on merge` applies the lane. Validation is non-blocking | `--on open\|merge`, `--ref`, `--body-file`, `--open-lane` |
 | `archive` | Move aged done tasks to `.furrow/archive/` (preview unless `--yes`) | `--older-than <days>`, `--yes` |
 | `lint` | Check index↔body 1:1, id shape, lanes, deps/parent refs, config clamp warnings | — |
