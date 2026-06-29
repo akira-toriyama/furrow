@@ -21,6 +21,10 @@ const DirName = ".furrow"
 // EnvDir overrides discovery with an explicit .furrow path.
 const EnvDir = "FURROW_DIR"
 
+// PointerName is a repo-local file that redirects furrow at a central board
+// (and optionally scopes it to a label) instead of holding its own .furrow.
+const PointerName = ".furrow-pointer.toml"
+
 // Store is what App needs from a store: the core port plus the few extras the
 // coordinator uses. Both fsstore and memstore satisfy it.
 type Store interface {
@@ -37,18 +41,25 @@ type App struct {
 	Clock    core.Clock
 	Dir      string   // the .furrow directory
 	Warnings []string // config clamp warnings
+
+	DefaultLabel string // pointer-provided scope label ("" unless resolved via a .furrow-pointer.toml)
 }
 
-// Open discovers the .furrow directory (FURROW_DIR, else the nearest ancestor
-// of startDir that contains one), loads config, and builds an fsstore. It is a
-// CodeValidation error to run a store command outside a furrow repo — the
-// message points at `furrow init`.
+// Open discovers the store (FURROW_DIR, else the nearest ancestor of startDir
+// holding a .furrow, else a .furrow-pointer.toml redirecting to a central board),
+// loads config, and builds an fsstore. Outside any of these it is a validation
+// error pointing at `furrow init`.
 func Open(startDir string) (*App, error) {
-	dir, err := discover(startDir)
+	res, err := discover(startDir)
 	if err != nil {
 		return nil, err
 	}
-	return openAt(dir)
+	a, err := openAt(res.Dir)
+	if err != nil {
+		return nil, err
+	}
+	a.DefaultLabel = res.DefaultLabel
+	return a, nil
 }
 
 func openAt(dir string) (*App, error) {
@@ -65,36 +76,74 @@ func NewWithStore(st Store, cfg *config.Config, clk core.Clock) *App {
 	return &App{Store: st, Cfg: cfg, Clock: clk}
 }
 
-// discover finds the .furrow directory: FURROW_DIR if set, else walk up from
-// startDir to the filesystem root.
-func discover(startDir string) (string, error) {
+// resolution is the outcome of discovery: which .furrow to open, and (only when
+// reached via a pointer) the label to scope commands to.
+type resolution struct {
+	Dir          string
+	DefaultLabel string
+}
+
+// discover finds the store: FURROW_DIR if set (no label injection), else walk up
+// from startDir. At each directory a local .furrow wins; failing that, a
+// .furrow-pointer.toml redirects to a central board and supplies its label.
+func discover(startDir string) (resolution, error) {
 	if env := os.Getenv(EnvDir); env != "" {
 		abs, err := filepath.Abs(env)
 		if err != nil {
-			return "", core.Validationf("", "%s=%q is not a valid path: %v", EnvDir, env, err)
+			return resolution{}, core.Validationf("", "%s=%q is not a valid path: %v", EnvDir, env, err)
 		}
 		// An explicit FURROW_DIR must point at an existing store directory;
 		// a typo'd path should fail loudly, not act as an empty store.
 		if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
-			return "", core.Validationf("", "%s=%q is not an existing directory", EnvDir, abs)
+			return resolution{}, core.Validationf("", "%s=%q is not an existing directory", EnvDir, abs)
 		}
-		return abs, nil
+		return resolution{Dir: abs}, nil
 	}
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
-		return "", core.Internalf("", "resolve %q: %v", startDir, err)
+		return resolution{}, core.Internalf("", "resolve %q: %v", startDir, err)
 	}
 	for {
 		cand := filepath.Join(dir, DirName)
 		if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
-			return cand, nil
+			return resolution{Dir: cand}, nil
+		}
+		ptr := filepath.Join(dir, PointerName)
+		if fi, err := os.Stat(ptr); err == nil && !fi.IsDir() {
+			return resolvePointer(dir, ptr)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir { // reached the root
-			return "", core.Validationf("", "no %s found in %q or any parent; run `furrow init`", DirName, startDir)
+			return resolution{}, core.Validationf("", "no %s or %s found in %q or any parent; run `furrow init`", DirName, PointerName, startDir)
 		}
 		dir = parent
 	}
+}
+
+// resolvePointer reads a .furrow-pointer.toml, resolves its board path against
+// the pointer file's directory (~ → home, relative → that dir, absolute as-is),
+// and requires the board to be an existing directory.
+func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
+	p, err := config.LoadPointer(pointerPath)
+	if err != nil {
+		return resolution{}, core.Validationf("", "%s: %v", pointerPath, err)
+	}
+	board := p.Board
+	if strings.HasPrefix(board, "~") {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return resolution{}, core.Internalf("", "resolve ~ in board %q: %v", board, herr)
+		}
+		board = filepath.Join(home, strings.TrimPrefix(board, "~"))
+	}
+	if !filepath.IsAbs(board) {
+		board = filepath.Join(pointerDir, board)
+	}
+	board = filepath.Clean(board)
+	if fi, err := os.Stat(board); err != nil || !fi.IsDir() {
+		return resolution{}, core.Validationf("", "%s: board %q is not an existing directory", pointerPath, board)
+	}
+	return resolution{Dir: board, DefaultLabel: p.DefaultLabel}, nil
 }
 
 // Init creates a fresh .furrow at dir/.furrow (config.toml template + empty
