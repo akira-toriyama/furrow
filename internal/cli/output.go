@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
 	"golang.org/x/term"
 )
@@ -150,6 +151,39 @@ func emitActionable(tasks []core.Task) error {
 	}
 	if len(tasks) == 0 {
 		return &core.Error{Code: core.CodeNotFound, Msg: "no actionable tasks"}
+	}
+	return nil
+}
+
+// revisitView is a task plus the reasons it needs re-evaluation (JSON/NDJSON
+// output only) — the agent's worklist of metadata to fix.
+type revisitView struct {
+	core.Task
+	Revisit []core.RevisitReason `json:"revisit"`
+}
+
+// emitRevisit renders `revisit` results. In --json / --ndjson it attaches the
+// reasons to each task so an agent sees exactly what to fix; the human table is
+// the shared one. Unlike `next`, an empty result is the healthy "nothing to
+// revisit" state and exits 0 — an agent pipeline must not treat it as an error.
+func emitRevisit(items []app.RevisitItem) error {
+	switch {
+	case flagNDJSON:
+		for _, it := range items {
+			printNDJSONValue(revisitView{Task: it.Task, Revisit: it.Reasons})
+		}
+	case flagJSON:
+		views := make([]revisitView, 0, len(items))
+		for _, it := range items {
+			views = append(views, revisitView{Task: it.Task, Revisit: it.Reasons})
+		}
+		printJSON(views)
+	default:
+		tasks := make([]core.Task, 0, len(items))
+		for _, it := range items {
+			tasks = append(tasks, it.Task)
+		}
+		printTaskTable(tasks)
 	}
 	return nil
 }

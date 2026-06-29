@@ -33,6 +33,11 @@ var (
 
 	DefaultArchiveOlderThanDays = 30
 	DefaultUITheme              = "auto"
+
+	// DefaultRevisitStaleDays is how long a task may go without an update before
+	// `furrow revisit` flags it stale. A config stale_days of 0 disables the
+	// stale signal (the other revisit signals still fire).
+	DefaultRevisitStaleDays = 30
 )
 
 // validThemes is the closed set for [ui].theme.
@@ -57,6 +62,8 @@ type Config struct {
 	ArchiveOlderThanDays int
 	UITheme              string
 
+	RevisitStaleDays int // days without update before `revisit` flags stale; 0 disables
+
 	LabelsRequired bool // when true, a task with zero labels is rejected/flagged
 
 	idPattern *regexp.Regexp  // compiled from IDPrefix, cached
@@ -77,6 +84,7 @@ func Default() *Config {
 		IDWidth:              DefaultIDWidth,
 		ArchiveOlderThanDays: DefaultArchiveOlderThanDays,
 		UITheme:              DefaultUITheme,
+		RevisitStaleDays:     DefaultRevisitStaleDays,
 	}
 	c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)
 	c.compile()

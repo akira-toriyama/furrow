@@ -86,3 +86,43 @@ func newNextCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; use -n1 for just the top)")
 	return cmd
 }
+
+func newRevisitCmd() *cobra.Command {
+	var (
+		label     string
+		limit     int
+		staleDays int
+	)
+	cmd := &cobra.Command{
+		Use:   "revisit",
+		Short: "List open tasks needing re-evaluation (agent re-weighing signal)",
+		Long: "List the open tasks worth a fresh judgment, the read-only counterpart to\n" +
+			"`next`. A task surfaces when an estimate is unset (value/effort), it has\n" +
+			"gone stale (no update within [revisit].stale_days), or a dependency is\n" +
+			"already done. --json/--ndjson attach the reasons per task so an agent can\n" +
+			"fix them with the setters (value/effort/dep); this command never mutates.\n" +
+			"An empty result is healthy and exits 0. Use --label to restrict to a repo\n" +
+			"and --stale-days to override the staleness window (0 disables it).",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			days := a.Cfg.RevisitStaleDays
+			if cmd.Flags().Changed("stale-days") {
+				days = staleDays
+			}
+			items, err := a.Revisit(label, days, limit)
+			if err != nil {
+				return err
+			}
+			// "nothing to revisit" is a valid clean result (exit 0), not a miss.
+			return emitRevisit(items)
+		},
+	}
+	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label")
+	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
+	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
+	return cmd
+}

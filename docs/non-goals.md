@@ -106,8 +106,9 @@ keeping the index as plain JSON.
 To keep this list honest about today's reality (not aspirations):
 
 - **Built and real today** (`internal/cli`): `init`, `add`, `ls` (alias
-  `list`), `show`, `next`, `edit`, `done`, `move`, `reorder`, `check`, `dep`,
-  `migrate`, `archive`, `lint`, `schema`, `version`, `ui`. Read commands honor
+  `list`), `show`, `next`, `revisit`, `edit`, `done`, `move`, `reorder`,
+  `check`, `dep`, `migrate`, `archive`, `lint`, `schema`, `version`, `ui`. Read
+  commands honor
   `--json` / `--ndjson`; `ls` supports `--status`/`-s`, `--label`/`-l`,
   `--limit`/`-n`.
   Destructive ops are guarded: `archive` previews unless `--yes`. Exit-code
