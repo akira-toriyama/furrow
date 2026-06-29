@@ -104,3 +104,59 @@ func TestDiscover_PointerBadBoardErrors(t *testing.T) {
 		t.Fatal("expected error for non-existent board, got nil")
 	}
 }
+
+func hasLabel(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAdd_InjectsDefaultLabel(t *testing.T) {
+	repoDir, _ := pointerLayout(t, "chord")
+	a, err := Open(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := a.Add("a task", AddOpts{})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if !hasLabel(task.Labels, "chord") {
+		t.Errorf("labels = %v, want to contain chord", task.Labels)
+	}
+}
+
+func TestAdd_UnionsWithExplicitLabel(t *testing.T) {
+	repoDir, _ := pointerLayout(t, "chord")
+	a, err := Open(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := a.Add("a task", AddOpts{Labels: []string{"bug"}})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if !hasLabel(task.Labels, "chord") || !hasLabel(task.Labels, "bug") {
+		t.Errorf("labels = %v, want both chord and bug", task.Labels)
+	}
+}
+
+func TestAddMany_InjectsDefaultLabel(t *testing.T) {
+	repoDir, _ := pointerLayout(t, "chord")
+	a, err := Open(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := a.AddMany([]AddSpec{{Title: "x"}, {Title: "y"}})
+	if err != nil {
+		t.Fatalf("AddMany: %v", err)
+	}
+	for _, task := range created {
+		if !hasLabel(task.Labels, "chord") {
+			t.Errorf("%s labels = %v, want to contain chord", task.ID, task.Labels)
+		}
+	}
+}

@@ -27,6 +27,12 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		return nil, err
 	}
 
+	// Union the pointer default label into every spec up front, so the
+	// LabelsRequired check below and the created tasks both see it.
+	for i := range specs {
+		specs[i].Labels = a.withDefaultLabel(specs[i].Labels)
+	}
+
 	// validate every lane/title before writing anything.
 	for i, s := range specs {
 		if strings.TrimSpace(s.Title) == "" {

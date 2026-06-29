@@ -201,6 +201,7 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	if title == "" {
 		return nil, core.Validationf("", "title must not be empty")
 	}
+	o.Labels = a.withDefaultLabel(o.Labels)
 	status := o.Status
 	if status == "" {
 		status = a.Cfg.DefaultLane
@@ -565,6 +566,17 @@ func cloneIntp(p *int) *int {
 	}
 	n := *p
 	return &n
+}
+
+// withDefaultLabel unions the pointer-provided default label (if any) into a
+// label set, so `add` from a pointer-scoped repo tags the repo without an
+// explicit -l. Returns a copy; a no-op when no pointer label is set or it is
+// already present.
+func (a *App) withDefaultLabel(labels []string) []string {
+	if a.DefaultLabel == "" || contains(labels, a.DefaultLabel) {
+		return labels
+	}
+	return append(append([]string(nil), labels...), a.DefaultLabel)
 }
 
 func contains(ss []string, s string) bool {
