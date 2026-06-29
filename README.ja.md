@@ -192,25 +192,51 @@ furrow show t-0001 --json   # task + body_text
 
 ストアの場所は、カレントから親方向に `.furrow/` を探して解決する。`FURROW_DIR` で明示も可能。`edit` のエディタは `FURROW_EDITOR` → `VISUAL` → `EDITOR` → `vi` の順で選ぶ。
 
-### 中央ボード: per-repo pointer
+### 中央ボード
 
-自前の `.furrow` を持たない repo から、中央ボード（横断トラッカー等）を指し、その
-repo のラベルへ自動スコープできる。repo 直下に `.furrow-pointer.toml` を置く:
+複数 repo で 1 つの中央ボード（横断トラッカー等）を共有し、各 repo をそのラベルへ
+自動スコープできる。repo 群まとめて一度に（global 既定ボード）か、repo ごと（pointer
+ファイル）の 2 通り。
+
+#### global 既定ボード（per-repo ファイル不要）
+
+repo 群に対し **設定ゼロ**で 1 つのボードを既定にする（新規 repo も自動でカバー）。
+`~/.config/furrow/config.toml`（または `$XDG_CONFIG_HOME/furrow/config.toml`）に一度だけ:
+
+```toml
+[board]
+path  = "~/src/github.com/me/projects/.furrow"  # 中央 .furrow（~・本ファイル基準の相対・絶対）
+scope = "~/src/github.com/me"                    # ここ配下でだけ有効（任意・省略時は board の repo 親）
+label = "auto"                                   # "auto" = 最も近い git repo の dir 名 / "" = 無 / 任意リテラル
+```
+
+**cwd が `scope` 配下のときだけ**有効で、それ以外では furrow は無設定時と完全に同じ挙動。
+`label = "auto"` は最も近い git repo の dir 名からスコープラベルを導出する（ローカルの
+`.git` を辿るだけ。`git` 起動も `GHQ_ROOT` 参照もしない）。git repo の外ではボードは開くが
+auto ラベルは付かない（stderr に注記。`-l` でスコープ指定）。`FURROW_BOARD=<path>` で
+単発・テスト用に上書き可。
+
+#### per-repo pointer
+
+特定の 1 repo は、直下の `.furrow-pointer.toml` で redirect できる（global 既定ボードに
+**優先**する）:
 
 ```toml
 board = "../projects/.furrow"   # 中央 .furrow（本ファイル基準の相対・~・絶対）
 default_label = "chord"         # 任意: この repo を 1 ラベルにスコープ
 ```
 
-発見の優先順位: `FURROW_DIR`（明示・ラベル注入なし）→ 直近の親で `.furrow` を持つ
-ディレクトリ（実体のローカルストアが勝つ）→ `.furrow-pointer.toml`（中央ボードへ
-redirect）→ `furrow init`。
+#### 発見の優先順位
 
-pointer 有効時:
+`FURROW_DIR`（明示・ラベル注入なし）→ 直近の親で `.furrow` を持つディレクトリ（実体の
+ローカルストアが勝つ）→ `.furrow-pointer.toml`（ボードへ redirect）→ **global 既定ボード**
+（cwd が `scope` 配下のとき）→ `furrow init`。
 
-- `furrow add "…"` は `default_label` をラベルに union（`[labels].required` も充足）。
+ボード有効時（pointer / global いずれも）:
+
+- `furrow add "…"` はスコープラベルをラベルに union（`[labels].required` も充足）。
   明示 `-l x` は置換でなく追加。
-- `furrow ls|next|revisit` は `default_label` で絞り、スコープを stderr に表示
+- `furrow ls|next|revisit` はスコープラベルで絞り、スコープを stderr に表示
   （例 `furrow: board=… scope=label=chord (-l '' for all)`）。`-l ''` で全件、
   `-l other` で別ラベル。
 

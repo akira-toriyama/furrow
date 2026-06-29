@@ -21,6 +21,11 @@ const DirName = ".furrow"
 // EnvDir overrides discovery with an explicit .furrow path.
 const EnvDir = "FURROW_DIR"
 
+// EnvBoard overrides the user-level default board with an explicit board path
+// (the central .furrow). Like EnvDir it is a single-value env override; the
+// scope is derived from the board and the label mode is "auto".
+const EnvBoard = "FURROW_BOARD"
+
 // PointerName is a repo-local file that redirects furrow at a central board
 // (and optionally scopes it to a label) instead of holding its own .furrow.
 const PointerName = ".furrow-pointer.toml"
@@ -42,7 +47,11 @@ type App struct {
 	Dir      string   // the .furrow directory
 	Warnings []string // config clamp warnings
 
-	DefaultLabel string // pointer-provided scope label ("" unless resolved via a .furrow-pointer.toml)
+	DefaultLabel string // scope label from a pointer or the global default board ("" otherwise)
+
+	// ScopeWarnings are discovery-time notes bound for stderr (e.g. the global
+	// default board activated but found no enclosing git repo for an auto label).
+	ScopeWarnings []string
 }
 
 // Open discovers the store (FURROW_DIR, else the nearest ancestor of startDir
@@ -59,6 +68,7 @@ func Open(startDir string) (*App, error) {
 		return nil, err
 	}
 	a.DefaultLabel = res.DefaultLabel
+	a.ScopeWarnings = res.ScopeWarn
 	return a, nil
 }
 
@@ -81,6 +91,7 @@ func NewWithStore(st Store, cfg *config.Config, clk core.Clock) *App {
 type resolution struct {
 	Dir          string
 	DefaultLabel string
+	ScopeWarn    []string
 }
 
 // discover finds the store: FURROW_DIR if set (no label injection), else walk up
@@ -113,7 +124,12 @@ func discover(startDir string) (resolution, error) {
 			return resolvePointer(dir, ptr)
 		}
 		parent := filepath.Dir(dir)
-		if parent == dir { // reached the root
+		if parent == dir { // reached the root: try the user-level default board, else give up
+			if res, ok, err := resolveGlobalBoard(startDir); err != nil {
+				return resolution{}, err
+			} else if ok {
+				return res, nil
+			}
 			return resolution{}, core.Validationf("", "no %s or %s found in %q or any parent; run `furrow init`", DirName, PointerName, startDir)
 		}
 		dir = parent
@@ -128,28 +144,172 @@ func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
 	if err != nil {
 		return resolution{}, core.Validationf("", "%s: %v", pointerPath, err)
 	}
-	board := p.Board
+	board, err := resolveBoardPath(pointerDir, p.Board)
+	if err != nil {
+		return resolution{}, err
+	}
+	if fi, err := os.Stat(board); err != nil || !fi.IsDir() {
+		return resolution{}, core.Validationf("", "%s: board %q is not an existing directory", pointerPath, board)
+	}
+	return resolution{Dir: board, DefaultLabel: p.DefaultLabel}, nil
+}
+
+// resolveBoardPath turns a board path (bare ~/~/path, relative to baseDir, or
+// absolute) into a cleaned absolute path. It does NOT check existence — that is
+// the caller's job, since only the caller has the context for the error. Shared
+// by resolvePointer and resolveGlobalBoard.
+func resolveBoardPath(baseDir, board string) (string, error) {
 	if strings.HasPrefix(board, "~") {
 		rest := board[1:]
 		// Only bare ~ / ~/path is supported; ~user would silently resolve onto
 		// the current user's home, so reject it loudly rather than misroute.
 		if rest != "" && !strings.HasPrefix(rest, "/") {
-			return resolution{}, core.Validationf("", "%s: board %q uses the unsupported ~user form; use an absolute path", pointerPath, board)
+			return "", core.Validationf("", "board %q uses the unsupported ~user form; use an absolute path", board)
 		}
 		home, herr := os.UserHomeDir()
 		if herr != nil {
-			return resolution{}, core.Internalf("", "resolve ~ in board %q: %v", board, herr)
+			return "", core.Internalf("", "resolve ~ in board %q: %v", board, herr)
 		}
 		board = filepath.Join(home, rest)
 	}
 	if !filepath.IsAbs(board) {
-		board = filepath.Join(pointerDir, board)
+		board = filepath.Join(baseDir, board)
 	}
-	board = filepath.Clean(board)
+	return filepath.Clean(board), nil
+}
+
+// resolveGlobalBoard is the last-resort arm of discover: a user-level default
+// board (FURROW_BOARD, else ${XDG_CONFIG_HOME:-~/.config}/furrow/config.toml)
+// that backs many repos without a per-repo pointer. It returns ok=false with no
+// error whenever there is no default board OR cwd is outside its scope, so
+// discover falls through to the usual "run furrow init" error and behaves
+// exactly as before. A bad board path is a loud error, but only once the scope
+// gate has passed (so a stray config never breaks furrow in unrelated repos).
+func resolveGlobalBoard(startDir string) (resolution, bool, error) {
+	gb, cfgDir, warn, err := loadGlobalBoard()
+	if err != nil {
+		return resolution{}, false, err
+	}
+	if gb == nil {
+		return resolution{}, false, nil
+	}
+	board, err := resolveBoardPath(cfgDir, gb.Path)
+	if err != nil {
+		return resolution{}, false, err
+	}
+	// scope defaults to the parent of the board's repo:
+	// …/<org>/<repo>/.furrow -> repo …/<org>/<repo> -> scope …/<org>.
+	scope := gb.Scope
+	if scope == "" {
+		scope = filepath.Dir(filepath.Dir(board))
+	}
+	abs, err := filepath.Abs(startDir)
+	if err != nil {
+		return resolution{}, false, core.Internalf("", "resolve %q: %v", startDir, err)
+	}
+	if !underScope(abs, scope) {
+		return resolution{}, false, nil // out of scope: inert, behaves like today
+	}
 	if fi, err := os.Stat(board); err != nil || !fi.IsDir() {
-		return resolution{}, core.Validationf("", "%s: board %q is not an existing directory", pointerPath, board)
+		return resolution{}, false, core.Validationf("", "global default board %q is not an existing directory", board)
 	}
-	return resolution{Dir: board, DefaultLabel: p.DefaultLabel}, nil
+	label, lwarn := deriveScopeLabel(gb.Label, abs)
+	return resolution{Dir: board, DefaultLabel: label, ScopeWarn: append(warn, lwarn...)}, true, nil
+}
+
+// loadGlobalBoard resolves the user-level default board: FURROW_BOARD (an env
+// override supplying only a board path) wins; else the config file at
+// globalConfigPath. cfgDir is the base for resolving a relative [board].path.
+func loadGlobalBoard() (gb *config.GlobalBoard, cfgDir string, warn []string, err error) {
+	if env := os.Getenv(EnvBoard); env != "" {
+		base, _ := os.Getwd()
+		return &config.GlobalBoard{Path: env, Scope: "", Label: "auto"}, base, nil, nil
+	}
+	path, err := globalConfigPath()
+	if err != nil {
+		return nil, "", nil, err
+	}
+	gb, warn, err = config.LoadGlobalBoard(path)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return gb, filepath.Dir(path), warn, nil
+}
+
+// globalConfigPath is ${XDG_CONFIG_HOME}/furrow/config.toml when XDG_CONFIG_HOME
+// is an absolute path, else ~/.config/furrow/config.toml. (os.UserConfigDir is
+// deliberately avoided: on darwin it returns ~/Library/Application Support,
+// which violates the ~/.config contract.)
+func globalConfigPath() (string, error) {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(xdg) {
+		return filepath.Join(xdg, "furrow", "config.toml"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", core.Internalf("", "resolve home for the furrow config: %v", err)
+	}
+	return filepath.Join(home, ".config", "furrow", "config.toml"), nil
+}
+
+// underScope reports whether dir is scope itself or a descendant of it, using a
+// path-separator boundary so "/ws/org-evil" never matches scope "/ws/org". Both
+// sides are canonicalized (symlinks resolved) so a symlinked cwd or scope — e.g.
+// macOS's /var -> /private/var — still compares correctly.
+func underScope(dir, scope string) bool {
+	if scope == "" {
+		return false
+	}
+	dir = canonicalPath(dir)
+	scope = canonicalPath(scope)
+	return dir == scope || strings.HasPrefix(dir, scope+string(os.PathSeparator))
+}
+
+// canonicalPath cleans p and resolves symlinks when it can; if EvalSymlinks
+// fails (e.g. the path does not exist) it falls back to the cleaned path.
+func canonicalPath(p string) string {
+	p = filepath.Clean(p)
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	return p
+}
+
+// deriveScopeLabel turns the configured label mode into the actual scope label:
+// "auto" -> the nearest enclosing git repo's basename (empty + a warning when
+// there is none), "" -> no label, anything else -> a literal label.
+func deriveScopeLabel(mode, startDir string) (label string, warn []string) {
+	switch mode {
+	case "auto":
+		if l, ok := nearestRepoLabel(startDir); ok {
+			return l, nil
+		}
+		return "", []string{"furrow: default board active but no enclosing git repo; no auto label (use -l to scope)"}
+	case "":
+		return "", nil
+	default:
+		return mode, nil
+	}
+}
+
+// nearestRepoLabel walks up from startDir looking for a directory holding a
+// `.git` entry (a dir for a normal repo, a file for a worktree/submodule); the
+// label is that directory's basename. It never shells out to git. Returns
+// ("", false) when no git repo encloses startDir.
+func nearestRepoLabel(startDir string) (string, bool) {
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", false
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return filepath.Base(dir), true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
 }
 
 // Init creates a fresh .furrow at dir/.furrow (config.toml template + empty

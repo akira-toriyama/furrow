@@ -85,13 +85,22 @@ func newRootCmd() *cobra.Command {
 	return root
 }
 
-// openApp discovers the .furrow store from the current directory.
+// openApp discovers the .furrow store from the current directory. Any
+// discovery-time scope warnings (e.g. the global default board activated with no
+// enclosing git repo for an auto label) go to stderr, so stdout stays pure data.
 func openApp() (*app.App, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, core.Internalf("", "getwd: %v", err)
 	}
-	return app.Open(cwd)
+	a, err := app.Open(cwd)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range a.ScopeWarnings {
+		fmt.Fprintln(errOut, w)
+	}
+	return a, nil
 }
 
 // renderError prints a structured error object to stderr (never stdout, so a
