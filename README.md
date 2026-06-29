@@ -114,6 +114,13 @@ Notes on the fields: `id` is frozen and is the stem of the body file (`bodies/t-
 furrow ls --json | jq 'map(select(.value and .effort)) | sort_by(-(.value / .effort))'
 ```
 
+`furrow revisit` is the agent-facing companion: a **read-only** query that surfaces the open tasks whose metadata may be out of date — missing `value`/`effort`, gone stale (no update within `[revisit].stale_days`), or carrying a dependency that is already done. Each task comes back with a `revisit` array of `{code, detail}` so the agent knows exactly what to fix with the existing setters (`value`/`effort`/`dep`); it never mutates anything itself.
+
+```sh
+# tasks in this repo that still need estimates, with the reasons
+furrow revisit -l furrow --json | jq '.[] | {id, revisit: [.revisit[].code]}'
+```
+
 ### Attaching images and media
 
 A task body is plain Markdown, so you can attach a screenshot or diagram by committing the file alongside the bodies and linking it with a **relative path**:
@@ -141,6 +148,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `ls` (alias `list`) | List tasks in canonical `lane -> priority -> id` order | `-s/--status`, `-l/--label`, `-n/--limit` |
 | `show <id>` | Show one task plus its Markdown body | — |
 | `next` | Show actionable tasks (non-terminal lane, all deps done); `--json`/`--ndjson` attach a `reason` (`in_next_lane`, `deps_satisfied`) | `-n/--limit` (use `-n1` for just the top) |
+| `revisit` | Read-only; list open tasks needing re-evaluation. `--json`/`--ndjson` attach a `revisit` array of `{code, detail}` (`value_unset`, `effort_unset`, `stale`, `dep_done`) so an agent knows what to fix. Empty result exits 0 | `-l/--label`, `-n/--limit`, `--stale-days <n>` (0 disables stale) |
 | `edit <id>` | Open `bodies/<id>.md` in `$EDITOR`; prints the path when non-interactive | — |
 | `done <id>` | Move a task into the done lane (stamps `closed`) | — |
 | `move <id> <lane>` | Move a task to a lane (clears `closed` when leaving done) | — |
@@ -227,6 +235,9 @@ width  = 5                        # number of random suffix chars, e.g. t-k3m9p
 
 [archive]
 older_than_days = 30              # default window for `furrow archive --older-than`
+
+[revisit]
+stale_days = 30                   # `furrow revisit` flags a task with no update in this many days (0 disables)
 
 [ui]
 theme = "auto"                    # auto | dark | light (NO_COLOR is always respected)

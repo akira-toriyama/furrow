@@ -125,6 +125,7 @@ furrow done t-0001
 | `ls`（別名 `list`） | タスクを正準順で一覧 |
 | `show <id>` | タスクを markdown 本文付きで表示 |
 | `next` | 着手可能なタスク（非 terminal・依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
+| `revisit` | read-only。再評価すべき open タスクを一覧。`--json`/`--ndjson` は各タスクに `revisit` 配列 `{code, detail}`（`value_unset`・`effort_unset`・`stale`・`dep_done`）を付与し、エージェントが何を直すか分かる。空でも exit 0。`-l/--label`・`-n/--limit`・`--stale-days <n>`（0 で stale 無効） |
 | `edit <id>` | `bodies/<id>.md` を `$EDITOR` で開く（非対話ならパスを出力） |
 | `done <id>` | done レーンへ移動し `closed` を打刻 |
 | `move <id> <lane>` | 任意のレーンへ移動 |
@@ -238,6 +239,13 @@ furrow show t-0001 --json   # task + body_text
 furrow ls --json | jq 'map(select(.value and .effort)) | sort_by(-(.value / .effort))'
 ```
 
+`furrow revisit` はそのエージェント向けの相棒——**read-only** で、メタデータが古くなり得る open タスク（`value`/`effort` 未設定・`[revisit].stale_days` 以内に更新がない stale・既に done な依存を持つ）を洗い出す。各タスクには `revisit` 配列 `{code, detail}` が付くので、エージェントは既存セッター（`value`/`effort`/`dep`）で何を直せばよいか分かる。コマンド自身は一切変更しない。
+
+```sh
+# このリポで見積もりがまだ要るタスクを理由つきで
+furrow revisit -l furrow --json | jq '.[] | {id, revisit: [.revisit[].code]}'
+```
+
 ---
 
 ## アーキテクチャ（hexagonal）
@@ -287,6 +295,9 @@ width = 5                   # ランダムサフィックスの文字数（例: 
 
 [archive]
 older_than_days = 30
+
+[revisit]
+stale_days = 30             # `furrow revisit` が「更新なし」を stale 扱いする日数（0 で無効）
 
 [ui]
 theme = "auto"              # auto | dark | light

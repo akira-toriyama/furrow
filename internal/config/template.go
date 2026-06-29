@@ -55,6 +55,11 @@ width = 5 # t-k3m9p
 # Default window for ` + "`furrow archive --older-than`" + ` (days; done tasks only).
 older_than_days = 30
 
+[revisit]
+# Days a task may go without an update before ` + "`furrow revisit`" + ` flags it
+# stale. 0 disables the stale signal (the other revisit signals still fire).
+stale_days = 30
+
 [ui]
 # bubbletea TUI. NO_COLOR is always respected regardless of this value.
 theme = "auto" # auto | dark | light

@@ -38,6 +38,9 @@ type raw struct {
 	Labels struct {
 		Required *bool `toml:"required"`
 	} `toml:"labels"`
+	Revisit struct {
+		StaleDays *int `toml:"stale_days"`
+	} `toml:"revisit"`
 }
 
 // Load reads config.toml at path and returns the effective config plus any
@@ -146,6 +149,16 @@ func fromRaw(r raw) (*Config, []string, error) {
 
 	if r.Labels.Required != nil {
 		c.LabelsRequired = *r.Labels.Required
+	}
+
+	// stale_days: a "days" knob like archive.older_than_days — 0 is valid (it
+	// disables the stale signal); only a negative value clamps to the default.
+	if r.Revisit.StaleDays != nil {
+		if *r.Revisit.StaleDays < 0 {
+			warn = append(warn, fmt.Sprintf("revisit.stale_days %d < 0; using %d", *r.Revisit.StaleDays, DefaultRevisitStaleDays))
+		} else {
+			c.RevisitStaleDays = *r.Revisit.StaleDays
+		}
 	}
 
 	if r.UI.Theme != "" {
