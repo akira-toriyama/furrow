@@ -20,6 +20,8 @@
         "title": { "type": "string" },
         "status": { "type": "string", "description": "a lane from config.toml [lanes].order" },
         "priority": { "type": "integer", "description": "sparse 10-step ordering key" },
+        "value": { "type": "integer", "minimum": 1, "maximum": 5, "description": "optional coarse 1..5 value (importance) estimate; absent = unset" },
+        "effort": { "type": "integer", "minimum": 1, "maximum": 5, "description": "optional coarse 1..5 effort (cost) estimate; absent = unset" },
         "labels": { "type": "array", "items": { "type": "string" } },
         "parent": { "type": "string" },
         "deps": { "type": "array", "items": { "type": "string" } },

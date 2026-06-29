@@ -105,7 +105,14 @@ A minimal `index.json`:
 }
 ```
 
-Notes on the fields: `id` is frozen and is the stem of the body file (`bodies/t-0001.md`); `priority` is a sparse 10-step integer so reordering edits one field instead of renumbering; `status` is a lane defined in `config.toml`; `closed` is `null` while open and stamped when a task enters the done lane; empty collections serialize as `[]`, never `null`. The JSON Schema for the index lives at [`docs/schema/furrow.index.v1.json`](docs/schema/furrow.index.v1.json) and is emitted by `furrow schema`.
+Notes on the fields: `id` is frozen and is the stem of the body file (`bodies/t-0001.md`); `priority` is a sparse 10-step integer so reordering edits one field instead of renumbering; `status` is a lane defined in `config.toml`; `closed` is `null` while open and stamped when a task enters the done lane; empty collections serialize as `[]`, never `null`. `value` and `effort` are an optional coarse 1..5 estimate (importance and cost) — both omitted while unset, so dropping an idea into the inbox stays friction-free — and out-of-range scores clamp to 1..5. The JSON Schema for the index lives at [`docs/schema/furrow.index.v1.json`](docs/schema/furrow.index.v1.json) and is emitted by `furrow schema`.
+
+`value` and `effort` exist so an agent (or you) can pick the next task from recorded data instead of re-guessing each time. **ROI = value / effort is derived, never stored** (so editing either estimate always yields a current ROI, with no stale number to reconcile), and `next` is deliberately unchanged — sorting by ROI is the caller's choice:
+
+```sh
+# highest value-per-effort first, among tasks that carry both estimates
+furrow ls --json | jq 'map(select(.value and .effort)) | sort_by(-(.value / .effort))'
+```
 
 ### Attaching images and media
 
@@ -130,7 +137,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | Command | What it does | Key flags / args |
 |---|---|---|
 | `init` | Create a `.furrow/` store (config + empty index + `bodies/`) in the current directory | — |
-| `add <title>...` | Add a task (or many from stdin with `--stdin`); assigns frozen ids and seeds `bodies/<id>.md` | `--stdin`, `-s/--status`, `-p/--priority`, `-l/--label`, `--parent`, `--dep`, `--ref`, `--body` |
+| `add <title>...` | Add a task (or many from stdin with `--stdin`); assigns frozen ids and seeds `bodies/<id>.md` | `--stdin`, `-s/--status`, `-p/--priority`, `--value`, `--effort`, `-l/--label`, `--parent`, `--dep`, `--ref`, `--body` |
 | `ls` (alias `list`) | List tasks in canonical `lane -> priority -> id` order | `-s/--status`, `-l/--label`, `-n/--limit` |
 | `show <id>` | Show one task plus its Markdown body | — |
 | `next` | Show actionable tasks (non-terminal lane, all deps done); `--json`/`--ndjson` attach a `reason` (`in_next_lane`, `deps_satisfied`) | `-n/--limit` (use `-n1` for just the top) |
@@ -138,6 +145,8 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `done <id>` | Move a task into the done lane (stamps `closed`) | — |
 | `move <id> <lane>` | Move a task to a lane (clears `closed` when leaving done) | — |
 | `reorder <id> <priority>` | Set a task's priority (sparse integer; lower sorts higher) | — |
+| `value <id> <1-5>` | Set a task's coarse value (importance) estimate; out-of-range scores clamp to 1..5; `--clear` unsets | `--clear` |
+| `effort <id> <1-5>` | Set a task's coarse effort (cost) estimate; clamps to 1..5; `--clear` unsets | `--clear` |
 | `check <id> [index]` | Toggle a checklist item by zero-based index, or append one | `--add <text>`, `--off` |
 | `dep <id> <dep-id>` | Add a dependency (id waits on dep-id), or remove it with `--rm`; acyclic & idempotent | `--rm` |
 | `label <id>` | Add and/or remove labels on a task (both repeatable, combinable); idempotent | `--add <label>`, `--remove <label>` |
@@ -149,7 +158,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `ui` | Launch the interactive TUI (list + detail panes): navigate, filter, done, move lane, reorder (`K`/`J`), toggle checklist, edit body | — |
 | `migrate <file>` | Import an existing `Task.md` etc. (dry-run by default; unmapped headings & `[[wikilink]]`s reported, never dropped) | `--write`, `-l/--label` |
 
-Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `move`, `reorder`, `check`, `dep`) also accept `--json`, emitting `{before, after, changed}` so a caller sees the effect without a follow-up `show`. `apply --json` emits a per-directive report (`{on, ref, outcomes}`). `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
+Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `move`, `reorder`, `value`, `effort`, `check`, `dep`, `label`) also accept `--json`, emitting `{before, after, changed}` so a caller sees the effect without a follow-up `show`. `apply --json` emits a per-directive report (`{on, ref, outcomes}`). `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
 
 ---
 

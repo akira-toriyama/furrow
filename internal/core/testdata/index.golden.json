@@ -20,6 +20,8 @@
       "title": "畝を一本進める",
       "status": "in-progress",
       "priority": 110,
+      "value": 4,
+      "effort": 2,
       "labels": [
         "canon",
         "zmk"

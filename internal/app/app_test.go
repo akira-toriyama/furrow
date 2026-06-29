@@ -503,3 +503,88 @@ func TestRelabelRespectsLabelsRequired(t *testing.T) {
 		t.Errorf("labels = %q, want %q", join, "new")
 	}
 }
+
+func intptr(n int) *int { return &n }
+
+func TestSetValueAndEffort(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("estimate me", AddOpts{})
+	if tk.Value != nil || tk.Effort != nil {
+		t.Fatalf("a fresh task must have unset value/effort: %+v", tk)
+	}
+
+	got, err := a.SetValue(tk.ID, intptr(4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Value == nil || *got.Value != 4 || got.Effort != nil {
+		t.Errorf("after SetValue(4): value=%v effort=%v", got.Value, got.Effort)
+	}
+
+	got, err = a.SetEffort(tk.ID, intptr(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Value == nil || *got.Value != 4 || got.Effort == nil || *got.Effort != 2 {
+		t.Errorf("after SetEffort(2): value=%v effort=%v", got.Value, got.Effort)
+	}
+	if roi := got.ROI(); roi != 2 {
+		t.Errorf("ROI = %v, want 2", roi)
+	}
+
+	// nil clears the estimate (back to unset — intake friction stays zero).
+	got, err = a.SetValue(tk.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Value != nil {
+		t.Errorf("SetValue(nil) should clear value, got %v", got.Value)
+	}
+}
+
+func TestAddWithEstimate(t *testing.T) {
+	a := newApp()
+	tk, err := a.Add("scoped", AddOpts{Value: intptr(3), Effort: intptr(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.Value == nil || *tk.Value != 3 || tk.Effort == nil || *tk.Effort != 2 {
+		t.Errorf("Add did not carry value/effort: %+v", tk)
+	}
+}
+
+func TestEstimateClampedOnRead(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("x", AddOpts{})
+	if _, err := a.SetValue(tk.ID, intptr(9)); err != nil { // out of range
+		t.Fatal(err)
+	}
+	got, _, err := a.Get(tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Value == nil || *got.Value != 5 {
+		t.Errorf("an out-of-range value must clamp to 5 on read, got %v", got.Value)
+	}
+}
+
+func TestLintWarnsOutOfRangeEstimate(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("x", AddOpts{})
+	if _, err := a.SetValue(tk.ID, intptr(9)); err != nil {
+		t.Fatal(err)
+	}
+	probs, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, p := range probs {
+		if p.ID == tk.ID && p.Severity == core.SevWarn && strings.Contains(p.Msg, "value 9") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("lint should warn that value 9 is out of range; got %+v", probs)
+	}
+}

@@ -136,6 +136,8 @@ func (a *App) load() (*core.Index, error) {
 type AddOpts struct {
 	Status   string
 	Priority *int
+	Value    *int // optional coarse 1..5 estimate; nil = unset
+	Effort   *int // optional coarse 1..5 estimate; nil = unset
 	Labels   []string
 	Parent   string
 	Deps     []string
@@ -181,6 +183,7 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	now := a.Clock.Now()
 	t := core.Task{
 		ID: id, Title: title, Status: status, Priority: prio,
+		Value: cloneIntp(o.Value), Effort: cloneIntp(o.Effort),
 		Labels: o.Labels, Parent: o.Parent, Deps: o.Deps, Refs: o.Refs,
 		Created: now, Updated: now, Body: core.BodyPath(id),
 	}
@@ -321,6 +324,20 @@ func (a *App) Done(id string) (*core.Task, error) { return a.Move(id, a.Cfg.Done
 // Reorder sets a task's absolute priority.
 func (a *App) Reorder(id string, priority int) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) { t.Priority = priority })
+}
+
+// SetValue records a task's value estimate, or clears it when v is nil (back to
+// "unset", so triage stays frictionless). An out-of-range score is clamped into
+// 1..5 on write by the marshaller. The pointer is copied so a later clamp can't
+// reach back into the caller's variable.
+func (a *App) SetValue(id string, v *int) (*core.Task, error) {
+	return a.mutate(id, func(t *core.Task) { t.Value = cloneIntp(v) })
+}
+
+// SetEffort records a task's effort estimate, or clears it when v is nil. Same
+// clamp/copy semantics as SetValue.
+func (a *App) SetEffort(id string, v *int) (*core.Task, error) {
+	return a.mutate(id, func(t *core.Task) { t.Effort = cloneIntp(v) })
 }
 
 // SetTitle renames a task's one-line summary.
@@ -489,6 +506,16 @@ func (a *App) EditPath(id string) (string, error) {
 		return "", core.Internalf(id, "this store is not file-backed; cannot edit")
 	}
 	return p, nil
+}
+
+// cloneIntp returns a copy of an optional int so callers and the store never
+// alias the same *int (Canonicalize clamps in place).
+func cloneIntp(p *int) *int {
+	if p == nil {
+		return nil
+	}
+	n := *p
+	return &n
 }
 
 func contains(ss []string, s string) bool {

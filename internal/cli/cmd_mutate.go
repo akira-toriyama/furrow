@@ -75,6 +75,56 @@ func newReorderCmd() *cobra.Command {
 	}
 }
 
+// newEstimateCmd builds the shared `value`/`effort` setter: `furrow <name> <id>
+// <1-5>` records a coarse estimate (clamped into 1..5), `--clear` unsets it.
+// value and effort together drive ROI = value/effort for picking the next task.
+func newEstimateCmd(name string, set func(*app.App, string, *int) (*core.Task, error)) *cobra.Command {
+	var clear bool
+	cmd := &cobra.Command{
+		Use:   name + " <id> <1-5>",
+		Short: "Set a task's " + name + " estimate (coarse 1..5), or clear it with --clear",
+		Long: "Record a coarse 1..5 " + name + " estimate on a task; out-of-range scores are\n" +
+			"clamped into 1..5. With --clear, remove the estimate (back to unset, so intake\n" +
+			"stays frictionless). value and effort together derive ROI = value/effort, the\n" +
+			"signal for picking the next task — sort with: furrow ls --json | jq 'sort_by(.value/.effort)'.",
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			id := args[0]
+			var v *int
+			switch {
+			case clear:
+				if len(args) != 1 {
+					return core.Validationf(id, "--clear takes no score argument")
+				}
+			default:
+				if len(args) != 2 {
+					return core.Validationf(id, "provide a 1-5 score, or --clear to unset")
+				}
+				n, err := atoiArg(name, args[1])
+				if err != nil {
+					return err
+				}
+				v = &n
+			}
+			return emitMutation(a, name, id, func() (*core.Task, error) { return set(a, id, v) })
+		},
+	}
+	cmd.Flags().BoolVar(&clear, "clear", false, "remove the estimate (back to unset)")
+	return cmd
+}
+
+func newValueCmd() *cobra.Command {
+	return newEstimateCmd("value", func(a *app.App, id string, v *int) (*core.Task, error) { return a.SetValue(id, v) })
+}
+
+func newEffortCmd() *cobra.Command {
+	return newEstimateCmd("effort", func(a *app.App, id string, v *int) (*core.Task, error) { return a.SetEffort(id, v) })
+}
+
 func newCheckCmd() *cobra.Command {
 	var (
 		add string

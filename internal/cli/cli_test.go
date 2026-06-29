@@ -430,3 +430,92 @@ func TestCLIMigrateAppliesLabel(t *testing.T) {
 		t.Errorf("ls -l other should not return the facet tasks:\n%s", out)
 	}
 }
+
+func TestCLIValueEffort(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "estimate me", "-s", "ready")
+
+	parseAfter := func(out string) (*core.Task, []string) {
+		t.Helper()
+		var res struct {
+			After   *core.Task `json:"after"`
+			Changed []string   `json:"changed"`
+		}
+		if err := json.Unmarshal([]byte(out), &res); err != nil {
+			t.Fatalf("parse mutation json: %v\n%s", err, out)
+		}
+		return res.After, res.Changed
+	}
+
+	out, code := run(t, "--json", "value", id, "4")
+	if code != 0 {
+		t.Fatalf("value exit = %d:\n%s", code, out)
+	}
+	after, changed := parseAfter(out)
+	if after.Value == nil || *after.Value != 4 {
+		t.Errorf("value should be 4, got %v", after.Value)
+	}
+	if !strings.Contains(strings.Join(changed, ","), "value") {
+		t.Errorf("changed should list value, got %v", changed)
+	}
+
+	out, _ = run(t, "--json", "effort", id, "2")
+	after, _ = parseAfter(out)
+	if after.Effort == nil || *after.Effort != 2 {
+		t.Errorf("effort should be 2, got %v", after.Effort)
+	}
+
+	// show --json carries both (so ROI = value/effort is derivable downstream).
+	out, _ = run(t, "show", id, "--json")
+	if !strings.Contains(out, `"value": 4`) || !strings.Contains(out, `"effort": 2`) {
+		t.Errorf("show --json missing value/effort:\n%s", out)
+	}
+
+	// clamp-don't-reject: 9 lands as 5.
+	out, _ = run(t, "--json", "value", id, "9")
+	after, _ = parseAfter(out)
+	if after.Value == nil || *after.Value != 5 {
+		t.Errorf("out-of-range value should clamp to 5, got %v", after.Value)
+	}
+
+	// --clear returns the task to unset.
+	out, _ = run(t, "--json", "value", id, "--clear")
+	after, _ = parseAfter(out)
+	if after.Value != nil {
+		t.Errorf("--clear should unset value, got %v", after.Value)
+	}
+}
+
+func TestCLIAddWithEstimate(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "--json", "add", "scoped", "-s", "ready", "--value", "3", "--effort", "2")
+	if code != 0 {
+		t.Fatalf("add exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, `"value": 3`) || !strings.Contains(out, `"effort": 2`) {
+		t.Errorf("add --json missing value/effort:\n%s", out)
+	}
+}
+
+func TestCLIValueRequiresArgOrClear(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "x", "-s", "ready")
+	// neither n nor --clear is a usage error.
+	if _, code := run(t, "value", id); code != int(core.CodeValidation) {
+		t.Errorf("value with no score and no --clear should exit 2, got %d", code)
+	}
+}
+
+func TestCLIShowDisplaysEstimate(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "x", "-s", "ready", "--value", "4", "--effort", "2")
+	out, code := run(t, "show", id) // human output (no --json)
+	if code != 0 {
+		t.Fatalf("show exit = %d:\n%s", code, out)
+	}
+	for _, want := range []string{"value:", "effort:", "roi:"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("human show should display %q:\n%s", want, out)
+		}
+	}
+}

@@ -84,6 +84,12 @@ func Canonicalize(idx *Index, laneOrder []string) {
 			c := normTime(*t.Closed)
 			t.Closed = &c
 		}
+
+		// value/effort are clamp-don't-reject: an out-of-range estimate (from a
+		// hand-edit) is rounded into 1..5 so furrow never writes a stray. lint
+		// (EstimateProblems, run on the pre-clamp bytes) surfaces it first.
+		clampEstimate(t.Value)
+		clampEstimate(t.Effort)
 	}
 
 	sort.SliceStable(idx.Tasks, func(a, b int) bool {
@@ -101,6 +107,19 @@ func Canonicalize(idx *Index, laneOrder []string) {
 // normTime coerces a timestamp to the on-disk contract: UTC, whole seconds. A
 // zero time stays zero (encoding/json emits "0001-01-01T00:00:00Z").
 func normTime(t time.Time) time.Time { return t.UTC().Truncate(time.Second) }
+
+// clampEstimate rounds a non-nil value/effort into [EstimateMin, EstimateMax]
+// in place. A nil pointer (unset) is left untouched so absent stays absent.
+func clampEstimate(p *int) {
+	if p == nil {
+		return
+	}
+	if *p < EstimateMin {
+		*p = EstimateMin
+	} else if *p > EstimateMax {
+		*p = EstimateMax
+	}
+}
 
 // laneRank maps each lane to its rank by FIRST occurrence (0,1,2,…), not by raw
 // slice index. This keeps ranks contiguous in 0..len(unique)-1 even if laneOrder

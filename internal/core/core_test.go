@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,6 +25,7 @@ func sampleIndex() *Index {
 		return time.Date(y, mo, d, 1, 2, 3, 0, time.UTC)
 	}
 	closed := mk(2026, 6, 20)
+	vi := func(n int) *int { return &n }
 	return &Index{
 		SchemaVersion: SchemaVersion,
 		Tasks: []Task{
@@ -35,7 +37,8 @@ func sampleIndex() *Index {
 			},
 			{
 				ID: "t-0001", Title: "畝を一本進める", Status: "in-progress",
-				Priority: 110, Labels: []string{"zmk", "canon"}, Deps: []string{"t-0002"},
+				Priority: 110, Value: vi(4), Effort: vi(2),
+				Labels: []string{"zmk", "canon"}, Deps: []string{"t-0002"},
 				Refs:      []string{"docs/x.md#L10", "https://example.com"},
 				Checklist: []ChecklistItem{{Text: "design", Done: true}, {Text: "ship", Done: false}},
 				Created:   mk(2026, 6, 2), Updated: mk(2026, 6, 21), Closed: nil,
@@ -115,6 +118,19 @@ func TestMarshalDetails(t *testing.T) {
 	if !bytes.Contains(got, []byte(`"closed": null`)) {
 		t.Errorf("open task must serialize closed as null:\n%s", s)
 	}
+	// a set estimate serializes its key; an unset one is omitted entirely
+	// (omitempty on the *int), so absent stays distinct from any score.
+	if !bytes.Contains(got, []byte(`"value": 4`)) || !bytes.Contains(got, []byte(`"effort": 2`)) {
+		t.Errorf("a task with value/effort must serialize them:\n%s", s)
+	}
+	// t-0002 has no estimate; "value"/"effort" must not appear for it. The whole
+	// index has exactly one estimate-bearing task, so a single occurrence each.
+	if n := bytes.Count(got, []byte(`"value":`)); n != 1 {
+		t.Errorf("unset value must be omitted: want 1 \"value\" key, got %d:\n%s", n, s)
+	}
+	if n := bytes.Count(got, []byte(`"effort":`)); n != 1 {
+		t.Errorf("unset effort must be omitted: want 1 \"effort\" key, got %d:\n%s", n, s)
+	}
 }
 
 func TestCanonicalSort(t *testing.T) {
@@ -191,6 +207,100 @@ func TestCanonicalizeDedupesSets(t *testing.T) {
 	if len(got.Deps) != 1 || got.Deps[0] != "t-2" {
 		t.Errorf("deps should dedupe to [t-2], got %v", got.Deps)
 	}
+}
+
+func TestROI(t *testing.T) {
+	p := func(n int) *int { return &n }
+	cases := []struct {
+		name          string
+		value, effort *int
+		want          float64
+	}{
+		{"value over effort", p(4), p(2), 2},
+		{"fractional", p(3), p(2), 1.5},
+		{"effort one", p(5), p(1), 5},
+		{"both unset is undefined", nil, nil, 0},
+		{"value unset is undefined", nil, p(2), 0},
+		{"effort unset is undefined", p(3), nil, 0},
+		{"effort zero is undefined", p(3), p(0), 0},
+		{"effort negative is undefined", p(3), p(-1), 0},
+	}
+	for _, c := range cases {
+		got := (&Task{Value: c.value, Effort: c.effort}).ROI()
+		if got != c.want {
+			t.Errorf("%s: ROI = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestCanonicalizeClampsEstimates(t *testing.T) {
+	p := func(n int) *int { return &n }
+	idx := &Index{Tasks: []Task{
+		{ID: "t-0001", Status: "ready", Body: BodyPath("t-0001"), Value: p(9), Effort: p(0)},
+		{ID: "t-0002", Status: "ready", Body: BodyPath("t-0002"), Value: p(-3), Effort: p(7)},
+		{ID: "t-0003", Status: "ready", Body: BodyPath("t-0003"), Value: p(3), Effort: p(2)}, // in range
+		{ID: "t-0004", Status: "ready", Body: BodyPath("t-0004")},                            // unset
+	}}
+	Canonicalize(idx, testLanes)
+	want := []struct {
+		id            string
+		value, effort *int
+	}{
+		{"t-0001", p(5), p(1)}, // 9->5, 0->1
+		{"t-0002", p(1), p(5)}, // -3->1, 7->5
+		{"t-0003", p(3), p(2)}, // untouched
+		{"t-0004", nil, nil},   // unset stays unset
+	}
+	for i, w := range want {
+		got := idx.Tasks[i]
+		if got.ID != w.id {
+			t.Fatalf("task %d: id = %s, want %s (canonical sort changed?)", i, got.ID, w.id)
+		}
+		if !intpEq(got.Value, w.value) {
+			t.Errorf("%s: value = %s, want %s", w.id, fmtIntp(got.Value), fmtIntp(w.value))
+		}
+		if !intpEq(got.Effort, w.effort) {
+			t.Errorf("%s: effort = %s, want %s", w.id, fmtIntp(got.Effort), fmtIntp(w.effort))
+		}
+	}
+}
+
+func TestEstimateProblems(t *testing.T) {
+	p := func(n int) *int { return &n }
+	idx := &Index{Tasks: []Task{
+		{ID: "t-0001", Value: p(9)},               // value too high
+		{ID: "t-0002", Effort: p(0)},              // effort too low
+		{ID: "t-0003", Value: p(3), Effort: p(2)}, // in range, no problem
+		{ID: "t-0004"},                            // unset, no problem
+	}}
+	ps := EstimateProblems(idx)
+	gotIDs := map[string]bool{}
+	for _, pr := range ps {
+		if pr.Severity != SevWarn {
+			t.Errorf("estimate problems must be warns, got %q for %s", pr.Severity, pr.ID)
+		}
+		gotIDs[pr.ID] = true
+	}
+	if !gotIDs["t-0001"] || !gotIDs["t-0002"] {
+		t.Errorf("expected warns for t-0001 (value) and t-0002 (effort); got %+v", ps)
+	}
+	if gotIDs["t-0003"] || gotIDs["t-0004"] {
+		t.Errorf("in-range/unset tasks must not warn; got %+v", ps)
+	}
+}
+
+func intpEq(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func fmtIntp(p *int) string {
+	if p == nil {
+		return "nil"
+	}
+	return fmt.Sprintf("%d", *p)
 }
 
 func TestLaneRankNoSentinelCollisionWithDuplicateLanes(t *testing.T) {
