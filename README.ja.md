@@ -129,6 +129,8 @@ furrow done t-0001
 | `done <id>` | done レーンへ移動し `closed` を打刻 |
 | `move <id> <lane>` | 任意のレーンへ移動 |
 | `reorder <id> <priority>` | priority（疎な整数）を設定 |
+| `value <id> <1-5>` | 粗い value（重要度）見積もりを設定（範囲外は 1..5 に丸め）。`--clear` で未設定に戻す |
+| `effort <id> <1-5>` | 粗い effort（手間）見積もりを設定（1..5 に丸め）。`--clear` で未設定に戻す |
 | `check <id> [index]` | チェックリスト項目をトグル（`--add` で追加・`--off` で外す） |
 | `dep <id> <dep-id>` | 依存を追加（id が dep-id を待つ）。`--rm` で削除。循環防止・冪等 |
 | `label <id>` | ラベルを追加／削除（`--add`・`--remove`、いずれも反復可・併用可）。冪等 |
@@ -146,6 +148,7 @@ furrow done t-0001
 - `--label, -l <label>` — ラベルで絞り込み（`ls`）。`add` では `-l` 繰り返しでラベルを付与
 - `--limit, -n <N>` — 行数の上限（`ls` / `next`。`0` は全件、`next` は `-n1` で先頭だけ）
 - `--priority, -p <N>` — `add` で priority を明示（省略時はレーン末尾に追記）
+- `--value <1-5>` / `--effort <1-5>` — `add` で粗い value/effort 見積もりを付与（範囲外は 1..5 に丸め・省略で未設定）
 - `--parent <id>` / `--dep <id>`（繰り返し）/ `--ref <file:line|URL>`（繰り返し）/ `--body <md>` — `add` のメタ指定
 - `--add <text>` / `--off` — `check` のチェックリスト操作
 - `--older-than <days>` / `--yes` — `archive`（`--yes` なしは dry-run プレビュー）
@@ -210,6 +213,8 @@ furrow show t-0001 --json   # task + body_text
       "title": "…",                   // 一行サマリ
       "status": "in-progress",        // config.toml のレーン
       "priority": 100,                // 疎な整数・並べ替えはこれだけ
+      "value": 4,                     // 任意・粗い 1..5（重要度）。未設定なら省略
+      "effort": 2,                    // 任意・粗い 1..5（手間）。未設定なら省略
       "labels": ["core", "cli"],
       "parent": "t-0001",             // 任意（omitempty）
       "deps": ["t-0003"],             // 依存（next が ready 判定に使う）
@@ -225,6 +230,13 @@ furrow show t-0001 --json   # task + body_text
 ```
 
 正準スキーマは `furrow schema` が出力する（draft 2020-12）。これが正本で、`docs/schema/furrow.index.v1.json` は commit 済みのコピー。CI が両者を diff して drift を防ぐ。
+
+`value` / `effort` は、エージェント（や自分）が「次に何をやるか」を毎回見積もり直すのではなく**記録済みデータから選ぶ**ための任意フィールド。**ROI = value ÷ effort は導出で保存しない**（どちらを直しても常に最新の ROI になり、古い数字が残らない）。`next` はあえて据え置き——ROI 並べ替えは呼ぶ側の選択：
+
+```sh
+# value/effort を両方持つタスクを value÷effort の高い順に
+furrow ls --json | jq 'map(select(.value and .effort)) | sort_by(-(.value / .effort))'
+```
 
 ---
 

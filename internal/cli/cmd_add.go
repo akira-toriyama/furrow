@@ -16,6 +16,8 @@ func newAddCmd() *cobra.Command {
 	var (
 		status   string
 		priority int
+		value    int
+		effort   int
 		labels   []string
 		parent   string
 		deps     []string
@@ -44,6 +46,14 @@ func newAddCmd() *cobra.Command {
 				p := priority
 				opts.Priority = &p
 			}
+			if cmd.Flags().Changed("value") {
+				v := value
+				opts.Value = &v
+			}
+			if cmd.Flags().Changed("effort") {
+				e := effort
+				opts.Effort = &e
+			}
 
 			if stdin {
 				if len(args) > 0 {
@@ -68,6 +78,8 @@ func newAddCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "lane (default: config lanes.default)")
 	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "explicit priority (default: append in lane)")
+	cmd.Flags().IntVar(&value, "value", 0, "coarse 1..5 value estimate (clamped; omit to leave unset)")
+	cmd.Flags().IntVar(&effort, "effort", 0, "coarse 1..5 effort estimate (clamped; omit to leave unset)")
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable)")
 	cmd.Flags().StringVar(&parent, "parent", "", "parent task id")
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")

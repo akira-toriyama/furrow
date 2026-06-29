@@ -12,11 +12,17 @@ import (
 // vice versa). Config clamp warnings are surfaced too, so `furrow lint` is the
 // one place that tells you everything that is off.
 func (a *App) Lint() ([]core.Problem, error) {
-	idx, err := a.load()
+	idx, err := a.Store.Load()
 	if err != nil {
 		return nil, err
 	}
-	ps := core.Validate(idx, a.Cfg.Lanes, a.Cfg.IDPattern())
+	// The estimate range check runs on the RAW (pre-clamp) index: Canonicalize
+	// would otherwise round a hand-edited out-of-range value/effort away before
+	// we could warn about it. Everything else is order-independent, so we
+	// canonicalize after and validate as before.
+	ps := core.EstimateProblems(idx)
+	core.Canonicalize(idx, a.Cfg.Lanes)
+	ps = append(ps, core.Validate(idx, a.Cfg.Lanes, a.Cfg.IDPattern())...)
 
 	// index <-> body 1:1.
 	bodyIDs, err := a.Store.ListBodyIDs()

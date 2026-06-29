@@ -169,6 +169,15 @@ func printTaskDetail(t *core.Task, body string) {
 	fmt.Fprintf(out, "%s  %s\n", t.ID, t.Title)
 	fmt.Fprintf(out, "status:   %s\n", t.Status)
 	fmt.Fprintf(out, "priority: %d\n", t.Priority)
+	if t.Value != nil {
+		fmt.Fprintf(out, "value:    %d\n", *t.Value)
+	}
+	if t.Effort != nil {
+		fmt.Fprintf(out, "effort:   %d\n", *t.Effort)
+	}
+	if t.Value != nil && t.Effort != nil && *t.Effort > 0 {
+		fmt.Fprintf(out, "roi:      %.2f\n", t.ROI())
+	}
 	if len(t.Labels) > 0 {
 		fmt.Fprintf(out, "labels:   %s\n", strings.Join(t.Labels, ", "))
 	}
@@ -238,6 +247,12 @@ func changedFields(before, after *core.Task) []string {
 	if before.Priority != after.Priority {
 		ch = append(ch, "priority")
 	}
+	if !intpEq(before.Value, after.Value) {
+		ch = append(ch, "value")
+	}
+	if !intpEq(before.Effort, after.Effort) {
+		ch = append(ch, "effort")
+	}
 	if before.Title != after.Title {
 		ch = append(ch, "title")
 	}
@@ -260,6 +275,14 @@ func changedFields(before, after *core.Task) []string {
 		ch = append(ch, "closed")
 	}
 	return ch
+}
+
+// intpEq compares two optional ints: both nil is equal; one nil is not.
+func intpEq(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // strsEq compares two string slices; nil and empty compare equal.

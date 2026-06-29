@@ -84,6 +84,25 @@ func Validate(idx *Index, laneOrder []string, idPattern *regexp.Regexp) []Proble
 	return out
 }
 
+// EstimateProblems warns about any value/effort outside the 1..5 scale. It is a
+// backstop for hand-edits: the marshaller clamps on every write (Canonicalize),
+// so an out-of-range estimate can only reach disk by editing index.json by hand
+// — and would be silently rounded on the next write. Run this on the RAW index
+// (before Canonicalize) so the stray is still visible. Findings are warnings,
+// not errors: the data still loads and the clamp keeps it sane.
+func EstimateProblems(idx *Index) []Problem {
+	var out []Problem
+	for _, t := range idx.Tasks {
+		if t.Value != nil && (*t.Value < EstimateMin || *t.Value > EstimateMax) {
+			out = append(out, Problem{SevWarn, t.ID, fmt.Sprintf("value %d is outside %d..%d; it will be clamped on the next write", *t.Value, EstimateMin, EstimateMax)})
+		}
+		if t.Effort != nil && (*t.Effort < EstimateMin || *t.Effort > EstimateMax) {
+			out = append(out, Problem{SevWarn, t.ID, fmt.Sprintf("effort %d is outside %d..%d; it will be clamped on the next write", *t.Effort, EstimateMin, EstimateMax)})
+		}
+	}
+	return out
+}
+
 // HasErrors reports whether any problem is an error (vs. only warnings).
 func HasErrors(ps []Problem) bool {
 	for _, p := range ps {

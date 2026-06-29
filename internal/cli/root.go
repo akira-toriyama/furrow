@@ -68,6 +68,8 @@ func newRootCmd() *cobra.Command {
 		newDoneCmd(),
 		newMoveCmd(),
 		newReorderCmd(),
+		newValueCmd(),
+		newEffortCmd(),
 		newCheckCmd(),
 		newDepCmd(),
 		newLabelCmd(),

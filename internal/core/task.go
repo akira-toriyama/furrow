@@ -34,10 +34,17 @@ type Index struct {
 // `parent` is omitempty because most tasks have no parent and an empty string
 // key would be noise; both states (absent / present) are deterministic.
 type Task struct {
-	ID        string          `json:"id"`       // frozen, == bodies/<id>.md stem; never reused or renumbered
-	Title     string          `json:"title"`    // one-line summary
-	Status    string          `json:"status"`   // a lane value from config.toml [lanes].order
-	Priority  int             `json:"priority"` // sparse integer (10-step); reorder = edit this one field
+	ID       string `json:"id"`       // frozen, == bodies/<id>.md stem; never reused or renumbered
+	Title    string `json:"title"`    // one-line summary
+	Status   string `json:"status"`   // a lane value from config.toml [lanes].order
+	Priority int    `json:"priority"` // sparse integer (10-step); reorder = edit this one field
+	// Value and Effort are an optional, coarse 1..5 estimate (importance and
+	// cost) an agent or human records at triage. Both are pointers so "unset"
+	// (nil -> key absent) is distinct from any score, keeping intake friction
+	// zero. Out-of-range inputs are clamped to 1..5 by Canonicalize (lint warns
+	// on a hand-edited stray); ROI = Value/Effort is derived, never stored.
+	Value     *int            `json:"value,omitempty"`
+	Effort    *int            `json:"effort,omitempty"`
 	Labels    []string        `json:"labels"`
 	Parent    string          `json:"parent,omitempty"`
 	Deps      []string        `json:"deps"` // ids this task waits on; `next` treats a task ready when all are done
@@ -59,3 +66,21 @@ type ChecklistItem struct {
 // BodyPath returns the canonical relative body path for an id. Both the store
 // and the marshaller use this so the Body field is never hand-assembled.
 func BodyPath(id string) string { return "bodies/" + id + ".md" }
+
+// EstimateMin and EstimateMax bound the coarse value/effort scale. Inputs
+// outside the range are clamped to it (see Canonicalize).
+const (
+	EstimateMin = 1
+	EstimateMax = 5
+)
+
+// ROI is the derived return-on-investment, Value/Effort — the signal an agent
+// uses to pick the next task. It is computed, never stored, so editing value or
+// effort always yields a current ROI with no stale number to reconcile. ROI is
+// undefined (0) when either estimate is unset or Effort is non-positive.
+func (t *Task) ROI() float64 {
+	if t.Value == nil || t.Effort == nil || *t.Effort <= 0 {
+		return 0
+	}
+	return float64(*t.Value) / float64(*t.Effort)
+}
