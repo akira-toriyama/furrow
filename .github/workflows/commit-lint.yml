@@ -1,29 +1,11 @@
+# Canonical standard file managed by fleet-sync (.github/workflows/fleet-sync.yml).
+# Do NOT edit per-repo copies — edit THIS file; fleet-sync propagates it to every
+# owned, non-fork, non-archived repo. Synced to: .github/workflows/commit-lint.yml
 name: commit-lint
 
 on:
   pull_request:
 
 jobs:
-  commit-lint:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: validate commit messages (gitmoji + Conventional)
-        run: |
-          # Reuse the same hook that runs locally, against every commit in the PR.
-          base="${{ github.event.pull_request.base.sha }}"
-          head="${{ github.event.pull_request.head.sha }}"
-          status=0
-          for sha in $(git rev-list "$base..$head"); do
-            msg="$(git log -1 --format=%B "$sha")"
-            tmp="$(mktemp)"; printf '%s\n' "$msg" > "$tmp"
-            if ! sh scripts/hooks/commit-msg "$tmp"; then
-              echo "  ^ offending commit: $sha" >&2
-              status=1
-            fi
-          done
-          exit $status
+  lint:
+    uses: akira-toriyama/.github/.github/workflows/commit-lint.yml@v1
