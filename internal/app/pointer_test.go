@@ -93,6 +93,75 @@ func TestDiscover_FurrowDirBeatsPointer(t *testing.T) {
 	}
 }
 
+func TestDiscover_NearestPointerBeatsAncestorFurrow(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	root := t.TempDir()
+	if _, err := Init(root); err != nil { // root/.furrow — an ANCESTOR real store
+		t.Fatal(err)
+	}
+	central := filepath.Join(root, "central")
+	if _, err := Init(central); err != nil { // the board the pointer redirects to
+		t.Fatal(err)
+	}
+	ptrDir := filepath.Join(root, "sub")
+	if err := os.MkdirAll(ptrDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "board = \"../central/.furrow\"\ndefault_label = \"near\"\n"
+	if err := os.WriteFile(filepath.Join(ptrDir, PointerName), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(ptrDir, "deep")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Walking up from child, the pointer at root/sub is nearer than root/.furrow,
+	// so it must win (nearest wins).
+	a, err := Open(child)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if a.Dir != filepath.Join(central, DirName) {
+		t.Errorf("Dir = %q, want the central board (nearest pointer should beat ancestor .furrow)", a.Dir)
+	}
+	if a.DefaultLabel != "near" {
+		t.Errorf("DefaultLabel = %q, want near", a.DefaultLabel)
+	}
+}
+
+func TestAdd_InjectedLabelSatisfiesRequired(t *testing.T) {
+	repoDir, boardDir := pointerLayout(t, "chord")
+	// Turn on [labels].required on the central board.
+	if err := os.WriteFile(filepath.Join(boardDir, "config.toml"), []byte("[labels]\nrequired = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a, err := Open(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a.Cfg.LabelsRequired {
+		t.Fatal("precondition: labels.required should be on")
+	}
+	task, err := a.Add("x", AddOpts{}) // no explicit label — must pass via the injected one
+	if err != nil {
+		t.Fatalf("Add should succeed via injected default_label: %v", err)
+	}
+	if !hasLabel(task.Labels, "chord") {
+		t.Errorf("labels = %v, want chord", task.Labels)
+	}
+}
+
+func TestDiscover_PointerTildeUserRejected(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, PointerName), []byte("board = \"~bob/.furrow\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(repoDir); err == nil {
+		t.Fatal("expected ~user board to be rejected, got nil")
+	}
+}
+
 func TestDiscover_PointerBadBoardErrors(t *testing.T) {
 	t.Setenv(EnvDir, "")
 	repoDir := t.TempDir()

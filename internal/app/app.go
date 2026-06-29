@@ -130,11 +130,17 @@ func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
 	}
 	board := p.Board
 	if strings.HasPrefix(board, "~") {
+		rest := board[1:]
+		// Only bare ~ / ~/path is supported; ~user would silently resolve onto
+		// the current user's home, so reject it loudly rather than misroute.
+		if rest != "" && !strings.HasPrefix(rest, "/") {
+			return resolution{}, core.Validationf("", "%s: board %q uses the unsupported ~user form; use an absolute path", pointerPath, board)
+		}
 		home, herr := os.UserHomeDir()
 		if herr != nil {
 			return resolution{}, core.Internalf("", "resolve ~ in board %q: %v", board, herr)
 		}
-		board = filepath.Join(home, strings.TrimPrefix(board, "~"))
+		board = filepath.Join(home, rest)
 	}
 	if !filepath.IsAbs(board) {
 		board = filepath.Join(pointerDir, board)
