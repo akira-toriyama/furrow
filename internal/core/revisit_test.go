@@ -69,6 +69,12 @@ func TestRevisitReasons(t *testing.T) {
 			want:      []string{RevisitStale},
 		},
 		{
+			name:      "stale boundary: just under threshold stays quiet",
+			task:      Task{Value: p(3), Effort: p(2), Updated: now.AddDate(0, 0, -29)},
+			staleDays: 30,
+			want:      []string{},
+		},
+		{
 			name:      "staleDays<=0 disables stale",
 			task:      Task{Value: p(3), Effort: p(2), Updated: old},
 			staleDays: 0,
@@ -107,6 +113,26 @@ func TestRevisitReasonsDepDoneNamesDep(t *testing.T) {
 	}
 	if want := "dep t-d1 is done"; rs[0].Detail != want {
 		t.Errorf("detail = %q, want %q", rs[0].Detail, want)
+	}
+}
+
+func TestRevisitReasonsDepDoneOrder(t *testing.T) {
+	now := time.Date(2026, time.June, 29, 12, 0, 0, 0, time.UTC)
+	done := map[string]bool{"t-d1": true, "t-d2": true}
+	// Deps order is [t-open, t-d2, t-d1]; only the two done deps emit, and they
+	// must come back in Deps order (t-d2 before t-d1) with the dep named in detail.
+	rs := RevisitReasons(Task{Value: intptr(1), Effort: intptr(1), Updated: now, Deps: []string{"t-open", "t-d2", "t-d1"}}, now, 30, done)
+	want := []RevisitReason{
+		{Code: RevisitDepDone, Detail: "dep t-d2 is done"},
+		{Code: RevisitDepDone, Detail: "dep t-d1 is done"},
+	}
+	if len(rs) != len(want) {
+		t.Fatalf("got %d reasons, want %d: %+v", len(rs), len(want), rs)
+	}
+	for i, w := range want {
+		if rs[i] != w {
+			t.Errorf("reason[%d] = %+v, want %+v", i, rs[i], w)
+		}
 	}
 }
 

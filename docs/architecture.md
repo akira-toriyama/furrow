@@ -279,12 +279,16 @@ A few app-level rules worth stating, all verified against the code:
 Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
 except where noted:
 
-`init`, `add`, `ls` (alias `list`), `show`, `next`, `edit`, `done`, `move`,
-`reorder`, `check`, `dep`, `archive`, `lint`, `schema`, `version`, `ui`,
+`init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `edit`, `done`,
+`move`, `reorder`, `check`, `dep`, `archive`, `lint`, `schema`, `version`, `ui`,
 `migrate`.
 
 - **`dep`** adds or removes a dependency edge on an existing task (`--rm`).
   Adding is acyclic (rejects self- and cycle-creating edges) and idempotent.
+- **`revisit`** is the read-only, agent-facing counterpart to `next`: it lists
+  open tasks needing re-evaluation (unset value/effort, stale, or a done
+  dependency), attaching a `revisit` reason array in `--json` so an agent fixes
+  them via the setters. An empty result exits 0 (nothing to revisit is healthy).
 - **`ui`** launches the bubbletea TUI (`internal/tui`): list + glamour detail,
   navigate / filter / done / move lane / reorder (`K`/`J`) / checklist toggle /
   edit body.

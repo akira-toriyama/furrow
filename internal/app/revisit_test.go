@@ -98,6 +98,34 @@ func TestRevisitLabelFilterAndLimit(t *testing.T) {
 	}
 }
 
+func TestRevisitCanonicalOrderAndLimitIdentity(t *testing.T) {
+	a, _ := revisitApp()
+	// Added out of canonical order; all unestimated so all surface. Canonical
+	// order is lane-rank -> priority -> id: ready (rank 2) sorts before
+	// in-progress (rank 3), and within ready the sparse priority orders them.
+	ip, _ := a.Add("in progress", AddOpts{Status: "in-progress"})
+	r1, _ := a.Add("ready a", AddOpts{Status: "ready"}) // priority 100
+	r2, _ := a.Add("ready b", AddOpts{Status: "ready"}) // priority 110
+
+	items, err := a.Revisit("", 30, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotOrder := make([]string, len(items))
+	for i, it := range items {
+		gotOrder[i] = it.Task.ID
+	}
+	if want := []string{r1.ID, r2.ID, ip.ID}; !eq(gotOrder, want) {
+		t.Errorf("revisit order = %v, want canonical %v", gotOrder, want)
+	}
+
+	// limit must return the canonical-FIRST item, not just any one.
+	one, _ := a.Revisit("", 30, 1)
+	if len(one) != 1 || one[0].Task.ID != r1.ID {
+		t.Errorf("limit=1 should return canonical-first %s, got %+v", r1.ID, one)
+	}
+}
+
 func eq(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
