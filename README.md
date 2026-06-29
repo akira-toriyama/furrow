@@ -213,6 +213,31 @@ non-blocking: an unknown id or lane is reported, never a merge blocker.
 
 ---
 
+## Central board: per-repo pointer
+
+A repo without its own `.furrow` can point at a central board (e.g. a private
+cross-repo tracker) and have furrow auto-scope to that repo's label. Drop a
+`.furrow-pointer.toml` at the repo root:
+
+```toml
+board = "../projects/.furrow"   # the central .furrow (relative to this file, ~, or absolute)
+default_label = "chord"         # optional: scope this repo to one label
+```
+
+Discovery precedence: `FURROW_DIR` (explicit, no label injection) → the nearest
+ancestor directory holding a `.furrow` (a real local store wins) → a
+`.furrow-pointer.toml` redirecting to the board → `furrow init`.
+
+With a pointer in effect:
+
+- `furrow add "…"` unions `default_label` into the task's labels (and satisfies
+  `[labels].required`); an explicit `-l x` adds to it rather than replacing.
+- `furrow ls|next|revisit` filter to `default_label` and print the active scope
+  to stderr, e.g. `furrow: board=… scope=label=chord (-l '' for all)`. Pass
+  `-l ''` to see the whole board, or `-l other` for another label.
+
+---
+
 ## Configuration
 
 `.furrow/config.toml` is the one human-edited file in the store. furrow only **reads** it (it never rewrites it) and applies a **clamp-don't-reject** policy: unknown keys are ignored and out-of-range values fall back to a safe default with a warning surfaced by `furrow lint` — so a typo can never break the tool.

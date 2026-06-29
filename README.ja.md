@@ -192,6 +192,28 @@ furrow show t-0001 --json   # task + body_text
 
 ストアの場所は、カレントから親方向に `.furrow/` を探して解決する。`FURROW_DIR` で明示も可能。`edit` のエディタは `FURROW_EDITOR` → `VISUAL` → `EDITOR` → `vi` の順で選ぶ。
 
+### 中央ボード: per-repo pointer
+
+自前の `.furrow` を持たない repo から、中央ボード（横断トラッカー等）を指し、その
+repo のラベルへ自動スコープできる。repo 直下に `.furrow-pointer.toml` を置く:
+
+```toml
+board = "../projects/.furrow"   # 中央 .furrow（本ファイル基準の相対・~・絶対）
+default_label = "chord"         # 任意: この repo を 1 ラベルにスコープ
+```
+
+発見の優先順位: `FURROW_DIR`（明示・ラベル注入なし）→ 直近の親で `.furrow` を持つ
+ディレクトリ（実体のローカルストアが勝つ）→ `.furrow-pointer.toml`（中央ボードへ
+redirect）→ `furrow init`。
+
+pointer 有効時:
+
+- `furrow add "…"` は `default_label` をラベルに union（`[labels].required` も充足）。
+  明示 `-l x` は置換でなく追加。
+- `furrow ls|next|revisit` は `default_label` で絞り、スコープを stderr に表示
+  （例 `furrow: board=… scope=label=chord (-l '' for all)`）。`-l ''` で全件、
+  `-l other` で別ラベル。
+
 ---
 
 ## 設計の不変条件
