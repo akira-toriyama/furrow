@@ -21,7 +21,7 @@ func newLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tasks, err := a.List(app.QueryOpts{Status: status, Label: label, Limit: limit})
+			tasks, err := a.List(app.QueryOpts{Status: status, Label: scopedLabel(cmd, a, label), Limit: limit})
 			if err != nil {
 				return err
 			}
@@ -73,7 +73,7 @@ func newNextCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tasks, err := a.Next(label, limit)
+			tasks, err := a.Next(scopedLabel(cmd, a, label), limit)
 			if err != nil {
 				return err
 			}
@@ -113,7 +113,7 @@ func newRevisitCmd() *cobra.Command {
 			if cmd.Flags().Changed("stale-days") {
 				days = staleDays
 			}
-			items, err := a.Revisit(label, days, limit)
+			items, err := a.Revisit(scopedLabel(cmd, a, label), days, limit)
 			if err != nil {
 				return err
 			}

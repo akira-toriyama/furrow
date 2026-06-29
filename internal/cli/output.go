@@ -21,6 +21,10 @@ import (
 // out is stdout; overridable in tests.
 var out io.Writer = os.Stdout
 
+// errOut is stderr; overridable in tests. The scope banner and other
+// human-facing notices go here so stdout stays pure data (JSON/table).
+var errOut io.Writer = os.Stderr
+
 // mustJSON marshals deterministically (SetEscapeHTML(false), 2-space indent) so
 // CLI JSON output matches the index's encoding style.
 func mustJSON(v any) []byte {
