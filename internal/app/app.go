@@ -50,6 +50,11 @@ type App struct {
 
 	DefaultLabel string // scope label from a pointer or a central board ("" otherwise)
 
+	// AutoFilter reports whether read commands (ls/next/revisit) auto-filter by
+	// DefaultLabel. A pointer always scopes (true); a central board honors its
+	// per-board auto_filter (default true). Meaningless when DefaultLabel is "".
+	AutoFilter bool
+
 	// ScopeWarnings are discovery-time notes bound for stderr (e.g. the global
 	// default board activated but found no enclosing git repo for an auto label).
 	ScopeWarnings []string
@@ -69,6 +74,7 @@ func Open(startDir string) (*App, error) {
 		return nil, err
 	}
 	a.DefaultLabel = res.DefaultLabel
+	a.AutoFilter = res.AutoFilter
 	a.ScopeWarnings = res.ScopeWarn
 	return a, nil
 }
@@ -92,6 +98,7 @@ func NewWithStore(st Store, cfg *config.Config, clk core.Clock) *App {
 type resolution struct {
 	Dir          string
 	DefaultLabel string
+	AutoFilter   bool // scope reads by DefaultLabel (pointer: always; board: its auto_filter)
 	ScopeWarn    []string
 }
 
@@ -152,7 +159,7 @@ func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
 	if fi, err := os.Stat(board); err != nil || !fi.IsDir() {
 		return resolution{}, core.Validationf("", "%s: board %q is not an existing directory", pointerPath, board)
 	}
-	return resolution{Dir: board, DefaultLabel: p.DefaultLabel}, nil
+	return resolution{Dir: board, DefaultLabel: p.DefaultLabel, AutoFilter: true}, nil
 }
 
 // resolvePathRelTo turns a path (bare ~ or ~/path, relative to baseDir, or
@@ -241,7 +248,7 @@ func resolveGlobalBoard(startDir string) (resolution, bool, error) {
 		return resolution{}, false, core.Validationf("", "central board %q is not an existing directory", winBoard)
 	}
 	label, lwarn := deriveScopeLabel(winner.Label, abs)
-	return resolution{Dir: winBoard, DefaultLabel: label, ScopeWarn: append(warn, lwarn...)}, true, nil
+	return resolution{Dir: winBoard, DefaultLabel: label, AutoFilter: winner.AutoFilter, ScopeWarn: append(warn, lwarn...)}, true, nil
 }
 
 // boardScopes returns the scopes to match a board against. A board loaded from
@@ -264,7 +271,7 @@ func boardScopes(b *config.GlobalBoard, resolvedBoard string) []string {
 func loadGlobalBoards() (boards []config.GlobalBoard, cfgDir string, warn []string, err error) {
 	if env := os.Getenv(EnvBoard); env != "" {
 		base, _ := os.Getwd()
-		return []config.GlobalBoard{{Path: env, Scopes: nil, Label: "auto"}}, base, nil, nil
+		return []config.GlobalBoard{{Path: env, Scopes: nil, Label: "auto", AutoFilter: true}}, base, nil, nil
 	}
 	path, err := globalConfigPath()
 	if err != nil {

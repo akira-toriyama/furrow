@@ -20,29 +20,51 @@ func labelCmd() (*cobra.Command, *string) {
 	return cmd, &label
 }
 
-func TestScopedLabel_DefaultAppliesAndAnnounces(t *testing.T) {
+// With auto_filter on (a pointer, or a board with auto_filter=true) and no
+// explicit --label, scopedLabel scopes reads to the default label — silently.
+// PR2 turns the old scope banner OFF (auto_filter is now an explicit,
+// discoverable config field), so nothing is written to stderr.
+func TestScopedLabel_AutoFilterAppliesSilently(t *testing.T) {
 	var se bytes.Buffer
 	errOut = &se
 	defer func() { errOut = os.Stderr }()
 
 	cmd, _ := labelCmd() // --label NOT changed
-	got := scopedLabel(cmd, &app.App{DefaultLabel: "chord", Dir: "/b/.furrow"}, "")
+	got := scopedLabel(cmd, &app.App{DefaultLabel: "chord", AutoFilter: true, Dir: "/b/.furrow"}, "")
 	if got != "chord" {
 		t.Errorf("label = %q, want chord", got)
 	}
-	if !strings.Contains(se.String(), "scope=label=chord") {
-		t.Errorf("banner missing scope, stderr = %q", se.String())
+	if se.Len() != 0 {
+		t.Errorf("expected no banner (PR2 turns it off), stderr = %q", se.String())
 	}
 }
 
-func TestScopedLabel_ExplicitEmptyEscapesNoBanner(t *testing.T) {
+// auto_filter = false: reads are NOT scoped by the board label (the whole board
+// shows), even though DefaultLabel is set — the label still tags `add`, but read
+// filtering is off.
+func TestScopedLabel_AutoFilterFalseDoesNotScope(t *testing.T) {
+	var se bytes.Buffer
+	errOut = &se
+	defer func() { errOut = os.Stderr }()
+
+	cmd, _ := labelCmd() // --label NOT changed
+	got := scopedLabel(cmd, &app.App{DefaultLabel: "chord", AutoFilter: false, Dir: "/b/.furrow"}, "")
+	if got != "" {
+		t.Errorf("label = %q, want empty (auto_filter=false shows the whole board)", got)
+	}
+	if se.Len() != 0 {
+		t.Errorf("expected no banner, stderr = %q", se.String())
+	}
+}
+
+func TestScopedLabel_ExplicitEmptyEscapes(t *testing.T) {
 	var se bytes.Buffer
 	errOut = &se
 	defer func() { errOut = os.Stderr }()
 
 	cmd, _ := labelCmd()
 	_ = cmd.Flags().Set("label", "") // Changed=true, value ""
-	got := scopedLabel(cmd, &app.App{DefaultLabel: "chord", Dir: "/b/.furrow"}, "")
+	got := scopedLabel(cmd, &app.App{DefaultLabel: "chord", AutoFilter: true, Dir: "/b/.furrow"}, "")
 	if got != "" {
 		t.Errorf("label = %q, want empty (whole board)", got)
 	}
@@ -58,7 +80,7 @@ func TestScopedLabel_ExplicitOtherWins(t *testing.T) {
 
 	cmd, _ := labelCmd()
 	_ = cmd.Flags().Set("label", "other")
-	got := scopedLabel(cmd, &app.App{DefaultLabel: "chord", Dir: "/b/.furrow"}, "other")
+	got := scopedLabel(cmd, &app.App{DefaultLabel: "chord", AutoFilter: true, Dir: "/b/.furrow"}, "other")
 	if got != "other" {
 		t.Errorf("label = %q, want other", got)
 	}
@@ -67,13 +89,13 @@ func TestScopedLabel_ExplicitOtherWins(t *testing.T) {
 	}
 }
 
-func TestScopedLabel_NoPointerNoBanner(t *testing.T) {
+func TestScopedLabel_NoDefaultLabel(t *testing.T) {
 	var se bytes.Buffer
 	errOut = &se
 	defer func() { errOut = os.Stderr }()
 
 	cmd, _ := labelCmd()
-	got := scopedLabel(cmd, &app.App{DefaultLabel: "", Dir: "/b/.furrow"}, "")
+	got := scopedLabel(cmd, &app.App{DefaultLabel: "", AutoFilter: true, Dir: "/b/.furrow"}, "")
 	if got != "" {
 		t.Errorf("label = %q, want empty", got)
 	}
@@ -82,14 +104,20 @@ func TestScopedLabel_NoPointerNoBanner(t *testing.T) {
 	}
 }
 
-// TestLs_BannerOnStderrNotStdout drives a real `ls` through cobra against a
-// pointer layout (discovery uses cwd), asserting the output contract end to end:
-// the scope banner lands on stderr while stdout stays pure data.
-func TestLs_BannerOnStderrNotStdout(t *testing.T) {
+// TestLs_PointerScopesSilently drives a real `ls` through cobra against a pointer
+// layout. It asserts the PR2 contract end to end: the pointer still scopes reads
+// to its label (a differently-labeled task on the same board is filtered out),
+// stdout stays pure data, and NO scope banner appears on stdout or stderr.
+func TestLs_PointerScopesSilently(t *testing.T) {
 	t.Setenv(app.EnvDir, "") // do not let FURROW_DIR override pointer discovery
 	root := t.TempDir()
 	central := filepath.Join(root, "central")
-	if _, err := app.Init(central); err != nil {
+	cboard, err := app.Init(central)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A task on the board NOT carrying the pointer label must be scoped out.
+	if _, err := cboard.Add("only on board", app.AddOpts{Labels: []string{"other"}}); err != nil {
 		t.Fatal(err)
 	}
 	repo := filepath.Join(root, "repo")
@@ -100,7 +128,8 @@ func TestLs_BannerOnStderrNotStdout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, app.PointerName), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Seed one task via the pointer (Open takes an explicit start dir, no chdir).
+	// Seed one task via the pointer (Open takes an explicit start dir, no chdir);
+	// withDefaultLabel tags it "demo".
 	a, err := app.Open(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -133,10 +162,13 @@ func TestLs_BannerOnStderrNotStdout(t *testing.T) {
 	if strings.Contains(so.String(), "furrow:") {
 		t.Errorf("scope banner leaked into stdout:\n%s", so.String())
 	}
-	if !strings.Contains(se.String(), "scope=label=demo") {
-		t.Errorf("scope banner missing from stderr:\n%s", se.String())
+	if strings.Contains(se.String(), "scope=label=") {
+		t.Errorf("scope banner must be OFF in PR2, stderr:\n%s", se.String())
 	}
 	if !strings.Contains(so.String(), "hello from repo") {
 		t.Errorf("scoped task missing from stdout:\n%s", so.String())
+	}
+	if strings.Contains(so.String(), "only on board") {
+		t.Errorf("pointer scope must filter out the differently-labeled task:\n%s", so.String())
 	}
 }

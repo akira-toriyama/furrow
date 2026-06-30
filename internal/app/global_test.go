@@ -557,6 +557,84 @@ func TestGlobal_RequiredNoGitFailsLoud(t *testing.T) {
 	}
 }
 
+// auto_filter threads from the winning [[board]] onto the App. Omitted -> true,
+// so a global board scopes reads by default exactly as before PR2.
+func TestGlobal_AutoFilterDefaultsTrueOnApp(t *testing.T) {
+	scope, _ := globalLayout(t, "auto")
+	repo := mkGitRepo(t, filepath.Join(scope, "repoX"))
+	a, err := Open(repo)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if !a.AutoFilter {
+		t.Errorf("AutoFilter = false, want true by default")
+	}
+}
+
+// auto_filter = false threads onto the App, but the label is still derived: the
+// label remains the add-time tag, only read-time scoping is turned off.
+func TestGlobal_AutoFilterFalseThreadsToApp(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	t.Setenv(EnvBoard, "")
+	root := t.TempDir()
+	scope := filepath.Join(root, "org")
+	board := mustInitBoard(t, filepath.Join(scope, "projects"))
+	writeGlobalConfig(t, boardEntry(board, "auto", scope)+"auto_filter = false\n")
+	repo := mkGitRepo(t, filepath.Join(scope, "repoX"))
+	a, err := Open(repo)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if a.DefaultLabel != "repoX" {
+		t.Errorf("DefaultLabel = %q, want repoX (label still derived for tagging)", a.DefaultLabel)
+	}
+	if a.AutoFilter {
+		t.Errorf("AutoFilter = true, want false (auto_filter = false threaded to App)")
+	}
+}
+
+// A pointer always scopes reads (no auto_filter knob), so the App carries
+// AutoFilter = true whenever discovery came through a pointer.
+func TestGlobal_PointerAlwaysAutoFilters(t *testing.T) {
+	scope, _ := globalLayout(t, "auto")
+	repo := mkGitRepo(t, filepath.Join(scope, "repoX"))
+	body := "board = \"projects/.furrow\"\ndefault_label = \"ptr\"\n"
+	if err := os.WriteFile(filepath.Join(repo, PointerName), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Init(filepath.Join(repo, "projects")); err != nil {
+		t.Fatal(err)
+	}
+	a, err := Open(repo)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if a.DefaultLabel != "ptr" {
+		t.Fatalf("DefaultLabel = %q, want ptr", a.DefaultLabel)
+	}
+	if !a.AutoFilter {
+		t.Errorf("AutoFilter = false, want true (a pointer always scopes reads)")
+	}
+}
+
+// FURROW_BOARD is a synthetic single board; it scopes reads by default.
+func TestGlobal_EnvBoardAutoFilters(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	root := t.TempDir()
+	scope := filepath.Join(root, "org")
+	board := mustInitBoard(t, filepath.Join(scope, "projects"))
+	writeGlobalConfig(t, "")
+	t.Setenv(EnvBoard, board)
+	repo := mkGitRepo(t, filepath.Join(scope, "repoX"))
+	a, err := Open(repo)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if !a.AutoFilter {
+		t.Errorf("AutoFilter = false, want true (FURROW_BOARD scopes by default)")
+	}
+}
+
 func TestGlobal_GitFileDetected(t *testing.T) {
 	scope, board := globalLayout(t, "auto")
 	wt := filepath.Join(scope, "wt")
