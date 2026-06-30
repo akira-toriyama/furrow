@@ -170,3 +170,45 @@ func TestLoadGlobalBoards_MalformedErrors(t *testing.T) {
 		t.Fatal("expected error for malformed TOML, got nil")
 	}
 }
+
+// auto_filter is an explicit, discoverable per-board switch for whether the read
+// commands (ls/next/revisit) auto-filter by label. It defaults to true when the
+// key is omitted, so an existing [[board]] keeps scoping reads as before.
+func TestLoadGlobalBoards_AutoFilterDefaultsTrue(t *testing.T) {
+	boards, _, err := LoadGlobalBoards(writeGlobal(t,
+		"[[board]]\npath = \"/a/.furrow\"\nscopes = [\"/a\"]\n")) // no auto_filter key
+	if err != nil {
+		t.Fatalf("LoadGlobalBoards: %v", err)
+	}
+	if len(boards) != 1 {
+		t.Fatalf("boards = %+v, want one", boards)
+	}
+	if !boards[0].AutoFilter {
+		t.Errorf("AutoFilter = false, want true when auto_filter is omitted")
+	}
+}
+
+func TestLoadGlobalBoards_AutoFilterExplicitFalse(t *testing.T) {
+	boards, _, err := LoadGlobalBoards(writeGlobal(t,
+		"[[board]]\npath = \"/a/.furrow\"\nscopes = [\"/a\"]\nauto_filter = false\n"))
+	if err != nil {
+		t.Fatalf("LoadGlobalBoards: %v", err)
+	}
+	if len(boards) != 1 {
+		t.Fatalf("boards = %+v, want one", boards)
+	}
+	if boards[0].AutoFilter {
+		t.Errorf("AutoFilter = true, want false when auto_filter = false")
+	}
+}
+
+func TestLoadGlobalBoards_AutoFilterExplicitTrue(t *testing.T) {
+	boards, _, err := LoadGlobalBoards(writeGlobal(t,
+		"[[board]]\npath = \"/a/.furrow\"\nscopes = [\"/a\"]\nauto_filter = true\n"))
+	if err != nil {
+		t.Fatalf("LoadGlobalBoards: %v", err)
+	}
+	if len(boards) != 1 || !boards[0].AutoFilter {
+		t.Errorf("boards = %+v, want one with AutoFilter true", boards)
+	}
+}

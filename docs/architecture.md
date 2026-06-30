@@ -349,9 +349,10 @@ is a `[[board]]` table (an array, so several can coexist):
 
 ```toml
 [[board]]
-path   = "~/src/github.com/me/projects/.furrow"
-scopes = ["~/src/github.com/me"]   # at least one; cwd must be under one to activate
-label  = "auto"                    # "auto" | "" | a literal label
+path        = "~/src/github.com/me/projects/.furrow"
+scopes      = ["~/src/github.com/me"]   # at least one; cwd must be under one to activate
+label       = "auto"                    # "auto" | "" | a literal label
+auto_filter = true                      # scope reads by label (default true; false = whole board)
 ```
 
 Resolution is split across two layers, honouring the purity rule:
@@ -377,6 +378,12 @@ Resolution is split across two layers, honouring the purity rule:
 
 A central board injects a scope label exactly like a pointer (see the coordinator
 contract), which is how a cross-repo tracker tags each task with its owning repo.
+Whether the read commands (`ls`/`next`/`revisit`) auto-filter by that label is a
+separate, explicit knob: a board's per-entry **`auto_filter`** (default true)
+threads onto `App.AutoFilter`; a pointer always filters. The label still tags
+`add` regardless, so `auto_filter = false` means "tag writes, show the whole
+board". Because the switch is now declared in config, the old scope banner is
+gone — filtering is silent (stdout stays pure data).
 
 ---
 

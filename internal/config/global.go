@@ -14,9 +14,10 @@ import (
 // The config is read from ${XDG_CONFIG_HOME:-~/.config}/furrow/config.toml (the
 // path is the app layer's job to compute, like Load and LoadPointer take a path).
 type GlobalBoard struct {
-	Path   string   // path to the central .furrow (~, relative to the config file, or absolute)
-	Scopes []string // activate only when cwd is under one of these dirs (at least one, post-clamp)
-	Label  string   // "auto" (nearest git repo basename) | "" (none) | a literal label
+	Path       string   // path to the central .furrow (~, relative to the config file, or absolute)
+	Scopes     []string // activate only when cwd is under one of these dirs (at least one, post-clamp)
+	Label      string   // "auto" (nearest git repo basename) | "" (none) | a literal label
+	AutoFilter bool     // auto-filter reads (ls/next/revisit) by Label; defaults to true when omitted
 }
 
 type rawGlobal struct {
@@ -27,6 +28,9 @@ type rawBoard struct {
 	Path   string   `toml:"path"`
 	Scopes []string `toml:"scopes"`
 	Label  string   `toml:"label"`
+	// AutoFilter is a pointer so an omitted key is distinguishable from an
+	// explicit false: nil clamps to the true default, set honors the value.
+	AutoFilter *bool `toml:"auto_filter"`
 }
 
 // LoadGlobalBoards parses the user-level furrow config at path and returns its
@@ -74,7 +78,8 @@ func LoadGlobalBoards(path string) ([]GlobalBoard, []string, error) {
 			warn = append(warn, fmt.Sprintf("%s: [[board]] %q has no scopes; ignoring it", path, b.Path))
 			continue
 		}
-		boards = append(boards, GlobalBoard{Path: b.Path, Scopes: scopes, Label: b.Label})
+		autoFilter := b.AutoFilter == nil || *b.AutoFilter // omitted -> true
+		boards = append(boards, GlobalBoard{Path: b.Path, Scopes: scopes, Label: b.Label, AutoFilter: autoFilter})
 	}
 	if len(boards) == 0 {
 		return nil, warn, nil

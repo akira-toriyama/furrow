@@ -227,9 +227,10 @@ in `~/.config/furrow/config.toml` (or `$XDG_CONFIG_HOME/furrow/config.toml`):
 
 ```toml
 [[board]]
-path   = "~/src/github.com/me/projects/.furrow"  # the central .furrow (~, relative to this file, or absolute)
-scopes = ["~/src/github.com/me"]                  # activate only under these dirs (at least one is required)
-label  = "auto"                                   # "auto" = nearest git repo's dir name | "" = none | a literal label
+path        = "~/src/github.com/me/projects/.furrow"  # the central .furrow (~, relative to this file, or absolute)
+scopes      = ["~/src/github.com/me"]                 # activate only under these dirs (at least one is required)
+label       = "auto"                                  # "auto" = nearest git repo's dir name | "" = none | a literal label
+auto_filter = true                                    # scope ls/next/revisit to the label (default true; false = whole board)
 ```
 
 A board activates **only when the current directory is under one of its
@@ -266,9 +267,10 @@ With a board in effect (pointer or user-level):
 
 - `furrow add "…"` unions the scope label into the task's labels (and satisfies
   `[labels].required`); an explicit `-l x` adds to it rather than replacing.
-- `furrow ls|next|revisit` filter to the scope label and print the active scope
-  to stderr, e.g. `furrow: board=… scope=label=chord (-l '' for all)`. Pass
-  `-l ''` to see the whole board, or `-l other` for another label.
+- `furrow ls|next|revisit` filter to the scope label — **silently** (no banner).
+  A user-level board can opt out with `auto_filter = false` to show the whole
+  board while `add` still tags with the label; a pointer always filters. Pass
+  `-l ''` to see the whole board for one command, or `-l other` for another label.
 
 ---
 
