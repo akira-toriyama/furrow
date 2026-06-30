@@ -385,6 +385,19 @@ threads onto `App.AutoFilter`; a pointer always filters. The label still tags
 board". Because the switch is now declared in config, the old scope banner is
 gone — filtering is silent (stdout stays pure data).
 
+**Writing and validating it.** `furrow config init` scaffolds this file — the
+single exception to "config is read-only", exactly like `furrow init` writing a
+board's `config.toml` (both write through `internal/app`, not a new fs path). Run
+inside a board it derives the `path` (nearest enclosing `.furrow`) and `scopes`
+(that board repo's parent) from context; `--path`/`--scope` override; elsewhere it
+writes the commented placeholder — the `config.GlobalTemplate` const, mirrored at
+the repo-root `config.global.toml` and drift-guarded by `scripts/check.sh`.
+`furrow config path` prints the resolved location. Discovery stays **silent on its
+inert path** (when every `[[board]]` clamps away there is no board *and* no
+signal), so those clamp warnings are surfaced explicitly instead: both `furrow
+lint` and `furrow config path` report a half-written user-level config rather than
+spamming every command's stderr.
+
 ---
 
 ## What's NOT in scope

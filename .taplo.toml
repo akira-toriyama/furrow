@@ -1,0 +1,13 @@
+# taplo (TOML) formatter config. The CI `taplo` workflow (fleet-synced) checks
+# every *.toml. furrow's hand-crafted, shipped config templates use a deliberately
+# readable style that taplo's defaults would fight, so relax two rules FOR THOSE
+# FILES ONLY (a scoped rule keeps cliff.toml etc. on taplo defaults):
+#   - array_auto_expand = false: keep readable single-line arrays (e.g. the
+#     [lanes].order enum) instead of exploding them one element per line.
+#   - align_comments = false: leave inline `# …` comments where they are written.
+[[rule]]
+include = ["**/config.toml", "**/config.global.toml"]
+
+[rule.formatting]
+array_auto_expand = false
+align_comments = false
