@@ -1,5 +1,5 @@
 # git-cliff — derive the next version + release notes from gitmoji + Conventional
-# Commits (docs/commit-convention.md). Used by .github/workflows/release.yml in a
+# Commits (https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md). Used by .github/workflows/release.yml in a
 # rolling-draft model: no CHANGELOG.md is committed; notes are generated on the
 # fly at release time.
 

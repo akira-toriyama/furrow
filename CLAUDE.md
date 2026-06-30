@@ -112,7 +112,7 @@ struct → update the schema const, the committed file, and the golden together.
 
 - Commits: gitmoji + Conventional — `<:gitmoji:> <type>(<scope>)<!>: <subject>`.
   Enable the hook once: `git config core.hooksPath scripts/hooks`. Spec:
-  [docs/commit-convention.md](docs/commit-convention.md).
+  [CONTRIBUTING.md](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md).
 - `go build ./...` and `go test ./...` must pass before finishing a turn.
 - Keep [README.md](README.md) / [README.ja.md](README.ja.md) in sync on any
   user-visible change (bilingual is the house style).
