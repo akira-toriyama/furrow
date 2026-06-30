@@ -216,33 +216,39 @@ non-blocking: an unknown id or lane is reported, never a merge blocker.
 ## Central board
 
 Many repos can share one central board (e.g. a private cross-repo tracker), each
-auto-scoped to its own label. Wire it up once for a whole tree of repos (the
-global default board), or per repo (a pointer file).
+auto-scoped to its own label. Wire it up once for whole trees of repos
+(user-level config), or per repo (a pointer file).
 
-### Global default board (no per-repo file)
+### User-level config (no per-repo file)
 
-Point furrow at one board for a whole tree of repos, with **zero per-repo setup**
-— new repos are covered automatically. Configure it once in
-`~/.config/furrow/config.toml` (or `$XDG_CONFIG_HOME/furrow/config.toml`):
+Point furrow at one or more central boards covering whole trees of repos, with
+**zero per-repo setup** — new repos are covered automatically. Configure it once
+in `~/.config/furrow/config.toml` (or `$XDG_CONFIG_HOME/furrow/config.toml`):
 
 ```toml
-[board]
-path  = "~/src/github.com/me/projects/.furrow"  # the central .furrow (~, relative to this file, or absolute)
-scope = "~/src/github.com/me"                    # activate only under here (optional; default = the board repo's parent)
-label = "auto"                                   # "auto" = nearest git repo's dir name | "" = none | a literal label
+[[board]]
+path   = "~/src/github.com/me/projects/.furrow"  # the central .furrow (~, relative to this file, or absolute)
+scopes = ["~/src/github.com/me"]                  # activate only under these dirs (at least one is required)
+label  = "auto"                                   # "auto" = nearest git repo's dir name | "" = none | a literal label
 ```
 
-It activates **only when the current directory is under `scope`**; everywhere
-else furrow behaves exactly as without it. `label = "auto"` derives the scope
-label from the nearest enclosing git repo's directory name (a local `.git` walk
-— no `git` subprocess, no `GHQ_ROOT`); outside any git repo the board still opens
-but with no auto label (a note goes to stderr; pass `-l` to scope). `FURROW_BOARD=<path>`
-overrides the board for one-offs and tests.
+A board activates **only when the current directory is under one of its
+`scopes`**; everywhere else furrow behaves exactly as without it. Repeat the
+`[[board]]` table to send different trees to different boards — when several
+scopes enclose the cwd, the **most specific (longest) one wins** (ties go to the
+first in the file). A board with no `scopes` is ignored rather than guessed, so a
+half-written entry never breaks furrow elsewhere.
+
+`label = "auto"` derives the scope label from the nearest enclosing git repo's
+directory name (a local `.git` walk — no `git` subprocess, no `GHQ_ROOT`);
+outside any git repo the board still opens but with no auto label (a note goes to
+stderr; pass `-l` to scope). `FURROW_BOARD=<path>` overrides everything with a
+single board for one-offs and tests (its scope is the board repo's parent).
 
 ### Per-repo pointer
 
 A single repo can instead redirect with a `.furrow-pointer.toml` at its root
-(this **wins over** the global default board):
+(this **wins over** the user-level central boards):
 
 ```toml
 board = "../projects/.furrow"   # the central .furrow (relative to this file, ~, or absolute)
@@ -253,10 +259,10 @@ default_label = "chord"         # optional: scope this repo to one label
 
 `FURROW_DIR` (explicit, no label injection) → the nearest ancestor directory
 holding a `.furrow` (a real local store wins) → a `.furrow-pointer.toml`
-redirecting to a board → the **global default board** (when the cwd is under its
-`scope`) → `furrow init`.
+redirecting to a board → a **user-level central board** (when the cwd is under
+one of its `scopes`; most specific scope wins) → `furrow init`.
 
-With a board in effect (pointer or global):
+With a board in effect (pointer or user-level):
 
 - `furrow add "…"` unions the scope label into the task's labels (and satisfies
   `[labels].required`); an explicit `-l x` adds to it rather than replacing.

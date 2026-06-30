@@ -11,7 +11,7 @@ import (
 )
 
 // TestLs_GlobalBoardNoGitWarnOnStderr drives a real `ls` from a directory that
-// is under a global default board's scope but is not inside any git repo. The
+// is under a central board's scope but is not inside any git repo. The
 // board activates (so the task shows on stdout) and the "no auto label" warning
 // lands on stderr, never stdout.
 func TestLs_GlobalBoardNoGitWarnOnStderr(t *testing.T) {
@@ -30,7 +30,7 @@ func TestLs_GlobalBoardNoGitWarnOnStderr(t *testing.T) {
 	if err := os.MkdirAll(fdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg := "[board]\npath = \"" + board + "\"\nscope = \"" + scope + "\"\nlabel = \"auto\"\n"
+	cfg := "[[board]]\npath = \"" + board + "\"\nscopes = [\"" + scope + "\"]\nlabel = \"auto\"\n"
 	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}

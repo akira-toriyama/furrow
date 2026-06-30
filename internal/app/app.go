@@ -6,6 +6,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ const DirName = ".furrow"
 // EnvDir overrides discovery with an explicit .furrow path.
 const EnvDir = "FURROW_DIR"
 
-// EnvBoard overrides the user-level default board with an explicit board path
+// EnvBoard overrides the user-level central boards with one explicit board path
 // (the central .furrow). Like EnvDir it is a single-value env override; the
 // scope is derived from the board and the label mode is "auto".
 const EnvBoard = "FURROW_BOARD"
@@ -47,7 +48,7 @@ type App struct {
 	Dir      string   // the .furrow directory
 	Warnings []string // config clamp warnings
 
-	DefaultLabel string // scope label from a pointer or the global default board ("" otherwise)
+	DefaultLabel string // scope label from a pointer or a central board ("" otherwise)
 
 	// ScopeWarnings are discovery-time notes bound for stderr (e.g. the global
 	// default board activated but found no enclosing git repo for an auto label).
@@ -144,7 +145,7 @@ func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
 	if err != nil {
 		return resolution{}, core.Validationf("", "%s: %v", pointerPath, err)
 	}
-	board, err := resolveBoardPath(pointerDir, p.Board)
+	board, err := resolvePathRelTo(pointerDir, p.Board)
 	if err != nil {
 		return resolution{}, err
 	}
@@ -154,86 +155,126 @@ func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
 	return resolution{Dir: board, DefaultLabel: p.DefaultLabel}, nil
 }
 
-// resolveBoardPath turns a board path (bare ~/~/path, relative to baseDir, or
+// resolvePathRelTo turns a path (bare ~ or ~/path, relative to baseDir, or
 // absolute) into a cleaned absolute path. It does NOT check existence — that is
 // the caller's job, since only the caller has the context for the error. Shared
-// by resolvePointer and resolveGlobalBoard.
-func resolveBoardPath(baseDir, board string) (string, error) {
-	if strings.HasPrefix(board, "~") {
-		rest := board[1:]
+// by resolvePointer (a board path) and resolveGlobalBoard (board AND scope paths).
+func resolvePathRelTo(baseDir, p string) (string, error) {
+	if strings.HasPrefix(p, "~") {
+		rest := p[1:]
 		// Only bare ~ / ~/path is supported; ~user would silently resolve onto
 		// the current user's home, so reject it loudly rather than misroute.
 		if rest != "" && !strings.HasPrefix(rest, "/") {
-			return "", core.Validationf("", "board %q uses the unsupported ~user form; use an absolute path", board)
+			return "", core.Validationf("", "path %q uses the unsupported ~user form; use an absolute path", p)
 		}
 		home, herr := os.UserHomeDir()
 		if herr != nil {
-			return "", core.Internalf("", "resolve ~ in board %q: %v", board, herr)
+			return "", core.Internalf("", "resolve ~ in path %q: %v", p, herr)
 		}
-		board = filepath.Join(home, rest)
+		p = filepath.Join(home, rest)
 	}
-	if !filepath.IsAbs(board) {
-		board = filepath.Join(baseDir, board)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(baseDir, p)
 	}
-	return filepath.Clean(board), nil
+	return filepath.Clean(p), nil
 }
 
-// resolveGlobalBoard is the last-resort arm of discover: a user-level default
-// board (FURROW_BOARD, else ${XDG_CONFIG_HOME:-~/.config}/furrow/config.toml)
-// that backs many repos without a per-repo pointer. It returns ok=false with no
-// error whenever there is no default board OR cwd is outside its scope, so
-// discover falls through to the usual "run furrow init" error and behaves
-// exactly as before. A bad board path is a loud error, but only once the scope
-// gate has passed (so a stray config never breaks furrow in unrelated repos).
+// resolveGlobalBoard is the last-resort arm of discover: a user-level central
+// board (FURROW_BOARD, else the [[board]] entries in
+// ${XDG_CONFIG_HOME:-~/.config}/furrow/config.toml) that backs many repos
+// without a per-repo pointer. Several boards may be configured; the one whose
+// scope most specifically (longest canonical prefix) encloses cwd wins, with
+// ties broken by file order. It returns ok=false with no error whenever there is
+// no default board OR cwd is outside every scope, so discover falls through to
+// the usual "run furrow init" error and behaves exactly as before. A bad board
+// path is a loud error, but only for the winning board once the scope gate has
+// passed (so a stray config never breaks furrow in unrelated repos).
 func resolveGlobalBoard(startDir string) (resolution, bool, error) {
-	gb, cfgDir, warn, err := loadGlobalBoard()
+	boards, cfgDir, warn, err := loadGlobalBoards()
 	if err != nil {
 		return resolution{}, false, err
 	}
-	if gb == nil {
+	if len(boards) == 0 {
 		return resolution{}, false, nil
-	}
-	board, err := resolveBoardPath(cfgDir, gb.Path)
-	if err != nil {
-		return resolution{}, false, err
-	}
-	// scope defaults to the parent of the board's repo:
-	// …/<org>/<repo>/.furrow -> repo …/<org>/<repo> -> scope …/<org>.
-	scope := gb.Scope
-	if scope == "" {
-		scope = filepath.Dir(filepath.Dir(board))
 	}
 	abs, err := filepath.Abs(startDir)
 	if err != nil {
 		return resolution{}, false, core.Internalf("", "resolve %q: %v", startDir, err)
 	}
-	if !underScope(abs, scope) {
-		return resolution{}, false, nil // out of scope: inert, behaves like today
+	cdir := canonicalPath(abs)
+
+	// Pick the board whose matching scope is the longest (most specific) canonical
+	// prefix of cwd. Boards are visited in file order and ties keep the first
+	// match (strict >), so the choice is deterministic. Paths are resolved for the
+	// comparison but NOT stat'd here — only the eventual winner is checked to
+	// exist, so a broken board in an unrelated scope never breaks furrow.
+	//
+	// A path/scope that cannot even be resolved (e.g. the unsupported ~user form)
+	// is DROPPED with a warning, never a hard error: clamp-don't-reject means one
+	// half-written entry must not break furrow in every directory on the machine.
+	// Only the winner's existence is ever loud (the os.Stat below).
+	var winner *config.GlobalBoard
+	var winBoard string
+	winLen := -1
+	for i := range boards {
+		b := &boards[i]
+		board, err := resolvePathRelTo(cfgDir, b.Path)
+		if err != nil {
+			warn = append(warn, fmt.Sprintf("ignoring central board %q: %v", b.Path, err))
+			continue
+		}
+		for _, s := range boardScopes(b, board) {
+			cs, ok, err := canonicalScopeUnder(cdir, cfgDir, s)
+			if err != nil {
+				warn = append(warn, fmt.Sprintf("ignoring scope %q of central board %q: %v", s, b.Path, err))
+				continue
+			}
+			if ok && len(cs) > winLen {
+				winner, winBoard, winLen = b, board, len(cs)
+			}
+		}
 	}
-	if fi, err := os.Stat(board); err != nil || !fi.IsDir() {
-		return resolution{}, false, core.Validationf("", "global default board %q is not an existing directory", board)
+	if winner == nil {
+		return resolution{}, false, nil // out of every scope: inert, behaves like today
 	}
-	label, lwarn := deriveScopeLabel(gb.Label, abs)
-	return resolution{Dir: board, DefaultLabel: label, ScopeWarn: append(warn, lwarn...)}, true, nil
+	if fi, err := os.Stat(winBoard); err != nil || !fi.IsDir() {
+		return resolution{}, false, core.Validationf("", "central board %q is not an existing directory", winBoard)
+	}
+	label, lwarn := deriveScopeLabel(winner.Label, abs)
+	return resolution{Dir: winBoard, DefaultLabel: label, ScopeWarn: append(warn, lwarn...)}, true, nil
 }
 
-// loadGlobalBoard resolves the user-level default board: FURROW_BOARD (an env
-// override supplying only a board path) wins; else the config file at
-// globalConfigPath. cfgDir is the base for resolving a relative [board].path.
-func loadGlobalBoard() (gb *config.GlobalBoard, cfgDir string, warn []string, err error) {
+// boardScopes returns the scopes to match a board against. A board loaded from
+// config always carries at least one (the clamp drops scope-less entries); the
+// nil-scopes sentinel belongs only to FURROW_BOARD, whose scope is derived from
+// the board's repo parent: …/<org>/<repo>/.furrow -> repo …/<org>/<repo> ->
+// scope …/<org>.
+func boardScopes(b *config.GlobalBoard, resolvedBoard string) []string {
+	if b.Scopes == nil {
+		return []string{filepath.Dir(filepath.Dir(resolvedBoard))}
+	}
+	return b.Scopes
+}
+
+// loadGlobalBoards resolves the user-level central boards: FURROW_BOARD (an env
+// override supplying only a board path) wins as a single synthetic board with
+// nil scopes (the derive-from-parent sentinel); else the [[board]] entries from
+// the config file at globalConfigPath. cfgDir is the base for resolving relative
+// board/scope paths.
+func loadGlobalBoards() (boards []config.GlobalBoard, cfgDir string, warn []string, err error) {
 	if env := os.Getenv(EnvBoard); env != "" {
 		base, _ := os.Getwd()
-		return &config.GlobalBoard{Path: env, Scope: "", Label: "auto"}, base, nil, nil
+		return []config.GlobalBoard{{Path: env, Scopes: nil, Label: "auto"}}, base, nil, nil
 	}
 	path, err := globalConfigPath()
 	if err != nil {
 		return nil, "", nil, err
 	}
-	gb, warn, err = config.LoadGlobalBoard(path)
+	boards, warn, err = config.LoadGlobalBoards(path)
 	if err != nil {
 		return nil, "", nil, err
 	}
-	return gb, filepath.Dir(path), warn, nil
+	return boards, filepath.Dir(path), warn, nil
 }
 
 // globalConfigPath is ${XDG_CONFIG_HOME}/furrow/config.toml when XDG_CONFIG_HOME
@@ -251,17 +292,26 @@ func globalConfigPath() (string, error) {
 	return filepath.Join(home, ".config", "furrow", "config.toml"), nil
 }
 
-// underScope reports whether dir is scope itself or a descendant of it, using a
-// path-separator boundary so "/ws/org-evil" never matches scope "/ws/org". Both
-// sides are canonicalized (symlinks resolved) so a symlinked cwd or scope — e.g.
-// macOS's /var -> /private/var — still compares correctly.
-func underScope(dir, scope string) bool {
+// canonicalScopeUnder resolves scope (relative to baseDir, ~ aware) to a
+// canonical path and reports whether cdir (already canonical) is the scope
+// itself or a descendant of it, using a path-separator boundary so
+// "/ws/org-evil" never matches scope "/ws/org". It returns the canonical scope
+// so the caller can compare match specificity by length. Both sides are
+// canonicalized (symlinks resolved) so a symlinked cwd or scope — e.g. macOS's
+// /var -> /private/var — still compares correctly. A blank scope never matches.
+func canonicalScopeUnder(cdir, baseDir, scope string) (string, bool, error) {
 	if scope == "" {
-		return false
+		return "", false, nil
 	}
-	dir = canonicalPath(dir)
-	scope = canonicalPath(scope)
-	return dir == scope || strings.HasPrefix(dir, scope+string(os.PathSeparator))
+	sp, err := resolvePathRelTo(baseDir, scope)
+	if err != nil {
+		return "", false, err
+	}
+	cs := canonicalPath(sp)
+	if cdir == cs || strings.HasPrefix(cdir, cs+string(os.PathSeparator)) {
+		return cs, true, nil
+	}
+	return "", false, nil
 }
 
 // canonicalPath cleans p and resolves symlinks when it can; if EvalSymlinks

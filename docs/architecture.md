@@ -338,6 +338,46 @@ Sections and their defaults:
 `status` is just a lane from `[lanes].order`; that list is simultaneously the
 status enum and the top-to-bottom sort rank.
 
+### User-level config: central boards
+
+There is a **second**, machine-specific config — the user-level
+`${XDG_CONFIG_HOME:-~/.config}/furrow/config.toml` — that declares one or more
+**central boards**: a single `.furrow` that backs many repos *without* a per-repo
+`.furrow-pointer.toml`. It is to the board-local `config.toml` what `~/.gitconfig`
+is to a repo's `.git/config`: ambient and personal, never committed. Each board
+is a `[[board]]` table (an array, so several can coexist):
+
+```toml
+[[board]]
+path   = "~/src/github.com/me/projects/.furrow"
+scopes = ["~/src/github.com/me"]   # at least one; cwd must be under one to activate
+label  = "auto"                    # "auto" | "" | a literal label
+```
+
+Resolution is split across two layers, honouring the purity rule:
+
+- **`internal/config` (pure, read-only)** parses the `[[board]]` array and
+  **clamps per entry**: an entry with no `path`, or no `scopes` after blank
+  strings are pruned, is dropped with a warning; if every entry is dropped the
+  result is "no central board" (`nil`). It never touches cwd, the filesystem, or
+  symlinks — it only shapes what the file says. A legacy single `[board]` table
+  decodes into a one-element array whose old `scope` key is ignored, so it clamps
+  away to "no board" rather than erroring (the accepted rollout-window
+  degradation when a v2 binary meets a v1 config).
+- **`internal/app` (the only fs/cwd-aware layer)** is the last arm of `discover`
+  (after `FURROW_DIR`, a local `.furrow`, and a `.furrow-pointer.toml`). It
+  resolves each board/scope path (`~`, relative-to-the-config-file, absolute),
+  canonicalizes both cwd and scopes (symlinks resolved, so `/var`→`/private/var`
+  still matches), and selects the board whose matching scope is the **longest
+  (most specific) canonical prefix** of cwd, ties broken by file order. Only the
+  **winning** board is `stat`-ed for existence — a broken path in an unrelated
+  scope never breaks furrow in this directory. `FURROW_BOARD=<path>` short-circuits
+  the file with one synthetic board whose nil scopes are a sentinel for "derive
+  the scope from the board repo's parent".
+
+A central board injects a scope label exactly like a pointer (see the coordinator
+contract), which is how a cross-repo tracker tags each task with its owning repo.
+
 ---
 
 ## What's NOT in scope
