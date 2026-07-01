@@ -24,12 +24,43 @@ import (
 // hand-edit, so re-saving an untouched index produces zero git churn.
 func Marshal(idx *Index, laneOrder []string) ([]byte, error) {
 	Canonicalize(idx, laneOrder)
+	data, err := encodeCanonical(idx)
+	if err != nil {
+		return nil, Internalf("index", "marshal index: %v", err)
+	}
+	return data, nil
+}
+
+// MarshalTask is the per-task twin of Marshal: the ONE path that serializes a
+// single task to its shard bytes (tasks/<id>.json). It shares Marshal's byte
+// recipe (encodeCanonical) and per-task normalization (canonicalizeTask) so a
+// shard written by furrow equals a hand-edit byte-for-byte, exactly as the index
+// does. Unlike the index, a shard carries NO schema_version — the store's
+// meta.json owns the one board-wide version, keeping every shard free of a field
+// that would otherwise be a needless merge point. canonicalizeTask mutates t in
+// place (as Canonicalize does for the index). t must be non-nil — a nil task is
+// a programmer error, mirroring Marshal's contract for a nil index.
+func MarshalTask(t *Task) ([]byte, error) {
+	canonicalizeTask(t)
+	data, err := encodeCanonical(t)
+	if err != nil {
+		return nil, Internalf(t.ID, "marshal task: %v", err)
+	}
+	return data, nil
+}
+
+// encodeCanonical applies the determinism byte-recipe to any value: no HTML
+// escaping (CJK and < > & survive verbatim), 2-space indent, and a trailing
+// newline (Encode appends it). Marshal (*Index) and MarshalTask (*Task) both go
+// through it so the recipe lives in exactly one place; regressing it here would
+// silently reintroduce git churn for both.
+func encodeCanonical(v any) ([]byte, error) {
 	var b bytes.Buffer
 	e := json.NewEncoder(&b)
 	e.SetEscapeHTML(false)
 	e.SetIndent("", "  ")
-	if err := e.Encode(idx); err != nil { // Encode writes the trailing '\n'
-		return nil, Internalf("index", "marshal index: %v", err)
+	if err := e.Encode(v); err != nil { // Encode writes the trailing '\n'
+		return nil, err
 	}
 	return b.Bytes(), nil
 }
@@ -42,6 +73,17 @@ func Unmarshal(data []byte) (*Index, error) {
 		return nil, Validationf("index", "index.json is not valid JSON: %v", err)
 	}
 	return &idx, nil
+}
+
+// UnmarshalTask parses one shard's bytes into a Task, the per-task twin of
+// Unmarshal. A parse failure is a validation error (malformed input), not an
+// internal fault.
+func UnmarshalTask(data []byte) (*Task, error) {
+	var t Task
+	if err := json.Unmarshal(data, &t); err != nil {
+		return nil, Validationf("task", "task shard is not valid JSON: %v", err)
+	}
+	return &t, nil
 }
 
 // Canonicalize enforces the determinism invariants in place: non-nil slices,
@@ -58,38 +100,7 @@ func Canonicalize(idx *Index, laneOrder []string) {
 
 	rank := laneRank(laneOrder)
 	for i := range idx.Tasks {
-		t := &idx.Tasks[i]
-		if t.Labels == nil {
-			t.Labels = []string{}
-		}
-		if t.Deps == nil {
-			t.Deps = []string{}
-		}
-		if t.Refs == nil {
-			t.Refs = []string{}
-		}
-		if t.Checklist == nil {
-			t.Checklist = []ChecklistItem{}
-		}
-		// Labels and deps are sets — sort AND dedupe them so reordering or
-		// repeating inputs (e.g. `add -l x -l x`) can't churn the diff and a
-		// furrow-written set equals a hand-written one byte-for-byte. Refs and
-		// checklist are user-ordered sequences, so leave them.
-		t.Labels = sortDedup(t.Labels)
-		t.Deps = sortDedup(t.Deps)
-
-		t.Created = normTime(t.Created)
-		t.Updated = normTime(t.Updated)
-		if t.Closed != nil {
-			c := normTime(*t.Closed)
-			t.Closed = &c
-		}
-
-		// value/effort are clamp-don't-reject: an out-of-range estimate (from a
-		// hand-edit) is rounded into 1..5 so furrow never writes a stray. lint
-		// (EstimateProblems, run on the pre-clamp bytes) surfaces it first.
-		clampEstimate(t.Value)
-		clampEstimate(t.Effort)
+		canonicalizeTask(&idx.Tasks[i])
 	}
 
 	sort.SliceStable(idx.Tasks, func(a, b int) bool {
@@ -102,6 +113,45 @@ func Canonicalize(idx *Index, laneOrder []string) {
 		}
 		return ta.ID < tb.ID
 	})
+}
+
+// canonicalizeTask enforces the per-task determinism invariants in place:
+// non-nil slices, sorted+deduped sets, whole-second UTC timestamps, and clamped
+// estimates. It is the single per-task recipe — the index's Canonicalize loop
+// and MarshalTask both call it — so a shard and a task-inside-the-index
+// normalize identically and the rules never drift between the two paths.
+func canonicalizeTask(t *Task) {
+	if t.Labels == nil {
+		t.Labels = []string{}
+	}
+	if t.Deps == nil {
+		t.Deps = []string{}
+	}
+	if t.Refs == nil {
+		t.Refs = []string{}
+	}
+	if t.Checklist == nil {
+		t.Checklist = []ChecklistItem{}
+	}
+	// Labels and deps are sets — sort AND dedupe them so reordering or
+	// repeating inputs (e.g. `add -l x -l x`) can't churn the diff and a
+	// furrow-written set equals a hand-written one byte-for-byte. Refs and
+	// checklist are user-ordered sequences, so leave them.
+	t.Labels = sortDedup(t.Labels)
+	t.Deps = sortDedup(t.Deps)
+
+	t.Created = normTime(t.Created)
+	t.Updated = normTime(t.Updated)
+	if t.Closed != nil {
+		c := normTime(*t.Closed)
+		t.Closed = &c
+	}
+
+	// value/effort are clamp-don't-reject: an out-of-range estimate (from a
+	// hand-edit) is rounded into 1..5 so furrow never writes a stray. lint
+	// (EstimateProblems, run on the pre-clamp bytes) surfaces it first.
+	clampEstimate(t.Value)
+	clampEstimate(t.Effort)
 }
 
 // normTime coerces a timestamp to the on-disk contract: UTC, whole seconds. A
