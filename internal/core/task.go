@@ -67,6 +67,13 @@ type ChecklistItem struct {
 // and the marshaller use this so the Body field is never hand-assembled.
 func BodyPath(id string) string { return "bodies/" + id + ".md" }
 
+// TaskPath returns the canonical relative metadata-shard path for an id — the
+// per-task twin of BodyPath. Under the sharded store, one <id>.json under tasks/
+// holds a task's metadata, 1:1 with bodies/<id>.md, so the whole record for an
+// id is exactly {tasks/<id>.json, bodies/<id>.md} and never a slice of a shared
+// file. Callers must not hand-assemble this path.
+func TaskPath(id string) string { return "tasks/" + id + ".json" }
+
 // EstimateMin and EstimateMax bound the coarse value/effort scale. Inputs
 // outside the range are clamped to it (see Canonicalize).
 const (

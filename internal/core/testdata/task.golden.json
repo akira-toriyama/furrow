@@ -1,0 +1,33 @@
+{
+  "id": "t-0001",
+  "title": "畝を一本進める <b>&amp;</b> 完了",
+  "status": "in-progress",
+  "priority": 110,
+  "value": 4,
+  "effort": 2,
+  "labels": [
+    "canon",
+    "zmk"
+  ],
+  "deps": [
+    "t-0002"
+  ],
+  "refs": [
+    "docs/x.md#L10",
+    "https://example.com"
+  ],
+  "checklist": [
+    {
+      "text": "design",
+      "done": true
+    },
+    {
+      "text": "ship",
+      "done": false
+    }
+  ],
+  "created": "2026-06-02T01:02:03Z",
+  "updated": "2026-06-21T01:02:03Z",
+  "closed": null,
+  "body": "bodies/t-0001.md"
+}
