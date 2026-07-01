@@ -160,7 +160,9 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `label <id>` | Add and/or remove labels on a task (both repeatable, combinable); idempotent | `--add <label>`, `--remove <label>` |
 | `apply` | Apply `SetStatus-task: <body-link> [<lane>]` directives parsed from PR/commit text (stdin or `--body-file`) — the CI hook for auto status updates. `--on open` nudges to in-progress; `--on merge` applies the lane. Validation is non-blocking | `--on open\|merge`, `--ref`, `--body-file`, `--open-lane` |
 | `archive` | Move aged done tasks to `.furrow/archive/` (preview unless `--yes`) | `--older-than <days>`, `--yes` |
-| `lint` | Check index↔body 1:1, id shape, lanes, deps/parent refs, config clamp warnings | — |
+| `lint` | Check index↔body 1:1, id shape, lanes, deps/parent refs, config clamp warnings (incl. a half-written user-level config) | — |
+| `config init` | Write the user-level `~/.config/furrow/config.toml` (central-board template); fills the board path/scopes from the nearest `.furrow` when run inside a board, else a placeholder. Never overwrites an existing file | `--path`, `--scope` (repeatable) |
+| `config path` | Print the resolved user-level config path; a half-written config's clamp warnings go to stderr (stdout stays the bare path) | — |
 | `schema` | Print the JSON Schema for `index.json` (matches the committed copy) | — |
 | `version` | Print the furrow version | — |
 | `ui` | Launch the interactive TUI (list + detail panes): navigate, filter, done, move lane, reorder (`K`/`J`), toggle checklist, edit body | — |
@@ -222,8 +224,11 @@ auto-scoped to its own label. Wire it up once for whole trees of repos
 ### User-level config (no per-repo file)
 
 Point furrow at one or more central boards covering whole trees of repos, with
-**zero per-repo setup** — new repos are covered automatically. Configure it once
-in `~/.config/furrow/config.toml` (or `$XDG_CONFIG_HOME/furrow/config.toml`):
+**zero per-repo setup** — new repos are covered automatically. Scaffold it with
+`furrow config init` (run inside the central board's repo, it fills the board
+path and scope in for you; elsewhere it writes a commented placeholder to edit),
+or write `~/.config/furrow/config.toml` (or `$XDG_CONFIG_HOME/furrow/config.toml`)
+by hand; `furrow config path` prints where it lives.
 
 ```toml
 [[board]]
@@ -238,7 +243,8 @@ A board activates **only when the current directory is under one of its
 `[[board]]` table to send different trees to different boards — when several
 scopes enclose the cwd, the **most specific (longest) one wins** (ties go to the
 first in the file). A board with no `scopes` is ignored rather than guessed, so a
-half-written entry never breaks furrow elsewhere.
+half-written entry never breaks furrow elsewhere — and because that makes it
+silent, `furrow lint` and `furrow config path` report whatever was clamped.
 
 `label = "auto"` derives the scope label from the nearest enclosing git repo's
 directory name (a local `.git` walk — no `git` subprocess, no `GHQ_ROOT`);

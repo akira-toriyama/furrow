@@ -62,6 +62,14 @@ func (a *App) Lint() ([]core.Problem, error) {
 		ps = append(ps, core.Problem{Severity: core.SevWarn, ID: "config", Msg: w})
 	}
 
+	// surface user-level (home) config clamp warnings too. Discovery drops these
+	// on its inert path — a half-written ~/.config/furrow/config.toml whose boards
+	// all clamp away leaves no board AND no signal — so lint is where they land
+	// (running it once is explicit, unlike spamming every command's stderr).
+	for _, w := range GlobalConfigWarnings() {
+		ps = append(ps, core.Problem{Severity: core.SevWarn, ID: "global-config", Msg: w})
+	}
+
 	sort.SliceStable(ps, func(i, j int) bool {
 		if ps[i].Severity != ps[j].Severity {
 			return ps[i].Severity < ps[j].Severity

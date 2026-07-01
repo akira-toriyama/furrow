@@ -38,14 +38,25 @@ tmp="$(mktemp -d)"
 ( cd "$tmp" && "$BIN" init >/dev/null )
 diff -u config.toml "$tmp/.furrow/config.toml" >/dev/null && echo "  config.toml matches init template"
 
-echo "→ smoke: init / add / ls --json / next / done / lint"
+echo "→ global config template drift guard"
+gtmp="$(mktemp -d)"
+# Run from a dir with no enclosing .furrow so `config init` derives nothing and
+# writes the placeholder template; XDG_CONFIG_HOME isolates where it lands.
+( cd "$gtmp" && XDG_CONFIG_HOME="$gtmp/xdg" "$BIN" config init >/dev/null )
+diff -u config.global.toml "$gtmp/xdg/furrow/config.toml" >/dev/null \
+  && echo "  config.global.toml matches config-init placeholder template"
+
+echo "→ smoke: init / add / ls --json / next / done / lint / config init|path"
 sb="$(mktemp -d)"
 ( cd "$sb"
+  export XDG_CONFIG_HOME="$sb/xdg"   # isolate from the dev's real ~/.config/furrow
   "$BIN" init >/dev/null
   id="$("$BIN" --json add "smoke" -s ready | sed -n 's/.*"id": "\([^"]*\)".*/\1/p' | head -1)"
   "$BIN" ls --json | grep -q '"smoke"'
   "$BIN" next --json | grep -q '"smoke"'
   "$BIN" done "$id" >/dev/null
   "$BIN" lint
+  "$BIN" config init >/dev/null
+  "$BIN" config path | grep -q "furrow/config.toml"
 )
 echo "✓ all checks passed"
