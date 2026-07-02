@@ -66,7 +66,7 @@ func TestScopedQuery_ExplicitLabelKeepsScope(t *testing.T) {
 	}
 }
 
-// Scope control is -r only: -r ” escapes to the whole board.
+// Scope control is -r only: -r "" escapes to the whole board.
 func TestScopedQuery_ExplicitEmptyRepoEscapes(t *testing.T) {
 	cmd := queryCmd()
 	_ = cmd.Flags().Set("repo", "") // Changed=true, value ""
@@ -159,7 +159,7 @@ func TestLs_PointerScopesSilently(t *testing.T) {
 // TestLs_TagFilterANDsWithScope pins the -l/-r orthogonality end to end (the
 // design's required test): on a pointer-scoped board, `ls -l tag` returns ONLY
 // the in-scope tasks carrying the tag — the explicit -l neither clears the
-// scope nor leaks the other repo's tagged task. And `-r ”` escapes to the
+// scope nor leaks the other repo's tagged task. And `-r ""` escapes to the
 // whole board.
 func TestLs_TagFilterANDsWithScope(t *testing.T) {
 	t.Setenv(app.EnvDir, "")

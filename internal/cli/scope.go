@@ -14,7 +14,7 @@ import (
 // explicit -l value is a pure tag filter (Label) that ANDs with the scope and
 // never clears it. Scope control is -r only: an explicit -r X replaces the
 // board scope with a repo filter (X resolved strictly — a full owner/repo, or
-// a short name matching exactly one repo known to the board), and -r ” means
+// a short name matching exactly one repo known to the board), and -r "" means
 // the whole board. The filtering stays silent (stderr quiet, stdout pure data).
 func scopedQuery(cmd *cobra.Command, a *app.App, flagLabel, flagRepo string) (app.QueryOpts, error) {
 	o := app.QueryOpts{Label: flagLabel}

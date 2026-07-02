@@ -239,6 +239,14 @@ func TestDidYouMeanRepo(t *testing.T) {
 	if err := a.DidYouMeanRepo("ghost"); err != nil {
 		t.Errorf("guard must stay quiet on an unknown name: %v", err)
 	}
+	// does not fire: the label uniquely names a repo known ONLY via the board
+	// seam (BoardRepos), with zero tasks — steering to `-r` would be a dead end
+	// ("has 0 task(s)"). Pinned now because P3 populating BoardRepos is exactly
+	// what activates this arm.
+	a.BoardRepos = []string{"akira-toriyama/facet"}
+	if err := a.DidYouMeanRepo("facet"); err != nil {
+		t.Errorf("guard must stay quiet on a 0-task board repo: %v", err)
+	}
 	// does not fire on ambiguity (only a UNIQUE short-name match guards).
 	a.Add("three", AddOpts{Repos: []string{"other-org/chord"}})
 	a.Add("four", AddOpts{Repos: []string{"akira-toriyama/chord"}})
