@@ -33,7 +33,9 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		specs[i].Labels = a.withDefaultLabel(specs[i].Labels)
 	}
 
-	// validate every lane/title before writing anything.
+	// validate every lane/title (and resolve every repo) before writing
+	// anything, so a bad spec fails before the first body hits disk.
+	universe := repoUniverse(idx, a.BoardRepos)
 	for i, s := range specs {
 		if strings.TrimSpace(s.Title) == "" {
 			return nil, core.Validationf("", "spec %d has an empty title", i)
@@ -48,6 +50,14 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		if a.Cfg.LabelsRequired && len(s.Labels) == 0 {
 			return nil, core.Validationf("", "spec %d (%q): a label is required ([labels].required)", i, s.Title)
 		}
+		if s.Draft && len(s.Repos) > 0 {
+			return nil, core.Validationf("", "spec %d (%q): --draft cannot be combined with an explicit repo (-r)", i, s.Title)
+		}
+		repos, err := resolveRepoArgs(s.Repos, "", universe)
+		if err != nil {
+			return nil, err
+		}
+		specs[i].Repos = repos
 	}
 
 	now := a.Clock.Now()
@@ -69,7 +79,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		}
 		t := core.Task{
 			ID: id, Title: strings.TrimSpace(s.Title), Status: lane, Priority: prio,
-			Labels: s.Labels, Parent: s.Parent, Deps: s.Deps, Refs: s.Refs,
+			Labels: s.Labels, Repos: s.Repos, Parent: s.Parent, Deps: s.Deps, Refs: s.Refs,
 			Created: now, Updated: now, Body: core.BodyPath(id),
 		}
 		body := s.Body

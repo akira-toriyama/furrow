@@ -72,8 +72,8 @@ func TestCLIRevisitEmptyExit0(t *testing.T) {
 
 func TestCLIRevisitStaleDaysFlagParses(t *testing.T) {
 	initStore(t)
-	addTask(t, "estimated", "-s", "ready", "--value", "3", "--effort", "2")
-	// estimated + fresh + no deps + stale disabled -> nothing surfaces.
+	addTask(t, "estimated", "-s", "ready", "--value", "3", "--effort", "2", "-r", "o/r")
+	// estimated + repo-attached + fresh + no deps + stale disabled -> nothing surfaces.
 	out, code := run(t, "--json", "revisit", "--stale-days", "0")
 	if code != 0 {
 		t.Fatalf("revisit --stale-days exit = %d:\n%s", code, out)
@@ -138,7 +138,7 @@ func TestCLIRevisitConfigStaleDaysDefault(t *testing.T) {
 	st := fsstore.New(fdir, cfg.Lanes, cfg.IDPrefix, cfg.IDWidth)
 	aged := app.NewWithStore(st, cfg, pastClock{t: time.Now().AddDate(0, 0, -30)})
 	v, e := 3, 2
-	old, err := aged.Add("aged task", app.AddOpts{Status: "ready", Value: &v, Effort: &e})
+	old, err := aged.Add("aged task", app.AddOpts{Status: "ready", Value: &v, Effort: &e, Repos: []string{"o/r"}})
 	if err != nil {
 		t.Fatal(err)
 	}

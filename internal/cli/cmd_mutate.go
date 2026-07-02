@@ -215,3 +215,30 @@ func newLabelCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&remove, "remove", nil, "label to remove (repeatable)")
 	return cmd
 }
+
+func newRepoCmd() *cobra.Command {
+	var add, rm []string
+	cmd := &cobra.Command{
+		Use:   "repo <id>",
+		Short: "Attach and/or detach repos (owner/repo) on a task",
+		Long: "Attach repos with --add and detach them with --rm (both repeatable and\n" +
+			"combinable in one call). Each value must be a full owner/repo, or a short\n" +
+			"name matching exactly one repo already known to the board (case-insensitive,\n" +
+			"at a '/' boundary); anything else is a validation error — never a silent new\n" +
+			"repo. Attaching a repo already present, or detaching one already absent, is\n" +
+			"a no-op. A task with no repos is a draft (see ls --drafts).",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			return emitMutation(a, "repo", args[0], func() (*core.Task, error) {
+				return a.Rerepo(args[0], add, rm)
+			})
+		},
+	}
+	cmd.Flags().StringSliceVar(&add, "add", nil, "repo to attach (owner/repo, or a unique short name; repeatable)")
+	cmd.Flags().StringSliceVar(&rm, "rm", nil, "repo to detach (same forms; repeatable)")
+	return cmd
+}

@@ -22,7 +22,7 @@ func newTestApp(t *testing.T) *app.App {
 	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
 	st.SeedSequentialIDs() // deterministic ids (t-00001, …) so tests can assert on them
 	a := app.NewWithStore(st, cfg, fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
-	if _, err := a.Add("first", app.AddOpts{Status: "ready"}); err != nil {
+	if _, err := a.Add("first", app.AddOpts{Status: "ready", Repos: []string{"akira-toriyama/furrow"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.Add("second", app.AddOpts{Status: "backlog"}); err != nil {

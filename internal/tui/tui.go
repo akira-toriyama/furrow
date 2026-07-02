@@ -439,6 +439,9 @@ func (m model) detailMarkdown(t core.Task, body string) string {
 	if len(t.Labels) > 0 {
 		fmt.Fprintf(&b, "labels: %s\n\n", strings.Join(t.Labels, ", "))
 	}
+	if len(t.Repos) > 0 {
+		fmt.Fprintf(&b, "repos: %s\n\n", strings.Join(t.Repos, ", "))
+	}
 	if len(t.Deps) > 0 {
 		fmt.Fprintf(&b, "deps: %s\n\n", strings.Join(t.Deps, ", "))
 	}

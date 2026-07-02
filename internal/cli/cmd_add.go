@@ -19,6 +19,8 @@ func newAddCmd() *cobra.Command {
 		value    int
 		effort   int
 		labels   []string
+		repos    []string
+		draft    bool
 		parent   string
 		deps     []string
 		refs     []string
@@ -39,8 +41,8 @@ func newAddCmd() *cobra.Command {
 				return err
 			}
 			opts := app.AddOpts{
-				Status: status, Labels: labels, Parent: parent,
-				Deps: deps, Refs: refs, Body: body,
+				Status: status, Labels: labels, Repos: repos, Draft: draft,
+				Parent: parent, Deps: deps, Refs: refs, Body: body,
 			}
 			if cmd.Flags().Changed("priority") {
 				p := priority
@@ -81,6 +83,8 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().IntVar(&value, "value", 0, "coarse 1..5 value estimate (clamped; omit to leave unset)")
 	cmd.Flags().IntVar(&effort, "effort", 0, "coarse 1..5 effort estimate (clamped; omit to leave unset)")
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable)")
+	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "repo to attach (owner/repo, or a unique short name; repeatable)")
+	cmd.Flags().BoolVar(&draft, "draft", false, "create as a draft (no repo attached); conflicts with -r")
 	cmd.Flags().StringVar(&parent, "parent", "", "parent task id")
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
 	cmd.Flags().StringSliceVar(&refs, "ref", nil, "reference (file:line or URL, repeatable)")

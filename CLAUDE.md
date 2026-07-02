@@ -15,11 +15,15 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|edit|done|move|reorder|check|dep|label|sync|archive|lint|init`.
+- Canonical commands: `furrow add|ls|show|next|revisit|edit|done|move|reorder|check|dep|label|repo|sync|archive|lint|init`.
 - `--json` is available on read commands; **JSON goes to stdout only** (logs and
   errors go to stderr). Use `--ndjson` for one task per line and
-  `--status/-s`, `--label/-l`, `--limit/-n` to filter — so you rarely need jq.
-  Mutations (`done|move|reorder|check|dep|label`) with `--json` emit
+  `--status/-s`, `--label/-l`, `--repo/-r`, `--limit/-n` to filter — so you
+  rarely need jq. `-r` takes a full `owner/repo` or a short name resolving
+  uniquely against the board's repos; an explicit `-r` overrides the board
+  scope (`-r ''` = whole board) while `-l` is a pure tag filter that ANDs with
+  the scope. `ls --drafts` lists only the repo-less tasks (drafts).
+  Mutations (`done|move|reorder|check|dep|label|repo`) with `--json` emit
   `{before, after, changed}`; `add --stdin` bulk-creates one task per stdin line;
   `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) per task.
 - `furrow edit <id>` with no TTY **prints the body file path** instead of opening
@@ -27,7 +31,10 @@ the user-level config. When you work with any furrow store:
 - Exit codes: `0` ok / `1` not-found|empty / `2` bad-usage|validation / `3+`
   internal|IO. On non-zero, an `{"error":{"code","id","message"}}` object is on
   stderr (plus an optional machine-actionable `details` — e.g. `sync` puts the
-  conflicted paths there under id `sync-conflict`).
+  conflicted paths there under id `sync-conflict` — and an optional
+  `candidates` array when an input almost resolved: an ambiguous repo short
+  name, or the `-l` did-you-mean guard. Branch on the array, never regex the
+  message).
 - furrow is **non-interactive by default**; the TUI is `furrow ui` only.
   Destructive ops guard themselves: `furrow archive` previews unless `--yes`.
 

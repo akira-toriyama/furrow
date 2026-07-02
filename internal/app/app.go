@@ -58,6 +58,13 @@ type App struct {
 	// ScopeWarnings are discovery-time notes bound for stderr (e.g. the global
 	// default board activated but found no enclosing git repo for an auto label).
 	ScopeWarnings []string
+
+	// BoardRepos is the repo set derived from the enclosing checkout (the
+	// owner/repo parsed from the git origin URL). It is the seam for P3
+	// (repo auto-derivation), which populates it at Open time; until then it
+	// stays empty. It already participates in the short-name resolution
+	// universe (see repoUniverse), so P3 only has to fill the field.
+	BoardRepos []string
 }
 
 // Open discovers the store (FURROW_DIR, else the nearest ancestor of startDir
@@ -412,10 +419,20 @@ type AddOpts struct {
 	Value    *int // optional coarse 1..5 estimate; nil = unset
 	Effort   *int // optional coarse 1..5 estimate; nil = unset
 	Labels   []string
-	Parent   string
-	Deps     []string
-	Refs     []string
-	Body     string // initial body markdown; "" seeds a heading from the title
+	// Repos attaches the task to repositories. Each entry is resolved strictly
+	// (full owner/repo, or a short name naming exactly one repo in the board's
+	// universe — see resolveRepoIn).
+	Repos  []string
+	Parent string
+	Deps   []string
+	Refs   []string
+	Body   string // initial body markdown; "" seeds a heading from the title
+	// Draft marks the task as deliberately repo-less (repos == [], the
+	// issue-draft analogue). It conflicts with explicit Repos. Its force role
+	// arrives with P3 (board-derived repo auto-attachment on add), where Draft
+	// suppresses the derivation; until then add attaches no repo by default
+	// anyway, so the flag only carries the conflict semantics.
+	Draft bool
 }
 
 // Add creates a task, writes its body file, and saves the index. Returns the
@@ -436,8 +453,16 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	if a.Cfg.LabelsRequired && len(o.Labels) == 0 {
 		return nil, core.Validationf("", "a label is required ([labels].required); add -l <label>")
 	}
+	if o.Draft && len(o.Repos) > 0 {
+		return nil, core.Validationf("", "--draft cannot be combined with an explicit repo (-r): a draft is attached to no repo")
+	}
 
 	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+
+	repos, err := resolveRepoArgs(o.Repos, "", repoUniverse(idx, a.BoardRepos))
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +483,7 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	t := core.Task{
 		ID: id, Title: title, Status: status, Priority: prio,
 		Value: cloneIntp(o.Value), Effort: cloneIntp(o.Effort),
-		Labels: o.Labels, Parent: o.Parent, Deps: o.Deps, Refs: o.Refs,
+		Labels: o.Labels, Repos: repos, Parent: o.Parent, Deps: o.Deps, Refs: o.Refs,
 		Created: now, Updated: now, Body: core.BodyPath(id),
 	}
 	idx.Add(t)
@@ -512,11 +537,55 @@ func (a *App) Get(id string) (*core.Task, string, error) {
 	return t, body, nil
 }
 
-// QueryOpts filters List. Zero values mean "no filter".
+// QueryOpts filters List/Next/Revisit. Zero values mean "no filter". Label
+// (an explicit tag filter) and ScopeLabel (the board scope) are separate on
+// purpose: they AND together, so filtering by a tag never widens a scoped
+// board. Repo filters on the repos field; Drafts selects only repo-less tasks
+// and bypasses the scope (a draft belongs to no repo, so no repo scope may
+// hide it — see match).
 type QueryOpts struct {
-	Status string
-	Label  string
-	Limit  int
+	Status     string
+	Label      string // explicit tag filter; ANDs with ScopeLabel
+	ScopeLabel string // board-scope label (a pointer's / central board's DefaultLabel)
+	Repo       string // owner/repo filter on the repos field (already resolved)
+	Drafts     bool   // only tasks with repos == []; ignores ScopeLabel/Repo
+	Limit      int
+}
+
+// match reports whether t passes the query's filters (Limit excluded — that is
+// the iteration's job). In Drafts mode only repo-less tasks pass and the board
+// scope is bypassed; Status and Label still apply.
+func (o QueryOpts) match(t *core.Task) bool {
+	if o.Status != "" && t.Status != o.Status {
+		return false
+	}
+	if o.Label != "" && !contains(t.Labels, o.Label) {
+		return false
+	}
+	if o.Drafts {
+		return len(t.Repos) == 0
+	}
+	if o.ScopeLabel != "" && !contains(t.Labels, o.ScopeLabel) {
+		return false
+	}
+	if o.Repo != "" && !contains(t.Repos, o.Repo) {
+		return false
+	}
+	return true
+}
+
+// matchRevisit is match with the draft carve-out `revisit` needs: an open
+// draft (repos == []) passes the board scope and any repo filter, so drafts
+// surface (with the no_repo signal) regardless of scope. The explicit filters
+// (Status/Label) still apply — asking for one tag must not return unrelated
+// drafts.
+func (o QueryOpts) matchRevisit(t *core.Task) bool {
+	if len(t.Repos) > 0 {
+		return o.match(t)
+	}
+	d := o
+	d.ScopeLabel, d.Repo = "", ""
+	return d.match(t)
 }
 
 // List returns tasks in canonical order, after applying the filters.
@@ -526,14 +595,12 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 		return nil, err
 	}
 	var out []core.Task
-	for _, t := range idx.Tasks {
-		if o.Status != "" && t.Status != o.Status {
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if !o.match(t) {
 			continue
 		}
-		if o.Label != "" && !contains(t.Labels, o.Label) {
-			continue
-		}
-		out = append(out, t)
+		out = append(out, *t)
 		if o.Limit > 0 && len(out) >= o.Limit {
 			break
 		}
@@ -543,9 +610,9 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 
 // Next returns the actionable tasks in canonical order — the work that is ready
 // to pick up: status in the configured next-lanes ([next].lanes, default
-// ready+in-progress) AND every dependency already done. A non-empty label
-// restricts the result to tasks carrying that label (same semantics as List).
-func (a *App) Next(label string, limit int) ([]core.Task, error) {
+// ready+in-progress) AND every dependency already done. The query's filters
+// restrict the result with the same semantics as List.
+func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -559,12 +626,12 @@ func (a *App) Next(label string, limit int) ([]core.Task, error) {
 	var out []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if label != "" && !contains(t.Labels, label) {
+		if !o.match(t) {
 			continue
 		}
 		if a.Cfg.IsNextLane(t.Status) && idx.Actionable(t, a.Cfg.Terminal, doneIDs) {
 			out = append(out, *t)
-			if limit > 0 && len(out) >= limit {
+			if o.Limit > 0 && len(out) >= o.Limit {
 				break
 			}
 		}
