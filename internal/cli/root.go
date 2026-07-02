@@ -76,6 +76,7 @@ func newRootCmd() *cobra.Command {
 		newDepCmd(),
 		newLabelCmd(),
 		newApplyCmd(),
+		newSyncCmd(),
 		newArchiveCmd(),
 		newMigrateCmd(),
 		newLintCmd(),
@@ -109,14 +110,15 @@ func openApp() (*app.App, error) {
 // caller piping stdout to jq is unaffected).
 func renderError(fe *core.Error) {
 	type errBody struct {
-		Code int    `json:"code"`
-		ID   string `json:"id,omitempty"`
-		Msg  string `json:"message"`
+		Code    int    `json:"code"`
+		ID      string `json:"id,omitempty"`
+		Msg     string `json:"message"`
+		Details any    `json:"details,omitempty"`
 	}
 	type envelope struct {
 		Error errBody `json:"error"`
 	}
-	env := envelope{Error: errBody{Code: int(fe.Code), ID: fe.ID, Msg: fe.Msg}}
+	env := envelope{Error: errBody{Code: int(fe.Code), ID: fe.ID, Msg: fe.Msg, Details: fe.Details}}
 	// Errors are always JSON on stderr — machine-readable for Claude/scripts,
 	// still readable for humans.
 	b := mustJSON(env)

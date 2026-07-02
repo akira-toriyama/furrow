@@ -166,6 +166,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `dep <id> <dep-id>` | Add a dependency (id waits on dep-id), or remove it with `--rm`; acyclic & idempotent | `--rm` |
 | `label <id>` | Add and/or remove labels on a task (both repeatable, combinable); idempotent | `--add <label>`, `--remove <label>` |
 | `apply` | Apply `SetStatus-task: <body-link> [<lane>]` directives parsed from PR/commit text (stdin or `--body-file`) — the CI hook for auto status updates. `--on open` nudges to in-progress; `--on merge` applies the lane. Validation is non-blocking | `--on open\|merge`, `--ref`, `--body-file`, `--open-lane` |
+| `sync` | The multi-machine board ritual as one command: auto-commit limited to `.furrow/`, `pull --rebase` (autostash), `push` (one pull→push retry on non-fast-forward). On conflict it aborts the rebase automatically (`sync-conflict` error carries the paths); progress `{committed, pulled, pushed, conflict}` goes to stdout even on failure | `-m/--message` |
 | `archive` | Move aged done tasks to `.furrow/archive/` (preview unless `--yes`) | `--older-than <days>`, `--yes` |
 | `lint` | Check shard↔body 1:1, id shape, lanes, deps/parent refs, config clamp warnings (incl. a half-written user-level config) | — |
 | `config init` | Write the user-level `~/.config/furrow/config.toml` (central-board template); fills the board path/scopes from the nearest `.furrow` when run inside a board, else a placeholder. Never overwrites an existing file | `--path`, `--scope` (repeatable) |
@@ -286,6 +287,28 @@ With a board in effect (pointer or user-level):
   `-l ''` to see the whole board for one command, or `-l other` for another label.
 
 ---
+
+### Multi-machine: `furrow sync`
+
+A central board cloned on several machines needs only one ritual: pull before
+you read, push after you write. `furrow sync` is that ritual as one
+non-interactive command — a thin git wrapper, not a sync daemon or server
+(see [docs/non-goals.md](docs/non-goals.md)):
+
+1. auto-commit, **pathspec-limited to `.furrow/`** — other dirty files in the
+   board repo (notes, drafts) are never swept in. Default message
+   `:card_file_box: chore(board): sync via furrow`; override with `-m`.
+2. `git -c rebase.autoStash=true pull --rebase`
+3. `git push` (one pull→push retry on non-fast-forward)
+
+Per-task shards make true conflicts rare — two machines *adding* tasks touch
+disjoint files; only both sides editing the *same* task conflicts. When that
+happens sync **aborts the rebase automatically** (the board is never left with
+conflict markers; your local sync commit survives) and exits 3 with an error
+envelope carrying `"id": "sync-conflict"` and `"details": {"paths": [...]}` so
+an agent knows exactly which shards to reconcile. The progress object
+`{committed, pulled, pushed, conflict}` is printed to stdout on success and
+failure alike.
 
 ## Configuration
 

@@ -18,12 +18,18 @@ const (
 )
 
 // Error is furrow's structured error. On a non-zero exit the CLI prints it to
-// stderr as {"error":{"code","id","message"}} so callers get a machine-readable
-// failure. Plain (non-*Error) errors are treated as CodeInternal.
+// stderr as {"error":{"code","id","message"[,"details"]}} so callers get a
+// machine-readable failure. Plain (non-*Error) errors are treated as
+// CodeInternal.
 type Error struct {
 	Code Code
-	ID   string // the offending task id, "index", or "" when not applicable
+	ID   string // the offending task id, "index", an error slug (e.g. "sync-conflict"), or ""
 	Msg  string
+	// Details is optional machine-actionable payload for errors where the
+	// message alone isn't enough to act on (e.g. sync-conflict carries
+	// {"paths": [...]}). Rendered as "details" in the envelope when non-nil;
+	// existing consumers that only read code/id/message are unaffected.
+	Details any
 }
 
 func (e *Error) Error() string { return e.Msg }

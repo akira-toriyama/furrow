@@ -40,6 +40,15 @@ import, not an ongoing sync) has been floated but is **not built** today.
 
 ---
 
+### No sync daemon / server
+Multi-machine use is `furrow sync` — a **thin git wrapper** (commit only
+`.furrow/`, `pull --rebase`, `push`, abort-and-report on conflict) that the
+user or agent runs explicitly. There is no background process, no file
+watcher, no hosted relay, and none is planned: git is already the
+synchronization layer, and per-task shards already make concurrent writes
+merge cleanly. — *A daemon would add an always-on failure mode to a tool whose
+whole premise is "plain files in your repo".*
+
 ## Storage format
 
 The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
@@ -111,7 +120,7 @@ To keep this list honest about today's reality (not aspirations):
 
 - **Built and real today** (`internal/cli`): `init`, `add`, `ls` (alias
   `list`), `show`, `next`, `revisit`, `edit`, `done`, `move`, `reorder`,
-  `check`, `dep`, `migrate`, `archive`, `lint`, `schema`, `version`, `ui`. Read
+  `check`, `dep`, `sync`, `migrate`, `archive`, `lint`, `schema`, `version`, `ui`. Read
   commands honor
   `--json` / `--ndjson`; `ls` supports `--status`/`-s`, `--label`/`-l`,
   `--limit`/`-n`.
