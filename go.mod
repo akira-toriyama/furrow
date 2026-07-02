@@ -1,6 +1,6 @@
 module github.com/akira-toriyama/furrow
 
-go 1.23
+go 1.25.0
 
 require (
 	github.com/charmbracelet/bubbles v0.20.0
@@ -10,7 +10,7 @@ require (
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20240815200342-61de596daa2b
 	github.com/pelletier/go-toml/v2 v2.4.2
 	github.com/spf13/cobra v1.8.1
-	golang.org/x/term v0.27.0
+	golang.org/x/term v0.43.0
 )
 
 require (
@@ -40,8 +40,8 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/yuin/goldmark v1.7.4 // indirect
 	github.com/yuin/goldmark-emoji v1.0.3 // indirect
-	golang.org/x/net v0.27.0 // indirect
-	golang.org/x/sync v0.11.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.17.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 )
