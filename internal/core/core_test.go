@@ -38,9 +38,9 @@ func sampleIndex() *Index {
 			{
 				ID: "t-0001", Title: "畝を一本進める", Status: "in-progress",
 				Priority: 110, Value: vi(4), Effort: vi(2),
-				Labels: []string{"zmk", "canon"},
-				Repos:  []string{"akira-toriyama/furrow", "akira-toriyama/chord"}, // unsorted: must sort
-				Deps:   []string{"t-0002"},
+				Labels:    []string{"zmk", "canon"},
+				Repos:     []string{"akira-toriyama/furrow", "akira-toriyama/chord"}, // unsorted: must sort
+				Deps:      []string{"t-0002"},
 				Refs:      []string{"docs/x.md#L10", "https://example.com"},
 				Checklist: []ChecklistItem{{Text: "design", Done: true}, {Text: "ship", Done: false}},
 				Created:   mk(2026, 6, 2), Updated: mk(2026, 6, 21), Closed: nil,
