@@ -39,7 +39,7 @@ library.
               +------------------+------------------+
               |                  |                  |
               v                  v                  v
-     internal/config   internal/store/fsstore  internal/store/memstore
+     internal/config   internal/store/fsstore  internal/store/memstore  internal/gitrepo
      read config.toml  the ONLY FS package      in-memory fake
      (clamp, no write) (atomic write,           (tests, dry-runs)
                          lazy body load,
@@ -75,6 +75,7 @@ directly for mutation — they go through `internal/app`.
 | `internal/config` | Loads `.furrow/config.toml` (read-only, clamp-don't-reject). Produces an effective `Config`. |
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
 | `internal/store/memstore` | In-memory `core.Store` for tests and `migrate --dry-run`. A normal non-test package. |
+| `internal/gitrepo` | git subprocess adapter behind `furrow sync` (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers (and the in-memory `Marshal`), the `Store`/`Clock` ports, `Validate`, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard and `meta.json` as Go constants; emitted by `furrow schema [task|meta]`. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |

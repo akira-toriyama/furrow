@@ -69,13 +69,21 @@ func (a *App) Sync(message string) (*SyncProgress, error) {
 	pull := func() error {
 		if err := r.PullRebase(); err != nil {
 			if r.RebaseInProgress() {
+				// Flag the conflict BEFORE attempting the abort: even if the
+				// abort itself fails (the one state the contract promises never
+				// to leave behind), the progress object and the error must both
+				// say "conflict" and carry the paths.
+				p.Conflict = true
 				paths := r.ConflictedPaths()
 				if aerr := r.AbortRebase(); aerr != nil {
-					// Extremely unlikely; surface it — a stuck rebase is the one
-					// state the contract promises to never leave behind.
-					return aerr
+					return &core.Error{
+						Code: core.CodeInternal,
+						ID:   "sync-conflict",
+						Msg: fmt.Sprintf("pull --rebase hit conflicts AND the automatic abort failed (%v) — "+
+							"run 'git rebase --abort' in %s by hand, then re-run furrow sync", aerr, r.Toplevel()),
+						Details: map[string]any{"paths": paths},
+					}
 				}
-				p.Conflict = true
 				return &core.Error{
 					Code: core.CodeInternal,
 					ID:   "sync-conflict",

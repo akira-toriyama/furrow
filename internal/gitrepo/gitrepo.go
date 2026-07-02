@@ -145,7 +145,7 @@ func (r *Repo) ConflictedPaths() []string {
 	if err != nil {
 		return nil
 	}
-	var paths []string
+	paths := []string{} // [] not null in the envelope, matching the store's slice style
 	for _, l := range strings.Split(out, "\n") {
 		if l = strings.TrimSpace(l); l != "" {
 			paths = append(paths, l)
@@ -177,7 +177,7 @@ func (r *Repo) Push() error {
 	if isNonFastForward(stderr) {
 		return fmt.Errorf("%w: %s", ErrNonFastForward, firstLine(stderr))
 	}
-	return core.Internalf("sync", "git push: %s", firstLine(stderr))
+	return core.Internalf("sync", "git push: %s", errorLine(stderr))
 }
 
 // isNonFastForward classifies a push rejection from git's stderr. git phrases
@@ -222,4 +222,18 @@ func firstLine(s string) string {
 		}
 	}
 	return "(no output)"
+}
+
+// errorLine picks the most diagnostic line of a git stderr blob: push failures
+// open with a bland "To <url>" line, and the actual reason lives in the
+// "error:"/"fatal:"/"! [remote rejected]" line below it. Falls back to
+// firstLine when no such line exists.
+func errorLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "error:") || strings.HasPrefix(t, "fatal:") || strings.HasPrefix(t, "!") {
+			return t
+		}
+	}
+	return firstLine(s)
 }

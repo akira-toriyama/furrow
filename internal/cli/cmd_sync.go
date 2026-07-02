@@ -34,9 +34,12 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 			prog, err := a.Sync(message)
-			if flagJSON || flagNDJSON {
+			switch {
+			case flagNDJSON:
+				printNDJSONValue(prog) // one compact line, honoring the NDJSON contract
+			case flagJSON:
 				printJSON(prog)
-			} else {
+			default:
 				fmt.Fprintln(out, prog.SyncSummary())
 			}
 			return err
