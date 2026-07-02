@@ -4,7 +4,10 @@ Guidance for working in this repository (and for furrow itself as a tool).
 
 ## For Claude Code — integration contract (read first)
 
-furrow is the task store for THIS repo, living in `.furrow/`. When you work here:
+furrow's own tasks live on the **central board** (the private
+`akira-toriyama/projects` repo) — this repo deliberately has **no local
+`.furrow/`**, so `furrow` commands run here resolve to the central board via
+the user-level config. When you work with any furrow store:
 
 - furrow **OWNS the `.furrow/tasks/*.json` shards** (one per task) **and
   `.furrow/meta.json`**. **Never hand-edit them.** They are written by a
