@@ -185,7 +185,7 @@ error (the file is malformed input), not an internal fault.
   read → write stays identical).
 - **Schema drift test.** `furrow schema [task|meta]` prints
   `internal/schema.TaskV2` / `internal/schema.MetaV1` (JSON Schema draft 2020-12);
-  `docs/schema/furrow.task.v1.json` and `docs/schema/furrow.meta.v1.json` are
+  `docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v1.json` are
   committed copies of the same bytes, and CI diffs both so they cannot drift.
 - **Single-path grep guard.** `scripts/check-marshal-singlepath.sh` greps for
   stray `json.Marshal` calls on a `Task`/`Index`/meta outside `core`'s serializers

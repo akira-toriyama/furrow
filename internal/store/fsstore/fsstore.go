@@ -96,8 +96,9 @@ func (s *Store) Load() (*core.Index, error) {
 
 // metaVersion returns meta.json's schema version, defaulting to the current
 // SchemaVersion when meta.json is absent or unreadable (a fresh store, or one
-// written before meta.json existed). The version is informational — the shards
-// are the data — so a missing/garbled meta must not fail a Load.
+// written before meta.json existed). A missing/garbled meta must not fail a
+// Load — the shards are the data — but a READABLE version feeds the gate:
+// Load/Save refuse a board declaring a newer layout (core.CheckSchemaVersion).
 func (s *Store) metaVersion() int {
 	b, err := os.ReadFile(s.metaPath())
 	if err != nil {
