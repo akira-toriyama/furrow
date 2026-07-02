@@ -32,7 +32,7 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
     homepage: https://github.com/akira-toriyama/furrow
-    description: "Repo-local plain-text task tracker (JSON index + per-task markdown bodies)"
+    description: "Clonable, git-native plain-text task tracker — an alternative to GitHub Projects/Issues"
     # The binary is unsigned; strip the quarantine xattr on macOS so Gatekeeper
     # allows launch (same pattern as the family's other casks).
     hooks:
