@@ -242,10 +242,35 @@ SetStatus-task: https://github.com/<owner>/<tracker>/blob/main/.furrow/bodies/<i
 
 On PR **open** (incl. draft) the task is nudged to in-progress; on **merge** the
 named lane is applied (omit the lane to only annotate the body). `apply` reads the
-text from `--body-file` or stdin and is CI/VCS-agnostic, so a thin CI job — see
-this repo's [`.github/workflows/task-status.yml`](.github/workflows/task-status.yml),
-which calls a shared reusable workflow — is all the wiring it needs. Validation is
-non-blocking: an unknown id or lane is reported, never a merge blocker.
+text from `--body-file` or stdin and is CI/VCS-agnostic.
+
+The GitHub wiring **ships with furrow** as a reusable workflow,
+[`.github/workflows/sync-task-status.yml`](.github/workflows/sync-task-status.yml).
+A code repo needs only a ~10-line caller, pinned to a **concrete furrow release
+tag** (never a moving ref):
+
+```yaml
+# .github/workflows/task-status.yml
+name: task-status
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  sync:
+    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.5.0
+    secrets:
+      PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
+```
+
+The workflow downloads the furrow **release binary matching its own tag**
+(checksum-verified) — the workflow revision and the binary revision cannot
+diverge, and CI upgrades only when you bump the pin. Auth is one fine-grained
+PAT (`PROJECTS_WRITE_PAT`: Contents Read & write on the tracker repo only);
+until it exists the job skips cleanly. Validation is non-blocking: an unknown
+id or lane is reported, never a merge blocker.
 
 ---
 
