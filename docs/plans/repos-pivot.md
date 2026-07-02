@@ -1,18 +1,34 @@
-# repos-pivot — furrow を GitHub Projects/Issues の「代替」へ（設計 v1.1）
+# repos-pivot — furrow を GitHub Projects/Issues の「代替」へ（設計 v1.1 → v1.2）
 
-> **状態（2026-07-02）**: 設計はユーザ承認済み（①〜⑧全節＋3視点敵対レビューの指摘一式を v1.1 として採用）。**タスクは projects 中央ボードに起票済み**（下表）— 各 body に該当節を verbatim 転記済みなので、**実装セッションはまず `furrow show <id>` を読む**こと。本ファイルは全体像（順序・依存・横断の理由）の正本。全タスク完了（flag-day #2 終了）で削除する。
+> **状態（2026-07-02 更新）**: **P0〜P8 は全て出荷済み**（下表）。**残る本体は P4（flag-day・user gate）のみ** — 前提は全充足（v0.5.0 で CI バイナリ pin 済み）、ready 先頭に配置済み。追加相談で **v1.2 タスク群**（下の第2表）を起票済み。各 body に仕様を verbatim 転記してあるので、**実装セッションはまず `furrow show <id>` を読む**こと。本ファイルは全体像（順序・依存・横断の理由）の正本。全タスク完了で削除する。
+>
+> P4 までの既知の運用状態: home config は `label="auto"` のままなので毎コマンド tombstone 警告が出て、code repo cwd からの board read は scope されない（P4 の手順 2 で解消）。
 
-| # | task id | 内容 | dep |
+| # | task id | 内容 | 状態 |
 |---|---|---|---|
-| P0 | `t-6fp3` | 自リポの `.furrow/` tombstone 削除（central board へ一本化） | — |
-| P1 | `t-tnjc` | core: `repos` 一級フィールド＋schema v2＋version gate | — |
-| P2 | `t-xvm6` | cli: `-r`・`furrow repo`・drafts・`no_repo`・did-you-mean・candidates・表示 | P1 |
-| P3 | `t-14sw` | config: `repo="auto"` 導出（origin INI・worktree commondir）＋label literal 化＋strict write | P1 |
-| P5 | `t-jkck` | `furrow sync`（gitrepo adapter・失敗契約込み） | — |
-| P8 | `t-cckp` | README/docs ポジショニング転換 | P2,P3,P5 |
-| P6 | `t-jhv6` | release v0.4.0（repos 対応）＋flake vendorHash | P8 |
-| P7 | `t-epcx` | task-status reusable workflow 同梱・公開＋CI バイナリ pin | P6 |
-| P4 | `t-3bmm` | flag-day #2: 194 件 labels→repos 変換・meta 3・運用ルール/dotfiles（**user gate**） | P7 |
+| P0 | `t-6fp3` | 自リポの `.furrow/` tombstone 削除 | ✅ #42 |
+| P1 | `t-tnjc` | core: `repos` 一級フィールド＋schema v2＋version gate | ✅ #43 |
+| P2 | `t-xvm6` | cli: `-r`・`furrow repo`・drafts・`no_repo`・did-you-mean・candidates | ✅ #45 |
+| P3 | `t-14sw` | config: `repo="auto"` 導出・label literal 化・strict write | ✅ #46 |
+| P5 | `t-jkck` | `furrow sync` | ✅ #44 |
+| P8 | `t-cckp` | README/docs ポジショニング転換 | ✅ #47 |
+| P6 | `t-jhv6` | release（v0.4.0）＋flake vendorHash | ✅ v0.4.0 |
+| P7 | `t-epcx` | task-status reusable workflow 同梱＋CI pin | ✅ #49 / v0.5.0・fleet 適用済み |
+| P4 | `t-3bmm` | **flag-day #2**: labels→repos 変換・meta 2→3・運用ルール/dotfiles（**user gate**・書き込み停止を伴う） | 🔜 **次の一手**（ready 先頭） |
+
+## v1.2 追加タスク（2026-07-02 追加相談で確定・起票済み）
+
+設計レンズ: クラウドが無料でくれるものの棚卸し → git が既にくれるもの（履歴・remote・権限）は除外 → 残りを **hooks（local の門番）＋Actions（借りる中央）** で埋める。すべて「検知」でありロックではない。
+
+| task id | 内容 | lane |
+|---|---|---|
+| `t-xrtr` | lint にリンクグラフ検査（dep cycle＝並行 merge の silent starvation 対策＋dangling `[[t-x]]`） | ready |
+| `t-7jeq` | `show --backlinks`（`[[t-x]]` 逆引き＝GitHub "mentioned in" の pull 型代替） | ready |
+| `t-759v` | board 用 git hooks 同梱（post-merge/post-rewrite/pre-push lint・`core.hooksPath` 1行 activation） | backlog |
+| `t-v0b1` | projects の lint CI（`.furrow/**` push → lint＝中央 backstop） | backlog |
+| `t-kfrx` | task-status workflow の push 競合リトライ（silent な lane 更新ロスト対策） | backlog |
+| `t-2v1b` | docs 追補（`[[t-x]]` 記法正式化・Issues との使い分けモデル・糖衣原則） | backlog |
+| `t-e23r` | **メンション**（v1 sync 検知 → v2 TUI 着地。マスト・着手は P 系が落ち着いてから） | backlog 下位 |
 
 ## Context（なぜ）
 
