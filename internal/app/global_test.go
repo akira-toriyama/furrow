@@ -849,3 +849,31 @@ func TestGlobal_GitFileDanglingGitdirWarns(t *testing.T) {
 		t.Error("want a derivation warning, got none")
 	}
 }
+
+// The board's literal label satisfies [labels].required — the union happens
+// before the check (the positive twin of the "a repo does NOT satisfy it"
+// case), so a required-labels board stays zero-friction under a literal tag.
+func TestGlobal_LiteralLabelSatisfiesRequired(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	t.Setenv(EnvBoard, "")
+	root := t.TempDir()
+	scope := filepath.Join(root, "org")
+	board := mustInitBoard(t, filepath.Join(scope, "projects"))
+	cfgPath := filepath.Join(board, "config.toml")
+	cfg, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, []byte(strings.Replace(string(cfg), "# required = false", "required = true", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeGlobalConfig(t, boardEntry(board, "auto", scope)+"label = \"tracked\"\n")
+
+	a, err := Open(mkGitRepo(t, filepath.Join(scope, "repoY")))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, err := a.Add("x", AddOpts{}); err != nil {
+		t.Fatalf("the literal board label must satisfy [labels].required: %v", err)
+	}
+}
