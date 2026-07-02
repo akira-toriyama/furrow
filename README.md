@@ -151,11 +151,11 @@ All commands below are implemented and working today, including the `ui` TUI and
 | Command | What it does | Key flags / args |
 |---|---|---|
 | `init` | Create a `.furrow/` store (config + `meta.json` + empty `tasks/` + `bodies/`) in the current directory | — |
-| `add <title>...` | Add a task (or many from stdin with `--stdin`); assigns frozen ids and seeds `bodies/<id>.md` | `--stdin`, `-s/--status`, `-p/--priority`, `--value`, `--effort`, `-l/--label`, `--parent`, `--dep`, `--ref`, `--body` |
-| `ls` (alias `list`) | List tasks in canonical `lane -> priority -> id` order | `-s/--status`, `-l/--label`, `-n/--limit` |
+| `add <title>...` | Add a task (or many from stdin with `--stdin`); assigns frozen ids and seeds `bodies/<id>.md` | `--stdin`, `-s/--status`, `-p/--priority`, `--value`, `--effort`, `-l/--label`, `-r/--repo`, `--draft`, `--parent`, `--dep`, `--ref`, `--body` |
+| `ls` (alias `list`) | List tasks in canonical `lane -> priority -> id` order; `--drafts` lists only the tasks with no repo (bypasses the board scope) | `-s/--status`, `-l/--label`, `-r/--repo`, `-n/--limit`, `--drafts` |
 | `show <id>` | Show one task plus its Markdown body | — |
-| `next` | Show actionable tasks (non-terminal lane, all deps done); `--json`/`--ndjson` attach a `reason` (`in_next_lane`, `deps_satisfied`) | `-n/--limit` (use `-n1` for just the top) |
-| `revisit` | Read-only; list open tasks needing re-evaluation. `--json`/`--ndjson` attach a `revisit` array of `{code, detail}` (`value_unset`, `effort_unset`, `stale`, `dep_done`) so an agent knows what to fix. Empty result exits 0 | `-l/--label`, `-n/--limit`, `--stale-days <n>` (0 disables stale) |
+| `next` | Show actionable tasks (non-terminal lane, all deps done); `--json`/`--ndjson` attach a `reason` (`in_next_lane`, `deps_satisfied`) | `-l/--label`, `-r/--repo`, `-n/--limit` (use `-n1` for just the top) |
+| `revisit` | Read-only; list open tasks needing re-evaluation. `--json`/`--ndjson` attach a `revisit` array of `{code, detail}` (`no_repo`, `value_unset`, `effort_unset`, `stale`, `dep_done`) so an agent knows what to fix. Drafts surface regardless of scope. Empty result exits 0 | `-l/--label`, `-r/--repo`, `-n/--limit`, `--stale-days <n>` (0 disables stale) |
 | `edit <id>` | Open `bodies/<id>.md` in `$EDITOR`; prints the path when non-interactive | — |
 | `done <id>` | Move a task into the done lane (stamps `closed`) | — |
 | `move <id> <lane>` | Move a task to a lane (clears `closed` when leaving done) | — |
@@ -165,6 +165,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `check <id> [index]` | Toggle a checklist item by zero-based index, or append one | `--add <text>`, `--off` |
 | `dep <id> <dep-id>` | Add a dependency (id waits on dep-id), or remove it with `--rm`; acyclic & idempotent | `--rm` |
 | `label <id>` | Add and/or remove labels on a task (both repeatable, combinable); idempotent | `--add <label>`, `--remove <label>` |
+| `repo <id>` | Attach and/or detach repos (`owner/repo`) on a task; each value must be a full `owner/repo` or a short name uniquely resolving against the board's repos (else exit 2 with `candidates`); idempotent. A task with no repos is a draft | `--add <repo>`, `--rm <repo>` |
 | `apply` | Apply `SetStatus-task: <body-link> [<lane>]` directives parsed from PR/commit text (stdin or `--body-file`) — the CI hook for auto status updates. `--on open` nudges to in-progress; `--on merge` applies the lane. Validation is non-blocking | `--on open\|merge`, `--ref`, `--body-file`, `--open-lane` |
 | `sync` | The multi-machine board ritual as one command: auto-commit limited to `.furrow/`, `pull --rebase` (autostash), `push` (one pull→push retry on non-fast-forward). On conflict it aborts the rebase automatically (`sync-conflict` error carries the paths); progress `{committed, pulled, pushed, conflict}` goes to stdout even on failure | `-m/--message` |
 | `archive` | Move aged done tasks to `.furrow/archive/` (preview unless `--yes`) | `--older-than <days>`, `--yes` |
@@ -176,7 +177,9 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `ui` | Launch the interactive TUI (list + detail panes): navigate, filter, done, move lane, reorder (`K`/`J`), toggle checklist, edit body | — |
 | `migrate <file>` | Import an existing `Task.md` etc. (dry-run by default; unmapped headings & `[[wikilink]]`s reported, never dropped) | `--write`, `-l/--label` |
 
-Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `move`, `reorder`, `value`, `effort`, `check`, `dep`, `label`) also accept `--json`, emitting `{before, after, changed}` so a caller sees the effect without a follow-up `show`. `apply --json` emits a per-directive report (`{on, ref, outcomes}`). `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
+On the read commands, `-r/--repo` filters by the first-class `repos` field and is the scope control: a short name resolves case-insensitively at a `/` boundary (`-r furrow` → `akira-toriyama/furrow`; ambiguity is exit 2 with `candidates`), an explicit `-r` overrides the board scope, and `-r ''` shows the whole board. `-l/--label` is a pure tag filter that ANDs with the scope. When a label filter matches nothing but the name uniquely resolves to a repo that has tasks, furrow exits 2 pointing you at `-r` (the did-you-mean guard). When an explicit `-r` hides drafts on `ls`/`next`, one stderr hint line (`N draft(s) hidden — furrow ls --drafts`) points at them; stdout stays pure data.
+
+Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `move`, `reorder`, `value`, `effort`, `check`, `dep`, `label`, `repo`) also accept `--json`, emitting `{before, after, changed}` so a caller sees the effect without a follow-up `show`. `apply --json` emits a per-directive report (`{on, ref, outcomes}`). `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
 
 ---
 
@@ -186,7 +189,7 @@ furrow needs no MCP server and no plugin — for a repo-local tool that is overk
 
 - **Never hand-edit `tasks/<id>.json` (or `meta.json`).** A single deterministic marshaller owns those files; a manual edit will churn the diff (and likely lose the canonical ordering). Mutate tasks through the commands above.
 - **`bodies/*.md` are yours to edit.** Prose lives there and is plain Markdown — edit it directly, or via `furrow edit <id>` (which prints the absolute path in a non-interactive context).
-- **Use `--json` for machine reads.** JSON is written to **stdout only**; logs, confirmations, and errors go to **stderr**, so piping stdout into `jq` is always clean. `--ndjson` emits one task per line for streaming. Filters: `--status/-s`, `--label/-l`, `--limit/-n`.
+- **Use `--json` for machine reads.** JSON is written to **stdout only**; logs, confirmations, and errors go to **stderr**, so piping stdout into `jq` is always clean. `--ndjson` emits one task per line for streaming. Filters: `--status/-s`, `--label/-l`, `--repo/-r`, `--limit/-n`.
 
 furrow is **non-interactive by default** — it never prompts. Destructive operations are guarded: `archive` only previews unless you pass `--yes`.
 
@@ -204,6 +207,11 @@ On a non-zero exit, furrow prints a structured error object to stderr:
 ```json
 {"error":{"code":2,"id":"t-0001","message":"unknown lane \"backlogg\""}}
 ```
+
+When an input almost resolved — an ambiguous repo short name, or a label that
+uniquely names a repo (the did-you-mean guard) — the envelope also carries
+`"candidates": ["owner/repo", …]`, so a script picks an alternative from the
+array instead of parsing the message prose.
 
 ### CI: auto-update a tracker from PRs
 
@@ -283,8 +291,10 @@ With a board in effect (pointer or user-level):
   `[labels].required`); an explicit `-l x` adds to it rather than replacing.
 - `furrow ls|next|revisit` filter to the scope label — **silently** (no banner).
   A user-level board can opt out with `auto_filter = false` to show the whole
-  board while `add` still tags with the label; a pointer always filters. Pass
-  `-l ''` to see the whole board for one command, or `-l other` for another label.
+  board while `add` still tags with the label; a pointer always filters. Scope
+  control is `-r`: pass `-r ''` to see the whole board for one command, or
+  `-r <repo>` for another repo. An explicit `-l tag` filters *within* the scope
+  (it ANDs; it does not clear it).
 
 ---
 
