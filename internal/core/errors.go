@@ -30,6 +30,11 @@ type Error struct {
 	// {"paths": [...]}). Rendered as "details" in the envelope when non-nil;
 	// existing consumers that only read code/id/message are unaffected.
 	Details any
+	// Candidates is the optional list of concrete alternatives when an input
+	// almost resolved — an ambiguous repo short name, or the did-you-mean
+	// guard's repo suggestion. Rendered as "candidates" in the envelope when
+	// non-empty, so agents branch on the array and never regex the prose.
+	Candidates []string
 }
 
 func (e *Error) Error() string { return e.Msg }
