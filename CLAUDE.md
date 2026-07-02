@@ -15,32 +15,47 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|edit|done|move|reorder|check|dep|label|repo|sync|archive|lint|init`.
+- Canonical commands: `furrow add|ls|show|next|revisit|edit|done|move|reorder|value|effort|check|dep|label|repo|sync|apply|archive|lint|config|init`.
+- **Repos are the scope; labels are pure tags.** A task's repositories live in
+  the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
+  issue-draft analogue). `-r` is the scope control on reads: a full
+  `owner/repo` or a short name resolving uniquely against the board's repos;
+  an explicit `-r` overrides the board scope, `-r ''` = the whole board. `-l`
+  filters by tag and ANDs with the scope. On a board, `add` unions the scope
+  repo into `repos` (`--draft` suppresses exactly that); `ls --drafts` lists
+  the repo-less tasks; `furrow repo <id> --add|--rm` attaches/detaches later.
 - `--json` is available on read commands; **JSON goes to stdout only** (logs and
   errors go to stderr). Use `--ndjson` for one task per line and
   `--status/-s`, `--label/-l`, `--repo/-r`, `--limit/-n` to filter — so you
-  rarely need jq. `-r` takes a full `owner/repo` or a short name resolving
-  uniquely against the board's repos; an explicit `-r` overrides the board
-  scope (`-r ''` = whole board) while `-l` is a pure tag filter that ANDs with
-  the scope. `ls --drafts` lists only the repo-less tasks (drafts).
-  Mutations (`done|move|reorder|check|dep|label|repo`) with `--json` emit
+  rarely need jq.
+  Mutations (`done|move|reorder|value|effort|check|dep|label|repo`) with
+  `--json` emit
   `{before, after, changed}`; `add --stdin` bulk-creates one task per stdin line;
-  `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) per task.
+  `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) and
+  `revisit --json` a `revisit` array (`no_repo`, `value_unset`, `effort_unset`,
+  `stale`, `dep_done`) per task.
+- **A multi-machine board converges with `furrow sync`** (auto-commit limited
+  to `.furrow/` → `pull --rebase` → `push`): run it before reading and after
+  writing a shared board. On a true conflict it aborts the rebase itself and
+  exits 3 with id `sync-conflict` + the conflicted shard paths in `details`.
 - `furrow edit <id>` with no TTY **prints the body file path** instead of opening
   an editor — read/edit that file directly.
 - Exit codes: `0` ok / `1` not-found|empty / `2` bad-usage|validation / `3+`
   internal|IO. On non-zero, an `{"error":{"code","id","message"}}` object is on
-  stderr (plus an optional machine-actionable `details` — e.g. `sync` puts the
-  conflicted paths there under id `sync-conflict` — and an optional
-  `candidates` array when an input almost resolved: an ambiguous repo short
-  name, or the `-l` did-you-mean guard. Branch on the array, never regex the
-  message).
+  stderr — plus an optional machine-actionable `details` (see `sync` above)
+  and an optional `candidates` array when an input almost resolved (an
+  ambiguous repo short name, or `-l <x>` matching nothing while `x` uniquely
+  names a repo — the did-you-mean guard). Branch on the array, never regex
+  the message.
 - furrow is **non-interactive by default**; the TUI is `furrow ui` only.
   Destructive ops guard themselves: `furrow archive` previews unless `--yes`.
 
 ## What this is
 
-furrow — a repo-local, plain-text task tracker. Structured metadata lives in
+furrow — an alternative to GitHub Projects/Issues: a clonable, git-native,
+plain-text task tracker. One central board can back many repos (tasks carry
+their repositories in the first-class `repos` field) or a store can live
+repo-local. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
 (`{"schema_version": 2}`); long-form prose lives in

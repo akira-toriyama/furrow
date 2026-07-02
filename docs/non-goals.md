@@ -13,13 +13,22 @@
 ## Integration
 
 ### No MCP server
-furrow ships no Model Context Protocol server. — *MCP is for
-cross-agent / remote / auth scenarios, none of which apply to a local,
-single-repo tool; a plain CLI is simpler and has no daemon to run.*
+furrow ships no Model Context Protocol server. — *The plain CLI is already the
+agent interface: `--json`/`--ndjson` on every read, `{before, after, changed}`
+on mutations, machine-actionable error envelopes (`candidates`,
+`sync-conflict` paths), and a plain-text store the agent can read — and, for
+bodies, write — directly. That holds for multi-repo, multi-machine central
+boards too: the board is a git repo, so "remote access" is `git clone`, not a
+protocol. An MCP server would add a daemon to run and a second interface to
+keep in lockstep with the CLI, for zero new capability.*
 
 ### No Claude Code plugin
-furrow is not packaged as a Claude Code plugin. — *Plugins are for team-wide
-distribution; for a repo-local, single-author tool the overhead is pure cost.*
+furrow is not packaged as a Claude Code plugin. — *The integration contract is
+a short `CLAUDE.md` block that lives in the tracked repo itself — versioned,
+cloned, and reviewed with everything else, on every machine and for every
+operator at once. A plugin would move that contract into a per-machine install
+that can go stale against the board it drives, and (as with MCP) it would add
+no capability the CLI does not already expose.*
 
 The actual integration layer is small and deliberate: a `~15`-line `CLAUDE.md`
 block plus `--json` on the read commands. The rules that block encodes:
@@ -29,11 +38,19 @@ determinism contract); `.furrow/bodies/<id>.md` files **are** meant to be
 hand- or agent-edited; mutate state through the CLI commands, not the JSON.
 
 ### No GitHub Issue sync
-furrow does not sync to, mirror, or import from GitHub Issues. — *Issues are
-**public**, mix with other people's issues, and lag behind the local plain text;
-a repo-local store is the whole point.* GitHub-friendly here means "non-binary,
+furrow does not sync to, mirror, or import from GitHub Issues. furrow is an
+**alternative** to Issues, not a mirror of them. — *Issues are **public**, mix
+with other people's issues, and lag behind the local plain text; a clonable
+plain-text store is the whole point.* GitHub-friendly here means "non-binary,
 commits to the repo and diffs cleanly as plain text" — not "talks to the GitHub
 API."
+
+The boundary, stated once: the two GitHub touchpoints that **do** exist are
+deliberately not API integrations. `furrow sync` is a **thin git wrapper**
+(git is the transport — see *No sync daemon* below), and the task-status
+GitHub Actions workflow is **PR-event → own-board reflection**: it runs
+`furrow apply` over the PR's own text to update the board *in its own repo*,
+calling no Issues/Projects API and mirroring no external state.
 
 A speculative one-shot `furrow import --from-gh-project` seed (a one-time
 import, not an ongoing sync) has been floated but is **not built** today.
@@ -94,10 +111,12 @@ markdown (no escaping, task-level diffs).
 ## Backend & UI
 
 ### No cloud / hosted / web-app backend
-furrow has no server, no account, no hosted state. — *The store lives in the
-user's own repo under `.furrow/`; cloud-/Issue-/account-backed candidates
-(Linear, Notion, GitHub Projects, CCPM, Spec Kit) were explicitly dropped for
-assuming a remote backend.*
+furrow has no server, no account, no hosted state. — *The store lives under
+`.furrow/` in a git repo the user owns — a code repo, or a dedicated central
+tracker repo; multi-machine and multi-repo use is git (clone + `furrow sync`),
+not a service. Cloud-/Issue-/account-backed candidates (Linear, Notion, GitHub
+Projects, CCPM, Spec Kit) were explicitly dropped for assuming a remote
+backend.*
 
 ### Web / React UI is low priority, not a near-term goal
 A rich web or React UI is deliberately deferred. — *CLI and TUI are the
@@ -120,14 +139,16 @@ To keep this list honest about today's reality (not aspirations):
 
 - **Built and real today** (`internal/cli`): `init`, `add`, `ls` (alias
   `list`), `show`, `next`, `revisit`, `edit`, `done`, `move`, `reorder`,
-  `check`, `dep`, `sync`, `migrate`, `archive`, `lint`, `schema`, `version`, `ui`. Read
-  commands honor
-  `--json` / `--ndjson`; `ls` supports `--status`/`-s`, `--label`/`-l`,
-  `--limit`/`-n`.
+  `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`, `sync`,
+  `migrate`, `archive`, `lint`, `config init|path`, `schema`, `version`, `ui`.
+  Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
+  `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, and `--drafts`.
   Destructive ops are guarded: `archive` previews unless `--yes`. Exit-code
   contract: `0` ok / `1` not-found|empty / `2` bad-usage|validation / `3+`
   internal|IO, with `{"error":{"code","id","message"}}` to stderr
-  (`internal/core/errors.go`). The bubbletea TUI (`internal/tui`, `furrow ui`)
+  (`internal/core/errors.go`), plus optional `candidates` / `details` fields
+  when there is something machine-actionable to say. The bubbletea TUI
+  (`internal/tui`, `furrow ui`)
   and `furrow migrate` (importing a legacy `Task.md`) are wired and working too.
 - **Not built** — a hosted/web backend and a rich React UI remain out of scope
   for now (see *Backend & UI* above); the optional `furrow import
@@ -135,5 +156,8 @@ To keep this list honest about today's reality (not aspirations):
 
 ---
 
-*(reviewed 2026-06-25)* — When a non-goal changes, update this file and the
-relevant `docs/` so the scope stays honest.
+*(reviewed 2026-07-02 — rationales for "No MCP server" and "No Claude Code
+plugin" rewritten for the repos pivot: the non-goals stand, but their old
+"local, single-repo / single-author" grounds became false once central boards
+went multi-repo and multi-machine.)* — When a non-goal changes, update this
+file and the relevant `docs/` so the scope stays honest.
