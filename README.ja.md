@@ -90,7 +90,7 @@ go install github.com/akira-toriyama/furrow/cmd/furrow@latest
 nix run github:akira-toriyama/furrow
 ```
 
-配布は GoReleaser から Homebrew tap（`akira-toriyama/homebrew-tap`）と nix flake へ流す。`v0.1.0` は公開済みで、tag は `v0.3.0` まである。nix flake の `vendorHash` はまだ placeholder なので、埋まるまでは Homebrew か `go install` を推奨。
+配布は GoReleaser から Homebrew tap（`akira-toriyama/homebrew-tap`）と nix flake へ流す。`v0.1.0`〜`v0.3.0` が公開済み。nix flake の `vendorHash` はまだ placeholder なので、埋まるまでは Homebrew か `go install` を推奨。
 
 ---
 
@@ -348,7 +348,7 @@ furrow ls --json | jq 'map(select(.value and .effort)) | sort_by(-(.value / .eff
 
 ```sh
 # このリポで見積もりがまだ要るタスクを理由つきで
-furrow revisit -l furrow --json | jq '.[] | {id, revisit: [.revisit[].code]}'
+furrow revisit -r furrow --json | jq '.[] | {id, revisit: [.revisit[].code]}'
 ```
 
 ---
@@ -471,7 +471,7 @@ gitmoji + Conventional Commits。形式は次のとおり（gitmoji は `:code:`
 
 ## ステータス
 
-core（一級の `repos`・schema v2・version gate）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは `v0.1.0` が公開済みで tag は `v0.3.0` まで（GoReleaser → Homebrew tap）。repos 系の機能は `main` にあり、次の tag で ship する（nix flake の `vendorHash` placeholder もそのタイミングで埋める）。将来（低優先）: read-only の Web ビューア。
+core（一級の `repos`・schema v2・version gate）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは `v0.1.0`〜`v0.3.0` が公開済み（GoReleaser → Homebrew tap）。repos 系の機能は `main` にあり、次の tag で ship する（nix flake の `vendorHash` placeholder もそのタイミングで埋める）。将来（低優先）: read-only の Web ビューア。
 
 ## ライセンス
 

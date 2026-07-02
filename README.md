@@ -9,7 +9,7 @@ Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.23). No database,
 > **Status:** core (first-class `repos`, schema v2 + version gate), CLI (incl.
 > `repo`, drafts, `-r` scoping, `sync`, `apply`), the bubbletea TUI
 > (`furrow ui`), and `migrate` all work (`go test ./...` + golangci green).
-> `v0.1.0` is published; tags run through `v0.3.0` — see [Status](#status).
+> Releases `v0.1.0`–`v0.3.0` are published — see [Status](#status).
 
 [日本語版 README →](README.ja.md)
 
@@ -17,7 +17,7 @@ Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.23). No database,
 
 ## Install
 
-> Releases are cut with GoReleaser; `v0.1.0` is published and tags run through `v0.3.0`. The nix flake still carries a placeholder `vendorHash`, so prefer Homebrew or `go install` until it is filled in.
+> Releases are cut with GoReleaser; `v0.1.0`–`v0.3.0` are published. The nix flake still carries a placeholder `vendorHash`, so prefer Homebrew or `go install` until it is filled in.
 
 ```sh
 # Homebrew (tap)
@@ -143,7 +143,7 @@ furrow ls --json | jq 'map(select(.value and .effort)) | sort_by(-(.value / .eff
 
 ```sh
 # tasks in this repo that still need estimates, with the reasons
-furrow revisit -l furrow --json | jq '.[] | {id, revisit: [.revisit[].code]}'
+furrow revisit -r furrow --json | jq '.[] | {id, revisit: [.revisit[].code]}'
 ```
 
 ### Attaching images and media

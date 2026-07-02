@@ -40,14 +40,14 @@ library.
                   the ONE mutation funnel
               (Store + Config + Clock coordinator)
                                  |
-              +------------------+------------------+
-              |                  |                  |
-              v                  v                  v
+              +------------------+------------------+----------------------+
+              |                  |                  |                      |
+              v                  v                  v                      v
      internal/config   internal/store/fsstore  internal/store/memstore  internal/gitrepo
      read config.toml  the ONLY FS package      in-memory fake           git subprocess
-     (clamp, no write) (atomic write,           (tests, dry-runs)        adapter (sync)
-                         lazy body load,
-                         random ids)
+     (clamp, no write) (atomic write,           (tests, dry-runs)        adapter (sync;
+                         lazy body load,                                 implements no
+                         random ids)                                     core port)
               |                  |                  |
               +------------------+------------------+
                                  |  (implement core ports)
@@ -364,9 +364,10 @@ except where noted:
   or `--body-file`) and reflects them onto the board — the CI hook behind the
   task-status workflow. Validation is non-blocking by design.
 - **`revisit`** is the read-only, agent-facing counterpart to `next`: it lists
-  open tasks needing re-evaluation (unset value/effort, stale, or a done
-  dependency), attaching a `revisit` reason array in `--json` so an agent fixes
-  them via the setters. An empty result exits 0 (nothing to revisit is healthy).
+  open tasks needing re-evaluation (`no_repo` — a draft, surfaced regardless
+  of scope — plus unset value/effort, stale, or a done dependency), attaching a
+  `revisit` reason array in `--json` so an agent fixes them via the setters
+  (`value`/`effort`/`dep`/`repo --add`). An empty result exits 0 (nothing to revisit is healthy).
 - **`ui`** launches the bubbletea TUI (`internal/tui`): list + glamour detail,
   navigate / filter / done / move lane / reorder (`K`/`J`) / checklist toggle /
   edit body.
@@ -386,8 +387,9 @@ except where noted:
   `-l` is a pure tag filter that ANDs with the scope. `ls --drafts` lists only
   the repo-less tasks. When an input *almost* resolved — an ambiguous repo
   short name, or a label that uniquely names a repo (the did-you-mean guard) —
-  the error envelope carries a `candidates` array; when an explicit `-r` hides
-  drafts, a one-line stderr hint points at `--drafts` (stdout stays pure data).
+  the error envelope carries a `candidates` array; when a repo scope — explicit `-r`
+  or the board's auto scope — hides drafts, a one-line stderr hint points at
+  `--drafts` (stdout stays pure data).
 - **Non-interactive by default.** No prompts; the TUI is `furrow ui` only.
   `furrow edit` on a non-TTY prints the absolute body path instead of launching
   an editor, so an agent can edit the file directly. `NO_COLOR` and non-TTY
@@ -544,8 +546,10 @@ This document covers the *built* architecture. Several things are deliberately
   editable, and mutate only through commands.
 - **No binary storage** (no SQLite) and **no YAML.** JSON for the machine-written
   shards, TOML for human config, Markdown for prose.
-- **No GitHub Issues coupling.** furrow is repo-local plain text; "GitHub
-  friendly" means "diffs cleanly", not "syncs to Issues".
+- **No GitHub Issues coupling.** furrow is an *alternative* to Issues, not a
+  client: a clonable plain-text store. "GitHub friendly" means "diffs cleanly",
+  not "syncs to Issues" (see docs/non-goals.md for the boundary with the
+  task-status Action).
 - **No interactive prompting from the CLI.** Interactivity is confined to
   `furrow ui`.
 - **Web / React UI is out of scope for now** (parked): a future read-only viewer
@@ -566,7 +570,7 @@ This document covers the *built* architecture. Several things are deliberately
 | `internal/schema` + `docs/schema/furrow.task.v2.json` / `furrow.meta.v1.json` | **Built** |
 | Golden round-trip + schema drift tests | **Built** |
 | `scripts/check-marshal-singlepath.sh` | **Built** |
-| Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0` published, tags through `v0.3.0`; the repos line ships in the next tag |
+| Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0`–`v0.3.0` published; the repos line ships in the next tag |
 | nix flake | **Placeholder `vendorHash`** — to be filled alongside the next release |
 | Read-only web / React viewer | **Future, low priority** |
 
