@@ -9,6 +9,10 @@
     "canon",
     "zmk"
   ],
+  "repos": [
+    "akira-toriyama/chord",
+    "akira-toriyama/furrow"
+  ],
   "deps": [
     "t-0002"
   ],

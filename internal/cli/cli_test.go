@@ -398,8 +398,12 @@ func TestCLISchemaMatchesPackage(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("schema exit = %d", code)
 	}
-	if !strings.Contains(out, `"furrow task shard v1"`) || !strings.Contains(out, `"checklist"`) {
+	if !strings.Contains(out, `"furrow task shard v2"`) || !strings.Contains(out, `"checklist"`) {
 		t.Errorf("task schema output looks wrong:\n%s", out)
+	}
+	// v2 promotes repos to a first-class, required set.
+	if !strings.Contains(out, `"repos"`) {
+		t.Errorf("task schema v2 must declare repos:\n%s", out)
 	}
 	// A task shard carries no schema_version PROPERTY — that belongs to meta.json
 	// (the description prose may still mention it).

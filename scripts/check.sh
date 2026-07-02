@@ -35,8 +35,8 @@ BIN="$(pwd)/bin/furrow"
 # bare `diff` (build.yml) fails the run. A standalone `diff` aborts on drift and
 # prints the offending diff; the confirmation echo only runs when it matched.
 echo "→ schema drift guard"
-"$BIN" schema task | diff -u docs/schema/furrow.task.v1.json -
-echo "  task schema matches docs/schema/furrow.task.v1.json"
+"$BIN" schema task | diff -u docs/schema/furrow.task.v2.json -
+echo "  task schema matches docs/schema/furrow.task.v2.json"
 "$BIN" schema meta | diff -u docs/schema/furrow.meta.v1.json -
 echo "  meta schema matches docs/schema/furrow.meta.v1.json"
 

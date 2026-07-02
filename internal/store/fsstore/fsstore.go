@@ -65,9 +65,13 @@ func (s *Store) BodyFile(id string) string {
 // keeps every shard as a separate array entry, so a duplicate id introduced by a
 // hand-edit surfaces to `furrow lint` rather than being silently merged.
 func (s *Store) Load() (*core.Index, error) {
+	ver := s.metaVersion()
+	if err := core.CheckSchemaVersion(ver); err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(s.tasksDir())
 	if os.IsNotExist(err) {
-		return &core.Index{SchemaVersion: s.metaVersion(), Tasks: []core.Task{}}, nil
+		return &core.Index{SchemaVersion: ver, Tasks: []core.Task{}}, nil
 	}
 	if err != nil {
 		return nil, core.Internalf("index", "read tasks/: %v", err)
@@ -87,7 +91,7 @@ func (s *Store) Load() (*core.Index, error) {
 		}
 		tasks = append(tasks, *t)
 	}
-	return &core.Index{SchemaVersion: s.metaVersion(), Tasks: tasks}, nil
+	return &core.Index{SchemaVersion: ver, Tasks: tasks}, nil
 }
 
 // metaVersion returns meta.json's schema version, defaulting to the current
@@ -119,6 +123,11 @@ func (s *Store) metaVersion() int {
 //
 // index.json is never read or written — the abolished monolith stays abolished.
 func (s *Store) Save(idx *core.Index) error {
+	// Version gate on the write side too: never let this binary rewrite (and
+	// silently strip fields from) a board written by a newer furrow.
+	if err := core.CheckSchemaVersion(s.metaVersion()); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.tasksDir(), 0o755); err != nil {
 		return core.Internalf("index", "create tasks/: %v", err)
 	}

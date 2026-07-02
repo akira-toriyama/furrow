@@ -41,7 +41,7 @@ jobs:
 
       - name: schema drift guard
         run: |
-          /tmp/furrow schema task | diff -u docs/schema/furrow.task.v1.json -
+          /tmp/furrow schema task | diff -u docs/schema/furrow.task.v2.json -
           /tmp/furrow schema meta | diff -u docs/schema/furrow.meta.v1.json -
 
       - name: config template drift guard

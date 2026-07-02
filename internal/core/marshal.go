@@ -151,6 +151,9 @@ func canonicalizeTask(t *Task) {
 	if t.Labels == nil {
 		t.Labels = []string{}
 	}
+	if t.Repos == nil {
+		t.Repos = []string{}
+	}
 	if t.Deps == nil {
 		t.Deps = []string{}
 	}
@@ -160,11 +163,12 @@ func canonicalizeTask(t *Task) {
 	if t.Checklist == nil {
 		t.Checklist = []ChecklistItem{}
 	}
-	// Labels and deps are sets — sort AND dedupe them so reordering or
+	// Labels, repos, and deps are sets — sort AND dedupe them so reordering or
 	// repeating inputs (e.g. `add -l x -l x`) can't churn the diff and a
 	// furrow-written set equals a hand-written one byte-for-byte. Refs and
 	// checklist are user-ordered sequences, so leave them.
 	t.Labels = sortDedup(t.Labels)
+	t.Repos = sortDedup(t.Repos)
 	t.Deps = sortDedup(t.Deps)
 
 	t.Created = normTime(t.Created)
