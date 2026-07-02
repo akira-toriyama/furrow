@@ -260,7 +260,7 @@ permissions:
   pull-requests: write
 jobs:
   sync:
-    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.5.0
+    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.6.0
     secrets:
       PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
 ```
@@ -420,15 +420,15 @@ furrow's write path is byte-stable on purpose. Every shard write goes through on
 ## Status
 
 - **Working:** the core domain (`internal/core`) with the first-class `repos`
-  field (schema v2 + the version gate), config loader, filesystem store, app
+  field (board layout v3 + the version gate), config loader, filesystem store, app
   coordinator, the full CLI (incl. `repo`, drafts, `-r` scoping, `apply`, and
   `sync`), the bubbletea **TUI** (`furrow ui`), and **`migrate`** (importing a
   legacy `Task.md`). `go test ./...` + golangci clean; `sh scripts/check.sh`
   runs the full verification (incl. a teatest TUI e2e).
-- **Released:** `v0.1.0` is published (GoReleaser → the Homebrew tap) and tags
-  run through `v0.3.0`. The repos feature line above is on `main` and ships in
-  the next tag. The nix `flake.nix` still carries a placeholder `vendorHash`
-  (to be filled alongside that release).
+- **Released:** tags run through `v0.6.0` (GoReleaser → the Homebrew tap; the
+  bundled task-status Action ships since `v0.5.0`, board layout v3 since
+  `v0.6.0`). The nix `flake.nix` carries a real, pinned `vendorHash` with a
+  committed `flake.lock` (since `v0.4.0`).
 - **Future (low priority):** a read-only web viewer / React UI over the task shards.
 
 Design notes: architecture in [`docs/architecture.md`](docs/architecture.md),
