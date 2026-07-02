@@ -16,7 +16,7 @@ jobs:
     env:
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # fast-fail guard before the toolchain: the index must be single-path.
       - name: marshaller single-path guard
