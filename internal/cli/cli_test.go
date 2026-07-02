@@ -416,7 +416,7 @@ func TestCLISchemaMatchesPackage(t *testing.T) {
 	if mcode != 0 {
 		t.Fatalf("schema meta exit = %d", mcode)
 	}
-	if !strings.Contains(mout, `"furrow meta v1"`) || !strings.Contains(mout, `"schema_version": {`) {
+	if !strings.Contains(mout, `"furrow meta v2"`) || !strings.Contains(mout, `"schema_version": {`) {
 		t.Errorf("meta schema output looks wrong:\n%s", mout)
 	}
 

@@ -32,7 +32,7 @@ func newSchemaCmd() *cobra.Command {
 		Long: "Print the JSON Schema (draft 2020-12) for the store's files. With no\n" +
 			"argument (or \"task\") it prints the schema for one .furrow/tasks/<id>.json\n" +
 			"shard; \"meta\" prints the schema for .furrow/meta.json. These are the single\n" +
-			"source of truth; docs/schema/furrow.task.v2.json and furrow.meta.v1.json are\n" +
+			"source of truth; docs/schema/furrow.task.v2.json and furrow.meta.v2.json are\n" +
 			"committed copies and CI diffs them so they cannot drift.",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"task", "meta"},
@@ -47,7 +47,7 @@ func newSchemaCmd() *cobra.Command {
 			case "task":
 				fmt.Fprint(out, schema.TaskV2)
 			case "meta":
-				fmt.Fprint(out, schema.MetaV1)
+				fmt.Fprint(out, schema.MetaV2)
 			default:
 				return core.Validationf("", "unknown schema kind %q (want \"task\" or \"meta\")", kind)
 			}

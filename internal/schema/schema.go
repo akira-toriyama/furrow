@@ -1,12 +1,13 @@
 // Package schema is the single source of the JSON Schema for furrow's on-disk
-// store. `furrow schema [task|meta]` prints TaskV2 / MetaV1; docs/schema/*.json
+// store. `furrow schema [task|meta]` prints TaskV2 / MetaV2; docs/schema/*.json
 // are committed copies of the same bytes, and CI diffs them so they can never
 // drift.
 //
 // The store is per-task shards (tasks/<id>.json, described by TaskV2) plus one
-// board-wide meta.json (described by MetaV1). Versioning: the version here
+// board-wide meta.json (described by MetaV2). Versioning: the version here
 // numbers each schema document; the board LAYOUT version lives in meta.json's
-// schema_version (currently 2 — v1 was the monolithic index.json).
+// schema_version (currently 3 — 2 was pre-repos shards, 1 the monolithic
+// index.json).
 package schema
 
 // TaskV2 is the JSON Schema (draft 2020-12) for one task shard: the object in a
@@ -56,20 +57,23 @@ const TaskV2 = `{
 }
 `
 
-// MetaV1 is the JSON Schema (draft 2020-12) for .furrow/meta.json: the one
+// MetaV2 is the JSON Schema (draft 2020-12) for .furrow/meta.json: the one
 // board-wide schema version, kept in its own file so a version bump touches one
 // file and no shard becomes a merge point. Keep the const in lockstep with
-// internal/core.Meta and core.SchemaVersion.
-const MetaV1 = `{
+// internal/core.Meta and core.SchemaVersion. v2 pins layout version 3 (the
+// repos pivot flag-day); v1 (which pinned layout 2) is retired, not
+// dual-supported — the published v1 document is deleted rather than silently
+// rewritten.
+const MetaV2 = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.meta.v1.json",
-  "title": "furrow meta v1",
-  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 2 = per-task shards + meta.json (v1 was the monolithic index.json). Pin to a tagged URL or vendor this file.",
+  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.meta.v2.json",
+  "title": "furrow meta v2",
+  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 3 = shards whose tasks carry the required first-class repos set (2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version"],
   "properties": {
-    "schema_version": { "const": 2 }
+    "schema_version": { "const": 3 }
   }
 }
 `
