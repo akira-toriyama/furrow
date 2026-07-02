@@ -404,13 +404,16 @@ Resolution is split across two layers, honouring the purity rule:
   the file with one synthetic board whose nil scopes are a sentinel for "derive
   the scope from the board repo's parent".
 
-A central board injects a scope label exactly like a pointer (see the coordinator
-contract), which is how a cross-repo tracker tags each task with its owning repo.
-Whether the read commands (`ls`/`next`/`revisit`) auto-filter by that label is a
-separate, explicit knob: a board's per-entry **`auto_filter`** (default true)
-threads onto `App.AutoFilter`; a pointer always filters. The label still tags
-`add` regardless, so `auto_filter = false` means "tag writes, show the whole
-board". Because the switch is now declared in config, the old scope banner is
+A central board injects a scope repo exactly like a pointer (see the coordinator
+contract): `repo = "auto"` derives the owner/repo from the enclosing checkout
+(git origin URL, worktree-aware, ghq-path fallback — file reads only, never a
+git subprocess), which is how a cross-repo tracker attaches each task to its
+owning repo; a board's `label` is only a literal add-time tag. Whether the read
+commands (`ls`/`next`/`revisit`) auto-filter by that repo is a separate,
+explicit knob: a board's per-entry **`auto_filter`** (default true) threads onto
+`App.AutoFilter`; a pointer always filters. The repo still attaches on `add`
+regardless, so `auto_filter = false` means "attach writes, show the whole
+board". Because the switch is declared in config, the old scope banner is
 gone — filtering is silent (stdout stays pure data).
 
 **Writing and validating it.** `furrow config init` scaffolds this file — the

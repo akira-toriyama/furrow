@@ -16,6 +16,12 @@ func TestGlobalTemplate_DeclaresBoardArrayWithExplicitAutoFilter(t *testing.T) {
 	if !strings.Contains(GlobalTemplate, "auto_filter = true") {
 		t.Errorf("GlobalTemplate must state auto_filter = true explicitly; got:\n%s", GlobalTemplate)
 	}
+	if !strings.Contains(GlobalTemplate, "repo = \"auto\"") {
+		t.Errorf("GlobalTemplate must declare repo = \"auto\" (the repos-pivot scope key); got:\n%s", GlobalTemplate)
+	}
+	if strings.Contains(GlobalTemplate, "label = \"auto\"") {
+		t.Errorf("GlobalTemplate must not carry the retired label = \"auto\" mode")
+	}
 	if strings.Contains(GlobalTemplate, "\n[board]\n") || strings.Contains(GlobalTemplate, "\n[board] ") {
 		t.Errorf("GlobalTemplate must not use the retired singular [board] table")
 	}
@@ -63,7 +69,10 @@ func TestRenderGlobalConfig_SubstitutesAndRoundTrips(t *testing.T) {
 	if !b.AutoFilter {
 		t.Errorf("auto_filter should default-render to true")
 	}
-	if b.Label != "auto" {
-		t.Errorf("label = %q, want \"auto\"", b.Label)
+	if b.Repo != "auto" {
+		t.Errorf("repo = %q, want \"auto\"", b.Repo)
+	}
+	if b.Label != "" {
+		t.Errorf("label = %q, want \"\" (a literal tag, opt-in)", b.Label)
 	}
 }

@@ -27,7 +27,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		return nil, err
 	}
 
-	// Union the pointer default label into every spec up front, so the
+	// Union the board's literal label tag into every spec up front, so the
 	// LabelsRequired check below and the created tasks both see it.
 	for i := range specs {
 		specs[i].Labels = a.withDefaultLabel(specs[i].Labels)
@@ -57,7 +57,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		if err != nil {
 			return nil, err
 		}
-		specs[i].Repos = repos
+		specs[i].Repos = a.withBoardRepo(repos, s.Draft)
 	}
 
 	now := a.Clock.Now()

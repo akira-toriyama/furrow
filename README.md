@@ -234,8 +234,9 @@ non-blocking: an unknown id or lane is reported, never a merge blocker.
 ## Central board
 
 Many repos can share one central board (e.g. a private cross-repo tracker), each
-auto-scoped to its own label. Wire it up once for whole trees of repos
-(user-level config), or per repo (a pointer file).
+auto-scoped to its own repo (`owner/repo`, the first-class `repos` field). Wire
+it up once for whole trees of repos (user-level config), or per repo (a pointer
+file).
 
 ### User-level config (no per-repo file)
 
@@ -250,8 +251,9 @@ by hand; `furrow config path` prints where it lives.
 [[board]]
 path        = "~/src/github.com/me/projects/.furrow"  # the central .furrow (~, relative to this file, or absolute)
 scopes      = ["~/src/github.com/me"]                 # activate only under these dirs (at least one is required)
-label       = "auto"                                  # "auto" = nearest git repo's dir name | "" = none | a literal label
-auto_filter = true                                    # scope ls/next/revisit to the label (default true; false = whole board)
+repo        = "auto"                                  # "auto" = derive owner/repo from the checkout | "" = none | a literal "owner/repo"
+label       = ""                                      # optional literal tag `add` applies (never filters reads)
+auto_filter = true                                    # scope ls/next/revisit to the board repo (default true; false = whole board)
 ```
 
 A board activates **only when the current directory is under one of its
@@ -262,11 +264,20 @@ first in the file). A board with no `scopes` is ignored rather than guessed, so 
 half-written entry never breaks furrow elsewhere — and because that makes it
 silent, `furrow lint` and `furrow config path` report whatever was clamped.
 
-`label = "auto"` derives the scope label from the nearest enclosing git repo's
-directory name (a local `.git` walk — no `git` subprocess, no `GHQ_ROOT`);
-outside any git repo the board still opens but with no auto label (a note goes to
-stderr; pass `-l` to scope). `FURROW_BOARD=<path>` overrides everything with a
-single board for one-offs and tests (its scope is the board repo's parent).
+`repo = "auto"` derives the scope repo from the nearest enclosing git checkout —
+file reads only, no `git` subprocess: it parses the FIRST `url` of
+`[remote "origin"]` in `.git/config` (scp-like `git@host:o/r.git`, `ssh://`,
+`git+ssh://`, and `http(s)://` forms, with or without `.git`; `pushurl`, second
+`url` lines, and other remotes never count). A worktree's `.git` FILE is
+followed through `gitdir` and `commondir` to the shared config, so a worktree
+named `chord-fix-y` still derives `owner/chord`. With no usable origin it falls
+back to a ghq-style `…/github.com/<owner>/<repo>` path; failing that the board
+opens **unscoped** with a stderr note and `add` creates drafts — a bare
+directory name is never written into `repos`. Outside any git repo the board
+still opens, with the same note. `FURROW_BOARD=<path>` overrides everything
+with a single board for one-offs and tests (its scope is the board repo's
+parent). The retired `label = "auto"` mode is ignored with a warning pointing
+at `repo = "auto"`.
 
 ### Per-repo pointer
 
@@ -275,26 +286,28 @@ A single repo can instead redirect with a `.furrow-pointer.toml` at its root
 
 ```toml
 board = "../projects/.furrow"   # the central .furrow (relative to this file, ~, or absolute)
-default_label = "chord"         # optional: scope this repo to one label
+default_repo = "me/chord"       # optional: scope to one owner/repo ("auto" derives it; "" = redirect only)
 ```
 
 ### Discovery precedence
 
-`FURROW_DIR` (explicit, no label injection) → the nearest ancestor directory
+`FURROW_DIR` (explicit, no scope injection) → the nearest ancestor directory
 holding a `.furrow` (a real local store wins) → a `.furrow-pointer.toml`
 redirecting to a board → a **user-level central board** (when the cwd is under
 one of its `scopes`; most specific scope wins) → `furrow init`.
 
 With a board in effect (pointer or user-level):
 
-- `furrow add "…"` unions the scope label into the task's labels (and satisfies
-  `[labels].required`); an explicit `-l x` adds to it rather than replacing.
-- `furrow ls|next|revisit` filter to the scope label — **silently** (no banner).
+- `furrow add "…"` unions the scope repo into the task's `repos` (an explicit
+  `-r x` adds to it rather than replacing); `add --draft` suppresses exactly
+  that union. The board's literal `label` (if any) still unions into labels.
+- `furrow ls|next|revisit` filter to the scope repo — **silently** (no banner).
   A user-level board can opt out with `auto_filter = false` to show the whole
-  board while `add` still tags with the label; a pointer always filters. Scope
+  board while `add` still attaches the repo; a pointer always filters. Scope
   control is `-r`: pass `-r ''` to see the whole board for one command, or
   `-r <repo>` for another repo. An explicit `-l tag` filters *within* the scope
-  (it ANDs; it does not clear it).
+  (it ANDs; it does not clear it). When the scope hides drafts, one stderr hint
+  line points at `furrow ls --drafts`.
 
 ---
 

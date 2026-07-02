@@ -119,7 +119,13 @@ unknown keys and out-of-range values fall back to defaults with a warning that
 `furrow lint` surfaces. Read it through `internal/config`. Two additive,
 off-by-default switches: `[next].lanes` (which lanes `furrow next` shows;
 default ready+in-progress) and `[labels].required` (a label-less task errors on
-`add` and in `lint`; default false).
+`add` and in `lint`; default false). The user-level central-board config
+(`~/.config/furrow/config.toml`) scopes each `[[board]]` by **repo**:
+`repo = "auto" | "" | "owner/repo"` ("auto" derives owner/repo from the
+checkout's git origin, worktree-aware, ghq-path fallback — `internal/app`'s
+job, file reads only, never a bare dir name); a board's `label` is only a
+literal add-time tag, and `label = "auto"` is a reserved tombstone (warned,
+ignored).
 
 ### Schema
 `internal/schema.TaskV2` and `internal/schema.MetaV1` are the sources of the JSON
