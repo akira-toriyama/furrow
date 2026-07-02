@@ -1,14 +1,15 @@
 # furrow
 
-> A repo-local, plain-text task tracker you and your coding agent can both edit cleanly.
+> An alternative to GitHub Projects / Issues — a clonable, git-native, plain-text task tracker you and your coding agent can both edit cleanly.
 
-**furrow** keeps your tasks *inside the repo* as plain text: structured metadata in one deterministic JSON shard per task, long-form prose in per-task Markdown files. It replaces the friction of GitHub Projects / a single `Task.md` with a small CLI whose writes are byte-stable, so `git diff` only ever shows what actually changed.
+**furrow** keeps your tasks as plain text *in a git repo*: structured metadata in one deterministic JSON shard per task, long-form prose in per-task Markdown files. The case against Issues is simple. An issue can't be cloned — plain text can, so the tracker works offline and greps with your code. An agent can *read and write* it with ordinary file and CLI operations, no API client. And because the tracker lives in git next to the work, status never drifts from reality — the same push that changes the code can change the task. Writes are byte-stable, so `git diff` only ever shows what actually changed.
 
 Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.23). No database, no daemon, no cloud.
 
-> **Status:** core, CLI, the bubbletea TUI (`furrow ui`), and `migrate` all work
-> (`go test ./...` + golangci green). Packaging (brew/nix release) is configured
-> but not yet published — see [Status](#status).
+> **Status:** core (first-class `repos`, schema v2 + version gate), CLI (incl.
+> `repo`, drafts, `-r` scoping, `sync`, `apply`), the bubbletea TUI
+> (`furrow ui`), and `migrate` all work (`go test ./...` + golangci green).
+> `v0.1.0` is published; tags run through `v0.3.0` — see [Status](#status).
 
 [日本語版 README →](README.ja.md)
 
@@ -16,7 +17,7 @@ Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.23). No database,
 
 ## Install
 
-> furrow is pre-release. The packaging targets below are wired toward release; some channels may be placeholders until the first tagged build.
+> Releases are cut with GoReleaser; `v0.1.0` is published and tags run through `v0.3.0`. The nix flake still carries a placeholder `vendorHash`, so prefer Homebrew or `go install` until it is filled in.
 
 ```sh
 # Homebrew (tap)
@@ -30,6 +31,20 @@ nix run github:akira-toriyama/furrow
 ```
 
 A from-source build reports its version as `dev` (the release version is injected at link time).
+
+---
+
+## Two ways to run it
+
+- **A central board** — one clonable tracker repo backs *all* your repos: each
+  task carries the repos it relates to (the first-class `repos` field,
+  `owner/repo`), each checkout is auto-scoped to its own repo, and
+  `furrow sync` keeps clones on several machines converged. This is the
+  GitHub-Projects-alternative mode — see [Central board](#central-board).
+- **Repo-local** — another way to run it: a single repo carries its own
+  `.furrow/` next to the code (`furrow init` and go). Fully supported; the
+  Quickstart below runs this way, and everything except the board scoping
+  works identically on a central board.
 
 ---
 
@@ -94,6 +109,9 @@ A minimal `tasks/t-0001.json` shard:
     "config",
     "core"
   ],
+  "repos": [
+    "akira-toriyama/furrow"
+  ],
   "deps": [],
   "refs": [],
   "checklist": [],
@@ -112,7 +130,7 @@ The board-wide layout version lives on its own in `meta.json` (never inside a sh
 }
 ```
 
-Notes on the fields: `id` is frozen and is the stem of both the shard file (`tasks/t-0001.json`) and the body file (`bodies/t-0001.md`); `priority` is a sparse 10-step integer so reordering edits one field instead of renumbering; `status` is a lane defined in `config.toml`; `closed` is `null` while open and stamped when a task enters the done lane; empty collections serialize as `[]`, never `null`. `value` and `effort` are an optional coarse 1..5 estimate (importance and cost) — both omitted while unset, so dropping an idea into the inbox stays friction-free — and out-of-range scores clamp to 1..5. The JSON Schema for a shard lives at [`docs/schema/furrow.task.v2.json`](docs/schema/furrow.task.v2.json) and for `meta.json` at [`docs/schema/furrow.meta.v1.json`](docs/schema/furrow.meta.v1.json); both are emitted by `furrow schema` (`task` by default, `meta` for the board version).
+Notes on the fields: `id` is frozen and is the stem of both the shard file (`tasks/t-0001.json`) and the body file (`bodies/t-0001.md`); `priority` is a sparse 10-step integer so reordering edits one field instead of renumbering; `status` is a lane defined in `config.toml`; `repos` is the first-class set of repositories the task relates to (`owner/repo` identifiers, 0..N — an empty set means a **draft**, the GitHub-Issues-draft analogue; labels are pure tags, a repo is *not* a label); `closed` is `null` while open and stamped when a task enters the done lane; empty collections serialize as `[]`, never `null`. `value` and `effort` are an optional coarse 1..5 estimate (importance and cost) — both omitted while unset, so dropping an idea into the inbox stays friction-free — and out-of-range scores clamp to 1..5. The JSON Schema for a shard lives at [`docs/schema/furrow.task.v2.json`](docs/schema/furrow.task.v2.json) and for `meta.json` at [`docs/schema/furrow.meta.v1.json`](docs/schema/furrow.meta.v1.json); both are emitted by `furrow schema` (`task` by default, `meta` for the board version).
 
 `value` and `effort` exist so an agent (or you) can pick the next task from recorded data instead of re-guessing each time. **ROI = value / effort is derived, never stored** (so editing either estimate always yields a current ROI, with no stale number to reconcile), and `next` is deliberately unchanged — sorting by ROI is the caller's choice:
 
@@ -185,7 +203,7 @@ Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `
 
 ## Claude Code / agent integration
 
-furrow needs no MCP server and no plugin — for a repo-local tool that is overkill. The integration is just a small `CLAUDE.md` block plus the `--json` flag. The rules:
+furrow needs no MCP server and no plugin — the plain CLI **is** the agent interface: `--json`/`--ndjson` on every read, machine-actionable error envelopes, and a clonable plain-text store the agent can read (and, for bodies, write) directly. A daemon or a second protocol would add operational surface without adding a capability (see [docs/non-goals.md](docs/non-goals.md)). The integration is just a small `CLAUDE.md` block plus the `--json` flag. The rules:
 
 - **Never hand-edit `tasks/<id>.json` (or `meta.json`).** A single deterministic marshaller owns those files; a manual edit will churn the diff (and likely lose the canonical ordering). Mutate tasks through the commands above.
 - **`bodies/*.md` are yours to edit.** Prose lives there and is plain Markdown — edit it directly, or via `furrow edit <id>` (which prints the absolute path in a non-interactive context).
@@ -233,10 +251,11 @@ non-blocking: an unknown id or lane is reported, never a merge blocker.
 
 ## Central board
 
-Many repos can share one central board (e.g. a private cross-repo tracker), each
-auto-scoped to its own repo (`owner/repo`, the first-class `repos` field). Wire
-it up once for whole trees of repos (user-level config), or per repo (a pointer
-file).
+This is the GitHub-Projects-alternative mode: many repos share one central
+board (e.g. a private cross-repo tracker repo — clonable, greppable, diffable),
+each auto-scoped to its own repo (`owner/repo`, the first-class `repos` field).
+Wire it up once for whole trees of repos (user-level config), or per repo (a
+pointer file).
 
 ### User-level config (no per-repo file)
 
@@ -375,13 +394,16 @@ furrow's write path is byte-stable on purpose. Every shard write goes through on
 
 ## Status
 
-- **Working:** the core domain (`internal/core`), config loader, filesystem store,
-  app coordinator, the full CLI, the bubbletea **TUI** (`furrow ui`), and
-  **`migrate`** (importing a legacy `Task.md`). `go test ./...` + golangci clean;
-  `sh scripts/check.sh` runs the full verification (incl. a teatest TUI e2e).
-- **Configured, not yet published:** the brew/nix release — GoReleaser
-  config validated, but `v0.1.0` isn't tagged yet. nix `flake.nix` carries a
-  placeholder `vendorHash`.
+- **Working:** the core domain (`internal/core`) with the first-class `repos`
+  field (schema v2 + the version gate), config loader, filesystem store, app
+  coordinator, the full CLI (incl. `repo`, drafts, `-r` scoping, `apply`, and
+  `sync`), the bubbletea **TUI** (`furrow ui`), and **`migrate`** (importing a
+  legacy `Task.md`). `go test ./...` + golangci clean; `sh scripts/check.sh`
+  runs the full verification (incl. a teatest TUI e2e).
+- **Released:** `v0.1.0` is published (GoReleaser → the Homebrew tap) and tags
+  run through `v0.3.0`. The repos feature line above is on `main` and ships in
+  the next tag. The nix `flake.nix` still carries a placeholder `vendorHash`
+  (to be filled alongside that release).
 - **Future (low priority):** a read-only web viewer / React UI over the task shards.
 
 Design notes: architecture in [`docs/architecture.md`](docs/architecture.md),

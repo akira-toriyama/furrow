@@ -1,7 +1,11 @@
 # furrow — architecture
 
-furrow is a repo-local, plain-text task tracker written in Go (module
-`github.com/akira-toriyama/furrow`, Go 1.23). This document describes how the
+furrow is a clonable, git-native, plain-text task tracker — an alternative to
+GitHub Projects/Issues — written in Go (module
+`github.com/akira-toriyama/furrow`, Go 1.23). One board can back many repos (a
+central board, each task carrying its repos as first-class `owner/repo`
+identifiers) or live repo-local in a single repo's `.furrow/`. This document
+describes how the
 code is organized, why the layers are shaped the way they are, and which
 invariants hold the design together. It is the canonical reference for the
 package layout; the storage *rationale* lives in [`non-goals.md`](non-goals.md).
@@ -40,8 +44,8 @@ library.
               |                  |                  |
               v                  v                  v
      internal/config   internal/store/fsstore  internal/store/memstore  internal/gitrepo
-     read config.toml  the ONLY FS package      in-memory fake
-     (clamp, no write) (atomic write,           (tests, dry-runs)
+     read config.toml  the ONLY FS package      in-memory fake           git subprocess
+     (clamp, no write) (atomic write,           (tests, dry-runs)        adapter (sync)
                          lazy body load,
                          random ids)
               |                  |                  |
@@ -195,6 +199,32 @@ error (the file is malformed input), not an internal fault.
 
 ---
 
+## The `repos` field and the version gate
+
+A task carries a **first-class `repos` set**: the repositories it relates to,
+as `owner/repo` identifiers, 0..N per task, with the same set semantics as
+labels (sorted + deduped on write, `[]` never `null`). Labels stay pure
+free-form tags — a repo is **not** a label. An empty `repos` set is a
+**draft** (the GitHub-Issues-draft analogue), a first-class state that `ls
+--drafts` lists and `revisit` flags with the `no_repo` signal.
+`core.IsRepoShaped` is the one shape predicate (exactly `owner/repo`);
+`furrow lint` warns on entries that don't match.
+
+Promoting `repos` to a schema field is what let the schema *document* bump to
+**v2** (`internal/schema.TaskV2`, `docs/schema/furrow.task.v2.json`) — and it
+motivated the **version gate**: `core.CheckSchemaVersion` rejects a board
+whose `meta.json` declares a `schema_version` **newer than the binary knows**
+(`core.SchemaVersion`) — surfaced as exit 3 (internal: the fix is updating
+the binary, not the input). Both
+store adapters enforce it on `Load` *and* `Save` (`fsstore`, `memstore`).
+Without the gate, an old binary's lenient unmarshal would silently drop the
+fields it doesn't know — a re-save would strip every task's `repos` and git
+would dutifully commit the damage. Older versions load fine (the store's
+normal lenient read is the forward-compat path); only *newer* boards are
+refused.
+
+---
+
 ## The store
 
 `internal/store/fsstore` is the only package that touches the filesystem for the
@@ -278,9 +308,11 @@ not file-backed — so `$EDITOR` shell-out is unsupported against it, which the
 ## The coordinator and the CLI contract
 
 `internal/app` is the **only mutation funnel**. The CLI (and, later, the TUI)
-call `App` methods — `Add`, `Move`, `Done`, `Reorder`, `SetTitle`, `Check`,
-`AddCheck`, `Archive`, `Lint`, `EditPath`, plus the read methods `Get`, `List`,
-`Next`. Keeping every edit in one place is what keeps the invariants (frozen
+call `App` methods — `Add`, `Move`, `Done`, `Reorder`, `SetTitle`, `SetValue`,
+`SetEffort`, `Check`, `AddCheck`, `AddDep`/`RemoveDep`, `Relabel`, `Rerepo`,
+`ApplyDirectives`, `Sync`, `Archive`, `Lint`, `EditPath`, plus the read methods
+`Get`, `List`, `Next`, `Revisit`. Keeping every edit in one place is what keeps
+the invariants (frozen
 ids, canonical order, closed-timestamp rules, body↔index pairing) from being
 re-implemented across two presentation layers. `App.load()` canonicalizes on
 every read, so reads see the same lane→priority→id order regardless of any
@@ -290,7 +322,13 @@ A few app-level rules worth stating, all verified against the code:
 
 - **`Add`** assigns the next frozen id, picks a sparse priority (explicit
   `--priority`, else `max(priority in lane) + step`), writes a body file seeded
-  with `# <title>`, then saves.
+  with `# <title>`, then saves. With a board scope in effect, it **unions the
+  scope repo** into the task's `repos` (an explicit `-r` adds rather than
+  replaces; `--draft` suppresses exactly that union).
+- **`Rerepo`** (the `furrow repo` command) attaches/detaches `owner/repo`
+  values on a task, resolving short names against the board's known repos
+  (`ResolveRepo`); an ambiguous or unknown name is a validation error carrying
+  a `candidates` array — never a silent new repo.
 - **`Move` / `Done`** set the lane. Moving **into** the done lane stamps
   `Closed`; moving **out** of it clears `Closed`. Other terminal lanes (e.g.
   `icebox`) leave `Closed` alone — *parked is not closed*.
@@ -308,11 +346,23 @@ Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
 except where noted:
 
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `edit`, `done`,
-`move`, `reorder`, `check`, `dep`, `archive`, `lint`, `schema`, `version`, `ui`,
+`move`, `reorder`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
+`sync`, `archive`, `lint`, `config` (`init`/`path`), `schema`, `version`, `ui`,
 `migrate`.
 
 - **`dep`** adds or removes a dependency edge on an existing task (`--rm`).
   Adding is acyclic (rejects self- and cycle-creating edges) and idempotent.
+- **`repo`** attaches/detaches `owner/repo` values on a task (`--add`/`--rm`,
+  both repeatable); short names resolve against the board's known repos or
+  fail with `candidates`. A task with no repos is a **draft** (`ls --drafts`).
+- **`sync`** runs the multi-machine ritual against the git repo enclosing the
+  board: auto-commit pathspec-limited to `.furrow/`, autostash
+  `pull --rebase`, `push` (one retry on non-fast-forward), via the
+  `internal/gitrepo` adapter. A conflict aborts the rebase automatically and
+  reports the paths (`sync-conflict`, exit 3).
+- **`apply`** parses `SetStatus-task:` directives out of PR/commit text (stdin
+  or `--body-file`) and reflects them onto the board — the CI hook behind the
+  task-status workflow. Validation is non-blocking by design.
 - **`revisit`** is the read-only, agent-facing counterpart to `next`: it lists
   open tasks needing re-evaluation (unset value/effort, stale, or a done
   dependency), attaching a `revisit` reason array in `--json` so an agent fixes
@@ -329,8 +379,15 @@ except where noted:
   stderr (so a caller piping stdout to `jq` is unaffected). `--ndjson` emits one
   compact task object per line. CLI JSON uses the same `SetEscapeHTML(false)` /
   2-space encoding as the shards.
-- Read filters: `--status`/`-s`, `--label`/`-l`, `--limit`/`-n` on `ls`;
-  `--limit`/`-n` on `next`.
+- Read filters: `--status`/`-s`, `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`,
+  `--drafts` on `ls`; `-l`/`-r`/`-n` on `next` and `revisit` (plus
+  `--stale-days` on `revisit`). `-r` is the scope control (an
+  explicit `-r` overrides the board scope; `-r ''` shows the whole board);
+  `-l` is a pure tag filter that ANDs with the scope. `ls --drafts` lists only
+  the repo-less tasks. When an input *almost* resolved — an ambiguous repo
+  short name, or a label that uniquely names a repo (the did-you-mean guard) —
+  the error envelope carries a `candidates` array; when an explicit `-r` hides
+  drafts, a one-line stderr hint points at `--drafts` (stdout stays pure data).
 - **Non-interactive by default.** No prompts; the TUI is `furrow ui` only.
   `furrow edit` on a non-TTY prints the absolute body path instead of launching
   an editor, so an agent can edit the file directly. `NO_COLOR` and non-TTY
@@ -340,7 +397,9 @@ except where noted:
 - **Exit-code contract** (`internal/core/errors.go`): `0` ok / `1`
   not-found or empty result / `2` bad-usage or validation / `3+` internal or IO.
   On a non-zero exit the CLI prints `{"error":{"code","id","message"}}` to
-  stderr. `cmd/furrow/main.go` is literally `os.Exit(cli.Execute())`.
+  stderr, plus optional machine-actionable fields: `candidates` (a near-miss
+  that almost resolved) and `details` (e.g. `sync-conflict` carries the
+  conflicted paths). `cmd/furrow/main.go` is literally `os.Exit(cli.Execute())`.
 
 ---
 
@@ -357,10 +416,13 @@ Sections and their defaults:
 
 | Section | Keys | Default |
 |---|---|---|
-| `[lanes]` | `order`, `default`, `done`, `terminal` | `inbox, backlog, ready, in-progress, done, icebox`; default `inbox`; done `done`; terminal `done, icebox` |
+| `[lanes]` | `order`, `default`, `done`, `terminal` | `inbox, backlog, ready, in-progress, waiting, done, icebox`; default `inbox`; done `done`; terminal `done, icebox, waiting` |
+| `[next]` | `lanes` | `ready, in-progress` (falls back to all non-terminal lanes when neither exists) |
 | `[priority]` | `step`, `default` | `10`, `100` |
-| `[ids]` | `prefix`, `width` | `t-`, `4` |
+| `[ids]` | `prefix`, `width` | `t-`, `5` |
+| `[labels]` | `required` | `false` |
 | `[archive]` | `older_than_days` | `30` |
+| `[revisit]` | `stale_days` | `30` (`0` disables the stale signal) |
 | `[ui]` | `theme` | `auto` (one of `auto`/`dark`/`light`) |
 
 `status` is just a lane from `[lanes].order`; that list is simultaneously the
@@ -379,8 +441,9 @@ is a `[[board]]` table (an array, so several can coexist):
 [[board]]
 path        = "~/src/github.com/me/projects/.furrow"
 scopes      = ["~/src/github.com/me"]   # at least one; cwd must be under one to activate
-label       = "auto"                    # "auto" | "" | a literal label
-auto_filter = true                      # scope reads by label (default true; false = whole board)
+repo        = "auto"                    # "auto" | "" | a literal "owner/repo"
+label       = ""                        # optional literal tag `add` applies (never filters reads)
+auto_filter = true                      # scope reads by the board repo (default true; false = whole board)
 ```
 
 Resolution is split across two layers, honouring the purity rule:
@@ -416,6 +479,40 @@ regardless, so `auto_filter = false` means "attach writes, show the whole
 board". Because the switch is declared in config, the old scope banner is
 gone — filtering is silent (stdout stays pure data).
 
+**Repo derivation (`repo = "auto"`).** The derivation lives in
+[`internal/app/gitorigin.go`](../internal/app/gitorigin.go) (the app layer is
+the only fs/cwd-aware layer) and is **file reads only — no `git`
+subprocess**. The chain, in order:
+
+1. **Find the checkout.** Walk up from cwd to the nearest directory holding a
+   `.git` entry.
+2. **Find the shared git config.** A `.git` *directory* holds it directly. A
+   `.git` **file** (worktree/submodule) is a `gitdir:` redirect: follow it,
+   then follow that dir's `commondir` file back to the shared `.git` — this
+   commondir chase is what makes a worktree named `chord-fix-y` still derive
+   `owner/chord` (a submodule gitdir has no `commondir` and carries its own
+   config, which is the right one to read).
+3. **The first-url rule.** Parse the config as section-aware INI and take the
+   **first `url` line of `[remote "origin"]`** — only that line counts: never
+   `pushurl`, never a second `url` line (a real config carried a foreign
+   repo's URL there), never another remote. Supported URL forms: scp-like
+   (`git@host:o/r.git`), `ssh://`, `git+ssh://`, `git://`, and `http(s)://`,
+   each with or without `.git`. A first url that is unusable does **not** fall
+   through to the next line — that misattribution is exactly what the rule
+   guards against.
+4. **ghq-path fallback.** With no usable origin (typically a repo not pushed
+   yet), a ghq-style path — a host-like component followed by
+   `<owner>/<repo>`, the match closest to the repo winning — supplies the
+   identifier.
+5. **Fail open, as drafts.** Failing both, the board opens **unscoped** with a
+   stderr note and `add` creates drafts. The invariant this chain guards:
+   every derived value is owner/repo-shaped — **a bare directory name is never
+   written into `repos`**.
+
+The retired `label = "auto"` mode is a reserved tombstone: ignored with a
+warning pointing at `repo = "auto"` (a board's `label` is only a literal
+add-time tag now).
+
 **Writing and validating it.** `furrow config init` scaffolds this file — the
 single exception to "config is read-only", exactly like `furrow init` writing a
 board's `config.toml` (both write through `internal/app`, not a new fs path). Run
@@ -437,8 +534,11 @@ This document covers the *built* architecture. Several things are deliberately
 **out of scope** for furrow's design; the full rationale lives in
 [`non-goals.md`](non-goals.md). The headline non-goals:
 
-- **No MCP server, no Claude Code plugin.** For a repo-local tool these are overkill.
-  The integration layer is a short `CLAUDE.md` block plus `--json` on read
+- **No MCP server, no Claude Code plugin.** The plain CLI (with
+  `--json`/`--ndjson` and machine-actionable error envelopes) plus a clonable
+  plain-text store is already the agent interface; a daemon or a second
+  protocol would add nothing but operational surface. The integration layer is
+  a short `CLAUDE.md` block plus `--json` on read
   commands. The rules that block belongs to: never hand-edit `tasks/<id>.json`
   (the single marshaller owns them; manual edits churn git), `bodies/*.md` *are*
   editable, and mutate only through commands.
@@ -456,18 +556,20 @@ This document covers the *built* architecture. Several things are deliberately
 
 | Area | Status |
 |---|---|
-| `internal/core` (structs, `Marshal`, ports, validate, index ops) | **Built** |
-| `internal/config` (TOML load, clamp) | **Built** |
+| `internal/core` (structs incl. `repos`, `Marshal`, ports, validate, index ops, version gate) | **Built** |
+| `internal/config` (TOML load, clamp; user-level `[[board]]` with `repo = "auto"`) | **Built** |
 | `internal/store/fsstore`, `internal/store/memstore` | **Built** |
-| `internal/app` (mutation funnel, archive, lint) | **Built** |
-| `internal/cli` (cobra: all commands above, including `ui` and `migrate`) | **Built** |
+| `internal/app` (mutation funnel, board discovery + repo derivation, archive, lint) | **Built** |
+| `internal/gitrepo` (git subprocess adapter behind `furrow sync`) | **Built** |
+| `internal/cli` (cobra: all commands above, including `repo`, `sync`, `apply`, `ui`, `migrate`) | **Built** |
 | `internal/tui` (bubbletea v1, `furrow ui`) | **Built** |
-| `internal/schema` + `docs/schema/furrow.{task,meta}.v1.json` | **Built** |
+| `internal/schema` + `docs/schema/furrow.task.v2.json` / `furrow.meta.v1.json` | **Built** |
 | Golden round-trip + schema drift tests | **Built** |
 | `scripts/check-marshal-singlepath.sh` | **Built** |
-| Packaging (GoReleaser → Homebrew tap, nix) | **Configured; release not yet tagged** |
+| Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0` published, tags through `v0.3.0`; the repos line ships in the next tag |
+| nix flake | **Placeholder `vendorHash`** — to be filled alongside the next release |
 | Read-only web / React viewer | **Future, low priority** |
 
 ---
 
-*(reviewed 2026-06-25)*
+*(reviewed 2026-07-02)*
