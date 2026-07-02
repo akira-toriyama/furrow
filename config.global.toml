@@ -20,11 +20,16 @@ path = "/path/to/central/.furrow"
 # Across all [[board]] entries the most specific (longest) match wins; list more
 # than one to back several trees with the same board.
 scopes = ["/path/to/the/tree/it/backs"]
-# Label that `furrow add` tags new tasks with: "auto" = the nearest enclosing git
-# repo's directory name, "" = no label, or a literal string.
-label = "auto"
-# Auto-filter reads (ls/next/revisit) by that label; false shows the whole board
-# while `add` still tags with the label.
+# Repo the board scopes to: "auto" = derive owner/repo from the enclosing
+# checkout (the git origin URL, worktree-aware; falls back to a ghq-style
+# .../github.com/<owner>/<repo> path; otherwise new tasks are drafts), "" = no
+# scope, or a literal "owner/repo". `furrow add` attaches it (`--draft` opts out).
+repo = "auto"
+# Optional LITERAL label `furrow add` tags new tasks with — a pure tag, like a
+# GitHub Issues label auto-applied per board. It never filters reads.
+label = ""
+# Auto-filter reads (ls/next/revisit) by the board repo; false shows the whole
+# board while `add` still attaches the repo.
 auto_filter = true
 
 # Repeat [[board]] to declare more central boards; the innermost scope wins.

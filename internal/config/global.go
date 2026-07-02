@@ -14,10 +14,19 @@ import (
 // The config is read from ${XDG_CONFIG_HOME:-~/.config}/furrow/config.toml (the
 // path is the app layer's job to compute, like Load and LoadPointer take a path).
 type GlobalBoard struct {
-	Path       string   // path to the central .furrow (~, relative to the config file, or absolute)
-	Scopes     []string // activate only when cwd is under one of these dirs (at least one, post-clamp)
-	Label      string   // "auto" (nearest git repo basename) | "" (none) | a literal label
-	AutoFilter bool     // auto-filter reads (ls/next/revisit) by Label; defaults to true when omitted
+	Path   string   // path to the central .furrow (~, relative to the config file, or absolute)
+	Scopes []string // activate only when cwd is under one of these dirs (at least one, post-clamp)
+	// Repo is the board's scope repo: "auto" (derive owner/repo from the
+	// enclosing checkout's git origin URL, worktree-aware, with a ghq-style path
+	// fallback) | "" (none) | a literal owner/repo. The app layer derives it —
+	// config only carries the mode.
+	Repo string
+	// Label is a LITERAL tag `add` unions into a task's labels ("" = none) —
+	// like a GitHub Issues label auto-applied per board. It never filters
+	// reads; scoping moved to Repo. "auto" is a reserved word (the retired
+	// label="auto" mode), warned about and ignored below.
+	Label      string
+	AutoFilter bool // auto-filter reads (ls/next/revisit) by the board repo; defaults to true when omitted
 }
 
 type rawGlobal struct {
@@ -27,6 +36,7 @@ type rawGlobal struct {
 type rawBoard struct {
 	Path   string   `toml:"path"`
 	Scopes []string `toml:"scopes"`
+	Repo   string   `toml:"repo"`
 	Label  string   `toml:"label"`
 	// AutoFilter is a pointer so an omitted key is distinguishable from an
 	// explicit false: nil clamps to the true default, set honors the value.
@@ -78,8 +88,17 @@ func LoadGlobalBoards(path string) ([]GlobalBoard, []string, error) {
 			warn = append(warn, fmt.Sprintf("%s: [[board]] %q has no scopes; ignoring it", path, b.Path))
 			continue
 		}
+		label := b.Label
+		if label == "auto" {
+			// Tombstone, not a compat shim: the retired label="auto" mode is
+			// ignored (never treated as a literal tag), loudly — so the window
+			// between this release and the user's config switch cannot silently
+			// change what a scoped board means.
+			warn = append(warn, fmt.Sprintf("%s: [[board]] %q: label=\"auto\" moved to repo=\"auto\"; update your config (label ignored)", path, b.Path))
+			label = ""
+		}
 		autoFilter := b.AutoFilter == nil || *b.AutoFilter // omitted -> true
-		boards = append(boards, GlobalBoard{Path: b.Path, Scopes: scopes, Label: b.Label, AutoFilter: autoFilter})
+		boards = append(boards, GlobalBoard{Path: b.Path, Scopes: scopes, Repo: b.Repo, Label: label, AutoFilter: autoFilter})
 	}
 	if len(boards) == 0 {
 		return nil, warn, nil

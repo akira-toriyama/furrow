@@ -10,19 +10,19 @@ import (
 
 // scopedQuery resolves the board scope and the repo filter for a read command
 // (ls/next/revisit). The board scope (a pointer's or central board's
-// DefaultLabel, honored when AutoFilter is on) lands in ScopeLabel; the
-// explicit -l value is a pure tag filter (Label) that ANDs with the scope and
-// never clears it. Scope control is -r only: an explicit -r X replaces the
-// board scope with a repo filter (X resolved strictly — a full owner/repo, or
-// a short name matching exactly one repo known to the board), and -r "" means
+// DefaultRepo, honored when AutoFilter is on) lands in ScopeRepo; the explicit
+// -l value is a pure tag filter (Label) that ANDs with the scope and never
+// clears it. Scope control is -r only: an explicit -r X replaces the board
+// scope with a repo filter (X resolved strictly — a full owner/repo, or a
+// short name matching exactly one repo known to the board), and -r "" means
 // the whole board. The filtering stays silent (stderr quiet, stdout pure data).
 func scopedQuery(cmd *cobra.Command, a *app.App, flagLabel, flagRepo string) (app.QueryOpts, error) {
 	o := app.QueryOpts{Label: flagLabel}
-	if a.DefaultLabel != "" && a.AutoFilter {
-		o.ScopeLabel = a.DefaultLabel
+	if a.DefaultRepo != "" && a.AutoFilter {
+		o.ScopeRepo = a.DefaultRepo
 	}
 	if cmd.Flags().Changed("repo") {
-		o.ScopeLabel = ""
+		o.ScopeRepo = ""
 		if flagRepo != "" {
 			r, err := a.ResolveRepo(flagRepo)
 			if err != nil {
@@ -46,16 +46,17 @@ func labelDidYouMean(cmd *cobra.Command, a *app.App, o app.QueryOpts, n int) err
 	return a.DidYouMeanRepo(o.Label)
 }
 
-// hintHiddenDrafts prints the single stderr hint line when an explicit -r
-// filter hid drafts (a draft has no repo, so any repo filter excludes it).
-// count re-runs the same query with the repo filter swapped for drafts-only;
+// hintHiddenDrafts prints the single stderr hint line when a repo-scoped read
+// hid drafts (a draft has no repo, so any repo filter excludes it) — whether
+// the filter came from an explicit -r or from the board's auto scope. count
+// re-runs the same query with the repo filters swapped for drafts-only;
 // stdout stays pure data.
 func hintHiddenDrafts(o app.QueryOpts, count func(app.QueryOpts) ([]core.Task, error)) {
-	if o.Repo == "" {
-		return
+	if o.Drafts || (o.Repo == "" && o.ScopeRepo == "") {
+		return // a drafts listing hides nothing; nor does an unscoped read
 	}
 	d := o
-	d.Repo, d.Drafts, d.Limit = "", true, 0
+	d.Repo, d.ScopeRepo, d.Drafts, d.Limit = "", "", true, 0
 	if hidden, err := count(d); err == nil && len(hidden) > 0 {
 		fmt.Fprintf(errOut, "%d draft(s) hidden — furrow ls --drafts\n", len(hidden))
 	}

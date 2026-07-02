@@ -3,12 +3,14 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 // pointerLayout builds tmp/central/.furrow (a real store) and a sibling repo dir
-// holding a .furrow-pointer.toml; it returns the repo dir to Open from.
-func pointerLayout(t *testing.T, label string) (repoDir, boardDir string) {
+// holding a .furrow-pointer.toml with the given default_repo ("" = redirect
+// only); it returns the repo dir to Open from.
+func pointerLayout(t *testing.T, repo string) (repoDir, boardDir string) {
 	t.Helper()
 	t.Setenv(EnvDir, "") // ensure FURROW_DIR does not override discovery
 	root := t.TempDir()
@@ -22,8 +24,8 @@ func pointerLayout(t *testing.T, label string) (repoDir, boardDir string) {
 		t.Fatal(err)
 	}
 	body := "board = \"../central/.furrow\"\n"
-	if label != "" {
-		body += "default_label = \"" + label + "\"\n"
+	if repo != "" {
+		body += "default_repo = \"" + repo + "\"\n"
 	}
 	if err := os.WriteFile(filepath.Join(repoDir, PointerName), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -32,7 +34,7 @@ func pointerLayout(t *testing.T, label string) (repoDir, boardDir string) {
 }
 
 func TestDiscover_PointerRedirectsAndScopes(t *testing.T) {
-	repoDir, boardDir := pointerLayout(t, "chord")
+	repoDir, boardDir := pointerLayout(t, "me/chord")
 	a, err := Open(repoDir)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -40,24 +42,76 @@ func TestDiscover_PointerRedirectsAndScopes(t *testing.T) {
 	if a.Dir != boardDir {
 		t.Errorf("Dir = %q, want %q", a.Dir, boardDir)
 	}
-	if a.DefaultLabel != "chord" {
-		t.Errorf("DefaultLabel = %q, want chord", a.DefaultLabel)
+	if a.DefaultRepo != "me/chord" {
+		t.Errorf("DefaultRepo = %q, want me/chord", a.DefaultRepo)
+	}
+	if len(a.BoardRepos) != 1 || a.BoardRepos[0] != "me/chord" {
+		t.Errorf("BoardRepos = %v, want [me/chord]", a.BoardRepos)
 	}
 }
 
-func TestDiscover_PointerBoardOnlyNoLabel(t *testing.T) {
+func TestDiscover_PointerBoardOnlyNoRepo(t *testing.T) {
 	repoDir, _ := pointerLayout(t, "")
 	a, err := Open(repoDir)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if a.DefaultLabel != "" {
-		t.Errorf("DefaultLabel = %q, want empty", a.DefaultLabel)
+	if a.DefaultRepo != "" {
+		t.Errorf("DefaultRepo = %q, want empty", a.DefaultRepo)
+	}
+}
+
+// default_repo = "auto" derives from the pointer repo's checkout, exactly like
+// a central board's repo = "auto".
+func TestDiscover_PointerDefaultRepoAuto(t *testing.T) {
+	repoDir, _ := pointerLayout(t, "auto")
+	mkGitRepoWithOrigin(t, repoDir, "git@github.com:me/ptr.git")
+	a, err := Open(repoDir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if a.DefaultRepo != "me/ptr" {
+		t.Errorf("DefaultRepo = %q, want me/ptr (derived)", a.DefaultRepo)
+	}
+}
+
+// The retired default_label key is ignored with a tombstone warning — it never
+// becomes a repo or a label.
+func TestDiscover_PointerRetiredDefaultLabelWarns(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	root := t.TempDir()
+	central := filepath.Join(root, "central")
+	if _, err := Init(central); err != nil {
+		t.Fatal(err)
+	}
+	repoDir := filepath.Join(root, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "board = \"../central/.furrow\"\ndefault_label = \"chord\"\n"
+	if err := os.WriteFile(filepath.Join(repoDir, PointerName), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a, err := Open(repoDir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if a.DefaultRepo != "" || a.DefaultLabel != "" {
+		t.Errorf("repo=%q label=%q, want both empty (default_label is retired)", a.DefaultRepo, a.DefaultLabel)
+	}
+	found := false
+	for _, w := range a.ScopeWarnings {
+		if strings.Contains(w, "default_repo") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ScopeWarnings = %v, want the default_label tombstone", a.ScopeWarnings)
 	}
 }
 
 func TestDiscover_LocalFurrowBeatsPointer(t *testing.T) {
-	repoDir, _ := pointerLayout(t, "chord")
+	repoDir, _ := pointerLayout(t, "me/chord")
 	// Give the repo dir its OWN .furrow; it must win over the pointer.
 	if _, err := Init(repoDir); err != nil {
 		t.Fatal(err)
@@ -69,13 +123,13 @@ func TestDiscover_LocalFurrowBeatsPointer(t *testing.T) {
 	if a.Dir != filepath.Join(repoDir, DirName) {
 		t.Errorf("Dir = %q, want local .furrow", a.Dir)
 	}
-	if a.DefaultLabel != "" {
-		t.Errorf("DefaultLabel = %q, want empty (local store, no pointer)", a.DefaultLabel)
+	if a.DefaultRepo != "" {
+		t.Errorf("DefaultRepo = %q, want empty (local store, no pointer)", a.DefaultRepo)
 	}
 }
 
 func TestDiscover_FurrowDirBeatsPointer(t *testing.T) {
-	repoDir, _ := pointerLayout(t, "chord")
+	repoDir, _ := pointerLayout(t, "me/chord")
 	other := t.TempDir()
 	if _, err := Init(other); err != nil {
 		t.Fatal(err)
@@ -88,8 +142,8 @@ func TestDiscover_FurrowDirBeatsPointer(t *testing.T) {
 	if a.Dir != filepath.Join(other, DirName) {
 		t.Errorf("Dir = %q, want FURROW_DIR store", a.Dir)
 	}
-	if a.DefaultLabel != "" {
-		t.Errorf("DefaultLabel = %q, want empty (FURROW_DIR injects no label)", a.DefaultLabel)
+	if a.DefaultRepo != "" {
+		t.Errorf("DefaultRepo = %q, want empty (FURROW_DIR injects no scope)", a.DefaultRepo)
 	}
 }
 
@@ -107,7 +161,7 @@ func TestDiscover_NearestPointerBeatsAncestorFurrow(t *testing.T) {
 	if err := os.MkdirAll(ptrDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "board = \"../central/.furrow\"\ndefault_label = \"near\"\n"
+	body := "board = \"../central/.furrow\"\ndefault_repo = \"me/near\"\n"
 	if err := os.WriteFile(filepath.Join(ptrDir, PointerName), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -124,14 +178,15 @@ func TestDiscover_NearestPointerBeatsAncestorFurrow(t *testing.T) {
 	if a.Dir != filepath.Join(central, DirName) {
 		t.Errorf("Dir = %q, want the central board (nearest pointer should beat ancestor .furrow)", a.Dir)
 	}
-	if a.DefaultLabel != "near" {
-		t.Errorf("DefaultLabel = %q, want near", a.DefaultLabel)
+	if a.DefaultRepo != "me/near" {
+		t.Errorf("DefaultRepo = %q, want me/near", a.DefaultRepo)
 	}
 }
 
-func TestAdd_InjectedLabelSatisfiesRequired(t *testing.T) {
-	repoDir, boardDir := pointerLayout(t, "chord")
-	// Turn on [labels].required on the central board.
+// The pointer's default_repo unions into repos on add — a repo, not a label, so
+// [labels].required is NOT satisfied by it (labels stayed a pure-tag concern).
+func TestAdd_PointerRepoDoesNotSatisfyLabelsRequired(t *testing.T) {
+	repoDir, boardDir := pointerLayout(t, "me/chord")
 	if err := os.WriteFile(filepath.Join(boardDir, "config.toml"), []byte("[labels]\nrequired = true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -142,12 +197,15 @@ func TestAdd_InjectedLabelSatisfiesRequired(t *testing.T) {
 	if !a.Cfg.LabelsRequired {
 		t.Fatal("precondition: labels.required should be on")
 	}
-	task, err := a.Add("x", AddOpts{}) // no explicit label — must pass via the injected one
-	if err != nil {
-		t.Fatalf("Add should succeed via injected default_label: %v", err)
+	if _, err := a.Add("x", AddOpts{}); err == nil {
+		t.Fatal("expected a required-label error (default_repo is not a label), got nil")
 	}
-	if !hasLabel(task.Labels, "chord") {
-		t.Errorf("labels = %v, want chord", task.Labels)
+	task, err := a.Add("x", AddOpts{Labels: []string{"tagged"}})
+	if err != nil {
+		t.Fatalf("Add with an explicit label: %v", err)
+	}
+	if !contains(task.Repos, "me/chord") {
+		t.Errorf("repos = %v, want me/chord unioned", task.Repos)
 	}
 }
 
@@ -183,8 +241,8 @@ func hasLabel(ss []string, s string) bool {
 	return false
 }
 
-func TestAdd_InjectsDefaultLabel(t *testing.T) {
-	repoDir, _ := pointerLayout(t, "chord")
+func TestAdd_PointerUnionsDefaultRepo(t *testing.T) {
+	repoDir, _ := pointerLayout(t, "me/chord")
 	a, err := Open(repoDir)
 	if err != nil {
 		t.Fatal(err)
@@ -193,28 +251,28 @@ func TestAdd_InjectsDefaultLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if !hasLabel(task.Labels, "chord") {
-		t.Errorf("labels = %v, want to contain chord", task.Labels)
+	if !contains(task.Repos, "me/chord") {
+		t.Errorf("repos = %v, want to contain me/chord", task.Repos)
 	}
 }
 
-func TestAdd_UnionsWithExplicitLabel(t *testing.T) {
-	repoDir, _ := pointerLayout(t, "chord")
+func TestAdd_PointerUnionsWithExplicitRepo(t *testing.T) {
+	repoDir, _ := pointerLayout(t, "me/chord")
 	a, err := Open(repoDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := a.Add("a task", AddOpts{Labels: []string{"bug"}})
+	task, err := a.Add("a task", AddOpts{Repos: []string{"other/repo"}})
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if !hasLabel(task.Labels, "chord") || !hasLabel(task.Labels, "bug") {
-		t.Errorf("labels = %v, want both chord and bug", task.Labels)
+	if !contains(task.Repos, "me/chord") || !contains(task.Repos, "other/repo") {
+		t.Errorf("repos = %v, want both me/chord and other/repo", task.Repos)
 	}
 }
 
-func TestAddMany_InjectsDefaultLabel(t *testing.T) {
-	repoDir, _ := pointerLayout(t, "chord")
+func TestAddMany_PointerUnionsDefaultRepo(t *testing.T) {
+	repoDir, _ := pointerLayout(t, "me/chord")
 	a, err := Open(repoDir)
 	if err != nil {
 		t.Fatal(err)
@@ -224,8 +282,8 @@ func TestAddMany_InjectsDefaultLabel(t *testing.T) {
 		t.Fatalf("AddMany: %v", err)
 	}
 	for _, task := range created {
-		if !hasLabel(task.Labels, "chord") {
-			t.Errorf("%s labels = %v, want to contain chord", task.ID, task.Labels)
+		if !contains(task.Repos, "me/chord") {
+			t.Errorf("%s repos = %v, want to contain me/chord", task.ID, task.Repos)
 		}
 	}
 }

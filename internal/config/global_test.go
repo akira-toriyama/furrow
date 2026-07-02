@@ -41,7 +41,7 @@ func TestLoadGlobalBoards_EmptyFileIsNoOp(t *testing.T) {
 
 func TestLoadGlobalBoards_SingleEntry(t *testing.T) {
 	boards, warn, err := LoadGlobalBoards(writeGlobal(t,
-		"[[board]]\npath = \"/ws/org/projects/.furrow\"\nscopes = [\"/ws/org\"]\nlabel = \"auto\"\n"))
+		"[[board]]\npath = \"/ws/org/projects/.furrow\"\nscopes = [\"/ws/org\"]\nrepo = \"auto\"\nlabel = \"tracked\"\n"))
 	if err != nil {
 		t.Fatalf("LoadGlobalBoards: %v", err)
 	}
@@ -52,11 +52,45 @@ func TestLoadGlobalBoards_SingleEntry(t *testing.T) {
 		t.Fatalf("boards = %+v, want exactly one", boards)
 	}
 	b := boards[0]
-	if b.Path != "/ws/org/projects/.furrow" || b.Label != "auto" {
-		t.Errorf("board = %+v, want path/label set", b)
+	if b.Path != "/ws/org/projects/.furrow" || b.Repo != "auto" || b.Label != "tracked" {
+		t.Errorf("board = %+v, want path/repo/label set", b)
 	}
 	if len(b.Scopes) != 1 || b.Scopes[0] != "/ws/org" {
 		t.Errorf("scopes = %v, want [/ws/org]", b.Scopes)
+	}
+}
+
+// A literal repo passes through verbatim (validation/derivation is the app
+// layer's job — config only carries the mode).
+func TestLoadGlobalBoards_LiteralRepoCarried(t *testing.T) {
+	boards, _, err := LoadGlobalBoards(writeGlobal(t,
+		"[[board]]\npath = \"/a/.furrow\"\nscopes = [\"/a\"]\nrepo = \"me/proj\"\n"))
+	if err != nil {
+		t.Fatalf("LoadGlobalBoards: %v", err)
+	}
+	if len(boards) != 1 || boards[0].Repo != "me/proj" {
+		t.Errorf("boards = %+v, want one with repo me/proj", boards)
+	}
+}
+
+// label="auto" is a reserved word now (the retired scope mode): the board is
+// kept, the label is ignored — NOT treated as a literal tag — and a tombstone
+// warning points at repo="auto". This closes the window between this release
+// and the user's config switch without a compat shim.
+func TestLoadGlobalBoards_LabelAutoTombstone(t *testing.T) {
+	boards, warn, err := LoadGlobalBoards(writeGlobal(t,
+		"[[board]]\npath = \"/a/.furrow\"\nscopes = [\"/a\"]\nlabel = \"auto\"\n"))
+	if err != nil {
+		t.Fatalf("LoadGlobalBoards: %v", err)
+	}
+	if len(boards) != 1 {
+		t.Fatalf("boards = %+v, want the board kept", boards)
+	}
+	if boards[0].Label != "" {
+		t.Errorf("Label = %q, want empty (\"auto\" is reserved, never a literal)", boards[0].Label)
+	}
+	if len(warn) != 1 || !strings.Contains(warn[0], `repo="auto"`) {
+		t.Errorf("warn = %v, want one tombstone warning pointing at repo=\"auto\"", warn)
 	}
 }
 

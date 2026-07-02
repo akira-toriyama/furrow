@@ -24,11 +24,11 @@ const EnvDir = "FURROW_DIR"
 
 // EnvBoard overrides the user-level central boards with one explicit board path
 // (the central .furrow). Like EnvDir it is a single-value env override; the
-// scope is derived from the board and the label mode is "auto".
+// scope is derived from the board and the repo mode is "auto".
 const EnvBoard = "FURROW_BOARD"
 
 // PointerName is a repo-local file that redirects furrow at a central board
-// (and optionally scopes it to a label) instead of holding its own .furrow.
+// (and optionally scopes it to a repo) instead of holding its own .furrow.
 const PointerName = ".furrow-pointer.toml"
 
 // Store is what App needs from a store: the core port plus the few extras the
@@ -48,22 +48,31 @@ type App struct {
 	Dir      string   // the .furrow directory
 	Warnings []string // config clamp warnings
 
-	DefaultLabel string // scope label from a pointer or a central board ("" otherwise)
+	// DefaultLabel is a central board's LITERAL `label` tag ("" = none): `add`
+	// unions it into the task's labels, like a GitHub Issues label auto-applied
+	// per board. It never filters reads — scoping is DefaultRepo's job.
+	DefaultLabel string
+
+	// DefaultRepo is the board-scope repo from a pointer or a central board
+	// ("" = none): `add` unions it into the task's repos (suppressed by
+	// --draft) and reads filter by it when AutoFilter is on.
+	DefaultRepo string
 
 	// AutoFilter reports whether read commands (ls/next/revisit) auto-filter by
-	// DefaultLabel. A pointer always scopes (true); a central board honors its
-	// per-board auto_filter (default true). Meaningless when DefaultLabel is "".
+	// DefaultRepo. A pointer always scopes (true); a central board honors its
+	// per-board auto_filter (default true). Meaningless when DefaultRepo is "".
 	AutoFilter bool
 
 	// ScopeWarnings are discovery-time notes bound for stderr (e.g. the global
-	// default board activated but found no enclosing git repo for an auto label).
+	// default board activated but found no enclosing git repo to derive an
+	// auto repo from).
 	ScopeWarnings []string
 
 	// BoardRepos is the repo set derived from the enclosing checkout (the
-	// owner/repo parsed from the git origin URL). It is the seam for P3
-	// (repo auto-derivation), which populates it at Open time; until then it
-	// stays empty. It already participates in the short-name resolution
-	// universe (see repoUniverse), so P3 only has to fill the field.
+	// owner/repo parsed from the git origin URL — see deriveScopeRepo). Open
+	// populates it from DefaultRepo; it participates in the short-name
+	// resolution universe (see repoUniverse), so a derived repo resolves short
+	// names even before its first task exists.
 	BoardRepos []string
 }
 
@@ -81,8 +90,12 @@ func Open(startDir string) (*App, error) {
 		return nil, err
 	}
 	a.DefaultLabel = res.DefaultLabel
+	a.DefaultRepo = res.DefaultRepo
 	a.AutoFilter = res.AutoFilter
 	a.ScopeWarnings = res.ScopeWarn
+	if res.DefaultRepo != "" {
+		a.BoardRepos = []string{res.DefaultRepo}
+	}
 	return a, nil
 }
 
@@ -101,17 +114,18 @@ func NewWithStore(st Store, cfg *config.Config, clk core.Clock) *App {
 }
 
 // resolution is the outcome of discovery: which .furrow to open, and (only when
-// reached via a pointer) the label to scope commands to.
+// reached via a pointer or central board) the repo/label to scope commands to.
 type resolution struct {
 	Dir          string
-	DefaultLabel string
-	AutoFilter   bool // scope reads by DefaultLabel (pointer: always; board: its auto_filter)
+	DefaultLabel string // literal board tag (add-time union; never read-filters)
+	DefaultRepo  string // board-scope repo ("" = none)
+	AutoFilter   bool   // scope reads by DefaultRepo (pointer: always; board: its auto_filter)
 	ScopeWarn    []string
 }
 
-// discover finds the store: FURROW_DIR if set (no label injection), else walk up
+// discover finds the store: FURROW_DIR if set (no scope injection), else walk up
 // from startDir. At each directory a local .furrow wins; failing that, a
-// .furrow-pointer.toml redirects to a central board and supplies its label.
+// .furrow-pointer.toml redirects to a central board and supplies its repo.
 func discover(startDir string) (resolution, error) {
 	if env := os.Getenv(EnvDir); env != "" {
 		abs, err := filepath.Abs(env)
@@ -155,7 +169,7 @@ func discover(startDir string) (resolution, error) {
 // the pointer file's directory (~ → home, relative → that dir, absolute as-is),
 // and requires the board to be an existing directory.
 func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
-	p, err := config.LoadPointer(pointerPath)
+	p, pwarn, err := config.LoadPointer(pointerPath)
 	if err != nil {
 		return resolution{}, core.Validationf("", "%s: %v", pointerPath, err)
 	}
@@ -166,7 +180,8 @@ func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
 	if fi, err := os.Stat(board); err != nil || !fi.IsDir() {
 		return resolution{}, core.Validationf("", "%s: board %q is not an existing directory", pointerPath, board)
 	}
-	return resolution{Dir: board, DefaultLabel: p.DefaultLabel, AutoFilter: true}, nil
+	repo, rwarn := deriveScopeRepo(p.DefaultRepo, pointerDir)
+	return resolution{Dir: board, DefaultRepo: repo, AutoFilter: true, ScopeWarn: append(pwarn, rwarn...)}, nil
 }
 
 // resolvePathRelTo turns a path (bare ~ or ~/path, relative to baseDir, or
@@ -254,8 +269,8 @@ func resolveGlobalBoard(startDir string) (resolution, bool, error) {
 	if fi, err := os.Stat(winBoard); err != nil || !fi.IsDir() {
 		return resolution{}, false, core.Validationf("", "central board %q is not an existing directory", winBoard)
 	}
-	label, lwarn := deriveScopeLabel(winner.Label, abs)
-	return resolution{Dir: winBoard, DefaultLabel: label, AutoFilter: winner.AutoFilter, ScopeWarn: append(warn, lwarn...)}, true, nil
+	repo, rwarn := deriveScopeRepo(winner.Repo, abs)
+	return resolution{Dir: winBoard, DefaultLabel: winner.Label, DefaultRepo: repo, AutoFilter: winner.AutoFilter, ScopeWarn: append(warn, rwarn...)}, true, nil
 }
 
 // boardScopes returns the scopes to match a board against. A board loaded from
@@ -278,7 +293,7 @@ func boardScopes(b *config.GlobalBoard, resolvedBoard string) []string {
 func loadGlobalBoards() (boards []config.GlobalBoard, cfgDir string, warn []string, err error) {
 	if env := os.Getenv(EnvBoard); env != "" {
 		base, _ := os.Getwd()
-		return []config.GlobalBoard{{Path: env, Scopes: nil, Label: "auto", AutoFilter: true}}, base, nil, nil
+		return []config.GlobalBoard{{Path: env, Scopes: nil, Repo: "auto", AutoFilter: true}}, base, nil, nil
 	}
 	path, err := globalConfigPath()
 	if err != nil {
@@ -338,44 +353,6 @@ func canonicalPath(p string) string {
 	return p
 }
 
-// deriveScopeLabel turns the configured label mode into the actual scope label:
-// "auto" -> the nearest enclosing git repo's basename (empty + a warning when
-// there is none), "" -> no label, anything else -> a literal label.
-func deriveScopeLabel(mode, startDir string) (label string, warn []string) {
-	switch mode {
-	case "auto":
-		if l, ok := nearestRepoLabel(startDir); ok {
-			return l, nil
-		}
-		return "", []string{"furrow: default board active but no enclosing git repo; no auto label (use -l to scope)"}
-	case "":
-		return "", nil
-	default:
-		return mode, nil
-	}
-}
-
-// nearestRepoLabel walks up from startDir looking for a directory holding a
-// `.git` entry (a dir for a normal repo, a file for a worktree/submodule); the
-// label is that directory's basename. It never shells out to git. Returns
-// ("", false) when no git repo encloses startDir.
-func nearestRepoLabel(startDir string) (string, bool) {
-	dir, err := filepath.Abs(startDir)
-	if err != nil {
-		return "", false
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			return filepath.Base(dir), true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", false
-		}
-		dir = parent
-	}
-}
-
 // Init creates a fresh .furrow at dir/.furrow (config.toml template + an empty
 // tasks/ shard dir + meta.json + bodies/). It is an error if one already
 // exists. The tasks/ dir and meta.json are provisioned by the first Store.Save.
@@ -428,10 +405,9 @@ type AddOpts struct {
 	Refs   []string
 	Body   string // initial body markdown; "" seeds a heading from the title
 	// Draft marks the task as deliberately repo-less (repos == [], the
-	// issue-draft analogue). It conflicts with explicit Repos. Its force role
-	// arrives with P3 (board-derived repo auto-attachment on add), where Draft
-	// suppresses the derivation; until then add attaches no repo by default
-	// anyway, so the flag only carries the conflict semantics.
+	// issue-draft analogue). It conflicts with explicit Repos, and it
+	// suppresses exactly the board-scope repo union (see withBoardRepo) — the
+	// escape hatch for "note this on the board, attach it later".
 	Draft bool
 }
 
@@ -466,6 +442,7 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	repos = a.withBoardRepo(repos, o.Draft)
 
 	id, err := a.uniqueID(idx)
 	if err != nil {
@@ -537,24 +514,26 @@ func (a *App) Get(id string) (*core.Task, string, error) {
 	return t, body, nil
 }
 
-// QueryOpts filters List/Next/Revisit. Zero values mean "no filter". Label
-// (an explicit tag filter) and ScopeLabel (the board scope) are separate on
+// QueryOpts filters List/Next/Revisit. Zero values mean "no filter". Label (an
+// explicit tag filter) and ScopeRepo (the board scope) are separate on
 // purpose: they AND together, so filtering by a tag never widens a scoped
-// board. Repo filters on the repos field; Drafts selects only repo-less tasks
-// and bypasses the scope (a draft belongs to no repo, so no repo scope may
-// hide it — see match).
+// board. Repo (an explicit -r) and ScopeRepo both filter on the repos field;
+// Drafts selects only repo-less tasks and bypasses the scope (a draft belongs
+// to no repo, so no repo scope may hide it — see match).
 type QueryOpts struct {
-	Status     string
-	Label      string // explicit tag filter; ANDs with ScopeLabel
-	ScopeLabel string // board-scope label (a pointer's / central board's DefaultLabel)
-	Repo       string // owner/repo filter on the repos field (already resolved)
-	Drafts     bool   // only tasks with repos == []; ignores ScopeLabel/Repo
-	Limit      int
+	Status    string
+	Label     string // explicit tag filter; ANDs with ScopeRepo
+	ScopeRepo string // board-scope repo (a pointer's / central board's DefaultRepo)
+	Repo      string // owner/repo filter on the repos field (already resolved)
+	Drafts    bool   // only tasks with repos == []; ignores ScopeRepo/Repo
+	Limit     int
 }
 
 // match reports whether t passes the query's filters (Limit excluded — that is
 // the iteration's job). In Drafts mode only repo-less tasks pass and the board
-// scope is bypassed; Status and Label still apply.
+// scope is bypassed; Status and Label still apply. Note a repo-scoped read
+// (ScopeRepo or Repo set) hides drafts — the CLI's hidden-drafts hint exists
+// for exactly that.
 func (o QueryOpts) match(t *core.Task) bool {
 	if o.Status != "" && t.Status != o.Status {
 		return false
@@ -565,7 +544,7 @@ func (o QueryOpts) match(t *core.Task) bool {
 	if o.Drafts {
 		return len(t.Repos) == 0
 	}
-	if o.ScopeLabel != "" && !contains(t.Labels, o.ScopeLabel) {
+	if o.ScopeRepo != "" && !contains(t.Repos, o.ScopeRepo) {
 		return false
 	}
 	if o.Repo != "" && !contains(t.Repos, o.Repo) {
@@ -584,7 +563,7 @@ func (o QueryOpts) matchRevisit(t *core.Task) bool {
 		return o.match(t)
 	}
 	d := o
-	d.ScopeLabel, d.Repo = "", ""
+	d.ScopeRepo, d.Repo = "", ""
 	return d.match(t)
 }
 
@@ -859,15 +838,26 @@ func cloneIntp(p *int) *int {
 	return &n
 }
 
-// withDefaultLabel unions the pointer-provided default label (if any) into a
-// label set, so `add` from a pointer-scoped repo tags the repo without an
-// explicit -l. Returns a copy; a no-op when no pointer label is set or it is
-// already present.
+// withDefaultLabel unions a central board's literal `label` tag (if any) into a
+// label set, so `add` on that board carries the tag without an explicit -l.
+// Returns a copy; a no-op when no board label is set or it is already present.
 func (a *App) withDefaultLabel(labels []string) []string {
 	if a.DefaultLabel == "" || contains(labels, a.DefaultLabel) {
 		return labels
 	}
 	return append(append([]string(nil), labels...), a.DefaultLabel)
+}
+
+// withBoardRepo unions the board-scope repo (a pointer's / central board's
+// DefaultRepo) into a task's repos on add — the repos-field mirror of
+// withDefaultLabel. Draft suppresses exactly this union (the task stays a
+// draft); an explicit -r adds to the board repo rather than replacing it,
+// mirroring the old label-union semantics. Returns a copy.
+func (a *App) withBoardRepo(repos []string, draft bool) []string {
+	if draft || a.DefaultRepo == "" || contains(repos, a.DefaultRepo) {
+		return repos
+	}
+	return append(append([]string(nil), repos...), a.DefaultRepo)
 }
 
 func contains(ss []string, s string) bool {

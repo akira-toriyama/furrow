@@ -157,8 +157,8 @@ func TestListNextFilterByRepoAndDrafts(t *testing.T) {
 	if len(drafts) != 1 || drafts[0].ID != d.ID {
 		t.Errorf("List drafts = %+v", drafts)
 	}
-	// Drafts bypass the board scope (ScopeLabel would exclude everything here).
-	drafts, _ = a.List(QueryOpts{Drafts: true, ScopeLabel: "nothing-has-this"})
+	// Drafts bypass the board scope (ScopeRepo would exclude everything here).
+	drafts, _ = a.List(QueryOpts{Drafts: true, ScopeRepo: "nothing/has-this"})
 	if len(drafts) != 1 || drafts[0].ID != d.ID {
 		t.Errorf("drafts must bypass the scope, got %+v", drafts)
 	}
@@ -167,11 +167,12 @@ func TestListNextFilterByRepoAndDrafts(t *testing.T) {
 	if len(next) != 1 || next[0].ID != c.ID {
 		t.Errorf("Next by repo = %+v", next)
 	}
-	// Scope + tag AND at the app layer.
-	a.Add("scoped tagged", AddOpts{Status: "ready", Labels: []string{"scope", "tag"}})
-	a.Add("scoped plain", AddOpts{Status: "ready", Labels: []string{"scope"}})
+	// Scope + tag AND at the app layer: the board's repo scope ANDs with an
+	// explicit -l tag, so the tag never widens the scope.
+	a.Add("scoped tagged", AddOpts{Status: "ready", Repos: []string{"sc/ope"}, Labels: []string{"tag"}})
+	a.Add("scoped plain", AddOpts{Status: "ready", Repos: []string{"sc/ope"}})
 	a.Add("unscoped tagged", AddOpts{Status: "ready", Labels: []string{"tag"}})
-	both, _ := a.List(QueryOpts{ScopeLabel: "scope", Label: "tag"})
+	both, _ := a.List(QueryOpts{ScopeRepo: "sc/ope", Label: "tag"})
 	if len(both) != 1 || both[0].Title != "scoped tagged" {
 		t.Errorf("scope AND tag should keep exactly the scoped+tagged task, got %+v", both)
 	}
@@ -184,7 +185,7 @@ func TestRevisitSurfacesDraftsRegardlessOfScope(t *testing.T) {
 	d, _ := a.Add("a draft", AddOpts{Status: "ready"})
 	a.Add("other repo task", AddOpts{Status: "ready", Repos: []string{"other/repo"}})
 
-	items, err := a.Revisit(QueryOpts{ScopeLabel: "some-scope"}, 0)
+	items, err := a.Revisit(QueryOpts{ScopeRepo: "some/scope"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
