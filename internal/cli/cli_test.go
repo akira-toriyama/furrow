@@ -393,12 +393,32 @@ func TestCLIMutationJSONDiff(t *testing.T) {
 }
 
 func TestCLISchemaMatchesPackage(t *testing.T) {
+	// Default (no arg) prints the task-shard schema.
 	out, code := run(t, "schema")
 	if code != 0 {
 		t.Fatalf("schema exit = %d", code)
 	}
-	if !strings.Contains(out, `"furrow index v1"`) || !strings.Contains(out, `"schema_version"`) {
-		t.Errorf("schema output looks wrong:\n%s", out)
+	if !strings.Contains(out, `"furrow task shard v1"`) || !strings.Contains(out, `"checklist"`) {
+		t.Errorf("task schema output looks wrong:\n%s", out)
+	}
+	// A task shard carries no schema_version PROPERTY — that belongs to meta.json
+	// (the description prose may still mention it).
+	if strings.Contains(out, `"schema_version": {`) {
+		t.Errorf("task schema must not declare a schema_version property:\n%s", out)
+	}
+
+	// `schema meta` prints the meta.json schema, which owns the schema_version.
+	mout, mcode := run(t, "schema", "meta")
+	if mcode != 0 {
+		t.Fatalf("schema meta exit = %d", mcode)
+	}
+	if !strings.Contains(mout, `"furrow meta v1"`) || !strings.Contains(mout, `"schema_version": {`) {
+		t.Errorf("meta schema output looks wrong:\n%s", mout)
+	}
+
+	// An unknown kind is a usage error.
+	if _, code := run(t, "schema", "bogus"); code == 0 {
+		t.Error("schema with an unknown kind should be a non-zero usage error")
 	}
 }
 

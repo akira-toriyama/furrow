@@ -6,11 +6,12 @@ Guidance for working in this repository (and for furrow itself as a tool).
 
 furrow is the task store for THIS repo, living in `.furrow/`. When you work here:
 
-- furrow **OWNS `.furrow/index.json`**. **Never hand-edit it.** It is written by a
+- furrow **OWNS the `.furrow/tasks/*.json` shards** (one per task) **and
+  `.furrow/meta.json`**. **Never hand-edit them.** They are written by a
   single deterministic marshaller; manual edits will fight the next `furrow`
-  write and churn git. Mutate tasks via commands, not the file.
+  write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
-  of the hybrid store. One body file per task id, 1:1 with the index.
+  of the hybrid store. One body file per task id, 1:1 with its shard.
 - Canonical commands: `furrow add|ls|show|next|revisit|edit|done|move|reorder|check|dep|label|archive|lint|init`.
 - `--json` is available on read commands; **JSON goes to stdout only** (logs and
   errors go to stderr). Use `--ndjson` for one task per line and
@@ -29,7 +30,9 @@ furrow is the task store for THIS repo, living in `.furrow/`. When you work here
 ## What this is
 
 furrow — a repo-local, plain-text task tracker. Structured metadata lives in
-`.furrow/index.json` (deterministic, machine-written); long-form prose lives in
+one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
+machine-written), with the board-wide layout version in `.furrow/meta.json`
+(`{"schema_version": 2}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI and a bubbletea TUI drive it. Go,
 cross-platform, brew/nix packaged.
@@ -79,12 +82,16 @@ Ports (`Store`, `Clock`) are interfaces **defined in core**;
 interface, don't add the import.
 
 ### The single marshaller path — DO NOT regress this
-`core.Marshal` is the **only** function that serializes the index. Never call
-`json.Marshal`/`json.NewEncoder` on an `*Index` anywhere else. Recipe:
+`core.Marshal` is the **only** function that serializes the in-memory index;
+the store persists per-shard via `core.MarshalTask` (one `tasks/<id>.json`) and
+the layout version via `core.MarshalMeta` (`meta.json`). All three live in
+`internal/core/marshal.go`. Never call `json.Marshal`/`json.NewEncoder` on an
+`*Index`, `*Task`, or `*Meta` anywhere else. Recipe (same per shard):
 struct-field key order, 2-space indent, `SetEscapeHTML(false)`, `[]` not null,
-sort lane→priority→id, UTC whole-second timestamps, trailing newline. This is
-what makes app-writes equal hand-edits byte-for-byte (zero git churn). A golden
-round-trip test and `scripts/check-marshal-singlepath.sh` guard it.
+sorted+deduped label/dep sets, UTC whole-second timestamps, trailing newline.
+This is what makes app-writes equal hand-edits byte-for-byte, and Save writes
+only the shards whose bytes changed (zero git churn on a no-op save). A golden
+round-trip test and `scripts/check-marshal-singlepath.sh` guard all three.
 
 ### Frozen, collision-free ids & sparse priority
 ids (`t-k3m9p`) are **frozen**: never reused, never renumbered. They are
@@ -104,8 +111,10 @@ default ready+in-progress) and `[labels].required` (a label-less task errors on
 `add` and in `lint`; default false).
 
 ### Schema
-`internal/schema.IndexV1` is the source of the JSON Schema; `furrow schema`
-prints it and CI diffs it against `docs/schema/furrow.index.v1.json`. Change the
+`internal/schema.TaskV1` and `internal/schema.MetaV1` are the sources of the JSON
+Schemas; `furrow schema [task|meta]` prints them (no arg or `task` = the shard
+schema; `meta` = the `meta.json` schema) and CI diffs them against
+`docs/schema/furrow.task.v1.json` and `docs/schema/furrow.meta.v1.json`. Change a
 struct → update the schema const, the committed file, and the golden together.
 
 ## Conventions

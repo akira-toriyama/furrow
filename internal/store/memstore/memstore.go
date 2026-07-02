@@ -8,15 +8,16 @@ import (
 	"crypto/rand"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// Store keeps the index and bodies in memory. The zero value is not ready —
-// use New.
+// Store keeps each task as its own map entry, keyed by id — the in-memory twin
+// of fsstore's one-shard-per-id layout, so tests exercise the same "every task
+// is an independent record" semantics (no shared array to imply ordering). The
+// zero value is not ready — use New.
 type Store struct {
-	idx      *core.Index
+	tasks    map[string]core.Task // id -> task, one entry per shard
 	bodies   map[string]string
 	idPrefix string
 	idLen    int
@@ -29,7 +30,7 @@ var _ core.Store = (*Store)(nil)
 // New returns an empty in-memory store with the given id formatting.
 func New(idPrefix string, idLen int) *Store {
 	s := &Store{
-		idx:      &core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{}},
+		tasks:    map[string]core.Task{},
 		bodies:   map[string]string{},
 		idPrefix: idPrefix,
 		idLen:    idLen,
@@ -38,15 +39,32 @@ func New(idPrefix string, idLen int) *Store {
 	return s
 }
 
-// Load returns a deep-enough copy so callers mutating the result do not alter
-// the store until they Save (matches fsstore, which re-reads from disk).
+// Load folds the per-id task entries into one Index, in id order (deterministic;
+// the app canonicalizes into display order afterward), mirroring fsstore's
+// glob-and-fold. The tasks are copied out so callers mutating the result do not
+// alter the store until they Save.
 func (s *Store) Load() (*core.Index, error) {
-	cp := &core.Index{SchemaVersion: s.idx.SchemaVersion, Tasks: append([]core.Task(nil), s.idx.Tasks...)}
-	return cp, nil
+	ids := make([]string, 0, len(s.tasks))
+	for id := range s.tasks {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	tasks := make([]core.Task, 0, len(ids))
+	for _, id := range ids {
+		tasks = append(tasks, s.tasks[id])
+	}
+	return &core.Index{SchemaVersion: core.SchemaVersion, Tasks: tasks}, nil
 }
 
+// Save replaces the task set from idx: every task becomes its own entry and any
+// id no longer present is dropped — the in-memory twin of writing one shard per
+// task and deleting the shards of removed ids.
 func (s *Store) Save(idx *core.Index) error {
-	s.idx = &core.Index{SchemaVersion: idx.SchemaVersion, Tasks: append([]core.Task(nil), idx.Tasks...)}
+	next := make(map[string]core.Task, len(idx.Tasks))
+	for _, t := range idx.Tasks {
+		next[t.ID] = t
+	}
+	s.tasks = next
 	return nil
 }
 
@@ -71,13 +89,21 @@ func (s *Store) DeleteBody(id string) error {
 	return nil
 }
 
-func (s *Store) ListBodyIDs() ([]string, error) {
-	ids := make([]string, 0, len(s.bodies))
-	for id := range s.bodies {
+func (s *Store) ListBodyIDs() ([]string, error) { return sortedKeys(s.bodies), nil }
+
+// ListTaskIDs returns the ids of all task shards, sorted — the twin of
+// fsstore.ListTaskIDs (in-memory the "shard filename" is just the map key, so
+// it always matches the task's id).
+func (s *Store) ListTaskIDs() ([]string, error) { return sortedKeys(s.tasks), nil }
+
+// sortedKeys returns the sorted keys of a string-keyed map (any value type).
+func sortedKeys[V any](m map[string]V) []string {
+	ids := make([]string, 0, len(m))
+	for id := range m {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	return ids, nil
+	return ids
 }
 
 // NextID returns a fresh id via the configured generator (random by default,
@@ -102,11 +128,4 @@ func (s *Store) SeedSequentialIDs() {
 		n++
 		return fmt.Sprintf("%s%0*d", s.idPrefix, s.idLen, n), nil
 	}
-}
-
-// Dump returns the current canonical index bytes — convenient for tests that
-// want to assert on serialized output without a filesystem.
-func (s *Store) Dump(laneOrder []string) string {
-	b, _ := core.Marshal(s.idx, laneOrder)
-	return strings.TrimRight(string(b), "\n")
 }

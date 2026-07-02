@@ -369,8 +369,9 @@ func nearestRepoLabel(startDir string) (string, bool) {
 	}
 }
 
-// Init creates a fresh .furrow at dir/.furrow (config.toml template + empty
-// index.json + bodies/). It is an error if one already exists.
+// Init creates a fresh .furrow at dir/.furrow (config.toml template + an empty
+// tasks/ shard dir + meta.json + bodies/). It is an error if one already
+// exists. The tasks/ dir and meta.json are provisioned by the first Store.Save.
 func Init(dir string) (*App, error) {
 	fdir := filepath.Join(dir, DirName)
 	if fi, err := os.Stat(fdir); err == nil && fi.IsDir() {

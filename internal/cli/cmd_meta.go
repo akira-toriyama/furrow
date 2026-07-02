@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/schema"
 	"github.com/akira-toriyama/furrow/internal/version"
 	"github.com/spf13/cobra"
@@ -26,16 +27,30 @@ func newVersionCmd() *cobra.Command {
 
 func newSchemaCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "schema",
-		Short: "Print the JSON Schema for .furrow/index.json",
-		Long: "Print the JSON Schema (draft 2020-12) for the index. This is the single\n" +
-			"source of truth; docs/schema/furrow.index.v1.json is a committed copy and CI\n" +
-			"diffs the two so they cannot drift.",
-		Args: cobra.NoArgs,
+		Use:   "schema [task|meta]",
+		Short: "Print the JSON Schema for a task shard or meta.json",
+		Long: "Print the JSON Schema (draft 2020-12) for the store's files. With no\n" +
+			"argument (or \"task\") it prints the schema for one .furrow/tasks/<id>.json\n" +
+			"shard; \"meta\" prints the schema for .furrow/meta.json. These are the single\n" +
+			"source of truth; docs/schema/furrow.{task,meta}.v1.json are committed copies\n" +
+			"and CI diffs them so they cannot drift.",
+		Args:      cobra.MaximumNArgs(1),
+		ValidArgs: []string{"task", "meta"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// schema is already valid JSON text; print it verbatim (not via the
-			// JSON encoder) so the bytes match the committed file exactly.
-			fmt.Fprint(out, schema.IndexV1)
+			kind := "task"
+			if len(args) == 1 {
+				kind = args[0]
+			}
+			// schema consts are already valid JSON text; print verbatim (not via
+			// the JSON encoder) so the bytes match the committed file exactly.
+			switch kind {
+			case "task":
+				fmt.Fprint(out, schema.TaskV1)
+			case "meta":
+				fmt.Fprint(out, schema.MetaV1)
+			default:
+				return core.Validationf("", "unknown schema kind %q (want \"task\" or \"meta\")", kind)
+			}
 			return nil
 		},
 	}

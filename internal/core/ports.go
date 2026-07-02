@@ -9,15 +9,18 @@ import "time"
 // on these interfaces, never on a concrete adapter — that is what keeps core
 // testable without touching disk.
 
-// Store persists the index and the per-task body files. Implementations own all
-// path construction (callers never assemble ".furrow/bodies/<id>.md" by hand)
-// and all atomicity guarantees (Save must not leave a partial index.json).
+// Store persists the tasks (one metadata shard per id) and the per-task body
+// files. Implementations own all path construction (callers never assemble
+// ".furrow/tasks/<id>.json" by hand) and all atomicity guarantees (Save must
+// never leave a half-written shard).
 type Store interface {
-	// Load reads and parses index.json. A missing index returns an empty,
-	// well-formed Index (SchemaVersion set, Tasks == []) rather than an error,
-	// so `furrow add` works in a fresh repo.
+	// Load folds every task shard into one Index. A fresh store returns an
+	// empty, well-formed Index (SchemaVersion set, Tasks == []) rather than an
+	// error, so `furrow add` works in a fresh repo.
 	Load() (*Index, error)
-	// Save serializes via core.Marshal and writes index.json atomically.
+	// Save writes each task as its own shard (via core.MarshalTask), writes the
+	// board-wide meta, and deletes shards for ids no longer present — all
+	// atomically and writing only what changed.
 	Save(idx *Index) error
 
 	// LoadBody returns the markdown body for id, or "" if the file is absent.
@@ -27,8 +30,11 @@ type Store interface {
 	// BodyExists reports whether bodies/<id>.md is present.
 	BodyExists(id string) bool
 	// ListBodyIDs returns the ids of all bodies/<id>.md files, for the
-	// index<->body 1:1 lint check.
+	// tasks<->body 1:1 lint check.
 	ListBodyIDs() ([]string, error)
+	// ListTaskIDs returns the ids of all task shards (tasks/<id>.json), for the
+	// tasks<->body 1:1 lint check and shard filename/id integrity.
+	ListTaskIDs() ([]string, error)
 
 	// NextID returns a fresh, random, collision-resistant id (e.g. "t-k3m9p":
 	// prefix + a random Crockford-base32 suffix). There is no shared counter, so

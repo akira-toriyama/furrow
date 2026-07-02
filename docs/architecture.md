@@ -50,12 +50,12 @@ library.
                                  v
                           internal/core
                   PURE domain: Index/Task structs,
-                  the single core.Marshal path,
+                  the core.MarshalTask/MarshalMeta paths,
                   ports (Store, Clock), validate, index ops
                   imports: stdlib only
 
    leaves (imported where needed, depend on nothing internal of note):
-     internal/schema   JSON Schema source ( `furrow schema` )
+     internal/schema   JSON Schema source ( `furrow schema [task|meta]` )
      internal/version  build version string (ldflags-injected)
 ```
 
@@ -75,8 +75,8 @@ directly for mutation — they go through `internal/app`.
 | `internal/config` | Loads `.furrow/config.toml` (read-only, clamp-don't-reject). Produces an effective `Config`. |
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
 | `internal/store/memstore` | In-memory `core.Store` for tests and `migrate --dry-run`. A normal non-test package. |
-| `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the single `Marshal` serializer, the `Store`/`Clock` ports, `Validate`, and in-memory index ops. |
-| `internal/schema` | The JSON Schema for `index.json` as a Go constant; emitted by `furrow schema`. |
+| `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers (and the in-memory `Marshal`), the `Store`/`Clock` ports, `Validate`, and in-memory index ops. |
+| `internal/schema` | The JSON Schemas for a task shard and `meta.json` as Go constants; emitted by `furrow schema [task|meta]`. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |
 
 ---
@@ -102,10 +102,10 @@ through interfaces it declares itself.
 The seams between the pure core and the outside world are interfaces declared in
 [`internal/core/ports.go`](../internal/core/ports.go):
 
-- **`Store`** — persists the index and per-task bodies. It owns *all* path
-  construction (callers never assemble `".furrow/bodies/<id>.md"` by hand) and
-  *all* atomicity. Methods: `Load`, `Save`, `LoadBody`, `SaveBody`,
-  `BodyExists`, `ListBodyIDs`, `NextID`.
+- **`Store`** — persists the per-task metadata shards and per-task bodies. It owns
+  *all* path construction (callers never assemble `".furrow/bodies/<id>.md"` by
+  hand) and *all* atomicity. Methods: `Load`, `Save`, `LoadBody`, `SaveBody`,
+  `BodyExists`, `ListBodyIDs`, `ListTaskIDs`, `NextID`.
 - **`Clock`** — supplies `Now()`. Injected so tests get deterministic timestamps
   and the marshaller's UTC/whole-second contract is trivial to honor.
   `core.SystemClock()` is the production implementation.
@@ -131,21 +131,29 @@ file"; it grows a `Store` method instead, implemented by the adapter.
 
 ## The single-marshaller invariant
 
-`core.Marshal(*Index, laneOrder []string) ([]byte, error)` in
-[`internal/core/marshal.go`](../internal/core/marshal.go) is the **one and only**
-path that serializes an `Index` to bytes. Every writer — `fsstore.Save`, and
-`migrate` — goes through it. No other code calls `json.Marshal` on an `Index`.
+The serializers in
+[`internal/core/marshal.go`](../internal/core/marshal.go) are the **one and only**
+paths that serialize task metadata to bytes. Persistence goes per shard:
+`core.MarshalTask(Task) ([]byte, error)` writes one `tasks/<id>.json`, and
+`core.MarshalMeta(...) ([]byte, error)` writes `meta.json`. Every writer —
+`fsstore.Save`, and `migrate` — goes through them. `core.Marshal(*Index, laneOrder
+[]string) ([]byte, error)` still exists, but it is now the **in-memory canonical
+form** (used by the determinism golden and by inspection), *not* a persistence
+path: the store never writes those bytes to disk, because doing so would resurrect
+the abolished `index.json`. No other code calls `json.Marshal` on a `Task`,
+`Index`, or the meta object.
 
-Why one path: the byte layout of `index.json` is a contract, not an
-implementation detail. If two code paths could serialize the index, they could
-drift, and a re-save would churn the git diff. One path means **bytes written by
-`furrow` equal bytes a human or Claude would hand-edit**, so re-saving an
-untouched index produces zero git churn.
+Why one path per file: the byte layout of each shard is a contract, not an
+implementation detail. If two code paths could serialize a task, they could drift,
+and a re-save would churn the git diff. One path means **bytes written by `furrow`
+equal bytes a human or Claude would hand-edit**, so re-saving an untouched task
+produces zero git churn.
 
 ### The determinism contract
 
-`Marshal` calls `Canonicalize` and then encodes. The contract (documented in the
-`Marshal` doc comment and exercised by
+Each serializer calls `Canonicalize` and then encodes — the recipe is identical
+for `MarshalTask`, `MarshalMeta`, and the in-memory `Marshal`. The contract
+(documented in the `Marshal` doc comment and exercised by
 [`internal/core/testdata/index.golden.json`](../internal/core/testdata/index.golden.json)):
 
 - **Key order = struct field order.** `encoding/json` emits struct fields in
@@ -175,12 +183,14 @@ error (the file is malformed input), not an internal fault.
 - **Golden round-trip test.** `internal/core/core_test.go` asserts that marshalling
   the fixture index produces `testdata/index.golden.json` byte-for-byte (write →
   read → write stays identical).
-- **Schema drift test.** `furrow schema` prints `internal/schema.IndexV1`
-  (JSON Schema draft 2020-12); `docs/schema/furrow.index.v1.json` is a committed
-  copy of the same bytes, and CI diffs the two so they cannot drift.
+- **Schema drift test.** `furrow schema [task|meta]` prints
+  `internal/schema.TaskV1` / `internal/schema.MetaV1` (JSON Schema draft 2020-12);
+  `docs/schema/furrow.task.v1.json` and `docs/schema/furrow.meta.v1.json` are
+  committed copies of the same bytes, and CI diffs both so they cannot drift.
 - **Single-path grep guard.** `scripts/check-marshal-singlepath.sh` greps for
-  stray `json.Marshal(Index)` calls outside `core.Marshal` and fails CI if any
-  appear; it runs as part of `scripts/check.sh`.
+  stray `json.Marshal` calls on a `Task`/`Index`/meta outside `core`'s serializers
+  (all in `internal/core/marshal.go`) and fails CI if any appear; it runs as part
+  of `scripts/check.sh`.
 
 ---
 
@@ -195,19 +205,35 @@ A `.furrow/` store directory contains:
 
 ```
 .furrow/
-  index.json          structured metadata — written ONLY via core.Marshal
+  tasks/               structured metadata, one JSON shard per task
+    t-k3m9p.json         written ONLY via core.MarshalTask
+    t-9qw2z.json
   bodies/<id>.md       long-form prose, one file per task (hand/agent editable)
+  meta.json            board-wide layout version {"schema_version": 2} — MarshalMeta
   config.toml          human config (read-only from furrow's side)
-  archive/             a sibling store: aged done tasks moved out of the hot index
+  archive/             a sibling sharded store: aged done tasks moved out of the hot store
 ```
+
+### Load and Save (shard fold / split)
+
+`fsstore.Load` globs `tasks/*.json`, unmarshals each shard, and folds every one
+into a single in-memory `core.Index`; the `schema_version` is read from
+`meta.json`. `fsstore.Save` is the inverse: it splits the `Index` back into
+per-task shards and writes **only the shards whose bytes changed** (a byte-compare
+against what is already on disk) plus `meta.json`, and **deletes** the shards of
+any ids no longer present. So a no-op save touches no files and produces zero git
+churn.
 
 ### Atomic writes (tmp + rename)
 
-Every write — `index.json` and each `bodies/<id>.md` — goes through
-`atomicWrite`: create a temp file (`.tmp-*`) in the **destination directory**,
-write, `fsync`, `close`, then `os.Rename` over the target. Rename is atomic on a
-single filesystem, so a crash never leaves a half-written `index.json`. The temp
-file is removed on any error path.
+Every write — each `tasks/<id>.json`, `meta.json`, and each `bodies/<id>.md` —
+goes through `atomicWrite`: create a temp file (`.tmp-*`) in the **destination
+directory**, write, `fsync`, `close`, then `os.Rename` over the target. Rename is
+atomic on a single filesystem, so a crash never leaves a half-written shard. The
+temp file is removed on any error path. A single-task change is one shard and thus
+fully atomic; a bulk change is atomic **per shard** — each shard is independently
+valid, so an interrupted bulk save leaves a coherent store and is safely
+re-runnable.
 
 ### Lazy body load
 
@@ -234,7 +260,7 @@ flags any duplicate as a cross-branch backstop. Ids are still **frozen** (never
 reused or renumbered); legacy zero-padded numeric ids (`t-0042`) remain valid
 and coexist with new random ones.
 
-`Load` on a missing `index.json` returns an empty, well-formed `Index`
+`Load` on a missing `tasks/` directory returns an empty, well-formed `Index`
 (`schema_version` set, `tasks: []`) rather than an error, so `furrow add` works
 on day one before `init` has written anything.
 
@@ -272,7 +298,8 @@ A few app-level rules worth stating, all verified against the code:
   core — `Index.Actionable` takes the terminal set and the done-id set as
   arguments.
 - **`Archive`** selects done-lane tasks whose `Closed` is older than the cutoff
-  and moves them (index entry + body) into the sibling `.furrow/archive/` store.
+  and moves them (shard + body) into the sibling `.furrow/archive/` store (its own
+  `tasks/`, `meta.json`, and `bodies/`).
 
 ### CLI commands
 
@@ -300,7 +327,7 @@ except where noted:
 - `--json` (persistent flag) emits JSON to **stdout only**; logs and errors go to
   stderr (so a caller piping stdout to `jq` is unaffected). `--ndjson` emits one
   compact task object per line. CLI JSON uses the same `SetEscapeHTML(false)` /
-  2-space encoding as the index.
+  2-space encoding as the shards.
 - Read filters: `--status`/`-s`, `--label`/`-l`, `--limit`/`-n` on `ls`;
   `--limit`/`-n` on `next`.
 - **Non-interactive by default.** No prompts; the TUI is `furrow ui` only.
@@ -408,17 +435,18 @@ This document covers the *built* architecture. Several things are deliberately
 
 - **No MCP server, no Claude Code plugin.** For a repo-local tool these are overkill.
   The integration layer is a short `CLAUDE.md` block plus `--json` on read
-  commands. The rules that block belongs to: never hand-edit `index.json` (the
-  single marshaller owns it; manual edits churn git), `bodies/*.md` *are*
+  commands. The rules that block belongs to: never hand-edit `tasks/<id>.json`
+  (the single marshaller owns them; manual edits churn git), `bodies/*.md` *are*
   editable, and mutate only through commands.
 - **No binary storage** (no SQLite) and **no YAML.** JSON for the machine-written
-  index, TOML for human config, Markdown for prose.
+  shards, TOML for human config, Markdown for prose.
 - **No GitHub Issues coupling.** furrow is repo-local plain text; "GitHub
   friendly" means "diffs cleanly", not "syncs to Issues".
 - **No interactive prompting from the CLI.** Interactivity is confined to
   `furrow ui`.
 - **Web / React UI is out of scope for now** (parked): a future read-only viewer
-  would simply read `index.json`, which is exactly why a clean JSON index matters.
+  would simply read the `tasks/*.json` shards, which is exactly why clean JSON
+  shards matter.
 
 ### Built vs. planned — honest status
 
@@ -430,7 +458,7 @@ This document covers the *built* architecture. Several things are deliberately
 | `internal/app` (mutation funnel, archive, lint) | **Built** |
 | `internal/cli` (cobra: all commands above, including `ui` and `migrate`) | **Built** |
 | `internal/tui` (bubbletea v1, `furrow ui`) | **Built** |
-| `internal/schema` + `docs/schema/furrow.index.v1.json` | **Built** |
+| `internal/schema` + `docs/schema/furrow.{task,meta}.v1.json` | **Built** |
 | Golden round-trip + schema drift tests | **Built** |
 | `scripts/check-marshal-singlepath.sh` | **Built** |
 | Packaging (GoReleaser → Homebrew tap, nix) | **Configured; release not yet tagged** |

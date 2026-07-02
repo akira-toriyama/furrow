@@ -24,27 +24,47 @@ func (a *App) Lint() ([]core.Problem, error) {
 	core.Canonicalize(idx, a.Cfg.Lanes)
 	ps = append(ps, core.Validate(idx, a.Cfg.Lanes, a.Cfg.IDPattern())...)
 
-	// index <-> body 1:1.
+	// tasks/ <-> bodies/ 1:1 + shard filename/id integrity — all by directory
+	// enumeration. Sharding makes a duplicate filename impossible; a duplicate id
+	// can only appear as two shards carrying the same id field, which the fold
+	// (Load) surfaces to core.Validate above as a "duplicate id".
+	taskFileIDs, err := a.Store.ListTaskIDs()
+	if err != nil {
+		return nil, err
+	}
 	bodyIDs, err := a.Store.ListBodyIDs()
 	if err != nil {
 		return nil, err
 	}
-	have := map[string]bool{}
+	hasBody := map[string]bool{}
 	for _, id := range bodyIDs {
-		have[id] = true
+		hasBody[id] = true
 	}
+	// A task's identity is its id, so key the body 1:1 check on the folded task
+	// ids (idx.Tasks), NOT on the raw shard filenames. A single misnamed shard
+	// (filename != the id it carries) then reports exactly once — as the
+	// filename-integrity error below — instead of cascading into a phantom
+	// "missing body" (for the wrong filename) and a phantom "orphan body" (for
+	// the real id whose shard is merely misnamed).
+	hasTask := map[string]bool{}
 	for _, t := range idx.Tasks {
-		if !have[t.ID] {
+		hasTask[t.ID] = true
+		if !hasBody[t.ID] {
 			ps = append(ps, core.Problem{Severity: core.SevError, ID: t.ID, Msg: fmt.Sprintf("task has no body file (%s)", core.BodyPath(t.ID))})
 		}
 	}
-	inIndex := map[string]bool{}
-	for _, t := range idx.Tasks {
-		inIndex[t.ID] = true
-	}
 	for _, id := range bodyIDs {
-		if !inIndex[id] {
-			ps = append(ps, core.Problem{Severity: core.SevWarn, ID: id, Msg: fmt.Sprintf("orphan body file %s has no task in the index", core.BodyPath(id))})
+		if !hasTask[id] {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, ID: id, Msg: fmt.Sprintf("orphan body file %s has no task", core.BodyPath(id))})
+		}
+	}
+	// Shard filename integrity: every shard file's name must equal the id it
+	// carries. A folded task's id always came from some shard file, so if a
+	// filename is not itself a task id, that shard is misnamed (a hand-edit
+	// hazard the monolith couldn't have had, when the id was a field not a name).
+	for _, id := range taskFileIDs {
+		if !hasTask[id] {
+			ps = append(ps, core.Problem{Severity: core.SevError, ID: id, Msg: fmt.Sprintf("task shard %s's filename does not match the id it carries", core.TaskPath(id))})
 		}
 	}
 

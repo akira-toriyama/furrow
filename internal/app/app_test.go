@@ -382,10 +382,15 @@ func TestArchiveCommitsBeforeDeletingBodies(t *testing.T) {
 	if ia.Store.BodyExists("t-0001") {
 		t.Error("archived task's hot body should be deleted")
 	}
-	// archive store: index + body present.
-	arcIdxPath := filepath.Join(ia.Dir, "archive", "index.json")
-	if _, err := os.Stat(arcIdxPath); err != nil {
-		t.Errorf("archive index.json should exist: %v", err)
+	// archive store: the task's shard + meta.json + body present (no index.json).
+	if _, err := os.Stat(filepath.Join(ia.Dir, "archive", "tasks", "t-0001.json")); err != nil {
+		t.Errorf("archive task shard should exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ia.Dir, "archive", "meta.json")); err != nil {
+		t.Errorf("archive meta.json should exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ia.Dir, "archive", "index.json")); !os.IsNotExist(err) {
+		t.Errorf("archive must not contain index.json (stat err = %v)", err)
 	}
 	if _, err := os.Stat(filepath.Join(ia.Dir, "archive", "bodies", "t-0001.md")); err != nil {
 		t.Errorf("archive body should exist: %v", err)
@@ -435,6 +440,61 @@ func TestLintFlagsMissingBody(t *testing.T) {
 		t.Errorf("lint should flag t-0099 (no body), got %+v", ps)
 	}
 	_ = tk
+}
+
+// A task shard whose filename disagrees with the id it carries is a hand-edit
+// corruption the old monolith couldn't have (the id was a field, not a
+// filename). lint must catch it by directory enumeration.
+func TestLintFlagsShardFilenameMismatch(t *testing.T) {
+	dir := t.TempDir()
+	ia, err := Init(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Hand-write a shard at tasks/t-wrongnm.json whose id field is t-realid0,
+	// with a matching body so the ONLY inconsistency is the filename/id mismatch.
+	fdir := filepath.Join(dir, ".furrow")
+	shard := `{
+  "id": "t-realid0",
+  "title": "mismatched shard",
+  "status": "ready",
+  "priority": 100,
+  "labels": [],
+  "deps": [],
+  "refs": [],
+  "checklist": [],
+  "created": "2026-06-25T00:00:00Z",
+  "updated": "2026-06-25T00:00:00Z",
+  "closed": null,
+  "body": "bodies/t-realid0.md"
+}
+`
+	if err := os.WriteFile(filepath.Join(fdir, "tasks", "t-wrongnm.json"), []byte(shard), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ia.Store.SaveBody("t-realid0", "# mismatched shard\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	ps, err := ia.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The ONLY inconsistency is the filename/id mismatch, so lint must report it
+	// exactly once — no phantom "missing body" for the wrong filename and no
+	// phantom "orphan body" for the real id whose shard is merely misnamed.
+	var errs []core.Problem
+	for _, p := range ps {
+		if p.Severity == core.SevError {
+			errs = append(errs, p)
+		}
+		if strings.Contains(p.Msg, "no body file") || strings.Contains(p.Msg, "orphan body") {
+			t.Errorf("a misnamed shard must not cascade into a body finding: %+v", p)
+		}
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0].Msg, "filename") {
+		t.Errorf("expected exactly one filename-mismatch error, got %+v", ps)
+	}
 }
 
 func TestRelabelAddsRemovesIdempotently(t *testing.T) {

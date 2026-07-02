@@ -23,8 +23,9 @@ func Archivable(idx *core.Index, doneLane string, cutoff time.Time) []string {
 }
 
 // Archive moves done tasks older than olderThanDays into .furrow/archive/
-// (its own index.json + bodies/), keeping the hot store light. With dryRun it
-// only reports what it would move. Returns the affected tasks.
+// (its own tasks/ shards + meta.json + bodies/, a sibling sharded store),
+// keeping the hot store light. With dryRun it only reports what it would move.
+// Returns the affected tasks.
 //
 // Requires a file-backed store (a.Dir set) — the archive is a sibling .furrow
 // directory; an in-memory app cannot archive to disk.

@@ -1,6 +1,7 @@
 package fsstore
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,7 +18,16 @@ func newStore(t *testing.T) *Store {
 	return New(filepath.Join(t.TempDir(), ".furrow"), lanes, "t-", 5)
 }
 
-func TestLoadMissingIndexIsEmpty(t *testing.T) {
+// mkTask builds a minimal well-formed task at a fixed time.
+func mkTask(id, title, status string, prio int) core.Task {
+	now := time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)
+	return core.Task{ID: id, Title: title, Status: status, Priority: prio,
+		Created: now, Updated: now, Body: core.BodyPath(id)}
+}
+
+// A fresh store (no meta.json, no tasks/) loads an empty, well-formed index so
+// `furrow add` works day one.
+func TestLoadFreshIsEmpty(t *testing.T) {
 	s := newStore(t)
 	idx, err := s.Load()
 	if err != nil {
@@ -28,46 +38,194 @@ func TestLoadMissingIndexIsEmpty(t *testing.T) {
 	}
 }
 
-func TestSaveLoadRoundTrip(t *testing.T) {
+// Save writes one shard per task under tasks/<id>.json — byte-identical to
+// MarshalTask — plus a meta.json carrying the board-wide schema version, and it
+// writes NO index.json (that monolith is abolished).
+func TestSaveWritesShardsAndMeta(t *testing.T) {
 	s := newStore(t)
-	now := time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)
-	idx := &core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{
-		{ID: "t-0001", Title: "畝", Status: "ready", Priority: 100, Created: now, Updated: now, Body: core.BodyPath("t-0001")},
-	}}
-	if err := s.Save(idx); err != nil {
+	a := mkTask("t-0001", "畝", "ready", 100)
+	b := mkTask("t-0002", "second", "in-progress", 110)
+	if err := s.Save(&core.Index{Tasks: []core.Task{a, b}}); err != nil {
 		t.Fatal(err)
 	}
 
-	// the file on disk equals the marshaller's bytes (no surprises).
-	raw, err := os.ReadFile(s.indexPath())
+	// index.json must never appear.
+	if _, err := os.Stat(filepath.Join(s.root, "index.json")); !os.IsNotExist(err) {
+		t.Errorf("index.json must not exist under the sharded store (stat err = %v)", err)
+	}
+
+	// meta.json equals the canonical MarshalMeta bytes.
+	wantMeta, _ := core.MarshalMeta(&core.Meta{SchemaVersion: core.SchemaVersion})
+	gotMeta, err := os.ReadFile(filepath.Join(s.root, "meta.json"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("read meta.json: %v", err)
 	}
-	want, _ := core.Marshal(idx, lanes)
-	if string(raw) != string(want) {
-		t.Errorf("on-disk index != marshalled bytes\n--- disk ---\n%s\n--- want ---\n%s", raw, want)
+	if !bytes.Equal(gotMeta, wantMeta) {
+		t.Errorf("meta.json bytes\n got %s\nwant %s", gotMeta, wantMeta)
 	}
 
+	// each shard equals MarshalTask's bytes (hand-edit == furrow write).
+	for _, task := range []core.Task{a, b} {
+		tt := task
+		want, _ := core.MarshalTask(&tt)
+		got, err := os.ReadFile(filepath.Join(s.root, "tasks", task.ID+".json"))
+		if err != nil {
+			t.Fatalf("read shard %s: %v", task.ID, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("shard %s bytes != MarshalTask\n got %s\nwant %s", task.ID, got, want)
+		}
+	}
+}
+
+// Load folds every tasks/<id>.json shard back into one in-memory index.
+func TestLoadFoldsShards(t *testing.T) {
+	s := newStore(t)
+	if err := s.Save(&core.Index{Tasks: []core.Task{
+		mkTask("t-0002", "b", "ready", 110),
+		mkTask("t-0001", "a", "ready", 100),
+	}}); err != nil {
+		t.Fatal(err)
+	}
 	got, err := s.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Tasks) != 1 || got.Tasks[0].Title != "畝" {
-		t.Errorf("round-trip lost data: %+v", got)
+	if len(got.Tasks) != 2 || !got.Has("t-0001") || !got.Has("t-0002") {
+		t.Errorf("Load did not fold both shards: %+v", got)
+	}
+}
+
+// A no-op Save rewrites nothing: re-saving an untouched board leaves every shard
+// (and meta.json) byte-for-byte on disk, so git sees zero churn. We prove it by
+// stamping an old mtime and asserting Save left it untouched.
+func TestSaveDirtyOnlyNoChurn(t *testing.T) {
+	s := newStore(t)
+	idx := &core.Index{Tasks: []core.Task{mkTask("t-0001", "a", "ready", 100)}}
+	if err := s.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	shard := filepath.Join(s.root, "tasks", "t-0001.json")
+	meta := filepath.Join(s.root, "meta.json")
+	past := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, p := range []string{shard, meta} {
+		if err := os.Chtimes(p, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Save the very same index again.
+	again, _ := s.Load()
+	if err := s.Save(again); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{shard, meta} {
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !fi.ModTime().Equal(past) {
+			t.Errorf("no-op Save rewrote %s (mtime moved to %v) — that is churn", filepath.Base(p), fi.ModTime())
+		}
+	}
+}
+
+// A changed task rewrites only its own shard; unrelated shards are left alone.
+func TestSaveRewritesOnlyChanged(t *testing.T) {
+	s := newStore(t)
+	idx := &core.Index{Tasks: []core.Task{
+		mkTask("t-0001", "a", "ready", 100),
+		mkTask("t-0002", "b", "ready", 110),
+	}}
+	if err := s.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	p1 := filepath.Join(s.root, "tasks", "t-0001.json")
+	p2 := filepath.Join(s.root, "tasks", "t-0002.json")
+	past := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, p := range []string{p1, p2} {
+		if err := os.Chtimes(p, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// mutate only t-0001.
+	next, _ := s.Load()
+	tk, _ := next.Find("t-0001")
+	tk.Title = "a changed"
+	if err := s.Save(next); err != nil {
+		t.Fatal(err)
+	}
+
+	fi1, _ := os.Stat(p1)
+	fi2, _ := os.Stat(p2)
+	if fi1.ModTime().Equal(past) {
+		t.Error("changed shard t-0001 was NOT rewritten")
+	}
+	if !fi2.ModTime().Equal(past) {
+		t.Error("untouched shard t-0002 was rewritten (churn)")
+	}
+}
+
+// A task dropped from the index has its shard deleted on the next Save, and
+// Load no longer sees it.
+func TestSaveDeletesRemovedShard(t *testing.T) {
+	s := newStore(t)
+	idx := &core.Index{Tasks: []core.Task{
+		mkTask("t-0001", "a", "ready", 100),
+		mkTask("t-0002", "b", "ready", 110),
+	}}
+	if err := s.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	idx.Remove("t-0002")
+	if err := s.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.root, "tasks", "t-0002.json")); !os.IsNotExist(err) {
+		t.Errorf("removed task's shard should be deleted (stat err = %v)", err)
+	}
+	got, _ := s.Load()
+	if got.Has("t-0002") {
+		t.Error("removed task should be gone from a re-loaded index")
+	}
+}
+
+// ListTaskIDs returns the id of every tasks/<id>.json, sorted, for lint.
+func TestListTaskIDs(t *testing.T) {
+	s := newStore(t)
+	if err := s.Save(&core.Index{Tasks: []core.Task{
+		mkTask("t-0002", "b", "ready", 110),
+		mkTask("t-0001", "a", "ready", 100),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := s.ListTaskIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || ids[0] != "t-0001" || ids[1] != "t-0002" {
+		t.Errorf("ListTaskIDs = %v, want [t-0001 t-0002]", ids)
+	}
+	// a fresh store (no tasks/) returns no ids, no error.
+	fresh := newStore(t)
+	if ids, err := fresh.ListTaskIDs(); err != nil || len(ids) != 0 {
+		t.Errorf("fresh ListTaskIDs = %v, %v", ids, err)
 	}
 }
 
 func TestAtomicWriteLeavesNoTemp(t *testing.T) {
 	s := newStore(t)
-	if err := s.Save(&core.Index{SchemaVersion: 1, Tasks: []core.Task{}}); err != nil {
+	if err := s.Save(&core.Index{Tasks: []core.Task{mkTask("t-0001", "a", "ready", 100)}}); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ := os.ReadDir(s.root)
-	for _, e := range entries {
-		if filepath.Ext(e.Name()) == "" && len(e.Name()) > 0 && e.Name()[0] == '.' && e.Name() != ".furrow" {
-			// any leftover ".tmp-*" would fail us
+	// no ".tmp-*" leftovers in tasks/ or the root.
+	for _, dir := range []string{s.root, filepath.Join(s.root, "tasks")} {
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
 			if len(e.Name()) >= 4 && e.Name()[:4] == ".tmp" {
-				t.Errorf("atomic write left a temp file: %s", e.Name())
+				t.Errorf("atomic write left a temp file: %s/%s", dir, e.Name())
 			}
 		}
 	}
@@ -75,7 +233,6 @@ func TestAtomicWriteLeavesNoTemp(t *testing.T) {
 
 func TestBodyLazyAndExists(t *testing.T) {
 	s := newStore(t)
-	// absent body reads as "" and does not exist.
 	if got, _ := s.LoadBody("t-0001"); got != "" {
 		t.Errorf("absent body should read empty, got %q", got)
 	}
@@ -111,10 +268,6 @@ func TestBodyLazyAndExists(t *testing.T) {
 func TestNextIDRandom(t *testing.T) {
 	s := newStore(t)
 	re := regexp.MustCompile(`^t-[0-9a-z]{5}$`)
-	// NextID is random + stateless (uniqueness is the app's job). Assert the
-	// shape always, and that a small batch is distinct — birthday collision over
-	// 64 ids in a 32^5 (~33.5M) space is ~6e-5 (≈1 in 16,000), so a dup here is a
-	// real bug, not flake.
 	seen := map[string]bool{}
 	for i := 0; i < 64; i++ {
 		id, err := s.NextID()

@@ -45,11 +45,12 @@ func Execute() int {
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "furrow",
-		Short: "Repo-local plain-text task tracker (JSON index + per-task markdown bodies)",
+		Short: "Repo-local plain-text task tracker (per-task JSON shards + markdown bodies)",
 		Long: "furrow — a repo-local, plain-text task tracker.\n\n" +
-			"Structured metadata lives in .furrow/index.json (deterministic, machine-written);\n" +
-			"long-form prose lives in .furrow/bodies/<id>.md (hand-editable). Drive it from the\n" +
-			"CLI or the TUI (furrow ui). Both you and Claude Code can edit the store cleanly.",
+			"Structured metadata lives in one .furrow/tasks/<id>.json shard per task\n" +
+			"(deterministic, machine-written); long-form prose lives in .furrow/bodies/<id>.md\n" +
+			"(hand-editable). Drive it from the CLI or the TUI (furrow ui). Both you and Claude\n" +
+			"Code can edit the store cleanly.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// non-interactive by default: never prompt; the TUI is `furrow ui` only.

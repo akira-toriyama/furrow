@@ -29,22 +29,30 @@ echo "→ build binary for live checks"
 go build -o bin/furrow ./cmd/furrow
 BIN="$(pwd)/bin/furrow"
 
+# NB: run each `diff` as a bare command (not `diff … && echo`). Under `set -e`,
+# a command on the LEFT of `&&` is exempt from errexit, so `diff … && echo`
+# would SWALLOW a real drift and let check.sh exit 0 — diverging from CI, whose
+# bare `diff` (build.yml) fails the run. A standalone `diff` aborts on drift and
+# prints the offending diff; the confirmation echo only runs when it matched.
 echo "→ schema drift guard"
-"$BIN" schema | diff -u docs/schema/furrow.index.v1.json - >/dev/null \
-  && echo "  schema matches docs/schema/furrow.index.v1.json"
+"$BIN" schema task | diff -u docs/schema/furrow.task.v1.json -
+echo "  task schema matches docs/schema/furrow.task.v1.json"
+"$BIN" schema meta | diff -u docs/schema/furrow.meta.v1.json -
+echo "  meta schema matches docs/schema/furrow.meta.v1.json"
 
 echo "→ config template drift guard"
 tmp="$(mktemp -d)"
 ( cd "$tmp" && "$BIN" init >/dev/null )
-diff -u config.toml "$tmp/.furrow/config.toml" >/dev/null && echo "  config.toml matches init template"
+diff -u config.toml "$tmp/.furrow/config.toml"
+echo "  config.toml matches init template"
 
 echo "→ global config template drift guard"
 gtmp="$(mktemp -d)"
 # Run from a dir with no enclosing .furrow so `config init` derives nothing and
 # writes the placeholder template; XDG_CONFIG_HOME isolates where it lands.
 ( cd "$gtmp" && XDG_CONFIG_HOME="$gtmp/xdg" "$BIN" config init >/dev/null )
-diff -u config.global.toml "$gtmp/xdg/furrow/config.toml" >/dev/null \
-  && echo "  config.global.toml matches config-init placeholder template"
+diff -u config.global.toml "$gtmp/xdg/furrow/config.toml"
+echo "  config.global.toml matches config-init placeholder template"
 
 echo "→ smoke: init / add / ls --json / next / done / lint / config init|path"
 sb="$(mktemp -d)"

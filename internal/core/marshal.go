@@ -7,11 +7,16 @@ import (
 	"time"
 )
 
-// Marshal is the ONE path that serializes an Index to bytes. Every writer — CLI,
-// TUI, migrate — MUST go through it; never call json.Marshal on an Index
-// anywhere else (scripts/check-marshal-singlepath.sh enforces this in CI).
+// Marshal is the ONE path that serializes an Index to bytes; never call
+// json.Marshal on an Index anywhere else (scripts/check-marshal-singlepath.sh
+// enforces this in CI). It produces the in-memory aggregate's canonical form —
+// used by the determinism golden and for inspection — and is NOT a persistence
+// path: the store writes per-task shards via MarshalTask + a MetaPath file via
+// MarshalMeta, so these bytes must never be written to .furrow/ (that would
+// resurrect the abolished, drift-prone index.json).
 //
-// DO NOT regress the determinism contract:
+// DO NOT regress the determinism contract (shared with MarshalTask via
+// encodeCanonical + canonicalizeTask):
 //   - key order        = struct field order (encoding/json guarantees this)
 //   - indent           = 2 spaces
 //   - SetEscapeHTML(false) so CJK and < > & survive verbatim
@@ -20,8 +25,8 @@ import (
 //   - timestamps       = UTC, whole seconds (RFC3339 "...Z", no fractional)
 //   - trailing newline (Encode appends it)
 //
-// The payoff: bytes written by `furrow` equal bytes a human or Claude would
-// hand-edit, so re-saving an untouched index produces zero git churn.
+// The payoff: shard bytes written by `furrow` equal bytes a human or Claude
+// would hand-edit, so re-saving an untouched task produces zero git churn.
 func Marshal(idx *Index, laneOrder []string) ([]byte, error) {
 	Canonicalize(idx, laneOrder)
 	data, err := encodeCanonical(idx)
@@ -84,6 +89,28 @@ func UnmarshalTask(data []byte) (*Task, error) {
 		return nil, Validationf("task", "task shard is not valid JSON: %v", err)
 	}
 	return &t, nil
+}
+
+// MarshalMeta serializes the board-wide Meta (schema version) to its meta.json
+// bytes. It shares encodeCanonical so meta.json obeys the same byte recipe as
+// the shards (2-space indent, no HTML escaping, trailing newline) — a hand-edit
+// equals a furrow write. This is the ONE path that serializes Meta.
+func MarshalMeta(m *Meta) ([]byte, error) {
+	data, err := encodeCanonical(m)
+	if err != nil {
+		return nil, Internalf("meta", "marshal meta: %v", err)
+	}
+	return data, nil
+}
+
+// UnmarshalMeta parses meta.json bytes into a Meta. A parse failure is a
+// validation error (malformed input), not an internal fault.
+func UnmarshalMeta(data []byte) (*Meta, error) {
+	var m Meta
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, Validationf("meta", "meta.json is not valid JSON: %v", err)
+	}
+	return &m, nil
 }
 
 // Canonicalize enforces the determinism invariants in place: non-nil slices,

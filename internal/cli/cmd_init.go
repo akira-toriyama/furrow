@@ -13,7 +13,7 @@ func newInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Create a .furrow store in the current directory",
-		Long:  "Create .furrow/ (config.toml + empty index.json + bodies/) in the current directory.",
+		Long:  "Create .furrow/ (config.toml + empty tasks/ + meta.json + bodies/) in the current directory.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := os.Getwd()

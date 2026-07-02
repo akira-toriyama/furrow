@@ -1,5 +1,5 @@
 // Package core is furrow's pure domain. It models the task index and owns the
-// single deterministic serialization path for .furrow/index.json.
+// single deterministic serialization path for the store's per-task shards.
 //
 // PURITY RULE (the spine — see docs/architecture.md): this package imports only
 // the standard library (encoding/json, sort, time, fmt, errors, regexp). It
@@ -11,18 +11,32 @@ package core
 
 import "time"
 
-// SchemaVersion is the current on-disk schema version written into index.json.
-// Bump only on a breaking layout change, and update docs/schema/ + goldens in
-// the same change.
-const SchemaVersion = 1
+// SchemaVersion is the current on-disk layout version. It lives in exactly one
+// file, .furrow/meta.json (see Meta) — never in a task shard, so a version bump
+// is a single-file change and no shard becomes a cross-write merge point. Bump
+// only on a breaking layout change, and update docs/schema/ + goldens in the
+// same change. v2 = per-task shards (tasks/<id>.json) + meta.json (v1 was the
+// monolithic index.json).
+const SchemaVersion = 2
 
-// Index is the whole of .furrow/index.json. The struct field order IS the JSON
-// key order — encoding/json emits fields in declaration order — so reordering
-// these fields changes every diff. Do not reorder without a schema bump and a
-// golden-file update.
+// Index is the in-memory aggregate of every task: the store folds the per-task
+// shards (tasks/<id>.json) into one of these on Load, and splits it back into
+// shards on Save. It is NOT an on-disk file — .furrow/index.json is abolished.
+// The struct field order IS the JSON key order for Marshal (an in-memory,
+// test/inspection-only canonical form; the store never persists these bytes), so
+// reordering fields changes the determinism golden — don't reorder without a
+// schema bump and a golden-file update.
 type Index struct {
 	SchemaVersion int    `json:"schema_version"`
 	Tasks         []Task `json:"tasks"`
+}
+
+// Meta is .furrow/meta.json: the one board-wide schema version, deliberately
+// held in its own file so a version bump touches a single file and no task shard
+// ever carries a schema_version field that separate operators would rewrite at
+// once (turning it into a git-conflict point). MetaPath names it.
+type Meta struct {
+	SchemaVersion int `json:"schema_version"`
 }
 
 // Task is one tracked item. Metadata only: the long-form prose lives in
@@ -73,6 +87,11 @@ func BodyPath(id string) string { return "bodies/" + id + ".md" }
 // id is exactly {tasks/<id>.json, bodies/<id>.md} and never a slice of a shared
 // file. Callers must not hand-assemble this path.
 func TaskPath(id string) string { return "tasks/" + id + ".json" }
+
+// MetaPath returns the relative path of the board-wide meta file. It holds only
+// the schema version (see Meta); keeping it out of every shard is what stops a
+// version field from becoming a merge point. Callers must not hand-assemble it.
+func MetaPath() string { return "meta.json" }
 
 // EstimateMin and EstimateMax bound the coarse value/effort scale. Inputs
 // outside the range are clamped to it (see Canonicalize).

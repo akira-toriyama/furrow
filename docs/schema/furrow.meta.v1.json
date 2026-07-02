@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.meta.v1.json",
+  "title": "furrow meta v1",
+  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 2 = per-task shards + meta.json (v1 was the monolithic index.json). Pin to a tagged URL or vendor this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": { "const": 2 }
+  }
+}

@@ -23,7 +23,7 @@ distribution; for a repo-local, single-author tool the overhead is pure cost.*
 
 The actual integration layer is small and deliberate: a `~15`-line `CLAUDE.md`
 block plus `--json` on the read commands. The rules that block encodes:
-never hand-edit `.furrow/index.json` (a single deterministic marshaller in
+never hand-edit `.furrow/tasks/<id>.json` (a single deterministic marshaller in
 `internal/core` owns it, so manual edits churn git and can break the
 determinism contract); `.furrow/bodies/<id>.md` files **are** meant to be
 hand- or agent-edited; mutate state through the CLI commands, not the JSON.
@@ -42,10 +42,13 @@ import, not an ongoing sync) has been floated but is **not built** today.
 
 ## Storage format
 
-The storage model is a hybrid: `.furrow/index.json` (structured metadata,
-machine-written) + `.furrow/bodies/<id>.md` (long-form prose, hand/agent
+The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
+(structured metadata, machine-written) + `.furrow/meta.json`
+(`{"schema_version": 2}`, the board-wide layout version) +
+`.furrow/bodies/<id>.md` (long-form prose, hand/agent
 editable) + `.furrow/config.toml` (human config) +
-`.furrow/archive/` (aged done tasks). The rejected alternatives below are *not*
+`.furrow/archive/` (aged done tasks, itself a sibling sharded store). The
+rejected alternatives below are *not*
 shortcuts we skipped — they are formats we evaluated and ruled out.
 
 ### No single-file `tasks.json`
@@ -73,8 +76,8 @@ git-diffable, which violates the core "non-binary, clean git-diff" requirement*
 For completeness: a pure "one markdown file per task with YAML frontmatter"
 store was also rejected, because cross-cutting queries ("open tasks by
 priority") would require scanning every file and cross-cutting updates would
-rewrite many files. The hybrid keeps small structured metadata in one
-JSON index (fast `jq`/Go queries, field-level diffs) and prose in per-task
+rewrite many files. The hybrid keeps small structured metadata in per-task
+JSON shards (fast `jq`/Go queries, field-level diffs) and prose in per-task
 markdown (no escaping, task-level diffs).
 
 ---
@@ -92,12 +95,13 @@ A rich web or React UI is deliberately deferred. — *CLI and TUI are the
 high-priority surfaces; web/React is low priority and explicitly future-only.*
 
 If web does happen, the first step is a *read-only* static viewer built on Go
-`net/http` + `embed.FS` that simply reads `index.json` — no Node toolchain,
+`net/http` + `embed.FS` that simply reads the `tasks/*.json` shards — no Node
+toolchain,
 single binary. `templ+htmx`, `Wails`, and the React + Electron stack are out of
 scope for that viewer (the React *component shape* may be borrowed later; the
 host — Electron vs. Go static — is held open). A future React UI works precisely
-because it only has to read the JSON index — which is itself an argument for
-keeping the index as plain JSON.
+because it only has to read the JSON shards — which is itself an argument for
+keeping them as plain JSON.
 
 ---
 
