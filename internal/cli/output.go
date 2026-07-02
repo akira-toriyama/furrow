@@ -86,6 +86,10 @@ func printTaskTable(tasks []core.Task) {
 		if len(t.Labels) > 0 {
 			title += "  [" + strings.Join(t.Labels, ",") + "]"
 		}
+		// repos ride alongside the labels in (), so `ls | grep owner/repo` works.
+		if len(t.Repos) > 0 {
+			title += "  (" + strings.Join(t.Repos, ",") + ")"
+		}
 		fmt.Fprintf(out, "%-*s  %-*s  %5d  %s\n", wID, t.ID, wStatus, t.Status, t.Priority, title)
 	}
 }
@@ -219,6 +223,9 @@ func printTaskDetail(t *core.Task, body string) {
 	if len(t.Labels) > 0 {
 		fmt.Fprintf(out, "labels:   %s\n", strings.Join(t.Labels, ", "))
 	}
+	if len(t.Repos) > 0 {
+		fmt.Fprintf(out, "repos:    %s\n", strings.Join(t.Repos, ", "))
+	}
 	if t.Parent != "" {
 		fmt.Fprintf(out, "parent:   %s\n", t.Parent)
 	}
@@ -299,6 +306,9 @@ func changedFields(before, after *core.Task) []string {
 	}
 	if !strsEq(before.Labels, after.Labels) {
 		ch = append(ch, "labels")
+	}
+	if !strsEq(before.Repos, after.Repos) {
+		ch = append(ch, "repos")
 	}
 	if !strsEq(before.Deps, after.Deps) {
 		ch = append(ch, "deps")

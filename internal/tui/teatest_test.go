@@ -53,6 +53,33 @@ func TestTUIProgramEndToEnd(t *testing.T) {
 	}
 }
 
+// TestTUIDetailShowsRepos drives the REAL Program and asserts the detail pane
+// renders the selected task's repos line (t-00001 "first" carries
+// akira-toriyama/furrow in the fixture) — the TUI display surface for the
+// first-class repos field.
+func TestTUIDetailShowsRepos(t *testing.T) {
+	a := newTestApp(t) // t-00001 "first" (ready, repos: akira-toriyama/furrow)
+	m, err := newModel(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 32))
+
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("furrow")) && bytes.Contains(b, []byte("first"))
+	}, teatest.WithDuration(3*time.Second))
+
+	// Canonical order is backlog(second) then ready(first): move down onto
+	// "first" and wait for its detail pane to paint the repos line.
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("repos:")) && bytes.Contains(b, []byte("akira-toriyama/furrow"))
+	}, teatest.WithDuration(3*time.Second))
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+}
+
 // TestTUIReorderEndToEnd drives the REAL Program: with two ready-lane tasks it
 // selects the first and presses J, then asserts the priority swap persisted
 // through internal/app to the store (the headless e2e counterpart to the

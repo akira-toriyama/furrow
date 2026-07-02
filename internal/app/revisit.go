@@ -11,12 +11,14 @@ type RevisitItem struct {
 }
 
 // Revisit lists open tasks that may need a fresh judgment, in canonical order.
-// It is purely read-only. A task surfaces when it has at least one signal (unset
-// value/effort, stale, or a done dependency). Terminal-lane tasks (done/icebox/
-// waiting) are skipped — there is nothing to re-evaluate about parked or finished
-// work. A non-empty label restricts the result the same way as List/Next.
-// staleDays of 0 disables the stale signal (the rest still fire).
-func (a *App) Revisit(label string, staleDays, limit int) ([]RevisitItem, error) {
+// It is purely read-only. A task surfaces when it has at least one signal (no
+// repo, unset value/effort, stale, or a done dependency). Terminal-lane tasks
+// (done/icebox/waiting) are skipped — there is nothing to re-evaluate about
+// parked or finished work. The query's filters restrict the result like
+// List/Next, with one carve-out: a draft (repos == []) bypasses the board
+// scope and any repo filter, so open drafts surface (as no_repo) regardless of
+// scope. staleDays of 0 disables the stale signal (the rest still fire).
+func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -34,7 +36,7 @@ func (a *App) Revisit(label string, staleDays, limit int) ([]RevisitItem, error)
 		if a.Cfg.IsTerminal(t.Status) {
 			continue
 		}
-		if label != "" && !contains(t.Labels, label) {
+		if !o.matchRevisit(t) {
 			continue
 		}
 		reasons := core.RevisitReasons(*t, now, staleDays, doneIDs)
@@ -42,7 +44,7 @@ func (a *App) Revisit(label string, staleDays, limit int) ([]RevisitItem, error)
 			continue
 		}
 		out = append(out, RevisitItem{Task: *t, Reasons: reasons})
-		if limit > 0 && len(out) >= limit {
+		if o.Limit > 0 && len(out) >= o.Limit {
 			break
 		}
 	}

@@ -75,6 +75,7 @@ func newRootCmd() *cobra.Command {
 		newCheckCmd(),
 		newDepCmd(),
 		newLabelCmd(),
+		newRepoCmd(),
 		newApplyCmd(),
 		newSyncCmd(),
 		newArchiveCmd(),
@@ -114,13 +115,17 @@ func renderError(fe *core.Error) {
 		ID      string `json:"id,omitempty"`
 		Msg     string `json:"message"`
 		Details any    `json:"details,omitempty"`
+		// Candidates carries the concrete alternatives when an input almost
+		// resolved (ambiguous repo short name, the -l did-you-mean guard), so
+		// agents branch on the array and never regex the message prose.
+		Candidates []string `json:"candidates,omitempty"`
 	}
 	type envelope struct {
 		Error errBody `json:"error"`
 	}
-	env := envelope{Error: errBody{Code: int(fe.Code), ID: fe.ID, Msg: fe.Msg, Details: fe.Details}}
+	env := envelope{Error: errBody{Code: int(fe.Code), ID: fe.ID, Msg: fe.Msg, Details: fe.Details, Candidates: fe.Candidates}}
 	// Errors are always JSON on stderr — machine-readable for Claude/scripts,
 	// still readable for humans.
 	b := mustJSON(env)
-	fmt.Fprintln(os.Stderr, string(b))
+	fmt.Fprintln(errOut, string(b))
 }
