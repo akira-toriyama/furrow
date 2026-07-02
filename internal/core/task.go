@@ -39,6 +39,20 @@ type Meta struct {
 	SchemaVersion int `json:"schema_version"`
 }
 
+// CheckSchemaVersion is the version gate: it rejects a board whose meta.json
+// declares a layout NEWER than this binary knows. Without it, an old binary's
+// lenient json.Unmarshal would load such a board, silently drop every field it
+// doesn't know (e.g. repos), and write the loss back on the next Save. Both
+// stores call this on Load AND Save; the CLI surfaces it as exit 3 (internal —
+// the fix is updating the binary, not the input). Older versions load fine:
+// forward-compat is the store's normal lenient read.
+func CheckSchemaVersion(v int) error {
+	if v > SchemaVersion {
+		return Internalf("meta", "board is schema v%d; this furrow is too old (it knows v%d) — update the binary", v, SchemaVersion)
+	}
+	return nil
+}
+
 // Task is one tracked item. Metadata only: the long-form prose lives in
 // .furrow/bodies/<id>.md and is addressed by Body (a relative path, never the
 // content). This split is the whole point of the hybrid store.
@@ -57,9 +71,14 @@ type Task struct {
 	// (nil -> key absent) is distinct from any score, keeping intake friction
 	// zero. Out-of-range inputs are clamped to 1..5 by Canonicalize (lint warns
 	// on a hand-edited stray); ROI = Value/Effort is derived, never stored.
-	Value     *int            `json:"value,omitempty"`
-	Effort    *int            `json:"effort,omitempty"`
-	Labels    []string        `json:"labels"`
+	Value  *int     `json:"value,omitempty"`
+	Effort *int     `json:"effort,omitempty"`
+	Labels []string `json:"labels"`
+	// Repos is the set of repositories (owner/repo form) this task relates to —
+	// a first-class concept, not a label convention. 0..N entries; an empty set
+	// means the task is a draft (attached to no repo yet), the issue-draft
+	// analogue. Same set semantics as Labels: sorted+deduped, [] never null.
+	Repos     []string        `json:"repos"`
 	Parent    string          `json:"parent,omitempty"`
 	Deps      []string        `json:"deps"` // ids this task waits on; `next` treats a task ready when all are done
 	Refs      []string        `json:"refs"` // file:line or URL pointers

@@ -21,7 +21,8 @@ func sampleTask() *Task {
 	return &Task{
 		ID: "t-0001", Title: "畝を一本進める <b>&amp;</b> 完了", Status: "in-progress",
 		Priority: 110, Value: vi(4), Effort: vi(2),
-		Labels:    []string{"zmk", "canon", "zmk"}, // unsorted + duplicated
+		Labels:    []string{"zmk", "canon", "zmk"},                                                    // unsorted + duplicated
+		Repos:     []string{"akira-toriyama/furrow", "akira-toriyama/chord", "akira-toriyama/furrow"}, // unsorted + duplicated
 		Deps:      []string{"t-0002"},
 		Refs:      []string{"docs/x.md#L10", "https://example.com"},
 		Checklist: []ChecklistItem{{Text: "design", Done: true}, {Text: "ship", Done: false}},

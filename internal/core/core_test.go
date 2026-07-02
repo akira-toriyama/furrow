@@ -38,7 +38,9 @@ func sampleIndex() *Index {
 			{
 				ID: "t-0001", Title: "畝を一本進める", Status: "in-progress",
 				Priority: 110, Value: vi(4), Effort: vi(2),
-				Labels: []string{"zmk", "canon"}, Deps: []string{"t-0002"},
+				Labels:    []string{"zmk", "canon"},
+				Repos:     []string{"akira-toriyama/furrow", "akira-toriyama/chord"}, // unsorted: must sort
+				Deps:      []string{"t-0002"},
 				Refs:      []string{"docs/x.md#L10", "https://example.com"},
 				Checklist: []ChecklistItem{{Text: "design", Done: true}, {Text: "ship", Done: false}},
 				Created:   mk(2026, 6, 2), Updated: mk(2026, 6, 21), Closed: nil,
@@ -114,6 +116,10 @@ func TestMarshalDetails(t *testing.T) {
 	if !bytes.Contains(got, []byte(`"labels": []`)) {
 		t.Errorf("nil slices must marshal as [], not null:\n%s", s)
 	}
+	// repos follows the same []-not-null set contract as labels.
+	if !bytes.Contains(got, []byte(`"repos": []`)) {
+		t.Errorf("a task with no repos must emit \"repos\": []:\n%s", s)
+	}
 	// open task -> "closed": null
 	if !bytes.Contains(got, []byte(`"closed": null`)) {
 		t.Errorf("open task must serialize closed as null:\n%s", s)
@@ -159,7 +165,8 @@ func TestValidate(t *testing.T) {
 	idx := &Index{
 		SchemaVersion: SchemaVersion,
 		Tasks: []Task{
-			{ID: "t-0001", Status: "ready", Body: BodyPath("t-0001"), Deps: []string{"t-0099"}},
+			{ID: "t-0001", Status: "ready", Body: BodyPath("t-0001"), Deps: []string{"t-0099"},
+				Repos: []string{"furrow", "akira-toriyama/furrow", "https://github.com/a/b"}}, // bare name + URL are not owner/repo
 			{ID: "t-0001", Status: "nope", Body: "wrong/path.md", Parent: "t-0404"}, // dup id, bad lane, bad body, missing parent
 			{ID: "BAD", Status: "ready", Body: BodyPath("BAD")},                     // id pattern fail
 		},
@@ -172,6 +179,8 @@ func TestValidate(t *testing.T) {
 		`body path "wrong/path.md" should be "bodies/t-0001.md"`: false,
 		`parent "t-0404" does not exist`:                         false,
 		`dep "t-0099" does not exist`:                            false,
+		`repo "furrow" is not owner/repo-shaped`:                 false,
+		`repo "https://github.com/a/b" is not owner/repo-shaped`: false,
 	}
 	for _, p := range ps {
 		if _, ok := want[p.Msg]; ok {
@@ -197,12 +206,16 @@ func TestValidate(t *testing.T) {
 func TestCanonicalizeDedupesSets(t *testing.T) {
 	idx := &Index{Tasks: []Task{
 		{ID: "t-0001", Status: "ready", Body: BodyPath("t-0001"),
-			Labels: []string{"x", "x", "a", "x"}, Deps: []string{"t-2", "t-2"}},
+			Labels: []string{"x", "x", "a", "x"}, Deps: []string{"t-2", "t-2"},
+			Repos: []string{"o/b", "o/a", "o/b"}},
 	}}
 	Canonicalize(idx, testLanes)
 	got := idx.Tasks[0]
 	if len(got.Labels) != 2 || got.Labels[0] != "a" || got.Labels[1] != "x" {
 		t.Errorf("labels should be sorted+deduped to [a x], got %v", got.Labels)
+	}
+	if len(got.Repos) != 2 || got.Repos[0] != "o/a" || got.Repos[1] != "o/b" {
+		t.Errorf("repos should be sorted+deduped to [o/a o/b], got %v", got.Repos)
 	}
 	if len(got.Deps) != 1 || got.Deps[0] != "t-2" {
 		t.Errorf("deps should dedupe to [t-2], got %v", got.Deps)

@@ -19,6 +19,12 @@ const (
 	SevWarn  = "warn"
 )
 
+// repoShapeRe is the owner/repo shape for a Task.Repos entry: a GitHub-style
+// owner (alphanumeric and inner hyphens) + "/" + a repo name (word chars, dots,
+// hyphens). Kept permissive on purpose — it guards against obvious typos (bare
+// names, URLs, spaces), not against every invalid GitHub name.
+var repoShapeRe = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+$`)
+
 // Validate runs the in-memory consistency rules that need only the Index plus
 // the configured lane order and id pattern. The filesystem-level check (the
 // index<->body 1:1 mapping) lives in the app layer, which has the store; it
@@ -66,6 +72,15 @@ func Validate(idx *Index, laneOrder []string, idPattern *regexp.Regexp) []Proble
 		for _, dep := range t.Deps {
 			if !ids[dep] {
 				out = append(out, Problem{SevError, t.ID, fmt.Sprintf("dep %q does not exist", dep)})
+			}
+		}
+
+		// repos entries are owner/repo identifiers (e.g. akira-toriyama/furrow).
+		// A malformed entry still loads and filters — hence warn, not error —
+		// but it will never match a derived repo, so surface it.
+		for _, r := range t.Repos {
+			if !repoShapeRe.MatchString(r) {
+				out = append(out, Problem{SevWarn, t.ID, fmt.Sprintf("repo %q is not owner/repo-shaped", r)})
 			}
 		}
 	}

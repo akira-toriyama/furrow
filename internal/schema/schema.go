@@ -1,26 +1,29 @@
 // Package schema is the single source of the JSON Schema for furrow's on-disk
-// store. `furrow schema [task|meta]` prints TaskV1 / MetaV1; docs/schema/*.json
+// store. `furrow schema [task|meta]` prints TaskV2 / MetaV1; docs/schema/*.json
 // are committed copies of the same bytes, and CI diffs them so they can never
 // drift.
 //
-// The store is per-task shards (tasks/<id>.json, described by TaskV1) plus one
-// board-wide meta.json (described by MetaV1). Versioning: "v1" here numbers each
-// schema document; the board LAYOUT version lives in meta.json's schema_version
-// (currently 2 — v1 was the monolithic index.json).
+// The store is per-task shards (tasks/<id>.json, described by TaskV2) plus one
+// board-wide meta.json (described by MetaV1). Versioning: the version here
+// numbers each schema document; the board LAYOUT version lives in meta.json's
+// schema_version (currently 2 — v1 was the monolithic index.json).
 package schema
 
-// TaskV1 is the JSON Schema (draft 2020-12) for one task shard: the object in a
+// TaskV2 is the JSON Schema (draft 2020-12) for one task shard: the object in a
 // single .furrow/tasks/<id>.json file. Keep the required list and field set in
 // lockstep with internal/core.Task's json tags. A shard carries NO
-// schema_version — that lives in meta.json (see MetaV1).
-const TaskV1 = `{
+// schema_version — that lives in meta.json (see MetaV1). v2 adds the required
+// "repos" set (repositories as a first-class concept); v1 is retired, not
+// dual-supported — the published v1 document is deleted rather than silently
+// rewritten.
+const TaskV2 = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.task.v1.json",
-  "title": "furrow task shard v1",
-  "description": "Schema for one .furrow/tasks/<id>.json shard (a single task's metadata). The board-wide schema_version lives in .furrow/meta.json, never in a shard. Pin to a tagged URL or vendor this file.",
+  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.task.v2.json",
+  "title": "furrow task shard v2",
+  "description": "Schema for one .furrow/tasks/<id>.json shard (a single task's metadata). The board-wide schema_version lives in .furrow/meta.json, never in a shard. v2 adds the required repos set (owner/repo identifiers; [] = draft, attached to no repo). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "title", "status", "priority", "labels", "deps", "refs", "checklist", "created", "updated", "closed", "body"],
+  "required": ["id", "title", "status", "priority", "labels", "repos", "deps", "refs", "checklist", "created", "updated", "closed", "body"],
   "properties": {
     "id": { "type": "string", "description": "frozen id; == the shard filename stem and bodies/<id>.md stem" },
     "title": { "type": "string" },
@@ -28,7 +31,8 @@ const TaskV1 = `{
     "priority": { "type": "integer", "description": "sparse 10-step ordering key" },
     "value": { "type": "integer", "minimum": 1, "maximum": 5, "description": "optional coarse 1..5 value (importance) estimate; absent = unset" },
     "effort": { "type": "integer", "minimum": 1, "maximum": 5, "description": "optional coarse 1..5 effort (cost) estimate; absent = unset" },
-    "labels": { "type": "array", "items": { "type": "string" } },
+    "labels": { "type": "array", "items": { "type": "string" }, "description": "free-form tags (labels are NOT repos; see repos)" },
+    "repos": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+$" }, "description": "repositories this task relates to, owner/repo form, sorted+deduped; [] = draft (no repo yet)" },
     "parent": { "type": "string" },
     "deps": { "type": "array", "items": { "type": "string" } },
     "refs": { "type": "array", "items": { "type": "string" } },

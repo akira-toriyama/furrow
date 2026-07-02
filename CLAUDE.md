@@ -114,11 +114,16 @@ default ready+in-progress) and `[labels].required` (a label-less task errors on
 `add` and in `lint`; default false).
 
 ### Schema
-`internal/schema.TaskV1` and `internal/schema.MetaV1` are the sources of the JSON
+`internal/schema.TaskV2` and `internal/schema.MetaV1` are the sources of the JSON
 Schemas; `furrow schema [task|meta]` prints them (no arg or `task` = the shard
 schema; `meta` = the `meta.json` schema) and CI diffs them against
-`docs/schema/furrow.task.v1.json` and `docs/schema/furrow.meta.v1.json`. Change a
+`docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v1.json`. Change a
 struct → update the schema const, the committed file, and the golden together.
+A task carries a first-class `repos` set (owner/repo identifiers, same
+sorted+deduped/[]-not-null semantics as labels; `[]` = draft). Labels are pure
+free-form tags — a repo is NOT a label. The store refuses (exit 3) a board whose
+`meta.json` version is newer than the binary (`core.CheckSchemaVersion`), so an
+old binary can never lenient-parse away fields it doesn't know.
 
 ## Conventions
 

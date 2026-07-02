@@ -32,8 +32,8 @@ func newSchemaCmd() *cobra.Command {
 		Long: "Print the JSON Schema (draft 2020-12) for the store's files. With no\n" +
 			"argument (or \"task\") it prints the schema for one .furrow/tasks/<id>.json\n" +
 			"shard; \"meta\" prints the schema for .furrow/meta.json. These are the single\n" +
-			"source of truth; docs/schema/furrow.{task,meta}.v1.json are committed copies\n" +
-			"and CI diffs them so they cannot drift.",
+			"source of truth; docs/schema/furrow.task.v2.json and furrow.meta.v1.json are\n" +
+			"committed copies and CI diffs them so they cannot drift.",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"task", "meta"},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -45,7 +45,7 @@ func newSchemaCmd() *cobra.Command {
 			// the JSON encoder) so the bytes match the committed file exactly.
 			switch kind {
 			case "task":
-				fmt.Fprint(out, schema.TaskV1)
+				fmt.Fprint(out, schema.TaskV2)
 			case "meta":
 				fmt.Fprint(out, schema.MetaV1)
 			default:

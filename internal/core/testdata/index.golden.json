@@ -7,6 +7,7 @@
       "status": "in-progress",
       "priority": 100,
       "labels": [],
+      "repos": [],
       "deps": [],
       "refs": [],
       "checklist": [],
@@ -25,6 +26,10 @@
       "labels": [
         "canon",
         "zmk"
+      ],
+      "repos": [
+        "akira-toriyama/chord",
+        "akira-toriyama/furrow"
       ],
       "deps": [
         "t-0002"
@@ -54,6 +59,7 @@
       "status": "done",
       "priority": 100,
       "labels": [],
+      "repos": [],
       "deps": [],
       "refs": [],
       "checklist": [],

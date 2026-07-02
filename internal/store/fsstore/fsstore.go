@@ -65,9 +65,13 @@ func (s *Store) BodyFile(id string) string {
 // keeps every shard as a separate array entry, so a duplicate id introduced by a
 // hand-edit surfaces to `furrow lint` rather than being silently merged.
 func (s *Store) Load() (*core.Index, error) {
+	ver := s.metaVersion()
+	if err := core.CheckSchemaVersion(ver); err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(s.tasksDir())
 	if os.IsNotExist(err) {
-		return &core.Index{SchemaVersion: s.metaVersion(), Tasks: []core.Task{}}, nil
+		return &core.Index{SchemaVersion: ver, Tasks: []core.Task{}}, nil
 	}
 	if err != nil {
 		return nil, core.Internalf("index", "read tasks/: %v", err)
@@ -87,13 +91,14 @@ func (s *Store) Load() (*core.Index, error) {
 		}
 		tasks = append(tasks, *t)
 	}
-	return &core.Index{SchemaVersion: s.metaVersion(), Tasks: tasks}, nil
+	return &core.Index{SchemaVersion: ver, Tasks: tasks}, nil
 }
 
 // metaVersion returns meta.json's schema version, defaulting to the current
 // SchemaVersion when meta.json is absent or unreadable (a fresh store, or one
-// written before meta.json existed). The version is informational — the shards
-// are the data — so a missing/garbled meta must not fail a Load.
+// written before meta.json existed). A missing/garbled meta must not fail a
+// Load — the shards are the data — but a READABLE version feeds the gate:
+// Load/Save refuse a board declaring a newer layout (core.CheckSchemaVersion).
 func (s *Store) metaVersion() int {
 	b, err := os.ReadFile(s.metaPath())
 	if err != nil {
@@ -119,6 +124,11 @@ func (s *Store) metaVersion() int {
 //
 // index.json is never read or written — the abolished monolith stays abolished.
 func (s *Store) Save(idx *core.Index) error {
+	// Version gate on the write side too: never let this binary rewrite (and
+	// silently strip fields from) a board written by a newer furrow.
+	if err := core.CheckSchemaVersion(s.metaVersion()); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.tasksDir(), 0o755); err != nil {
 		return core.Internalf("index", "create tasks/: %v", err)
 	}

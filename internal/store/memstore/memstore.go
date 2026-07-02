@@ -22,6 +22,10 @@ type Store struct {
 	idPrefix string
 	idLen    int
 	nextID   func() (string, error) // id generator; random by default
+	// schemaVersion mirrors fsstore's meta.json so tests can exercise the
+	// version gate (Load/Save refuse a board newer than the binary). Defaults
+	// to the current core.SchemaVersion via New.
+	schemaVersion int
 }
 
 // compile-time proof memstore satisfies the port.
@@ -30,20 +34,28 @@ var _ core.Store = (*Store)(nil)
 // New returns an empty in-memory store with the given id formatting.
 func New(idPrefix string, idLen int) *Store {
 	s := &Store{
-		tasks:    map[string]core.Task{},
-		bodies:   map[string]string{},
-		idPrefix: idPrefix,
-		idLen:    idLen,
+		tasks:         map[string]core.Task{},
+		bodies:        map[string]string{},
+		idPrefix:      idPrefix,
+		idLen:         idLen,
+		schemaVersion: core.SchemaVersion,
 	}
 	s.nextID = s.randomID
 	return s
 }
+
+// SetSchemaVersion overrides the board's layout version — the in-memory twin of
+// hand-editing meta.json. Tests use it to exercise the version gate.
+func (s *Store) SetSchemaVersion(v int) { s.schemaVersion = v }
 
 // Load folds the per-id task entries into one Index, in id order (deterministic;
 // the app canonicalizes into display order afterward), mirroring fsstore's
 // glob-and-fold. The tasks are copied out so callers mutating the result do not
 // alter the store until they Save.
 func (s *Store) Load() (*core.Index, error) {
+	if err := core.CheckSchemaVersion(s.schemaVersion); err != nil {
+		return nil, err
+	}
 	ids := make([]string, 0, len(s.tasks))
 	for id := range s.tasks {
 		ids = append(ids, id)
@@ -53,13 +65,16 @@ func (s *Store) Load() (*core.Index, error) {
 	for _, id := range ids {
 		tasks = append(tasks, s.tasks[id])
 	}
-	return &core.Index{SchemaVersion: core.SchemaVersion, Tasks: tasks}, nil
+	return &core.Index{SchemaVersion: s.schemaVersion, Tasks: tasks}, nil
 }
 
 // Save replaces the task set from idx: every task becomes its own entry and any
 // id no longer present is dropped — the in-memory twin of writing one shard per
 // task and deleting the shards of removed ids.
 func (s *Store) Save(idx *core.Index) error {
+	if err := core.CheckSchemaVersion(s.schemaVersion); err != nil {
+		return err
+	}
 	next := make(map[string]core.Task, len(idx.Tasks))
 	for _, t := range idx.Tasks {
 		next[t.ID] = t
