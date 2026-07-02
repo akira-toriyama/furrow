@@ -70,7 +70,7 @@ whole premise is "plain files in your repo".*
 
 The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
 (structured metadata, machine-written) + `.furrow/meta.json`
-(`{"schema_version": 2}`, the board-wide layout version) +
+(`{"schema_version": 3}`, the board-wide layout version) +
 `.furrow/bodies/<id>.md` (long-form prose, hand/agent
 editable) + `.furrow/config.toml` (human config) +
 `.furrow/archive/` (aged done tasks, itself a sibling sharded store). The

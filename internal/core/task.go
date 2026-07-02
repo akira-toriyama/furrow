@@ -15,9 +15,11 @@ import "time"
 // file, .furrow/meta.json (see Meta) — never in a task shard, so a version bump
 // is a single-file change and no shard becomes a cross-write merge point. Bump
 // only on a breaking layout change, and update docs/schema/ + goldens in the
-// same change. v2 = per-task shards (tasks/<id>.json) + meta.json (v1 was the
-// monolithic index.json).
-const SchemaVersion = 2
+// same change. v3 = shards whose tasks carry the required first-class repos
+// set (the repos pivot; a v2-only binary must refuse it, or its lenient
+// unmarshal would strip repos and write the loss back). v2 = per-task shards
+// (tasks/<id>.json) + meta.json (v1 was the monolithic index.json).
+const SchemaVersion = 3
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into

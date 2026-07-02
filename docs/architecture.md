@@ -190,7 +190,7 @@ error (the file is malformed input), not an internal fault.
   read → write stays identical).
 - **Schema drift test.** `furrow schema [task|meta]` prints
   `internal/schema.TaskV2` / `internal/schema.MetaV1` (JSON Schema draft 2020-12);
-  `docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v1.json` are
+  `docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v2.json` are
   committed copies of the same bytes, and CI diffs both so they cannot drift.
 - **Single-path grep guard.** `scripts/check-marshal-singlepath.sh` greps for
   stray `json.Marshal` calls on a `Task`/`Index`/meta outside `core`'s serializers
@@ -240,7 +240,7 @@ A `.furrow/` store directory contains:
     t-k3m9p.json         written ONLY via core.MarshalTask
     t-9qw2z.json
   bodies/<id>.md       long-form prose, one file per task (hand/agent editable)
-  meta.json            board-wide layout version {"schema_version": 2} — MarshalMeta
+  meta.json            board-wide layout version {"schema_version": 3} — MarshalMeta
   config.toml          human config (read-only from furrow's side)
   archive/             a sibling sharded store: aged done tasks moved out of the hot store
 ```
@@ -567,7 +567,7 @@ This document covers the *built* architecture. Several things are deliberately
 | `internal/gitrepo` (git subprocess adapter behind `furrow sync`) | **Built** |
 | `internal/cli` (cobra: all commands above, including `repo`, `sync`, `apply`, `ui`, `migrate`) | **Built** |
 | `internal/tui` (bubbletea v1, `furrow ui`) | **Built** |
-| `internal/schema` + `docs/schema/furrow.task.v2.json` / `furrow.meta.v1.json` | **Built** |
+| `internal/schema` + `docs/schema/furrow.task.v2.json` / `furrow.meta.v2.json` | **Built** |
 | Golden round-trip + schema drift tests | **Built** |
 | `scripts/check-marshal-singlepath.sh` | **Built** |
 | Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0`–`v0.3.0` published; the repos line ships in the next tag |

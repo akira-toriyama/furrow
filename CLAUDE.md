@@ -58,7 +58,7 @@ their repositories in the first-class `repos` field) or a store can live
 repo-local. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
-(`{"schema_version": 2}`); long-form prose lives in
+(`{"schema_version": 3}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI and a bubbletea TUI drive it. Go,
 cross-platform, brew/nix packaged.
@@ -146,7 +146,7 @@ ignored).
 `internal/schema.TaskV2` and `internal/schema.MetaV1` are the sources of the JSON
 Schemas; `furrow schema [task|meta]` prints them (no arg or `task` = the shard
 schema; `meta` = the `meta.json` schema) and CI diffs them against
-`docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v1.json`. Change a
+`docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v2.json`. Change a
 struct → update the schema const, the committed file, and the golden together.
 A task carries a first-class `repos` set (owner/repo identifiers, same
 sorted+deduped/[]-not-null semantics as labels; `[]` = draft). Labels are pure

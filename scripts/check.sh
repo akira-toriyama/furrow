@@ -37,8 +37,8 @@ BIN="$(pwd)/bin/furrow"
 echo "→ schema drift guard"
 "$BIN" schema task | diff -u docs/schema/furrow.task.v2.json -
 echo "  task schema matches docs/schema/furrow.task.v2.json"
-"$BIN" schema meta | diff -u docs/schema/furrow.meta.v1.json -
-echo "  meta schema matches docs/schema/furrow.meta.v1.json"
+"$BIN" schema meta | diff -u docs/schema/furrow.meta.v2.json -
+echo "  meta schema matches docs/schema/furrow.meta.v2.json"
 
 echo "→ config template drift guard"
 tmp="$(mktemp -d)"

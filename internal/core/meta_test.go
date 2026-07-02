@@ -10,7 +10,7 @@ func TestMarshalMetaCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"schema_version\": 2\n}\n"
+	want := "{\n  \"schema_version\": 3\n}\n"
 	if string(b) != want {
 		t.Errorf("MarshalMeta bytes = %q, want %q", b, want)
 	}
@@ -31,9 +31,11 @@ func TestUnmarshalMetaRejectsGarbage(t *testing.T) {
 	}
 }
 
-// SchemaVersion is 2: PR2 bumps the on-disk layout to per-task shards + meta.json.
-func TestSchemaVersionIsTwo(t *testing.T) {
-	if SchemaVersion != 2 {
-		t.Errorf("SchemaVersion = %d, want 2 (sharded layout)", SchemaVersion)
+// SchemaVersion is 3: the repos pivot made repos a required first-class field,
+// and the flag-day bumped every board so pre-repos binaries refuse it (the
+// version gate) instead of lenient-parsing repos away.
+func TestSchemaVersionIsThree(t *testing.T) {
+	if SchemaVersion != 3 {
+		t.Errorf("SchemaVersion = %d, want 3 (repos-required shards)", SchemaVersion)
 	}
 }
