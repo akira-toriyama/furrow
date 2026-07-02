@@ -1,0 +1,211 @@
+name: sync-task-status
+
+# Reusable workflow — apply `SetStatus-task:` directives from a PR to a furrow
+# task tracker. This is furrow's OFFICIAL GitHub Actions integration: the brain
+# ships with furrow itself, so the workflow and the binary it runs come from the
+# same repo and the same release. Each code repo only needs a ~10-line caller
+# stub, pinned to a CONCRETE furrow release tag (never a moving ref — GoReleaser
+# owns the vX.Y.Z tag space, and an unpinned caller would let a future flag-day
+# mix old and new binaries in CI):
+#
+#   # .github/workflows/task-status.yml in a code repo
+#   name: task-status
+#   on:
+#     pull_request:
+#       types: [opened, reopened, ready_for_review, closed]
+#   permissions:
+#     contents: read
+#     pull-requests: write
+#   jobs:
+#     sync:
+#       uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.5.0  # pin a release tag
+#       secrets:
+#         PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
+#
+# The furrow binary is DOWNLOADED from a release (checksum-verified) — not
+# `go install`ed. The `furrow-version` default in THIS file is kept in lockstep
+# with the file's own release tag (bump it right before tagging), so the
+# workflow revision a caller pins and the binary revision it runs cannot
+# diverge, and CI (the "third writer" of the tracker) upgrades only when a
+# caller's pin is bumped deliberately (one fleet-sync PR per furrow release).
+#
+# Auth is a fine-grained PAT (credential only — no server, no token minting).
+# Set it as a secret on each calling repo:
+#   PROJECTS_WRITE_PAT   fine-grained PAT scoped to the tracker repo with
+#                        Contents: Read & write ONLY, auto-expiring.
+# Until the PAT exists the workflow is DORMANT: it skips cleanly (green).
+#
+# A PR open (incl. draft) nudges the task to in-progress; a merge applies the
+# directive's lane. Validation is NON-blocking: an invalid directive comments on
+# the PR and fails THIS job, but never blocks the merge — keep it out of the
+# repo's required checks.
+
+on:
+  workflow_call:
+    inputs:
+      tracker-owner:
+        description: Owner of the furrow tracker repo.
+        type: string
+        default: akira-toriyama
+      tracker-repo:
+        description: Name of the furrow tracker repo to update.
+        type: string
+        default: projects
+      open-lane:
+        description: Lane a task is nudged to when a PR opens.
+        type: string
+        default: in-progress
+      furrow-version:
+        description: >-
+          The furrow release whose binary is installed (vX.Y.Z). The default is
+          kept in LOCKSTEP with this file's own release tag (bumped right
+          before tagging), so a caller pinned to @vX.Y.Z runs binary vX.Y.Z.
+        type: string
+        default: v0.5.0
+    secrets:
+      PROJECTS_WRITE_PAT:
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate — resolve event mode and PAT auth
+        id: gate
+        env:
+          ACTION: ${{ github.event.action }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
+        run: |
+          set -euo pipefail
+          case "$ACTION" in
+            opened|reopened|ready_for_review) mode=open ;;
+            closed) if [ "$MERGED" = "true" ]; then mode=merge; else mode=skip; fi ;;
+            *) mode=skip ;;
+          esac
+          proceed=true
+          [ "$mode" = skip ] && proceed=false
+          if [ -z "${WRITE_PAT:-}" ]; then
+            proceed=false
+            echo "::notice::No PROJECTS_WRITE_PAT — task-status sync is dormant until configured."
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "proceed=$proceed" >> "$GITHUB_OUTPUT"
+          echo "action=$ACTION merged=$MERGED mode=$mode proceed=$proceed"
+
+      - name: Checkout the tracker repo
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.tracker-owner }}/${{ inputs.tracker-repo }}
+          token: ${{ secrets.PROJECTS_WRITE_PAT }}
+          path: tracker
+          fetch-depth: 0
+
+      - name: Install furrow (pinned release binary, checksum-verified)
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          VER: ${{ inputs.furrow-version }}
+        run: |
+          set -euo pipefail
+          ver="$VER"
+          base="https://github.com/akira-toriyama/furrow/releases/download/$ver"
+          file="furrow_${ver#v}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o "/tmp/$file" "$base/$file"
+          curl -fsSL --retry 3 -o /tmp/furrow-checksums.txt "$base/checksums.txt"
+          ( cd /tmp && grep -F "  $file" furrow-checksums.txt | sha256sum -c - )
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf "/tmp/$file" -C "$HOME/.local/bin" furrow
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/furrow" version
+
+      - name: Apply SetStatus-task directives
+        if: steps.gate.outputs.proceed == 'true'
+        id: apply
+        working-directory: tracker
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          REF: ${{ github.event.repository.name }}#${{ github.event.pull_request.number }}
+          MODE: ${{ steps.gate.outputs.mode }}
+          OPEN_LANE: ${{ inputs.open-lane }}
+        run: |
+          set -uo pipefail
+          printf '%s' "$PR_BODY" > /tmp/pr-body.txt
+          furrow apply --on "$MODE" --ref "$REF" --open-lane "$OPEN_LANE" \
+            --body-file /tmp/pr-body.txt --json > /tmp/apply.json
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo '--- furrow apply report ---'
+          cat /tmp/apply.json || true
+          {
+            echo 'report<<FURROW_EOF'
+            cat /tmp/apply.json 2>/dev/null || echo '{}'
+            echo 'FURROW_EOF'
+          } >> "$GITHUB_OUTPUT"
+          # Never fail here: the dedicated step below sets the (non-blocking) job status.
+          exit 0
+
+      - name: Commit and push status changes
+        if: steps.gate.outputs.proceed == 'true'
+        working-directory: tracker
+        env:
+          REF: ${{ github.event.repository.name }}#${{ github.event.pull_request.number }}
+          MODE: ${{ steps.gate.outputs.mode }}
+        run: |
+          set -euo pipefail
+          git config user.name  "furrow-status[bot]"
+          git config user.email "furrow-status@users.noreply.github.com"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "no task changes to commit"
+            exit 0
+          fi
+          git add -A
+          git commit -q -m ":robot: chore(status): ${REF} ${MODE}"
+          # Cross-repo pushes can race (GH concurrency groups are per-repo and
+          # cannot serialize them), so rebase-retry like a human operator would.
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "pushed"
+              exit 0
+            fi
+            echo "push rejected (race); rebasing (attempt $i)"
+            git pull --rebase origin main
+          done
+          echo "push failed after retries"
+          exit 1
+
+      - name: Comment validation failures on the PR
+        if: steps.gate.outputs.proceed == 'true' && steps.apply.outputs.code != '0'
+        uses: actions/github-script@v9
+        env:
+          REPORT: ${{ steps.apply.outputs.report }}
+        with:
+          script: |
+            const report = (process.env.REPORT || '{}').trim();
+            const body = [
+              '⚠️ **furrow: one or more `SetStatus-task:` directives were invalid.**',
+              'The merge is **not** blocked; the affected task status was left unchanged.',
+              '',
+              '```json',
+              report,
+              '```',
+              '',
+              'Fix the directive (task id / lane) or update the task manually with `furrow move`.',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
+
+      - name: Fail the job if any directive was invalid
+        if: steps.gate.outputs.proceed == 'true' && steps.apply.outputs.code != '0'
+        run: |
+          echo "furrow apply reported invalid directive(s) (exit ${{ steps.apply.outputs.code }})."
+          echo "This job is intentionally NON-blocking — keep it out of required checks."
+          exit 1

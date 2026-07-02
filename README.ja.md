@@ -435,9 +435,34 @@ SetStatus-task: https://github.com/<owner>/<tracker>/blob/main/.furrow/bodies/<i
 
 PR **open**（draft 含む）でタスクは in-progress に寄り、**merge** で指定 lane が適用される
 （lane 省略なら本文に追記のみ）。`apply` は `--body-file` か stdin からテキストを読む CI/VCS
-非依存の設計なので、薄い CI ジョブ（このリポジトリの
-[`.github/workflows/task-status.yml`](.github/workflows/task-status.yml) が共有 reusable
-workflow を呼ぶ）だけで配線できる。検証は非ブロッキング: 不正な id/lane は報告されるが merge は止めない。
+非依存の設計。
+
+GitHub 側の配線は **furrow 同梱の reusable workflow**
+[`.github/workflows/sync-task-status.yml`](.github/workflows/sync-task-status.yml) が担う。
+利用側 repo は 10 行程度の caller を置くだけ — 参照は moving ref でなく**具体的な
+furrow release tag に pin** する:
+
+```yaml
+# .github/workflows/task-status.yml
+name: task-status
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  sync:
+    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.5.0
+    secrets:
+      PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
+```
+
+workflow は**自身の tag と一致する furrow release バイナリ**を DL する
+（checksum 検証つき）— workflow と binary の版がズレることは構造的にない。CI の
+更新は pin を上げた時だけ。認証は fine-grained PAT 1 本（`PROJECTS_WRITE_PAT`:
+tracker repo の Contents Read & write のみ）。未設定の間は job は green のまま
+スキップ（dormant）。検証は非ブロッキング: 不正な id/lane は報告されるが merge は止めない。
 
 ---
 
