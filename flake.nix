@@ -1,11 +1,10 @@
 {
   # furrow — `nix run github:akira-toriyama/furrow` or `nix profile install`.
   #
-  # NOTE: nix is not installed on the author's machine (MEMO §8), so vendorHash
-  # below is a placeholder (lib.fakeHash). On the first build nix will print the
-  # correct hash ("got: sha256-...") — paste it in. CI / another machine will
-  # finalize this; from-source `go install` and Homebrew work today regardless.
-  description = "Repo-local plain-text task tracker (JSON index + per-task markdown bodies)";
+  # vendorHash pins the vendored go modules; when go.mod/go.sum change, set it
+  # back to pkgs.lib.fakeHash, run `nix build`, and paste the hash nix prints
+  # ("got: sha256-...").
+  description = "Clonable, git-native plain-text task tracker — an alternative to GitHub Projects/Issues (per-task JSON shards + markdown bodies)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -23,14 +22,14 @@
           pname = "furrow";
           inherit version;
           src = ./.;
-          vendorHash = pkgs.lib.fakeHash; # TODO: replace with the hash nix prints
+          vendorHash = "sha256-+NskPv31fPTL4ntWPnT5gM3QA0LoLEMXI6plccvt8aY=";
           ldflags = [
             "-s" "-w"
             "-X github.com/akira-toriyama/furrow/internal/version.Version=${version}"
           ];
           subPackages = [ "cmd/furrow" ];
           meta = with pkgs.lib; {
-            description = "Repo-local plain-text task tracker";
+            description = "Clonable, git-native plain-text task tracker — an alternative to GitHub Projects/Issues";
             homepage = "https://github.com/akira-toriyama/furrow";
             license = licenses.mit;
             mainProgram = "furrow";
@@ -43,7 +42,9 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.go_1_23 pkgs.golangci-lint pkgs.goreleaser pkgs.git-cliff ];
+          # go (not go_1_23): nixpkgs removed EOL go versions; go.mod's 1.23
+          # floor is satisfied by any current toolchain (GOTOOLCHAIN=local).
+          packages = [ pkgs.go pkgs.golangci-lint pkgs.goreleaser pkgs.git-cliff ];
         };
       });
 }

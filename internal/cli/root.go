@@ -46,7 +46,9 @@ func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "furrow",
 		Short: "Repo-local plain-text task tracker (per-task JSON shards + markdown bodies)",
-		Long: "furrow — a repo-local, plain-text task tracker.\n\n" +
+		Long: "furrow — a clonable, git-native plain-text task tracker: an alternative to\n" +
+			"GitHub Projects/Issues that lives in a git repo (a shared central board or the\n" +
+			"code repo itself).\n\n" +
 			"Structured metadata lives in one .furrow/tasks/<id>.json shard per task\n" +
 			"(deterministic, machine-written); long-form prose lives in .furrow/bodies/<id>.md\n" +
 			"(hand-editable). Drive it from the CLI or the TUI (furrow ui). Both you and Claude\n" +
