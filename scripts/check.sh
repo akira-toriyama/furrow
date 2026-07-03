@@ -1,7 +1,7 @@
 #!/bin/sh
 # check.sh — the full local verification, runnable by you or by Claude Code with
-# no TTY. Mirrors what .github/workflows/build.yml enforces in CI, so a green
-# run here means a green CI. Use GOTOOLCHAIN=local on a Go 1.25+ host.
+# no TTY. Mirrors what .github/workflows/{build,govulncheck}.yml enforce in CI, so
+# a green run here means a green CI. Use GOTOOLCHAIN=local on a Go 1.25+ host.
 set -eu
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=local
@@ -23,6 +23,13 @@ if command -v golangci-lint >/dev/null 2>&1; then
   golangci-lint run ./...
 else
   echo "→ golangci-lint (skipped — not installed; CI runs it)"
+fi
+
+if command -v govulncheck >/dev/null 2>&1; then
+  echo "→ govulncheck"
+  govulncheck ./...
+else
+  echo "→ govulncheck (skipped — not installed; CI runs it)"
 fi
 
 echo "→ build binary for live checks"
