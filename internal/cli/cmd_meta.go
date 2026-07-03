@@ -12,14 +12,19 @@ import (
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print the furrow version",
-		Args:  cobra.NoArgs,
+		Short: "Print the furrow version (with build commit/date when stamped)",
+		Example: "  furrow version\n" +
+			"  furrow version --json   # {version, commit, date, modified} for scripts/agents",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			info := version.Resolve()
 			if flagJSON {
-				printJSON(map[string]string{"version": version.Version})
+				// Info carries json tags; the full commit sha stays here (the
+				// human string shortens it) so an agent can match exactly.
+				printJSON(info)
 				return nil
 			}
-			fmt.Fprintf(out, "furrow %s\n", version.Version)
+			fmt.Fprintln(out, info.String())
 			return nil
 		},
 	}

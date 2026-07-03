@@ -17,7 +17,11 @@ func newLsCmd() *cobra.Command {
 		Use:     "ls",
 		Aliases: []string{"list"},
 		Short:   "List tasks (canonical lane->priority->id order)",
-		Args:    cobra.NoArgs,
+		Example: "  furrow ls                 # this repo's board, canonical order\n" +
+			"  furrow ls -s ready --json\n" +
+			"  furrow ls -l bug -r furrow\n" +
+			"  furrow ls --drafts        # only repo-less draft tasks",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -100,6 +104,9 @@ func newNextCmd() *cobra.Command {
 			"dependency already in the done lane, in canonical order. Use --repo to\n" +
 			"restrict to a repo (a unique short name works) and --label to AND a tag\n" +
 			"filter on top.",
+		Example: "  furrow next               # what to pick up now\n" +
+			"  furrow next -n1 --json    # just the top task, with a reason\n" +
+			"  furrow next -r furrow -l bug",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()

@@ -153,7 +153,7 @@ furrow done t-0001
 | `config init` | ユーザー設定 `~/.config/furrow/config.toml`（中央ボード雛形）を書き出す。ボード内で実行すると最寄りの `.furrow` から path/scopes を文脈導出、離れていればコメント付き placeholder。既存ファイルは上書きしない（`--path`・`--scope`（複数可）） |
 | `config path` | 解決されるユーザー設定パスを表示。書きかけ設定の clamp 警告は stderr へ（stdout は path のみ） |
 | `schema [task\|meta]` | JSON Schema を出力（引数なし or `task` = シャード（`tasks/<id>.json`）のスキーマ・`meta` = `meta.json` のスキーマ） |
-| `version` | furrow のバージョンを出力 |
+| `version` | furrow のバージョンを出力（stamp 済みならビルド commit/date も）。root の `--version` フラグでも同じ行を出力。`--json` は `{version, commit, date, modified}` を出力（スクリプト／エージェント向け） |
 | `ui` | 対話 TUI を起動（一覧＋詳細ペイン：移動・フィルタ・done・レーン移動・並べ替え（`K`/`J`）・チェックリストトグル・本文編集） |
 | `migrate <file>` | 既存の `Task.md` などを取り込む（dry-run 既定／`--write` で作成・未対応の見出しや `[[wikilink]]` は破棄せず報告） |
 
