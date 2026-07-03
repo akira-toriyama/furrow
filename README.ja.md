@@ -132,7 +132,7 @@ furrow done t-0001
 | `init` | カレントディレクトリに `.furrow` ストアを作る（`config.toml` + `meta.json` + 空の `tasks/` + `bodies/`） |
 | `add <title>...` | タスクを追加（`--stdin` で標準入力から1行1タスクを一括作成）。id を自動採番し `bodies/<id>.md` を作る |
 | `ls`（別名 `list`） | タスクを正準順で一覧。`--drafts` で repo 未付与のタスク（draft）だけを一覧（ボードのスコープは無視） |
-| `show <id>` | タスクを markdown 本文付きで表示 |
+| `show <id>` | タスクを markdown 本文付きで表示。`--backlinks` を付けると、本文でこのタスクを `[[id]]` で参照している他タスクも列挙する（「Mentioned in」節／`--json` では `mentioned_by` 配列。GitHub の "mentioned in" のローカル・レート制限なし版） |
 | `next` | 着手可能なタスク（非 terminal・依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
 | `revisit` | read-only。再評価すべき open タスクを一覧。`--json`/`--ndjson` は各タスクに `revisit` 配列 `{code, detail}`（`no_repo`・`value_unset`・`effort_unset`・`stale`・`dep_done`）を付与し、エージェントが何を直すか分かる。draft はスコープに関係なく浮上する。空でも exit 0。`-l/--label`・`-r/--repo`・`-n/--limit`・`--stale-days <n>`（0 で stale 無効） |
 | `edit <id>` | `bodies/<id>.md` を `$EDITOR` で開く（非対話ならパスを出力） |

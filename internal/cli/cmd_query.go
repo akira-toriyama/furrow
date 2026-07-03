@@ -52,10 +52,15 @@ func newLsCmd() *cobra.Command {
 }
 
 func newShowCmd() *cobra.Command {
-	return &cobra.Command{
+	var backlinks bool
+	cmd := &cobra.Command{
 		Use:   "show <id>",
 		Short: "Show a task with its markdown body",
-		Args:  cobra.ExactArgs(1),
+		Long: "Show one task's metadata and Markdown body. With --backlinks, also list the\n" +
+			"tasks whose body mentions this one via the [[id]] notation (the local,\n" +
+			"rate-limit-free twin of GitHub's \"mentioned in\"); --json adds a mentioned_by\n" +
+			"array. The scan is opt-in, so a plain `show` never pays for it.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -65,10 +70,20 @@ func newShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			printTaskDetail(t, body)
+			if !backlinks {
+				printTaskDetail(t, body)
+				return nil
+			}
+			refs, err := a.Backlinks(args[0])
+			if err != nil {
+				return err
+			}
+			printTaskDetailWithBacklinks(t, body, refs)
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&backlinks, "backlinks", false, "also list tasks whose body mentions this one via [[id]]")
+	return cmd
 }
 
 func newNextCmd() *cobra.Command {

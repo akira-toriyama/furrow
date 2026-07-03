@@ -514,6 +514,47 @@ func (a *App) Get(id string) (*core.Task, string, error) {
 	return t, body, nil
 }
 
+// Backlinks returns the tasks whose body mentions id via the [[id]] wiki-link
+// notation, in canonical order. It is the pull-side twin of GitHub's "mentioned
+// in" panel — no server, no rate limit, just a scan of the local bodies (cheap
+// at this scale; an index is YAGNI). A task's own body mentioning itself is not
+// a backlink, and an orphan body (no task) never surfaces since the result is
+// drawn from the index. NotFound when id is unknown.
+func (a *App) Backlinks(id string) ([]core.Task, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	if !idx.Has(id) {
+		return nil, core.NotFound(id)
+	}
+	re := core.LinkPattern(a.Cfg.IDPrefix)
+	bodyIDs, err := a.Store.ListBodyIDs()
+	if err != nil {
+		return nil, err
+	}
+	mentioners := map[string]bool{}
+	for _, bid := range bodyIDs {
+		if bid == id {
+			continue // a body referring to itself is not a backlink
+		}
+		body, err := a.Store.LoadBody(bid)
+		if err != nil {
+			return nil, err
+		}
+		if contains(core.ExtractLinks(body, re), id) {
+			mentioners[bid] = true
+		}
+	}
+	var out []core.Task
+	for i := range idx.Tasks {
+		if mentioners[idx.Tasks[i].ID] {
+			out = append(out, idx.Tasks[i])
+		}
+	}
+	return out, nil
+}
+
 // QueryOpts filters List/Next/Revisit. Zero values mean "no filter". Label (an
 // explicit tag filter) and ScopeRepo (the board scope) are separate on
 // purpose: they AND together, so filtering by a tag never widens a scoped
