@@ -95,6 +95,24 @@ func TestLintReportsDanglingLink(t *testing.T) {
 	}
 }
 
+func TestLintCodeSpanLinkNotDangling(t *testing.T) {
+	// A [[t-x]] written as a documented example inside a code span must not raise
+	// a dangling-link warning — the dangling scan inherits ExtractLinks' code
+	// stripping. This keeps furrow's own notation-documenting bodies from
+	// self-flagging.
+	a := newApp()
+	live, _ := a.Add("documents the notation", AddOpts{Status: "ready"})
+	if err := a.Store.SaveBody(live.ID, "# doc\n\nuse `[[t-x]]` to link a task\n"); err != nil {
+		t.Fatal(err)
+	}
+	ps, _ := a.Lint()
+	for _, p := range ps {
+		if strings.Contains(p.Msg, "t-x") && strings.Contains(p.Msg, "no such task") {
+			t.Errorf("a [[t-x]] inside a code span must not be dangling: %q", p.Msg)
+		}
+	}
+}
+
 func TestLintArchivedIDNotDangling(t *testing.T) {
 	dir := t.TempDir()
 	a, err := Init(dir)

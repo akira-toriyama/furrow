@@ -81,6 +81,28 @@ func TestCycleProblemsDedupesAcrossEntryPoints(t *testing.T) {
 	}
 }
 
+func TestCycleProblemsDiamondNamesEveryEntangledTask(t *testing.T) {
+	// Two simple cycles t-a->t-b->t-d->t-a and t-a->t-c->t-d->t-a share nodes a
+	// and d — one strongly-connected region {a,b,c,d}. Report it once, but every
+	// task in it (including t-c, which a gray-only DFS would never name) must
+	// appear, so an operator sees the full set of mutually-blocked tasks.
+	idx := &Index{Tasks: []Task{
+		{ID: "t-a", Deps: []string{"t-b", "t-c"}},
+		{ID: "t-b", Deps: []string{"t-d"}},
+		{ID: "t-c", Deps: []string{"t-d"}},
+		{ID: "t-d", Deps: []string{"t-a"}},
+	}}
+	ps := CycleProblems(idx)
+	if len(ps) != 1 {
+		t.Fatalf("the diamond is one cyclic region; want 1 problem, got %d: %+v", len(ps), ps)
+	}
+	for _, id := range []string{"t-a", "t-b", "t-c", "t-d"} {
+		if !strings.Contains(ps[0].Msg, id) {
+			t.Errorf("every entangled task must be named; %q missing from %q", id, ps[0].Msg)
+		}
+	}
+}
+
 func TestCycleProblemsTwoDisjointCycles(t *testing.T) {
 	idx := &Index{Tasks: []Task{
 		{ID: "t-a", Deps: []string{"t-b"}}, {ID: "t-b", Deps: []string{"t-a"}},
