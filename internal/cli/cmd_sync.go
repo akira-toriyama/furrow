@@ -27,6 +27,8 @@ func newSyncCmd() *cobra.Command {
 			"envelope carries id \"sync-conflict\" plus the conflicted paths. The progress\n" +
 			"object {committed, pulled, pushed, conflict} goes to stdout even on failure.\n" +
 			"It is a thin git wrapper — not a daemon or a sync server (see docs/non-goals.md).",
+		Example: "  furrow sync                   # commit .furrow/, pull --rebase, push\n" +
+			"  furrow sync -m \"triage inbox\"",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()

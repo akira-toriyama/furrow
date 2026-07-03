@@ -34,6 +34,10 @@ func newAddCmd() *cobra.Command {
 			"bodies/<id>.md file is created, seeded with the title as a heading.\n\n" +
 			"With --stdin, read one title per line from stdin and create them all in a\n" +
 			"single write (blank lines skipped); the shared flags apply to every task.",
+		Example: "  furrow add \"Wire up the config loader\"\n" +
+			"  furrow add \"Fix flaky sync test\" -s ready -l bug --value 4 --effort 2\n" +
+			"  furrow add \"Cross-repo epic\" -r akira-toriyama/furrow -r akira-toriyama/cifail\n" +
+			"  git grep -l TODO | furrow add --stdin -l chore   # one task per line",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
