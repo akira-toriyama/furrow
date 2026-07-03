@@ -9,7 +9,7 @@ Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.25+). No database
 > **Status:** core (first-class `repos`, schema v2 + version gate), CLI (incl.
 > `repo`, drafts, `-r` scoping, `sync`, `apply`), the bubbletea TUI
 > (`furrow ui`), and `migrate` all work (`go test ./...` + golangci green).
-> Releases `v0.1.0`–`v0.6.0` are published — see [Status](#status).
+> Releases `v0.1.0`–`v0.6.1` are published — see [Status](#status).
 
 [日本語版 README →](README.ja.md)
 
@@ -17,7 +17,7 @@ Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.25+). No database
 
 ## Install
 
-> Releases are cut with GoReleaser; `v0.1.0`–`v0.6.0` are published, distributed via the Homebrew tap and the nix flake (which carries a real, pinned `vendorHash`). Install with any of Homebrew, `go install`, or `nix run`.
+> Releases are cut with GoReleaser; `v0.1.0`–`v0.6.1` are published, distributed via the Homebrew tap and the nix flake (which carries a real, pinned `vendorHash`). Install with any of Homebrew, `go install`, or `nix run`.
 
 ```sh
 # Homebrew (tap)
@@ -260,7 +260,7 @@ permissions:
   pull-requests: write
 jobs:
   sync:
-    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.6.0
+    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.6.1
     secrets:
       PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
 ```
@@ -425,7 +425,7 @@ furrow's write path is byte-stable on purpose. Every shard write goes through on
   `sync`), the bubbletea **TUI** (`furrow ui`), and **`migrate`** (importing a
   legacy `Task.md`). `go test ./...` + golangci clean; `sh scripts/check.sh`
   runs the full verification (incl. a teatest TUI e2e).
-- **Released:** tags run through `v0.6.0` (GoReleaser → the Homebrew tap; the
+- **Released:** tags run through `v0.6.1` (GoReleaser → the Homebrew tap; the
   bundled task-status Action ships since `v0.5.0`, board layout v3 since
   `v0.6.0`). The nix `flake.nix` carries a real, pinned `vendorHash` with a
   committed `flake.lock` (since `v0.4.0`).
