@@ -602,6 +602,71 @@ func TestSetValueAndEffort(t *testing.T) {
 	}
 }
 
+func TestRetitle(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("old title", AddOpts{}) // body seeded "# old title\n"
+
+	// The shard title updates and the body's heading is kept in step; a stray
+	// title is trimmed to match SetTitle.
+	got, err := a.Retitle(tk.ID, "  new title  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "new title" {
+		t.Errorf("shard title = %q, want %q", got.Title, "new title")
+	}
+	if body, _ := a.Store.LoadBody(tk.ID); body != "# new title\n" {
+		t.Errorf("body heading not synced, got %q", body)
+	}
+
+	// A body whose first line is not an H1 keeps its prose; only the shard moves.
+	if err := a.Store.SaveBody(tk.ID, "no heading here\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Retitle(tk.ID, "second title"); err != nil {
+		t.Fatal(err)
+	}
+	got2, _, err := a.Get(tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.Title != "second title" {
+		t.Errorf("shard title = %q, want %q", got2.Title, "second title")
+	}
+	if body, _ := a.Store.LoadBody(tk.ID); body != "no heading here\n" {
+		t.Errorf("headingless body should be untouched, got %q", body)
+	}
+
+	// An empty title is a validation error (delegated to SetTitle).
+	if _, err := a.Retitle(tk.ID, "   "); err == nil {
+		t.Error("empty title should be a validation error")
+	}
+}
+
+func TestRetitleHeading(t *testing.T) {
+	cases := []struct {
+		name, body, title, want string
+		changed                 bool
+	}{
+		{"replace h1", "# old\nbody\n", "new", "# new\nbody\n", true},
+		{"noop when identical", "# same\n", "same", "# same\n", false},
+		{"seed empty body", "", "seed", "# seed\n", true},
+		{"seed whitespace body", "  \n\n", "seed", "# seed\n", true},
+		{"headingless prose untouched", "just prose\n# later\n", "x", "just prose\n# later\n", false},
+		{"h2 is not an h1", "## sub\n", "x", "## sub\n", false},
+		{"hash without space is not a heading", "#foo\n", "x", "#foo\n", false},
+		{"leading blank lines then h1", "\n\n# old\ntail\n", "new", "\n\n# new\ntail\n", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, changed := retitleHeading(c.body, c.title)
+			if got != c.want || changed != c.changed {
+				t.Errorf("retitleHeading(%q, %q) = (%q, %v), want (%q, %v)", c.body, c.title, got, changed, c.want, c.changed)
+			}
+		})
+	}
+}
+
 func TestAddWithEstimate(t *testing.T) {
 	a := newApp()
 	tk, err := a.Add("scoped", AddOpts{Value: intptr(3), Effort: intptr(2)})

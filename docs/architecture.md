@@ -346,7 +346,7 @@ Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
 except where noted:
 
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `edit`, `done`,
-`move`, `reorder`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
+`move`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
 `sync`, `archive`, `lint`, `config` (`init`/`path`), `schema`, `version`, `ui`,
 `migrate`.
 

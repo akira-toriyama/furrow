@@ -139,6 +139,7 @@ furrow done t-0001
 | `done <id>` | done レーンへ移動し `closed` を打刻 |
 | `move <id> <lane>` | 任意のレーンへ移動 |
 | `reorder <id> <priority>` | priority（疎な整数）を設定 |
+| `retitle <id> <title...>` | タイトルを変更。シャードの title **と** body 先頭の `# ` 見出しを両方更新して食い違わせない（末尾の引数は空白で連結するのでクォート不要） |
 | `value <id> <1-5>` | 粗い value（重要度）見積もりを設定（範囲外は 1..5 に丸め）。`--clear` で未設定に戻す |
 | `effort <id> <1-5>` | 粗い effort（手間）見積もりを設定（1..5 に丸め）。`--clear` で未設定に戻す |
 | `check <id> [index]` | チェックリスト項目をトグル（`--add` で追加・`--off` で外す） |
@@ -420,7 +421,7 @@ furrow の連携層は意図的に薄い。**MCP も plugin も作らない**—
 
 Claude（やエージェント）に守らせるルール:
 
-- **`tasks/<id>.json` と `meta.json` を手編集しない。** 単一のマーシャラが所有しており、手編集は git の churn を生む。`add` / `move` / `reorder` / `done` / `check` などのコマンドで変更する。
+- **`tasks/<id>.json` と `meta.json` を手編集しない。** 単一のマーシャラが所有しており、手編集は git の churn を生む。`add` / `move` / `reorder` / `retitle` / `done` / `check` などのコマンドで変更する（タイトル変更は `retitle`——シャードと body 見出しを一括更新）。
 - **`bodies/*.md` は編集してよい。** 長文の散文はここに置く。
 - 状態変更は必ずコマンド経由。出力を機械処理するなら `--json` / `--ndjson` を使う。
 

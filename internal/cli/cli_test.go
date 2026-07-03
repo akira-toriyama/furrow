@@ -530,6 +530,39 @@ func TestCLIValueRequiresArgOrClear(t *testing.T) {
 	}
 }
 
+func TestCLIRetitle(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "old title", "-s", "ready") // body seeded "# old title\n"
+
+	// A multi-word title need not be quoted — the trailing args are joined.
+	out, code := run(t, "retitle", id, "a", "brand", "new", "title")
+	if code != 0 {
+		t.Fatalf("retitle exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "retitled "+id) || !strings.Contains(out, "a brand new title") {
+		t.Errorf("unexpected retitle output:\n%s", out)
+	}
+
+	// The shard title moved...
+	out, _ = run(t, "--json", "show", id)
+	if !strings.Contains(out, `"title": "a brand new title"`) {
+		t.Errorf("show does not reflect the new title:\n%s", out)
+	}
+	// ...and the body heading was synced on disk (real fsstore, not memstore).
+	body, err := os.ReadFile(filepath.Join(os.Getenv(app.EnvDir), "bodies", id+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "# a brand new title\n" {
+		t.Errorf("body heading not synced on disk, got %q", string(body))
+	}
+
+	// A bare id (no title) is a usage error.
+	if _, code := run(t, "retitle", id); code != int(core.CodeValidation) {
+		t.Errorf("retitle with no title should exit 2, got %d", code)
+	}
+}
+
 func TestCLIShowDisplaysEstimate(t *testing.T) {
 	initStore(t)
 	id := addTask(t, "x", "-s", "ready", "--value", "4", "--effort", "2")
