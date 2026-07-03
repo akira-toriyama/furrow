@@ -19,20 +19,20 @@ jobs:
     env:
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
 
       # go-version: 'stable' + a floor-only go.mod — see build.yml. Ships
       # release binaries built on the current, patched Go without pinning a
       # toolchain that non-CI builds (nix, source installs) may not have.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: 'stable'
           cache: true
 
       - name: generate release notes (git-cliff)
-        uses: orhun/git-cliff-action@v4
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
         with:
           config: cliff.toml
           args: --latest --strip header
@@ -44,9 +44,11 @@ jobs:
           OUTPUT: ${{ runner.temp }}/CHANGELOG.md
 
       - name: GoReleaser
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
-          version: latest
+          # Pin the GoReleaser tool to the v2 line (never `latest`) so a major
+          # bump can't silently change the release build.
+          version: "~> 2"
           args: release --clean --release-notes ${{ runner.temp }}/CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
