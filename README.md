@@ -4,12 +4,12 @@
 
 **furrow** keeps your tasks as plain text *in a git repo*: structured metadata in one deterministic JSON shard per task, long-form prose in per-task Markdown files. The case against Issues is simple. An issue can't be cloned — plain text can, so the tracker works offline and greps with your code. An agent can *read and write* it with ordinary file and CLI operations, no API client. And because the tracker lives in git next to the work, status never drifts from reality — the same push that changes the code can change the task. Writes are byte-stable, so `git diff` only ever shows what actually changed.
 
-Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.23). No database, no daemon, no cloud.
+Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.25+). No database, no daemon, no cloud.
 
 > **Status:** core (first-class `repos`, schema v2 + version gate), CLI (incl.
 > `repo`, drafts, `-r` scoping, `sync`, `apply`), the bubbletea TUI
 > (`furrow ui`), and `migrate` all work (`go test ./...` + golangci green).
-> Releases `v0.1.0`–`v0.3.0` are published — see [Status](#status).
+> Releases `v0.1.0`–`v0.6.0` are published — see [Status](#status).
 
 [日本語版 README →](README.ja.md)
 
@@ -17,7 +17,7 @@ Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.23). No database,
 
 ## Install
 
-> Releases are cut with GoReleaser; `v0.1.0`–`v0.3.0` are published. The nix flake still carries a placeholder `vendorHash`, so prefer Homebrew or `go install` until it is filled in.
+> Releases are cut with GoReleaser; `v0.1.0`–`v0.6.0` are published, distributed via the Homebrew tap and the nix flake (which carries a real, pinned `vendorHash`). Install with any of Homebrew, `go install`, or `nix run`.
 
 ```sh
 # Homebrew (tap)

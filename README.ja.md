@@ -5,7 +5,7 @@
 **furrow** は **GitHub Projects / Issues の代替**——clone できる git ネイティブなプレーンテキスト・タスクトラッカー。Go 製の単一バイナリで、構造化メタデータを 1 タスク 1 つの JSON シャード `.furrow/tasks/<id>.json` に、長文の散文を `.furrow/bodies/<id>.md` に分けて持つ。ユーザとコーディングエージェントの両方が、git で綺麗に diff できる素のテキストとしてトラッカーを編集できることを最優先に設計している。畝（furrow）を一本ずつ進めるように、レーンを消化していく。
 
 - **module**: `github.com/akira-toriyama/furrow`
-- **Go**: 1.23
+- **Go**: 1.25+
 
 ---
 

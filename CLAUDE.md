@@ -66,7 +66,7 @@ cross-platform, brew/nix packaged.
 ## Build / run
 
 ```sh
-go build ./...                          # compile (use GOTOOLCHAIN=local on Go 1.23)
+go build ./...                          # compile (use GOTOOLCHAIN=local on Go 1.25+)
 go test ./...                           # all packages (see Verify for the TUI)
 ./run.sh ls --json                      # build + run a subcommand
 ./run.sh ui                             # build + launch the TUI (needs a TTY)

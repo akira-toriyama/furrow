@@ -22,7 +22,7 @@
           pname = "furrow";
           inherit version;
           src = ./.;
-          vendorHash = "sha256-+NskPv31fPTL4ntWPnT5gM3QA0LoLEMXI6plccvt8aY=";
+          vendorHash = "sha256-E3G7TfEfsgaBWSA+iSN0loxmB3weB5zTjuy6QUKtTu4=";
           ldflags = [
             "-s" "-w"
             "-X github.com/akira-toriyama/furrow/internal/version.Version=${version}"
@@ -42,8 +42,8 @@
         };
 
         devShells.default = pkgs.mkShell {
-          # go (not go_1_23): nixpkgs removed EOL go versions; go.mod's 1.23
-          # floor is satisfied by any current toolchain (GOTOOLCHAIN=local).
+          # go (not a pinned go_1_xx): nixpkgs removed EOL go versions; go.mod's
+          # 1.25.0 floor is satisfied by any current toolchain (GOTOOLCHAIN=local).
           packages = [ pkgs.go pkgs.golangci-lint pkgs.goreleaser pkgs.git-cliff ];
         };
       });
