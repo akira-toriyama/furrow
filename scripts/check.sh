@@ -1,7 +1,7 @@
 #!/bin/sh
 # check.sh — the full local verification, runnable by you or by Claude Code with
 # no TTY. Mirrors what .github/workflows/build.yml enforces in CI, so a green
-# run here means a green CI. Use GOTOOLCHAIN=local on a Go 1.23 host.
+# run here means a green CI. Use GOTOOLCHAIN=local on a Go 1.25+ host.
 set -eu
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=local

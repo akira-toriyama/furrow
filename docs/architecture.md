@@ -2,7 +2,7 @@
 
 furrow is a clonable, git-native, plain-text task tracker — an alternative to
 GitHub Projects/Issues — written in Go (module
-`github.com/akira-toriyama/furrow`, Go 1.23). One board can back many repos (a
+`github.com/akira-toriyama/furrow`, Go 1.25+). One board can back many repos (a
 central board, each task carrying its repos as first-class `owner/repo`
 identifiers) or live repo-local in a single repo's `.furrow/`. This document
 describes how the

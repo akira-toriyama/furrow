@@ -13,8 +13,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v4
 
@@ -22,9 +20,15 @@ jobs:
       - name: marshaller single-path guard
         run: sh scripts/check-marshal-singlepath.sh
 
+      # Do NOT set a job-level `env: GOTOOLCHAIN: local`. setup-go resolves
+      # go-version-file BEFORE it pins GOTOOLCHAIN, and if it already sees
+      # `local` it skips go.mod's `toolchain` line and installs the bare `go`
+      # floor — a specific, unpatched point release. Left unset, setup-go honors
+      # `toolchain go1.26.4`, then exports GOTOOLCHAIN=local itself so the build
+      # steps below stay pinned to the installed toolchain (no download).
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.23'
+          go-version-file: 'go.mod'
           cache: true
 
       - run: go build ./...
