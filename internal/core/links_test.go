@@ -19,6 +19,10 @@ func TestExtractLinks(t *testing.T) {
 		{"non-id bracket content ignored", "[[not-a-task]] and [[wiki page]]", nil},
 		{"legacy numeric ids", "[[t-0042]]", []string{"t-0042"}},
 		{"no links", "just prose", nil},
+		{"inline code span is not a link", "document the notation with `[[t-x]]`", nil},
+		{"double-backtick code span is not a link", "use ``[[t-abc]]`` as an example", nil},
+		{"fenced block is not a link", "```\nexample: [[t-abc]]\n```", nil},
+		{"real link in prose survives a nearby code span", "see [[t-9zz]] but not `[[t-x]]`", []string{"t-9zz"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
