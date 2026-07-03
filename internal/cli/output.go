@@ -252,6 +252,47 @@ func printTaskDetail(t *core.Task, body string) {
 	}
 }
 
+// mentionRef is one entry of `show --backlinks`' mentioned_by: the referencing
+// task trimmed to what an agent needs to act (id, title, status) without a
+// second lookup.
+type mentionRef struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+}
+
+// backlinkView is the JSON shape for `show --backlinks`: the task, its body, and
+// the tasks that mention it. mentioned_by is always present (never null) so a
+// "nobody mentions this" result is [] rather than a missing key.
+type backlinkView struct {
+	core.Task
+	BodyText    string       `json:"body_text"`
+	MentionedBy []mentionRef `json:"mentioned_by"`
+}
+
+// printTaskDetailWithBacklinks renders `show --backlinks`: the usual detail plus
+// a "Mentioned in" section (human) or a mentioned_by array (--json). In JSON mode
+// it emits a single object, so it must NOT fall through to printTaskDetail.
+func printTaskDetailWithBacklinks(t *core.Task, body string, mentions []core.Task) {
+	refs := make([]mentionRef, 0, len(mentions))
+	for _, m := range mentions {
+		refs = append(refs, mentionRef{ID: m.ID, Title: m.Title, Status: m.Status})
+	}
+	if flagJSON {
+		printJSON(backlinkView{Task: *t, BodyText: body, MentionedBy: refs})
+		return
+	}
+	printTaskDetail(t, body)
+	fmt.Fprintf(out, "\nMentioned in:\n")
+	if len(refs) == 0 {
+		fmt.Fprintln(out, "  (none)")
+		return
+	}
+	for _, m := range refs {
+		fmt.Fprintf(out, "  %s  %s\n", m.ID, m.Title)
+	}
+}
+
 // printOK prints a short confirmation line for a mutation (human mode) or the
 // task JSON (--json mode).
 func printOK(verb string, t *core.Task) {
