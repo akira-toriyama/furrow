@@ -1,30 +1,22 @@
-# Supply-chain gate: govulncheck scans furrow against the Go vulnerability
-# database. It is reachable-only (call-graph aware), so the signal is low-noise.
-# Two scans, matching the fleet's pare:
-#   - the source packages (`./...`), and
-#   - the actual compiled binary (`-mode binary`), which also catches stdlib vulns
-#     reachable in the shipped artifact — the class that let a stale
-#     golang.org/x/net ship with GO-2025-3595 (2026-07-03 audit F4; t-e8hm).
-# Text mode exits non-zero on a finding, so a PR (or the cron) that surfaces one
-# goes red. Companion to the guarded govulncheck step in scripts/check.sh.
-#
-# Unlike the fleet's in-build.yml govulncheck job, this is a standalone workflow
-# so it can ALSO run on a daily cron: a vuln DISCLOSED after merge (no code
-# change) is then caught within a day, not only at the next push. Promoting the
-# cron fleet-wide belongs in the Go-CI standardization (t-ytxa).
-#
-# Actions use moving-major tags to match furrow's other workflows; SHA-pinning
-# furrow's actions is its own fleet-alignment task (t-bkyp; pare/cifail pin — F7).
 name: govulncheck
 
+# Supply-chain gate via the shared go-vuln reusable: govulncheck of the source
+# (`./...`) and the compiled binary (`-mode binary`) — the latter catches stdlib
+# vulns reachable in the shipped artifact, the class that let a stale
+# golang.org/x/net ship with GO-2025-3595 (t-e8hm). Runs on push/PR AND a daily
+# cron so a vuln disclosed after merge — no code change — is caught within a day.
+#
+# This was furrow's standalone govulncheck workflow; the scan logic and its action
+# pins now live once in the hub (go-vuln.yml), and this caller only wires the
+# trigger and the binary path. The daily cron is now the fleet standard (t-ytxa).
+
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
   schedule:
     - cron: '0 2 * * *' # daily — catches vulns disclosed after merge
 
-# Least privilege (Actions "Secure use reference"): CI only reads the repo.
 permissions:
   contents: read
 
@@ -33,25 +25,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  govulncheck:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      GOTOOLCHAIN: local
-    steps:
-      - uses: actions/checkout@v4
-      # go-version: 'stable' + a floor-only go.mod is furrow's toolchain strategy
-      # (see build.yml) — scan on the current, patched Go without pinning one.
-      - uses: actions/setup-go@v6
-        with:
-          go-version: 'stable'
-          cache: true
-      # Latest scanner so the vuln DB is current.
-      - name: govulncheck (source + shipped binary)
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
-          # Also scan the compiled binary — catches stdlib vulns reachable in the
-          # shipped artifact (the GO-2025-3595 class), which source mode can miss.
-          go build -o /tmp/furrow ./cmd/furrow
-          govulncheck -mode binary /tmp/furrow
+  scan:
+    uses: akira-toriyama/.github/.github/workflows/go-vuln.yml@v1
+    with:
+      go-version: stable
+      go-version-file: ''
+      gotoolchain: local
+      binary-path: ./cmd/furrow

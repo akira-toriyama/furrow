@@ -5,42 +5,46 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: this workflow only reads the repo.
+permissions:
+  contents: read
+
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  # Shared Go CI core (build / vet / race-test / module-hygiene / golangci-lint v2),
+  # SHA-pinned once in the hub. Adopting it closes furrow's drift: it gains -race and
+  # SHA-pinned actions, and tests on macOS too (a shipped brew-cask target). go.mod
+  # is floor-only, so go-version: stable builds on the current release and
+  # gotoolchain: local pins it (furrow's deliberate toolchain strategy).
+  ci:
+    uses: akira-toriyama/.github/.github/workflows/go-ci.yml@v1
+    with:
+      runners: '["ubuntu-latest", "macos-latest"]'
+      go-version: stable
+      go-version-file: ''
+      gotoolchain: local
+
+  # Repo-specific guards + smoke. Linux only — OS-independent; the core `test` job
+  # already exercises the code on macOS.
+  extras:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       # fast-fail guard before the toolchain: the index must be single-path.
       - name: marshaller single-path guard
         run: sh scripts/check-marshal-singlepath.sh
 
-      # go-version: 'stable' installs the current Go release; go.mod declares
-      # only a floor (no `toolchain` line), so furrow always builds on a
-      # supported, patched toolchain (see flake.nix — "any current toolchain")
-      # without pinning a version that non-CI builds (nix, source installs) may
-      # not have. GOTOOLCHAIN: local then pins the build to that installed Go
-      # (no mid-run download), keeping a run deterministic.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: 'stable'
           cache: true
-
-      - run: go build ./...
-      - run: go vet ./...
-      - run: go test ./...
-
-      # v8 installs golangci-lint v2 (our .golangci.yml is v2 format); v6 ships v1.
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.12.2
 
       - name: build the binary (for drift + smoke checks)
         run: go build -o /tmp/furrow ./cmd/furrow
