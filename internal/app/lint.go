@@ -2,9 +2,11 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/store/fsstore"
 )
 
 // Lint runs the full consistency check: core's in-memory rules plus the
@@ -23,6 +25,10 @@ func (a *App) Lint() ([]core.Problem, error) {
 	ps := core.EstimateProblems(idx)
 	core.Canonicalize(idx, a.Cfg.Lanes)
 	ps = append(ps, core.Validate(idx, a.Cfg.Lanes, a.Cfg.IDPattern())...)
+	// Dependency cycles: prevented at mutation time, but a concurrent merge of
+	// two half-edges on separate shards can slip one in silently (the tasks then
+	// wait on each other forever and never surface in `next`). lint is the backstop.
+	ps = append(ps, core.CycleProblems(idx)...)
 
 	// tasks/ <-> bodies/ 1:1 + shard filename/id integrity — all by directory
 	// enumeration. Sharding makes a duplicate filename impossible; a duplicate id
@@ -68,6 +74,35 @@ func (a *App) Lint() ([]core.Problem, error) {
 		}
 	}
 
+	// Dangling [[t-x]] links (warn): a body's [[id]] reference to an id that
+	// exists in neither the hot store nor the archive is a typo or a since-deleted
+	// task. It breaks nothing (hence warn), but backlinks (`show --backlinks`) and
+	// agents follow these links, so a broken one should surface. Known ids are the
+	// hot tasks (hasTask) plus the archive, so a link to an archived task is fine.
+	known := make(map[string]bool, len(hasTask))
+	for id := range hasTask {
+		known[id] = true
+	}
+	arcIDs, err := a.archivedIDs()
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range arcIDs {
+		known[id] = true
+	}
+	linkRe := core.LinkPattern(a.Cfg.IDPrefix)
+	for _, bid := range bodyIDs {
+		body, err := a.Store.LoadBody(bid)
+		if err != nil {
+			return nil, err
+		}
+		for _, ref := range core.ExtractLinks(body, linkRe) {
+			if !known[ref] {
+				ps = append(ps, core.Problem{Severity: core.SevWarn, ID: bid, Msg: fmt.Sprintf("body links to %s via [[%s]] but no such task exists", ref, ref)})
+			}
+		}
+	}
+
 	// required-label rule (config [labels].required).
 	if a.Cfg.LabelsRequired {
 		for _, t := range idx.Tasks {
@@ -100,4 +135,17 @@ func (a *App) Lint() ([]core.Problem, error) {
 		return ps[i].Msg < ps[j].Msg
 	})
 	return ps, nil
+}
+
+// archivedIDs returns the ids in the sibling archive store (.furrow/archive/),
+// or nil for a store that is not file-backed (an in-memory app has no archive on
+// disk). The dangling-link check treats these as known, so a [[id]] pointing at
+// an archived task is not flagged. Construction mirrors Archive's; ListTaskIDs
+// reads shard filenames only (no parse), and a missing archive dir yields nil.
+func (a *App) archivedIDs() ([]string, error) {
+	if a.Dir == "" {
+		return nil, nil
+	}
+	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.IDWidth)
+	return arc.ListTaskIDs()
 }

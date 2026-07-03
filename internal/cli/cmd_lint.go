@@ -10,9 +10,10 @@ import (
 func newLintCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "lint",
-		Short: "Check index<->body consistency, lanes, deps, and config",
+		Short: "Check index<->body consistency, lanes, deps, links, and config",
 		Long: "Validate the store: id shape and uniqueness, status lanes, body path, the\n" +
-			"index<->body 1:1 mapping, dep/parent references, and config clamp warnings.\n" +
+			"index<->body 1:1 mapping, dep/parent references, dependency cycles (error),\n" +
+			"dangling [[id]] body links (warn), and config clamp warnings.\n" +
 			"Exits 2 if any errors are found; warnings alone exit 0.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
