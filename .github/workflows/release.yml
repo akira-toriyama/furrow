@@ -16,18 +16,19 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # No job-level `env: GOTOOLCHAIN: local` — see build.yml. It would make
-      # setup-go skip go.mod's `toolchain` line and ship release binaries built
-      # with an unpatched Go point release. setup-go pins GOTOOLCHAIN=local
-      # itself after resolving the toolchain directive.
+      # go-version: 'stable' + a floor-only go.mod — see build.yml. Ships
+      # release binaries built on the current, patched Go without pinning a
+      # toolchain that non-CI builds (nix, source installs) may not have.
       - uses: actions/setup-go@v6
         with:
-          go-version-file: 'go.mod'
+          go-version: 'stable'
           cache: true
 
       - name: generate release notes (git-cliff)
