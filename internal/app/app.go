@@ -701,13 +701,69 @@ func (a *App) SetEffort(id string, v *int) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) { t.Effort = cloneIntp(v) })
 }
 
-// SetTitle renames a task's one-line summary.
+// SetTitle renames a task's one-line summary. It touches only the shard; use
+// Retitle from the CLI/TUI so the body's heading is kept in step.
 func (a *App) SetTitle(id, title string) (*core.Task, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return nil, core.Validationf(id, "title must not be empty")
 	}
 	return a.mutate(id, func(t *core.Task) { t.Title = title })
+}
+
+// Retitle renames a task and keeps the two homes of a title in step: the shard's
+// title field (the source of truth) and the body's leading `# ` heading. Before
+// this, a title lived in both places with no command to change it, so a rename
+// meant hand-editing the shard AND the body — and once shards became
+// furrow-owned, hand-editing them was off-limits entirely. Retitle writes the
+// shard, then syncs the body heading. A body whose first line is not an H1 is
+// left untouched (there is no second home to drift); an empty body is seeded a
+// heading, mirroring add.
+func (a *App) Retitle(id, title string) (*core.Task, error) {
+	t, err := a.SetTitle(id, title)
+	if err != nil {
+		return nil, err
+	}
+	body, err := a.Store.LoadBody(id)
+	if err != nil {
+		return nil, err
+	}
+	if next, changed := retitleHeading(body, t.Title); changed {
+		if err := a.Store.SaveBody(id, next); err != nil {
+			return nil, err
+		}
+	}
+	return t, nil
+}
+
+// retitleHeading rewrites body's leading ATX H1 heading to `# <title>`, returning
+// the new body and whether it changed. The heading is the first non-blank line
+// when that line is an H1 — a single `#` then a space, so `##` and `#foo` are not
+// treated as one — and only its text is replaced; everything after is preserved
+// byte-for-byte. An empty (or whitespace-only) body is seeded `# <title>`,
+// matching add. A non-empty body whose first non-blank line is not an H1 is
+// returned unchanged: the title then lives only in the shard, with nothing to
+// keep in sync. Operates on LF-delimited markdown (furrow's on-disk form).
+func retitleHeading(body, title string) (string, bool) {
+	want := "# " + title
+	if strings.TrimSpace(body) == "" {
+		return want + "\n", true
+	}
+	lines := strings.Split(body, "\n")
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) == "" {
+			continue // skip leading blank lines before the heading
+		}
+		if !strings.HasPrefix(ln, "# ") {
+			return body, false // first real line isn't an H1 — leave the body alone
+		}
+		if ln == want {
+			return body, false
+		}
+		lines[i] = want
+		return strings.Join(lines, "\n"), true
+	}
+	return body, false
 }
 
 // Check sets a checklist item's done state by zero-based index. An out-of-range

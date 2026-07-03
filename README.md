@@ -178,6 +178,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `done <id>` | Move a task into the done lane (stamps `closed`) | — |
 | `move <id> <lane>` | Move a task to a lane (clears `closed` when leaving done) | — |
 | `reorder <id> <priority>` | Set a task's priority (sparse integer; lower sorts higher) | — |
+| `retitle <id> <title...>` | Rename a task, updating the shard title **and** the body's leading `# ` heading so they never drift (trailing args are joined, so the title need not be quoted) | — |
 | `value <id> <1-5>` | Set a task's coarse value (importance) estimate; out-of-range scores clamp to 1..5; `--clear` unsets | `--clear` |
 | `effort <id> <1-5>` | Set a task's coarse effort (cost) estimate; clamps to 1..5; `--clear` unsets | `--clear` |
 | `check <id> [index]` | Toggle a checklist item by zero-based index, or append one | `--add <text>`, `--off` |
@@ -197,7 +198,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 
 On the read commands, `-r/--repo` filters by the first-class `repos` field and is the scope control: a short name resolves case-insensitively at a `/` boundary (`-r furrow` → `akira-toriyama/furrow`; ambiguity is exit 2 with `candidates`), an explicit `-r` overrides the board scope, and `-r ''` shows the whole board. `-l/--label` is a pure tag filter that ANDs with the scope. When a label filter matches nothing but the name uniquely resolves to a repo that has tasks, furrow exits 2 pointing you at `-r` (the did-you-mean guard). When an explicit `-r` hides drafts on `ls`/`next`, one stderr hint line (`N draft(s) hidden — furrow ls --drafts`) points at them; stdout stays pure data.
 
-Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `move`, `reorder`, `value`, `effort`, `check`, `dep`, `label`, `repo`) also accept `--json`, emitting `{before, after, changed}` so a caller sees the effect without a follow-up `show`. `apply --json` emits a per-directive report (`{on, ref, outcomes}`). `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
+Global flags (read/list commands): `--json` and `--ndjson`. Mutations (`done`, `move`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`) also accept `--json`, emitting `{before, after, changed}` so a caller sees the effect without a follow-up `show`. `apply --json` emits a per-directive report (`{on, ref, outcomes}`). `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
 
 ---
 

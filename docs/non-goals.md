@@ -139,7 +139,7 @@ To keep this list honest about today's reality (not aspirations):
 
 - **Built and real today** (`internal/cli`): `init`, `add`, `ls` (alias
   `list`), `show`, `next`, `revisit`, `edit`, `done`, `move`, `reorder`,
-  `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`, `sync`,
+  `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`, `sync`,
   `migrate`, `archive`, `lint`, `config init|path`, `schema`, `version`, `ui`.
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
   `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, and `--drafts`.

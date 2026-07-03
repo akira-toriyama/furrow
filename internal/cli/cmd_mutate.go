@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
@@ -214,6 +216,28 @@ func newLabelCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&add, "add", nil, "label to add (repeatable)")
 	cmd.Flags().StringSliceVar(&remove, "remove", nil, "label to remove (repeatable)")
 	return cmd
+}
+
+func newRetitleCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "retitle <id> <title...>",
+		Short: "Rename a task (updates the shard title and the body heading)",
+		Long: "Set a task's one-line title. The title lives in two places — the task\n" +
+			"shard's title field and the body's leading `# ` heading — and retitle\n" +
+			"updates both so they never drift (the shard is the source of truth; a body\n" +
+			"with no leading heading is left untouched). The remaining args are joined\n" +
+			"with spaces, so the title need not be quoted:\n\n" +
+			"  furrow retitle t-k3m9p a clearer, shorter title",
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			id, title := args[0], strings.Join(args[1:], " ")
+			return emitMutation(a, "retitled", id, func() (*core.Task, error) { return a.Retitle(id, title) })
+		},
+	}
 }
 
 func newRepoCmd() *cobra.Command {
