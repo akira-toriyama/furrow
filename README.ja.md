@@ -90,7 +90,7 @@ go install github.com/akira-toriyama/furrow/cmd/furrow@latest
 nix run github:akira-toriyama/furrow
 ```
 
-配布は GoReleaser から Homebrew tap（`akira-toriyama/homebrew-tap`）と nix flake へ流す。`v0.1.0`〜`v0.6.0` が公開済み。nix flake の `vendorHash` は `v0.4.0` で実 hash 化済み（`flake.lock` も commit 済み）。
+配布は GoReleaser から Homebrew tap（`akira-toriyama/homebrew-tap`）と nix flake へ流す。`v0.1.0`〜`v0.6.1` が公開済み。nix flake の `vendorHash` は `v0.4.0` で実 hash 化済み（`flake.lock` も commit 済み）。
 
 ---
 
@@ -453,7 +453,7 @@ permissions:
   pull-requests: write
 jobs:
   sync:
-    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.6.0
+    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.6.1
     secrets:
       PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
 ```
@@ -496,7 +496,7 @@ gitmoji + Conventional Commits。形式は次のとおり（gitmoji は `:code:`
 
 ## ステータス
 
-core（一級の `repos`・board layout v3・version gate）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは `v0.1.0`〜`v0.6.0` が公開済み（GoReleaser → Homebrew tap・task-status Action は `v0.5.0` から同梱）。将来（低優先）: read-only の Web ビューア。
+core（一級の `repos`・board layout v3・version gate）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは `v0.1.0`〜`v0.6.1` が公開済み（GoReleaser → Homebrew tap・task-status Action は `v0.5.0` から同梱）。将来（低優先）: read-only の Web ビューア。
 
 ## ライセンス
 
