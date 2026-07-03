@@ -2,8 +2,6 @@ module github.com/akira-toriyama/furrow
 
 go 1.25.0
 
-toolchain go1.26.4
-
 require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10

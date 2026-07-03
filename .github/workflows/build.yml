@@ -13,6 +13,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v4
 
@@ -20,15 +22,15 @@ jobs:
       - name: marshaller single-path guard
         run: sh scripts/check-marshal-singlepath.sh
 
-      # Do NOT set a job-level `env: GOTOOLCHAIN: local`. setup-go resolves
-      # go-version-file BEFORE it pins GOTOOLCHAIN, and if it already sees
-      # `local` it skips go.mod's `toolchain` line and installs the bare `go`
-      # floor — a specific, unpatched point release. Left unset, setup-go honors
-      # `toolchain go1.26.4`, then exports GOTOOLCHAIN=local itself so the build
-      # steps below stay pinned to the installed toolchain (no download).
+      # go-version: 'stable' installs the current Go release; go.mod declares
+      # only a floor (no `toolchain` line), so furrow always builds on a
+      # supported, patched toolchain (see flake.nix — "any current toolchain")
+      # without pinning a version that non-CI builds (nix, source installs) may
+      # not have. GOTOOLCHAIN: local then pins the build to that installed Go
+      # (no mid-run download), keeping a run deterministic.
       - uses: actions/setup-go@v6
         with:
-          go-version-file: 'go.mod'
+          go-version: 'stable'
           cache: true
 
       - run: go build ./...
