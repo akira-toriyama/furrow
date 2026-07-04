@@ -12,14 +12,33 @@ import (
 // the pure selection rule behind Archive, split out so it is testable without a
 // filesystem. Only tasks with a Closed timestamp qualify (a done task always
 // has one; a parked/icebox task does not and is left in the hot index).
-func Archivable(idx *core.Index, doneLane string, cutoff time.Time) []string {
+//
+// repos scopes the selection to tasks carrying at least one of the given
+// (already-resolved) owner/repo identifiers — the age guard and the repo scope
+// AND together, and multiple repos are a union (a task in ANY of them counts).
+// An empty repos leaves the selection age-only across the whole board.
+func Archivable(idx *core.Index, doneLane string, cutoff time.Time, repos ...string) []string {
 	var ids []string
 	for _, t := range idx.Tasks {
-		if t.Status == doneLane && t.Closed != nil && t.Closed.Before(cutoff) {
-			ids = append(ids, t.ID)
+		if t.Status != doneLane || t.Closed == nil || !t.Closed.Before(cutoff) {
+			continue
 		}
+		if len(repos) > 0 && !containsAny(t.Repos, repos) {
+			continue
+		}
+		ids = append(ids, t.ID)
 	}
 	return ids
+}
+
+// containsAny reports whether have and want share at least one element.
+func containsAny(have, want []string) bool {
+	for _, w := range want {
+		if contains(have, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // Archive moves done tasks older than olderThanDays into .furrow/archive/
@@ -29,13 +48,17 @@ func Archivable(idx *core.Index, doneLane string, cutoff time.Time) []string {
 //
 // Requires a file-backed store (a.Dir set) — the archive is a sibling .furrow
 // directory; an in-memory app cannot archive to disk.
-func (a *App) Archive(olderThanDays int, dryRun bool) ([]core.Task, error) {
+//
+// repos, when non-empty, scopes the sweep to those (already-resolved)
+// owner/repo identifiers — for folding one repo's done on a shared board
+// without touching another's. Empty repos keeps the sweep global (the default).
+func (a *App) Archive(olderThanDays int, dryRun bool, repos ...string) ([]core.Task, error) {
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
 	}
 	cutoff := a.Clock.Now().AddDate(0, 0, -olderThanDays)
-	ids := Archivable(idx, a.Cfg.DoneLane, cutoff)
+	ids := Archivable(idx, a.Cfg.DoneLane, cutoff, repos...)
 
 	var moved []core.Task
 	for _, id := range ids {

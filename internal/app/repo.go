@@ -87,6 +87,20 @@ func (a *App) ResolveRepo(arg string) (string, error) {
 	return resolveRepoIn(arg, "", repoUniverse(idx, a.BoardRepos))
 }
 
+// ResolveRepos resolves a repeatable -r/--repo flag against the board's repo
+// universe in a single load (each arg follows ResolveRepo's contract). It backs
+// the archive command's repo scope; an empty args yields nil (no scope).
+func (a *App) ResolveRepos(args []string) ([]string, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	return resolveRepoArgs(args, "", repoUniverse(idx, a.BoardRepos))
+}
+
 // Rerepo attaches and/or detaches repos on a task — the repos-field mirror of
 // Relabel. Both --add and --rm values go through strict resolution (full
 // owner/repo, or a short name naming exactly one known repo); attaching a repo

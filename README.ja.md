@@ -148,7 +148,7 @@ furrow done t-0001
 | `repo <id>` | repo（`owner/repo`）を追加／削除（`--add`・`--rm`、反復可・併用可）。値は完全な `owner/repo` か、ボード既知の repo に一意に解決する短名のみ（それ以外は exit 2・`candidates` 付き）。冪等。repos が空のタスクは draft |
 | `apply` | PR/コミット本文から `SetStatus-task: <body-link> [<lane>]` ディレクティブを解析して適用（stdin または `--body-file`）。status 自動更新の CI フック。`--on open` は in-progress へ寄せ、`--on merge` は lane を適用。検証は非ブロッキング |
 | `sync` | マルチマシン運用の儀式を 1 コマンドで: `.furrow/` 限定の auto-commit → `pull --rebase`（autostash）→ `push`（non-fast-forward 時は pull→push を 1 回リトライ）。conflict 時は自動 abort（`sync-conflict` エラーにパス一覧）。進捗 `{committed, pulled, pushed, conflict}` は失敗時も stdout に出る |
-| `archive` | 古い done タスクを `.furrow/archive/` へ退避（`--yes` なしはプレビュー） |
+| `archive` | 古い done タスクを `.furrow/archive/` へ退避（`--yes` なしはプレビュー）。既定は全 repo 対象。共有ボードで 1 repo の古い done だけを畳むには `-r/--repo`（繰り返し可）で対象 repo を絞る（age ガードと AND） |
 | `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環は error、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。書きかけのユーザー設定の clamp 警告も含む） |
 | `config init` | ユーザー設定 `~/.config/furrow/config.toml`（中央ボード雛形）を書き出す。ボード内で実行すると最寄りの `.furrow` から path/scopes を文脈導出、離れていればコメント付き placeholder。既存ファイルは上書きしない（`--path`・`--scope`（複数可）） |
 | `config path` | 解決されるユーザー設定パスを表示。書きかけ設定の clamp 警告は stderr へ（stdout は path のみ） |
@@ -168,7 +168,7 @@ furrow done t-0001
 - `--value <1-5>` / `--effort <1-5>` — `add` で粗い value/effort 見積もりを付与（範囲外は 1..5 に丸め・省略で未設定）
 - `--parent <id>` / `--dep <id>`（繰り返し）/ `--ref <file:line|URL>`（繰り返し）/ `--body <md>` — `add` のメタ指定
 - `--add <text>` / `--off` — `check` のチェックリスト操作
-- `--older-than <days>` / `--yes` — `archive`（`--yes` なしは dry-run プレビュー）
+- `--older-than <days>` / `-r/--repo <repo>`（繰り返し）/ `--yes` — `archive`（`--yes` なしは dry-run プレビュー。`-r` で対象 repo を絞ると共有ボードで 1 repo の done だけ畳める）
 - `--on open\|merge` / `--ref <src>` / `--body-file <path>` / `--open-lane <lane>` — `apply`（`--on` 必須。`--ref` は本文に記録する出典 例 `furrow#42`）
 - `-m/--message <msg>` — `sync` の auto-commit メッセージ上書き（既定 `:card_file_box: chore(board): sync via furrow`）
 
