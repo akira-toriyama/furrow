@@ -418,6 +418,88 @@ func TestArchivableSelection(t *testing.T) {
 	}
 }
 
+// eqIDs compares two id slices for exact, in-order equality (Archivable yields
+// ids in index order, which is deterministic).
+func eqIDs(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestArchivableRepoFilter(t *testing.T) {
+	old := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	recent := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+	idx := &core.Index{Tasks: []core.Task{
+		{ID: "t-a", Status: "done", Closed: &old, Repos: []string{"owner/a"}},
+		{ID: "t-b", Status: "done", Closed: &old, Repos: []string{"owner/b"}},
+		{ID: "t-ab", Status: "done", Closed: &old, Repos: []string{"owner/a", "owner/b"}},
+		{ID: "t-recent", Status: "done", Closed: &recent, Repos: []string{"owner/a"}}, // too new
+		{ID: "t-draft", Status: "done", Closed: &old, Repos: nil},                     // repo-less
+	}}
+	cutoff := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
+
+	// No repo filter: age-only, every aged done task (including the repo-less draft).
+	if got := Archivable(idx, "done", cutoff); !eqIDs(got, []string{"t-a", "t-b", "t-ab", "t-draft"}) {
+		t.Errorf("Archivable(no repo) = %v, want [t-a t-b t-ab t-draft]", got)
+	}
+	// -r owner/a: only aged done carrying owner/a — the multi-repo task counts,
+	// the repo-less draft does not.
+	if got := Archivable(idx, "done", cutoff, "owner/a"); !eqIDs(got, []string{"t-a", "t-ab"}) {
+		t.Errorf("Archivable(owner/a) = %v, want [t-a t-ab]", got)
+	}
+	// Multiple repos are a union (OR): a task in ANY listed repo qualifies.
+	if got := Archivable(idx, "done", cutoff, "owner/a", "owner/b"); !eqIDs(got, []string{"t-a", "t-b", "t-ab"}) {
+		t.Errorf("Archivable(owner/a,owner/b) = %v, want [t-a t-b t-ab]", got)
+	}
+}
+
+func TestArchiveRepoScope(t *testing.T) {
+	// End-to-end repo-scoped archive against a real fsstore: only the named
+	// repo's aged done task moves; the out-of-scope repo's task stays hot.
+	dir := t.TempDir()
+	ia, err := Init(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ia.Clock = &fixedClock{t: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}
+	old := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	idx, _ := ia.Store.Load()
+	idx.Add(core.Task{ID: "t-aaa1", Title: "a done", Status: "done", Priority: 100,
+		Created: old, Updated: old, Closed: &old, Repos: []string{"owner/a"}, Body: core.BodyPath("t-aaa1")})
+	idx.Add(core.Task{ID: "t-bbb1", Title: "b done", Status: "done", Priority: 110,
+		Created: old, Updated: old, Closed: &old, Repos: []string{"owner/b"}, Body: core.BodyPath("t-bbb1")})
+	ia.Store.Save(idx)
+	ia.Store.SaveBody("t-aaa1", "# a\n")
+	ia.Store.SaveBody("t-bbb1", "# b\n")
+
+	moved, err := ia.Archive(30, false, "owner/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(moved) != 1 || moved[0].ID != "t-aaa1" {
+		t.Fatalf("repo-scoped archive should move only t-aaa1, got %+v", moved)
+	}
+	hot, _ := ia.Store.Load()
+	if hot.Has("t-aaa1") {
+		t.Error("owner/a task should be archived out of the hot index")
+	}
+	if !hot.Has("t-bbb1") {
+		t.Error("owner/b task must remain in the hot index (out of scope)")
+	}
+	if ia.Store.BodyExists("t-aaa1") {
+		t.Error("owner/a hot body should be deleted")
+	}
+	if !ia.Store.BodyExists("t-bbb1") {
+		t.Error("owner/b hot body must remain")
+	}
+}
+
 func TestLintFlagsMissingBody(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("has body", AddOpts{})
