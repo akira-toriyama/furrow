@@ -37,7 +37,11 @@ the user-level config. When you work with any furrow store:
 - **A multi-machine board converges with `furrow sync`** (auto-commit limited
   to `.furrow/` → `pull --rebase` → `push`): run it before reading and after
   writing a shared board. On a true conflict it aborts the rebase itself and
-  exits 3 with id `sync-conflict` + the conflicted shard paths in `details`.
+  exits 3 with id `sync-conflict` + the conflicted shard paths in `details`. If
+  a concurrent writer's rebase is briefly in progress, sync waits it out with a
+  bounded backoff; only a rebase still stuck after the budget exits 3 with id
+  `sync-busy` — a **retryable** condition (re-run), NOT the do-not-retry
+  `exit 2`. Branch on the `id`, not the exit code, to tell the two apart.
 - `furrow edit <id>` with no TTY **prints the body file path** instead of opening
   an editor — read/edit that file directly.
 - Exit codes: `0` ok / `1` not-found|empty / `2` bad-usage|validation / `3+`

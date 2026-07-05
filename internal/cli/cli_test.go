@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -227,6 +228,48 @@ func TestCLIArchiveJSONIsArrayNotNull(t *testing.T) {
 	}
 	if strings.Contains(out, `"tasks": null`) {
 		t.Errorf("archive --json must never emit null tasks:\n%s", out)
+	}
+}
+
+func TestCLIArchiveRepoScope(t *testing.T) {
+	// Seed two aged done tasks in different repos directly through the store
+	// (old Closed makes them archivable under the default age guard), then drive
+	// the CLI with -r to fold only one repo's done.
+	dir := t.TempDir()
+	ia, err := app.Init(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	idx, _ := ia.Store.Load()
+	idx.Add(core.Task{ID: "t-aaa1", Title: "a done", Status: "done", Priority: 100,
+		Created: old, Updated: old, Closed: &old, Repos: []string{"owner/a"}, Body: core.BodyPath("t-aaa1")})
+	idx.Add(core.Task{ID: "t-bbb1", Title: "b done", Status: "done", Priority: 110,
+		Created: old, Updated: old, Closed: &old, Repos: []string{"owner/b"}, Body: core.BodyPath("t-bbb1")})
+	ia.Store.Save(idx)
+	ia.Store.SaveBody("t-aaa1", "# a\n")
+	ia.Store.SaveBody("t-bbb1", "# b\n")
+	t.Setenv(app.EnvDir, filepath.Join(dir, app.DirName))
+
+	// -r owner/a --yes moves only owner/a; JSON records the repo scope.
+	out, code := run(t, "--json", "archive", "-r", "owner/a", "--yes")
+	if code != 0 {
+		t.Fatalf("archive -r exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "t-aaa1") {
+		t.Errorf("owner/a task should be archived:\n%s", out)
+	}
+	if strings.Contains(out, "t-bbb1") {
+		t.Errorf("owner/b task must NOT be archived (out of scope):\n%s", out)
+	}
+	if !strings.Contains(out, `"repos": [`) || !strings.Contains(out, "owner/a") {
+		t.Errorf("archive --json should record the repo scope in a repos array:\n%s", out)
+	}
+
+	// An unresolvable short repo name is a validation error (exit 2), same
+	// contract as the read commands — never a silent whole-board sweep.
+	if _, code := run(t, "archive", "-r", "ghost", "--yes"); code != int(core.CodeValidation) {
+		t.Errorf("unresolvable -r should exit 2, got %d", code)
 	}
 }
 

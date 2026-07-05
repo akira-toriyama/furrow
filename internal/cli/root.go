@@ -10,6 +10,7 @@ import (
 
 	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -55,9 +56,15 @@ func newRootCmd() *cobra.Command {
 			"Code can edit the store cleanly.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// Version holds the full human line (e.g. "furrow v1.2.3 (abc1234, ...)")
+		// so `furrow --version` and the `version` subcommand render identically;
+		// the template below prints it verbatim instead of cobra's default
+		// "furrow version <x>" form.
+		Version: version.Resolve().String(),
 		// non-interactive by default: never prompt; the TUI is `furrow ui` only.
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: false},
 	}
+	root.SetVersionTemplate("{{.Version}}\n")
 	root.PersistentFlags().BoolVar(&flagJSON, "json", false, "output JSON to stdout (read commands)")
 	root.PersistentFlags().BoolVar(&flagNDJSON, "ndjson", false, "output newline-delimited JSON, one task per line (list commands)")
 

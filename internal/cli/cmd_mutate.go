@@ -30,9 +30,10 @@ func emitMutation(a *app.App, verb, id string, mutate func() (*core.Task, error)
 
 func newDoneCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "done <id>",
-		Short: "Move a task into the done lane (stamps closed)",
-		Args:  cobra.ExactArgs(1),
+		Use:     "done <id>",
+		Short:   "Move a task into the done lane (stamps closed)",
+		Example: "  furrow done t-k3m9p",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -47,7 +48,9 @@ func newMoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "move <id> <lane>",
 		Short: "Move a task to a lane",
-		Args:  cobra.ExactArgs(2),
+		Example: "  furrow move t-k3m9p in-progress\n" +
+			"  furrow move t-k3m9p done",
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -251,6 +254,9 @@ func newRepoCmd() *cobra.Command {
 			"at a '/' boundary); anything else is a validation error — never a silent new\n" +
 			"repo. Attaching a repo already present, or detaching one already absent, is\n" +
 			"a no-op. A task with no repos is a draft (see ls --drafts).",
+		Example: "  furrow repo t-k3m9p --add akira-toriyama/furrow\n" +
+			"  furrow repo t-k3m9p --rm furrow                # detach by short name\n" +
+			"  furrow repo t-k3m9p --add cifail --rm furrow   # move across repos",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()

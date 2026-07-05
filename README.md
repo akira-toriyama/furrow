@@ -30,7 +30,7 @@ go install github.com/akira-toriyama/furrow/cmd/furrow@latest
 nix run github:akira-toriyama/furrow
 ```
 
-A from-source build reports its version as `dev` (the release version is injected at link time).
+A from-source build reports its version as `dev`, with the build commit/date filled in from the Go VCS stamp; the release version is injected at link time (`furrow version --json` shows all of it).
 
 ---
 
@@ -186,13 +186,13 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `label <id>` | Add and/or remove labels on a task (both repeatable, combinable); idempotent | `--add <label>`, `--remove <label>` |
 | `repo <id>` | Attach and/or detach repos (`owner/repo`) on a task; each value must be a full `owner/repo` or a short name uniquely resolving against the board's repos (else exit 2 with `candidates`); idempotent. A task with no repos is a draft | `--add <repo>`, `--rm <repo>` |
 | `apply` | Apply `SetStatus-task: <body-link> [<lane>]` directives parsed from PR/commit text (stdin or `--body-file`) — the CI hook for auto status updates. `--on open` nudges to in-progress; `--on merge` applies the lane. Validation is non-blocking | `--on open\|merge`, `--ref`, `--body-file`, `--open-lane` |
-| `sync` | The multi-machine board ritual as one command: auto-commit limited to `.furrow/`, `pull --rebase` (autostash), `push` (one pull→push retry on non-fast-forward). On conflict it aborts the rebase automatically (`sync-conflict` error carries the paths); progress `{committed, pulled, pushed, conflict}` goes to stdout even on failure | `-m/--message` |
-| `archive` | Move aged done tasks to `.furrow/archive/` (preview unless `--yes`) | `--older-than <days>`, `--yes` |
+| `sync` | The multi-machine board ritual as one command: auto-commit limited to `.furrow/`, `pull --rebase` (autostash), `push` (one pull→push retry on non-fast-forward). On conflict it aborts the rebase automatically (`sync-conflict` error carries the paths); a concurrent writer's transient rebase is waited out with a bounded backoff, else `sync-busy` (retryable, exit 3). Progress `{committed, pulled, pushed, conflict}` goes to stdout even on failure | `-m/--message` |
+| `archive` | Move aged done tasks to `.furrow/archive/` (preview unless `--yes`). Board-wide by default; `-r/--repo` (repeatable) scopes the sweep to one repo's aged done on a shared board, ANDed with the age guard | `--older-than <days>`, `-r/--repo <repo>` (repeatable), `--yes` |
 | `lint` | Check shard↔body 1:1, id shape, lanes, deps/parent refs, dependency cycles (error), dangling `[[id]]` body links (warn; archived ids are not dangling), config clamp warnings (incl. a half-written user-level config) | — |
 | `config init` | Write the user-level `~/.config/furrow/config.toml` (central-board template); fills the board path/scopes from the nearest `.furrow` when run inside a board, else a placeholder. Never overwrites an existing file | `--path`, `--scope` (repeatable) |
 | `config path` | Print the resolved user-level config path; a half-written config's clamp warnings go to stderr (stdout stays the bare path) | — |
 | `schema [task\|meta]` | Print the JSON Schema for a task shard (no arg or `task`) or for `meta.json` (`meta`); matches the committed copy | — |
-| `version` | Print the furrow version | — |
+| `version` | Print the furrow version (plus the build commit/date when stamped); `--version` on the root command prints the same line, and `--json` emits `{version, commit, date, modified}` for scripts/agents | `--json`, or `furrow --version` |
 | `ui` | Launch the interactive TUI (list + detail panes): navigate, filter, done, move lane, reorder (`K`/`J`), toggle checklist, edit body | — |
 | `migrate <file>` | Import an existing `Task.md` etc. (dry-run by default; unmapped headings & `[[wikilink]]`s reported, never dropped) | `--write`, `-l/--label` |
 
@@ -377,6 +377,14 @@ envelope carrying `"id": "sync-conflict"` and `"details": {"paths": [...]}` so
 an agent knows exactly which shards to reconcile. The progress object
 `{committed, pulled, pushed, conflict}` is printed to stdout on success and
 failure alike.
+
+Because a bot or a second operator can be pushing at any moment, the pre-flight
+sometimes catches *their* `pull --rebase` mid-flight. Sync **waits that
+transient window out** with a bounded backoff (~5s) rather than failing on it;
+only if a rebase is still in progress after the budget does it exit 3 with
+`"id": "sync-busy"` — a **retryable** class (not the `exit 2` "fix the args"
+class), signalling that re-running usually clears it (or that a rebase here is
+genuinely stuck and needs a manual `git rebase --abort`).
 
 ## Configuration
 
