@@ -34,6 +34,11 @@ the user-level config. When you work with any furrow store:
   `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) and
   `revisit --json` a `revisit` array (`no_repo`, `value_unset`, `effort_unset`,
   `stale`, `dep_done`) per task.
+- **Batch reads by id: `show <id>... --no-body`** — any id set in one process,
+  metadata only (no `body_text`), input order. `--json` = array for ≥2 ids (a
+  single id keeps the classic object), `--ndjson` = one line per task at any
+  arity. A partial miss still emits the found tasks and exits 1 with
+  `details.missing` — branch on that array.
 - **A multi-machine board converges with `furrow sync`** (auto-commit limited
   to `.furrow/` → `pull --rebase` → `push`): run it before reading and after
   writing a shared board. On a true conflict it aborts the rebase itself and

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
 )
@@ -56,37 +58,70 @@ func newLsCmd() *cobra.Command {
 }
 
 func newShowCmd() *cobra.Command {
-	var backlinks bool
+	var backlinks, noBody bool
 	cmd := &cobra.Command{
-		Use:   "show <id>",
-		Short: "Show a task with its markdown body",
-		Long: "Show one task's metadata and Markdown body. With --backlinks, also list the\n" +
-			"tasks whose body mentions this one via the [[id]] notation (the local,\n" +
-			"rate-limit-free twin of GitHub's \"mentioned in\"); --json adds a mentioned_by\n" +
-			"array. The scan is opt-in, so a plain `show` never pays for it.",
-		Args: cobra.ExactArgs(1),
+		Use:   "show <id>...",
+		Short: "Show tasks with metadata and markdown body (batch-friendly)",
+		Long: "Show one or more tasks' metadata and Markdown body in a single read, in\n" +
+			"input order. --json emits an array for several ids (a single id keeps the\n" +
+			"historical single object); --ndjson emits one task per line at any arity;\n" +
+			"the human output separates tasks with a --- line. --no-body omits the body\n" +
+			"(the body_text key in JSON) — the lean metadata-only read for agents. When\n" +
+			"some ids are missing, the found tasks are still emitted and the not-found\n" +
+			"error carries details.missing, so a partial read is never wasted.\n" +
+			"With --backlinks, also list the tasks whose body mentions each one via the\n" +
+			"[[id]] notation (the local, rate-limit-free twin of GitHub's \"mentioned\n" +
+			"in\"); --json adds a mentioned_by array. The scan is opt-in, so a plain\n" +
+			"`show` never pays for it.",
+		Example: "  furrow show t-4fq1\n" +
+			"  furrow show t-4fq1 t-x2x9 --no-body --ndjson   # lean batch read\n" +
+			"  furrow show t-4fq1 --backlinks",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			t, body, err := a.Get(args[0])
+			items, missing, err := a.GetBatch(args, !noBody)
 			if err != nil {
 				return err
 			}
-			if !backlinks {
-				printTaskDetail(t, body)
-				return nil
+			// Single-id compat: the classic not-found error, nothing on stdout —
+			// details.missing rides along so agents branch the same at any arity.
+			if len(args) == 1 && len(missing) > 0 {
+				fe := core.NotFound(missing[0])
+				fe.Details = map[string][]string{"missing": missing}
+				return fe
 			}
-			refs, err := a.Backlinks(args[0])
-			if err != nil {
-				return err
+			var mentions [][]core.Task
+			if backlinks {
+				ids := make([]string, len(items))
+				for i := range items {
+					ids[i] = items[i].Task.ID
+				}
+				// One board pass for the whole batch (O(board), not O(ids×board)).
+				bl, err := a.BacklinksBatch(ids)
+				if err != nil {
+					return err
+				}
+				mentions = make([][]core.Task, len(items))
+				for i := range items {
+					mentions[i] = bl[items[i].Task.ID]
+				}
 			}
-			printTaskDetailWithBacklinks(t, body, refs)
+			emitShow(items, mentions, len(args) == 1, noBody, backlinks)
+			if len(missing) > 0 {
+				return &core.Error{
+					Code:    core.CodeNotFound,
+					Msg:     fmt.Sprintf("%d of %d ids not found", len(missing), len(items)+len(missing)),
+					Details: map[string][]string{"missing": missing},
+				}
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&backlinks, "backlinks", false, "also list tasks whose body mentions this one via [[id]]")
+	cmd.Flags().BoolVar(&noBody, "no-body", false, "omit the body (body_text in JSON): the lean metadata-only read")
 	return cmd
 }
 

@@ -132,7 +132,7 @@ furrow done t-0001
 | `init` | カレントディレクトリに `.furrow` ストアを作る（`config.toml` + `meta.json` + 空の `tasks/` + `bodies/`） |
 | `add <title>...` | タスクを追加（`--stdin` で標準入力から1行1タスクを一括作成）。id を自動採番し `bodies/<id>.md` を作る |
 | `ls`（別名 `list`） | タスクを正準順で一覧。`--drafts` で repo 未付与のタスク（draft）だけを一覧（ボードのスコープは無視） |
-| `show <id>` | タスクを markdown 本文付きで表示。`--backlinks` を付けると、本文でこのタスクを `[[id]]` で参照している他タスクも列挙する（「Mentioned in」節／`--json` では `mentioned_by` 配列。GitHub の "mentioned in" のローカル・レート制限なし版） |
+| `show <id>...` | タスク（複数可）を markdown 本文付きで 1 回の読みで表示（入力順。複数 id は `--json` で配列／human は `---` 区切り、1 id は従来どおり単一オブジェクト。`--ndjson` は個数によらず 1 行 1 タスク）。`--no-body` で本文（`body_text`）を省く＝agent 向けの軽量メタデータ読み。一部 id が見つからなくても見つかった分は出力し、exit 1 のエラーに `details.missing` が載る。`--backlinks` を付けると、本文でこのタスクを `[[id]]` で参照している他タスクも列挙する（「Mentioned in」節／`--json` では `mentioned_by` 配列。GitHub の "mentioned in" のローカル・レート制限なし版） |
 | `next` | 着手可能なタスク（非 terminal・依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
 | `revisit` | read-only。再評価すべき open タスクを一覧。`--json`/`--ndjson` は各タスクに `revisit` 配列 `{code, detail}`（`no_repo`・`value_unset`・`effort_unset`・`stale`・`dep_done`）を付与し、エージェントが何を直すか分かる。draft はスコープに関係なく浮上する。空でも exit 0。`-l/--label`・`-r/--repo`・`-n/--limit`・`--stale-days <n>`（0 で stale 無効） |
 | `edit <id>` | `bodies/<id>.md` を `$EDITOR` で開く（非対話ならパスを出力） |
@@ -181,7 +181,8 @@ furrow done t-0001
 furrow は **非対話がデフォルト**。プロンプトは出さない（TTY 検出は `golang.org/x/term`）。対話 UI は `furrow ui` だけ。
 
 - **`--json`** — read コマンドが JSON を **stdout のみ**に出す。ログ・エラーは stderr へ。
-- **`--ndjson`** — タスクを 1 行 1 JSON で出す（list 系）。
+- **`--ndjson`** — タスクを 1 行 1 JSON で出す（list 系・`show` は個数によらず 1 行 1 タスク）。
+- **id 集合の一括読み** — `show <id>... --no-body` で任意の id 集合を 1 プロセス・本文なしで横断取得（監査・依存チェック向け。`--ndjson` 併用で shape が個数非依存に）。
 - **フィルタ** — `--status/-s`・`--label/-l`・`--repo/-r`・`--limit/-n`。明示 `-l X` が 0 件で、X がタスクを持つ repo 短名に一意解決するときは exit 2 で `-r X` へ誘導する（did-you-mean ガード）。明示 `-r` が draft を隠したときは stderr に `N draft(s) hidden — furrow ls --drafts` を 1 行出す。
 - **破壊操作ガード** — `archive` は `--yes` がない限りプレビュー（dry-run）に留まる。
 - **exit code 契約**:
@@ -199,7 +200,7 @@ furrow は **非対話がデフォルト**。プロンプトは出さない（TT
   {"error":{"code":2,"id":"t-0042","message":"unknown lane \"foo\" (configured: inbox, backlog, ready, in-progress, waiting, done, icebox)"}}
   ```
 
-  入力が「あと一歩で解決できた」とき（repo 短名の曖昧・ラベルが repo を一意に指す did-you-mean ガード）は、封筒に `"candidates": ["owner/repo", …]` も載る。スクリプトはメッセージ文をパースせず、この配列から選べばよい。
+  入力が「あと一歩で解決できた」とき（repo 短名の曖昧・ラベルが repo を一意に指す did-you-mean ガード）は、封筒に `"candidates": ["owner/repo", …]` も載る。スクリプトはメッセージ文をパースせず、この配列から選べばよい。同様に `show` の一括読みで一部 id が見つからないときは、見つかった分を stdout に出した上で exit 1 になり、封筒に `"details": {"missing": ["t-…", …]}` が載る — 判定は配列で、メッセージ文では行わない。
 
 JSON 出力例:
 
