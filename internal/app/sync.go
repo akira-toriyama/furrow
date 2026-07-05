@@ -3,10 +3,61 @@ package app
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/gitrepo"
 )
+
+// retryPolicy bounds how long Sync waits out a transient foreign rebase (a
+// concurrent writer momentarily holding `pull --rebase`) before giving up.
+type retryPolicy struct {
+	base   time.Duration // first backoff
+	factor int           // per-attempt multiplier
+	cap    time.Duration // per-sleep ceiling
+	max    int           // maximum number of sleeps
+}
+
+// defaultRebaseWait retries for ~4.7s (100+200+400+800+1600+1600ms) — long
+// enough to ride out a concurrent writer's sub-second rebase window, short
+// enough that a genuinely stuck rebase surfaces promptly.
+var defaultRebaseWait = retryPolicy{
+	base:   100 * time.Millisecond,
+	factor: 2,
+	cap:    1600 * time.Millisecond,
+	max:    6,
+}
+
+// waitForRebaseToClear polls check (a mid-operation probe returning op+busy),
+// sleeping with bounded exponential backoff between polls, until the repo is no
+// longer mid-rebase or the policy budget is exhausted. It only waits out a
+// "rebase" — the concurrent-writer signature; any other in-progress op (a
+// user's own "merge") is never transient, so it returns immediately. Returns
+// the last observed op and whether the repo is now clear (no op in progress).
+func waitForRebaseToClear(check func() (string, bool), sleep func(time.Duration), pol retryPolicy) (string, bool) {
+	op, busy := check()
+	if !busy {
+		return op, true
+	}
+	if op != "rebase" {
+		return op, false
+	}
+	backoff := pol.base
+	for i := 0; i < pol.max; i++ {
+		sleep(backoff)
+		op, busy = check()
+		if !busy {
+			return op, true
+		}
+		if op != "rebase" {
+			return op, false
+		}
+		if backoff *= time.Duration(pol.factor); backoff > pol.cap {
+			backoff = pol.cap
+		}
+	}
+	return op, false
+}
 
 // DefaultSyncMessage is the auto-commit message `furrow sync` uses when
 // --message is not given: gitmoji + Conventional, and chore = no version bump,
@@ -43,7 +94,25 @@ func (a *App) Sync(message string) (*SyncProgress, error) {
 	if err != nil {
 		return p, err // non-git board = validation (exit 2), from the adapter
 	}
-	if op, busy := r.MidOperation(); busy {
+	// A rebase in progress is usually a concurrent writer (the board's bot / a
+	// second operator) momentarily holding `pull --rebase`; wait it out with a
+	// bounded backoff so agents don't fail spuriously in that sub-second window.
+	if op, cleared := waitForRebaseToClear(r.MidOperation, a.sleeper(), defaultRebaseWait); !cleared {
+		if op == "rebase" {
+			// Still rebasing after the budget: transient in the common case, so
+			// classify as retryable (exit 3, not the do-not-retry exit 2) and say
+			// how to recover if it's actually a stuck rebase.
+			top := r.Toplevel()
+			return p, &core.Error{
+				Code: core.CodeInternal,
+				ID:   "sync-busy",
+				Msg: fmt.Sprintf("a git rebase has stayed in progress in %s through several retries — "+
+					"this is usually a concurrent writer that clears within a second, so re-running "+
+					"'furrow sync' typically succeeds. If it persists a rebase here may be stuck: check "+
+					"'git -C %s status' and finish or abort it, then re-run", top, top),
+			}
+		}
+		// Any other in-progress op (a merge you started) is your own to resolve.
 		return p, core.Validationf("sync",
 			"a git %s is in progress in %s — finish or abort it, then re-run furrow sync", op, r.Toplevel())
 	}
