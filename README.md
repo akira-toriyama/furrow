@@ -171,7 +171,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `init` | Create a `.furrow/` store (config + `meta.json` + empty `tasks/` + `bodies/`) in the current directory | — |
 | `add <title>...` | Add a task (or many from stdin with `--stdin`); assigns frozen ids and seeds `bodies/<id>.md` | `--stdin`, `-s/--status`, `-p/--priority`, `--value`, `--effort`, `-l/--label`, `-r/--repo`, `--draft`, `--parent`, `--dep`, `--ref`, `--body` |
 | `ls` (alias `list`) | List tasks in canonical `lane -> priority -> id` order; `--drafts` lists only the tasks with no repo (bypasses the board scope) | `-s/--status`, `-l/--label`, `-r/--repo`, `-n/--limit`, `--drafts` |
-| `show <id>` | Show one task plus its Markdown body; `--backlinks` also lists the tasks whose body mentions it via `[[id]]` (a "Mentioned in" section, or a `mentioned_by` array under `--json`) | `--backlinks` |
+| `show <id>...` | Show one or more tasks plus their Markdown bodies in a single read, in input order (several ids emit a `--json` array or `---`-separated text; one id keeps the classic single-object shape; `--ndjson` is one task per line at any arity). `--no-body` omits the body (`body_text`) — the lean metadata-only read. A partial miss still prints the found tasks and exits 1 with `details.missing`. `--backlinks` also lists the tasks whose body mentions each one via `[[id]]` (a "Mentioned in" section, or a `mentioned_by` array under `--json`) | `--no-body`, `--backlinks` |
 | `next` | Show actionable tasks (non-terminal lane, all deps done); `--json`/`--ndjson` attach a `reason` (`in_next_lane`, `deps_satisfied`) | `-l/--label`, `-r/--repo`, `-n/--limit` (use `-n1` for just the top) |
 | `revisit` | Read-only; list open tasks needing re-evaluation. `--json`/`--ndjson` attach a `revisit` array of `{code, detail}` (`no_repo`, `value_unset`, `effort_unset`, `stale`, `dep_done`) so an agent knows what to fix. Drafts surface regardless of scope. Empty result exits 0 | `-l/--label`, `-r/--repo`, `-n/--limit`, `--stale-days <n>` (0 disables stale) |
 | `edit <id>` | Open `bodies/<id>.md` in `$EDITOR`; prints the path when non-interactive | — |
@@ -209,6 +209,7 @@ furrow needs no MCP server and no plugin — the plain CLI **is** the agent inte
 - **Never hand-edit `tasks/<id>.json` (or `meta.json`).** A single deterministic marshaller owns those files; a manual edit will churn the diff (and likely lose the canonical ordering). Mutate tasks through the commands above.
 - **`bodies/*.md` are yours to edit.** Prose lives there and is plain Markdown — edit it directly, or via `furrow edit <id>` (which prints the absolute path in a non-interactive context).
 - **Use `--json` for machine reads.** JSON is written to **stdout only**; logs, confirmations, and errors go to **stderr**, so piping stdout into `jq` is always clean. `--ndjson` emits one task per line for streaming. Filters: `--status/-s`, `--label/-l`, `--repo/-r`, `--limit/-n`.
+- **Batch by id with `show <id>... --no-body`.** Cross-checking a specific id set (audit sweeps, dependency checks) is one process, metadata only — no `body_text` bloating the output. Add `--ndjson` for an arity-independent one-task-per-line shape; a partial miss still emits the found tasks and reports the rest in `details.missing`.
 
 furrow is **non-interactive by default** — it never prompts. Destructive operations are guarded: `archive` only previews unless you pass `--yes`.
 
@@ -230,7 +231,9 @@ On a non-zero exit, furrow prints a structured error object to stderr:
 When an input almost resolved — an ambiguous repo short name, or a label that
 uniquely names a repo (the did-you-mean guard) — the envelope also carries
 `"candidates": ["owner/repo", …]`, so a script picks an alternative from the
-array instead of parsing the message prose.
+array instead of parsing the message prose. Likewise a partial `show` batch
+(some ids unknown) still prints the found tasks and exits 1 with
+`"details": {"missing": ["t-…", …]}` — branch on the array, never the message.
 
 ### CI: auto-update a tracker from PRs
 

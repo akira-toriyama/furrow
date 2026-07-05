@@ -202,6 +202,71 @@ type taskView struct {
 	BodyText string `json:"body_text"`
 }
 
+// metaBacklinkView is `show --no-body --backlinks`: metadata plus mentioned_by,
+// with no body_text key at all (absent, not an empty placeholder).
+type metaBacklinkView struct {
+	core.Task
+	MentionedBy []mentionRef `json:"mentioned_by"`
+}
+
+// showView picks the JSON shape for one `show` result. Body and backlinks are
+// each opt-in/out; an omitted facet means its key is absent, and with both
+// off the shape is a bare task — identical to a `ls` element.
+func showView(it app.ShowItem, mentions []core.Task, noBody, backlinks bool) any {
+	switch {
+	case noBody && backlinks:
+		return metaBacklinkView{Task: it.Task, MentionedBy: toMentionRefs(mentions)}
+	case noBody:
+		return it.Task
+	case backlinks:
+		return backlinkView{Task: it.Task, BodyText: it.Body, MentionedBy: toMentionRefs(mentions)}
+	default:
+		return taskView{Task: it.Task, BodyText: it.Body}
+	}
+}
+
+// emitShow renders `show` results in input order. --ndjson is one task per
+// line at any arity; --json keeps the historical single object for one id and
+// emits an array for a batch (so a batch of misses still prints []); the human
+// output separates detail blocks with a --- line. mentions is non-nil only
+// when --backlinks ran, aligned index-for-index with items.
+func emitShow(items []app.ShowItem, mentions [][]core.Task, single, noBody, backlinks bool) {
+	mentionsAt := func(i int) []core.Task {
+		if mentions == nil {
+			return nil
+		}
+		return mentions[i]
+	}
+	switch {
+	case flagNDJSON:
+		for i, it := range items {
+			printNDJSONValue(showView(it, mentionsAt(i), noBody, backlinks))
+		}
+	case flagJSON:
+		if single {
+			// exactly one item: a single-id miss error-returns before emission
+			printJSON(showView(items[0], mentionsAt(0), noBody, backlinks))
+			return
+		}
+		views := make([]any, 0, len(items))
+		for i, it := range items {
+			views = append(views, showView(it, mentionsAt(i), noBody, backlinks))
+		}
+		printJSON(views)
+	default:
+		for i := range items {
+			if i > 0 {
+				fmt.Fprintln(out, "---")
+			}
+			if backlinks {
+				printTaskDetailWithBacklinks(&items[i].Task, items[i].Body, mentionsAt(i))
+			} else {
+				printTaskDetail(&items[i].Task, items[i].Body)
+			}
+		}
+	}
+}
+
 // printTaskDetail renders a single task for `show` / after a mutation.
 func printTaskDetail(t *core.Task, body string) {
 	if flagJSON {
@@ -270,14 +335,21 @@ type backlinkView struct {
 	MentionedBy []mentionRef `json:"mentioned_by"`
 }
 
-// printTaskDetailWithBacklinks renders `show --backlinks`: the usual detail plus
-// a "Mentioned in" section (human) or a mentioned_by array (--json). In JSON mode
-// it emits a single object, so it must NOT fall through to printTaskDetail.
-func printTaskDetailWithBacklinks(t *core.Task, body string, mentions []core.Task) {
+// toMentionRefs trims mentioning tasks to the id/title/status an agent needs
+// to act without a second lookup. Always a non-nil slice ([] never null).
+func toMentionRefs(mentions []core.Task) []mentionRef {
 	refs := make([]mentionRef, 0, len(mentions))
 	for _, m := range mentions {
 		refs = append(refs, mentionRef{ID: m.ID, Title: m.Title, Status: m.Status})
 	}
+	return refs
+}
+
+// printTaskDetailWithBacklinks renders `show --backlinks`: the usual detail plus
+// a "Mentioned in" section (human) or a mentioned_by array (--json). In JSON mode
+// it emits a single object, so it must NOT fall through to printTaskDetail.
+func printTaskDetailWithBacklinks(t *core.Task, body string, mentions []core.Task) {
+	refs := toMentionRefs(mentions)
 	if flagJSON {
 		printJSON(backlinkView{Task: *t, BodyText: body, MentionedBy: refs})
 		return

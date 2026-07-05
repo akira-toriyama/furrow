@@ -529,6 +529,47 @@ func (a *App) Get(id string) (*core.Task, string, error) {
 	return t, body, nil
 }
 
+// ShowItem is one result of GetBatch: a task plus its body (empty when the
+// batch was read without bodies).
+type ShowItem struct {
+	Task core.Task
+	Body string
+}
+
+// GetBatch resolves a set of ids in one index load: the found tasks come back
+// in input order (duplicates collapse to their first occurrence, misses too),
+// and the ids that named no task come back in missing. A miss is data, not an
+// error — partial success stays representable, the caller decides what a
+// non-empty missing means. err is reserved for load/IO failures. withBody
+// loads each found task's body; without it the body files are never touched.
+func (a *App) GetBatch(ids []string, withBody bool) (items []ShowItem, missing []string, err error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, nil, err
+	}
+	items, missing = []ShowItem{}, []string{}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		t, i := idx.Find(id)
+		if i < 0 {
+			missing = append(missing, id)
+			continue
+		}
+		body := ""
+		if withBody {
+			if body, err = a.Store.LoadBody(id); err != nil {
+				return nil, nil, err
+			}
+		}
+		items = append(items, ShowItem{Task: *t, Body: body})
+	}
+	return items, missing, nil
+}
+
 // Backlinks returns the tasks whose body mentions id via the [[id]] wiki-link
 // notation, in canonical order. It is the pull-side twin of GitHub's "mentioned
 // in" panel — no server, no rate limit, just a scan of the local bodies (cheap
