@@ -126,6 +126,52 @@ func TestRevisitCanonicalOrderAndLimitIdentity(t *testing.T) {
 	}
 }
 
+func TestRevisitSummaryCountsScopedDepDoneAndStale(t *testing.T) {
+	a, clk := revisitApp()
+
+	// A dependency we finish, plus a stale in-scope task at T0.
+	dep, _ := a.Add("dep", AddOpts{Status: "ready", Value: p(1), Effort: p(1), Repos: []string{"o/r"}})
+	a.Done(dep.ID) // -> done lane (terminal)
+	staleIn, _ := a.Add("stale-in", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}})
+	a.Add("stale-other", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"x/y"}}) // other repo
+	a.Add("stale-draft", AddOpts{Status: "ready", Value: p(3), Effort: p(2)})                         // draft (no repo)
+	a.Add("parked", AddOpts{Status: "icebox", Repos: []string{"o/r"}})                                // terminal
+
+	// Age everything 60d, then a fresh dependent (in scope) whose dep is done.
+	clk.t = clk.t.AddDate(0, 0, 60)
+	user, _ := a.Add("dep-user", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
+
+	sum, err := a.RevisitSummary(QueryOpts{ScopeRepo: "o/r"}, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{user.ID}; !eq(sum.DepDone, want) {
+		t.Errorf("DepDone = %v, want %v", sum.DepDone, want)
+	}
+	// Only the in-scope stale task: other-repo, draft, terminal, and the fresh
+	// dependent (updated 0d ago) are all excluded.
+	if want := []string{staleIn.ID}; !eq(sum.Stale, want) {
+		t.Errorf("Stale = %v, want %v", sum.Stale, want)
+	}
+	if sum.Empty() {
+		t.Error("summary should not be Empty")
+	}
+}
+
+func TestRevisitSummaryStaleDaysZeroDisablesStale(t *testing.T) {
+	a, clk := revisitApp()
+	a.Add("old", AddOpts{Status: "ready", Value: p(1), Effort: p(1), Repos: []string{"o/r"}})
+	clk.t = clk.t.AddDate(0, 0, 90)
+
+	sum, err := a.RevisitSummary(QueryOpts{ScopeRepo: "o/r"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.Stale) != 0 || !sum.Empty() {
+		t.Errorf("staleDays=0 must disable stale; got %+v", sum)
+	}
+}
+
 func eq(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
