@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -74,6 +75,20 @@ type App struct {
 	// resolution universe (see repoUniverse), so a derived repo resolves short
 	// names even before its first task exists.
 	BoardRepos []string
+
+	// sleep is the backoff sleeper used by Sync's transient-rebase retry. nil
+	// means the real time.Sleep (see sleeper); tests set a no-op to run the
+	// retry budget instantly.
+	sleep func(time.Duration)
+}
+
+// sleeper returns the App's backoff sleeper, defaulting to time.Sleep so the
+// production path needs no wiring and only tests override it.
+func (a *App) sleeper() func(time.Duration) {
+	if a.sleep != nil {
+		return a.sleep
+	}
+	return time.Sleep
 }
 
 // Open discovers the store (FURROW_DIR, else the nearest ancestor of startDir

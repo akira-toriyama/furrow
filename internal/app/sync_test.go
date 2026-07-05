@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
@@ -237,6 +238,55 @@ func TestSyncRefusesMidMerge(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "merge") {
 		t.Errorf("error should name the in-progress operation: %v", err)
+	}
+}
+
+// startStuckRebase leaves dir with a real, non-clearing rebase in progress (an
+// add/add conflict git stopped on), so MidOperation reports "rebase" — the
+// concurrent-writer signature, here made permanent so the retry budget runs out.
+func startStuckRebase(t *testing.T, git, dir string) {
+	t.Helper()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitT(t, git, dir, "checkout", "-q", "-b", "topic")
+	write("c.txt", "topic\n")
+	runGitT(t, git, dir, "add", "-A")
+	runGitT(t, git, dir, "commit", "-qm", "topic change")
+	runGitT(t, git, dir, "checkout", "-q", "main")
+	write("c.txt", "main\n")
+	runGitT(t, git, dir, "add", "-A")
+	runGitT(t, git, dir, "commit", "-qm", "main change")
+	runGitT(t, git, dir, "checkout", "-q", "topic")
+	cmd := exec.Command(git, "rebase", "main") // add/add conflict — git stops mid-rebase
+	cmd.Dir = dir
+	_ = cmd.Run()
+}
+
+// A rebase in progress is transient (a concurrent writer momentarily rebasing),
+// so sync retries it out; if it never clears, the residual failure is retryable
+// (exit 3, id sync-busy) — NOT a validation error (exit 2 = do not retry).
+func TestSyncRebaseBusyIsRetryableNotValidation(t *testing.T) {
+	git, cloneA, _ := setupClones(t)
+	startStuckRebase(t, git, cloneA)
+
+	a := openBoard(t, cloneA)
+	a.sleep = func(time.Duration) {} // ride out the retry budget instantly
+	p, err := a.Sync("")
+	if err == nil {
+		t.Fatal("sync on a never-clearing rebase must fail after the retry budget")
+	}
+	if got := core.ExitCode(err); got != int(core.CodeInternal) {
+		t.Errorf("exit = %d, want %d (retryable, not validation)", got, core.CodeInternal)
+	}
+	fe := core.AsError(err)
+	if fe == nil || fe.ID != "sync-busy" {
+		t.Fatalf("want id sync-busy, got %+v", err)
+	}
+	if p == nil || p.Committed || p.Pulled || p.Pushed || p.Conflict {
+		t.Errorf("progress must be the all-false object, got %+v", p)
 	}
 }
 
