@@ -82,6 +82,25 @@ func TestShowNDJSONOneLinePerTaskAnyArity(t *testing.T) {
 	}
 }
 
+func TestShowNoBodyNDJSONBatchLeanLines(t *testing.T) {
+	initStore(t)
+	a := addTask(t, "task a", "--body", "SECRETBODY")
+	b := addTask(t, "task b", "--body", "OTHERBODY")
+
+	// The advertised lean-batch combination: one bare line per id, no body.
+	out, code := run(t, "--ndjson", "show", a, b, "--no-body")
+	if code != 0 {
+		t.Fatalf("show --ndjson --no-body exit=%d:\n%s", code, out)
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("want 2 NDJSON lines, got %d:\n%s", len(lines), out)
+	}
+	if strings.Contains(out, "body_text") || strings.Contains(out, "SECRETBODY") || strings.Contains(out, "OTHERBODY") {
+		t.Errorf("--no-body must drop the body from every NDJSON line:\n%s", out)
+	}
+}
+
 func TestShowNoBodyOmitsBodyTextKey(t *testing.T) {
 	initStore(t)
 	a := addTask(t, "task a", "--body", "SECRETBODY")

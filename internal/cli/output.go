@@ -267,12 +267,10 @@ func emitShow(items []app.ShowItem, mentions [][]core.Task, single, noBody, back
 	}
 }
 
-// printTaskDetail renders a single task for `show` / after a mutation.
+// printTaskDetail renders a single task's human detail block for `show`. JSON
+// and NDJSON are handled one layer up in emitShow/showView (which is where the
+// --no-body / --backlinks shape lives), so this is the human path only.
 func printTaskDetail(t *core.Task, body string) {
-	if flagJSON {
-		printJSON(taskView{Task: *t, BodyText: body})
-		return
-	}
 	fmt.Fprintf(out, "%s  %s\n", t.ID, t.Title)
 	fmt.Fprintf(out, "status:   %s\n", t.Status)
 	fmt.Fprintf(out, "priority: %d\n", t.Priority)
@@ -345,17 +343,13 @@ func toMentionRefs(mentions []core.Task) []mentionRef {
 	return refs
 }
 
-// printTaskDetailWithBacklinks renders `show --backlinks`: the usual detail plus
-// a "Mentioned in" section (human) or a mentioned_by array (--json). In JSON mode
-// it emits a single object, so it must NOT fall through to printTaskDetail.
+// printTaskDetailWithBacklinks renders `show --backlinks`'s human block: the
+// usual detail plus a "Mentioned in" section. JSON/NDJSON go through
+// emitShow/showView (backlinkView), so this is the human path only.
 func printTaskDetailWithBacklinks(t *core.Task, body string, mentions []core.Task) {
-	refs := toMentionRefs(mentions)
-	if flagJSON {
-		printJSON(backlinkView{Task: *t, BodyText: body, MentionedBy: refs})
-		return
-	}
 	printTaskDetail(t, body)
 	fmt.Fprintf(out, "\nMentioned in:\n")
+	refs := toMentionRefs(mentions)
 	if len(refs) == 0 {
 		fmt.Fprintln(out, "  (none)")
 		return

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// ids returns just the task ids of a GetBatch result, in order.
+// itemIDs returns just the task ids of a GetBatch result, in order.
 func itemIDs(items []ShowItem) []string {
 	out := []string{}
 	for _, it := range items {

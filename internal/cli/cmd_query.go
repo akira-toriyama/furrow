@@ -95,11 +95,18 @@ func newShowCmd() *cobra.Command {
 			}
 			var mentions [][]core.Task
 			if backlinks {
+				ids := make([]string, len(items))
+				for i := range items {
+					ids[i] = items[i].Task.ID
+				}
+				// One board pass for the whole batch (O(board), not O(ids×board)).
+				bl, err := a.BacklinksBatch(ids)
+				if err != nil {
+					return err
+				}
 				mentions = make([][]core.Task, len(items))
 				for i := range items {
-					if mentions[i], err = a.Backlinks(items[i].Task.ID); err != nil {
-						return err
-					}
+					mentions[i] = bl[items[i].Task.ID]
 				}
 			}
 			emitShow(items, mentions, len(args) == 1, noBody, backlinks)

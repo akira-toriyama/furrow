@@ -611,6 +611,61 @@ func (a *App) Backlinks(id string) ([]core.Task, error) {
 	return out, nil
 }
 
+// BacklinksBatch is Backlinks for a set of ids in ONE board pass: a single
+// load plus a single body scan, regardless of how many ids are requested — so
+// `show <many ids> --backlinks` stays O(board), not O(ids × board). Each entry
+// equals what Backlinks would return for that id: mentioners in canonical
+// order, self-mentions excluded, each mentioner counted once. Every requested
+// id present in the index maps to a (possibly empty, never nil) slice; unknown
+// ids are simply absent from the map (the caller has already filtered to found
+// tasks, so this never needs to raise NotFound).
+func (a *App) BacklinksBatch(ids []string) (map[string][]core.Task, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]core.Task{}
+	want := map[string]bool{}
+	for _, id := range ids {
+		if idx.Has(id) {
+			want[id] = true
+			out[id] = []core.Task{}
+		}
+	}
+	if len(want) == 0 {
+		return out, nil
+	}
+	re := core.LinkPattern(a.Cfg.IDPrefix)
+	bodyIDs, err := a.Store.ListBodyIDs()
+	if err != nil {
+		return nil, err
+	}
+	// mentions[mentionerID] = the requested targets that body links to (deduped
+	// so a body linking the same target twice still counts its author once).
+	mentions := map[string][]string{}
+	for _, bid := range bodyIDs {
+		body, err := a.Store.LoadBody(bid)
+		if err != nil {
+			return nil, err
+		}
+		seen := map[string]bool{}
+		for _, target := range core.ExtractLinks(body, re) {
+			if target == bid || !want[target] || seen[target] {
+				continue // self-mention isn't a backlink; ignore unrequested/dup
+			}
+			seen[target] = true
+			mentions[bid] = append(mentions[bid], target)
+		}
+	}
+	// Walk tasks in canonical order so each target's mentioners come out ordered.
+	for i := range idx.Tasks {
+		for _, target := range mentions[idx.Tasks[i].ID] {
+			out[target] = append(out[target], idx.Tasks[i])
+		}
+	}
+	return out, nil
+}
+
 // QueryOpts filters List/Next/Revisit. Zero values mean "no filter". Label (an
 // explicit tag filter) and ScopeRepo (the board scope) are separate on
 // purpose: they AND together, so filtering by a tag never widens a scoped
