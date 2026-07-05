@@ -55,8 +55,8 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 // miss, within a scope: task ids whose dependency is already done (reconcile-on-
 // close) and task ids past the stale threshold. Ids are in canonical order.
 type RevisitSummary struct {
-	DepDone []string // task ids with >=1 dependency in the done lane
-	Stale   []string // task ids not updated within staleDays
+	DepDone []string `json:"dep_done"` // task ids with >=1 dependency in the done lane
+	Stale   []string `json:"stale"`    // task ids not updated within staleDays
 }
 
 // Empty reports whether nothing is worth surfacing (a clean board).
