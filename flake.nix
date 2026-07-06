@@ -16,6 +16,10 @@
       let
         pkgs = import nixpkgs { inherit system; };
         version = "0.1.0-dev";
+        # The nix store src has no .git, so version.Resolve's VCS-stamp fallback
+        # finds nothing; stamp Commit explicitly from the flake's own revision
+        # (dirtyRev when the tree is uncommitted) so `furrow version` isn't blank.
+        rev = self.rev or self.dirtyRev or "unknown";
       in
       {
         packages.default = pkgs.buildGoModule {
@@ -26,6 +30,7 @@
           ldflags = [
             "-s" "-w"
             "-X github.com/akira-toriyama/furrow/internal/version.Version=${version}"
+            "-X github.com/akira-toriyama/furrow/internal/version.Commit=${rev}"
           ];
           subPackages = [ "cmd/furrow" ];
           meta = with pkgs.lib; {
