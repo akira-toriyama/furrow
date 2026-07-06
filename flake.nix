@@ -15,7 +15,11 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        version = "0.1.0-dev";
+        # Lockstep with the release tag: a flake has no tag info at eval time, so
+        # this is bumped in release-prep alongside sync-task-status.yml's
+        # furrow-version default (scripts/check-version-lockstep.sh enforces the
+        # match), so `nix run/install` never reports a stale version (audit F9).
+        version = "0.6.1";
         # The nix store src has no .git, so version.Resolve's VCS-stamp fallback
         # finds nothing; stamp Commit explicitly from the flake's own revision
         # (dirtyRev when the tree is uncommitted) so `furrow version` isn't blank.
