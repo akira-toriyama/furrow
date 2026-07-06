@@ -11,8 +11,9 @@ import (
 	"github.com/akira-toriyama/furrow/internal/gitrepo"
 )
 
-// retryPolicy bounds how long Sync waits out a transient foreign rebase (a
-// concurrent writer momentarily holding `pull --rebase`) before giving up.
+// retryPolicy bounds how long Sync waits out a transient concurrent-writer
+// condition before giving up: a foreign rebase caught by the pre-flight, or a
+// fetch/ref-lock race during the pull (see pullWithRetry).
 type retryPolicy struct {
 	base   time.Duration // first backoff
 	factor int           // per-attempt multiplier
@@ -20,10 +21,20 @@ type retryPolicy struct {
 	max    int           // maximum number of sleeps
 }
 
-// defaultRebaseWait retries for ~4.7s (100+200+400+800+1600+1600ms) — long
-// enough to ride out a concurrent writer's sub-second rebase window, short
-// enough that a genuinely stuck rebase surfaces promptly.
-var defaultRebaseWait = retryPolicy{
+// next advances a backoff by the policy's factor, clamped at cap — the one
+// place the exponential-backoff step lives, shared by every retry loop here.
+func (pol retryPolicy) next(backoff time.Duration) time.Duration {
+	if backoff *= time.Duration(pol.factor); backoff > pol.cap {
+		return pol.cap
+	}
+	return backoff
+}
+
+// defaultConcurrentWait retries for ~4.7s (100+200+400+800+1600+1600ms) — long
+// enough to ride out a concurrent writer's sub-second window (a foreign rebase,
+// or a fetch racing ours), short enough that a genuinely stuck state surfaces
+// promptly.
+var defaultConcurrentWait = retryPolicy{
 	base:   100 * time.Millisecond,
 	factor: 2,
 	cap:    1600 * time.Millisecond,
@@ -54,11 +65,38 @@ func waitForRebaseToClear(check func() (string, bool), sleep func(time.Duration)
 		if op != "rebase" {
 			return op, false
 		}
-		if backoff *= time.Duration(pol.factor); backoff > pol.cap {
-			backoff = pol.cap
-		}
+		backoff = pol.next(backoff)
 	}
 	return op, false
+}
+
+// pullWithRetry runs pullOnce and, while it fails with a transient
+// concurrent-access race (a co-writer's fetch clobbering FETCH_HEAD or
+// contending a ref/index lock in a shared checkout — gitrepo.ErrTransientFetchRace),
+// retries with bounded backoff. A LIVE race self-resolves in well under a
+// second, so this rides it out silently in the common case. If it outlives the
+// whole budget the lock is almost certainly STALE (a crashed git left a
+// .git/*.lock) or the ref conflict permanent, so the residual is returned as a
+// TERMINAL error naming the recovery — deliberately NOT the retryable
+// "sync-busy", which would loop an agent forever on a stale lock (git can't tell
+// a stale lock from a live one, but "outlived the retry budget" can). Any other
+// outcome — success, a sync-conflict, a real error — is returned immediately and
+// unchanged. top is the work-tree root, named in the recovery guidance.
+func pullWithRetry(pullOnce func() error, sleep func(time.Duration), pol retryPolicy, top string) error {
+	err := pullOnce()
+	backoff := pol.base
+	for i := 0; err != nil && errors.Is(err, gitrepo.ErrTransientFetchRace) && i < pol.max; i++ {
+		sleep(backoff)
+		err = pullOnce()
+		backoff = pol.next(backoff)
+	}
+	if err != nil && errors.Is(err, gitrepo.ErrTransientFetchRace) {
+		return core.Internalf("sync", "furrow sync kept losing a git lock/fetch race in %s across "+
+			"several seconds of retries; if no other operator is syncing, a crashed git likely left a "+
+			"stale lock — remove a stray .git/*.lock (e.g. .git/index.lock) in that repo, then re-run "+
+			"(last error: %v)", top, err)
+	}
+	return err
 }
 
 // DefaultSyncMessage is the auto-commit message `furrow sync` uses when
@@ -133,7 +171,8 @@ func partitionSync(spec string, changes []gitrepo.Change, opts SyncOpts) (commit
 // .furrow/ so unrelated dirty files are never swept in — and within it, to
 // machine-written shards plus new/opted-in bodies so a co-located operator's
 // in-progress body is never committed under the wrong author; see partitionSync),
-// pull --rebase (autostash), push (retrying pull→push once on non-fast-forward).
+// fetch + rebase --autostash @{u} (onto the tracking ref, not FETCH_HEAD), push
+// (retrying pull→push once on non-fast-forward).
 // It is a thin git wrapper by design — no daemon, no sync server (see
 // docs/non-goals.md).
 //
@@ -153,7 +192,7 @@ func (a *App) Sync(opts SyncOpts) (*SyncProgress, error) {
 	// A rebase in progress is usually a concurrent writer (the board's bot / a
 	// second operator) momentarily holding `pull --rebase`; wait it out with a
 	// bounded backoff so agents don't fail spuriously in that sub-second window.
-	if op, cleared := waitForRebaseToClear(r.MidOperation, a.sleeper(), defaultRebaseWait); !cleared {
+	if op, cleared := waitForRebaseToClear(r.MidOperation, a.sleeper(), defaultConcurrentWait); !cleared {
 		if op == "rebase" {
 			// Still rebasing after the budget: transient in the common case, so
 			// classify as retryable (exit 3, not the do-not-retry exit 2) and say
@@ -197,7 +236,10 @@ func (a *App) Sync(opts SyncOpts) (*SyncProgress, error) {
 		}
 	}
 
-	pull := func() error {
+	// pullOnce is a single pull --rebase attempt. A conflict is resolved
+	// definitively here (flag, abort, sync-conflict); a transient race bubbles up
+	// as ErrTransientFetchRace for pull (below) to retry; success sets Pulled.
+	pullOnce := func() error {
 		if err := r.PullRebase(); err != nil {
 			if r.RebaseInProgress() {
 				// Flag the conflict BEFORE attempting the abort: even if the
@@ -227,6 +269,11 @@ func (a *App) Sync(opts SyncOpts) (*SyncProgress, error) {
 		}
 		p.Pulled = true
 		return nil
+	}
+	// pull rides out a concurrent writer's fetch/ref-lock race (transient in a
+	// shared checkout), reclassifying a persistent one as retryable sync-busy.
+	pull := func() error {
+		return pullWithRetry(pullOnce, a.sleeper(), defaultConcurrentWait, r.Toplevel())
 	}
 
 	if err := pull(); err != nil {

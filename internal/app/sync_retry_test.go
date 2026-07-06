@@ -1,8 +1,14 @@
 package app
 
 import (
+	"errors"
+	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/gitrepo"
 )
 
 var testRebaseWait = retryPolicy{
@@ -10,6 +16,135 @@ var testRebaseWait = retryPolicy{
 	factor: 2,
 	cap:    1600 * time.Millisecond,
 	max:    6,
+}
+
+// scriptedErr yields one error per call, repeating the final element once the
+// script is exhausted — so "always fails" is a one-element script and
+// "fails twice then succeeds" is {race, race, nil}.
+func scriptedErr(errs []error) func() error {
+	i := 0
+	return func() error {
+		e := errs[i]
+		if i < len(errs)-1 {
+			i++
+		}
+		return e
+	}
+}
+
+func TestPullWithRetry(t *testing.T) {
+	race := func() error {
+		return errors.Join(gitrepo.ErrTransientFetchRace, errors.New("cannot lock ref"))
+	}
+	conflict := &core.Error{Code: core.CodeInternal, ID: "sync-conflict", Msg: "conflict"}
+
+	// the exact bounded-exponential sequence for testRebaseWait — pullWithRetry
+	// must advance its OWN backoff via pol.next each iteration, not sit at base.
+	fullBackoff := []time.Duration{100, 200, 400, 800, 1600, 1600}
+	for i := range fullBackoff {
+		fullBackoff[i] *= time.Millisecond
+	}
+
+	tests := []struct {
+		name         string
+		script       []error
+		wantSleeps   int
+		wantSleepSeq []time.Duration // when set, the exact backoff durations
+		wantErrID    string          // "" = nil error; else the *core.Error ID we expect
+		wantSame     error           // when set, the exact error value that must pass through
+		wantMsgHas   string          // when set, a substring the message must contain
+	}{
+		{
+			name:       "succeeds on the first attempt, no sleep",
+			script:     []error{nil},
+			wantSleeps: 0, wantErrID: "",
+		},
+		{
+			name:       "a transient race clears after two retries",
+			script:     []error{race(), race(), nil},
+			wantSleeps: 2, wantErrID: "",
+		},
+		{
+			// A race outliving the whole budget is a stale lock / permanent
+			// conflict, NOT a retryable sync-busy: it fails terminally (id "sync")
+			// naming the lock to remove, so an agent stops instead of looping.
+			name:       "a race that never clears fails terminally, naming the stale lock",
+			script:     []error{race()},
+			wantSleeps: testRebaseWait.max, wantSleepSeq: fullBackoff,
+			wantErrID: "sync", wantMsgHas: "stale lock",
+		},
+		{
+			name:       "a conflict on the FIRST attempt is not transient: returned immediately",
+			script:     []error{conflict},
+			wantSleeps: 0, wantErrID: "sync-conflict", wantSame: conflict,
+		},
+		{
+			// A race on attempt 1 that becomes a genuine conflict on retry (a
+			// co-writer pushed a conflicting shard between attempts) must return
+			// sync-conflict, never be swallowed into the retry/terminal path.
+			name:       "a conflict surfacing on a retry is returned, not retried",
+			script:     []error{race(), conflict},
+			wantSleeps: 1, wantErrID: "sync-conflict", wantSame: conflict,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var sleeps []time.Duration
+			sleep := func(d time.Duration) { sleeps = append(sleeps, d) }
+			err := pullWithRetry(scriptedErr(tc.script), sleep, testRebaseWait, "/board")
+
+			if len(sleeps) != tc.wantSleeps {
+				t.Errorf("sleeps = %d %v, want %d", len(sleeps), sleeps, tc.wantSleeps)
+			}
+			if tc.wantSleepSeq != nil && !slices.Equal(sleeps, tc.wantSleepSeq) {
+				t.Errorf("backoff = %v, want %v", sleeps, tc.wantSleepSeq)
+			}
+			if tc.wantErrID == "" {
+				if err != nil {
+					t.Fatalf("err = %v, want nil", err)
+				}
+				return
+			}
+			if tc.wantSame != nil && err != tc.wantSame {
+				t.Errorf("err = %v, want the same value passed through", err)
+			}
+			fe := core.AsError(err)
+			if fe == nil || fe.ID != tc.wantErrID {
+				t.Fatalf("err = %v, want *core.Error id %q", err, tc.wantErrID)
+			}
+			if fe.Code != core.CodeInternal {
+				t.Errorf("code = %d, want %d (internal, not validation)", fe.Code, core.CodeInternal)
+			}
+			if tc.wantMsgHas != "" && !strings.Contains(fe.Msg, tc.wantMsgHas) {
+				t.Errorf("message %q must contain %q", fe.Msg, tc.wantMsgHas)
+			}
+			// The terminal exhaustion error must be a fresh error, no longer
+			// matching the transient sentinel — and never the retryable sync-busy,
+			// which would loop an agent forever on a stale lock.
+			if errors.Is(err, gitrepo.ErrTransientFetchRace) {
+				t.Errorf("returned error must not still satisfy errors.Is(ErrTransientFetchRace)")
+			}
+			if fe.ID == "sync-busy" {
+				t.Errorf("a persistent pull race must not classify as retryable sync-busy: %v", err)
+			}
+		})
+	}
+}
+
+// retryPolicy.next doubles the backoff by factor and clamps it at cap.
+func TestRetryPolicyNext(t *testing.T) {
+	got := []time.Duration{}
+	backoff := testRebaseWait.base
+	for i := 0; i < testRebaseWait.max; i++ {
+		got = append(got, backoff)
+		backoff = testRebaseWait.next(backoff)
+	}
+	want := []time.Duration{100, 200, 400, 800, 1600, 1600}
+	for i := range want {
+		if got[i] != want[i]*time.Millisecond {
+			t.Errorf("backoff[%d] = %v, want %v", i, got[i], want[i]*time.Millisecond)
+		}
+	}
 }
 
 // scriptedCheck yields one (op,busy) step per call, repeating the final step

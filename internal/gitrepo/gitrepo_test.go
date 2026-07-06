@@ -256,3 +256,33 @@ func TestMidOperationDetectsMerge(t *testing.T) {
 		t.Errorf("MidOperation = %q,%v; want merge,true", op, busy)
 	}
 }
+
+// isTransientRace must fire on the concurrent-writer signatures a shared
+// checkout produces (a co-writer's fetch clobbering FETCH_HEAD or contending a
+// ref/index lock) and NOT on a genuine conflict, a non-fast-forward, or an
+// ordinary failure — misclassifying either of the latter as transient would
+// spin the retry loop on an error that never clears.
+func TestIsTransientRace(t *testing.T) {
+	tests := []struct {
+		name   string
+		stderr string
+		want   bool
+	}{
+		{"multiple branches (FETCH_HEAD clobbered)", "fatal: Cannot rebase onto multiple branches.", true},
+		{"cannot lock ref during fetch", "error: cannot lock ref 'refs/remotes/origin/main': is at 0000 but expected 1111", true},
+		{"unable to update local ref", "error: unable to update local ref refs/remotes/origin/main", true},
+		{"index.lock held by a co-writer", "fatal: Unable to create '/b/.git/index.lock': File exists.", true},
+		{"another git process running", "fatal: Another git process seems to be running this repository", true},
+		{"a real rebase conflict is NOT transient", "CONFLICT (content): Merge conflict in .furrow/tasks/t-k3m9p.json", false},
+		{"a non-fast-forward push is NOT transient", "! [rejected]        main -> main (non-fast-forward)", false},
+		{"an ordinary failure is NOT transient", "fatal: not a git repository", false},
+		{"empty stderr", "", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isTransientRace(tc.stderr); got != tc.want {
+				t.Errorf("isTransientRace(%q) = %v, want %v", tc.stderr, got, tc.want)
+			}
+		})
+	}
+}

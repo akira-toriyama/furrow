@@ -26,6 +26,14 @@ import (
 // the one push failure `furrow sync` retries (pull --rebase, push again).
 var ErrNonFastForward = errors.New("push rejected: non-fast-forward")
 
+// ErrTransientFetchRace marks a PullRebase failure caused by a concurrent
+// writer in a SHARED checkout — a co-located operator's/bot's `git fetch`
+// clobbering FETCH_HEAD or contending a ref/index lock while ours runs. It is
+// transient (the tree self-resolves within a second), so app.Sync rides it out
+// with bounded retries rather than failing; the sentinel is what tells "retry
+// this" apart from a real conflict or an ordinary failure.
+var ErrTransientFetchRace = errors.New("sync pull (fetch+rebase): transient concurrent-fetch race")
+
 // Repo drives git inside one working tree (the repo enclosing a .furrow board).
 type Repo struct {
 	git string // resolved git binary
@@ -170,15 +178,57 @@ func (r *Repo) Commit(message string, pathspecs ...string) error {
 	return nil
 }
 
-// PullRebase runs `git -c rebase.autoStash=true pull --rebase` — autostash so
-// dirty files OUTSIDE the board (already excluded from the sync commit) don't
-// stop the pull. On conflict git leaves the rebase in progress; the caller
-// (app.Sync) detects that, collects the paths, and aborts.
+// PullRebase brings the board up to date the concurrency-safe way: `git fetch`
+// then `git rebase --autostash @{u}` — rebasing onto the UPSTREAM TRACKING REF,
+// never FETCH_HEAD. `git pull --rebase` reads FETCH_HEAD, which a co-writer's
+// concurrent fetch in a shared checkout can rewrite with multiple entries
+// between our fetch and our rebase, yielding `fatal: Cannot rebase onto multiple
+// branches`; rebasing onto @{u} sidesteps that class entirely. --autostash keeps
+// dirty files OUTSIDE the board (already excluded from the sync commit) from
+// stopping the rebase.
+//
+// Two failure shapes matter to the caller. A rebase CONFLICT leaves the rebase
+// in progress; PullRebase returns an internal error and app.Sync detects the
+// in-progress rebase, collects the paths, and aborts. A transient
+// concurrent-access race (a co-writer's fetch clobbering a ref/index lock, or
+// the residual multiple-branches window) leaves NO rebase in progress and is
+// returned wrapped in ErrTransientFetchRace so app.Sync retries it.
 func (r *Repo) PullRebase() error {
-	if _, stderr, err := runGit(r.git, r.top, "-c", "rebase.autoStash=true", "pull", "--rebase", "-q"); err != nil {
-		return core.Internalf("sync", "git pull --rebase: %s", firstLine(stderr))
+	// fetch updates the remote-tracking ref; a co-writer's concurrent fetch can
+	// transiently lose a ref/index-lock race here — retryable, not fatal.
+	if _, stderr, err := runGit(r.git, r.top, "fetch", "-q"); err != nil {
+		if isTransientRace(stderr) {
+			return fmt.Errorf("%w: %s", ErrTransientFetchRace, firstLine(stderr))
+		}
+		return core.Internalf("sync", "git fetch: %s", firstLine(stderr))
+	}
+	// rebase onto @{u} (the ref fetch just moved), autostashing anything outside
+	// the sync commit. A conflict stops the rebase in progress (the caller's to
+	// abort); a transient race here left no rebase to abort, so classify it.
+	if _, stderr, err := runGit(r.git, r.top, "rebase", "--autostash", "-q", "@{u}"); err != nil {
+		if !r.RebaseInProgress() && isTransientRace(stderr) {
+			return fmt.Errorf("%w: %s", ErrTransientFetchRace, firstLine(stderr))
+		}
+		return core.Internalf("sync", "git rebase: %s", firstLine(stderr))
 	}
 	return nil
+}
+
+// isTransientRace classifies a fetch/rebase stderr as a concurrent-writer race
+// in a shared checkout — a condition that self-resolves, so sync retries rather
+// than fails. Two families: a fetch losing a ref/index-lock contest against a
+// co-writer's fetch ("cannot lock ref", "unable to update local ref",
+// "index.lock", "another git process"), and the residual FETCH_HEAD-clobbered
+// "cannot rebase onto multiple branches" (the split above makes this rare, but
+// classify it defensively). A real conflict ("CONFLICT", "could not apply") and
+// a plain failure are deliberately NOT matched — retrying those spins forever.
+func isTransientRace(stderr string) bool {
+	s := strings.ToLower(stderr)
+	return strings.Contains(s, "cannot rebase onto multiple branches") ||
+		strings.Contains(s, "cannot lock ref") ||
+		strings.Contains(s, "unable to update local ref") ||
+		strings.Contains(s, "index.lock") ||
+		strings.Contains(s, "another git process")
 }
 
 // ConflictedPaths lists the paths currently in conflict (diff filter U),

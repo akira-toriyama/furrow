@@ -40,13 +40,18 @@ the user-level config. When you work with any furrow store:
   arity. A partial miss still emits the found tasks and exits 1 with
   `details.missing` — branch on that array.
 - **A multi-machine board converges with `furrow sync`** (auto-commit limited
-  to `.furrow/` → `pull --rebase` → `push`): run it before reading and after
-  writing a shared board. On a true conflict it aborts the rebase itself and
-  exits 3 with id `sync-conflict` + the conflicted shard paths in `details`. If
-  a concurrent writer's rebase is briefly in progress, sync waits it out with a
-  bounded backoff; only a rebase still stuck after the budget exits 3 with id
-  `sync-busy` — a **retryable** condition (re-run), NOT the do-not-retry
-  `exit 2`. Branch on the `id`, not the exit code, to tell the two apart. A
+  to `.furrow/` → `fetch` + `rebase --autostash @{u}` → `push`): run it before
+  reading and after writing a shared board. It rebases onto the tracking ref,
+  not `FETCH_HEAD`, so a co-writer's concurrent fetch can't race it into
+  `Cannot rebase onto multiple branches`. On a true conflict it aborts the
+  rebase itself and exits 3 with id `sync-conflict` + the conflicted shard paths
+  in `details`. A concurrent writer's transient race is waited out with a bounded
+  backoff, handled by cause: a foreign rebase caught by the pre-flight, if still
+  stuck past the budget, exits 3 with id `sync-busy` — a **retryable** condition
+  (re-run), NOT the do-not-retry `exit 2`; a fetch/ref-lock race during the pull
+  is retried and, if a lock still blocks past the budget (a likely-stale
+  `.git/*.lock`), fails terminally (id `sync`) naming the lock to remove, NOT
+  `sync-busy`. Branch on the `id`, not the exit code, to tell these apart. A
   successful sync also gains a `revisit` key (`{dep_done:[ids], stale:[ids]}`,
   repo-scoped, omitted when empty) — the loop-visible staleness nudge; run
   `furrow revisit` for detail.

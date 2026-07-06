@@ -356,8 +356,9 @@ except where noted:
   both repeatable); short names resolve against the board's known repos or
   fail with `candidates`. A task with no repos is a **draft** (`ls --drafts`).
 - **`sync`** runs the multi-machine ritual against the git repo enclosing the
-  board: auto-commit pathspec-limited to `.furrow/`, autostash
-  `pull --rebase`, `push` (one retry on non-fast-forward), via the
+  board: auto-commit pathspec-limited to `.furrow/`, `fetch` + autostash
+  `rebase @{u}` (onto the tracking ref, not `FETCH_HEAD`, so a co-writer's fetch
+  can't race it), `push` (one retry on non-fast-forward), via the
   `internal/gitrepo` adapter. A conflict aborts the rebase automatically and
   reports the paths (`sync-conflict`, exit 3).
 - **`apply`** parses `SetStatus-task:` directives out of PR/commit text (stdin
@@ -409,15 +410,15 @@ except where noted:
 
 furrow never hides git from someone who knows it. Every state change is a plain
 commit to a plain-text store, and an operator fluent in git can always drop to
-`git add` / `commit` / `pull --rebase` / `push` and get exactly what furrow
-would have done. The CLI's job is not to wall git off — it is to offer **sugar**
+`git add` / `commit` / `fetch` / `rebase @{u}` / `push` and get exactly what
+furrow would have done. The CLI's job is not to wall git off — it is to offer **sugar**
 for the common multi-step rituals, so a GUI-leaning user (or an agent) gets one
 verb where an expert would type three. The principle: *never obstruct the
 expert; bundle the ceremony for everyone else.*
 
-`furrow sync` is exemplar #1. It bundles the exact three-command dance a git
+`furrow sync` is exemplar #1. It bundles the exact dance a git
 expert runs by hand — **auto-commit (pathspec-limited to `.furrow/`) →
-`pull --rebase` (autostash) → `push`** — behind one command, adding a
+`fetch` + `rebase --autostash @{u}` → `push`** — behind one command, adding a
 machine-readable progress object and conflict classification on top. The sugar
 is a convenience, not a cage: the underlying store is still just files in a git
 repo you fully own, so nothing stops you from running those three git commands

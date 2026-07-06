@@ -75,11 +75,17 @@ func newSyncCmd() *cobra.Command {
 			"     modified body is left for its author (listed in pending_bodies) so a\n" +
 			"     shared checkout never commits a co-located operator's WIP. --all-bodies\n" +
 			"     restores the old sweep for a checkout you know is yours alone.\n" +
-			"  2. git -c rebase.autoStash=true pull --rebase\n" +
+			"  2. git fetch, then git rebase --autostash @{u} (onto the tracking ref, not\n" +
+			"     FETCH_HEAD, so a co-writer's concurrent fetch can't race it)\n" +
 			"  3. git push (one pull→push retry on non-fast-forward)\n\n" +
 			"On a rebase conflict the rebase is aborted automatically (the board is never\n" +
 			"left with conflict markers; your local sync commit survives) and the error\n" +
-			"envelope carries id \"sync-conflict\" plus the conflicted paths. The progress\n" +
+			"envelope carries id \"sync-conflict\" plus the conflicted paths. A co-writer's\n" +
+			"fetch racing a ref/index lock during the pull is waited out with a bounded\n" +
+			"backoff; a live race clears in under a second, so a lock that persists is a\n" +
+			"likely-stale .git/*.lock and sync fails terminally naming it (a pre-flight\n" +
+			"foreign rebase that stays stuck instead exits with the retryable id\n" +
+			"\"sync-busy\"). The progress\n" +
 			"object {committed, pulled, pushed, conflict, committed_bodies, pending_bodies}\n" +
 			"goes to stdout even on failure. After a successful sync it also reports a\n" +
 			"revisit summary (repo-scoped counts of tasks with a done dependency or gone\n" +
