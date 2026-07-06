@@ -59,8 +59,8 @@ import, not an ongoing sync) has been floated but is **not built** today.
 
 ### No sync daemon / server
 Multi-machine use is `furrow sync` — a **thin git wrapper** (commit only
-`.furrow/`, `pull --rebase`, `push`, abort-and-report on conflict) that the
-user or agent runs explicitly. There is no background process, no file
+`.furrow/`, `fetch` + `rebase --autostash @{u}`, `push`, abort-and-report on
+conflict) that the user or agent runs explicitly. There is no background process, no file
 watcher, no hosted relay, and none is planned: git is already the
 synchronization layer, and per-task shards already make concurrent writes
 merge cleanly. — *A daemon would add an always-on failure mode to a tool whose

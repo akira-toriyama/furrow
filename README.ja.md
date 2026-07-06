@@ -153,7 +153,7 @@ furrow done t-0001
 | `label <id>` | ラベルを追加／削除（`--add`・`--remove`、いずれも反復可・併用可）。冪等 |
 | `repo <id>` | repo（`owner/repo`）を追加／削除（`--add`・`--rm`、反復可・併用可）。値は完全な `owner/repo` か、ボード既知の repo に一意に解決する短名のみ（それ以外は exit 2・`candidates` 付き）。冪等。repos が空のタスクは draft |
 | `apply` | PR/コミット本文から `SetStatus-task: <body-link> [<lane>]` ディレクティブを解析して適用（stdin または `--body-file`）。status 自動更新の CI フック。`--on open` は in-progress へ寄せ、`--on merge` は lane を適用。検証は非ブロッキング |
-| `sync` | マルチマシン運用の儀式を 1 コマンドで: `.furrow/` 限定の auto-commit（機械が書く shard は常に commit、手編集の `bodies/<id>.md` は新規か `-b` 明示時だけ・それ以外は `pending_bodies` に残して作者に委ね、共有 checkout が他人の WIP を巻き込まない。`--all-bodies` で従来の全 sweep）→ `pull --rebase`（autostash）→ `push`（non-fast-forward 時は pull→push を 1 回リトライ）。conflict 時は自動 abort（`sync-conflict` エラーにパス一覧）。別 writer の一時的 rebase は bounded backoff で待って吸収、超過時のみ `sync-busy`（retryable・exit 3）。進捗 `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` は失敗時も stdout に出る。成功時は repo スコープの `revisit` サマリ（`dep_done`/`stale` の id 一覧。空なら省略）も付く |
+| `sync` | マルチマシン運用の儀式を 1 コマンドで: `.furrow/` 限定の auto-commit（機械が書く shard は常に commit、手編集の `bodies/<id>.md` は新規か `-b` 明示時だけ・それ以外は `pending_bodies` に残して作者に委ね、共有 checkout が他人の WIP を巻き込まない。`--all-bodies` で従来の全 sweep）→ `fetch` + `rebase --autostash @{u}`（`FETCH_HEAD` でなく追跡 ref に rebase、他 writer の fetch と race しない）→ `push`（non-fast-forward 時は pull→push を 1 回リトライ）。conflict 時は自動 abort（`sync-conflict` エラーにパス一覧）。pre-flight が捕まえた他人の rebase は待って吸収、超過時は retryable `sync-busy`（exit 3）。pull 中の fetch/ロック競合はリトライし、解消しなければ（stale な `.git/*.lock` の可能性）除去すべきロックを名指して terminal に失敗。進捗 `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` は失敗時も stdout に出る。成功時は repo スコープの `revisit` サマリ（`dep_done`/`stale` の id 一覧。空なら省略）も付く |
 | `archive` | 古い done タスクを `.furrow/archive/` へ退避（`--yes` なしはプレビュー）。既定は全 repo 対象。共有ボードで 1 repo の古い done だけを畳むには `-r/--repo`（繰り返し可）で対象 repo を絞る（age ガードと AND） |
 | `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環は error、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。done な依存が最終更新後に閉じた open タスク＝reconcile gap も warn。書きかけのユーザー設定の clamp 警告も含む） |
 | `config init` | ユーザー設定 `~/.config/furrow/config.toml`（中央ボード雛形）を書き出す。ボード内で実行すると最寄りの `.furrow` から path/scopes を文脈導出、離れていればコメント付き placeholder。既存ファイルは上書きしない（`--path`・`--scope`（複数可）） |
@@ -297,7 +297,9 @@ default_repo = "me/chord"       # 任意: 1 owner/repo にスコープ（"auto" 
    通知）、共有 checkout が同居する他オペレータの WIP を誤った author で commit しないように
    する。`--all-bodies` で従来の全 sweep に戻せる（自分専有の checkout 向け）。既定メッセージ
    `:card_file_box: chore(board): sync via furrow`、`-m` で上書き
-2. `git -c rebase.autoStash=true pull --rebase`
+2. `git fetch` → `git rebase --autostash @{u}` —— `FETCH_HEAD` ではなく上流の
+   **追跡 ref** に rebase するので、共有 checkout で他 writer の並行 fetch が
+   `fatal: Cannot rebase onto multiple branches` を起こせない
 3. `git push`（non-fast-forward なら pull→push を 1 回リトライ）
 
 shard 化により本当の conflict は稀（別マシンの add 同士は別ファイル）。**同じ** task を
@@ -317,12 +319,16 @@ repo が無ければ `board`）、`--json`/`--ndjson` には id 一覧付きの 
 （`{dep_done:[ids], stale:[ids]}`）が乗る。どちらもボードがクリーンなら丸ごと
 省略される。
 
-bot や別オペレータが常に push しうるので、pre-flight が**他人の** `pull --rebase` の
-一瞬に当たることがある。sync はその transient 窓を bounded backoff（〜5s）で**待って
-吸収**し、その場では失敗しない。予算超過後もまだ rebase 中のときだけ exit 3 の
-`"id": "sync-busy"` を返す —— これは「引数を直せ・retry するな」の `exit 2` ではなく
-**retryable クラス**で、再実行で解消することが多い（本当に stuck なら手で
-`git rebase --abort`）ことを示す。
+bot や別オペレータが常に push しうるので、共有 checkout は 2 通りに race し、sync は
+原因ごとに扱いを変える。(1) pre-flight が**他人の** rebase の一瞬に当たる場合 ——
+bounded backoff（〜5s）で**待って吸収**し、まだ続いていれば exit 3 の
+`"id": "sync-busy"` を返す。これは「引数を直せ・retry するな」の `exit 2` ではなく
+**retryable クラス**で、再実行で解消することが多い（相手が終わっている／本当に stuck なら手で
+`git rebase --abort`）ことを示す。(2) **他人の** `git fetch` が ref/index ロックを
+こちらの実行中に一瞬奪う場合 —— pull を同じ backoff でリトライする。live な race は
+1 秒未満で解消するので、予算超過後もロックが残るならほぼ **stale** ロック（crash した
+git が `.git/*.lock` を残した）で、その場合は `sync-busy` で無限ループさせず、除去すべき
+ロックを名指して **terminal** に失敗する。
 
 #### ボード用 git hooks（任意）
 
