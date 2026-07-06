@@ -50,3 +50,57 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 	}
 	return out, nil
 }
+
+// RevisitSummary is the two "silent staleness" counts the session loop must not
+// miss, within a scope: task ids whose dependency is already done (reconcile-on-
+// close) and task ids past the stale threshold. Ids are in canonical order.
+type RevisitSummary struct {
+	DepDone []string `json:"dep_done"` // task ids with >=1 dependency in the done lane
+	Stale   []string `json:"stale"`    // task ids not updated within staleDays
+}
+
+// Empty reports whether nothing is worth surfacing (a clean board).
+func (s RevisitSummary) Empty() bool { return len(s.DepDone) == 0 && len(s.Stale) == 0 }
+
+// RevisitSummary tallies the dep_done and stale signals over the open
+// (non-terminal) tasks passing o.match. With a scope set (ScopeRepo/Repo),
+// repo-less drafts are excluded — the difference from Revisit, which always
+// surfaces drafts as no_repo; a board-wide o (no scope) counts them.
+// staleDays <= 0 disables the stale half (matching core.RevisitReasons).
+// It is purely read-only; it drives the `furrow sync` staleness nudge.
+func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error) {
+	idx, err := a.load()
+	if err != nil {
+		return RevisitSummary{}, err
+	}
+	doneIDs := map[string]bool{}
+	for _, t := range idx.Tasks {
+		if t.Status == a.Cfg.DoneLane {
+			doneIDs[t.ID] = true
+		}
+	}
+	now := a.Clock.Now()
+	sum := RevisitSummary{}
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if a.Cfg.IsTerminal(t.Status) || !o.match(t) {
+			continue
+		}
+		var depDone, stale bool
+		for _, r := range core.RevisitReasons(*t, now, staleDays, doneIDs) {
+			switch r.Code {
+			case core.RevisitDepDone:
+				depDone = true
+			case core.RevisitStale:
+				stale = true
+			}
+		}
+		if depDone {
+			sum.DepDone = append(sum.DepDone, t.ID)
+		}
+		if stale {
+			sum.Stale = append(sum.Stale, t.ID)
+		}
+	}
+	return sum, nil
+}

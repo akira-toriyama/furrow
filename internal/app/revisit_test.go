@@ -126,6 +126,106 @@ func TestRevisitCanonicalOrderAndLimitIdentity(t *testing.T) {
 	}
 }
 
+func TestRevisitSummaryCountsScopedDepDoneAndStale(t *testing.T) {
+	a, clk := revisitApp()
+
+	// A dependency we finish, plus a stale in-scope task at T0.
+	dep, _ := a.Add("dep", AddOpts{Status: "ready", Value: p(1), Effort: p(1), Repos: []string{"o/r"}})
+	a.Done(dep.ID) // -> done lane (terminal)
+	staleIn, _ := a.Add("stale-in", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}})
+	a.Add("stale-other", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"x/y"}}) // other repo
+	a.Add("stale-draft", AddOpts{Status: "ready", Value: p(3), Effort: p(2)})                         // draft (no repo)
+	a.Add("parked", AddOpts{Status: "icebox", Repos: []string{"o/r"}})                                // terminal
+
+	// Age everything 60d, then a fresh dependent (in scope) whose dep is done.
+	clk.t = clk.t.AddDate(0, 0, 60)
+	user, _ := a.Add("dep-user", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
+
+	sum, err := a.RevisitSummary(QueryOpts{ScopeRepo: "o/r"}, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{user.ID}; !eq(sum.DepDone, want) {
+		t.Errorf("DepDone = %v, want %v", sum.DepDone, want)
+	}
+	// Only the in-scope stale task: other-repo, draft, terminal, and the fresh
+	// dependent (updated 0d ago) are all excluded.
+	if want := []string{staleIn.ID}; !eq(sum.Stale, want) {
+		t.Errorf("Stale = %v, want %v", sum.Stale, want)
+	}
+	if sum.Empty() {
+		t.Error("summary should not be Empty")
+	}
+}
+
+func TestRevisitSummaryStaleDaysZeroDisablesStale(t *testing.T) {
+	a, clk := revisitApp()
+	a.Add("old", AddOpts{Status: "ready", Value: p(1), Effort: p(1), Repos: []string{"o/r"}})
+	clk.t = clk.t.AddDate(0, 0, 90)
+
+	sum, err := a.RevisitSummary(QueryOpts{ScopeRepo: "o/r"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.Stale) != 0 || !sum.Empty() {
+		t.Errorf("staleDays=0 must disable stale; got %+v", sum)
+	}
+}
+
+// TestRevisitSummaryMultiAndOverlap covers two gaps in the single-id-per-list
+// coverage above: DepDone must return >1 id in canonical (priority then id)
+// order, and a task that is BOTH stale and has a done dependency must appear
+// in both DepDone and Stale (the two loops in RevisitSummary are independent,
+// not mutually exclusive).
+func TestRevisitSummaryMultiAndOverlap(t *testing.T) {
+	a, clk := revisitApp()
+
+	dep, _ := a.Add("dep", AddOpts{Status: "ready", Value: p(1), Effort: p(1), Repos: []string{"o/r"}})
+	a.Done(dep.ID) // -> done lane (terminal)
+
+	// A dependent added at T0, aged 60d with nothing touching it afterwards:
+	// it goes stale AND has a done dep, so it must land in BOTH lists.
+	overlap, _ := a.Add("dep-user-overlap", AddOpts{Status: "ready", Priority: p(20), Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
+
+	clk.t = clk.t.AddDate(0, 0, 60) // past the 30d threshold
+
+	// Two more dependents added AFTER the age jump (so they stay fresh — NOT
+	// stale), out of priority order, to isolate the DepDone-order check from
+	// staleness. Canonical order is lane-rank -> priority -> id.
+	second, _ := a.Add("dep-user-2", AddOpts{Status: "ready", Priority: p(50), Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
+	first, _ := a.Add("dep-user-1", AddOpts{Status: "ready", Priority: p(10), Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
+
+	sum, err := a.RevisitSummary(QueryOpts{ScopeRepo: "o/r"}, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Canonical order is lane-rank -> priority -> id: first(10) < overlap(20) < second(50).
+	if want := []string{first.ID, overlap.ID, second.ID}; !eq(sum.DepDone, want) {
+		t.Errorf("DepDone order = %v, want canonical %v", sum.DepDone, want)
+	}
+	// Only the aged task is stale — the two fresh dependents are not.
+	if want := []string{overlap.ID}; !eq(sum.Stale, want) {
+		t.Errorf("Stale = %v, want %v", sum.Stale, want)
+	}
+
+	// The overlap task must be present in BOTH lists (not exclusively one).
+	inList := func(ids []string, id string) bool {
+		for _, x := range ids {
+			if x == id {
+				return true
+			}
+		}
+		return false
+	}
+	if !inList(sum.DepDone, overlap.ID) {
+		t.Errorf("overlap task %s missing from DepDone: %v", overlap.ID, sum.DepDone)
+	}
+	if !inList(sum.Stale, overlap.ID) {
+		t.Errorf("overlap task %s missing from Stale: %v", overlap.ID, sum.Stale)
+	}
+}
+
 func eq(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
