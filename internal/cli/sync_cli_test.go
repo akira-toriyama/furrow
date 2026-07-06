@@ -54,6 +54,35 @@ func TestRevisitLineRendering(t *testing.T) {
 	}
 }
 
+// TestRevisitScopeLabelAndSyncScope is a direct unit test for the two scope
+// helpers (revisitScopeLabel, syncScope) sharing boardScopeRepo — a bare
+// *app.App reading only DefaultRepo/AutoFilter is enough, no store needed.
+func TestRevisitScopeLabelAndSyncScope(t *testing.T) {
+	a := &app.App{DefaultRepo: "akira-toriyama/furrow", AutoFilter: true}
+	if got := revisitScopeLabel(a); got != "furrow" {
+		t.Errorf("revisitScopeLabel = %q, want %q", got, "furrow")
+	}
+	if got := syncScope(a).ScopeRepo; got != "akira-toriyama/furrow" {
+		t.Errorf("syncScope(a).ScopeRepo = %q, want %q", got, "akira-toriyama/furrow")
+	}
+
+	off := &app.App{DefaultRepo: "akira-toriyama/furrow", AutoFilter: false}
+	if got := revisitScopeLabel(off); got != "board" {
+		t.Errorf("revisitScopeLabel (auto_filter=false) = %q, want %q", got, "board")
+	}
+	if got := syncScope(off).ScopeRepo; got != "" {
+		t.Errorf("syncScope(off).ScopeRepo = %q, want empty", got)
+	}
+
+	noRepo := &app.App{DefaultRepo: "", AutoFilter: true}
+	if got := revisitScopeLabel(noRepo); got != "board" {
+		t.Errorf("revisitScopeLabel (no default repo) = %q, want %q", got, "board")
+	}
+	if got := syncScope(noRepo).ScopeRepo; got != "" {
+		t.Errorf("syncScope(noRepo).ScopeRepo = %q, want empty", got)
+	}
+}
+
 func TestSyncOutputJSONShape(t *testing.T) {
 	prog := &app.SyncProgress{Pulled: true, Pushed: true}
 	// With a summary: revisit object carries the ids.

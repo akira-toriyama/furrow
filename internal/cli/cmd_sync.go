@@ -17,16 +17,26 @@ type syncOutput struct {
 	Revisit *app.RevisitSummary `json:"revisit,omitempty"`
 }
 
+// boardScopeRepo is the board's auto scope repo (owner/repo) when auto-filtering
+// is on, else "" (whole board). Shared by the sync summary's scope and its label.
+func boardScopeRepo(a *app.App) string {
+	if a.DefaultRepo != "" && a.AutoFilter {
+		return a.DefaultRepo
+	}
+	return ""
+}
+
 // revisitScopeLabel is the tag shown after the counts: the auto repo's short
 // name (segment after the last "/"), or "board" when the sync ran board-wide.
 func revisitScopeLabel(a *app.App) string {
-	if a.DefaultRepo != "" && a.AutoFilter {
-		if i := strings.LastIndex(a.DefaultRepo, "/"); i >= 0 && i+1 < len(a.DefaultRepo) {
-			return a.DefaultRepo[i+1:]
-		}
-		return a.DefaultRepo
+	repo := boardScopeRepo(a)
+	if repo == "" {
+		return "board"
 	}
-	return "board"
+	if i := strings.LastIndex(repo, "/"); i >= 0 && i+1 < len(repo) {
+		return repo[i+1:]
+	}
+	return repo
 }
 
 // revisitLine is the one human line appended after the sync summary. Empty
@@ -42,11 +52,7 @@ func revisitLine(sum app.RevisitSummary, scope string) string {
 // syncScope builds the strict repo scope for the post-sync summary: the board's
 // auto repo when auto-filtering, else the whole board.
 func syncScope(a *app.App) app.QueryOpts {
-	o := app.QueryOpts{}
-	if a.DefaultRepo != "" && a.AutoFilter {
-		o.ScopeRepo = a.DefaultRepo
-	}
-	return o
+	return app.QueryOpts{ScopeRepo: boardScopeRepo(a)}
 }
 
 // newSyncCmd wires `furrow sync` — the multi-machine ritual (commit the board,
@@ -88,6 +94,8 @@ func newSyncCmd() *cobra.Command {
 			if syncErr == nil {
 				if s, err := a.RevisitSummary(syncScope(a), a.Cfg.RevisitStaleDays); err == nil {
 					sum = s
+				} else {
+					fmt.Fprintf(errOut, "revisit summary skipped: %v\n", err)
 				}
 			}
 

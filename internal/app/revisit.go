@@ -63,9 +63,10 @@ type RevisitSummary struct {
 func (s RevisitSummary) Empty() bool { return len(s.DepDone) == 0 && len(s.Stale) == 0 }
 
 // RevisitSummary tallies the dep_done and stale signals over the open
-// (non-terminal) tasks passing o.match — strict scope, so repo-less drafts are
-// excluded (that is the difference from Revisit, which surfaces drafts as
-// no_repo). staleDays <= 0 disables the stale half (matching core.RevisitReasons).
+// (non-terminal) tasks passing o.match. With a scope set (ScopeRepo/Repo),
+// repo-less drafts are excluded — the difference from Revisit, which always
+// surfaces drafts as no_repo; a board-wide o (no scope) counts them.
+// staleDays <= 0 disables the stale half (matching core.RevisitReasons).
 // It is purely read-only; it drives the `furrow sync` staleness nudge.
 func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error) {
 	idx, err := a.load()
