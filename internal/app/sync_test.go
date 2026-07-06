@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func TestSyncTwoClonesConverge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := a.Sync("")
+	p, err := a.Sync(SyncOpts{})
 	if err != nil {
 		t.Fatalf("A sync: %v (progress %+v)", err, p)
 	}
@@ -95,7 +96,7 @@ func TestSyncTwoClonesConverge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Sync(""); err != nil {
+	if _, err := b.Sync(SyncOpts{}); err != nil {
 		t.Fatalf("B sync: %v", err)
 	}
 	// B now has both tasks.
@@ -104,7 +105,7 @@ func TestSyncTwoClonesConverge(t *testing.T) {
 	}
 
 	// A pulls B's task with a no-change sync (nothing to commit or push).
-	p, err = openBoard(t, cloneA).Sync("")
+	p, err = openBoard(t, cloneA).Sync(SyncOpts{})
 	if err != nil {
 		t.Fatalf("A second sync: %v", err)
 	}
@@ -128,10 +129,10 @@ func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Sync(""); err != nil {
+	if _, err := a.Sync(SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openBoard(t, cloneB).Sync(""); err != nil { // B pulls it
+	if _, err := openBoard(t, cloneB).Sync(SyncOpts{}); err != nil { // B pulls it
 		t.Fatal(err)
 	}
 
@@ -139,14 +140,14 @@ func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
 	if _, err := openBoard(t, cloneA).SetTitle(shared.ID, "A wins"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openBoard(t, cloneA).Sync(""); err != nil {
+	if _, err := openBoard(t, cloneA).Sync(SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := openBoard(t, cloneB).SetTitle(shared.ID, "B wins"); err != nil {
 		t.Fatal(err)
 	}
 
-	p, err := openBoard(t, cloneB).Sync("")
+	p, err := openBoard(t, cloneB).Sync(SyncOpts{})
 	if err == nil {
 		t.Fatal("B sync must fail on the conflicting shard")
 	}
@@ -196,7 +197,7 @@ func TestSyncOutsideGitIsValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := openBoard(t, dir)
-	p, err := a.Sync("")
+	p, err := a.Sync(SyncOpts{})
 	if err == nil {
 		t.Fatal("sync outside git must fail")
 	}
@@ -229,7 +230,7 @@ func TestSyncRefusesMidMerge(t *testing.T) {
 	cmd.Dir = cloneA
 	_ = cmd.Run() // conflicts; MERGE_HEAD left behind
 
-	_, err := openBoard(t, cloneA).Sync("")
+	_, err := openBoard(t, cloneA).Sync(SyncOpts{})
 	if err == nil {
 		t.Fatal("sync mid-merge must be refused")
 	}
@@ -274,7 +275,7 @@ func TestSyncRebaseBusyIsRetryableNotValidation(t *testing.T) {
 
 	a := openBoard(t, cloneA)
 	a.sleep = func(time.Duration) {} // ride out the retry budget instantly
-	p, err := a.Sync("")
+	p, err := a.Sync(SyncOpts{})
 	if err == nil {
 		t.Fatal("sync on a never-clearing rebase must fail after the retry budget")
 	}
@@ -290,6 +291,69 @@ func TestSyncRebaseBusyIsRetryableNotValidation(t *testing.T) {
 	}
 }
 
+// The class-split: a co-located operator's merely-modified body is NOT swept
+// into another session's sync (it is left dirty and surfaced in PendingBodies),
+// while machine-written shards and brand-new bodies still flow, and -b names the
+// explicit opt-in. This is the fix for the shared-board WIP-sweep accident.
+func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
+	git, cloneA, _ := setupClones(t)
+
+	a := openBoard(t, cloneA)
+	t1, err := a.Add("task one", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(SyncOpts{}); err != nil { // t1 shard + its new body committed
+		t.Fatalf("initial sync: %v", err)
+	}
+
+	// A co-located operator is mid-edit on t1's body (now modified + tracked)…
+	bodyPath := filepath.Join(cloneA, ".furrow", "bodies", t1.ID+".md")
+	if err := os.WriteFile(bodyPath, []byte("# task one\n\nWIP progress note, not ready\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// …while this session adds its own task (new shard + new body).
+	t2, err := a.Add("task two", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := a.Sync(SyncOpts{})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if !p.Committed {
+		t.Errorf("t2's shard must be committed: %+v", p)
+	}
+	// t1's modified body is left uncommitted and reported…
+	bodySpec := ".furrow/bodies/" + t1.ID + ".md"
+	if strings.TrimSpace(runGitT(t, git, cloneA, "status", "--porcelain", "--", bodySpec)) == "" {
+		t.Errorf("foreign body %s must stay dirty (uncommitted), but the tree is clean for it", bodySpec)
+	}
+	if !slices.Contains(p.PendingBodies, t1.ID) {
+		t.Errorf("PendingBodies = %v; want it to contain %s", p.PendingBodies, t1.ID)
+	}
+	// …while t2's brand-new body rode along automatically, and t1's did not.
+	if !slices.Contains(p.CommittedBodies, t2.ID) {
+		t.Errorf("CommittedBodies = %v; want it to contain the new body %s", p.CommittedBodies, t2.ID)
+	}
+	if slices.Contains(p.CommittedBodies, t1.ID) {
+		t.Errorf("t1's foreign edit must not be committed: %v", p.CommittedBodies)
+	}
+
+	// Explicit opt-in (-b) commits the named body and clears the pending nudge.
+	p2, err := a.Sync(SyncOpts{Bodies: []string{t1.ID}})
+	if err != nil {
+		t.Fatalf("opt-in sync: %v", err)
+	}
+	if !slices.Contains(p2.CommittedBodies, t1.ID) || len(p2.PendingBodies) != 0 {
+		t.Errorf("opt-in sync: committed=%v pending=%v; want t1 committed, none pending", p2.CommittedBodies, p2.PendingBodies)
+	}
+	if got := strings.TrimSpace(runGitT(t, git, cloneA, "status", "--porcelain", "--", bodySpec)); got != "" {
+		t.Errorf("t1 body must be clean after the opt-in sync, status: %q", got)
+	}
+}
+
 // --message overrides the default auto-commit message.
 func TestSyncMessageOverride(t *testing.T) {
 	git, cloneA, _ := setupClones(t)
@@ -297,7 +361,7 @@ func TestSyncMessageOverride(t *testing.T) {
 	if _, err := a.Add("x", AddOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Sync(":card_file_box: chore(board): custom words"); err != nil {
+	if _, err := a.Sync(SyncOpts{Message: ":card_file_box: chore(board): custom words"}); err != nil {
 		t.Fatal(err)
 	}
 	subject := strings.TrimSpace(runGitT(t, git, cloneA, "log", "-1", "--format=%s"))

@@ -186,7 +186,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `label <id>` | Add and/or remove labels on a task (both repeatable, combinable); idempotent | `--add <label>`, `--remove <label>` |
 | `repo <id>` | Attach and/or detach repos (`owner/repo`) on a task; each value must be a full `owner/repo` or a short name uniquely resolving against the board's repos (else exit 2 with `candidates`); idempotent. A task with no repos is a draft | `--add <repo>`, `--rm <repo>` |
 | `apply` | Apply `SetStatus-task: <body-link> [<lane>]` directives parsed from PR/commit text (stdin or `--body-file`) — the CI hook for auto status updates. `--on open` nudges to in-progress; `--on merge` applies the lane. Validation is non-blocking | `--on open\|merge`, `--ref`, `--body-file`, `--open-lane` |
-| `sync` | The multi-machine board ritual as one command: auto-commit limited to `.furrow/`, `pull --rebase` (autostash), `push` (one pull→push retry on non-fast-forward). On conflict it aborts the rebase automatically (`sync-conflict` error carries the paths); a concurrent writer's transient rebase is waited out with a bounded backoff, else `sync-busy` (retryable, exit 3). Progress `{committed, pulled, pushed, conflict}` goes to stdout even on failure. A successful sync also adds a repo-scoped `revisit` summary (`dep_done`/`stale` id lists; omitted when empty) | `-m/--message` |
+| `sync` | The multi-machine board ritual as one command: auto-commit scoped to `.furrow/` (machine-written shards always; a hand-edited `bodies/<id>.md` only when new or named with `-b`, else left for its author in `pending_bodies` — so a shared checkout never sweeps a co-located operator's WIP; `--all-bodies` restores the old sweep), `pull --rebase` (autostash), `push` (one pull→push retry on non-fast-forward). On conflict it aborts the rebase automatically (`sync-conflict` error carries the paths); a concurrent writer's transient rebase is waited out with a bounded backoff, else `sync-busy` (retryable, exit 3). Progress `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` goes to stdout even on failure. A successful sync also adds a repo-scoped `revisit` summary (`dep_done`/`stale` id lists; omitted when empty) | `-m/--message`, `-b/--body`, `--all-bodies` |
 | `archive` | Move aged done tasks to `.furrow/archive/` (preview unless `--yes`). Board-wide by default; `-r/--repo` (repeatable) scopes the sweep to one repo's aged done on a shared board, ANDed with the age guard | `--older-than <days>`, `-r/--repo <repo>` (repeatable), `--yes` |
 | `lint` | Check shard↔body 1:1, id shape, lanes, deps/parent refs, dependency cycles (error), dangling `[[id]]` body links (warn; archived ids are not dangling), reconcile gaps (an open task whose done dependency closed after its last update; warn), config clamp warnings (incl. a half-written user-level config) | — |
 | `config init` | Write the user-level `~/.config/furrow/config.toml` (central-board template); fills the board path/scopes from the nearest `.furrow` when run inside a board, else a placeholder. Never overwrites an existing file | `--path`, `--scope` (repeatable) |
@@ -366,8 +366,14 @@ you read, push after you write. `furrow sync` is that ritual as one
 non-interactive command — a thin git wrapper, not a sync daemon or server
 (see [docs/non-goals.md](docs/non-goals.md)):
 
-1. auto-commit, **pathspec-limited to `.furrow/`** — other dirty files in the
-   board repo (notes, drafts) are never swept in. Default message
+1. auto-commit, **scoped to `.furrow/`** — other dirty files in the board repo
+   (notes, drafts) are never swept in. Within `.furrow/`, machine-written shards
+   (`tasks/`, `meta.json`) are always committed, but a hand-edited
+   `bodies/<id>.md` is committed **only when it is new or named with `-b/--body`**
+   — a merely-modified body is left for its author (surfaced in `pending_bodies`)
+   so a shared checkout never commits a co-located operator's in-progress prose
+   under the wrong author. `--all-bodies` restores the old sweep for a checkout
+   you know is yours alone. Default message
    `:card_file_box: chore(board): sync via furrow`; override with `-m`.
 2. `git -c rebase.autoStash=true pull --rebase`
 3. `git push` (one pull→push retry on non-fast-forward)
@@ -378,8 +384,9 @@ happens sync **aborts the rebase automatically** (the board is never left with
 conflict markers; your local sync commit survives) and exits 3 with an error
 envelope carrying `"id": "sync-conflict"` and `"details": {"paths": [...]}` so
 an agent knows exactly which shards to reconcile. The progress object
-`{committed, pulled, pushed, conflict}` is printed to stdout on success and
-failure alike.
+`{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` is
+printed to stdout on success and failure alike (the two body lists are omitted
+when empty).
 
 On a **successful** sync it also prints a repo-scoped `revisit` summary: open
 tasks with a done dependency (`dep_done`) or gone stale (`stale`) — a nudge to

@@ -3,6 +3,8 @@ package app
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -64,6 +66,18 @@ func waitForRebaseToClear(check func() (string, bool), sleep func(time.Duration)
 // which is exactly right for board data.
 const DefaultSyncMessage = ":card_file_box: chore(board): sync via furrow"
 
+// SyncOpts controls one Sync. Message overrides the auto-commit subject. Bodies
+// names task ids whose hand-edited bodies/<id>.md this sync should commit — on a
+// shared board a merely-modified body is otherwise left for its own author
+// (reported in PendingBodies) rather than swept in under the wrong hands.
+// AllBodies commits every dirty body (the pre-scoping sweep), for a checkout you
+// know is yours alone.
+type SyncOpts struct {
+	Message   string
+	Bodies    []string
+	AllBodies bool
+}
+
 // SyncProgress is the machine-readable record of how far a sync got. It is
 // emitted on stdout on success AND on failure, so an agent can tell "the
 // auto-commit happened but the push didn't" instead of guessing from an error
@@ -73,11 +87,53 @@ type SyncProgress struct {
 	Pulled    bool `json:"pulled"`    // pull --rebase completed
 	Pushed    bool `json:"pushed"`    // push completed
 	Conflict  bool `json:"conflict"`  // pull hit conflicts (rebase was aborted)
+	// CommittedBodies lists task ids whose bodies/<id>.md this sync committed
+	// (new/seeded bodies, or ones named via -b/--all-bodies). PendingBodies lists
+	// modified bodies deliberately LEFT uncommitted on a shared board — rerun with
+	// -b <id> (or --all-bodies) to push them. Both are omitted when empty.
+	CommittedBodies []string `json:"committed_bodies,omitempty"`
+	PendingBodies   []string `json:"pending_bodies,omitempty"`
 }
 
-// Sync is the multi-machine ritual as one command: commit the board (pathspec
-// -limited to .furrow/ so unrelated dirty files are never swept in), pull
-// --rebase (autostash), push (retrying pull→push once on non-fast-forward).
+// partitionSync splits the dirty .furrow paths into what the auto-commit should
+// stage. Machine-written files (tasks/, meta.json, config.toml — everything that
+// is not a body) are always committed: they are deterministic and complete by
+// construction. A hand-edited bodies/<id>.md is committed only when it is
+// brand-new (an add/retitle seed, still untracked) or explicitly opted in
+// (opts.Bodies or opts.AllBodies); an otherwise-modified body is left
+// uncommitted and returned in pendingBodies, so a shared checkout never sweeps a
+// co-located operator's in-progress prose under the wrong author. commitPaths
+// are the pathspecs to stage; committedBodies/pendingBodies are affected ids,
+// sorted (nil when empty, so SyncProgress omits them).
+func partitionSync(spec string, changes []gitrepo.Change, opts SyncOpts) (commitPaths, committedBodies, pendingBodies []string) {
+	bodiesPrefix := spec + "/bodies/"
+	named := make(map[string]bool, len(opts.Bodies))
+	for _, id := range opts.Bodies {
+		named[id] = true
+	}
+	for _, ch := range changes {
+		if body, isBody := strings.CutPrefix(ch.Path, bodiesPrefix); isBody && strings.HasSuffix(body, ".md") {
+			id := strings.TrimSuffix(body, ".md")
+			if ch.Untracked || opts.AllBodies || named[id] {
+				commitPaths = append(commitPaths, ch.Path)
+				committedBodies = append(committedBodies, id)
+			} else {
+				pendingBodies = append(pendingBodies, id)
+			}
+			continue
+		}
+		commitPaths = append(commitPaths, ch.Path) // machine-written: always safe
+	}
+	sort.Strings(committedBodies)
+	sort.Strings(pendingBodies)
+	return commitPaths, committedBodies, pendingBodies
+}
+
+// Sync is the multi-machine ritual as one command: commit the board (scoped to
+// .furrow/ so unrelated dirty files are never swept in — and within it, to
+// machine-written shards plus new/opted-in bodies so a co-located operator's
+// in-progress body is never committed under the wrong author; see partitionSync),
+// pull --rebase (autostash), push (retrying pull→push once on non-fast-forward).
 // It is a thin git wrapper by design — no daemon, no sync server (see
 // docs/non-goals.md).
 //
@@ -87,7 +143,7 @@ type SyncProgress struct {
 // returns a CodeInternal error with ID "sync-conflict" whose Details carry the
 // conflicted paths. The returned SyncProgress is meaningful even when err is
 // non-nil.
-func (a *App) Sync(message string) (*SyncProgress, error) {
+func (a *App) Sync(opts SyncOpts) (*SyncProgress, error) {
 	p := &SyncProgress{}
 
 	r, err := gitrepo.Open(a.Dir)
@@ -121,18 +177,24 @@ func (a *App) Sync(message string) (*SyncProgress, error) {
 		return p, err
 	}
 
-	changed, err := r.HasChanges(spec)
+	changes, err := r.DirtyChanges(spec)
 	if err != nil {
 		return p, err
 	}
-	if changed {
-		if message == "" {
-			message = DefaultSyncMessage
+	if len(changes) > 0 {
+		commitPaths, committedBodies, pendingBodies := partitionSync(spec, changes, opts)
+		p.PendingBodies = pendingBodies // reported even when there is nothing else to commit
+		if len(commitPaths) > 0 {
+			message := opts.Message
+			if message == "" {
+				message = DefaultSyncMessage
+			}
+			if err := r.Commit(message, commitPaths...); err != nil {
+				return p, err
+			}
+			p.Committed = true
+			p.CommittedBodies = committedBodies
 		}
-		if err := r.Commit(message, spec); err != nil {
-			return p, err
-		}
-		p.Committed = true
 	}
 
 	pull := func() error {
