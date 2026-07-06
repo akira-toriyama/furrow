@@ -70,6 +70,9 @@ echo "  config.global.toml matches config-init placeholder template"
 echo "→ README EN/JA pin-parity guard"
 sh scripts/check-readme-parity.sh
 
+echo "→ nix flake version ⇄ release-pin lockstep guard"
+sh scripts/check-version-lockstep.sh
+
 echo "→ smoke: init / add / ls --json / next / done / lint / config init|path"
 sb="$(mktemp -d)"
 ( cd "$sb"
