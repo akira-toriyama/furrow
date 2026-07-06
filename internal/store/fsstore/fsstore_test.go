@@ -266,24 +266,49 @@ func TestBodyLazyAndExists(t *testing.T) {
 }
 
 func TestNextIDRandom(t *testing.T) {
+	// Production id shape: prefix + 5 Crockford-base32 chars, and no legacy
+	// counter file. NextID is a *raw* random draw with no internal dedup, so
+	// uniqueness of *persisted* ids is the app layer's job (App.uniqueID retries
+	// on an in-store clash — see internal/app TestAddGeneratesUniqueRandomIDs /
+	// TestAddManyGeneratesUniqueIDs), and the byte->alphabet mapping is pinned in
+	// core.TestRandomIDSuffix. This test pins what the *store* owns.
 	s := newStore(t)
 	re := regexp.MustCompile(`^t-[0-9a-z]{5}$`)
-	seen := map[string]bool{}
-	for i := 0; i < 64; i++ {
-		id, err := s.NextID()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !re.MatchString(id) {
-			t.Fatalf("id %q does not match the random id pattern", id)
-		}
-		if seen[id] {
-			t.Fatalf("NextID returned a duplicate within a small batch: %q", id)
-		}
-		seen[id] = true
+	id, err := s.NextID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !re.MatchString(id) {
+		t.Fatalf("id %q does not match the random id pattern", id)
 	}
 	// the legacy counter file is gone: NextID must not create .furrow/seq.
 	if _, err := os.Stat(filepath.Join(s.root, "seq")); !os.IsNotExist(err) {
 		t.Errorf("NextID must not create .furrow/seq (stat err = %v)", err)
+	}
+
+	// NextID is high-entropy and stateless: repeated draws are independent random
+	// values, not a constant or a counter. We assert this with a strict
+	// no-duplicate check — but only where that assertion is honest. A *raw* batch
+	// can collide by the birthday bound: at the 5-char production width the space
+	// is only 32^5 ≈ 3.4e7, so 64 draws collide with p ≈ 6e-5 — the CI flake this
+	// de-flakes (t-09ca). A wide suffix makes the birthday collision
+	// astronomically improbable (32^24 ≈ 1.3e36, so 1000 draws collide with
+	// p ≈ 4e-31), so a duplicate at this width means NextID is genuinely broken
+	// (constant/low-entropy), not unlucky.
+	wide := New(filepath.Join(t.TempDir(), ".furrow"), lanes, "t-", 24)
+	wideRe := regexp.MustCompile(`^t-[0-9a-z]{24}$`)
+	seen := map[string]bool{}
+	for i := 0; i < 1000; i++ {
+		id, err := wide.NextID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !wideRe.MatchString(id) {
+			t.Fatalf("id %q does not match the random id pattern", id)
+		}
+		if seen[id] {
+			t.Fatalf("NextID returned a duplicate within a batch: %q", id)
+		}
+		seen[id] = true
 	}
 }
