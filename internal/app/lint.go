@@ -30,6 +30,18 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// wait on each other forever and never surface in `next`). lint is the backstop.
 	ps = append(ps, core.CycleProblems(idx)...)
 
+	// Reconcile gaps (warn): a non-terminal task whose done dependency closed
+	// after the task was last touched. This is the structural backstop for
+	// reconcile-on-close — the always-on (hook/CI) twin of the `dep_done` revisit
+	// signal, so an epic whose slice shipped never silently keeps a stale body.
+	doneIDs := map[string]bool{}
+	for _, t := range idx.Tasks {
+		if t.Status == a.Cfg.DoneLane {
+			doneIDs[t.ID] = true
+		}
+	}
+	ps = append(ps, core.StaleDepProblems(idx, a.Cfg.Terminal, doneIDs)...)
+
 	// tasks/ <-> bodies/ 1:1 + shard filename/id integrity — all by directory
 	// enumeration. Sharding makes a duplicate filename impossible; a duplicate id
 	// can only appear as two shards carrying the same id field, which the fold
