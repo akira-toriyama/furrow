@@ -127,6 +127,62 @@ func TestCommitIsPathspecLimited(t *testing.T) {
 	}
 }
 
+// DirtyChanges enumerates the dirty paths under a pathspec, tagging untracked
+// files, and a variadic Commit of only the shard/meta paths leaves a modified
+// body dirty — the two primitives app.Sync's class-split is built on.
+func TestDirtyChangesTagsUntrackedAndScopesCommit(t *testing.T) {
+	git := gitOrSkip(t)
+	dir := initRepo(t, git)
+	fdir := filepath.Join(dir, ".furrow")
+	bdir := filepath.Join(fdir, "bodies")
+	if err := os.MkdirAll(bdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bodyPath := filepath.Join(bdir, "t-1.md")
+	if err := os.WriteFile(bodyPath, []byte("# one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Open(fdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Commit("seed", ".furrow"); err != nil { // body now tracked + committed
+		t.Fatal(err)
+	}
+	// A modification to the tracked body, plus a brand-new untracked meta.json.
+	if err := os.WriteFile(bodyPath, []byte("# one\n\nedited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fdir, "meta.json"), []byte("{\"schema_version\":3}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	changes, err := r.DirtyChanges(".furrow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	untracked := map[string]bool{}
+	seen := map[string]bool{}
+	for _, c := range changes {
+		seen[c.Path] = true
+		untracked[c.Path] = c.Untracked
+	}
+	if !seen[".furrow/bodies/t-1.md"] || untracked[".furrow/bodies/t-1.md"] {
+		t.Errorf("modified body: seen=%v untracked=%v; want seen, tracked", seen[".furrow/bodies/t-1.md"], untracked[".furrow/bodies/t-1.md"])
+	}
+	if !seen[".furrow/meta.json"] || !untracked[".furrow/meta.json"] {
+		t.Errorf("new meta.json: seen=%v untracked=%v; want seen, untracked", seen[".furrow/meta.json"], untracked[".furrow/meta.json"])
+	}
+
+	// Committing only the meta path must leave the modified body dirty.
+	if err := r.Commit("meta only", ".furrow/meta.json"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(runGitT(t, git, dir, "status", "--porcelain", "--", ".furrow/bodies/t-1.md")) == "" {
+		t.Error("modified body must remain uncommitted after a meta-only commit")
+	}
+}
+
 // Push against a remote that moved is classified ErrNonFastForward — the one
 // failure Sync retries.
 func TestPushClassifiesNonFastForward(t *testing.T) {

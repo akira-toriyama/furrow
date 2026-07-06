@@ -114,15 +114,58 @@ func (r *Repo) HasChanges(pathspec string) (bool, error) {
 	return strings.TrimSpace(out) != "", nil
 }
 
-// Commit stages and commits ONLY the pathspec (`git add -- <p>` then
-// `git commit -m <msg> -- <p>`), so other dirty files in the board repo —
-// notes, drafts — are never swept into a sync commit.
-func (r *Repo) Commit(message, pathspec string) error {
-	if _, stderr, err := runGit(r.git, r.top, "add", "--", pathspec); err != nil {
-		return core.Internalf("sync", "git add -- %s: %s", pathspec, firstLine(stderr))
+// Change is one dirty path under a pathspec (from git status --porcelain): its
+// slash-form path relative to the work-tree toplevel, and whether git sees it as
+// untracked (a brand-new file, "??"). It is what lets app.Sync tell a
+// machine-written shard from a hand-edited body and scope the auto-commit.
+type Change struct {
+	Path      string
+	Untracked bool
+}
+
+// DirtyChanges enumerates the working-tree changes under pathspec — the listing
+// twin of HasChanges. Each entry is tagged untracked-or-not and the slice is
+// sorted by path for deterministic output. Porcelain parsing stays here, in the
+// adapter, so app never sees git's wire format (layer rule).
+func (r *Repo) DirtyChanges(pathspec string) ([]Change, error) {
+	// core.quotepath=false keeps non-ASCII paths literal (unquoted) so the parse
+	// below is a plain byte-slice; furrow's own ids are ASCII, but a repo may hold
+	// other files under the pathspec.
+	out, stderr, err := runGit(r.git, r.top, "-c", "core.quotepath=false", "status", "--porcelain", "--", pathspec)
+	if err != nil {
+		return nil, core.Internalf("sync", "git status: %s", firstLine(stderr))
 	}
-	if _, stderr, err := runGit(r.git, r.top, "commit", "-q", "-m", message, "--", pathspec); err != nil {
-		return core.Internalf("sync", "git commit -- %s: %s", pathspec, firstLine(stderr))
+	changes := []Change{} // [] not null, matching the store's slice style
+	for _, l := range strings.Split(out, "\n") {
+		if len(l) < 4 { // each entry is "XY path"
+			continue
+		}
+		path := l[3:]
+		// A rename/copy is reported "orig -> new"; the live path is the target.
+		if i := strings.Index(path, " -> "); i >= 0 {
+			path = path[i+len(" -> "):]
+		}
+		changes = append(changes, Change{Path: filepath.ToSlash(path), Untracked: l[0] == '?' && l[1] == '?'})
+	}
+	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
+	return changes, nil
+}
+
+// Commit stages and commits ONLY the given pathspecs (`git add -- <p>...` then
+// `git commit -m <msg> -- <p>...`), so other dirty files in the board repo —
+// notes, drafts, or a co-located operator's uncommitted body — are never swept
+// into a sync commit. app.Sync passes an explicit, class-filtered path set
+// (machine-written shards always; hand-edited bodies only when new or opted in).
+// An empty pathspec set is a no-op (no empty commit).
+func (r *Repo) Commit(message string, pathspecs ...string) error {
+	if len(pathspecs) == 0 {
+		return nil
+	}
+	if _, stderr, err := runGit(r.git, r.top, append([]string{"add", "--"}, pathspecs...)...); err != nil {
+		return core.Internalf("sync", "git add: %s", firstLine(stderr))
+	}
+	if _, stderr, err := runGit(r.git, r.top, append([]string{"commit", "-q", "-m", message, "--"}, pathspecs...)...); err != nil {
+		return core.Internalf("sync", "git commit: %s", firstLine(stderr))
 	}
 	return nil
 }
