@@ -1,0 +1,38 @@
+#!/bin/sh
+# pre-push board hook: gate — refuse to publish a board with lint ERRORS.
+#
+# `furrow lint` exit codes ARE the policy:
+#   2   -> board has ERRORS (missing body, duplicate/misnamed shard, dep cycle,
+#          missing required label, ...): BLOCK the push.
+#   0   -> clean, or warnings only: allow (warnings are surfaced non-blockingly
+#          by the post-merge / post-rewrite hooks, not here).
+#   3+  -> furrow could NOT evaluate the board (its schema is newer than this
+#          binary, or an IO error): an environment problem, not broken board
+#          content — surface it but DO NOT block. Blocking here would wedge every
+#          push (even branches that never touch .furrow/) over a version skew.
+#
+# git passes "<remote> <url>" as $1 $2 and feeds ref-update lines on stdin; a
+# whole-board lint needs neither, so they are ignored. Bypass in a genuine
+# emergency with `git push --no-verify`.
+#
+# Install (once per machine, per board repo — git never auto-enables hooks on
+# clone, by design): git config core.hooksPath scripts/hooks
+# Low-dependency: POSIX sh + furrow. See furrow README "Board git hooks".
+
+# Don't hold the board hostage: no furrow on PATH, or not a furrow board → skip.
+command -v furrow >/dev/null 2>&1 || exit 0
+[ -d .furrow ] || exit 0
+
+# `report=$(...)` sets $? to furrow lint's exit status (POSIX); capture both.
+report="$(furrow lint 2>&1)"
+rc=$?
+if [ "$rc" -eq 2 ]; then
+	printf '%s\n' "$report" >&2
+	echo "pre-push: furrow lint found errors — refusing to publish a broken board." >&2
+	echo "          fix them, or bypass in an emergency with: git push --no-verify" >&2
+	exit 1
+elif [ "$rc" -ne 0 ]; then
+	printf '%s\n' "$report" >&2
+	echo "pre-push: furrow lint could not evaluate the board (exit $rc) — not blocking; check your furrow version." >&2
+fi
+exit 0

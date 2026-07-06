@@ -410,6 +410,42 @@ only if a rebase is still in progress after the budget does it exit 3 with
 class), signalling that re-running usually clears it (or that a rebase here is
 genuinely stuck and needs a manual `git rebase --abort`).
 
+### Board git hooks (optional)
+
+The design lens: **remote automation is GitHub Actions; local automation is git
+hooks.** furrow ships three POSIX-sh hooks in
+[`scripts/board-hooks/`](scripts/board-hooks/) that put `furrow lint` at git's
+extension points, so a board that goes inconsistent (a dep pointing at a task
+someone archived, an orphaned body, a duplicate shard from a merge) is caught the
+moment it happens — and never reaches the remote.
+
+| hook | fires after | action | blocking |
+|---|---|---|---|
+| `post-merge`   | `git merge` / plain `git pull` | `furrow lint` | no (nudge) |
+| `post-rewrite` | `git rebase` / `--amend` / `git pull --rebase` | `furrow lint` | no (nudge) |
+| `pre-push`     | before a push | `furrow lint` | **yes, on errors** |
+
+Only `pre-push` blocks, and only on lint **errors** (`furrow lint` exits 2);
+warnings flow through and are surfaced non-blockingly after a merge or rebase. A
+`git pull --rebase` fires `post-rewrite` (not `post-merge`), so a board wants
+both — and since `furrow sync` pulls with `--rebase` internally, sync trips these
+hooks too (which is why sync carries no lint of its own).
+
+Enable them once per machine — git does not turn on hooks at clone time, by
+design — with the same one line furrow's own repo uses:
+
+```sh
+git config core.hooksPath scripts/hooks   # after placing the hooks there
+```
+
+`core.hooksPath` **replaces** `.git/hooks` rather than augmenting it — git then
+consults only this directory — so move any hook you already keep in the default
+`.git/hooks/` into the hooks dir too, or it silently stops running. Once both
+live there, a same-name hook (say a `pre-push` that protects `main`) is a
+collision to **compose** — keep the existing body and add the furrow-lint block —
+not to replace. Each hook also **skips cleanly** when `furrow` is absent from
+`PATH` or the repo has no `.furrow/`, so it never wedges a checkout.
+
 ## Configuration
 
 `.furrow/config.toml` is the one human-edited file in the store. furrow only **reads** it (it never rewrites it) and applies a **clamp-don't-reject** policy: unknown keys are ignored and out-of-range values fall back to a safe default with a warning surfaced by `furrow lint` — so a typo can never break the tool.

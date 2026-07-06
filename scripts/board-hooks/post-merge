@@ -1,0 +1,27 @@
+#!/bin/sh
+# post-merge board hook: nudge — run `furrow lint` after a merge, non-blocking.
+#
+# Fires after a successful `git merge`, INCLUDING the merge half of `git pull`
+# (the plain, non-rebase pull). `git pull --rebase` fires post-rewrite instead,
+# so a board wants both hooks. A merge is the moment cross-writer inconsistency
+# lands (A depends on a task B archived → dangling ref); lint surfaces it here.
+#
+# This hook only DETECTS — it never blocks (you cannot un-merge a fast-forward
+# cleanly, and a nag must not wedge your pull). The hard gate is pre-push.
+#
+# Install (once per machine, per board repo — git never auto-enables hooks on
+# clone, by design): git config core.hooksPath scripts/hooks
+# Low-dependency: POSIX sh + furrow. See furrow README "Board git hooks".
+
+# Don't hold the board hostage: no furrow on PATH, or not a furrow board → skip.
+command -v furrow >/dev/null 2>&1 || exit 0
+[ -d .furrow ] || exit 0
+
+# Surface problems, stay silent when the board is clean. `furrow lint --json`
+# prints "[]" for a clean board (exit 0), a JSON array for warnings (exit 0) or
+# errors (exit 2), and nothing on a load failure (exit 3) — so anything that is
+# not "[]" is worth showing. Re-run for the human-readable report on stderr.
+if [ "$(furrow lint --json 2>/dev/null)" != "[]" ]; then
+	furrow lint >&2 || true
+fi
+exit 0

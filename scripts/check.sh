@@ -9,6 +9,12 @@ export GOTOOLCHAIN=local
 echo "→ marshaller single-path guard"
 sh scripts/check-marshal-singlepath.sh
 
+echo "→ board-hook template syntax guard (POSIX sh -n)"
+for h in scripts/board-hooks/post-merge scripts/board-hooks/post-rewrite scripts/board-hooks/pre-push; do
+  sh -n "$h"
+done
+echo "  scripts/board-hooks/* parse clean"
+
 echo "→ go build"
 go build ./...
 

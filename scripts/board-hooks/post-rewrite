@@ -1,0 +1,25 @@
+#!/bin/sh
+# post-rewrite board hook: nudge — run `furrow lint` after history is rewritten,
+# non-blocking.
+#
+# Fires after commits are rewritten: `git rebase` and `git commit --amend`, and
+# crucially the rebase half of `git pull --rebase` (the rebase-pull workflow this
+# board uses). `git pull` without --rebase fires post-merge instead, so a board
+# wants both hooks. `furrow sync` pulls with --rebase internally, so it trips
+# this hook too — that is why sync itself carries no lint (it is delegated here).
+#
+# Detect-only, never blocks (same rationale as post-merge). Hard gate is pre-push.
+# git feeds "<old-sha> <new-sha>" lines on stdin and passes the trigger
+# ("rebase"|"amend") as $1; we lint the resulting tree regardless, so neither is
+# read.
+#
+# Install (once per machine, per board repo): git config core.hooksPath scripts/hooks
+# Low-dependency: POSIX sh + furrow. See furrow README "Board git hooks".
+
+command -v furrow >/dev/null 2>&1 || exit 0
+[ -d .furrow ] || exit 0
+
+if [ "$(furrow lint --json 2>/dev/null)" != "[]" ]; then
+	furrow lint >&2 || true
+fi
+exit 0
