@@ -324,6 +324,38 @@ bot や別オペレータが常に push しうるので、pre-flight が**他人
 **retryable クラス**で、再実行で解消することが多い（本当に stuck なら手で
 `git rebase --abort`）ことを示す。
 
+#### ボード用 git hooks（任意）
+
+設計レンズは **remote の自動化 = GitHub Actions、local の自動化 = git hooks**。furrow は
+[`scripts/board-hooks/`](scripts/board-hooks/) に POSIX sh の hook を 3 本同梱し、git の拡張点に
+`furrow lint` を差し込む。これでボードが不整合になった瞬間（誰かが archive した先に dep が
+張られている・孤立 body・merge 由来の重複 shard）に検知でき、**壊れたボードを remote に出さない**。
+
+| hook | 発火 | 動作 | blocking |
+|---|---|---|---|
+| `post-merge`   | `git merge` / rebase なし `git pull` | `furrow lint` | しない（nudge） |
+| `post-rewrite` | `git rebase` / `--amend` / `git pull --rebase` | `furrow lint` | しない（nudge） |
+| `pre-push`     | push の前 | `furrow lint` | **error のとき中止** |
+
+blocking するのは `pre-push` だけ、しかも lint の **error 時のみ**（`furrow lint` は error で
+exit 2）。warning は素通りし、merge/rebase 後に非ブロッキングで surface する。`git pull --rebase`
+は（`post-merge` ではなく）`post-rewrite` を発火するので board は両方入れる。さらに `furrow sync`
+は内部で `--rebase` pull するのでこれらの hook を巻き込む —— だから sync 自身は lint を持たない
+（hooks に委譲）。
+
+有効化は**マシンごとに 1 回**（git は clone しただけでは hook を有効化しない＝セキュリティ境界。
+PC A/B それぞれで要る）。furrow リポ自身と同じ 1 行:
+
+```sh
+git config core.hooksPath scripts/hooks   # hook を置いたあと
+```
+
+`core.hooksPath` は `.git/hooks` を**上書き**する（足すのではなく、git はこのディレクトリ**だけ**を
+見る）。だから既定の `.git/hooks/` に元々ある hook は、この hooks ディレクトリへ**移さないと**黙って
+動かなくなる。両方がここに揃ってはじめて、同名 hook（例: `main` を守る `pre-push`）は置き換えでなく
+**合成**する対象になる —— 既存本体を残して furrow-lint ブロックを足す。各 hook は `furrow` が PATH に
+無い／リポに `.furrow/` が無いときは**綺麗に skip** し、checkout を人質にしない。
+
 ---
 
 ## 設計の不変条件
