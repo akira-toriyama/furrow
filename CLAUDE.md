@@ -172,8 +172,11 @@ old binary can never lenient-parse away fields it doesn't know.
   Enable the hook once: `git config core.hooksPath scripts/hooks`. Spec:
   [CONTRIBUTING.md](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md).
 - `go build ./...` and `go test ./...` must pass before finishing a turn.
-- Keep [README.md](README.md) / [README.ja.md](README.ja.md) in sync on any
-  user-visible change (bilingual is the house style).
+- Keep [README.md](README.md) / [README.ja.md](README.ja.md) carrying the same
+  FACTS, not the same STRUCTURE, on any user-visible change (bilingual is the
+  house style; JA is intentionally a superset). Only shared load-bearing facts —
+  the `sync-task-status.yml@vX.Y.Z` workflow-pin tag and `schema_version` — stay
+  in lockstep, enforced by [`scripts/check-readme-parity.sh`](scripts/check-readme-parity.sh).
 - **Don't push without explicit OK.** 1 item = 1 PR (squash); update docs
   in the same PR.
 
