@@ -11,6 +11,7 @@
 package gitrepo
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -44,12 +45,12 @@ type Repo struct {
 // directory itself). A dir outside any git work tree is a validation error
 // (exit 2): sync is meaningless there and the fix — `git init` or moving the
 // board — is the caller's.
-func Open(dir string) (*Repo, error) {
+func Open(ctx context.Context, dir string) (*Repo, error) {
 	git, err := exec.LookPath("git")
 	if err != nil {
 		return nil, core.Internalf("sync", "git not found on PATH: %v", err)
 	}
-	out, stderr, err := runGit(git, dir, "rev-parse", "--show-toplevel")
+	out, stderr, err := runGit(ctx, git, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return nil, core.Validationf("sync", "%s is not inside a git repository (sync is a git wrapper): %s", dir, firstLine(stderr))
 	}
@@ -86,11 +87,11 @@ func (r *Repo) RelPath(p string) (string, error) {
 
 // MidOperation reports a rebase or merge already in progress — sync must
 // refuse to start on top of one (pre-flight), never try to be clever.
-func (r *Repo) MidOperation() (string, bool) {
-	if r.RebaseInProgress() {
+func (r *Repo) MidOperation(ctx context.Context) (string, bool) {
+	if r.RebaseInProgress(ctx) {
 		return "rebase", true
 	}
-	if p, _, err := runGit(r.git, r.top, "rev-parse", "--git-path", "MERGE_HEAD"); err == nil {
+	if p, _, err := runGit(ctx, r.git, r.top, "rev-parse", "--git-path", "MERGE_HEAD"); err == nil {
 		if _, statErr := os.Stat(r.absGitPath(p)); statErr == nil {
 			return "merge", true
 		}
@@ -99,9 +100,9 @@ func (r *Repo) MidOperation() (string, bool) {
 }
 
 // RebaseInProgress reports whether a rebase (merge- or apply-backed) is midway.
-func (r *Repo) RebaseInProgress() bool {
+func (r *Repo) RebaseInProgress(ctx context.Context) bool {
 	for _, dir := range []string{"rebase-merge", "rebase-apply"} {
-		p, _, err := runGit(r.git, r.top, "rev-parse", "--git-path", dir)
+		p, _, err := runGit(ctx, r.git, r.top, "rev-parse", "--git-path", dir)
 		if err != nil {
 			continue
 		}
@@ -114,8 +115,8 @@ func (r *Repo) RebaseInProgress() bool {
 
 // HasChanges reports whether the pathspec has anything to commit (working tree
 // or index) — the guard that keeps a no-op sync from creating empty commits.
-func (r *Repo) HasChanges(pathspec string) (bool, error) {
-	out, stderr, err := runGit(r.git, r.top, "status", "--porcelain", "--", pathspec)
+func (r *Repo) HasChanges(ctx context.Context, pathspec string) (bool, error) {
+	out, stderr, err := runGit(ctx, r.git, r.top, "status", "--porcelain", "--", pathspec)
 	if err != nil {
 		return false, core.Internalf("sync", "git status: %s", firstLine(stderr))
 	}
@@ -135,11 +136,11 @@ type Change struct {
 // twin of HasChanges. Each entry is tagged untracked-or-not and the slice is
 // sorted by path for deterministic output. Porcelain parsing stays here, in the
 // adapter, so app never sees git's wire format (layer rule).
-func (r *Repo) DirtyChanges(pathspec string) ([]Change, error) {
+func (r *Repo) DirtyChanges(ctx context.Context, pathspec string) ([]Change, error) {
 	// core.quotepath=false keeps non-ASCII paths literal (unquoted) so the parse
 	// below is a plain byte-slice; furrow's own ids are ASCII, but a repo may hold
 	// other files under the pathspec.
-	out, stderr, err := runGit(r.git, r.top, "-c", "core.quotepath=false", "status", "--porcelain", "--", pathspec)
+	out, stderr, err := runGit(ctx, r.git, r.top, "-c", "core.quotepath=false", "status", "--porcelain", "--", pathspec)
 	if err != nil {
 		return nil, core.Internalf("sync", "git status: %s", firstLine(stderr))
 	}
@@ -165,14 +166,14 @@ func (r *Repo) DirtyChanges(pathspec string) ([]Change, error) {
 // into a sync commit. app.Sync passes an explicit, class-filtered path set
 // (machine-written shards always; hand-edited bodies only when new or opted in).
 // An empty pathspec set is a no-op (no empty commit).
-func (r *Repo) Commit(message string, pathspecs ...string) error {
+func (r *Repo) Commit(ctx context.Context, message string, pathspecs ...string) error {
 	if len(pathspecs) == 0 {
 		return nil
 	}
-	if _, stderr, err := runGit(r.git, r.top, append([]string{"add", "--"}, pathspecs...)...); err != nil {
+	if _, stderr, err := runGit(ctx, r.git, r.top, append([]string{"add", "--"}, pathspecs...)...); err != nil {
 		return core.Internalf("sync", "git add: %s", firstLine(stderr))
 	}
-	if _, stderr, err := runGit(r.git, r.top, append([]string{"commit", "-q", "-m", message, "--"}, pathspecs...)...); err != nil {
+	if _, stderr, err := runGit(ctx, r.git, r.top, append([]string{"commit", "-q", "-m", message, "--"}, pathspecs...)...); err != nil {
 		return core.Internalf("sync", "git commit: %s", firstLine(stderr))
 	}
 	return nil
@@ -193,10 +194,10 @@ func (r *Repo) Commit(message string, pathspecs ...string) error {
 // concurrent-access race (a co-writer's fetch clobbering a ref/index lock, or
 // the residual multiple-branches window) leaves NO rebase in progress and is
 // returned wrapped in ErrTransientFetchRace so app.Sync retries it.
-func (r *Repo) PullRebase() error {
+func (r *Repo) PullRebase(ctx context.Context) error {
 	// fetch updates the remote-tracking ref; a co-writer's concurrent fetch can
 	// transiently lose a ref/index-lock race here — retryable, not fatal.
-	if _, stderr, err := runGit(r.git, r.top, "fetch", "-q"); err != nil {
+	if _, stderr, err := runGit(ctx, r.git, r.top, "fetch", "-q"); err != nil {
 		if isTransientRace(stderr) {
 			return fmt.Errorf("%w: %s", ErrTransientFetchRace, firstLine(stderr))
 		}
@@ -205,8 +206,8 @@ func (r *Repo) PullRebase() error {
 	// rebase onto @{u} (the ref fetch just moved), autostashing anything outside
 	// the sync commit. A conflict stops the rebase in progress (the caller's to
 	// abort); a transient race here left no rebase to abort, so classify it.
-	if _, stderr, err := runGit(r.git, r.top, "rebase", "--autostash", "-q", "@{u}"); err != nil {
-		if !r.RebaseInProgress() && isTransientRace(stderr) {
+	if _, stderr, err := runGit(ctx, r.git, r.top, "rebase", "--autostash", "-q", "@{u}"); err != nil {
+		if !r.RebaseInProgress(ctx) && isTransientRace(stderr) {
 			return fmt.Errorf("%w: %s", ErrTransientFetchRace, firstLine(stderr))
 		}
 		return core.Internalf("sync", "git rebase: %s", firstLine(stderr))
@@ -233,8 +234,8 @@ func isTransientRace(stderr string) bool {
 
 // ConflictedPaths lists the paths currently in conflict (diff filter U),
 // sorted — the machine-actionable payload of a sync-conflict error.
-func (r *Repo) ConflictedPaths() []string {
-	out, _, err := runGit(r.git, r.top, "diff", "--name-only", "--diff-filter=U")
+func (r *Repo) ConflictedPaths(ctx context.Context) []string {
+	out, _, err := runGit(ctx, r.git, r.top, "diff", "--name-only", "--diff-filter=U")
 	if err != nil {
 		return nil
 	}
@@ -252,8 +253,13 @@ func (r *Repo) ConflictedPaths() []string {
 // sync commit survives; the working tree is never left with conflict markers —
 // a half-rebased board would make every later furrow command die in
 // UnmarshalTask.
-func (r *Repo) AbortRebase() error {
-	if _, stderr, err := runGit(r.git, r.top, "rebase", "--abort"); err != nil {
+func (r *Repo) AbortRebase(ctx context.Context) error {
+	// Abort is cleanup that MUST complete even mid-cancellation: if ctx is already
+	// cancelled (a Ctrl-C landed just as a conflict surfaced), running it under ctx
+	// would be killed immediately and leave the board half-rebased — the one state
+	// the contract promises never to leave. Detach from cancellation (values kept)
+	// so the abort always runs to completion.
+	if _, stderr, err := runGit(context.WithoutCancel(ctx), r.git, r.top, "rebase", "--abort"); err != nil {
 		return core.Internalf("sync", "git rebase --abort: %s", firstLine(stderr))
 	}
 	return nil
@@ -262,8 +268,8 @@ func (r *Repo) AbortRebase() error {
 // Push runs `git push`. A rejection because the remote moved ahead is returned
 // as ErrNonFastForward (wrapped) so the caller can retry pull→push exactly
 // once; everything else is an internal error carrying git's first stderr line.
-func (r *Repo) Push() error {
-	_, stderr, err := runGit(r.git, r.top, "push")
+func (r *Repo) Push(ctx context.Context) error {
+	_, stderr, err := runGit(ctx, r.git, r.top, "push")
 	if err == nil {
 		return nil
 	}
@@ -295,9 +301,12 @@ func (r *Repo) absGitPath(out string) string {
 }
 
 // runGit executes one git command with dir as cwd, returning stdout and stderr
-// separately (classification reads stderr; data reads stdout).
-func runGit(git, dir string, args ...string) (stdout, stderr string, err error) {
-	cmd := exec.Command(git, args...)
+// separately (classification reads stderr; data reads stdout). It is
+// cancellable: exec.CommandContext kills the git child when ctx is done (a
+// Ctrl-C/SIGTERM-cancelled sync), so a long fetch/push unwinds promptly instead
+// of hanging.
+func runGit(ctx context.Context, git, dir string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.CommandContext(ctx, git, args...)
 	cmd.Dir = dir
 	var so, se strings.Builder
 	cmd.Stdout = &so

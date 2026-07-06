@@ -1,6 +1,7 @@
 package gitrepo
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -51,7 +52,7 @@ func initRepo(t *testing.T, git string) string {
 
 func TestOpenOutsideGitIsValidation(t *testing.T) {
 	gitOrSkip(t)
-	_, err := Open(t.TempDir())
+	_, err := Open(context.Background(), t.TempDir())
 	if err == nil {
 		t.Fatal("Open outside a git repo must fail")
 	}
@@ -67,7 +68,7 @@ func TestOpenResolvesToplevelFromSubdir(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	r, err := Open(sub)
+	r, err := Open(context.Background(), sub)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,15 +104,15 @@ func TestCommitIsPathspecLimited(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := Open(fdir)
+	r, err := Open(context.Background(), fdir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed, err := r.HasChanges(".furrow")
+	changed, err := r.HasChanges(context.Background(), ".furrow")
 	if err != nil || !changed {
 		t.Fatalf("HasChanges = %v, %v; want true, nil", changed, err)
 	}
-	if err := r.Commit("test: sync", ".furrow"); err != nil {
+	if err := r.Commit(context.Background(), "test: sync", ".furrow"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -122,7 +123,7 @@ func TestCommitIsPathspecLimited(t *testing.T) {
 	if strings.Contains(status, ".furrow") {
 		t.Errorf(".furrow must be committed, status:\n%s", status)
 	}
-	if changed, _ := r.HasChanges(".furrow"); changed {
+	if changed, _ := r.HasChanges(context.Background(), ".furrow"); changed {
 		t.Error("HasChanges must be false after the commit")
 	}
 }
@@ -142,11 +143,11 @@ func TestDirtyChangesTagsUntrackedAndScopesCommit(t *testing.T) {
 	if err := os.WriteFile(bodyPath, []byte("# one\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r, err := Open(fdir)
+	r, err := Open(context.Background(), fdir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Commit("seed", ".furrow"); err != nil { // body now tracked + committed
+	if err := r.Commit(context.Background(), "seed", ".furrow"); err != nil { // body now tracked + committed
 		t.Fatal(err)
 	}
 	// A modification to the tracked body, plus a brand-new untracked meta.json.
@@ -157,7 +158,7 @@ func TestDirtyChangesTagsUntrackedAndScopesCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changes, err := r.DirtyChanges(".furrow")
+	changes, err := r.DirtyChanges(context.Background(), ".furrow")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +176,7 @@ func TestDirtyChangesTagsUntrackedAndScopesCommit(t *testing.T) {
 	}
 
 	// Committing only the meta path must leave the modified body dirty.
-	if err := r.Commit("meta only", ".furrow/meta.json"); err != nil {
+	if err := r.Commit(context.Background(), "meta only", ".furrow/meta.json"); err != nil {
 		t.Fatal(err)
 	}
 	if strings.TrimSpace(runGitT(t, git, dir, "status", "--porcelain", "--", ".furrow/bodies/t-1.md")) == "" {
@@ -214,11 +215,11 @@ func TestPushClassifiesNonFastForward(t *testing.T) {
 	runGitT(t, git, cloneDir, "add", "-A")
 	runGitT(t, git, cloneDir, "commit", "-q", "-m", "behind")
 
-	r, err := Open(cloneDir)
+	r, err := Open(context.Background(), cloneDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = r.Push()
+	err = r.Push(context.Background())
 	if err == nil {
 		t.Fatal("push from a behind clone must fail")
 	}
@@ -247,11 +248,11 @@ func TestMidOperationDetectsMerge(t *testing.T) {
 	cmd.Dir = dir
 	_ = cmd.Run() // expected to fail with a conflict
 
-	r, err := Open(dir)
+	r, err := Open(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	op, busy := r.MidOperation()
+	op, busy := r.MidOperation(context.Background())
 	if !busy || op != "merge" {
 		t.Errorf("MidOperation = %q,%v; want merge,true", op, busy)
 	}

@@ -102,7 +102,7 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			prog, syncErr := a.Sync(app.SyncOpts{Message: message, Bodies: bodies, AllBodies: allBodies})
+			prog, syncErr := a.Sync(cmd.Context(), app.SyncOpts{Message: message, Bodies: bodies, AllBodies: allBodies})
 
 			// Compute the revisit summary only on a fully-successful sync (a
 			// fresh, consistent, freshly-pulled board). On failure, skip it.

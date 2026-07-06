@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,7 +84,7 @@ func TestSyncTwoClonesConverge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := a.Sync(SyncOpts{})
+	p, err := a.Sync(context.Background(), SyncOpts{})
 	if err != nil {
 		t.Fatalf("A sync: %v (progress %+v)", err, p)
 	}
@@ -96,7 +97,7 @@ func TestSyncTwoClonesConverge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Sync(SyncOpts{}); err != nil {
+	if _, err := b.Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatalf("B sync: %v", err)
 	}
 	// B now has both tasks.
@@ -105,7 +106,7 @@ func TestSyncTwoClonesConverge(t *testing.T) {
 	}
 
 	// A pulls B's task with a no-change sync (nothing to commit or push).
-	p, err = openBoard(t, cloneA).Sync(SyncOpts{})
+	p, err = openBoard(t, cloneA).Sync(context.Background(), SyncOpts{})
 	if err != nil {
 		t.Fatalf("A second sync: %v", err)
 	}
@@ -129,10 +130,10 @@ func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Sync(SyncOpts{}); err != nil {
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openBoard(t, cloneB).Sync(SyncOpts{}); err != nil { // B pulls it
+	if _, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{}); err != nil { // B pulls it
 		t.Fatal(err)
 	}
 
@@ -140,14 +141,14 @@ func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
 	if _, err := openBoard(t, cloneA).SetTitle(shared.ID, "A wins"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openBoard(t, cloneA).Sync(SyncOpts{}); err != nil {
+	if _, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := openBoard(t, cloneB).SetTitle(shared.ID, "B wins"); err != nil {
 		t.Fatal(err)
 	}
 
-	p, err := openBoard(t, cloneB).Sync(SyncOpts{})
+	p, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{})
 	if err == nil {
 		t.Fatal("B sync must fail on the conflicting shard")
 	}
@@ -197,7 +198,7 @@ func TestSyncOutsideGitIsValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := openBoard(t, dir)
-	p, err := a.Sync(SyncOpts{})
+	p, err := a.Sync(context.Background(), SyncOpts{})
 	if err == nil {
 		t.Fatal("sync outside git must fail")
 	}
@@ -230,7 +231,7 @@ func TestSyncRefusesMidMerge(t *testing.T) {
 	cmd.Dir = cloneA
 	_ = cmd.Run() // conflicts; MERGE_HEAD left behind
 
-	_, err := openBoard(t, cloneA).Sync(SyncOpts{})
+	_, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{})
 	if err == nil {
 		t.Fatal("sync mid-merge must be refused")
 	}
@@ -275,7 +276,7 @@ func TestSyncRebaseBusyIsRetryableNotValidation(t *testing.T) {
 
 	a := openBoard(t, cloneA)
 	a.sleep = func(time.Duration) {} // ride out the retry budget instantly
-	p, err := a.Sync(SyncOpts{})
+	p, err := a.Sync(context.Background(), SyncOpts{})
 	if err == nil {
 		t.Fatal("sync on a never-clearing rebase must fail after the retry budget")
 	}
@@ -303,7 +304,7 @@ func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Sync(SyncOpts{}); err != nil { // t1 shard + its new body committed
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil { // t1 shard + its new body committed
 		t.Fatalf("initial sync: %v", err)
 	}
 
@@ -318,7 +319,7 @@ func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, err := a.Sync(SyncOpts{})
+	p, err := a.Sync(context.Background(), SyncOpts{})
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
@@ -342,7 +343,7 @@ func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
 	}
 
 	// Explicit opt-in (-b) commits the named body and clears the pending nudge.
-	p2, err := a.Sync(SyncOpts{Bodies: []string{t1.ID}})
+	p2, err := a.Sync(context.Background(), SyncOpts{Bodies: []string{t1.ID}})
 	if err != nil {
 		t.Fatalf("opt-in sync: %v", err)
 	}
@@ -361,11 +362,38 @@ func TestSyncMessageOverride(t *testing.T) {
 	if _, err := a.Add("x", AddOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Sync(SyncOpts{Message: ":card_file_box: chore(board): custom words"}); err != nil {
+	if _, err := a.Sync(context.Background(), SyncOpts{Message: ":card_file_box: chore(board): custom words"}); err != nil {
 		t.Fatal(err)
 	}
 	subject := strings.TrimSpace(runGitT(t, git, cloneA, "log", "-1", "--format=%s"))
 	if subject != ":card_file_box: chore(board): custom words" {
 		t.Errorf("subject = %q", subject)
+	}
+}
+
+// A context cancelled before/mid-sync (a Ctrl-C / SIGTERM) surfaces as one clean
+// "sync-interrupted" error — NOT the misleading "not a git repository" that a
+// cancelled rev-parse in Open would otherwise be classified as, nor a raw
+// "git fetch: (no output)" from a killed subprocess. The progress object still
+// reports how far the sync got.
+func TestSyncInterruptedByCancelledContext(t *testing.T) {
+	_, cloneA, _ := setupClones(t)
+	a := openBoard(t, cloneA)
+	if _, err := a.Add("work", AddOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled: every git subprocess dies immediately
+
+	p, err := a.Sync(ctx, SyncOpts{})
+	if err == nil {
+		t.Fatal("a cancelled sync must return an error")
+	}
+	fe := core.AsError(err)
+	if fe == nil || fe.ID != "sync-interrupted" {
+		t.Fatalf("err = %v, want *core.Error id \"sync-interrupted\"", err)
+	}
+	if p.Pushed {
+		t.Errorf("progress must not report pushed on an interrupted sync: %+v", p)
 	}
 }
