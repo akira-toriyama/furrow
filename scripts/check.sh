@@ -61,6 +61,9 @@ gtmp="$(mktemp -d)"
 diff -u config.global.toml "$gtmp/xdg/furrow/config.toml"
 echo "  config.global.toml matches config-init placeholder template"
 
+echo "→ README EN/JA pin-parity guard"
+sh scripts/check-readme-parity.sh
+
 echo "→ smoke: init / add / ls --json / next / done / lint / config init|path"
 sb="$(mktemp -d)"
 ( cd "$sb"

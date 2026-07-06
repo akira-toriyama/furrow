@@ -60,6 +60,9 @@ jobs:
           ( cd "$tmp" && /tmp/furrow init >/dev/null )
           diff -u config.toml "$tmp/.furrow/config.toml"
 
+      - name: README EN/JA pin-parity guard
+        run: sh scripts/check-readme-parity.sh
+
       - name: smoke test
         run: |
           /tmp/furrow version
