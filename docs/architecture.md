@@ -405,6 +405,33 @@ except where noted:
 
 ---
 
+## Command design: sugar over raw git
+
+furrow never hides git from someone who knows it. Every state change is a plain
+commit to a plain-text store, and an operator fluent in git can always drop to
+`git add` / `commit` / `pull --rebase` / `push` and get exactly what furrow
+would have done. The CLI's job is not to wall git off — it is to offer **sugar**
+for the common multi-step rituals, so a GUI-leaning user (or an agent) gets one
+verb where an expert would type three. The principle: *never obstruct the
+expert; bundle the ceremony for everyone else.*
+
+`furrow sync` is exemplar #1. It bundles the exact three-command dance a git
+expert runs by hand — **auto-commit (pathspec-limited to `.furrow/`) →
+`pull --rebase` (autostash) → `push`** — behind one command, adding a
+machine-readable progress object and conflict classification on top. The sugar
+is a convenience, not a cage: the underlying store is still just files in a git
+repo you fully own, so nothing stops you from running those three git commands
+yourself.
+
+The `[[id]]` **link** notation follows the same "one source, many readers"
+discipline: [`internal/core/links.go`](../internal/core/links.go)
+(`LinkPattern` + `ExtractLinks`) is the **single** definition of what a `[[id]]`
+body link is — a bare id is not a link, and a `[[id]]` inside code is an inert
+example — and both `App.Backlinks` (`show --backlinks`) and `furrow lint`'s
+dangling-link check read it, so the two features can never drift.
+
+---
+
 ## Configuration
 
 `internal/config` reads `.furrow/config.toml` and produces an effective
