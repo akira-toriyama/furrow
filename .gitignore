@@ -7,6 +7,10 @@
 *.out
 coverage.*
 
+# Nix build artifacts (`nix build` output symlinks)
+/result
+/result-*
+
 # Go workspace / vendor (kept out until needed)
 /vendor/
 go.work
