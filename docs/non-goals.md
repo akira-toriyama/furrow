@@ -153,6 +153,12 @@ To keep this list honest about today's reality (not aspirations):
 - **Not built** — a hosted/web backend and a rich React UI remain out of scope
   for now (see *Backend & UI* above); the optional `furrow import
   --from-gh-project` seed is also unbuilt.
+- **Planned, not a non-goal** — the per-person collaboration niceties, namely an
+  `@mention` (a *person*-directed notation, distinct from the task→task `[[id]]`
+  **link** that already ships) and a task **assignee**, are **unbuilt but on the
+  roadmap**. They are called out here so the gap stays honest: their absence
+  today is a *not-yet*, **not** a deliberate permanent non-goal like the rows
+  above.
 
 ---
 
