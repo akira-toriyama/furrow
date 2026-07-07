@@ -142,6 +142,7 @@ furrow done t-0001
 | `next` | 着手可能なタスク（非 terminal・依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
 | `revisit` | read-only。再評価すべき open タスクを一覧。`--json`/`--ndjson` は各タスクに `revisit` 配列 `{code, detail}`（`no_repo`・`value_unset`・`effort_unset`・`stale`・`dep_done`）を付与し、エージェントが何を直すか分かる。draft はスコープに関係なく浮上する。空でも exit 0。`-l/--label`・`-r/--repo`・`-n/--limit`・`--stale-days <n>`（0 で stale 無効） |
 | `edit <id>` | `bodies/<id>.md` を `$EDITOR` で開く（非対話ならパスを出力） |
+| `attach <id> <file>` | 画像/動画を `bodies/assets/<id>-*` にコピーし、body に相対 markdown 参照を追記する。画像は埋め込み（`![…]`）・その他媒体はリンク（`[…]`）。衝突しない名前（`…-2`, `…-3`）で既存アセットを上書きしない。body は commit される markdown なので、web アップロード無しに端末だけで attach 全体が git に載る。LFS 非依存。`--json` は `{id, asset, ref, line}` を出力 |
 | `done <id>` | done レーンへ移動し `closed` を打刻 |
 | `move <id> <lane>` | 任意のレーンへ移動 |
 | `reorder <id> <priority>` | priority（疎な整数）を設定 |

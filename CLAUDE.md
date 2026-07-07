@@ -15,7 +15,7 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|edit|done|move|reorder|retitle|value|effort|check|dep|label|repo|sync|apply|archive|lint|config|init`.
+- Canonical commands: `furrow add|ls|show|next|revisit|edit|attach|done|move|reorder|retitle|value|effort|check|dep|label|repo|sync|apply|archive|lint|config|init`.
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
   issue-draft analogue). `-r` is the scope control on reads: a full

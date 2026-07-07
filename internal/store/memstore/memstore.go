@@ -19,6 +19,7 @@ import (
 type Store struct {
 	tasks    map[string]core.Task // id -> task, one entry per shard
 	bodies   map[string]string
+	assets   map[string][]byte // basename -> bytes, the in-memory twin of bodies/assets/<name>
 	idPrefix string
 	idLen    int
 	nextID   func() (string, error) // id generator; random by default
@@ -36,6 +37,7 @@ func New(idPrefix string, idLen int) *Store {
 	s := &Store{
 		tasks:         map[string]core.Task{},
 		bodies:        map[string]string{},
+		assets:        map[string][]byte{},
 		idPrefix:      idPrefix,
 		idLen:         idLen,
 		schemaVersion: core.SchemaVersion,
@@ -93,6 +95,19 @@ func (s *Store) SaveBody(id, content string) error {
 func (s *Store) BodyExists(id string) bool {
 	_, ok := s.bodies[id]
 	return ok
+}
+
+// SaveAsset stores data under a collision-free basename — the in-memory twin of
+// fsstore copying into bodies/assets/<id>-<name>. Bytes are copied so a caller
+// mutating its slice afterward cannot alter the store.
+func (s *Store) SaveAsset(id, srcName string, data []byte) (string, error) {
+	base := id + "-" + core.SanitizeAssetName(srcName)
+	name := core.NextAssetName(base, func(cand string) bool {
+		_, ok := s.assets[cand]
+		return ok
+	})
+	s.assets[name] = append([]byte(nil), data...)
+	return name, nil
 }
 
 // BodyFile returns "" — an in-memory store is not file-backed, so $EDITOR

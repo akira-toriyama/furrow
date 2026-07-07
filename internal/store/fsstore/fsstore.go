@@ -47,6 +47,7 @@ func (s *Store) bodiesDir() string         { return filepath.Join(s.root, "bodie
 func (s *Store) bodyPath(id string) string {
 	return filepath.Join(s.bodiesDir(), id+".md")
 }
+func (s *Store) assetsDir() string { return filepath.Join(s.bodiesDir(), "assets") }
 
 // BodyFile returns the absolute path of bodies/<id>.md for the CLI to hand to
 // $EDITOR. It does not create the file.
@@ -207,6 +208,24 @@ func (s *Store) SaveBody(id, content string) error {
 func (s *Store) BodyExists(id string) bool {
 	_, err := os.Stat(s.bodyPath(id))
 	return err == nil
+}
+
+// SaveAsset copies data into bodies/assets/<id>-<sanitized name>, picking a
+// collision-free basename so an existing asset is never overwritten, and returns
+// the final basename. The write is atomic (temp + rename), mirroring SaveBody.
+func (s *Store) SaveAsset(id, srcName string, data []byte) (string, error) {
+	if err := os.MkdirAll(s.assetsDir(), 0o755); err != nil {
+		return "", core.Internalf(id, "create bodies/assets/: %v", err)
+	}
+	base := id + "-" + core.SanitizeAssetName(srcName)
+	name := core.NextAssetName(base, func(cand string) bool {
+		_, err := os.Stat(filepath.Join(s.assetsDir(), cand))
+		return err == nil
+	})
+	if err := s.atomicWrite(filepath.Join(s.assetsDir(), name), data); err != nil {
+		return "", err
+	}
+	return name, nil
 }
 
 // DeleteBody removes bodies/<id>.md (used by archive). Absent is not an error.
