@@ -15,6 +15,16 @@ for h in scripts/board-hooks/post-merge scripts/board-hooks/post-rewrite scripts
 done
 echo "  scripts/board-hooks/* parse clean"
 
+# Mirrors go-ci.yml's module-hygiene step (build.yml calls that reusable), so a
+# green run here matches CI. `go mod tidy -diff` prints the needed changes and
+# exits non-zero WITHOUT touching go.mod/go.sum — under `set -e` it aborts on
+# drift on its own, so no bare-`diff` footgun applies here. `go mod verify`
+# then checks the cached module downloads haven't been altered since download
+# (a cache-integrity check, not a go.sum re-derivation).
+echo "→ module hygiene (go mod tidy -diff + verify)"
+go mod tidy -diff
+go mod verify
+
 echo "→ go build"
 go build ./...
 
