@@ -6,6 +6,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -77,18 +78,32 @@ type App struct {
 	BoardRepos []string
 
 	// sleep is the backoff sleeper used by Sync's transient-rebase retry. nil
-	// means the real time.Sleep (see sleeper); tests set a no-op to run the
-	// retry budget instantly.
+	// means the real cancellable timer (see ctxSleep); tests set a no-op to run
+	// the retry budget instantly.
 	sleep func(time.Duration)
 }
 
-// sleeper returns the App's backoff sleeper, defaulting to time.Sleep so the
-// production path needs no wiring and only tests override it.
-func (a *App) sleeper() func(time.Duration) {
-	if a.sleep != nil {
-		return a.sleep
+// ctxSleep waits d during Sync's transient-retry backoff, returning early with
+// ctx.Err() if the context is cancelled mid-wait (a Ctrl-C / SIGTERM) — so the
+// retry loops bail promptly instead of riding out the remaining budget. The real
+// wait is a cancellable timer; tests inject a.sleep to run the budget instantly
+// (it still honours an already-cancelled context).
+func (a *App) ctxSleep(ctx context.Context, d time.Duration) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
-	return time.Sleep
+	if a.sleep != nil {
+		a.sleep(d)
+		return ctx.Err()
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // Open discovers the store (FURROW_DIR, else the nearest ancestor of startDir

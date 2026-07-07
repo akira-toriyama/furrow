@@ -5,8 +5,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -27,9 +30,22 @@ var (
 //
 // On a non-zero exit it prints {"error":{...}} to stderr. It is the only place
 // that calls os.Exit-worthy logic; main is just os.Exit(cli.Execute()).
+//
+// Signals: the root context is cancelled on the first SIGINT/SIGTERM, which
+// unwinds any in-flight subprocess (e.g. `furrow sync`'s git via
+// exec.CommandContext) gracefully. Once cancelled, the default signal
+// disposition is restored, so a SECOND Ctrl-C hard-kills a wedged process
+// instead of being swallowed.
 func Execute() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done() // first signal (or normal completion) — restore default so a
+		stop()       // second signal terminates hard rather than being buffered
+	}()
+
 	root := newRootCmd()
-	err := root.Execute()
+	err := root.ExecuteContext(ctx)
 	if err == nil {
 		return int(core.CodeOK)
 	}

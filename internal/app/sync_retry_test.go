@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -90,7 +91,7 @@ func TestPullWithRetry(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var sleeps []time.Duration
-			sleep := func(d time.Duration) { sleeps = append(sleeps, d) }
+			sleep := func(d time.Duration) error { sleeps = append(sleeps, d); return nil }
 			err := pullWithRetry(scriptedErr(tc.script), sleep, testRebaseWait, "/board")
 
 			if len(sleeps) != tc.wantSleeps {
@@ -193,7 +194,7 @@ func TestWaitForRebaseToClear(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var sleeps []time.Duration
-			sleep := func(d time.Duration) { sleeps = append(sleeps, d) }
+			sleep := func(d time.Duration) error { sleeps = append(sleeps, d); return nil }
 			op, cleared := waitForRebaseToClear(scriptedCheck(tc.script), sleep, testRebaseWait)
 			if op != tc.wantOp || cleared != tc.wantCleared {
 				t.Errorf("got (op=%q cleared=%v), want (op=%q cleared=%v)", op, cleared, tc.wantOp, tc.wantCleared)
@@ -209,7 +210,7 @@ func TestWaitForRebaseToClear(t *testing.T) {
 func TestWaitForRebaseBackoffSequence(t *testing.T) {
 	neverClears := func() (string, bool) { return "rebase", true }
 	var sleeps []time.Duration
-	waitForRebaseToClear(neverClears, func(d time.Duration) { sleeps = append(sleeps, d) }, testRebaseWait)
+	waitForRebaseToClear(neverClears, func(d time.Duration) error { sleeps = append(sleeps, d); return nil }, testRebaseWait)
 
 	want := []time.Duration{
 		100 * time.Millisecond,
@@ -226,5 +227,93 @@ func TestWaitForRebaseBackoffSequence(t *testing.T) {
 		if sleeps[i] != want[i] {
 			t.Errorf("sleep[%d] = %v, want %v", i, sleeps[i], want[i])
 		}
+	}
+}
+
+// A backoff cancelled mid-wait (a Ctrl-C during the transient-race retry) must
+// stop the loop and propagate the cancellation, NOT ride out the remaining budget
+// and then mislabel it a stale-lock failure.
+func TestPullWithRetryBailsWhenSleepCancelled(t *testing.T) {
+	race := func() error { return errors.Join(gitrepo.ErrTransientFetchRace, errors.New("cannot lock ref")) }
+	var sleeps int
+	sleep := func(time.Duration) error { // cancelled on the 2nd backoff
+		sleeps++
+		if sleeps >= 2 {
+			return context.Canceled
+		}
+		return nil
+	}
+	err := pullWithRetry(race, sleep, testRebaseWait, "/board")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled (bail on the cancelled backoff)", err)
+	}
+	if sleeps != 2 {
+		t.Errorf("sleeps = %d, want 2 (must bail on the cancelled backoff, not exhaust the budget)", sleeps)
+	}
+}
+
+// waitForRebaseToClear likewise stops waiting out a foreign rebase the moment the
+// backoff is cancelled, reporting the rebase still in progress (not cleared).
+func TestWaitForRebaseBailsWhenSleepCancelled(t *testing.T) {
+	neverClears := func() (string, bool) { return "rebase", true }
+	var sleeps int
+	sleep := func(time.Duration) error { sleeps++; return context.Canceled } // cancelled on the first backoff
+	op, cleared := waitForRebaseToClear(neverClears, sleep, testRebaseWait)
+	if cleared {
+		t.Error("cleared = true; a cancelled wait must not report the rebase cleared")
+	}
+	if op != "rebase" {
+		t.Errorf("op = %q, want rebase", op)
+	}
+	if sleeps != 1 {
+		t.Errorf("sleeps = %d, want 1 (must bail on the cancelled backoff, not exhaust the budget)", sleeps)
+	}
+}
+
+// interruptError collapses cancellation ARTIFACTS (a killed subprocess, a
+// cancelled rev-parse mis-said as "not a git repository") into sync-interrupted,
+// but must NOT mask a genuine sync-conflict: that error is a definitive outcome
+// (rebase aborted, board restored via the detached AbortRebase) carrying the
+// contract-promised Details.paths, so a signal racing the conflict handling must
+// leave it intact.
+func TestInterruptError(t *testing.T) {
+	cancelled := context.Canceled
+	conflict := &core.Error{Code: core.CodeInternal, ID: "sync-conflict", Msg: "conflict",
+		Details: map[string]any{"paths": []string{".furrow/tasks/t-1.json"}}}
+	killed := core.Internalf("sync", "git fetch: (no output)")
+	notARepo := core.Validationf("sync", "x is not inside a git repository")
+
+	tests := []struct {
+		name   string
+		err    error
+		ctxErr error
+		wantID string // expected *core.Error ID of the result ("" skips the id check)
+		want   error  // when non-nil, the exact value that must pass through unchanged
+	}{
+		{"nil error is never reclassified", nil, cancelled, "", nil},
+		{"no cancellation passes the error through", killed, nil, "", killed},
+		{"a killed subprocess becomes sync-interrupted", killed, cancelled, "sync-interrupted", nil},
+		{"a cancelled Open (mis-said 'not a git repo') becomes sync-interrupted", notARepo, cancelled, "sync-interrupted", nil},
+		{"a real sync-conflict is preserved with its paths", conflict, cancelled, "sync-conflict", conflict},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := interruptError(tc.err, tc.ctxErr)
+			if tc.want != nil && got != tc.want {
+				t.Fatalf("got %v, want the exact error value passed through unchanged", got)
+			}
+			if tc.err == nil {
+				if got != nil {
+					t.Fatalf("got %v, want nil", got)
+				}
+				return
+			}
+			if tc.wantID != "" {
+				fe := core.AsError(got)
+				if fe == nil || fe.ID != tc.wantID {
+					t.Fatalf("got %v, want *core.Error id %q", got, tc.wantID)
+				}
+			}
+		})
 	}
 }

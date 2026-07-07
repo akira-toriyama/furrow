@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -47,7 +48,7 @@ var defaultConcurrentWait = retryPolicy{
 // "rebase" — the concurrent-writer signature; any other in-progress op (a
 // user's own "merge") is never transient, so it returns immediately. Returns
 // the last observed op and whether the repo is now clear (no op in progress).
-func waitForRebaseToClear(check func() (string, bool), sleep func(time.Duration), pol retryPolicy) (string, bool) {
+func waitForRebaseToClear(check func() (string, bool), sleep func(time.Duration) error, pol retryPolicy) (string, bool) {
 	op, busy := check()
 	if !busy {
 		return op, true
@@ -57,7 +58,9 @@ func waitForRebaseToClear(check func() (string, bool), sleep func(time.Duration)
 	}
 	backoff := pol.base
 	for i := 0; i < pol.max; i++ {
-		sleep(backoff)
+		if sleep(backoff) != nil {
+			return op, false // cancelled while waiting out a foreign rebase — still in progress
+		}
 		op, busy = check()
 		if !busy {
 			return op, true
@@ -82,11 +85,13 @@ func waitForRebaseToClear(check func() (string, bool), sleep func(time.Duration)
 // a stale lock from a live one, but "outlived the retry budget" can). Any other
 // outcome — success, a sync-conflict, a real error — is returned immediately and
 // unchanged. top is the work-tree root, named in the recovery guidance.
-func pullWithRetry(pullOnce func() error, sleep func(time.Duration), pol retryPolicy, top string) error {
+func pullWithRetry(pullOnce func() error, sleep func(time.Duration) error, pol retryPolicy, top string) error {
 	err := pullOnce()
 	backoff := pol.base
 	for i := 0; err != nil && errors.Is(err, gitrepo.ErrTransientFetchRace) && i < pol.max; i++ {
-		sleep(backoff)
+		if serr := sleep(backoff); serr != nil {
+			return serr // cancelled mid-backoff — stop retrying and propagate
+		}
 		err = pullOnce()
 		backoff = pol.next(backoff)
 	}
@@ -167,6 +172,34 @@ func partitionSync(spec string, changes []gitrepo.Change, opts SyncOpts) (commit
 	return commitPaths, committedBodies, pendingBodies
 }
 
+// interruptError collapses err into one honest "sync-interrupted" error when the
+// sync was cancelled (ctxErr != nil): a Ctrl-C / SIGTERM kills the in-flight git
+// via exec.CommandContext, and that otherwise surfaces however the step then
+// running classified a failed git — a cancelled rev-parse in Open looks like "not
+// a git repository", a killed fetch like "git fetch: (no output)". With no
+// cancellation (or no error), err passes through unchanged.
+func interruptError(err error, ctxErr error) error {
+	if err == nil || ctxErr == nil {
+		return err
+	}
+	// A sync-conflict is a DELIBERATE, definitive outcome, not a cancellation
+	// artifact: the rebase was detected, aborted, and the board restored (the
+	// abort runs detached from ctx — see Repo.AbortRebase), and it carries the
+	// contract's Details.paths. A signal racing that handling must not mask it —
+	// dropping the paths and claiming the board "may be left mid-operation" would
+	// both be false. Everything else under a cancelled ctx is a killed-subprocess
+	// artifact, so collapse it.
+	if fe := core.AsError(err); fe != nil && fe.ID == "sync-conflict" {
+		return err
+	}
+	return &core.Error{
+		Code: core.CodeInternal,
+		ID:   "sync-interrupted",
+		Msg: "furrow sync was interrupted; the board may be left mid-operation " +
+			"(re-run furrow sync — its pre-flight waits out or reports any in-progress rebase)",
+	}
+}
+
 // Sync is the multi-machine ritual as one command: commit the board (scoped to
 // .furrow/ so unrelated dirty files are never swept in — and within it, to
 // machine-written shards plus new/opted-in bodies so a co-located operator's
@@ -182,17 +215,26 @@ func partitionSync(spec string, changes []gitrepo.Change, opts SyncOpts) (commit
 // returns a CodeInternal error with ID "sync-conflict" whose Details carry the
 // conflicted paths. The returned SyncProgress is meaningful even when err is
 // non-nil.
-func (a *App) Sync(opts SyncOpts) (*SyncProgress, error) {
-	p := &SyncProgress{}
+func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err error) {
+	p = &SyncProgress{}
+	// Collapse a cancellation artifact into one honest "sync-interrupted" (see
+	// interruptError). The progress object is left intact, so it still reports how
+	// far the sync got before the interrupt.
+	defer func() { err = interruptError(err, ctx.Err()) }()
 
-	r, err := gitrepo.Open(a.Dir)
+	r, err := gitrepo.Open(ctx, a.Dir)
 	if err != nil {
 		return p, err // non-git board = validation (exit 2), from the adapter
 	}
 	// A rebase in progress is usually a concurrent writer (the board's bot / a
 	// second operator) momentarily holding `pull --rebase`; wait it out with a
 	// bounded backoff so agents don't fail spuriously in that sub-second window.
-	if op, cleared := waitForRebaseToClear(r.MidOperation, a.sleeper(), defaultConcurrentWait); !cleared {
+	// sleep is the cancellable backoff used by both retry loops below: it waits
+	// out a transient concurrent-writer condition but returns early if ctx is
+	// cancelled, so a Ctrl-C during a backoff doesn't have to ride out the budget.
+	sleep := func(d time.Duration) error { return a.ctxSleep(ctx, d) }
+
+	if op, cleared := waitForRebaseToClear(func() (string, bool) { return r.MidOperation(ctx) }, sleep, defaultConcurrentWait); !cleared {
 		if op == "rebase" {
 			// Still rebasing after the budget: transient in the common case, so
 			// classify as retryable (exit 3, not the do-not-retry exit 2) and say
@@ -216,7 +258,7 @@ func (a *App) Sync(opts SyncOpts) (*SyncProgress, error) {
 		return p, err
 	}
 
-	changes, err := r.DirtyChanges(spec)
+	changes, err := r.DirtyChanges(ctx, spec)
 	if err != nil {
 		return p, err
 	}
@@ -228,7 +270,7 @@ func (a *App) Sync(opts SyncOpts) (*SyncProgress, error) {
 			if message == "" {
 				message = DefaultSyncMessage
 			}
-			if err := r.Commit(message, commitPaths...); err != nil {
+			if err := r.Commit(ctx, message, commitPaths...); err != nil {
 				return p, err
 			}
 			p.Committed = true
@@ -240,15 +282,15 @@ func (a *App) Sync(opts SyncOpts) (*SyncProgress, error) {
 	// definitively here (flag, abort, sync-conflict); a transient race bubbles up
 	// as ErrTransientFetchRace for pull (below) to retry; success sets Pulled.
 	pullOnce := func() error {
-		if err := r.PullRebase(); err != nil {
-			if r.RebaseInProgress() {
+		if err := r.PullRebase(ctx); err != nil {
+			if r.RebaseInProgress(ctx) {
 				// Flag the conflict BEFORE attempting the abort: even if the
 				// abort itself fails (the one state the contract promises never
 				// to leave behind), the progress object and the error must both
 				// say "conflict" and carry the paths.
 				p.Conflict = true
-				paths := r.ConflictedPaths()
-				if aerr := r.AbortRebase(); aerr != nil {
+				paths := r.ConflictedPaths(ctx)
+				if aerr := r.AbortRebase(ctx); aerr != nil {
 					return &core.Error{
 						Code: core.CodeInternal,
 						ID:   "sync-conflict",
@@ -273,14 +315,14 @@ func (a *App) Sync(opts SyncOpts) (*SyncProgress, error) {
 	// pull rides out a concurrent writer's fetch/ref-lock race (transient in a
 	// shared checkout), reclassifying a persistent one as retryable sync-busy.
 	pull := func() error {
-		return pullWithRetry(pullOnce, a.sleeper(), defaultConcurrentWait, r.Toplevel())
+		return pullWithRetry(pullOnce, sleep, defaultConcurrentWait, r.Toplevel())
 	}
 
 	if err := pull(); err != nil {
 		return p, err
 	}
 
-	if err := r.Push(); err != nil {
+	if err := r.Push(ctx); err != nil {
 		if !errors.Is(err, gitrepo.ErrNonFastForward) {
 			return p, err
 		}
@@ -288,7 +330,7 @@ func (a *App) Sync(opts SyncOpts) (*SyncProgress, error) {
 		if err := pull(); err != nil {
 			return p, err
 		}
-		if err := r.Push(); err != nil {
+		if err := r.Push(ctx); err != nil {
 			if errors.Is(err, gitrepo.ErrNonFastForward) {
 				return p, core.Internalf("sync", "push kept being rejected after a retry: %v", err)
 			}
