@@ -251,6 +251,33 @@ func (s *Store) ListTaskIDs() ([]string, error) {
 	return s.listStems(s.tasksDir(), ".json")
 }
 
+// ListAssets returns every file under bodies/assets/ as name+size, sorted by
+// name, for lint's orphan/oversized checks. Enumeration only — contents are not
+// read. A missing bodies/assets/ dir yields nil and no error, so lint works on a
+// board that never attached anything (mirroring listStems).
+func (s *Store) ListAssets() ([]core.AssetInfo, error) {
+	entries, err := os.ReadDir(s.assetsDir())
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, core.Internalf("assets", "read bodies/assets: %v", err)
+	}
+	var assets []core.AssetInfo
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			return nil, core.Internalf(e.Name(), "stat asset: %v", err)
+		}
+		assets = append(assets, core.AssetInfo{Name: e.Name(), Size: fi.Size()})
+	}
+	sort.Slice(assets, func(i, j int) bool { return assets[i].Name < assets[j].Name })
+	return assets, nil
+}
+
 // listStems returns the sorted filename stems (name minus ext) of the files in
 // dir with the given extension. A missing dir yields no ids and no error.
 func (s *Store) listStems(dir, ext string) ([]string, error) {

@@ -110,6 +110,22 @@ func (s *Store) SaveAsset(id, srcName string, data []byte) (string, error) {
 	return name, nil
 }
 
+// ListAssets returns every stored asset as name+size, sorted by name — the
+// in-memory twin of fsstore reading bodies/assets/. Size is the byte length of
+// the stored data. An empty store yields nil (no assets), matching fsstore's
+// missing-dir behavior.
+func (s *Store) ListAssets() ([]core.AssetInfo, error) {
+	if len(s.assets) == 0 {
+		return nil, nil
+	}
+	assets := make([]core.AssetInfo, 0, len(s.assets))
+	for name, data := range s.assets {
+		assets = append(assets, core.AssetInfo{Name: name, Size: int64(len(data))})
+	}
+	sort.Slice(assets, func(i, j int) bool { return assets[i].Name < assets[j].Name })
+	return assets, nil
+}
+
 // BodyFile returns "" — an in-memory store is not file-backed, so $EDITOR
 // shell-out (the only caller) is not supported against it.
 func (s *Store) BodyFile(id string) string { return "" }
