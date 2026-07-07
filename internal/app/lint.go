@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/store/fsstore"
@@ -102,6 +103,23 @@ func (a *App) Lint() ([]core.Problem, error) {
 	for _, id := range arcIDs {
 		known[id] = true
 	}
+	// Asset consistency (warn): the on-disk asset set is needed up front (to spot
+	// a body pointing at a missing file) and a "referenced" set is accumulated
+	// during the body scan below (to spot an on-disk asset nobody points at). All
+	// three asset findings are warn, never error: a broken/oversized/orphan asset
+	// never corrupts the store, but a blob committed raw stays in git history
+	// forever (history can't be un-committed), so lint is the place to catch it
+	// before it lands — never a reason to fail an otherwise-clean board.
+	assets, err := a.Store.ListAssets()
+	if err != nil {
+		return nil, err
+	}
+	onDisk := make(map[string]bool, len(assets))
+	for _, as := range assets {
+		onDisk[as.Name] = true
+	}
+	referenced := map[string]bool{}
+
 	linkRe := core.LinkPattern(a.Cfg.IDPrefix)
 	for _, bid := range bodyIDs {
 		body, err := a.Store.LoadBody(bid)
@@ -112,6 +130,31 @@ func (a *App) Lint() ([]core.Problem, error) {
 			if !known[ref] {
 				ps = append(ps, core.Problem{Severity: core.SevWarn, ID: bid, Msg: fmt.Sprintf("body links to %s via [[%s]] but no such task exists", ref, ref)})
 			}
+		}
+		// assets/<name> refs share this one body scan with the [[id]] links. A ref
+		// to an absent file dangles; either way the name counts as referenced, so
+		// it is not later flagged orphan.
+		for _, name := range core.ExtractAssetRefs(body) {
+			referenced[name] = true
+			if !onDisk[name] {
+				ps = append(ps, core.Problem{Severity: core.SevWarn, ID: bid, Msg: fmt.Sprintf("body references asset %s but %s is missing", core.AssetRef(name), core.AssetPath(name))})
+			}
+		}
+	}
+
+	// orphan (no body references it) + oversized (>= DefaultAssetWarnBytes), keyed
+	// to the owning task id when the asset's "<id>-" prefix still names a live task
+	// (else the asset basename, so a leftover from a deleted task stays identifiable).
+	for _, as := range assets {
+		owner := assetOwner(as.Name, hasTask)
+		if owner == "" {
+			owner = as.Name
+		}
+		if !referenced[as.Name] {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, ID: owner, Msg: fmt.Sprintf("asset %s is not referenced by any task body", core.AssetPath(as.Name))})
+		}
+		if as.Size >= core.DefaultAssetWarnBytes {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, ID: owner, Msg: fmt.Sprintf("asset %s is %s, over the %s warning threshold — Git-LFS-track it or shrink it", core.AssetPath(as.Name), humanBytes(as.Size), humanBytes(core.DefaultAssetWarnBytes))})
 		}
 	}
 
@@ -160,4 +203,32 @@ func (a *App) archivedIDs() ([]string, error) {
 	}
 	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.IDWidth)
 	return arc.ListTaskIDs()
+}
+
+// assetOwner returns the task id that owns asset name — the id in taskIDs for
+// which name is "<id>-…" — or "" when none matches (a leftover asset whose task
+// is gone). Frozen ids can never be one another's "<id>-" prefix, so at most one
+// id matches; lint uses this to file an orphan/oversized finding under its task.
+func assetOwner(name string, taskIDs map[string]bool) string {
+	for id := range taskIDs {
+		if strings.HasPrefix(name, id+"-") {
+			return id
+		}
+	}
+	return ""
+}
+
+// humanBytes renders a byte count as a compact IEC size (B/KiB/MiB/…) for the
+// oversized-asset lint message — e.g. 5<<20 -> "5.0 MiB". Presentation only.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

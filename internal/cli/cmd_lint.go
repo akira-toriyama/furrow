@@ -10,11 +10,12 @@ import (
 func newLintCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "lint",
-		Short: "Check index<->body consistency, lanes, deps, links, and config",
+		Short: "Check index<->body consistency, lanes, deps, links, assets, and config",
 		Long: "Validate the store: id shape and uniqueness, status lanes, body path, the\n" +
 			"index<->body 1:1 mapping, dep/parent references, dependency cycles (error),\n" +
 			"dangling [[id]] body links (warn), reconcile gaps — an open task whose done\n" +
-			"dependency closed after its last update (warn), and config clamp warnings.\n" +
+			"dependency closed after its last update (warn), asset hygiene — dangling\n" +
+			"refs, orphan and oversized assets (warn), and config clamp warnings.\n" +
 			"Exits 2 if any errors are found; warnings alone exit 0.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

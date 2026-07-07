@@ -66,6 +66,7 @@ Markdown が描画される場所（GitHub・Obsidian・エディタのプレビ
 - スクショは小さく保ち、秘匿情報はマスクする（git 履歴は永久）。
 - **private** repo では、画像を repo 内に commit して相対リンクするのが確実（外部/raw の画像 URL は認証が要り失効する）。public repo なら外部ホストへのリンクも可。
 - 動画など大きいメディアは、**最初の 1 つを commit する前に** Git LFS（`.gitattributes`）で track する（後から LFS を入れても効くのは新規ファイルだけで、既存 blob の掃除には履歴書き換えが要る）。
+- `furrow lint` がこの習慣を補強する：参照先が無い body の asset 参照・どの body からも参照されない asset・5 MiB 以上の asset を warn する——**履歴に blob が載る前に** LFS 追跡か縮小を促す（commit 後は消せない）。
 
 ### 決定論（生命線）
 
@@ -156,7 +157,7 @@ furrow done t-0001
 | `apply` | PR/コミット本文から `SetStatus-task: <body-link> [<lane>]` ディレクティブを解析して適用（stdin または `--body-file`）。status 自動更新の CI フック。`--on open` は in-progress へ寄せ、`--on merge` は lane を適用。検証は非ブロッキング |
 | `sync` | マルチマシン運用の儀式を 1 コマンドで: `.furrow/` 限定の auto-commit（機械が書く shard は常に commit、手編集の `bodies/<id>.md` は新規か `-b` 明示時だけ・それ以外は `pending_bodies` に残して作者に委ね、共有 checkout が他人の WIP を巻き込まない。`--all-bodies` で従来の全 sweep）→ `fetch` + `rebase --autostash @{u}`（`FETCH_HEAD` でなく追跡 ref に rebase、他 writer の fetch と race しない）→ `push`（non-fast-forward 時は pull→push を 1 回リトライ）。conflict 時は自動 abort（`sync-conflict` エラーにパス一覧）。pre-flight が捕まえた他人の rebase は待って吸収、超過時は retryable `sync-busy`（exit 3）。pull 中の fetch/ロック競合はリトライし、解消しなければ（stale な `.git/*.lock` の可能性）除去すべきロックを名指して terminal に失敗。進捗 `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` は失敗時も stdout に出る。成功時は repo スコープの `revisit` サマリ（`dep_done`/`stale` の id 一覧。空なら省略）も付く |
 | `archive` | 古い done タスクを `.furrow/archive/` へ退避（`--yes` なしはプレビュー）。既定は全 repo 対象。共有ボードで 1 repo の古い done だけを畳むには `-r/--repo`（繰り返し可）で対象 repo を絞る（age ガードと AND） |
-| `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環は error、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。done な依存が最終更新後に閉じた open タスク＝reconcile gap も warn。書きかけのユーザー設定の clamp 警告も含む） |
+| `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環は error、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。done な依存が最終更新後に閉じた open タスク＝reconcile gap も warn。アセット衛生＝参照先が存在しない body の asset 参照・どの body からも参照されない orphan asset・5 MiB 以上の oversized asset はいずれも warn（生 blob は commit 後に消せないので着地前に検出。Git LFS 追跡か縮小を促す）。書きかけのユーザー設定の clamp 警告も含む） |
 | `config init` | ユーザー設定 `~/.config/furrow/config.toml`（中央ボード雛形）を書き出す。ボード内で実行すると最寄りの `.furrow` から path/scopes を文脈導出、離れていればコメント付き placeholder。既存ファイルは上書きしない（`--path`・`--scope`（複数可）） |
 | `config path` | 解決されるユーザー設定パスを表示。書きかけ設定の clamp 警告は stderr へ（stdout は path のみ） |
 | `schema [task\|meta]` | JSON Schema を出力（引数なし or `task` = シャード（`tasks/<id>.json`）のスキーマ・`meta` = `meta.json` のスキーマ） |

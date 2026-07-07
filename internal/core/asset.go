@@ -1,6 +1,7 @@
 package core
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -12,6 +13,23 @@ import (
 // vs. link rendering); the store owns the actual copy and the "is this name
 // taken" check. This split keeps the policy testable without a disk and shared
 // byte-for-byte between fsstore and memstore.
+
+// AssetInfo is one enumerated on-disk asset: its basename (under bodies/assets/)
+// and byte size. The store fills it (only the store touches disk); lint consumes
+// it for the orphan (unreferenced) and oversized (over DefaultAssetWarnBytes)
+// checks. Size is the plain file size — for a Git LFS-smudged working tree that
+// is the real media, not the pointer.
+type AssetInfo struct {
+	Name string
+	Size int64
+}
+
+// DefaultAssetWarnBytes is the size at or above which `furrow lint` warns that an
+// asset is large (a heuristic nudge to Git-LFS-track or shrink it, since a blob
+// committed raw stays in git history forever). 5 MiB comfortably clears masked
+// screenshots yet catches raw video and unoptimized captures. It is warn-only, so
+// crossing it never fails lint; a configurable threshold is a later refinement.
+const DefaultAssetWarnBytes int64 = 5 << 20
 
 // AssetPath returns the store-relative path of an attached asset by basename,
 // e.g. "bodies/assets/t-0042-shot.png" — the asset twin of BodyPath. The store
@@ -38,6 +56,41 @@ func AttachLine(alt, ref string) string {
 		}
 	}
 	return "[" + alt + "](" + ref + ")"
+}
+
+// assetRefRe matches a markdown image/link whose target is an attached asset:
+// the "](assets/<name>)" tail that both AttachLine forms (![alt](…) and
+// [alt](…)) end in. The single capture group is the asset basename, i.e. what
+// AssetRef prefixes with "assets/". A leading "./" is tolerated. The class
+// stops at ')', whitespace, or a quote so a markdown title ("](assets/x "t")")
+// never leaks into the name. Because SanitizeAssetName guarantees the on-disk
+// name has no spaces/parens, this loses nothing that attach ever wrote.
+var assetRefRe = regexp.MustCompile(`\]\(\s*(?:\./)?assets/([^)\s"']+)`)
+
+// ExtractAssetRefs returns the asset basenames referenced from body markdown via
+// an "assets/<name>" link or image target, in first-seen order and de-duplicated
+// (the twin of ExtractLinks for [[id]] wiki-links). Code spans and fences are
+// stripped first (see stripCode), so an assets/ ref written as a documented
+// EXAMPLE inside `backticks` or a ``` fence ``` is not treated as a live
+// reference — matching how the dangling-link check ignores documented [[t-…]]
+// placeholders. Returns nil when there are no references. lint uses this to find
+// orphan assets (on disk, referenced by no body) and dangling refs (a body
+// pointing at an asset that is not on disk).
+func ExtractAssetRefs(text string) []string {
+	ms := assetRefRe.FindAllStringSubmatch(stripCode(text), -1)
+	if len(ms) == 0 {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range ms {
+		name := m[1]
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // SanitizeAssetName reduces an arbitrary source filename to a safe, portable
