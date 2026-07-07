@@ -36,6 +36,14 @@ type Store interface {
 	// tasks<->body 1:1 lint check and shard filename/id integrity.
 	ListTaskIDs() ([]string, error)
 
+	// SaveAsset copies data into the task's asset area (bodies/assets/<id>-<name>),
+	// choosing a collision-free basename (via NextAssetName) so an existing asset
+	// is never overwritten, and returns the final basename it stored. srcName is
+	// the caller's file name; the store sanitizes it (SanitizeAssetName) and
+	// prefixes the id. The write is atomic. This is the store half of `furrow
+	// attach`; the body's markdown reference is added by the app layer.
+	SaveAsset(id, srcName string, data []byte) (name string, err error)
+
 	// NextID returns a fresh, random, collision-resistant id (e.g. "t-k3m9p":
 	// prefix + a random Crockford-base32 suffix). There is no shared counter, so
 	// concurrent adds in separate worktrees won't collide. The caller (app) is

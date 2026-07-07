@@ -312,3 +312,50 @@ func TestNextIDRandom(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+func TestSaveAssetRoundTripAndDedup(t *testing.T) {
+	s := newStore(t)
+	assetPath := func(name string) string { return filepath.Join(s.root, "bodies", "assets", name) }
+	img := []byte{0x89, 'P', 'N', 'G', 1, 2, 3}
+
+	name, err := s.SaveAsset("t-0001", "shot.png", img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "t-0001-shot.png" {
+		t.Fatalf("first asset name = %q, want t-0001-shot.png", name)
+	}
+	got, err := os.ReadFile(assetPath(name))
+	if err != nil {
+		t.Fatalf("asset not written: %v", err)
+	}
+	if !bytes.Equal(got, img) {
+		t.Errorf("asset bytes round-trip wrong: %v", got)
+	}
+
+	// A second attach of the same source name must not overwrite: it gets a
+	// numeric suffix, and the original survives.
+	img2 := []byte("second")
+	name2, err := s.SaveAsset("t-0001", "shot.png", img2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name2 != "t-0001-shot-2.png" {
+		t.Fatalf("second asset name = %q, want t-0001-shot-2.png", name2)
+	}
+	if got, _ := os.ReadFile(assetPath("t-0001-shot.png")); !bytes.Equal(got, img) {
+		t.Error("first asset was clobbered by the second attach")
+	}
+	if got, _ := os.ReadFile(assetPath(name2)); !bytes.Equal(got, img2) {
+		t.Error("second asset content wrong")
+	}
+
+	// The source name is sanitized for the on-disk file.
+	spaced, err := s.SaveAsset("t-0002", "my clip.mp4", []byte("v"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spaced != "t-0002-my-clip.mp4" {
+		t.Errorf("sanitized name = %q, want t-0002-my-clip.mp4", spaced)
+	}
+}

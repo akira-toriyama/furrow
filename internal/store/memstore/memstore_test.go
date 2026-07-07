@@ -36,3 +36,22 @@ func TestVersionGate(t *testing.T) {
 		t.Fatalf("restored version must load again: %v", err)
 	}
 }
+
+func TestSaveAssetDedup(t *testing.T) {
+	s := New("t-", 5)
+
+	name, err := s.SaveAsset("t-0001", "shot.png", []byte("one"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "t-0001-shot.png" {
+		t.Fatalf("first name = %q, want t-0001-shot.png", name)
+	}
+	name2, err := s.SaveAsset("t-0001", "shot.png", []byte("two"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name2 != "t-0001-shot-2.png" {
+		t.Fatalf("second name = %q, want t-0001-shot-2.png", name2)
+	}
+}

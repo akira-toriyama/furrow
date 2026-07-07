@@ -181,6 +181,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `next` | Show actionable tasks (non-terminal lane, all deps done); `--json`/`--ndjson` attach a `reason` (`in_next_lane`, `deps_satisfied`) | `-l/--label`, `-r/--repo`, `-n/--limit` (use `-n1` for just the top) |
 | `revisit` | Read-only; list open tasks needing re-evaluation. `--json`/`--ndjson` attach a `revisit` array of `{code, detail}` (`no_repo`, `value_unset`, `effort_unset`, `stale`, `dep_done`) so an agent knows what to fix. Drafts surface regardless of scope. Empty result exits 0 | `-l/--label`, `-r/--repo`, `-n/--limit`, `--stale-days <n>` (0 disables stale) |
 | `edit <id>` | Open `bodies/<id>.md` in `$EDITOR`; prints the path when non-interactive | — |
+| `attach <id> <file>` | Copy an image/video into `bodies/assets/<id>-*` and append a relative markdown reference to the body — images embed (`![…]`), other media link (`[…]`); a collision-free name (`…-2`, `…-3`) never overwrites an existing asset. Because the body is committed markdown, the whole attach lands in git from the terminal alone (no web upload). LFS-independent. `--json` emits `{id, asset, ref, line}` | — |
 | `done <id>` | Move a task into the done lane (stamps `closed`) | — |
 | `move <id> <lane>` | Move a task to a lane (clears `closed` when leaving done) | — |
 | `reorder <id> <priority>` | Set a task's priority (sparse integer; lower sorts higher) | — |
