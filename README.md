@@ -66,7 +66,10 @@ furrow add "Wire up the config loader" --label core --label config
 # list tasks in canonical lane -> priority -> id order
 furrow ls
 
-# show what's actionable right now (non-terminal lane + all deps done)
+# move it out of intake once it's ready to pick up (add defaults to inbox)
+furrow move t-0001 ready
+
+# show what's ready to work (lane in [next].lanes — default ready + in-progress — and all deps done)
 furrow next
 
 # open the task's Markdown body in $EDITOR (prints the path when non-interactive)
@@ -171,7 +174,7 @@ It renders wherever Markdown does (GitHub, Obsidian, an editor preview) — but 
 
 ## Command reference
 
-All commands below are implemented and working today, including the `ui` TUI and `migrate`. (Packaging and a future web viewer are the remaining work — see [Status](#status).)
+All commands below are implemented and working today, including the `ui` TUI and `migrate`. (A read-only web viewer is the only remaining future work — see [Status](#status).)
 
 | Command | What it does | Key flags / args |
 |---|---|---|
@@ -179,7 +182,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `add <title>...` | Add a task (or many from stdin with `--stdin`); assigns frozen ids and seeds `bodies/<id>.md` | `--stdin`, `-s/--status`, `-p/--priority`, `--value`, `--effort`, `-l/--label`, `-r/--repo`, `--draft`, `--parent`, `--dep`, `--ref`, `--body` |
 | `ls` (alias `list`) | List tasks in canonical `lane -> priority -> id` order; `--drafts` lists only the tasks with no repo (bypasses the board scope) | `-s/--status`, `-l/--label`, `-r/--repo`, `-n/--limit`, `--drafts` |
 | `show <id>...` | Show one or more tasks plus their Markdown bodies in a single read, in input order (several ids emit a `--json` array or `---`-separated text; one id keeps the classic single-object shape; `--ndjson` is one task per line at any arity). `--no-body` omits the body (`body_text`) — the lean metadata-only read. A partial miss still prints the found tasks and exits 1 with `details.missing`. `--backlinks` also lists the tasks whose body mentions each one via `[[id]]` (a "Mentioned in" section, or a `mentioned_by` array under `--json`) | `--no-body`, `--backlinks` |
-| `next` | Show actionable tasks (non-terminal lane, all deps done); `--json`/`--ndjson` attach a `reason` (`in_next_lane`, `deps_satisfied`) | `-l/--label`, `-r/--repo`, `-n/--limit` (use `-n1` for just the top) |
+| `next` | Show actionable tasks (lane in the configured `[next].lanes` — default `ready` + `in-progress`, so intake lanes stay out — and all deps done); `--json`/`--ndjson` attach a `reason` (`in_next_lane`, `deps_satisfied`) | `-l/--label`, `-r/--repo`, `-n/--limit` (use `-n1` for just the top) |
 | `revisit` | Read-only; list open tasks needing re-evaluation. `--json`/`--ndjson` attach a `revisit` array of `{code, detail}` (`no_repo`, `value_unset`, `effort_unset`, `stale`, `dep_done`) so an agent knows what to fix. Drafts surface regardless of scope. Empty result exits 0 | `-l/--label`, `-r/--repo`, `-n/--limit`, `--stale-days <n>` (0 disables stale) |
 | `edit <id>` | Open `bodies/<id>.md` in `$EDITOR`; prints the path when non-interactive | — |
 | `attach <id> <file>` | Copy an image/video into `bodies/assets/<id>-*` and append a relative markdown reference to the body — images embed (`![…]`), other media link (`[…]`); a collision-free name (`…-2`, `…-3`) never overwrites an existing asset. Because the body is committed markdown, the whole attach lands in git from the terminal alone (no web upload). LFS-independent. `--json` emits `{id, asset, ref, line}` | — |
@@ -189,7 +192,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `retitle <id> <title...>` | Rename a task, updating the shard title **and** the body's leading `# ` heading so they never drift (trailing args are joined, so the title need not be quoted) | — |
 | `value <id> <1-5>` | Set a task's coarse value (importance) estimate; out-of-range scores clamp to 1..5; `--clear` unsets | `--clear` |
 | `effort <id> <1-5>` | Set a task's coarse effort (cost) estimate; clamps to 1..5; `--clear` unsets | `--clear` |
-| `check <id> [index]` | Toggle a checklist item by zero-based index, or append one | `--add <text>`, `--off` |
+| `check <id> [index]` | Mark a checklist item done by zero-based index (idempotent set, not a toggle; `--off` unchecks), or append one | `--add <text>`, `--off` |
 | `dep <id> <dep-id>` | Add a dependency (id waits on dep-id), or remove it with `--rm`; acyclic & idempotent | `--rm` |
 | `label <id>` | Add and/or remove labels on a task (both repeatable, combinable); idempotent | `--add <label>`, `--remove <label>` |
 | `repo <id>` | Attach and/or detach repos (`owner/repo`) on a task; each value must be a full `owner/repo` or a short name uniquely resolving against the board's repos (else exit 2 with `candidates`); idempotent. A task with no repos is a draft | `--add <repo>`, `--rm <repo>` |
@@ -466,7 +469,11 @@ not to replace. Each hook also **skips cleanly** when `furrow` is absent from
 order   = ["inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"]
 default = "inbox"                 # lane `furrow add` uses when --status is omitted
 done    = "done"                  # lane `furrow done` moves into (where `closed` is stamped)
-terminal = ["done", "icebox", "waiting"]  # lanes NOT actionable for `furrow next`
+terminal = ["done", "icebox", "waiting"]  # lanes never actionable (done/parked); what `next` shows is [next].lanes below
+
+[next]
+lanes = ["ready", "in-progress"]  # lanes `furrow next` considers "ready to work" (besides the deps-done check);
+                                  # intake/planning lanes are excluded — set to all non-terminal lanes to show everything actionable
 
 [priority]
 step    = 10                      # sparse step so reordering edits one field

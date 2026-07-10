@@ -13,7 +13,7 @@ package schema
 // TaskV2 is the JSON Schema (draft 2020-12) for one task shard: the object in a
 // single .furrow/tasks/<id>.json file. Keep the required list and field set in
 // lockstep with internal/core.Task's json tags. A shard carries NO
-// schema_version — that lives in meta.json (see MetaV1). v2 adds the required
+// schema_version — that lives in meta.json (see MetaV2). v2 adds the required
 // "repos" set (repositories as a first-class concept); v1 is retired, not
 // dual-supported — the published v1 document is deleted rather than silently
 // rewritten.

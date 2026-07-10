@@ -61,6 +61,7 @@ library.
    leaves (imported where needed, depend on nothing internal of note):
      internal/schema   JSON Schema source ( `furrow schema [task|meta]` )
      internal/version  build version string (ldflags-injected)
+     internal/migrate  pure Task.md parser behind `furrow migrate`
 ```
 
 A dependency arrow means "imports". Note what is **absent**: `internal/core`
@@ -82,6 +83,8 @@ directly for mutation — they go through `internal/app`.
 | `internal/gitrepo` | git subprocess adapter behind `furrow sync` (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers (and the in-memory `Marshal`), the `Store`/`Clock` ports, `Validate`, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard and `meta.json` as Go constants; emitted by `furrow schema [task|meta]`. |
+| `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |
+| `internal/gittest` | Test-only helper: `Isolate()` neutralizes global/system git config at the process-env level (called from `TestMain`) so real-git tests — especially `App.Sync`'s subprocess — don't flake on a developer's `commit.gpgsign`/`core.hooksPath`. Imported only by `_test.go` files. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |
 
 ---
@@ -110,7 +113,12 @@ The seams between the pure core and the outside world are interfaces declared in
 - **`Store`** — persists the per-task metadata shards and per-task bodies. It owns
   *all* path construction (callers never assemble `".furrow/bodies/<id>.md"` by
   hand) and *all* atomicity. Methods: `Load`, `Save`, `LoadBody`, `SaveBody`,
-  `BodyExists`, `ListBodyIDs`, `ListTaskIDs`, `NextID`.
+  `BodyExists`, `ListBodyIDs`, `ListTaskIDs`, `SaveAsset`, `ListAssets`,
+  `NextID`. The two asset methods are the store half of `furrow attach` /
+  `furrow lint`'s asset checks: `SaveAsset` copies media into the task's asset
+  area `bodies/assets/<id>-<name>` (sanitized, collision-free, atomic) and
+  returns the final basename; `ListAssets` enumerates `bodies/assets/` as
+  name+size, a missing dir yielding nil, not an error.
 - **`Clock`** — supplies `Now()`. Injected so tests get deterministic timestamps
   and the marshaller's UTC/whole-second contract is trivial to honor.
   `core.SystemClock()` is the production implementation.
@@ -122,8 +130,8 @@ compile-time assertion `var _ core.Store = (*Store)(nil)`. The `app`, `cli`, and
 what keeps the core testable without touching disk.
 
 `internal/app` widens the port slightly with its own `app.Store` interface
-(`core.Store` plus `DeleteBody`, `BumpSeqTo`, and `BodyFile` for `$EDITOR`
-shell-out); both adapters satisfy it.
+(`core.Store` plus `DeleteBody` and `BodyFile` for `$EDITOR` shell-out); both
+adapters satisfy it.
 
 ### "Crossing a layer means a missing port"
 
@@ -189,7 +197,7 @@ error (the file is malformed input), not an internal fault.
   the fixture index produces `testdata/index.golden.json` byte-for-byte (write →
   read → write stays identical).
 - **Schema drift test.** `furrow schema [task|meta]` prints
-  `internal/schema.TaskV2` / `internal/schema.MetaV1` (JSON Schema draft 2020-12);
+  `internal/schema.TaskV2` / `internal/schema.MetaV2` (JSON Schema draft 2020-12);
   `docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v2.json` are
   committed copies of the same bytes, and CI diffs both so they cannot drift.
 - **Single-path grep guard.** `scripts/check-marshal-singlepath.sh` greps for
@@ -240,6 +248,10 @@ A `.furrow/` store directory contains:
     t-k3m9p.json         written ONLY via core.MarshalTask
     t-9qw2z.json
   bodies/<id>.md       long-form prose, one file per task (hand/agent editable)
+  bodies/assets/       attached media, one file per attachment: <id>-<sanitized-name>
+    t-k3m9p-shot.png     written ONLY via Store.SaveAsset (atomic, collision-free
+                         basename); linked from the body by `furrow attach`; scanned
+                         by `furrow lint` (dangling / orphan / oversized warnings)
   meta.json            board-wide layout version {"schema_version": 3} — MarshalMeta
   config.toml          human config (read-only from furrow's side)
   archive/             a sibling sharded store: aged done tasks moved out of the hot store
@@ -310,7 +322,7 @@ not file-backed — so `$EDITOR` shell-out is unsupported against it, which the
 `internal/app` is the **only mutation funnel**. The CLI (and, later, the TUI)
 call `App` methods — `Add`, `Move`, `Done`, `Reorder`, `SetTitle`, `SetValue`,
 `SetEffort`, `Check`, `AddCheck`, `AddDep`/`RemoveDep`, `Relabel`, `Rerepo`,
-`ApplyDirectives`, `Sync`, `Archive`, `Lint`, `EditPath`, plus the read methods
+`Attach`, `ApplyDirectives`, `Sync`, `Archive`, `Lint`, `EditPath`, plus the read methods
 `Get`, `List`, `Next`, `Revisit`. Keeping every edit in one place is what keeps
 the invariants (frozen
 ids, canonical order, closed-timestamp rules, body↔index pairing) from being
@@ -332,10 +344,12 @@ A few app-level rules worth stating, all verified against the code:
 - **`Move` / `Done`** set the lane. Moving **into** the done lane stamps
   `Closed`; moving **out** of it clears `Closed`. Other terminal lanes (e.g.
   `icebox`) leave `Closed` alone — *parked is not closed*.
-- **`Next`** returns actionable tasks: not in a terminal lane and with every
-  named dependency already in the done lane. Lane semantics live in config, not
-  core — `Index.Actionable` takes the terminal set and the done-id set as
-  arguments.
+- **`Next`** returns actionable tasks: in one of the configured `[next].lanes`
+  (default `ready` + `in-progress` — intake lanes like `inbox` are deliberately
+  excluded) and with every named dependency already in the done lane. Lane
+  semantics live in config, not core — `Index.Actionable` takes the terminal
+  set and the done-id set as arguments, and the `[next].lanes` gate is applied
+  in `app` via `Config.IsNextLane`.
 - **`Archive`** selects done-lane tasks whose `Closed` is older than the cutoff
   and moves them (shard + body) into the sibling `.furrow/archive/` store (its own
   `tasks/`, `meta.json`, and `bodies/`).
@@ -345,8 +359,8 @@ A few app-level rules worth stating, all verified against the code:
 Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
 except where noted:
 
-`init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `edit`, `done`,
-`move`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
+`init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `edit`, `attach`,
+`done`, `move`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
 `sync`, `archive`, `lint`, `config` (`init`/`path`), `schema`, `version`, `ui`,
 `migrate`.
 
@@ -355,12 +369,30 @@ except where noted:
 - **`repo`** attaches/detaches `owner/repo` values on a task (`--add`/`--rm`,
   both repeatable); short names resolve against the board's known repos or
   fail with `candidates`. A task with no repos is a **draft** (`ls --drafts`).
+- **`attach <id> <file>`** copies a media file into the task's asset area
+  (`.furrow/bodies/assets/<id>-<name>`) and appends a relative markdown
+  reference to the body (images embed with `![...]`, other media link). The id
+  is validated before anything is written, so a bad id fails cleanly with no
+  stray asset. LFS-independent: a plain file copy plus a body edit — a
+  `.gitattributes` rule makes git-lfs take the blob transparently. `--json`
+  emits `{id, asset, ref, line}`.
 - **`sync`** runs the multi-machine ritual against the git repo enclosing the
-  board: auto-commit pathspec-limited to `.furrow/`, `fetch` + autostash
-  `rebase @{u}` (onto the tracking ref, not `FETCH_HEAD`, so a co-writer's fetch
-  can't race it), `push` (one retry on non-fast-forward), via the
-  `internal/gitrepo` adapter. A conflict aborts the rebase automatically and
-  reports the paths (`sync-conflict`, exit 3).
+  board: auto-commit scoped to `.furrow/` — machine-written paths (`tasks/`,
+  `meta.json`, `config.toml`) and brand-new (untracked) bodies always commit,
+  while a merely-modified `bodies/<id>.md` commits only when named with
+  `-b/--body <id>` or under `--all-bodies`, and is otherwise left for its
+  author and reported in `pending_bodies` plus a stderr note — then `fetch` +
+  autostash `rebase @{u}` (onto the tracking ref, not `FETCH_HEAD`, so a
+  co-writer's fetch can't race it), `push` (one retry on non-fast-forward), via
+  the `internal/gitrepo` adapter. The progress object — stdout on success AND
+  failure — carries `{committed, pulled, pushed, conflict, committed_bodies,
+  pending_bodies}` (the body lists omitted when empty). Failure modes, branch
+  on the error `id`: `sync-conflict` (exit 3, definitive — the rebase is
+  aborted automatically, conflicted paths in `details`), `sync-busy` (exit 3,
+  retryable — a foreign in-progress rebase outlived the bounded backoff),
+  `sync` (terminal — a likely-stale `.git/*.lock`, named in the message), and
+  `sync-interrupted` (exit 3, retryable — SIGINT/SIGTERM cancelled the
+  in-flight git; a genuine conflict is never masked by the signal).
 - **`apply`** parses `SetStatus-task:` directives out of PR/commit text (stdin
   or `--body-file`) and reflects them onto the board — the CI hook behind the
   task-status workflow. Validation is non-blocking by design.
@@ -417,7 +449,8 @@ verb where an expert would type three. The principle: *never obstruct the
 expert; bundle the ceremony for everyone else.*
 
 `furrow sync` is exemplar #1. It bundles the exact dance a git
-expert runs by hand — **auto-commit (pathspec-limited to `.furrow/`) →
+expert runs by hand — **auto-commit (pathspec-limited to `.furrow/`, and within
+it gated to machine-written files plus new/opted-in bodies) →
 `fetch` + `rebase --autostash @{u}` → `push`** — behind one command, adding a
 machine-readable progress object and conflict classification on top. The sugar
 is a convenience, not a cage: the underlying store is still just files in a git

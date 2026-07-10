@@ -113,7 +113,10 @@ furrow add "config.toml ローダを書く" --label core --priority 100
 # 一覧（lane->priority->id の正準順）
 furrow ls
 
-# いま着手できるタスク（terminal レーン以外で、依存が全部 done）
+# いま着手すべきタスクを ready へ（add の既定レーンは inbox）
+furrow move t-0001 ready
+
+# いま着手できるタスク（[next].lanes — 既定 ready + in-progress — にあり、依存が全部 done）
 furrow next
 
 # 本文を編集（TTY なら $EDITOR、非対話ならパスを出力する）
@@ -140,7 +143,7 @@ furrow done t-0001
 | `add <title>...` | タスクを追加（`--stdin` で標準入力から1行1タスクを一括作成）。id を自動採番し `bodies/<id>.md` を作る |
 | `ls`（別名 `list`） | タスクを正準順で一覧。`--drafts` で repo 未付与のタスク（draft）だけを一覧（ボードのスコープは無視） |
 | `show <id>...` | タスク（複数可）を markdown 本文付きで 1 回の読みで表示（入力順。複数 id は `--json` で配列／human は `---` 区切り、1 id は従来どおり単一オブジェクト。`--ndjson` は個数によらず 1 行 1 タスク）。`--no-body` で本文（`body_text`）を省く＝agent 向けの軽量メタデータ読み。一部 id が見つからなくても見つかった分は出力し、exit 1 のエラーに `details.missing` が載る。`--backlinks` を付けると、本文でこのタスクを `[[id]]` で参照している他タスクも列挙する（「Mentioned in」節／`--json` では `mentioned_by` 配列。GitHub の "mentioned in" のローカル・レート制限なし版） |
-| `next` | 着手可能なタスク（非 terminal・依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
+| `next` | 着手可能なタスク（設定 `[next].lanes` — 既定 `ready` + `in-progress`、intake レーンは出ない — にあり、依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
 | `revisit` | read-only。再評価すべき open タスクを一覧。`--json`/`--ndjson` は各タスクに `revisit` 配列 `{code, detail}`（`no_repo`・`value_unset`・`effort_unset`・`stale`・`dep_done`）を付与し、エージェントが何を直すか分かる。draft はスコープに関係なく浮上する。空でも exit 0。`-l/--label`・`-r/--repo`・`-n/--limit`・`--stale-days <n>`（0 で stale 無効） |
 | `edit <id>` | `bodies/<id>.md` を `$EDITOR` で開く（非対話ならパスを出力） |
 | `attach <id> <file>` | 画像/動画を `bodies/assets/<id>-*` にコピーし、body に相対 markdown 参照を追記する。画像は埋め込み（`![…]`）・その他媒体はリンク（`[…]`）。衝突しない名前（`…-2`, `…-3`）で既存アセットを上書きしない。body は commit される markdown なので、web アップロード無しに端末だけで attach 全体が git に載る。LFS 非依存。`--json` は `{id, asset, ref, line}` を出力 |
@@ -150,7 +153,7 @@ furrow done t-0001
 | `retitle <id> <title...>` | タイトルを変更。シャードの title **と** body 先頭の `# ` 見出しを両方更新して食い違わせない（末尾の引数は空白で連結するのでクォート不要） |
 | `value <id> <1-5>` | 粗い value（重要度）見積もりを設定（範囲外は 1..5 に丸め）。`--clear` で未設定に戻す |
 | `effort <id> <1-5>` | 粗い effort（手間）見積もりを設定（1..5 に丸め）。`--clear` で未設定に戻す |
-| `check <id> [index]` | チェックリスト項目をトグル（`--add` で追加・`--off` で外す） |
+| `check <id> [index]` | チェックリスト項目を 0 始まり index で done にする（トグルでなく冪等な set。`--off` で外す・`--add` で追加） |
 | `dep <id> <dep-id>` | 依存を追加（id が dep-id を待つ）。`--rm` で削除。循環防止・冪等 |
 | `label <id>` | ラベルを追加／削除（`--add`・`--remove`、いずれも反復可・併用可）。冪等 |
 | `repo <id>` | repo（`owner/repo`）を追加／削除（`--add`・`--rm`、反復可・併用可）。値は完全な `owner/repo` か、ボード既知の repo に一意に解決する短名のみ（それ以外は exit 2・`candidates` 付き）。冪等。repos が空のタスクは draft |
@@ -372,7 +375,7 @@ git config core.hooksPath scripts/hooks   # hook を置いたあと
 - **priority は疎な整数**（10 刻みが既定）。並べ替えは `reorder` で 1 フィールドを書き換えるだけ。手リナンバリングは消える。
 - **status は `config.toml` のレーン**。Open→Done は値の変更（1 文字 diff）。
 - **`done` への移動は `closed` を打刻**。done から外へ移動すると `closed` をクリアする。icebox（温存）のような他の terminal レーンは `closed` を打刻しない（parked と closed は別物）。
-- **`next` の定義** = terminal でないレーン、かつ依存（`deps`）が全て done レーンにあるタスク。
+- **`next` の定義** = レーンが `[next].lanes`（既定 `ready` + `in-progress` — inbox/backlog などの intake レーンは対象外）にあり、かつ依存（`deps`）が全て done レーンにあるタスク。
 - **shard ↔ body は 1:1**。`furrow lint` が、本文ファイルのないタスクと、タスクのない孤立本文の双方を報告する。
 
 ### スキーマ（`.furrow/tasks/<id>.json`）
@@ -459,7 +462,11 @@ cmd/furrow/main.go                 = os.Exit(cli.Execute()) のみ
 order = ["inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"]
 default = "inbox"           # `furrow add` が割り当てるレーン
 done = "done"               # `furrow done` の移動先（closed を打刻）
-terminal = ["done", "icebox", "waiting"]  # `next` で着手不可とするレーン
+terminal = ["done", "icebox", "waiting"]  # 常に着手不可のレーン（done/parked）。next に出るレーンは下の [next].lanes
+
+[next]
+lanes = ["ready", "in-progress"]  # `furrow next` が「着手できる」とみなすレーン（依存チェックは別途）。
+                                  # intake/planning レーンは除外 — 全て見たければ非 terminal レーンを列挙する
 
 [priority]
 step = 10
