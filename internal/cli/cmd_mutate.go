@@ -137,7 +137,7 @@ func newCheckCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "check <id> [item-index]",
-		Short: "Toggle a checklist item, or add one with --add",
+		Short: "Mark a checklist item done (--off to uncheck), or add one with --add",
 		Long: "With --add, append a checklist item. Otherwise, mark the item at the given\n" +
 			"zero-based index done (or --off to uncheck it).",
 		Args: cobra.RangeArgs(1, 2),

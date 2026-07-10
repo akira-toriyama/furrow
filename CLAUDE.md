@@ -39,22 +39,34 @@ the user-level config. When you work with any furrow store:
   single id keeps the classic object), `--ndjson` = one line per task at any
   arity. A partial miss still emits the found tasks and exits 1 with
   `details.missing` — branch on that array.
-- **A multi-machine board converges with `furrow sync`** (auto-commit limited
+- **A multi-machine board converges with `furrow sync`** (auto-commit scoped
   to `.furrow/` → `fetch` + `rebase --autostash @{u}` → `push`): run it before
-  reading and after writing a shared board. It rebases onto the tracking ref,
-  not `FETCH_HEAD`, so a co-writer's concurrent fetch can't race it into
-  `Cannot rebase onto multiple branches`. On a true conflict it aborts the
-  rebase itself and exits 3 with id `sync-conflict` + the conflicted shard paths
-  in `details`. A concurrent writer's transient race is waited out with a bounded
-  backoff, handled by cause: a foreign rebase caught by the pre-flight, if still
-  stuck past the budget, exits 3 with id `sync-busy` — a **retryable** condition
-  (re-run), NOT the do-not-retry `exit 2`; a fetch/ref-lock race during the pull
-  is retried and, if a lock still blocks past the budget (a likely-stale
-  `.git/*.lock`), fails terminally (id `sync`) naming the lock to remove, NOT
-  `sync-busy`. Branch on the `id`, not the exit code, to tell these apart. A
-  successful sync also gains a `revisit` key (`{dep_done:[ids], stale:[ids]}`,
-  repo-scoped, omitted when empty) — the loop-visible staleness nudge; run
-  `furrow revisit` for detail.
+  reading and after writing a shared board. Within `.furrow/`, machine-written
+  files (`tasks/`, `meta.json`, `config.toml`) and brand-new (untracked) bodies
+  always commit, but a **merely-modified `bodies/<id>.md` is committed only when
+  named with `-b/--body <id>` or swept with `--all-bodies`** — on a shared
+  checkout a plain sync must not commit a co-located operator's in-progress
+  prose under the wrong author. A skipped body is listed in the JSON
+  `pending_bodies` field (its twin `committed_bodies` lists what was committed)
+  and in a stderr note, while sync still exits 0 and pushes everything else —
+  so after hand-editing a body, run `furrow sync -b <id>` (or check
+  `pending_bodies`); a plain `furrow sync` would leave that edit local. It
+  rebases onto the tracking ref, not `FETCH_HEAD`, so a co-writer's concurrent
+  fetch can't race it into `Cannot rebase onto multiple branches`. On a true
+  conflict it aborts the rebase itself and exits 3 with id `sync-conflict` + the
+  conflicted shard paths in `details`. A concurrent writer's transient race is
+  waited out with a bounded backoff, handled by cause: a foreign rebase caught
+  by the pre-flight, if still stuck past the budget, exits 3 with id `sync-busy`
+  — a **retryable** condition (re-run), NOT the do-not-retry `exit 2`; a
+  fetch/ref-lock race during the pull is retried and, if a lock still blocks
+  past the budget (a likely-stale `.git/*.lock`), fails terminally (id `sync`)
+  naming the lock to remove, NOT `sync-busy`. A SIGINT/SIGTERM cancels the
+  in-flight git and exits 3 with id `sync-interrupted` — retryable, just re-run
+  (a genuine conflict is never masked by the signal: it still surfaces as
+  `sync-conflict` with its `details.paths`). Branch on the `id`, not the exit
+  code, to tell these apart. A successful sync also gains a `revisit` key
+  (`{dep_done:[ids], stale:[ids]}`, repo-scoped, omitted when empty) — the
+  loop-visible staleness nudge; run `furrow revisit` for detail.
 - `furrow edit <id>` with no TTY **prints the body file path** instead of opening
   an editor — read/edit that file directly.
 - Exit codes: `0` ok / `1` not-found|empty / `2` bad-usage|validation / `3+`
@@ -160,7 +172,7 @@ literal add-time tag, and `label = "auto"` is a reserved tombstone (warned,
 ignored).
 
 ### Schema
-`internal/schema.TaskV2` and `internal/schema.MetaV1` are the sources of the JSON
+`internal/schema.TaskV2` and `internal/schema.MetaV2` are the sources of the JSON
 Schemas; `furrow schema [task|meta]` prints them (no arg or `task` = the shard
 schema; `meta` = the `meta.json` schema) and CI diffs them against
 `docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v2.json`. Change a

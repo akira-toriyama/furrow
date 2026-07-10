@@ -58,9 +58,11 @@ import, not an ongoing sync) has been floated but is **not built** today.
 ---
 
 ### No sync daemon / server
-Multi-machine use is `furrow sync` — a **thin git wrapper** (commit only
-`.furrow/`, `fetch` + `rebase --autostash @{u}`, `push`, abort-and-report on
-conflict) that the user or agent runs explicitly. There is no background process, no file
+Multi-machine use is `furrow sync` — a **thin git wrapper** (auto-commit
+scoped to `.furrow/` — shards and `meta.json` always, a hand-edited
+`bodies/<id>.md` only when new or opted in with `-b`/`--all-bodies`, otherwise
+reported in `pending_bodies`; then `fetch` + `rebase --autostash @{u}`,
+`push`, abort-and-report on conflict) that the user or agent runs explicitly. There is no background process, no file
 watcher, no hosted relay, and none is planned: git is already the
 synchronization layer, and per-task shards already make concurrent writes
 merge cleanly. — *A daemon would add an always-on failure mode to a tool whose
@@ -72,7 +74,11 @@ The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
 (structured metadata, machine-written) + `.furrow/meta.json`
 (`{"schema_version": 3}`, the board-wide layout version) +
 `.furrow/bodies/<id>.md` (long-form prose, hand/agent
-editable) + `.furrow/config.toml` (human config) +
+editable) + `.furrow/bodies/assets/` (media copied in by `furrow attach` as
+collision-free `<id>-<name>` files, referenced from the body by a relative
+markdown line — the explicit binary exception, delegated to git(-lfs); the
+non-binary, clean-git-diff arguments below concern the structured store) +
+`.furrow/config.toml` (human config) +
 `.furrow/archive/` (aged done tasks, itself a sibling sharded store). The
 rejected alternatives below are *not*
 shortcuts we skipped — they are formats we evaluated and ruled out.
@@ -138,7 +144,7 @@ keeping them as plain JSON.
 To keep this list honest about today's reality (not aspirations):
 
 - **Built and real today** (`internal/cli`): `init`, `add`, `ls` (alias
-  `list`), `show`, `next`, `revisit`, `edit`, `done`, `move`, `reorder`,
+  `list`), `show`, `next`, `revisit`, `edit`, `attach`, `done`, `move`, `reorder`,
   `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`, `sync`,
   `migrate`, `archive`, `lint`, `config init|path`, `schema`, `version`, `ui`.
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
