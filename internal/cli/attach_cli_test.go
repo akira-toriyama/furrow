@@ -10,6 +10,45 @@ import (
 	"github.com/akira-toriyama/furrow/internal/app"
 )
 
+// TestCLIArchiveMovesAssets pins t-j2e8: `furrow attach`ed media travels with its
+// task into .furrow/archive/ instead of being orphaned in the hot store.
+func TestCLIArchiveMovesAssets(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "has media", "-s", "ready")
+	src := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(src, []byte{0x89, 'P', 'N', 'G', 1, 2}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := run(t, "attach", id, src); code != 0 {
+		t.Fatal("attach failed")
+	}
+
+	dir := os.Getenv(app.EnvDir)
+	name := id + "-shot.png"
+	hot := filepath.Join(dir, "bodies", "assets", name)
+	arc := filepath.Join(dir, "archive", "bodies", "assets", name)
+	if _, err := os.Stat(hot); err != nil {
+		t.Fatalf("asset should exist in the hot store before archive: %v", err)
+	}
+
+	run(t, "done", id)
+	if _, code := run(t, "archive", id, "--yes"); code != 0 {
+		t.Fatal("archive by id failed")
+	}
+
+	if _, err := os.Stat(hot); !os.IsNotExist(err) {
+		t.Errorf("asset should be gone from the hot store after archive, err = %v", err)
+	}
+	if _, err := os.Stat(arc); err != nil {
+		t.Errorf("asset should be moved into archive/, err = %v", err)
+	}
+	// the whole point: lint no longer flags an orphan asset.
+	out, _ := run(t, "--json", "lint")
+	if strings.Contains(out, "orphan-asset") {
+		t.Errorf("lint must not flag an orphan asset after the move:\n%s", out)
+	}
+}
+
 func TestCLIAttachUpdatesBodyAndJSON(t *testing.T) {
 	initStore(t)
 	id := addTask(t, "bug with a picture", "-s", "ready")

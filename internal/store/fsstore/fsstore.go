@@ -228,6 +228,40 @@ func (s *Store) SaveAsset(id, srcName string, data []byte) (string, error) {
 	return name, nil
 }
 
+// LoadAsset returns the bytes of bodies/assets/<name>. Missing is a NotFound
+// error (archive lists first, so absence here is unexpected).
+func (s *Store) LoadAsset(name string) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(s.assetsDir(), name))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, core.NotFound(name)
+		}
+		return nil, core.Internalf(name, "read asset: %v", err)
+	}
+	return data, nil
+}
+
+// SaveAssetRaw writes data to bodies/assets/<name> with the EXACT basename (no
+// sanitize, no collision-avoidance), atomically — used by archive to move an
+// asset while preserving its filename. (SaveAsset is the attach path, which
+// derives a fresh collision-free name instead.)
+func (s *Store) SaveAssetRaw(name string, data []byte) error {
+	if err := os.MkdirAll(s.assetsDir(), 0o755); err != nil {
+		return core.Internalf(name, "create bodies/assets/: %v", err)
+	}
+	return s.atomicWrite(filepath.Join(s.assetsDir(), name), data)
+}
+
+// DeleteAsset removes bodies/assets/<name>. Absent is not an error (mirrors
+// DeleteBody), so a re-run after a partial archive is idempotent.
+func (s *Store) DeleteAsset(name string) error {
+	err := os.Remove(filepath.Join(s.assetsDir(), name))
+	if err != nil && !os.IsNotExist(err) {
+		return core.Internalf(name, "delete asset: %v", err)
+	}
+	return nil
+}
+
 // DeleteBody removes bodies/<id>.md (used by archive). Absent is not an error.
 func (s *Store) DeleteBody(id string) error {
 	err := os.Remove(s.bodyPath(id))

@@ -126,6 +126,22 @@ func (s *Store) ListAssets() ([]core.AssetInfo, error) {
 	return assets, nil
 }
 
+// LoadAsset returns a copy of the stored asset's bytes, or a NotFound error when
+// absent — the in-memory twin of fsstore reading bodies/assets/<name>.
+func (s *Store) LoadAsset(name string) ([]byte, error) {
+	data, ok := s.assets[name]
+	if !ok {
+		return nil, core.NotFound(name)
+	}
+	return append([]byte(nil), data...), nil
+}
+
+// DeleteAsset removes the stored asset; absent is not an error (mirrors fsstore).
+func (s *Store) DeleteAsset(name string) error {
+	delete(s.assets, name)
+	return nil
+}
+
 // BodyFile returns "" — an in-memory store is not file-backed, so $EDITOR
 // shell-out (the only caller) is not supported against it.
 func (s *Store) BodyFile(id string) string { return "" }
