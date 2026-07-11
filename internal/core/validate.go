@@ -8,8 +8,18 @@ import (
 
 // Problem is one lint finding. Severity is "error" (breaks an invariant) or
 // "warn" (suspicious but tolerated). The CLI exits non-zero only on errors.
+//
+// Code is a stable kebab-case classifier for machine triage — the id field is
+// contextual (a task id, an asset name, or a literal like "config"/"global-config"),
+// so an agent branches on Code, never regexes the message prose. The closed
+// vocabulary: empty-id, id-pattern, duplicate-id, unknown-lane, body-path,
+// parent-missing, dep-missing, repo-shape, value-range, effort-range, dep-cycle,
+// reconcile-gap, done-unclosed, missing-body, orphan-body, shard-misnamed,
+// dangling-link, asset-missing, orphan-asset, oversized-asset, label-required,
+// config-clamp.
 type Problem struct {
 	Severity string `json:"severity"`
+	Code     string `json:"code"`
 	ID       string `json:"id"`
 	Msg      string `json:"message"`
 }
@@ -48,30 +58,30 @@ func Validate(idx *Index, laneOrder []string, idPattern *regexp.Regexp) []Proble
 	for _, t := range idx.Tasks {
 		switch {
 		case t.ID == "":
-			out = append(out, Problem{SevError, t.ID, "task has an empty id"})
+			out = append(out, Problem{SevError, "empty-id", t.ID, "task has an empty id"})
 		case idPattern != nil && !idPattern.MatchString(t.ID):
-			out = append(out, Problem{SevError, t.ID, fmt.Sprintf("id %q does not match the configured id pattern", t.ID)})
+			out = append(out, Problem{SevError, "id-pattern", t.ID, fmt.Sprintf("id %q does not match the configured id pattern", t.ID)})
 		}
 
 		seen[t.ID]++
 		if seen[t.ID] == 2 { // report each duplicate id once
-			out = append(out, Problem{SevError, t.ID, fmt.Sprintf("duplicate id: %s", t.ID)})
+			out = append(out, Problem{SevError, "duplicate-id", t.ID, fmt.Sprintf("duplicate id: %s", t.ID)})
 		}
 
 		if _, ok := known[t.Status]; !ok {
-			out = append(out, Problem{SevWarn, t.ID, fmt.Sprintf("status %q is not a configured lane", t.Status)})
+			out = append(out, Problem{SevWarn, "unknown-lane", t.ID, fmt.Sprintf("status %q is not a configured lane", t.Status)})
 		}
 
 		if want := BodyPath(t.ID); t.Body != want {
-			out = append(out, Problem{SevError, t.ID, fmt.Sprintf("body path %q should be %q", t.Body, want)})
+			out = append(out, Problem{SevError, "body-path", t.ID, fmt.Sprintf("body path %q should be %q", t.Body, want)})
 		}
 
 		if t.Parent != "" && !ids[t.Parent] {
-			out = append(out, Problem{SevError, t.ID, fmt.Sprintf("parent %q does not exist", t.Parent)})
+			out = append(out, Problem{SevError, "parent-missing", t.ID, fmt.Sprintf("parent %q does not exist", t.Parent)})
 		}
 		for _, dep := range t.Deps {
 			if !ids[dep] {
-				out = append(out, Problem{SevError, t.ID, fmt.Sprintf("dep %q does not exist", dep)})
+				out = append(out, Problem{SevError, "dep-missing", t.ID, fmt.Sprintf("dep %q does not exist", dep)})
 			}
 		}
 
@@ -80,7 +90,7 @@ func Validate(idx *Index, laneOrder []string, idPattern *regexp.Regexp) []Proble
 		// but it will never match a derived repo, so surface it.
 		for _, r := range t.Repos {
 			if !repoShapeRe.MatchString(r) {
-				out = append(out, Problem{SevWarn, t.ID, fmt.Sprintf("repo %q is not owner/repo-shaped", r)})
+				out = append(out, Problem{SevWarn, "repo-shape", t.ID, fmt.Sprintf("repo %q is not owner/repo-shaped", r)})
 			}
 		}
 	}
@@ -109,10 +119,10 @@ func EstimateProblems(idx *Index) []Problem {
 	var out []Problem
 	for _, t := range idx.Tasks {
 		if t.Value != nil && (*t.Value < EstimateMin || *t.Value > EstimateMax) {
-			out = append(out, Problem{SevWarn, t.ID, fmt.Sprintf("value %d is outside %d..%d; it will be clamped on the next write", *t.Value, EstimateMin, EstimateMax)})
+			out = append(out, Problem{SevWarn, "value-range", t.ID, fmt.Sprintf("value %d is outside %d..%d; it will be clamped on the next write", *t.Value, EstimateMin, EstimateMax)})
 		}
 		if t.Effort != nil && (*t.Effort < EstimateMin || *t.Effort > EstimateMax) {
-			out = append(out, Problem{SevWarn, t.ID, fmt.Sprintf("effort %d is outside %d..%d; it will be clamped on the next write", *t.Effort, EstimateMin, EstimateMax)})
+			out = append(out, Problem{SevWarn, "effort-range", t.ID, fmt.Sprintf("effort %d is outside %d..%d; it will be clamped on the next write", *t.Effort, EstimateMin, EstimateMax)})
 		}
 	}
 	return out
