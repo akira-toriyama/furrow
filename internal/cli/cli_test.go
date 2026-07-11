@@ -632,6 +632,44 @@ func TestCLIClampSignal(t *testing.T) {
 	}
 }
 
+// TestCLIAliasExpansion pins t-awsb: a board [alias] expands git-style before
+// dispatch, a builtin is never shadowed, and lint warns about a shadowing alias.
+func TestCLIAliasExpansion(t *testing.T) {
+	initStore(t)
+	// The board config is user-owned — hand-append an [alias] table.
+	cfgPath := filepath.Join(os.Getenv(app.EnvDir), "config.toml")
+	f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("\n[alias]\ntriage = \"ls -s inbox,backlog\"\nls = \"ls -s ready\"\n")
+	f.Close()
+
+	root := newRootCmd()
+	joined := func(args []string) string { return strings.Join(expandAlias(root, args), " ") }
+
+	// a real command is never shadowed by an alias.
+	if got := joined([]string{"ls", "-s", "ready"}); got != "ls -s ready" {
+		t.Errorf("builtin ls must not be aliased, got %q", got)
+	}
+	// an alias expands and appends the remaining args (git-style).
+	if got := joined([]string{"triage", "-r", "furrow"}); got != "ls -s inbox,backlog -r furrow" {
+		t.Errorf("triage should expand+append, got %q", got)
+	}
+	// an unknown non-alias and a leading flag both pass through untouched.
+	if got := joined([]string{"bogus"}); got != "bogus" {
+		t.Errorf("unknown non-alias must pass through, got %q", got)
+	}
+	if got := joined([]string{"--json", "triage"}); got != "--json triage" {
+		t.Errorf("a leading flag must pass through, got %q", got)
+	}
+	// lint warns about the shadowing `ls` alias (inert, but surfaced).
+	out, _ := run(t, "lint")
+	if !strings.Contains(out, "alias-shadow") || !strings.Contains(out, `"ls"`) {
+		t.Errorf("lint should warn about the shadowing alias:\n%s", out)
+	}
+}
+
 // TestCLICheckAddRepeatable pins that `check --add A --add B` appends BOTH items
 // (was: cobra StringVar kept only the last), and that a comma inside an item is
 // preserved verbatim — i.e. the flag is StringArrayVar, not StringSliceVar which

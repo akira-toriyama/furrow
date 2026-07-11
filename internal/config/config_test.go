@@ -7,6 +7,26 @@ import (
 	"testing"
 )
 
+// TestAliasParsing pins t-awsb: the board [alias] table parses, and a
+// blank-value entry drops with a clamp warning (clamp-don't-reject).
+func TestAliasParsing(t *testing.T) {
+	path := writeTOML(t, "[alias]\ntriage = \"ls -s inbox,backlog\"\nempty = \"\"\n")
+	cfg, warn, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Alias["triage"] != "ls -s inbox,backlog" {
+		t.Errorf("triage alias should parse: %v", cfg.Alias)
+	}
+	if _, ok := cfg.Alias["empty"]; ok {
+		t.Errorf("an empty-value alias should be dropped: %v", cfg.Alias)
+	}
+	joined := strings.Join(warn, "\n")
+	if !strings.Contains(joined, "empty") {
+		t.Errorf("an empty-value alias should warn: %v", warn)
+	}
+}
+
 func writeTOML(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()

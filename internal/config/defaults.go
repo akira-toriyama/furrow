@@ -66,6 +66,12 @@ type Config struct {
 
 	LabelsRequired bool // when true, a task with zero labels is rejected/flagged
 
+	// Alias is the board-level [alias] table (name -> command string) that
+	// `furrow <name> …` expands git-style. Empty when unset; a nil map is fine to
+	// range over. Builtin-shadowing entries are inert (expansion checks builtins
+	// first) and flagged by lint.
+	Alias map[string]string
+
 	idPattern *regexp.Regexp  // compiled from IDPrefix, cached
 	nextSet   map[string]bool // membership set built from NextLanes
 }

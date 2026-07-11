@@ -47,6 +47,10 @@ func Execute() int {
 	}()
 
 	root := newRootCmd()
+	// Board-config [alias] expansion (git-style): a leading token that names an
+	// alias (not a builtin) is rewritten before cobra dispatch. A real command
+	// always wins; any discovery error leaves args untouched.
+	root.SetArgs(expandAlias(root, os.Args[1:]))
 	err := root.ExecuteContext(ctx)
 	if err == nil {
 		return int(core.CodeOK)
@@ -123,6 +127,70 @@ func newRootCmd() *cobra.Command {
 		newUICmd(),
 	)
 	return root
+}
+
+// expandAlias rewrites args when the first arg names a board-config [alias],
+// git-style: the alias's whitespace-split tokens replace it and the remaining
+// args are appended (so `furrow triage -r sill` → `ls -s inbox,backlog -r sill`).
+// It fires only when the first arg is not a flag and not a builtin command (a
+// real command always wins — a shadowing alias is inert), and the alias resolves
+// against the enclosing board's config. Any discovery/config error returns args
+// unchanged; expansion never breaks furrow where a real command would work.
+func expandAlias(root *cobra.Command, args []string) []string {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return args
+	}
+	if isBuiltinCommand(root, args[0]) {
+		return args
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return args
+	}
+	expansion, ok := app.DiscoverAliases(cwd)[args[0]]
+	if !ok || strings.TrimSpace(expansion) == "" {
+		return args
+	}
+	return append(strings.Fields(expansion), args[1:]...)
+}
+
+// isBuiltinCommand reports whether name is one of root's subcommands or an alias
+// of one (e.g. `list` for `ls`, or the built-in `help`/`completion`).
+func isBuiltinCommand(root *cobra.Command, name string) bool {
+	for _, c := range root.Commands() {
+		if c.Name() == name {
+			return true
+		}
+		for _, a := range c.Aliases {
+			if a == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// aliasShadowProblems returns a lint warning for every [alias] whose name
+// shadows a builtin command — the alias is inert (expansion checks builtins
+// first), so this surfaces the dead config entry. Sorted by name for
+// determinism.
+func aliasShadowProblems(aliases map[string]string) []core.Problem {
+	if len(aliases) == 0 {
+		return nil
+	}
+	root := newRootCmd()
+	names := make([]string, 0, len(aliases))
+	for name := range aliases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var ps []core.Problem
+	for _, name := range names {
+		if isBuiltinCommand(root, name) {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "alias-shadow", ID: "alias", Msg: fmt.Sprintf("alias %q shadows the builtin command; the builtin wins (the alias is inert)", name)})
+		}
+	}
+	return ps
 }
 
 // unknownSubcommandErr is the validation error a parent command returns for an

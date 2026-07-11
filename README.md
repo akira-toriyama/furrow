@@ -496,7 +496,13 @@ stale_days = 30                   # `furrow revisit` flags a task with no update
 
 [ui]
 theme = "auto"                    # auto | dark | light (NO_COLOR is always respected)
+
+[alias]                           # name your frequent filters; `furrow <name> …` expands git-style
+triage = "ls -s inbox,backlog"    #   `furrow triage -r app` -> `furrow ls -s inbox,backlog -r app`
+wip    = "ls -s in-progress"       #   the remaining args append, so all existing flags/scope compose
 ```
+
+A board `[alias]` names a frequent command string; `furrow <name> <extra args>` expands it git-style (the alias tokens replace the name, the rest of the argv is appended), so every flag, board scope, and auto-filter composes for free. It lives in the **board** config (not the user-level one), so it syncs with the board and every machine/agent shares it. A real command always wins — an alias that shadows a builtin (`ls`, `next`, …) is inert and `furrow lint` flags it (`alias-shadow`); a blank alias value is dropped with a clamp warning. Put global flags *after* the alias (`furrow triage --json`), as with git.
 
 `done` stamps `closed`; moving a task *out* of the done lane clears it. Other terminal lanes (e.g. `icebox` — parked, not finished; `waiting` — the GTD *Waiting-For* lane for work delegated or blocked on someone external) do **not** stamp `closed`, which is why parked tasks are never archived.
 
