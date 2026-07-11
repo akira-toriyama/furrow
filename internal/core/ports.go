@@ -50,6 +50,15 @@ type Store interface {
 	// lint works on a board that never attached anything.
 	ListAssets() ([]AssetInfo, error)
 
+	// LoadAsset returns the bytes of the asset with this exact basename, or a
+	// NotFound error if it is absent. Used by archive to move an asset with its
+	// task (the caller lists first, so absence is unexpected).
+	LoadAsset(name string) ([]byte, error)
+
+	// DeleteAsset removes the asset with this exact basename. Absent is not an
+	// error (mirrors DeleteBody), so a re-run after a partial archive is idempotent.
+	DeleteAsset(name string) error
+
 	// NextID returns a fresh, random, collision-resistant id (e.g. "t-k3m9p":
 	// prefix + a random Crockford-base32 suffix). There is no shared counter, so
 	// concurrent adds in separate worktrees won't collide. The caller (app) is

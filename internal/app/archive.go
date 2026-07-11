@@ -2,6 +2,7 @@ package app
 
 import (
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -123,6 +124,13 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 	if err != nil {
 		return nil, err
 	}
+	// Assets attached to each moved task travel with it into archive/ (t-j2e8) —
+	// otherwise `furrow attach`ed media (bodies/assets/<id>-*) is orphaned in the
+	// hot store, which lint then flags forever.
+	assetsByID, err := a.assetsByOwner(moved)
+	if err != nil {
+		return nil, err
+	}
 	for _, t := range moved {
 		body, err := a.Store.LoadBody(t.ID)
 		if err != nil {
@@ -130,6 +138,15 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 		}
 		if err := arc.SaveBody(t.ID, body); err != nil {
 			return nil, err
+		}
+		for _, name := range assetsByID[t.ID] { // copy assets before the source is touched
+			data, err := a.Store.LoadAsset(name)
+			if err != nil {
+				return nil, err
+			}
+			if err := arc.SaveAssetRaw(name, data); err != nil {
+				return nil, err
+			}
 		}
 		if !arcIdx.Has(t.ID) { // idempotent: a retry won't double-add
 			arcIdx.Add(t)
@@ -142,10 +159,40 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
 	}
-	for _, t := range moved { // both indexes are durable now — safe to delete
+	for _, t := range moved { // both indexes are durable now — safe to delete the source
 		if err := a.Store.DeleteBody(t.ID); err != nil {
 			return nil, err
 		}
+		for _, name := range assetsByID[t.ID] {
+			if err := a.Store.DeleteAsset(name); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return moved, nil
+}
+
+// assetsByOwner groups the hot store's assets by the moved task that owns them —
+// an asset named "<id>-…" belongs to task id (frozen ids can't be one another's
+// prefix, so at most one owner matches). Only moved tasks are included, so
+// archive touches no other repo's or task's media.
+func (a *App) assetsByOwner(moved []core.Task) (map[string][]string, error) {
+	want := make(map[string]bool, len(moved))
+	for _, t := range moved {
+		want[t.ID] = true
+	}
+	assets, err := a.Store.ListAssets()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]string{}
+	for _, as := range assets {
+		for id := range want {
+			if strings.HasPrefix(as.Name, id+"-") {
+				out[id] = append(out[id], as.Name)
+				break
+			}
+		}
+	}
+	return out, nil
 }
