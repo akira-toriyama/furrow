@@ -115,9 +115,10 @@ func printTaskTable(tasks []core.Task) {
 }
 
 // emitTasks renders a task list per the active output mode (--json | --ndjson |
-// human table). emptyIsNotFound makes an empty result exit 1 (the "empty" arm
-// of the contract) — used by commands where "nothing matched" is a soft miss.
-func emitTasks(tasks []core.Task, emptyIsNotFound bool) error {
+// human table). An empty list is a healthy result (exit 0), never a miss — a
+// query that matched nothing still succeeded. exit 1 is reserved for a
+// specifically requested id that does not exist (e.g. `show <id>`).
+func emitTasks(tasks []core.Task) error {
 	switch {
 	case flagNDJSON:
 		printNDJSON(tasks)
@@ -128,9 +129,6 @@ func emitTasks(tasks []core.Task, emptyIsNotFound bool) error {
 		printJSON(tasks)
 	default:
 		printTaskTable(tasks)
-	}
-	if emptyIsNotFound && len(tasks) == 0 {
-		return &core.Error{Code: core.CodeNotFound, Msg: "no matching tasks"}
 	}
 	return nil
 }
@@ -161,7 +159,10 @@ func reasonFor(t core.Task) actionReason {
 
 // emitActionable renders `next` results. In --json / --ndjson it attaches a
 // reason to each task so an agent sees why it is actionable; the human table is
-// unchanged. An empty result is the "nothing actionable" miss (exit 1).
+// unchanged. An empty result is a healthy "nothing actionable right now" state
+// and exits 0 — the same contract as `ls`/`revisit` (exit 1 is reserved for a
+// specifically requested id that is missing, e.g. `show`). An agent pipeline
+// under `set -e` must not treat "no work to pick up" as a failure.
 func emitActionable(tasks []core.Task) error {
 	switch {
 	case flagNDJSON:
@@ -175,10 +176,11 @@ func emitActionable(tasks []core.Task) error {
 		}
 		printJSON(views)
 	default:
+		if len(tasks) == 0 {
+			fmt.Fprintln(out, "(nothing actionable)")
+			return nil
+		}
 		printTaskTable(tasks)
-	}
-	if len(tasks) == 0 {
-		return &core.Error{Code: core.CodeNotFound, Msg: "no actionable tasks"}
 	}
 	return nil
 }

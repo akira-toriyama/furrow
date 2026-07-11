@@ -11,8 +11,8 @@ import (
 type Code int
 
 const (
-	CodeOK         Code = 0 // success
-	CodeNotFound   Code = 1 // a requested id / result set was empty
+	CodeOK         Code = 0 // success (including an empty query result — a match of nothing still succeeded)
+	CodeNotFound   Code = 1 // a specifically requested id was not found (e.g. `show <id>`); NOT an empty list
 	CodeValidation Code = 2 // bad usage or invalid input — fix the args, do not retry
 	CodeInternal   Code = 3 // internal / IO failure
 )

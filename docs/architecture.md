@@ -451,12 +451,19 @@ except where noted:
   suppress color.
 - **Destructive-op guard.** `furrow archive` previews ("would archive …") unless
   `--yes` is passed.
-- **Exit-code contract** (`internal/core/errors.go`): `0` ok / `1`
-  not-found or empty result / `2` bad-usage or validation / `3+` internal or IO.
-  On a non-zero exit the CLI prints `{"error":{"code","id","message"}}` to
-  stderr, plus optional machine-actionable fields: `candidates` (a near-miss
-  that almost resolved) and `details` (e.g. `sync-conflict` carries the
-  conflicted paths). `cmd/furrow/main.go` is literally `os.Exit(cli.Execute())`.
+- **Exit-code contract** (`internal/core/errors.go`): `0` ok — **including an
+  empty query result** (a match of nothing still succeeded, so `ls`/`next`/
+  `revisit` all exit 0 when empty) / `1` a **specifically requested id** was not
+  found (e.g. `show <id>`), never an empty list / `2` bad-usage or validation /
+  `3+` internal or IO. The exit-code contract also lives in the binary's own
+  `--help` (the root command's long help) and each affected command's help, not
+  just here. On a non-zero exit the CLI prints `{"error":{"code","id","message"}}`
+  to stderr, plus optional machine-actionable fields: `candidates` (a near-miss
+  that almost resolved — an ambiguous repo short name, an unknown lane, or a
+  parent command's unknown subcommand) and `details` (e.g. `sync-conflict`
+  carries the conflicted paths). A parent command like `config` treats an unknown
+  subcommand as exit 2 with `candidates`, not the exit-0 help prose cobra
+  defaults to. `cmd/furrow/main.go` is literally `os.Exit(cli.Execute())`.
 
 ---
 

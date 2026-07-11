@@ -145,12 +145,36 @@ func TestCLINoStoreExit2(t *testing.T) {
 	}
 }
 
-func TestCLINextEmptyExit1(t *testing.T) {
+func TestCLINextEmptyExit0(t *testing.T) {
 	initStore(t)
-	// no tasks -> next is empty -> exit 1 (the "empty" arm of the contract).
-	_, code := run(t, "next", "--json")
-	if code != int(core.CodeNotFound) {
-		t.Errorf("empty next should exit 1, got %d", code)
+	// no tasks -> next is empty, which is a HEALTHY result -> exit 0 with `[]`,
+	// the same contract as ls/revisit (t-kx76: exit 1 is only a requested id
+	// that's missing, not an empty query). An agent's `set -e` pipeline must not
+	// treat "nothing to pick up" as a failure.
+	out, code := run(t, "next", "--json")
+	if code != int(core.CodeOK) {
+		t.Errorf("empty next should exit 0, got %d", code)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Errorf("empty next --json should print [], got %q", out)
+	}
+}
+
+// TestCLIConfigUnknownSubcommandExit2 pins t-kx76 (b): a bogus `config`
+// subcommand is exit 2 with the known names in candidates — not the exit-0 help
+// prose cobra swallows it as by default. Bare `config` still prints help (0).
+func TestCLIConfigUnknownSubcommandExit2(t *testing.T) {
+	initStore(t)
+	fe, _ := runErr(t, "config", "show")
+	if fe == nil || fe.Code != core.CodeValidation {
+		t.Fatalf("`config show` should exit 2, got %+v", fe)
+	}
+	if len(fe.Candidates) == 0 {
+		t.Errorf("unknown config subcommand should carry candidates, got %+v", fe)
+	}
+	// bare `config` prints help and exits 0 (unchanged).
+	if _, code := run(t, "config"); code != int(core.CodeOK) {
+		t.Errorf("bare `config` should exit 0 (help), got %d", code)
 	}
 }
 

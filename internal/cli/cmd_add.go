@@ -117,7 +117,7 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 	if err != nil {
 		return err
 	}
-	return emitTasks(created, false)
+	return emitTasks(created)
 }
 
 func newEditCmd() *cobra.Command {
