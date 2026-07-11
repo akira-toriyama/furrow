@@ -226,6 +226,49 @@ func newRevisitCmd() *cobra.Command {
 	return cmd
 }
 
+func newStatsCmd() *cobra.Command {
+	var (
+		status string
+		label  string
+		repo   string
+	)
+	cmd := &cobra.Command{
+		Use:   "stats",
+		Short: "Summarize the board: counts by lane, repo, and label",
+		Long: "Aggregate the tasks in scope into distributions — total, drafts, and counts\n" +
+			"by lane (a complete histogram in configured lane order), by repo, and by\n" +
+			"label (the used vocabulary, most-used first). It honors the same -s/-l/-r\n" +
+			"scope as `ls`, so a bare `stats` describes THIS repo's slice; `stats -r ''`\n" +
+			"describes the whole board — the call that learns the label/repo vocabulary\n" +
+			"before guessing a -l/-r value. --json/--ndjson emit one object; an all-zero\n" +
+			"board is a clean result (exit 0).",
+		Example: "  furrow stats               # this repo's board at a glance\n" +
+			"  furrow stats -r '' --json  # whole-board counts + full label/repo vocab\n" +
+			"  furrow stats -s inbox,backlog",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			o, err := scopedQuery(cmd, a, label, repo)
+			if err != nil {
+				return err
+			}
+			o.Status = status
+			s, err := a.Stats(o)
+			if err != nil {
+				return err
+			}
+			return emitStats(s)
+		},
+	}
+	cmd.Flags().StringVarP(&status, "status", "s", "", "filter by lane (comma-separated = OR, e.g. -s inbox,backlog)")
+	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (comma-separated = OR); a pure tag that ANDs with the board scope")
+	cmd.Flags().StringVarP(&repo, "repo", "r", "", "scope to a repo (owner/repo or a unique short name; '' = whole board)")
+	return cmd
+}
+
 func newSearchCmd() *cobra.Command {
 	var (
 		status string

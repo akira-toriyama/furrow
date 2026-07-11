@@ -342,6 +342,79 @@ func printDepRefs(refs []app.DepRef) {
 	}
 }
 
+// laneCountView / repoCountView / labelCountView are one distribution row each,
+// named for their category so an agent reads by_lane[].lane, by_repo[].repo,
+// by_label[].label rather than a generic "key".
+type laneCountView struct {
+	Lane  string `json:"lane"`
+	Count int    `json:"count"`
+}
+type repoCountView struct {
+	Repo  string `json:"repo"`
+	Count int    `json:"count"`
+}
+type labelCountView struct {
+	Label string `json:"label"`
+	Count int    `json:"count"`
+}
+
+// statsView is `stats`'s JSON object: totals plus the lane/repo/label
+// distributions within the active scope.
+type statsView struct {
+	Total   int              `json:"total"`
+	Drafts  int              `json:"drafts"`
+	ByLane  []laneCountView  `json:"by_lane"`
+	ByRepo  []repoCountView  `json:"by_repo"`
+	ByLabel []labelCountView `json:"by_label"`
+}
+
+func toStatsView(s app.Stats) statsView {
+	v := statsView{Total: s.Total, Drafts: s.Drafts}
+	v.ByLane = make([]laneCountView, 0, len(s.ByLane))
+	for _, c := range s.ByLane {
+		v.ByLane = append(v.ByLane, laneCountView{Lane: c.Key, Count: c.Count})
+	}
+	v.ByRepo = make([]repoCountView, 0, len(s.ByRepo))
+	for _, c := range s.ByRepo {
+		v.ByRepo = append(v.ByRepo, repoCountView{Repo: c.Key, Count: c.Count})
+	}
+	v.ByLabel = make([]labelCountView, 0, len(s.ByLabel))
+	for _, c := range s.ByLabel {
+		v.ByLabel = append(v.ByLabel, labelCountView{Label: c.Key, Count: c.Count})
+	}
+	return v
+}
+
+// emitStats renders `stats`. --json/--ndjson emit one object (the single-object
+// twin of the list emitters); human output is a labelled summary. An all-zero
+// board is a clean object (exit 0), never a miss.
+func emitStats(s app.Stats) error {
+	if jsonMode() {
+		emitObject(toStatsView(s))
+		return nil
+	}
+	fmt.Fprintf(out, "total: %d  (drafts: %d)\n", s.Total, s.Drafts)
+	fmt.Fprintln(out, "lanes:")
+	printCounts(s.ByLane)
+	fmt.Fprintf(out, "repos (%d):\n", len(s.ByRepo))
+	printCounts(s.ByRepo)
+	fmt.Fprintf(out, "labels (%d):\n", len(s.ByLabel))
+	printCounts(s.ByLabel)
+	return nil
+}
+
+// printCounts prints one `count  key` row per entry, right-aligned counts, plain
+// so it greps and copies cleanly. An empty category prints "(none)".
+func printCounts(counts []app.StatCount) {
+	if len(counts) == 0 {
+		fmt.Fprintln(out, "  (none)")
+		return
+	}
+	for _, c := range counts {
+		fmt.Fprintf(out, "  %5d  %s\n", c.Count, c.Key)
+	}
+}
+
 // taskView is the JSON shape for `show`: the task plus its resolved body text.
 type taskView struct {
 	core.Task
