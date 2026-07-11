@@ -10,8 +10,10 @@ import (
 
 // Archivable returns the ids of done-lane tasks closed strictly before cutoff —
 // the pure selection rule behind Archive, split out so it is testable without a
-// filesystem. Only tasks with a Closed timestamp qualify (a done task always
-// has one; a parked/icebox task does not and is left in the hot index).
+// filesystem. Only tasks with a Closed timestamp qualify: Add and Move guarantee
+// a done task has one, and the Closed==nil guard below skips any hand-edited
+// zombie (which `furrow lint` flags) instead of archiving it undated. A
+// parked/icebox task has no Closed and is left in the hot index.
 //
 // repos scopes the selection to tasks carrying at least one of the given
 // (already-resolved) owner/repo identifiers — the age guard and the repo scope

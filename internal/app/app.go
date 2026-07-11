@@ -474,6 +474,18 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	}
 	repos = a.withBoardRepo(repos, o.Draft)
 
+	// A --dep/--parent must name a task that exists, the same contract AddDep
+	// enforces — accepting a dangling one silently drops the task out of `next`
+	// (an unknown dep reads as unsatisfied) with no error.
+	for _, dep := range o.Deps {
+		if !idx.Has(dep) {
+			return nil, core.Validationf("", "dependency %q does not exist", dep)
+		}
+	}
+	if o.Parent != "" && !idx.Has(o.Parent) {
+		return nil, core.Validationf("", "parent %q does not exist", o.Parent)
+	}
+
 	id, err := a.uniqueID(idx)
 	if err != nil {
 		return nil, err
@@ -487,11 +499,18 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	}
 
 	now := a.Clock.Now()
+	// A task born directly in the done lane is closed at birth — otherwise it is a
+	// closed:null zombie that `done` no-ops on and `archive` skips forever (Move
+	// backfills the same field for an already-parked one; lint flags any leak).
+	var closed *time.Time
+	if status == a.Cfg.DoneLane {
+		closed = &now
+	}
 	t := core.Task{
 		ID: id, Title: title, Status: status, Priority: prio,
 		Value: cloneIntp(o.Value), Effort: cloneIntp(o.Effort),
 		Labels: o.Labels, Repos: repos, Parent: o.Parent, Deps: o.Deps, Refs: o.Refs,
-		Created: now, Updated: now, Body: core.BodyPath(id),
+		Created: now, Updated: now, Closed: closed, Body: core.BodyPath(id),
 	}
 	idx.Add(t)
 
@@ -787,7 +806,9 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 
 // Move sets a task's lane. Moving into the done lane stamps Closed; moving out
 // of it clears Closed. Other terminal lanes (e.g. icebox) leave Closed alone —
-// parked is not the same as closed.
+// parked is not the same as closed. Keying the stamp on Closed==nil (not on the
+// lane transition) also backfills a closed:null zombie: `done` on a task already
+// parked in the done lane with no timestamp now stamps one instead of no-opping.
 func (a *App) Move(id, lane string) (*core.Task, error) {
 	if !a.Cfg.IsLane(lane) {
 		return nil, core.Validationf(id, "unknown lane %q (configured: %s)", lane, strings.Join(a.Cfg.Lanes, ", "))
@@ -796,7 +817,7 @@ func (a *App) Move(id, lane string) (*core.Task, error) {
 		was := t.Status
 		t.Status = lane
 		switch {
-		case lane == a.Cfg.DoneLane && was != a.Cfg.DoneLane:
+		case lane == a.Cfg.DoneLane && t.Closed == nil:
 			now := a.Clock.Now()
 			t.Closed = &now
 		case lane != a.Cfg.DoneLane && was == a.Cfg.DoneLane:
@@ -1004,8 +1025,17 @@ func (a *App) Relabel(id string, add, remove []string) (*core.Task, error) {
 
 // AddCheck appends a checklist item.
 func (a *App) AddCheck(id, text string) (*core.Task, error) {
+	return a.AddChecks(id, []string{text})
+}
+
+// AddChecks appends several checklist items in one write, so `check --add A
+// --add B` records both (a repeated flag kept only the last before). Items are
+// appended verbatim, preserving order and any commas in the text.
+func (a *App) AddChecks(id string, items []string) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) {
-		t.Checklist = append(t.Checklist, core.ChecklistItem{Text: text})
+		for _, text := range items {
+			t.Checklist = append(t.Checklist, core.ChecklistItem{Text: text})
+		}
 	})
 }
 

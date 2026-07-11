@@ -153,14 +153,14 @@ furrow done t-0001
 | `retitle <id> <title...>` | タイトルを変更。シャードの title **と** body 先頭の `# ` 見出しを両方更新して食い違わせない（末尾の引数は空白で連結するのでクォート不要） |
 | `value <id> <1-5>` | 粗い value（重要度）見積もりを設定（範囲外は 1..5 に丸め）。`--clear` で未設定に戻す |
 | `effort <id> <1-5>` | 粗い effort（手間）見積もりを設定（1..5 に丸め）。`--clear` で未設定に戻す |
-| `check <id> [index]` | チェックリスト項目を 0 始まり index で done にする（トグルでなく冪等な set。`--off` で外す・`--add` で追加） |
+| `check <id> [index]` | チェックリスト項目を 0 始まり index で done にする（トグルでなく冪等な set。`--off` で外す・`--add` で追加＝反復可、テキストはカンマ含めそのまま） |
 | `dep <id> <dep-id>` | 依存を追加（id が dep-id を待つ）。`--rm` で削除。循環防止・冪等 |
 | `label <id>` | ラベルを追加／削除（`--add`・`--remove`、いずれも反復可・併用可）。冪等 |
 | `repo <id>` | repo（`owner/repo`）を追加／削除（`--add`・`--rm`、反復可・併用可）。値は完全な `owner/repo` か、ボード既知の repo に一意に解決する短名のみ（それ以外は exit 2・`candidates` 付き）。冪等。repos が空のタスクは draft |
 | `apply` | PR/コミット本文から `SetStatus-task: <body-link> [<lane>]` ディレクティブを解析して適用（stdin または `--body-file`）。status 自動更新の CI フック。`--on open` は in-progress へ寄せ、`--on merge` は lane を適用。検証は非ブロッキング |
 | `sync` | マルチマシン運用の儀式を 1 コマンドで: `.furrow/` 限定の auto-commit（機械が書く shard は常に commit、手編集の `bodies/<id>.md` は新規か `-b` 明示時だけ・それ以外は `pending_bodies` に残して作者に委ね、共有 checkout が他人の WIP を巻き込まない。`--all-bodies` で従来の全 sweep）→ `fetch` + `rebase --autostash @{u}`（`FETCH_HEAD` でなく追跡 ref に rebase、他 writer の fetch と race しない）→ `push`（non-fast-forward 時は pull→push を 1 回リトライ）。conflict 時は自動 abort（`sync-conflict` エラーにパス一覧）。pre-flight が捕まえた他人の rebase は待って吸収、超過時は retryable `sync-busy`（exit 3）。pull 中の fetch/ロック競合はリトライし、解消しなければ（stale な `.git/*.lock` の可能性）除去すべきロックを名指して terminal に失敗。進捗 `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` は失敗時も stdout に出る。成功時は repo スコープの `revisit` サマリ（`dep_done`/`stale` の id 一覧。空なら省略）も付く |
 | `archive` | 古い done タスクを `.furrow/archive/` へ退避（`--yes` なしはプレビュー）。既定は全 repo 対象。共有ボードで 1 repo の古い done だけを畳むには `-r/--repo`（繰り返し可）で対象 repo を絞る（age ガードと AND） |
-| `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環は error、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。done な依存が最終更新後に閉じた open タスク＝reconcile gap も warn。アセット衛生＝参照先が存在しない body の asset 参照・どの body からも参照されない orphan asset・5 MiB 以上の oversized asset はいずれも warn（生 blob は commit 後に消せないので着地前に検出。Git LFS 追跡か縮小を促す）。書きかけのユーザー設定の clamp 警告も含む） |
+| `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環は error、closed 無しの done レーンタスクも error＝`furrow done` で backfill、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。done な依存が最終更新後に閉じた open タスク＝reconcile gap も warn。アセット衛生＝参照先が存在しない body の asset 参照・どの body からも参照されない orphan asset・5 MiB 以上の oversized asset はいずれも warn（生 blob は commit 後に消せないので着地前に検出。Git LFS 追跡か縮小を促す）。書きかけのユーザー設定の clamp 警告も含む） |
 | `config init` | ユーザー設定 `~/.config/furrow/config.toml`（中央ボード雛形）を書き出す。ボード内で実行すると最寄りの `.furrow` から path/scopes を文脈導出、離れていればコメント付き placeholder。既存ファイルは上書きしない（`--path`・`--scope`（複数可）） |
 | `config path` | 解決されるユーザー設定パスを表示。書きかけ設定の clamp 警告は stderr へ（stdout は path のみ） |
 | `schema [task\|meta]` | JSON Schema を出力（引数なし or `task` = シャード（`tasks/<id>.json`）のスキーマ・`meta` = `meta.json` のスキーマ） |
@@ -178,7 +178,7 @@ furrow done t-0001
 - `--priority, -p <N>` — `add` で priority を明示（省略時はレーン末尾に追記）
 - `--value <1-5>` / `--effort <1-5>` — `add` で粗い value/effort 見積もりを付与（範囲外は 1..5 に丸め・省略で未設定）
 - `--parent <id>` / `--dep <id>`（繰り返し）/ `--ref <file:line|URL>`（繰り返し）/ `--body <md>` — `add` のメタ指定
-- `--add <text>` / `--off` — `check` のチェックリスト操作
+- `--add <text>`（反復可）/ `--off` — `check` のチェックリスト操作
 - `--older-than <days>` / `-r/--repo <repo>`（繰り返し）/ `--yes` — `archive`（`--yes` なしは dry-run プレビュー。`-r` で対象 repo を絞ると共有ボードで 1 repo の done だけ畳める）
 - `--on open\|merge` / `--ref <src>` / `--body-file <path>` / `--open-lane <lane>` — `apply`（`--on` 必須。`--ref` は本文に記録する出典 例 `furrow#42`）
 - `-m/--message <msg>` / `-b/--body <id>`（繰り返し）/ `--all-bodies` — `sync`。`-m` は auto-commit メッセージ上書き（既定 `:card_file_box: chore(board): sync via furrow`）、`-b` は手編集した `bodies/<id>.md` を明示 commit（共有ボードで既定 skip される変更済み body を push）、`--all-bodies` は dirty な body を全 commit（自分専有の checkout 向け）

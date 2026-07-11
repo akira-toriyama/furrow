@@ -39,6 +39,12 @@ func (a *App) Lint() ([]core.Problem, error) {
 	for _, t := range idx.Tasks {
 		if t.Status == a.Cfg.DoneLane {
 			doneIDs[t.ID] = true
+			// A done task with no closed timestamp is a zombie: `archive` skips it
+			// forever and its close date is lost. New ones can't be created (Add
+			// stamps, Move backfills); this catches pre-fix or hand-edited leaks.
+			if t.Closed == nil {
+				ps = append(ps, core.Problem{Severity: core.SevError, ID: t.ID, Msg: "task is in the done lane but has no closed timestamp (a `furrow done` will backfill it)"})
+			}
 		}
 	}
 	ps = append(ps, core.StaleDepProblems(idx, a.Cfg.Terminal, doneIDs)...)

@@ -58,6 +58,18 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 			return nil, err
 		}
 		specs[i].Repos = a.withBoardRepo(repos, s.Draft)
+		// A dep/parent must pre-exist (validated against the pre-batch index):
+		// batch ids are minted below, so an intra-batch reference is impossible —
+		// a dangling one would silently drop the task out of `next`. Checked after
+		// repo resolution so the error precedence matches single Add.
+		for _, dep := range s.Deps {
+			if !idx.Has(dep) {
+				return nil, core.Validationf("", "spec %d (%q): dependency %q does not exist", i, s.Title, dep)
+			}
+		}
+		if s.Parent != "" && !idx.Has(s.Parent) {
+			return nil, core.Validationf("", "spec %d (%q): parent %q does not exist", i, s.Title, s.Parent)
+		}
 	}
 
 	now := a.Clock.Now()
@@ -82,6 +94,13 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 			Value: cloneIntp(s.Value), Effort: cloneIntp(s.Effort),
 			Labels: s.Labels, Repos: s.Repos, Parent: s.Parent, Deps: s.Deps, Refs: s.Refs,
 			Created: now, Updated: now, Body: core.BodyPath(id),
+		}
+		// Mirror Add: a task born in the done lane is closed at birth, so bulk
+		// `add --stdin -s done` doesn't leak the same closed:null zombie. A
+		// per-iteration copy keeps each Closed pointer distinct.
+		if lane == a.Cfg.DoneLane {
+			c := now
+			t.Closed = &c
 		}
 		body := s.Body
 		if body == "" {
