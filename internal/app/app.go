@@ -834,17 +834,23 @@ func (a *App) Move(id, lane string) (*core.Task, error) {
 	if !a.Cfg.IsLane(lane) {
 		return nil, a.unknownLaneErr(id, lane)
 	}
-	return a.mutate(id, func(t *core.Task) {
-		was := t.Status
-		t.Status = lane
-		switch {
-		case lane == a.Cfg.DoneLane && t.Closed == nil:
-			now := a.Clock.Now()
-			t.Closed = &now
-		case lane != a.Cfg.DoneLane && was == a.Cfg.DoneLane:
-			t.Closed = nil
-		}
-	})
+	return a.mutate(id, func(t *core.Task) { a.applyLane(t, lane) })
+}
+
+// applyLane sets t.Status to lane and keeps Closed consistent: it stamps Closed
+// on entering the done lane (when unset — also backfilling a zombie), clears it
+// on leaving done, and leaves it alone for other terminal lanes (parked ≠
+// closed). Shared by Move and Set so the two can never diverge on the rule.
+func (a *App) applyLane(t *core.Task, lane string) {
+	was := t.Status
+	t.Status = lane
+	switch {
+	case lane == a.Cfg.DoneLane && t.Closed == nil:
+		now := a.Clock.Now()
+		t.Closed = &now
+	case lane != a.Cfg.DoneLane && was == a.Cfg.DoneLane:
+		t.Closed = nil
+	}
 }
 
 // Done moves a task into the done lane (and stamps Closed via Move).
@@ -956,33 +962,15 @@ func (a *App) Check(id string, item int, done bool) (*core.Task, error) {
 // task may not depend on itself, and the edge must not create a cycle (dep must
 // not already depend on id, directly or transitively). Re-adding an existing
 // dep is a no-op; the marshaller keeps the dep list sorted and de-duplicated.
-func (a *App) AddDep(id, dep string) (*core.Task, error) {
-	idx, err := a.load()
-	if err != nil {
-		return nil, err
-	}
-	if !idx.Has(id) {
-		return nil, core.NotFound(id)
-	}
-	if id == dep {
-		return nil, core.Validationf(id, "a task cannot depend on itself")
-	}
-	if !idx.Has(dep) {
-		return nil, core.Validationf(id, "dependency %q does not exist", dep)
-	}
-	if idx.DependsOn(dep, id) {
-		return nil, core.Validationf(id, "adding dep %q would create a cycle (%s already depends on %s)", dep, dep, id)
-	}
-	return a.mutate(id, func(t *core.Task) {
-		if !contains(t.Deps, dep) {
-			t.Deps = append(t.Deps, dep)
-		}
-	})
-}
+func (a *App) AddDep(id, dep string) (*core.Task, error) { return a.AddDeps(id, []string{dep}) }
 
-// RemoveDep drops `dep` from `id`'s dependency list. It is a validation error
-// when id has no such dependency, so the result is never a silent no-op.
-func (a *App) RemoveDep(id, dep string) (*core.Task, error) {
+// AddDeps adds several dependencies to `id` in one write (`dep a b c`). Every
+// dep is validated against the same contract AddDep enforced — must exist, must
+// not be `id` itself, must not create a cycle (checked against the graph as it
+// grows, so an in-batch edge counts) — and a dep already present is a no-op.
+// Validation is all-or-nothing: the first bad dep returns before any save, so a
+// partial batch never lands. The marshaller keeps the dep list sorted+deduped.
+func (a *App) AddDeps(id string, deps []string) (*core.Task, error) {
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -991,18 +979,65 @@ func (a *App) RemoveDep(id, dep string) (*core.Task, error) {
 	if i < 0 {
 		return nil, core.NotFound(id)
 	}
-	if !contains(t.Deps, dep) {
-		return nil, core.Validationf(id, "%q is not a dependency of %s", dep, id)
-	}
-	return a.mutate(id, func(t *core.Task) {
-		kept := make([]string, 0, len(t.Deps))
-		for _, d := range t.Deps {
-			if d != dep {
-				kept = append(kept, d)
-			}
+	for _, dep := range deps {
+		if id == dep {
+			return nil, core.Validationf(id, "a task cannot depend on itself")
 		}
-		t.Deps = kept
-	})
+		if !idx.Has(dep) {
+			return nil, core.Validationf(id, "dependency %q does not exist", dep)
+		}
+		if idx.DependsOn(dep, id) {
+			return nil, core.Validationf(id, "adding dep %q would create a cycle (%s already depends on %s)", dep, dep, id)
+		}
+		if !contains(t.Deps, dep) {
+			t.Deps = append(t.Deps, dep)
+		}
+	}
+	t.Updated = a.Clock.Now()
+	if err := a.Store.Save(idx); err != nil {
+		return nil, err
+	}
+	saved, _ := idx.Find(id)
+	return saved, nil
+}
+
+// RemoveDep drops `dep` from `id`'s dependency list. It is a validation error
+// when id has no such dependency, so the result is never a silent no-op.
+func (a *App) RemoveDep(id, dep string) (*core.Task, error) { return a.RemoveDeps(id, []string{dep}) }
+
+// RemoveDeps drops several dependencies from `id` in one write. Each must be a
+// current dependency (else a validation error naming it — never a silent no-op),
+// and the whole batch is validated before any change, so a bad id aborts without
+// a partial removal.
+func (a *App) RemoveDeps(id string, deps []string) (*core.Task, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	rm := make(map[string]bool, len(deps))
+	for _, dep := range deps {
+		if !contains(t.Deps, dep) {
+			return nil, core.Validationf(id, "%q is not a dependency of %s", dep, id)
+		}
+		rm[dep] = true
+	}
+	kept := make([]string, 0, len(t.Deps))
+	for _, d := range t.Deps {
+		if !rm[d] {
+			kept = append(kept, d)
+		}
+	}
+	t.Deps = kept
+	t.Updated = a.Clock.Now()
+	if err := a.Store.Save(idx); err != nil {
+		return nil, err
+	}
+	saved, _ := idx.Find(id)
+	return saved, nil
 }
 
 // Relabel adds and/or removes labels on a task. Adding a label already present,
@@ -1023,12 +1058,25 @@ func (a *App) Relabel(id string, add, remove []string) (*core.Task, error) {
 	if i < 0 {
 		return nil, core.NotFound(id)
 	}
+	next := labelDelta(t.Labels, add, remove)
+	if a.Cfg.LabelsRequired && len(next) == 0 {
+		return nil, core.Validationf(id, "a label is required ([labels].required); this relabel would remove the last one")
+	}
+	return a.mutate(id, func(t *core.Task) { t.Labels = next })
+}
+
+// labelDelta returns cur with every entry in remove dropped and every entry in
+// add unioned on (idempotent — an add already present, or a remove already
+// absent, is a no-op). Survivors keep their order, then the adds; the marshaller
+// sorts+dedupes on write, so in-memory order is immaterial. Shared by Relabel
+// and Set.
+func labelDelta(cur, add, remove []string) []string {
 	rm := make(map[string]bool, len(remove))
 	for _, l := range remove {
 		rm[l] = true
 	}
-	next := make([]string, 0, len(t.Labels)+len(add))
-	for _, l := range t.Labels {
+	next := make([]string, 0, len(cur)+len(add))
+	for _, l := range cur {
 		if !rm[l] {
 			next = append(next, l)
 		}
@@ -1038,10 +1086,81 @@ func (a *App) Relabel(id string, add, remove []string) (*core.Task, error) {
 			next = append(next, l)
 		}
 	}
-	if a.Cfg.LabelsRequired && len(next) == 0 {
-		return nil, core.Validationf(id, "a label is required ([labels].required); this relabel would remove the last one")
+	return next
+}
+
+// SetOpts is the combined-edit payload for Set — the routine triage quartet
+// (lane, value, effort, labels) in one write. A nil pointer / empty slice / false
+// flag means "leave that facet alone"; ClearValue/ClearEffort explicitly unset an
+// estimate (distinct from "leave alone"). Deps and repos keep their own commands.
+type SetOpts struct {
+	Status      *string  // move to this lane (validated like Move)
+	Value       *int     // set the value estimate
+	ClearValue  bool     // unset the value estimate (wins over Value)
+	Effort      *int     // set the effort estimate
+	ClearEffort bool     // unset the effort estimate (wins over Effort)
+	AddLabels   []string // labels to union on
+	RmLabels    []string // labels to drop
+}
+
+// empty reports whether o requests no change at all — Set rejects that rather
+// than silently touching only the `updated` stamp.
+func (o SetOpts) empty() bool {
+	return o.Status == nil && o.Value == nil && !o.ClearValue &&
+		o.Effort == nil && !o.ClearEffort && len(o.AddLabels) == 0 && len(o.RmLabels) == 0
+}
+
+// Set applies several triage edits to one task in a single load/save: move a
+// lane, set/clear value and effort, and add/remove labels — so `set` replaces
+// the move+value+effort+label four-command dance without four separate writes
+// (and four `updated` stamps). Everything is validated up front (unknown lane →
+// exit 2 with candidates like Move; a change that would strip the last label
+// under [labels].required → exit 2), then applied atomically. At least one
+// change is required.
+func (a *App) Set(id string, o SetOpts) (*core.Task, error) {
+	if o.Status != nil && !a.Cfg.IsLane(*o.Status) {
+		return nil, a.unknownLaneErr(id, *o.Status)
 	}
-	return a.mutate(id, func(t *core.Task) { t.Labels = next })
+	if o.empty() {
+		return nil, core.Validationf(id, "set needs at least one change (-s / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label)")
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	nextLabels := t.Labels
+	if len(o.AddLabels) > 0 || len(o.RmLabels) > 0 {
+		nextLabels = labelDelta(t.Labels, o.AddLabels, o.RmLabels)
+		if a.Cfg.LabelsRequired && len(nextLabels) == 0 {
+			return nil, core.Validationf(id, "a label is required ([labels].required); this set would remove the last one")
+		}
+	}
+	if o.Status != nil {
+		a.applyLane(t, *o.Status)
+	}
+	switch {
+	case o.ClearValue:
+		t.Value = nil
+	case o.Value != nil:
+		t.Value = cloneIntp(o.Value)
+	}
+	switch {
+	case o.ClearEffort:
+		t.Effort = nil
+	case o.Effort != nil:
+		t.Effort = cloneIntp(o.Effort)
+	}
+	t.Labels = nextLabels
+	t.Updated = a.Clock.Now()
+	if err := a.Store.Save(idx); err != nil {
+		return nil, err
+	}
+	saved, _ := idx.Find(id)
+	return saved, nil
 }
 
 // AddCheck appends a checklist item.

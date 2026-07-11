@@ -539,6 +539,74 @@ func hasLaneCandidates(a *App, err error) bool {
 	return fe != nil && fe.Code == core.CodeValidation && reflect.DeepEqual(fe.Candidates, a.Cfg.Lanes)
 }
 
+func intp(n int) *int       { return &n }
+func strp(s string) *string { return &s }
+
+// TestSetCombinedEdit pins t-kx76 (e): `set` applies lane+value+effort+labels in
+// one write, honors clear/rm, rejects an empty change, and validates the lane
+// like Move (unknown → candidates).
+func TestSetCombinedEdit(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("triage me", AddOpts{Status: "inbox"})
+
+	got, err := a.Set(tk.ID, SetOpts{Status: strp("ready"), Value: intp(4), Effort: intp(2), AddLabels: []string{"bug"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "ready" || got.Value == nil || *got.Value != 4 || got.Effort == nil || *got.Effort != 2 || !contains(got.Labels, "bug") {
+		t.Fatalf("set should apply every edit at once: %+v", got)
+	}
+
+	got, err = a.Set(tk.ID, SetOpts{ClearValue: true, RmLabels: []string{"bug"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Value != nil || contains(got.Labels, "bug") {
+		t.Errorf("set --clear-value/--rm-label should unset: %+v", got)
+	}
+
+	if _, err := a.Set(tk.ID, SetOpts{}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("empty set should be a validation error, got %v", err)
+	}
+	if _, err := a.Set(tk.ID, SetOpts{Status: strp("ghost")}); !hasLaneCandidates(a, err) {
+		t.Errorf("set to an unknown lane should carry lane candidates, got %v", err)
+	}
+}
+
+// TestDepsVariadicBatch pins t-kx76 (e): AddDeps/RemoveDeps apply several deps in
+// one write, and a bad dep aborts the whole batch (no partial add).
+func TestDepsVariadicBatch(t *testing.T) {
+	a := newApp()
+	base, _ := a.Add("base", AddOpts{})
+	b1, _ := a.Add("b1", AddOpts{})
+	b2, _ := a.Add("b2", AddOpts{})
+
+	got, err := a.AddDeps(base.ID, []string{b1.ID, b2.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(got.Deps, b1.ID) || !contains(got.Deps, b2.ID) {
+		t.Fatalf("AddDeps should add both: %v", got.Deps)
+	}
+
+	b3, _ := a.Add("b3", AddOpts{})
+	if _, err := a.AddDeps(base.ID, []string{b3.ID, "t-nope"}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Fatalf("AddDeps with a missing dep should be a validation error, got %v", err)
+	}
+	after, _, _ := a.Get(base.ID)
+	if contains(after.Deps, b3.ID) {
+		t.Errorf("a failed batch must not partially add b3: %v", after.Deps)
+	}
+
+	got, err = a.RemoveDeps(base.ID, []string{b1.ID, b2.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Deps) != 0 {
+		t.Errorf("RemoveDeps should drop both: %v", got.Deps)
+	}
+}
+
 // TestBoardInfo pins the introspection snapshot: it mirrors the effective config
 // (lanes/next/default/done) and orders terminal lanes canonically (t-bec7).
 func TestBoardInfo(t *testing.T) {
