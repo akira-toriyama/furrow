@@ -338,9 +338,12 @@ named `chord-fix-y` still derives `owner/chord`. With no usable origin it falls
 back to a ghq-style `…/github.com/<owner>/<repo>` path; failing that the board
 opens **unscoped** with a stderr note and `add` creates drafts — a bare
 directory name is never written into `repos`. Outside any git repo the board
-still opens, with the same note. `FURROW_BOARD=<path>` overrides everything
-with a single board for one-offs and tests (its scope is the board repo's
-parent). The retired `label = "auto"` mode is ignored with a warning pointing
+still opens, with the same note. `FURROW_BOARD=<path>` is the env form of the
+central board: it replaces the user-level config file's `[[board]]` entries with
+one synthetic board for one-offs and tests (its scope is the board repo's
+parent). It does **not** override a nearer store — `FURROW_DIR`, a local
+`.furrow`, and a `.furrow-pointer.toml` all still win over it (see Discovery
+precedence). The retired `label = "auto"` mode is ignored with a warning pointing
 at `repo = "auto"`.
 
 ### Per-repo pointer
@@ -357,8 +360,11 @@ default_repo = "me/chord"       # optional: scope to one owner/repo ("auto" deri
 
 `FURROW_DIR` (explicit, no scope injection) → the nearest ancestor directory
 holding a `.furrow` (a real local store wins) → a `.furrow-pointer.toml`
-redirecting to a board → a **user-level central board** (when the cwd is under
-one of its `scopes`; most specific scope wins) → `furrow init`.
+redirecting to a board → a **central board**: `FURROW_BOARD` (env override —
+one synthetic board) if set, otherwise the user-level config file's `[[board]]`
+entries (when the cwd is under one of their `scopes`; most specific scope wins)
+→ `furrow init`. So `FURROW_BOARD` only outranks the config-file boards, never a
+nearer `FURROW_DIR` / local `.furrow` / pointer.
 
 With a board in effect (pointer or user-level):
 
