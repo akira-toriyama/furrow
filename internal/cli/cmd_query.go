@@ -5,21 +5,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
 )
 
 func newLsCmd() *cobra.Command {
 	var (
-		status  string
-		label   string
-		repo    string
-		limit   int
-		drafts  bool
-		since   string
-		until   string
-		sortBy  string
-		reverse bool
+		status   string
+		label    string
+		repo     string
+		limit    int
+		drafts   bool
+		since    string
+		until    string
+		sortBy   string
+		reverse  bool
+		archived bool
 	)
 	cmd := &cobra.Command{
 		Use:     "ls",
@@ -52,7 +54,7 @@ func newLsCmd() *cobra.Command {
 				return err
 			}
 			o.Status, o.Limit, o.Drafts = status, limit, drafts
-			o.Sort, o.Reverse = sortBy, reverse
+			o.Sort, o.Reverse, o.Archived = sortBy, reverse, archived
 			if cmd.Flags().Changed("since") {
 				ts, err := parseDateBound(since, false)
 				if err != nil {
@@ -88,6 +90,7 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&until, "until", "", "only tasks updated on/before this date (YYYY-MM-DD includes the whole day, or RFC3339)")
 	cmd.Flags().StringVar(&sortBy, "sort", "", "reorder by updated|created|value|effort (default: canonical lane->priority->id)")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "reverse the --sort direction (oldest/lowest first; unset value/effort stay last)")
+	cmd.Flags().BoolVar(&archived, "archived", false, "list from the archive store (.furrow/archive/) instead of the hot board")
 	return cmd
 }
 
@@ -109,7 +112,7 @@ func parseDateBound(s string, endOfDay bool) (time.Time, error) {
 }
 
 func newShowCmd() *cobra.Command {
-	var backlinks, noBody bool
+	var backlinks, noBody, archived bool
 	cmd := &cobra.Command{
 		Use:   "show <id>...",
 		Short: "Show tasks with metadata and markdown body (batch-friendly)",
@@ -126,22 +129,39 @@ func newShowCmd() *cobra.Command {
 			"`show` never pays for it.",
 		Example: "  furrow show t-4fq1\n" +
 			"  furrow show t-4fq1 t-x2x9 --no-body --ndjson   # lean batch read\n" +
-			"  furrow show t-4fq1 --backlinks",
+			"  furrow show t-4fq1 --backlinks\n" +
+			"  furrow show t-4fq1 --archived                  # read a retired task",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			items, missing, err := a.GetBatch(args, !noBody)
+			var (
+				items   []app.ShowItem
+				missing []string
+			)
+			if archived {
+				items, missing, err = a.GetBatchArchived(args, !noBody)
+			} else {
+				items, missing, err = a.GetBatch(args, !noBody)
+			}
 			if err != nil {
 				return err
+			}
+			// A hot-store miss might be an archived task: name that subset so the
+			// agent knows to retry with --archived (the archive read already
+			// looked there, so it never re-hints itself).
+			var inArchive []string
+			if !archived && len(missing) > 0 {
+				inArchive = a.ArchivedContains(missing)
 			}
 			// Single-id compat: the classic not-found error, nothing on stdout —
 			// details.missing rides along so agents branch the same at any arity.
 			if len(args) == 1 && len(missing) > 0 {
 				fe := core.NotFound(missing[0])
-				fe.Details = map[string][]string{"missing": missing}
+				fe.Msg += archivedSuffix(inArchive)
+				fe.Details = missDetails(missing, inArchive)
 				return fe
 			}
 			var mentions [][]core.Task
@@ -164,8 +184,8 @@ func newShowCmd() *cobra.Command {
 			if len(missing) > 0 {
 				return &core.Error{
 					Code:    core.CodeNotFound,
-					Msg:     fmt.Sprintf("%d of %d ids not found", len(missing), len(items)+len(missing)),
-					Details: map[string][]string{"missing": missing},
+					Msg:     fmt.Sprintf("%d of %d ids not found", len(missing), len(items)+len(missing)) + archivedSuffix(inArchive),
+					Details: missDetails(missing, inArchive),
 				}
 			}
 			return nil
@@ -173,7 +193,31 @@ func newShowCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&backlinks, "backlinks", false, "also list tasks whose body mentions this one via [[id]]")
 	cmd.Flags().BoolVar(&noBody, "no-body", false, "omit the body (body_text in JSON): the lean metadata-only read")
+	cmd.Flags().BoolVar(&archived, "archived", false, "read from the archive store (.furrow/archive/) instead of the hot board")
+	cmd.MarkFlagsMutuallyExclusive("archived", "backlinks")
 	return cmd
+}
+
+// missDetails builds a show/not-found error's details: always the missing ids,
+// plus the subset found in the archive (so an agent can retry with --archived).
+// Kept as map[string][]string so a plain miss stays the historical
+// {"missing":[...]} shape and only gains an "archived" key when relevant.
+func missDetails(missing, inArchive []string) map[string][]string {
+	d := map[string][]string{"missing": missing}
+	if len(inArchive) > 0 {
+		d["archived"] = inArchive
+	}
+	return d
+}
+
+// archivedSuffix is the human hint appended to a not-found message when some of
+// the missing ids are actually archived — empty otherwise, so a genuine miss
+// keeps its classic wording.
+func archivedSuffix(inArchive []string) string {
+	if len(inArchive) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (%d archived — retry with --archived)", len(inArchive))
 }
 
 func newNextCmd() *cobra.Command {
