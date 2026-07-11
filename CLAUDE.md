@@ -48,9 +48,12 @@ the user-level config. When you work with any furrow store:
   a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `orphan-asset`, …) —
   branch on it, not the message, since the `id` field is contextual (a task id,
   an asset name, or `config`).
-  Mutations (`done|move|reorder|value|effort|check|dep|label|repo`) with
+  Mutations (`done|move|set|reorder|value|effort|check|dep|label|repo`) with
   `--json` emit
-  `{before, after, changed}`; `add --stdin` bulk-creates one task per stdin line;
+  `{before, after, changed}`; an out-of-range `value`/`effort` (also via `set`/
+  `add`) clamps to 1..5 and is signaled — a `clamped {requested, stored}` key in
+  the envelope plus a stderr note, so an explicit arg is never silently rounded.
+  `add --stdin` bulk-creates one task per stdin line;
   `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) and
   `revisit --json` a `revisit` array (`no_repo`, `value_unset`, `effort_unset`,
   `stale`, `dep_done`) per task.

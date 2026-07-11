@@ -14,6 +14,14 @@ import (
 // follow-up `show`. The pre-fetch is skipped (and harmless) in human mode; the
 // mutate closure is the authoritative source of any not-found / validation error.
 func emitMutation(a *app.App, verb, id string, mutate func() (*core.Task, error)) error {
+	return emitMutationWith(a, verb, id, mutate, nil)
+}
+
+// emitMutationWith is emitMutation plus an optional `annotate`: given the
+// resulting task it returns extra top-level fields to merge into the --json
+// {before,after,changed} envelope (and may write a human note to stderr). Used
+// by value/effort/set to surface a `clamped` estimate.
+func emitMutationWith(a *app.App, verb, id string, mutate func() (*core.Task, error), annotate func(after *core.Task) map[string]any) error {
 	var before *core.Task
 	if jsonMode() {
 		if b, _, err := a.Get(id); err == nil {
@@ -24,7 +32,11 @@ func emitMutation(a *app.App, verb, id string, mutate func() (*core.Task, error)
 	if err != nil {
 		return err
 	}
-	printMutation(verb, before, after)
+	var extra map[string]any
+	if annotate != nil {
+		extra = annotate(after)
+	}
+	printMutation(verb, before, after, extra)
 	return nil
 }
 
@@ -83,7 +95,7 @@ func newReorderCmd() *cobra.Command {
 // newEstimateCmd builds the shared `value`/`effort` setter: `furrow <name> <id>
 // <1-5>` records a coarse estimate (clamped into 1..5), `--clear` unsets it.
 // value and effort together drive ROI = value/effort for picking the next task.
-func newEstimateCmd(name string, set func(*app.App, string, *int) (*core.Task, error)) *cobra.Command {
+func newEstimateCmd(name string, set func(*app.App, string, *int) (*core.Task, error), get func(*core.Task) *int) *cobra.Command {
 	var clear bool
 	cmd := &cobra.Command{
 		Use:   name + " <id> <1-5>",
@@ -115,7 +127,19 @@ func newEstimateCmd(name string, set func(*app.App, string, *int) (*core.Task, e
 				}
 				v = &n
 			}
-			return emitMutation(a, name, id, func() (*core.Task, error) { return set(a, id, v) })
+			return emitMutationWith(a, name, id,
+				func() (*core.Task, error) { return set(a, id, v) },
+				func(after *core.Task) map[string]any {
+					// An out-of-range score is silently clamped to 1..5 on write;
+					// signal it (stderr note + a `clamped` envelope key) so an agent
+					// that recorded 9 knows it was stored as 5.
+					stored := get(after)
+					warnClamp(name, v, stored)
+					if e := clampEntry(v, stored); e != nil {
+						return map[string]any{"clamped": map[string]any{name: e}}
+					}
+					return nil
+				})
 		},
 	}
 	cmd.Flags().BoolVar(&clear, "clear", false, "remove the estimate (back to unset)")
@@ -123,23 +147,37 @@ func newEstimateCmd(name string, set func(*app.App, string, *int) (*core.Task, e
 }
 
 func newValueCmd() *cobra.Command {
-	return newEstimateCmd("value", func(a *app.App, id string, v *int) (*core.Task, error) { return a.SetValue(id, v) })
+	return newEstimateCmd("value",
+		func(a *app.App, id string, v *int) (*core.Task, error) { return a.SetValue(id, v) },
+		func(t *core.Task) *int { return t.Value })
 }
 
 func newEffortCmd() *cobra.Command {
-	return newEstimateCmd("effort", func(a *app.App, id string, v *int) (*core.Task, error) { return a.SetEffort(id, v) })
+	return newEstimateCmd("effort",
+		func(a *app.App, id string, v *int) (*core.Task, error) { return a.SetEffort(id, v) },
+		func(t *core.Task) *int { return t.Effort })
 }
 
 func newCheckCmd() *cobra.Command {
 	var (
-		adds []string
-		off  bool
+		adds   []string
+		off    bool
+		rm     bool
+		reword string
 	)
 	cmd := &cobra.Command{
 		Use:   "check <id> [item-index]",
-		Short: "Mark a checklist item done (--off to uncheck), or add one with --add",
-		Long: "With --add, append a checklist item. Otherwise, mark the item at the given\n" +
-			"zero-based index done (or --off to uncheck it).",
+		Short: "Toggle, add, remove, or reword a checklist item",
+		Long: "Edit a task's checklist. With no mode flag, mark the item at the given\n" +
+			"zero-based index done (--off unchecks). --add appends one or more items\n" +
+			"(repeatable, text verbatim). --rm deletes the item at the index. --reword\n" +
+			"replaces the text of the item at the index (keeping its done state). The\n" +
+			"mode flags are mutually exclusive; an out-of-range index is exit 2.",
+		Example: "  furrow check t-k3m9p 0            # mark item 0 done\n" +
+			"  furrow check t-k3m9p 0 --off     # uncheck item 0\n" +
+			"  furrow check t-k3m9p --add \"write tests\" --add \"update docs\"\n" +
+			"  furrow check t-k3m9p 1 --rm      # delete item 1\n" +
+			"  furrow check t-k3m9p 1 --reword \"revised step\"",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -156,28 +194,56 @@ func newCheckCmd() *cobra.Command {
 				}
 			}
 			adds = kept
-			verb := "checked"
-			mutate := func() (*core.Task, error) {
-				if len(adds) > 0 {
-					return a.AddChecks(args[0], adds)
-				}
+
+			// index parses the required zero-based item index for the modes that
+			// target an existing item (toggle / --off / --rm / --reword).
+			index := func() (int, error) {
 				if len(args) != 2 {
-					return nil, core.Validationf(args[0], "provide an item index to toggle, or --add to append")
+					return 0, core.Validationf(args[0], "provide a checklist item index")
 				}
-				idx, err := atoiArg("item-index", args[1])
-				if err != nil {
-					return nil, err
-				}
-				return a.Check(args[0], idx, !off)
+				return atoiArg("item-index", args[1])
 			}
-			if len(adds) > 0 {
+			verb := "checked"
+			var mutate func() (*core.Task, error)
+			switch {
+			case len(adds) > 0:
 				verb = "checklist+"
+				mutate = func() (*core.Task, error) { return a.AddChecks(args[0], adds) }
+			case rm:
+				verb = "checklist-"
+				mutate = func() (*core.Task, error) {
+					i, err := index()
+					if err != nil {
+						return nil, err
+					}
+					return a.RemoveCheck(args[0], i)
+				}
+			case cmd.Flags().Changed("reword"):
+				verb = "checklist~"
+				mutate = func() (*core.Task, error) {
+					i, err := index()
+					if err != nil {
+						return nil, err
+					}
+					return a.RewordCheck(args[0], i, reword)
+				}
+			default:
+				mutate = func() (*core.Task, error) {
+					i, err := index()
+					if err != nil {
+						return nil, err
+					}
+					return a.Check(args[0], i, !off)
+				}
 			}
 			return emitMutation(a, verb, args[0], mutate)
 		},
 	}
 	cmd.Flags().StringArrayVar(&adds, "add", nil, "append a checklist item with this text (repeatable)")
 	cmd.Flags().BoolVar(&off, "off", false, "uncheck instead of check")
+	cmd.Flags().BoolVar(&rm, "rm", false, "delete the checklist item at the index")
+	cmd.Flags().StringVar(&reword, "reword", "", "replace the text of the item at the index")
+	cmd.MarkFlagsMutuallyExclusive("add", "rm", "reword", "off")
 	return cmd
 }
 
@@ -259,7 +325,23 @@ func newSetCmd() *cobra.Command {
 				e := effort
 				o.Effort = &e
 			}
-			return emitMutation(a, "set", args[0], func() (*core.Task, error) { return a.Set(args[0], o) })
+			return emitMutationWith(a, "set", args[0],
+				func() (*core.Task, error) { return a.Set(args[0], o) },
+				func(after *core.Task) map[string]any {
+					clamped := map[string]any{}
+					warnClamp("value", o.Value, after.Value)
+					warnClamp("effort", o.Effort, after.Effort)
+					if e := clampEntry(o.Value, after.Value); e != nil {
+						clamped["value"] = e
+					}
+					if e := clampEntry(o.Effort, after.Effort); e != nil {
+						clamped["effort"] = e
+					}
+					if len(clamped) == 0 {
+						return nil
+					}
+					return map[string]any{"clamped": clamped}
+				})
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "move to this lane")
