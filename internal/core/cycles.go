@@ -65,7 +65,7 @@ func CycleProblems(idx *Index) []Problem {
 		if len(cyc) < len(scc) {
 			msg += fmt.Sprintf(" (mutually blocking: %s)", strings.Join(scc, ", "))
 		}
-		out = append(out, Problem{SevError, scc[0], msg})
+		out = append(out, Problem{SevError, "dep-cycle", scc[0], msg})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Msg < out[j].Msg })
 	return out

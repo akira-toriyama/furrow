@@ -37,10 +37,44 @@ func TestCLILintFlagsDanglingAsset(t *testing.T) {
 	for _, p := range ps {
 		if p.Severity == core.SevWarn && strings.Contains(p.Msg, id+"-missing.png") && strings.Contains(p.Msg, "is missing") {
 			found = true
+			// t-kx76 (d): every problem carries a stable kebab-case code for
+			// machine triage, so an agent branches on the array, not the prose.
+			if p.Code != "asset-missing" {
+				t.Errorf("dangling-asset problem should have code=asset-missing, got %q", p.Code)
+			}
 		}
 	}
 	if !found {
 		t.Errorf("lint --json did not surface the dangling-asset warn:\n%s", out)
+	}
+}
+
+// TestCLILintRuleCode pins that lint problems carry a stable kebab-case `code`
+// (t-kx76 d): induce a dangling [[id]] link and assert code=dangling-link, so
+// agent triage branches on the code, not an English regex.
+func TestCLILintRuleCode(t *testing.T) {
+	initStore(t)
+	addTask(t, "haslink", "--body", "see [[t-zzzzz]]")
+
+	out, code := run(t, "--json", "lint")
+	if code != int(core.CodeOK) {
+		t.Fatalf("a dangling link is warn-only; want exit 0, got %d:\n%s", code, out)
+	}
+	var ps []core.Problem
+	if err := json.Unmarshal([]byte(out), &ps); err != nil {
+		t.Fatalf("parse lint --json: %v\n%s", err, out)
+	}
+	found := false
+	for _, p := range ps {
+		if p.Code == "dangling-link" {
+			found = true
+			if !strings.Contains(p.Msg, "t-zzzzz") {
+				t.Errorf("dangling-link message should name the target: %q", p.Msg)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("lint --json should carry a dangling-link code:\n%s", out)
 	}
 }
 

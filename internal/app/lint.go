@@ -43,7 +43,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 			// forever and its close date is lost. New ones can't be created (Add
 			// stamps, Move backfills); this catches pre-fix or hand-edited leaks.
 			if t.Closed == nil {
-				ps = append(ps, core.Problem{Severity: core.SevError, ID: t.ID, Msg: "task is in the done lane but has no closed timestamp (a `furrow done` will backfill it)"})
+				ps = append(ps, core.Problem{Severity: core.SevError, Code: "done-unclosed", ID: t.ID, Msg: "task is in the done lane but has no closed timestamp (a `furrow done` will backfill it)"})
 			}
 		}
 	}
@@ -75,12 +75,12 @@ func (a *App) Lint() ([]core.Problem, error) {
 	for _, t := range idx.Tasks {
 		hasTask[t.ID] = true
 		if !hasBody[t.ID] {
-			ps = append(ps, core.Problem{Severity: core.SevError, ID: t.ID, Msg: fmt.Sprintf("task has no body file (%s)", core.BodyPath(t.ID))})
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "missing-body", ID: t.ID, Msg: fmt.Sprintf("task has no body file (%s)", core.BodyPath(t.ID))})
 		}
 	}
 	for _, id := range bodyIDs {
 		if !hasTask[id] {
-			ps = append(ps, core.Problem{Severity: core.SevWarn, ID: id, Msg: fmt.Sprintf("orphan body file %s has no task", core.BodyPath(id))})
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "orphan-body", ID: id, Msg: fmt.Sprintf("orphan body file %s has no task", core.BodyPath(id))})
 		}
 	}
 	// Shard filename integrity: every shard file's name must equal the id it
@@ -89,7 +89,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// hazard the monolith couldn't have had, when the id was a field not a name).
 	for _, id := range taskFileIDs {
 		if !hasTask[id] {
-			ps = append(ps, core.Problem{Severity: core.SevError, ID: id, Msg: fmt.Sprintf("task shard %s's filename does not match the id it carries", core.TaskPath(id))})
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "shard-misnamed", ID: id, Msg: fmt.Sprintf("task shard %s's filename does not match the id it carries", core.TaskPath(id))})
 		}
 	}
 
@@ -134,7 +134,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 		}
 		for _, ref := range core.ExtractLinks(body, linkRe) {
 			if !known[ref] {
-				ps = append(ps, core.Problem{Severity: core.SevWarn, ID: bid, Msg: fmt.Sprintf("body links to %s via [[%s]] but no such task exists", ref, ref)})
+				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "dangling-link", ID: bid, Msg: fmt.Sprintf("body links to %s via [[%s]] but no such task exists", ref, ref)})
 			}
 		}
 		// assets/<name> refs share this one body scan with the [[id]] links. A ref
@@ -143,7 +143,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 		for _, name := range core.ExtractAssetRefs(body) {
 			referenced[name] = true
 			if !onDisk[name] {
-				ps = append(ps, core.Problem{Severity: core.SevWarn, ID: bid, Msg: fmt.Sprintf("body references asset %s but %s is missing", core.AssetRef(name), core.AssetPath(name))})
+				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "asset-missing", ID: bid, Msg: fmt.Sprintf("body references asset %s but %s is missing", core.AssetRef(name), core.AssetPath(name))})
 			}
 		}
 	}
@@ -157,10 +157,10 @@ func (a *App) Lint() ([]core.Problem, error) {
 			owner = as.Name
 		}
 		if !referenced[as.Name] {
-			ps = append(ps, core.Problem{Severity: core.SevWarn, ID: owner, Msg: fmt.Sprintf("asset %s is not referenced by any task body", core.AssetPath(as.Name))})
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "orphan-asset", ID: owner, Msg: fmt.Sprintf("asset %s is not referenced by any task body", core.AssetPath(as.Name))})
 		}
 		if as.Size >= core.DefaultAssetWarnBytes {
-			ps = append(ps, core.Problem{Severity: core.SevWarn, ID: owner, Msg: fmt.Sprintf("asset %s is %s, over the %s warning threshold — Git-LFS-track it or shrink it", core.AssetPath(as.Name), humanBytes(as.Size), humanBytes(core.DefaultAssetWarnBytes))})
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "oversized-asset", ID: owner, Msg: fmt.Sprintf("asset %s is %s, over the %s warning threshold — Git-LFS-track it or shrink it", core.AssetPath(as.Name), humanBytes(as.Size), humanBytes(core.DefaultAssetWarnBytes))})
 		}
 	}
 
@@ -168,14 +168,14 @@ func (a *App) Lint() ([]core.Problem, error) {
 	if a.Cfg.LabelsRequired {
 		for _, t := range idx.Tasks {
 			if len(t.Labels) == 0 {
-				ps = append(ps, core.Problem{Severity: core.SevError, ID: t.ID, Msg: "task has no label ([labels].required)"})
+				ps = append(ps, core.Problem{Severity: core.SevError, Code: "label-required", ID: t.ID, Msg: "task has no label ([labels].required)"})
 			}
 		}
 	}
 
 	// surface config clamp warnings as lint warns.
 	for _, w := range a.Warnings {
-		ps = append(ps, core.Problem{Severity: core.SevWarn, ID: "config", Msg: w})
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "config", Msg: w})
 	}
 
 	// surface user-level (home) config clamp warnings too. Discovery drops these
@@ -183,7 +183,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// all clamp away leaves no board AND no signal — so lint is where they land
 	// (running it once is explicit, unlike spamming every command's stderr).
 	for _, w := range GlobalConfigWarnings() {
-		ps = append(ps, core.Problem{Severity: core.SevWarn, ID: "global-config", Msg: w})
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "global-config", Msg: w})
 	}
 
 	sort.SliceStable(ps, func(i, j int) bool {

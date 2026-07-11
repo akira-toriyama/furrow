@@ -48,7 +48,7 @@ func StaleDepProblems(idx *Index, terminal, doneIDs map[string]bool) []Problem {
 				continue // no Closed stamp -> no gap to measure
 			}
 			if closed.After(t.Updated) {
-				out = append(out, Problem{SevWarn, t.ID, fmt.Sprintf(
+				out = append(out, Problem{SevWarn, "reconcile-gap", t.ID, fmt.Sprintf(
 					"dep %s is done but closed after this task's last update — reconcile or close this task", dep)})
 			}
 		}

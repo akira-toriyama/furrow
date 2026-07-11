@@ -44,7 +44,7 @@ func newLintCmd() *cobra.Command {
 					fmt.Fprintln(out, "ok — no problems")
 				}
 				for _, p := range ps {
-					fmt.Fprintf(out, "%-5s  %-8s  %s\n", p.Severity, p.ID, p.Msg)
+					fmt.Fprintf(out, "%-5s  %-16s  %-8s  %s\n", p.Severity, p.Code, p.ID, p.Msg)
 				}
 			}
 			if core.HasErrors(ps) {

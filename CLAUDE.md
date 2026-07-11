@@ -40,7 +40,10 @@ the user-level config. When you work with any furrow store:
   `attach`, `init`, `version`, the `apply` report) prints one compact line, and
   `lint` streams one problem per line — so a line-oriented reader never gets a
   silent human-prose degrade. Filter reads with `--status/-s`, `--label/-l`,
-  `--repo/-r`, `--limit/-n` — so you rarely need jq.
+  `--repo/-r`, `--limit/-n` — so you rarely need jq. Each `lint` problem carries
+  a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `orphan-asset`, …) —
+  branch on it, not the message, since the `id` field is contextual (a task id,
+  an asset name, or `config`).
   Mutations (`done|move|reorder|value|effort|check|dep|label|repo`) with
   `--json` emit
   `{before, after, changed}`; `add --stdin` bulk-creates one task per stdin line;
