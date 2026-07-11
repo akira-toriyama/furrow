@@ -141,7 +141,7 @@ furrow done t-0001
 |---|---|
 | `init` | カレントディレクトリに `.furrow` ストアを作る（`config.toml` + `meta.json` + 空の `tasks/` + `bodies/`） |
 | `add <title>...` | タスクを追加（`--stdin` で標準入力から1行1タスクを一括作成）。id を自動採番し `bodies/<id>.md` を作る。`--check`（反復可）で checklist 項目を seed（body prose だけでは shard checklist に入らない）。範囲外 `--value`/`--effort` は clamp＋stderr note。`-` 始まり title は `--` 区切りが必要（エラーが案内） |
-| `ls`（別名 `list`） | タスクを正準順で一覧。`--drafts` で repo 未付与のタスク（draft）だけを一覧（ボードのスコープは無視） |
+| `ls`（別名 `list`） | タスクを正準順（`lane -> priority -> id`）で一覧。`--drafts` で repo 未付与のタスク（draft）だけを一覧（ボードのスコープは無視）。`--since`/`--until` は `updated` で期間フィルタ（素の `YYYY-MM-DD`、または RFC3339。素の `--until` はその日を丸ごと含む）。`--sort updated\|created\|value\|effort` で並べ替え（新しい/大きい順。`--reverse` で反転、未設定 `value`/`effort` はどちら向きでも末尾）。`--sort` 時は `-n` がソート後の上位 N。未知 `--sort` フィールド・不正な日付は exit 2 |
 | `show <id>...` | タスク（複数可）を markdown 本文付きで 1 回の読みで表示（入力順。複数 id は `--json` で配列／human は `---` 区切り、1 id は従来どおり単一オブジェクト。`--ndjson` は個数によらず 1 行 1 タスク）。`--no-body` で本文（`body_text`）を省く＝agent 向けの軽量メタデータ読み。一部 id が見つからなくても見つかった分は出力し、exit 1 のエラーに `details.missing` が載る。`--backlinks` を付けると、本文でこのタスクを `[[id]]` で参照している他タスクも列挙する（「Mentioned in」節／`--json` では `mentioned_by` 配列。GitHub の "mentioned in" のローカル・レート制限なし版） |
 | `next` | 着手可能なタスク（設定 `[next].lanes` — 既定 `ready` + `in-progress`、intake レーンは出ない — にあり、依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
 | `revisit` | read-only。再評価すべき open タスクを一覧。`--json`/`--ndjson` は各タスクに `revisit` 配列 `{code, detail}`（`no_repo`・`value_unset`・`effort_unset`・`stale`・`dep_done`）を付与し、エージェントが何を直すか分かる。draft はスコープに関係なく浮上する。空でも exit 0。`-l/--label`・`-r/--repo`・`-n/--limit`・`--stale-days <n>`（0 で stale 無効） |

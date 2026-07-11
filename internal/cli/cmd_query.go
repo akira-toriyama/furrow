@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
@@ -10,20 +11,32 @@ import (
 
 func newLsCmd() *cobra.Command {
 	var (
-		status string
-		label  string
-		repo   string
-		limit  int
-		drafts bool
+		status  string
+		label   string
+		repo    string
+		limit   int
+		drafts  bool
+		since   string
+		until   string
+		sortBy  string
+		reverse bool
 	)
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
 		Short:   "List tasks (canonical lane->priority->id order)",
+		Long: "List tasks in canonical lane->priority->id order (or reordered with\n" +
+			"--sort). --since/--until window by the updated timestamp (a bare\n" +
+			"YYYY-MM-DD, or a full RFC3339 instant; a bare --until includes the whole\n" +
+			"day). --sort reorders by updated|created|value|effort (newest/highest\n" +
+			"first; --reverse flips it, and an unset value/effort stays last either\n" +
+			"way); with --sort, -n takes the top N of the sorted set.",
 		Example: "  furrow ls                 # this repo's board, canonical order\n" +
 			"  furrow ls -s ready --json\n" +
 			"  furrow ls -s inbox,backlog     # comma = OR within a field\n" +
 			"  furrow ls -l bug -r furrow\n" +
+			"  furrow ls --since 2026-07-08   # touched on/after a date\n" +
+			"  furrow ls --sort value -n5     # top 5 by value\n" +
 			"  furrow ls --drafts        # only repo-less draft tasks",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -39,6 +52,21 @@ func newLsCmd() *cobra.Command {
 				return err
 			}
 			o.Status, o.Limit, o.Drafts = status, limit, drafts
+			o.Sort, o.Reverse = sortBy, reverse
+			if cmd.Flags().Changed("since") {
+				ts, err := parseDateBound(since, false)
+				if err != nil {
+					return err
+				}
+				o.Since = &ts
+			}
+			if cmd.Flags().Changed("until") {
+				ts, err := parseDateBound(until, true)
+				if err != nil {
+					return err
+				}
+				o.Until = &ts
+			}
 			tasks, err := a.List(o)
 			if err != nil {
 				return err
@@ -54,9 +82,30 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&status, "status", "s", "", "filter by lane (comma-separated = OR, e.g. -s inbox,backlog)")
 	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (comma-separated = OR); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
-	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
+	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; with --sort, the top N)")
 	cmd.Flags().BoolVar(&drafts, "drafts", false, "list only drafts (tasks with no repo); bypasses the board scope")
+	cmd.Flags().StringVar(&since, "since", "", "only tasks updated on/after this date (YYYY-MM-DD or RFC3339)")
+	cmd.Flags().StringVar(&until, "until", "", "only tasks updated on/before this date (YYYY-MM-DD includes the whole day, or RFC3339)")
+	cmd.Flags().StringVar(&sortBy, "sort", "", "reorder by updated|created|value|effort (default: canonical lane->priority->id)")
+	cmd.Flags().BoolVar(&reverse, "reverse", false, "reverse the --sort direction (oldest/lowest first; unset value/effort stay last)")
 	return cmd
+}
+
+// parseDateBound parses a --since/--until value: a bare YYYY-MM-DD (interpreted
+// UTC) or a full RFC3339 instant. For a bare date, endOfDay advances it to
+// 23:59:59 — the last whole second of the day, since furrow stamps whole-second
+// timestamps — so a bare --until includes the entire day.
+func parseDateBound(s string, endOfDay bool) (time.Time, error) {
+	if d, err := time.Parse("2006-01-02", s); err == nil {
+		if endOfDay {
+			return d.Add(24*time.Hour - time.Second), nil
+		}
+		return d, nil
+	}
+	if ts, err := time.Parse(time.RFC3339, s); err == nil {
+		return ts.UTC(), nil
+	}
+	return time.Time{}, core.Validationf("", "invalid date %q (want YYYY-MM-DD or RFC3339)", s)
 }
 
 func newShowCmd() *cobra.Command {
