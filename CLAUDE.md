@@ -64,7 +64,11 @@ the user-level config. When you work with any furrow store:
   metadata only (no `body_text`), input order. `--json` = array for ≥2 ids (a
   single id keeps the classic object), `--ndjson` = one line per task at any
   arity. A partial miss still emits the found tasks and exits 1 with
-  `details.missing` — branch on that array.
+  `details.missing` — branch on that array. If a missing id is **archived**, the
+  error also carries `details.archived` (the subset retrievable with
+  `--archived`) and hints it in the message; `show <id> --archived` /
+  `ls --archived` read the sibling `.furrow/archive/` store (same output shapes),
+  so a retired task never falls off the read API.
 - **A multi-machine board converges with `furrow sync`** (auto-commit scoped
   to `.furrow/` → `fetch` + `rebase --autostash @{u}` → `push`): run it before
   reading and after writing a shared board. Within `.furrow/`, machine-written

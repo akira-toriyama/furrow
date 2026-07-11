@@ -622,12 +622,20 @@ type ShowItem struct {
 // error — partial success stays representable, the caller decides what a
 // non-empty missing means. err is reserved for load/IO failures. withBody
 // loads each found task's body; without it the body files are never touched.
-func (a *App) GetBatch(ids []string, withBody bool) (items []ShowItem, missing []string, err error) {
+func (a *App) GetBatch(ids []string, withBody bool) ([]ShowItem, []string, error) {
 	idx, err := a.load()
 	if err != nil {
 		return nil, nil, err
 	}
-	items, missing = []ShowItem{}, []string{}
+	return getBatchFrom(idx, a.Store.LoadBody, ids, withBody)
+}
+
+// getBatchFrom resolves ids against idx in input order (duplicates collapse to
+// their first occurrence, misses collected), loading each found task's body via
+// loadBody when withBody. It is the shared core of the hot GetBatch and the
+// archive GetBatchArchived, so both reads behave identically.
+func getBatchFrom(idx *core.Index, loadBody func(string) (string, error), ids []string, withBody bool) ([]ShowItem, []string, error) {
+	items, missing := []ShowItem{}, []string{}
 	seen := map[string]bool{}
 	for _, id := range ids {
 		if seen[id] {
@@ -641,9 +649,11 @@ func (a *App) GetBatch(ids []string, withBody bool) (items []ShowItem, missing [
 		}
 		body := ""
 		if withBody {
-			if body, err = a.Store.LoadBody(id); err != nil {
+			b, err := loadBody(id)
+			if err != nil {
 				return nil, nil, err
 			}
+			body = b
 		}
 		items = append(items, ShowItem{Task: *t, Body: body})
 	}
@@ -767,7 +777,11 @@ type QueryOpts struct {
 	// lane->priority->id order); Reverse flips the default "most first" direction.
 	Sort    string
 	Reverse bool
-	Limit   int
+	// Archived reads from the sibling .furrow/archive/ store instead of the hot
+	// index (the `ls --archived` browse of retired tasks). The same filters/sort
+	// apply; only the source index changes.
+	Archived bool
+	Limit    int
 }
 
 // match reports whether t passes the query's filters (Limit excluded — that is
@@ -830,7 +844,7 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 	if err := validateSortField(o.Sort); err != nil {
 		return nil, err
 	}
-	idx, err := a.load()
+	idx, err := a.listIndex(o)
 	if err != nil {
 		return nil, err
 	}
