@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
@@ -222,5 +223,54 @@ func newRevisitCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
 	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
+	return cmd
+}
+
+func newSearchCmd() *cobra.Command {
+	var (
+		status string
+		label  string
+		repo   string
+		limit  int
+	)
+	cmd := &cobra.Command{
+		Use:   "search <term>",
+		Short: "Full-text search over task titles and bodies",
+		Long: "Search every task's title and Markdown body for a case-insensitive\n" +
+			"substring, in canonical order, honoring the same -s/-l/-r scope and -n\n" +
+			"limit as `ls` (so a bare `search` stays within this repo's board; -r ''\n" +
+			"searches the whole board). Each hit reports which field matched (title or\n" +
+			"body) and a one-line snippet with the term in context; --json/--ndjson\n" +
+			"emit the full task plus matched_field and snippet, so an agent skips the\n" +
+			"`grep .furrow/bodies` dance. A title match never pays to read the body.\n" +
+			"Several words are one literal phrase. An empty result is healthy (exit 0),\n" +
+			"not a miss — the same contract as ls/next/revisit.",
+		Example: "  furrow search teatest\n" +
+			"  furrow search \"single marshaller\" --json\n" +
+			"  furrow search sync -s backlog -n5\n" +
+			"  furrow search attach -r ''        # whole board, not just this repo",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			o, err := scopedQuery(cmd, a, label, repo)
+			if err != nil {
+				return err
+			}
+			o.Status, o.Limit = status, limit
+			hits, err := a.Search(o, strings.Join(args, " "))
+			if err != nil {
+				return err
+			}
+			// A zero-match search is a valid clean result (exit 0), not a miss.
+			return emitSearch(hits)
+		},
+	}
+	cmd.Flags().StringVarP(&status, "status", "s", "", "filter by lane (comma-separated = OR, e.g. -s inbox,backlog)")
+	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (comma-separated = OR); a pure tag that ANDs with the board scope")
+	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
+	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
 	return cmd
 }
