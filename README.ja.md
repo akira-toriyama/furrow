@@ -264,9 +264,11 @@ INI として読む（scp 風 `git@host:o/r.git`・`ssh://`・`git+ssh://`・`ht
 という名の worktree でも `owner/chord` が導出される。origin が使えなければ ghq 風パス
 （`…/github.com/<owner>/<repo>`）に fallback し、それも無ければボードは**スコープ無し**で
 開く（stderr に注記・`add` は draft を作る）—— 素の dir 名を `repos` に書くことは決してない。
-git repo の外でも同様（ボードは開く・注記のみ）。`FURROW_BOARD=<path>` は単発・テスト用に
-単一ボードで全体を上書きする（scope は board の repo 親）。廃止された `label = "auto"` は
-警告付きで無視され、`repo = "auto"` へ誘導される。
+git repo の外でも同様（ボードは開く・注記のみ）。`FURROW_BOARD=<path>` は中央ボードの env 版で、
+user-level の config ファイルの `[[board]]` 群を単発・テスト用の単一ボードで置き換える（scope は
+board の repo 親）。ただし**より近いストアは上書きしない**——`FURROW_DIR`・ローカル `.furrow`・
+`.furrow-pointer.toml` はいずれも `FURROW_BOARD` に勝つ（発見の優先順位を参照）。廃止された
+`label = "auto"` は警告付きで無視され、`repo = "auto"` へ誘導される。
 
 #### per-repo pointer
 
@@ -281,8 +283,11 @@ default_repo = "me/chord"       # 任意: 1 owner/repo にスコープ（"auto" 
 #### 発見の優先順位
 
 `FURROW_DIR`（明示・スコープ注入なし）→ 直近の親で `.furrow` を持つディレクトリ（実体の
-ローカルストアが勝つ）→ `.furrow-pointer.toml`（ボードへ redirect）→ **user-level の中央
-ボード**（cwd が `scopes` のいずれか配下のとき・最長一致が勝つ）→ `furrow init`。
+ローカルストアが勝つ）→ `.furrow-pointer.toml`（ボードへ redirect）→ **中央ボード**：
+`FURROW_BOARD`（env 上書き・単一 synthetic ボード）があればそれ、無ければ user-level config
+ファイルの `[[board]]` 群（cwd が `scopes` のいずれか配下のとき・最長一致が勝つ）→ `furrow init`。
+つまり `FURROW_BOARD` は config ファイルのボードにのみ勝ち、より近い `FURROW_DIR` / ローカル
+`.furrow` / pointer には決して勝たない。
 
 ボード有効時（pointer / user-level いずれも）:
 
