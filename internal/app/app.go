@@ -758,7 +758,16 @@ type QueryOpts struct {
 	ScopeRepo string // board-scope repo (a pointer's / central board's DefaultRepo)
 	Repo      string // owner/repo filter on the repos field (already resolved)
 	Drafts    bool   // only tasks with repos == []; ignores ScopeRepo/Repo
-	Limit     int
+	// Since/Until filter on the Updated timestamp (inclusive bounds); nil = no
+	// bound. Only `ls` wires these today, but they live here so any read that
+	// funnels through match can gain a date window without a second predicate.
+	Since *time.Time
+	Until *time.Time
+	// Sort re-orders List's result by one of core.SortFields (empty = canonical
+	// lane->priority->id order); Reverse flips the default "most first" direction.
+	Sort    string
+	Reverse bool
+	Limit   int
 }
 
 // match reports whether t passes the query's filters (Limit excluded — that is
@@ -771,6 +780,14 @@ func (o QueryOpts) match(t *core.Task) bool {
 		return false
 	}
 	if !matchAnyLabel(o.Label, t.Labels) {
+		return false
+	}
+	// The date window is a field filter like Status/Label, so it applies even in
+	// Drafts mode (before the draft short-circuit below).
+	if o.Since != nil && t.Updated.Before(*o.Since) {
+		return false
+	}
+	if o.Until != nil && t.Updated.After(*o.Until) {
 		return false
 	}
 	if o.Drafts {
@@ -799,12 +816,18 @@ func (o QueryOpts) matchRevisit(t *core.Task) bool {
 	return d.match(t)
 }
 
-// List returns tasks in canonical order, after applying the filters. A -s
-// filter naming an unknown lane fails fast (validateLaneFilter) rather than
-// silently returning [] — `ls` is the only read carrying -s, so this is its
-// guard.
+// List returns tasks after applying the filters, in canonical
+// lane->priority->id order unless o.Sort re-orders them. A -s filter naming an
+// unknown lane, or an unknown --sort field, fails fast (rather than silently
+// returning [] / ignoring the flag) — `ls` is the only read carrying these, so
+// this is its guard. With a sort, Limit applies AFTER ordering (the top N of the
+// sorted set), so it collects all matches first; without a sort the result is
+// identical to the old canonical-order-first-N.
 func (a *App) List(o QueryOpts) ([]core.Task, error) {
 	if err := a.validateLaneFilter(o.Status); err != nil {
+		return nil, err
+	}
+	if err := validateSortField(o.Sort); err != nil {
 		return nil, err
 	}
 	idx, err := a.load()
@@ -814,15 +837,31 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 	var out []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if !o.match(t) {
-			continue
-		}
-		out = append(out, *t)
-		if o.Limit > 0 && len(out) >= o.Limit {
-			break
+		if o.match(t) {
+			out = append(out, *t)
 		}
 	}
+	if o.Sort != "" {
+		core.SortTasks(out, o.Sort, o.Reverse)
+	}
+	if o.Limit > 0 && len(out) > o.Limit {
+		out = out[:o.Limit]
+	}
 	return out, nil
+}
+
+// validateSortField rejects an unknown --sort key with the valid fields in
+// Candidates (symmetric with the unknown-lane guard) — a typo must not silently
+// fall back to canonical order. Empty = no sort, always valid.
+func validateSortField(field string) error {
+	if field == "" || core.IsSortField(field) {
+		return nil
+	}
+	return &core.Error{
+		Code:       core.CodeValidation,
+		Msg:        fmt.Sprintf("unknown sort field %q (valid: %s)", field, strings.Join(core.SortFields, ", ")),
+		Candidates: append([]string(nil), core.SortFields...),
+	}
 }
 
 // Next returns the actionable tasks in canonical order — the work that is ready
