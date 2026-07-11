@@ -273,6 +273,41 @@ func TestCLIArchiveRepoScope(t *testing.T) {
 	}
 }
 
+// TestCLIListMultiValueOR pins the -s/-l comma = OR plumbing end-to-end through
+// the real cobra flags. The OR semantics rely on -s/-l staying raw-string
+// passthrough (StringVarP): if a maintainer ever switched to StringSliceVarP or
+// added a CLI-layer split, cobra would consume the comma and this test would
+// fail where the app-level TestListMultiValueOR could not see it.
+func TestCLIListMultiValueOR(t *testing.T) {
+	initStore(t)
+	addTask(t, "i-bug", "-s", "inbox", "-l", "bug")
+	addTask(t, "b-urgent", "-s", "backlog", "-l", "urgent")
+	addTask(t, "r-bug", "-s", "ready", "-l", "bug")
+
+	// -s comma = OR within the field: inbox,backlog matches the first two.
+	out, code := run(t, "--ndjson", "ls", "-s", "inbox,backlog")
+	if code != 0 {
+		t.Fatalf("ls -s exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "i-bug") || !strings.Contains(out, "b-urgent") || strings.Contains(out, "r-bug") {
+		t.Errorf("`ls -s inbox,backlog` should OR to i-bug + b-urgent only:\n%s", out)
+	}
+
+	// -l comma = OR: bug,urgent matches all three.
+	out, _ = run(t, "--ndjson", "ls", "-l", "bug,urgent")
+	for _, want := range []string{"i-bug", "b-urgent", "r-bug"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("`ls -l bug,urgent` should include %q:\n%s", want, out)
+		}
+	}
+
+	// flags still AND across fields: (inbox|backlog) AND label bug -> i-bug only.
+	out, _ = run(t, "--ndjson", "ls", "-s", "inbox,backlog", "-l", "bug")
+	if !strings.Contains(out, "i-bug") || strings.Contains(out, "b-urgent") || strings.Contains(out, "r-bug") {
+		t.Errorf("`ls -s inbox,backlog -l bug` should AND to i-bug only:\n%s", out)
+	}
+}
+
 func TestCLICheckOutOfRangeExit2(t *testing.T) {
 	initStore(t)
 	id := addTask(t, "task", "-s", "ready")

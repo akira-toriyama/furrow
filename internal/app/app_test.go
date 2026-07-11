@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -308,6 +309,55 @@ func TestNextFiltersByLabel(t *testing.T) {
 	if none, _ := a.Next(QueryOpts{Label: "nope"}); len(none) != 0 {
 		t.Errorf("unknown label should return no tasks, got %d", len(none))
 	}
+}
+
+// TestListMultiValueOR covers the comma = OR-within-a-field, flags-AND-across
+// semantics for -s and -l: `-s inbox,backlog` matches either lane, `-l a,b`
+// matches either tag, and combining them ANDs. Whitespace is trimmed, empty
+// tokens dropped, and unknown tokens match nothing (no error), consistent with
+// clamp-don't-reject. Regression for t-25qt.
+func TestListMultiValueOR(t *testing.T) {
+	a := newApp()
+	a.Add("i-bug", AddOpts{Status: "inbox", Labels: []string{"bug"}})
+	a.Add("b-urgent", AddOpts{Status: "backlog", Labels: []string{"urgent"}})
+	a.Add("ready-bug", AddOpts{Status: "ready", Labels: []string{"bug"}})
+	a.Add("done-chore", AddOpts{Status: "done", Labels: []string{"chore"}})
+
+	cases := []struct {
+		name string
+		q    QueryOpts
+		want []string
+	}{
+		{"status OR", QueryOpts{Status: "inbox,backlog"}, []string{"i-bug", "b-urgent"}},
+		{"label OR", QueryOpts{Label: "bug,urgent"}, []string{"i-bug", "b-urgent", "ready-bug"}},
+		{"AND across fields", QueryOpts{Status: "inbox,backlog", Label: "bug"}, []string{"i-bug"}},
+		{"single status unchanged", QueryOpts{Status: "inbox"}, []string{"i-bug"}},
+		{"single label unchanged", QueryOpts{Label: "chore"}, []string{"done-chore"}},
+		{"whitespace + empty tokens", QueryOpts{Status: " inbox , , backlog "}, []string{"i-bug", "b-urgent"}},
+		{"known + unknown token", QueryOpts{Status: "inbox,ghost"}, []string{"i-bug"}},
+		{"unknown tokens match nothing", QueryOpts{Status: "ghost,phantom"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := a.List(tc.q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var titles []string
+			for _, tk := range got {
+				titles = append(titles, tk.Title)
+			}
+			if !reflect.DeepEqual(sortedCopy(titles), sortedCopy(tc.want)) {
+				t.Errorf("%s: got %v, want %v", tc.name, titles, tc.want)
+			}
+		})
+	}
+}
+
+func sortedCopy(s []string) []string {
+	out := append([]string(nil), s...)
+	sort.Strings(out)
+	return out
 }
 
 func titlesOf(ts []core.Task) []string {

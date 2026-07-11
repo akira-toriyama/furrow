@@ -417,8 +417,12 @@ except where noted:
   `--drafts` on `ls`; `-l`/`-r`/`-n` on `next` and `revisit` (plus
   `--stale-days` on `revisit`). `-r` is the scope control (an
   explicit `-r` overrides the board scope; `-r ''` shows the whole board);
-  `-l` is a pure tag filter that ANDs with the scope. `ls --drafts` lists only
-  the repo-less tasks. When an input *almost* resolved — an ambiguous repo
+  `-l` is a pure tag filter that ANDs with the scope. Within a single `-s` or
+  `-l`, a comma is OR (`-s inbox,backlog`, `-l bug,urgent`; tokens are trimmed,
+  empties dropped, an unknown token just matches nothing) — the flags still AND
+  across fields. Comma is the reserved separator, so a lane/label whose name
+  contains one can't be selected this way (lane/label names with commas are not
+  a supported shape). `ls --drafts` lists only the repo-less tasks. When an input *almost* resolved — an ambiguous repo
   short name, or a label that uniquely names a repo (the did-you-mean guard) —
   the error envelope carries a `candidates` array; when a repo scope — explicit `-r`
   or the board's auto scope — hides drafts, a one-line stderr hint points at

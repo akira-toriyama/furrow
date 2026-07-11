@@ -21,7 +21,8 @@ the user-level config. When you work with any furrow store:
   issue-draft analogue). `-r` is the scope control on reads: a full
   `owner/repo` or a short name resolving uniquely against the board's repos;
   an explicit `-r` overrides the board scope, `-r ''` = the whole board. `-l`
-  filters by tag and ANDs with the scope. On a board, `add` unions the scope
+  filters by tag and ANDs with the scope. Within a single `-s` or `-l`, a comma
+  is OR (`-s inbox,backlog`); flags still AND across fields. On a board, `add` unions the scope
   repo into `repos` (`--draft` suppresses exactly that); `ls --drafts` lists
   the repo-less tasks; `furrow repo <id> --add|--rm` attaches/detaches later.
 - `--json` is available on read commands; **JSON goes to stdout only** (logs and

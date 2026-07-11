@@ -702,10 +702,10 @@ type QueryOpts struct {
 // (ScopeRepo or Repo set) hides drafts — the CLI's hidden-drafts hint exists
 // for exactly that.
 func (o QueryOpts) match(t *core.Task) bool {
-	if o.Status != "" && t.Status != o.Status {
+	if !matchAnyLane(o.Status, t.Status) {
 		return false
 	}
-	if o.Label != "" && !contains(t.Labels, o.Label) {
+	if !matchAnyLabel(o.Label, t.Labels) {
 		return false
 	}
 	if o.Drafts {
@@ -1090,4 +1090,41 @@ func contains(ss []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// matchAnyLane reports whether lane satisfies the -s filter. A comma splits the
+// filter into an OR-set: an empty filter (or one that trims to no tokens) is no
+// constraint; otherwise lane must equal one of the trimmed, non-empty tokens.
+// An unknown token simply matches nothing (clamp-don't-reject — never an error).
+// Re-splitting per task is negligible at furrow's board scale.
+func matchAnyLane(filter, lane string) bool {
+	matched := false
+	any := false
+	for _, tok := range strings.Split(filter, ",") {
+		if tok = strings.TrimSpace(tok); tok == "" {
+			continue
+		}
+		any = true
+		if lane == tok {
+			matched = true
+		}
+	}
+	return !any || matched
+}
+
+// matchAnyLabel is matchAnyLane for tags: comma = OR, and a task passes when it
+// carries at least one of the tokens. Empty/whitespace filter = no constraint.
+func matchAnyLabel(filter string, labels []string) bool {
+	matched := false
+	any := false
+	for _, tok := range strings.Split(filter, ",") {
+		if tok = strings.TrimSpace(tok); tok == "" {
+			continue
+		}
+		any = true
+		if contains(labels, tok) {
+			matched = true
+		}
+	}
+	return !any || matched
 }
