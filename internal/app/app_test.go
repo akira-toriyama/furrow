@@ -157,6 +157,156 @@ func TestAddRejectsUnknownLaneAndEmptyTitle(t *testing.T) {
 	}
 }
 
+// --- t-hgxw: write-path silent divergences ---
+
+// (a) A task born directly in the done lane must stamp Closed, so it isn't a
+// zombie that `done` no-ops on and `archive` skips forever.
+func TestAddStampsClosedWhenBornInDoneLane(t *testing.T) {
+	a := newApp()
+	tk, err := a.Add("born done", AddOpts{Status: "done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.Closed == nil {
+		t.Error("a task added directly into the done lane must stamp Closed, got nil")
+	}
+	// a non-done lane must NOT stamp Closed.
+	open, _ := a.Add("open", AddOpts{Status: "ready"})
+	if open.Closed != nil {
+		t.Errorf("a task in a non-done lane must not stamp Closed, got %v", open.Closed)
+	}
+}
+
+// (a) the bulk path stamps Closed too, so `add --stdin -s done` doesn't leak the
+// same zombie the single path was fixed for.
+func TestAddManyStampsClosedInDoneLane(t *testing.T) {
+	a := newApp()
+	created, err := a.AddMany([]AddSpec{{Title: "bulk done", AddOpts: AddOpts{Status: "done"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 1 || created[0].Closed == nil {
+		t.Errorf("bulk add into the done lane must stamp Closed, got %+v", created)
+	}
+}
+
+// (a) `done` (Move into the done lane) must backfill Closed on a pre-existing
+// closed:null zombie, not no-op because it's already in the done lane.
+func TestDoneBackfillsClosedOnZombie(t *testing.T) {
+	a := newApp()
+	idx, _ := a.Store.Load()
+	idx.Add(core.Task{ID: "t-zomb1", Title: "zombie", Status: "done", Priority: 100, Body: core.BodyPath("t-zomb1")})
+	a.Store.Save(idx)
+	a.Store.SaveBody("t-zomb1", "# z\n")
+
+	got, err := a.Done("t-zomb1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Closed == nil {
+		t.Error("done on a closed:null done-lane task must backfill Closed, got nil")
+	}
+}
+
+// (a) a repeated `done` on an already-closed task must PRESERVE the original
+// Closed timestamp — the Move rewrite keys its stamp on Closed==nil, so a no-op
+// re-close must not refresh the date even as the clock advances.
+func TestDonePreservesOriginalClosed(t *testing.T) {
+	cfg := config.Default()
+	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	clk := &fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)}
+	a := NewWithStore(st, cfg, clk)
+
+	tk, _ := a.Add("finish me", AddOpts{Status: "ready"})
+	first, err := a.Done(tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Closed == nil {
+		t.Fatal("done should stamp Closed")
+	}
+	firstClosed := *first.Closed
+
+	clk.t = clk.t.Add(48 * time.Hour) // clock moves on
+	again, err := a.Done(tk.ID)       // idempotent re-close
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Closed == nil || !again.Closed.Equal(firstClosed) {
+		t.Errorf("a repeated done must preserve the original Closed %v, got %v", firstClosed, again.Closed)
+	}
+}
+
+// (a) lint must flag a done-lane task with no Closed timestamp — the backstop for
+// zombies created before the fix or by a hand-edit.
+func TestLintFlagsDoneWithoutClosed(t *testing.T) {
+	a := newApp()
+	idx, _ := a.Store.Load()
+	idx.Add(core.Task{ID: "t-zomb2", Title: "zombie", Status: "done", Priority: 100, Body: core.BodyPath("t-zomb2")})
+	a.Store.Save(idx)
+	a.Store.SaveBody("t-zomb2", "# z\n")
+
+	probs, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, p := range probs {
+		if p.ID == "t-zomb2" && p.Severity == core.SevError && strings.Contains(p.Msg, "closed") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("lint should error on a done task with no closed timestamp; got %+v", probs)
+	}
+}
+
+// (b) add must reject a dangling --dep / --parent up front (exit 2), the same
+// existence contract AddDep enforces — instead of silently accepting it.
+func TestAddRejectsDanglingDepAndParent(t *testing.T) {
+	a := newApp()
+	if _, err := a.Add("x", AddOpts{Deps: []string{"t-nope"}}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("add with a non-existent dep should be a validation error, got %v", err)
+	}
+	if _, err := a.Add("y", AddOpts{Parent: "t-nosuch"}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("add with a non-existent parent should be a validation error, got %v", err)
+	}
+	base, _ := a.Add("base", AddOpts{})
+	if _, err := a.Add("child", AddOpts{Deps: []string{base.ID}, Parent: base.ID}); err != nil {
+		t.Errorf("add with an existing dep/parent should succeed, got %v", err)
+	}
+}
+
+// (b) the same existence check on the bulk path, for both a dangling dep and a
+// dangling parent.
+func TestAddManyRejectsDanglingDep(t *testing.T) {
+	a := newApp()
+	if _, err := a.AddMany([]AddSpec{{Title: "x", AddOpts: AddOpts{Deps: []string{"t-ghost"}}}}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("AddMany with a dangling dep should be a validation error, got %v", err)
+	}
+	if _, err := a.AddMany([]AddSpec{{Title: "y", AddOpts: AddOpts{Parent: "t-nosuch"}}}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("AddMany with a dangling parent should be a validation error, got %v", err)
+	}
+}
+
+// (c) check --add is repeatable: every item is appended, not just the last.
+func TestAddChecksAppendsAll(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("steps", AddOpts{})
+	got, err := a.AddChecks(tk.ID, []string{"first", "second", "third"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Checklist) != 3 {
+		t.Fatalf("AddChecks should append all 3 items, got %d: %+v", len(got.Checklist), got.Checklist)
+	}
+	for i, want := range []string{"first", "second", "third"} {
+		if got.Checklist[i].Text != want {
+			t.Errorf("item %d = %q, want %q", i, got.Checklist[i].Text, want)
+		}
+	}
+}
+
 func TestAddDepAndRemoveDep(t *testing.T) {
 	a := newApp()
 	ta, _ := a.Add("a", AddOpts{})

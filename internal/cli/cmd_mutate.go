@@ -132,8 +132,8 @@ func newEffortCmd() *cobra.Command {
 
 func newCheckCmd() *cobra.Command {
 	var (
-		add string
-		off bool
+		adds []string
+		off  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "check <id> [item-index]",
@@ -146,10 +146,20 @@ func newCheckCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Drop empty/whitespace-only --add values so `--add ""` keeps its prior
+			// meaning (flag effectively unset → fall through to the toggle path)
+			// rather than appending a blank checklist item. Real items stay verbatim.
+			kept := adds[:0]
+			for _, s := range adds {
+				if strings.TrimSpace(s) != "" {
+					kept = append(kept, s)
+				}
+			}
+			adds = kept
 			verb := "checked"
 			mutate := func() (*core.Task, error) {
-				if add != "" {
-					return a.AddCheck(args[0], add)
+				if len(adds) > 0 {
+					return a.AddChecks(args[0], adds)
 				}
 				if len(args) != 2 {
 					return nil, core.Validationf(args[0], "provide an item index to toggle, or --add to append")
@@ -160,13 +170,13 @@ func newCheckCmd() *cobra.Command {
 				}
 				return a.Check(args[0], idx, !off)
 			}
-			if add != "" {
+			if len(adds) > 0 {
 				verb = "checklist+"
 			}
 			return emitMutation(a, verb, args[0], mutate)
 		},
 	}
-	cmd.Flags().StringVar(&add, "add", "", "append a checklist item with this text")
+	cmd.Flags().StringArrayVar(&adds, "add", nil, "append a checklist item with this text (repeatable)")
 	cmd.Flags().BoolVar(&off, "off", false, "uncheck instead of check")
 	return cmd
 }

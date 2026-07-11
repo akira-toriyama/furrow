@@ -308,6 +308,27 @@ func TestCLIListMultiValueOR(t *testing.T) {
 	}
 }
 
+// TestCLICheckAddRepeatable pins that `check --add A --add B` appends BOTH items
+// (was: cobra StringVar kept only the last), and that a comma inside an item is
+// preserved verbatim — i.e. the flag is StringArrayVar, not StringSliceVar which
+// would wrongly split free-text on commas. Regression for t-hgxw leg (c).
+func TestCLICheckAddRepeatable(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "task")
+	out, code := run(t, "--json", "check", id, "--add", "buy milk, eggs", "--add", "second")
+	if code != 0 {
+		t.Fatalf("check --add exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "buy milk, eggs") || !strings.Contains(out, "second") {
+		t.Errorf("both --add items should be appended verbatim (comma not split):\n%s", out)
+	}
+	// An empty --add keeps its prior "flag unset" meaning (falls through to the
+	// toggle path, which needs an index) rather than appending a blank bullet.
+	if _, code := run(t, "check", id, "--add", ""); code != int(core.CodeValidation) {
+		t.Errorf(`check --add "" with no index should require an index (exit 2), got %d`, code)
+	}
+}
+
 func TestCLICheckOutOfRangeExit2(t *testing.T) {
 	initStore(t)
 	id := addTask(t, "task", "-s", "ready")
