@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -100,6 +101,48 @@ func TestAddManyGeneratesUniqueIDs(t *testing.T) {
 			t.Fatalf("AddMany produced a duplicate id within one batch: %q", tk.ID)
 		}
 		seen[tk.ID] = true
+	}
+}
+
+// TestAddManyMatchesSingleAdd guards the bulk path against silently diverging
+// from a single `add`: the shared --value/--effort flags must land on every
+// task (help promises "the shared flags apply to every task"), and each returned
+// task must be canonicalized so bulk-add output deep-equals a subsequent read
+// (no `null` slices where single-add emits `[]`). Regression for t-adx9.
+func TestAddManyMatchesSingleAdd(t *testing.T) {
+	a := newApp()
+	specs := []AddSpec{
+		{Title: "alpha", AddOpts: AddOpts{Value: intptr(3), Effort: intptr(2)}},
+		{Title: "beta", AddOpts: AddOpts{Value: intptr(4), Effort: intptr(1)}},
+	}
+	created, err := a.AddMany(specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != len(specs) {
+		t.Fatalf("AddMany created %d tasks, want %d", len(created), len(specs))
+	}
+	for i, tk := range created {
+		// (1) value/effort must be carried, exactly as single Add does.
+		wantV, wantE := *specs[i].Value, *specs[i].Effort
+		if tk.Value == nil || *tk.Value != wantV || tk.Effort == nil || *tk.Effort != wantE {
+			t.Errorf("task %d dropped estimate: value=%v effort=%v, want %d/%d",
+				i, tk.Value, tk.Effort, wantV, wantE)
+		}
+		// (2) []-not-null: a returned nil slice would marshal to `null`, breaking
+		// the documented invariant and diverging from a subsequent ls.
+		if tk.Labels == nil || tk.Repos == nil || tk.Deps == nil || tk.Refs == nil || tk.Checklist == nil {
+			t.Errorf("task %d returned a nil slice (must be []): %+v", i, tk)
+		}
+		// (3) the strong parity check: the returned task equals what a fresh read
+		// returns, field for field — so `add --stdin --json` deep-equals `ls`.
+		got, _, err := a.Get(tk.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(tk, *got) {
+			t.Errorf("task %d: AddMany return diverges from a read:\n add=%+v\n get=%+v", i, tk, *got)
+		}
 	}
 }
 
