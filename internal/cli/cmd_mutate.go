@@ -248,22 +248,40 @@ func newCheckCmd() *cobra.Command {
 }
 
 func newDepCmd() *cobra.Command {
-	var rm bool
+	var rm, list bool
 	cmd := &cobra.Command{
-		Use:   "dep <id> <dep-id>...",
-		Short: "Add one or more dependencies to a task (or remove with --rm)",
+		Use:   "dep <id> [<dep-id>...]",
+		Short: "Add/remove a task's dependencies, or list them both ways with --list",
 		Long: "Make <id> depend on each <dep-id> (id waits on them). Several dep-ids in one\n" +
 			"call apply in a single write. With --rm, remove those dependencies instead.\n" +
 			"Every dep must exist; adding is acyclic and idempotent, and the batch is\n" +
-			"all-or-nothing (a bad dep-id aborts without a partial change).",
+			"all-or-nothing (a bad dep-id aborts without a partial change).\n\n" +
+			"With --list, don't mutate — read <id>'s dependency neighborhood in BOTH\n" +
+			"directions: what it depends_on (its own deps — what it waits on) and what it\n" +
+			"blocks (the reverse edge — the tasks waiting on it), each resolved to\n" +
+			"id+title+lane. --json/--ndjson emit one object with both arrays. The\n" +
+			"reverse edge is the local, no-server twin of \"what unblocks if I finish this\".",
 		Example: "  furrow dep t-k3m9p t-a1b2c\n" +
 			"  furrow dep t-k3m9p t-a1b2c t-d4e5f    # depend on both in one write\n" +
-			"  furrow dep t-k3m9p t-a1b2c --rm",
-		Args: cobra.MinimumNArgs(2),
+			"  furrow dep t-k3m9p t-a1b2c --rm\n" +
+			"  furrow dep t-k3m9p --list --json      # what it waits on and what it blocks",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("list") {
+				return cobra.ExactArgs(1)(cmd, args)
+			}
+			return cobra.MinimumNArgs(2)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
+			}
+			if list {
+				res, err := a.DepList(args[0])
+				if err != nil {
+					return err
+				}
+				return emitDepList(res)
 			}
 			id, deps := args[0], args[1:]
 			verb := "dep+"
@@ -276,6 +294,8 @@ func newDepCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&rm, "rm", false, "remove the dependencies instead of adding them")
+	cmd.Flags().BoolVar(&list, "list", false, "read-only: list what <id> depends on and what depends on it (both directions)")
+	cmd.MarkFlagsMutuallyExclusive("list", "rm")
 	return cmd
 }
 

@@ -72,6 +72,24 @@ func (idx *Index) Actionable(t *Task, terminal map[string]bool, doneIDs map[stri
 	return true
 }
 
+// Dependents returns the tasks that depend on id — those naming id in their
+// Deps — in index (canonical) order. It is the reverse of the Deps edge: id
+// "blocks" each returned task. This is the shared reverse-deps helper the CLI's
+// `dep --list` and future TUI dep views read (so the relation is computed in one
+// place). An unknown id simply has no dependents (never panics).
+func (idx *Index) Dependents(id string) []Task {
+	var out []Task
+	for i := range idx.Tasks {
+		for _, dep := range idx.Tasks[i].Deps {
+			if dep == id {
+				out = append(out, idx.Tasks[i])
+				break
+			}
+		}
+	}
+	return out
+}
+
 // DependsOn reports whether task `a` reaches task `b` by following dependency
 // edges transitively (a depends on b, directly or indirectly). It underpins
 // acyclic dep edits: adding a->b is safe only when b does not already depend on
