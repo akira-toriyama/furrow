@@ -18,10 +18,10 @@ func newVersionCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			info := version.Resolve()
-			if flagJSON {
+			if jsonMode() {
 				// Info carries json tags; the full commit sha stays here (the
 				// human string shortens it) so an agent can match exactly.
-				printJSON(info)
+				emitObject(info)
 				return nil
 			}
 			fmt.Fprintln(out, info.String())

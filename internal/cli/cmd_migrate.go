@@ -47,7 +47,7 @@ func newMigrateCmd() *cobra.Command {
 }
 
 func previewMigrate(path string, res migrate.Result, labels []string) error {
-	if flagJSON {
+	if jsonMode() {
 		tasks, warnings := res.Tasks, res.Warnings
 		if tasks == nil {
 			tasks = []migrate.Task{}
@@ -58,7 +58,7 @@ func previewMigrate(path string, res migrate.Result, labels []string) error {
 		if labels == nil {
 			labels = []string{}
 		}
-		printJSON(map[string]any{"dry_run": true, "source": path, "labels": labels, "tasks": tasks, "warnings": warnings})
+		emitObject(map[string]any{"dry_run": true, "source": path, "labels": labels, "tasks": tasks, "warnings": warnings})
 		return nil
 	}
 	fmt.Fprintf(out, "migrate %s — %d task(s) (dry-run)\n\n", path, len(res.Tasks))
@@ -106,7 +106,7 @@ func applyMigrate(a *app.App, res migrate.Result, labels []string) error {
 	if err != nil {
 		return err
 	}
-	if flagJSON {
+	if jsonMode() {
 		if created == nil {
 			created = []core.Task{}
 		}
@@ -114,7 +114,7 @@ func applyMigrate(a *app.App, res migrate.Result, labels []string) error {
 		if warnings == nil {
 			warnings = []string{}
 		}
-		printJSON(map[string]any{"created": len(created), "tasks": created, "warnings": warnings})
+		emitObject(map[string]any{"created": len(created), "tasks": created, "warnings": warnings})
 		return nil
 	}
 	fmt.Fprintf(out, "imported %d task(s)\n", len(created))

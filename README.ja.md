@@ -192,8 +192,8 @@ furrow done t-0001
 
 furrow は **非対話がデフォルト**。プロンプトは出さない（TTY 検出は `golang.org/x/term`）。対話 UI は `furrow ui` だけ。
 
-- **`--json`** — read コマンドが JSON を **stdout のみ**に出す。ログ・エラーは stderr へ。
-- **`--ndjson`** — タスクを 1 行 1 JSON で出す（list 系・`show` は個数によらず 1 行 1 タスク）。
+- **`--json`** — JSON を **stdout のみ**に出す。ログ・エラーは stderr へ。read だけでなく **JSON を出す全コマンド**で効く（mutation の `{before,after,changed}`・`apply` の `{on,ref,outcomes}`・`add`/`attach`/`init`/`lint`/`archive`/`migrate`/`version`/`board` も含む）。
+- **`--ndjson`** — `--json` と同じ payload を **compact に 1 行 1 値**で出す。`--json` が効く全コマンドで honor（list 系は 1 行 1 レコード、単一オブジェクト系＝mutation・`board` 等は compact 1 行、`lint` は 1 problem 1 行）。line 志向の agent が human prose に silent degrade しない。
 - **id 集合の一括読み** — `show <id>... --no-body` で任意の id 集合を 1 プロセス・本文なしで横断取得（監査・依存チェック向け。`--ndjson` 併用で shape が個数非依存に）。
 - **フィルタ** — `--status/-s`・`--label/-l`・`--repo/-r`・`--limit/-n`（`-s`/`-l` は値内のカンマが field 内 OR）。未知トークンの扱いは非対称: `-s` の未知レーンは exit 2＋`candidates`（閉じた語彙・`move`/`add` と対称）、`-l` の未知タグは無マッチ（開いた語彙）。明示 `-l X` が 0 件で、X がタスクを持つ repo 短名に一意解決するときは exit 2 で `-r X` へ誘導する（did-you-mean ガード）。レーンとスコープは `furrow board` でエラーを起こさず一覧できる。明示 `-r` が draft を隠したときは stderr に `N draft(s) hidden — furrow ls --drafts` を 1 行出す。
 - **破壊操作ガード** — `archive` は `--yes` がない限りプレビュー（dry-run）に留まる。

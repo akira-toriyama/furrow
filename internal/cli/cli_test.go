@@ -363,6 +363,66 @@ func TestCLIBoard(t *testing.T) {
 	}
 }
 
+// TestCLINDJSONEverywhere pins t-f5xk 案A: --ndjson is honored wherever --json
+// is, emitting the SAME payload compact (one value per line) instead of the old
+// silent degrade to human prose at exit 0. Covers a mutation, add, version, the
+// apply report, and the lint problem stream.
+func TestCLINDJSONEverywhere(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "task one", "-s", "ready")
+
+	// compactLine asserts out's first line parses as JSON and carries no 2-space
+	// indent (i.e. it is the compact form, not the pretty --json form).
+	compactLine := func(label, out string) {
+		t.Helper()
+		trimmed := strings.TrimRight(out, "\n")
+		if trimmed == "" {
+			t.Fatalf("%s --ndjson emitted nothing", label)
+		}
+		if strings.Contains(trimmed, "\n  ") {
+			t.Errorf("%s --ndjson should be compact (no indent):\n%s", label, out)
+		}
+		first := strings.SplitN(trimmed, "\n", 2)[0]
+		var v any
+		if err := json.Unmarshal([]byte(first), &v); err != nil {
+			t.Errorf("%s --ndjson first line is not JSON: %v\n%s", label, err, out)
+		}
+	}
+
+	// mutation: done --ndjson -> {before,after,changed} on one compact line.
+	out, code := run(t, "--ndjson", "done", id)
+	if code != 0 {
+		t.Fatalf("done --ndjson exit %d:\n%s", code, out)
+	}
+	compactLine("done", out)
+	if !strings.Contains(out, `"changed":`) || !strings.Contains(out, `"before":`) {
+		t.Errorf("done --ndjson should carry before/changed:\n%s", out)
+	}
+
+	// add --ndjson -> the created task as one compact line.
+	out, _ = run(t, "--ndjson", "add", "task two", "-s", "ready")
+	compactLine("add", out)
+
+	// version --ndjson -> the version block, one compact line.
+	out, _ = run(t, "--ndjson", "version")
+	compactLine("version", out)
+
+	// apply --ndjson -> the {on, ref, outcomes} report on one compact line.
+	out, _ = runIn(t, "SetStatus-task: "+id+" done\n", "--ndjson", "apply", "--on", "merge")
+	compactLine("apply", out)
+	if !strings.Contains(out, `"outcomes":`) {
+		t.Errorf("apply --ndjson should carry the outcomes array:\n%s", out)
+	}
+
+	// lint --ndjson -> one problem per compact line (induce a dangling [[id]]).
+	addTask(t, "haslink", "--body", "see [[t-zzzzz]]")
+	out, _ = run(t, "--ndjson", "lint")
+	compactLine("lint", out)
+	if !strings.Contains(out, "t-zzzzz") {
+		t.Errorf("lint --ndjson should stream the dangling-link problem:\n%s", out)
+	}
+}
+
 // TestCLICheckAddRepeatable pins that `check --add A --add B` appends BOTH items
 // (was: cobra StringVar kept only the last), and that a comma inside an item is
 // preserved verbatim — i.e. the flag is StringArrayVar, not StringSliceVar which

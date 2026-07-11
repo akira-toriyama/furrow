@@ -57,6 +57,26 @@ func printNDJSON(tasks []core.Task) {
 	}
 }
 
+// jsonMode reports whether machine output was requested in either form. It is
+// the single predicate a command gates on so --ndjson is honored everywhere
+// --json is — not just the list commands. (--ndjson wins when both are set;
+// emitObject picks the exact shape.)
+func jsonMode() bool { return flagJSON || flagNDJSON }
+
+// emitObject writes a single value as the active machine format: indented under
+// --json, compact one-line under --ndjson. It is the single-object twin of
+// emitTasks — for commands whose machine payload is one object (a mutation's
+// {before,after,changed}, an attach/init/edit result, the apply report, the
+// version block). Callers gate on jsonMode() first; a list-shaped command uses
+// emitTasks / a per-line loop instead.
+func emitObject(v any) {
+	if flagNDJSON {
+		printNDJSONValue(v)
+		return
+	}
+	printJSON(v)
+}
+
 // isTTY reports whether stdout is a terminal — used to pick table vs plain
 // output and to gate destructive ops in non-interactive contexts.
 func isTTY() bool {
@@ -360,21 +380,22 @@ func printTaskDetailWithBacklinks(t *core.Task, body string, mentions []core.Tas
 }
 
 // printOK prints a short confirmation line for a mutation (human mode) or the
-// task JSON (--json mode).
+// task as one JSON value (--json indented / --ndjson compact one-line).
 func printOK(verb string, t *core.Task) {
-	if flagJSON {
-		printJSON(t)
+	if jsonMode() {
+		emitObject(t)
 		return
 	}
 	fmt.Fprintf(out, "%s %s  %s\n", verb, t.ID, t.Title)
 }
 
-// printMutation reports a single-task edit. In --json mode it emits
+// printMutation reports a single-task edit. In machine mode it emits
 // {before, after, changed} so an agent sees the effect of a mutation inline,
-// without a follow-up `show`. In human mode it prints the short verb line.
+// without a follow-up `show` — indented under --json, compact one-line under
+// --ndjson. In human mode it prints the short verb line.
 func printMutation(verb string, before, after *core.Task) {
-	if flagJSON {
-		printJSON(map[string]any{
+	if jsonMode() {
+		emitObject(map[string]any{
 			"before":  before,
 			"after":   after,
 			"changed": changedFields(before, after),

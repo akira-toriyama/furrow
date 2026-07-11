@@ -27,12 +27,19 @@ func newLintCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flagJSON {
+			switch {
+			case flagNDJSON:
+				// A problem stream is list-shaped, so --ndjson is one problem per
+				// compact line (an empty store simply emits nothing).
+				for _, p := range ps {
+					printNDJSONValue(p)
+				}
+			case flagJSON:
 				if ps == nil {
 					ps = []core.Problem{}
 				}
 				printJSON(ps)
-			} else {
+			default:
 				if len(ps) == 0 {
 					fmt.Fprintln(out, "ok — no problems")
 				}

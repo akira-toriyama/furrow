@@ -8,14 +8,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// emitMutation runs a single-task edit on id and reports it. In --json mode it
-// snapshots the task before the change and prints {before, after, changed}, so
-// an agent sees the effect inline without a follow-up `show`. The pre-fetch is
-// skipped (and harmless) outside --json; the mutate closure is the authoritative
-// source of any not-found / validation error.
+// emitMutation runs a single-task edit on id and reports it. In machine mode
+// (--json or --ndjson) it snapshots the task before the change and prints
+// {before, after, changed}, so an agent sees the effect inline without a
+// follow-up `show`. The pre-fetch is skipped (and harmless) in human mode; the
+// mutate closure is the authoritative source of any not-found / validation error.
 func emitMutation(a *app.App, verb, id string, mutate func() (*core.Task, error)) error {
 	var before *core.Task
-	if flagJSON {
+	if jsonMode() {
 		if b, _, err := a.Get(id); err == nil {
 			before = b
 		}

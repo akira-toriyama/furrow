@@ -35,8 +35,8 @@ func newAttachCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flagJSON {
-				printJSON(map[string]string{"id": res.ID, "asset": res.Path, "ref": res.Ref, "line": res.Line})
+			if jsonMode() {
+				emitObject(map[string]string{"id": res.ID, "asset": res.Path, "ref": res.Ref, "line": res.Line})
 				return nil
 			}
 			fmt.Fprintf(out, "attached %s  %s\n", res.ID, res.Path)
