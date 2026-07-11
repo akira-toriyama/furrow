@@ -18,7 +18,10 @@ the user-level config. When you work with any furrow store:
 - Canonical commands: `furrow add|ls|show|next|revisit|search|board|edit|attach|done|move|set|reorder|retitle|value|effort|check|dep|label|repo|sync|apply|archive|lint|config|init`.
   `set <id>` combines lane/value/effort/labels in one write (the triage
   shortcut for move+value+effort+label); `dep <id> <dep-id>...` is variadic
-  (add/remove several in one write); `archive <id>...` retires specific done
+  (add/remove several in one write), and `dep <id> --list` is the read-only
+  reverse-deps view — both directions (`depends_on` / `blocks`) resolved to
+  id+title+lane, one `--json` object — so "what waits on this?" is a command,
+  not a full-board dump; `archive <id>...` retires specific done
   tasks by id (vs the age sweep).
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the

@@ -157,7 +157,7 @@ furrow done t-0001
 | `effort <id> <1-5>` | 粗い effort（手間）見積もりを設定。`value` 同様 1..5 に丸め＋`clamped` signal。`--clear` で未設定に戻す |
 | `set <id>` | routine triage（lane・value・effort・label）を **1 回の write** でまとめて適用（`move`+`value`+`effort`+`label` の 4 コマンドを 1 つに）。最低 1 変更が必要。未知レーンは `move` 同様 exit 2＋`candidates`。`[labels].required` 下で最後のラベルを剥がす set は拒否 |
 | `check <id> [index]` | チェックリストを編集: 0 始まり index の項目を done にする（トグルでなく冪等 set。`--off` で外す）・`--add` で追加（反復可・verbatim）・`--rm` で index の項目を削除・`--reword <text>` で index の項目テキストを差し替え。mode フラグは排他、範囲外 index は exit 2 |
-| `dep <id> <dep-id>...` | 依存を 1 つ以上まとめて追加（id がそれらを待つ）。`--rm` で削除。循環防止・冪等・all-or-nothing（不正 dep-id は部分適用せず abort） |
+| `dep <id> [<dep-id>...]` | 依存を 1 つ以上まとめて追加（id がそれらを待つ）。`--rm` で削除。循環防止・冪等・all-or-nothing（不正 dep-id は部分適用せず abort）。`--list` は mutate せず `<id>` の依存近傍を**両方向**で読む —— `depends_on`（待っている先＝自分の deps）と `blocks`（逆辺＝このタスクを待っている側。「これを終わらせたら何が解ける？」ビュー）を id+title+lane に解決。`--json`/`--ndjson` は両配列を持つ 1 オブジェクトを出力（空は `[]`）。dangling dep は id だけに解決（lint が指摘）。`--list` は id のみで `--rm` とは併用不可 |
 | `label <id>` | ラベルを追加／削除（`--add`・`--remove`、いずれも反復可・併用可）。冪等 |
 | `repo <id>` | repo（`owner/repo`）を追加／削除（`--add`・`--rm`、反復可・併用可）。値は完全な `owner/repo` か、ボード既知の repo に一意に解決する短名のみ（それ以外は exit 2・`candidates` 付き）。冪等。repos が空のタスクは draft |
 | `apply` | PR/コミット本文から `SetStatus-task: <body-link> [<lane>]` ディレクティブを解析して適用（stdin または `--body-file`）。status 自動更新の CI フック。`--on open` は in-progress へ寄せ、`--on merge` は lane を適用。検証は非ブロッキング |
