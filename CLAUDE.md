@@ -190,7 +190,11 @@ unknown keys and out-of-range values fall back to defaults with a warning that
 `furrow lint` surfaces. Read it through `internal/config`. Two additive,
 off-by-default switches: `[next].lanes` (which lanes `furrow next` shows;
 default ready+in-progress) and `[labels].required` (a label-less task errors on
-`add` and in `lint`; default false). The user-level central-board config
+`add` and in `lint`; default false). A board `[alias]` table (`name = "command
+string"`) lets `furrow <name> …` expand git-style before dispatch (the rest of
+argv appends); a builtin always wins (a shadowing alias is inert and `lint`
+warns `alias-shadow`), and it lives in the **board** config so it syncs. The
+user-level central-board config
 (`~/.config/furrow/config.toml`) scopes each `[[board]]` by **repo**:
 `repo = "auto" | "" | "owner/repo"` ("auto" derives owner/repo from the
 checkout's git origin, worktree-aware, ghq-path fallback — `internal/app`'s

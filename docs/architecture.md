@@ -521,9 +521,21 @@ Sections and their defaults:
 | `[archive]` | `older_than_days` | `30` |
 | `[revisit]` | `stale_days` | `30` (`0` disables the stale signal) |
 | `[ui]` | `theme` | `auto` (one of `auto`/`dark`/`light`) |
+| `[alias]` | `<name> = "<command string>"` | none (a `name -> command` map) |
 
 `status` is just a lane from `[lanes].order`; that list is simultaneously the
 status enum and the top-to-bottom sort rank.
+
+`[alias]` names frequent command strings. `cli.expandAlias` runs before cobra
+dispatch: when the first argv token is not a flag and not a builtin command, it
+looks it up in the board's `[alias]` table (via `app.DiscoverAliases`, a
+config-only read — no store load) and, on a hit, replaces the token with the
+alias's whitespace-split tokens and appends the rest of argv (git-style). A
+builtin always wins (the lookup is builtin-first), so a shadowing alias is inert
+and `cli.aliasShadowProblems` surfaces it as a `lint` warning (`alias-shadow`);
+the `internal/config` parse drops a blank-valued alias with a clamp warning.
+Command knowledge stays in `internal/cli` (the layer that owns the command set),
+so this needs no new port.
 
 ### User-level config: central boards
 

@@ -136,6 +136,23 @@ func Open(startDir string) (*App, error) {
 	return a, nil
 }
 
+// DiscoverAliases returns the board config's [alias] table for the store
+// enclosing startDir, or nil (never an error) when there is no store or no
+// aliases — alias expansion must never break furrow where a real command would
+// have worked. It reads only the config file (no store/task load), so it is
+// cheap enough to run on every invocation before command dispatch.
+func DiscoverAliases(startDir string) map[string]string {
+	res, err := discover(startDir)
+	if err != nil {
+		return nil
+	}
+	cfg, _, err := config.Load(filepath.Join(res.Dir, "config.toml"))
+	if err != nil {
+		return nil
+	}
+	return cfg.Alias
+}
+
 func openAt(dir string) (*App, error) {
 	cfg, warn, err := config.Load(filepath.Join(dir, "config.toml"))
 	if err != nil {

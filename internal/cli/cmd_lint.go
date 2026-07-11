@@ -27,6 +27,9 @@ func newLintCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// A board [alias] that shadows a builtin is inert; surface it here (the
+			// CLI owns the command set, so this warning can't live in app.Lint).
+			ps = append(ps, aliasShadowProblems(a.Cfg.Alias)...)
 			switch {
 			case flagNDJSON:
 				// A problem stream is list-shaped, so --ndjson is one problem per

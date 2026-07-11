@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -41,6 +42,9 @@ type raw struct {
 	Revisit struct {
 		StaleDays *int `toml:"stale_days"`
 	} `toml:"revisit"`
+	// Alias is the board-level [alias] table: name -> a command string that
+	// `furrow <name> …` expands to, git-style. A map decodes any [alias] key.
+	Alias map[string]string `toml:"alias"`
 }
 
 // Load reads config.toml at path and returns the effective config plus any
@@ -167,6 +171,26 @@ func fromRaw(r raw) (*Config, []string, error) {
 		} else {
 			warn = append(warn, fmt.Sprintf("ui.theme %q is not auto|dark|light; using %q", r.UI.Theme, DefaultUITheme))
 		}
+	}
+
+	// [alias]: keep only entries with a non-blank name AND a non-blank command
+	// (clamp-don't-reject — a half-written alias never breaks furrow, just drops
+	// with a warning `furrow lint` surfaces). Builtin-shadow refusal is the CLI's
+	// job (it owns the command set): a shadowing alias is inert because expansion
+	// checks builtins first, and lint warns about it there.
+	for name, cmd := range r.Alias {
+		if strings.TrimSpace(name) == "" {
+			warn = append(warn, "alias with an empty name; ignored")
+			continue
+		}
+		if strings.TrimSpace(cmd) == "" {
+			warn = append(warn, fmt.Sprintf("alias %q has an empty command; ignored", name))
+			continue
+		}
+		if c.Alias == nil {
+			c.Alias = map[string]string{}
+		}
+		c.Alias[name] = cmd
 	}
 
 	c.compile()
