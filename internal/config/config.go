@@ -42,6 +42,9 @@ type raw struct {
 	Revisit struct {
 		StaleDays *int `toml:"stale_days"`
 	} `toml:"revisit"`
+	Lint struct {
+		ArchiveDone *int `toml:"archive_done"`
+	} `toml:"lint"`
 	// Alias is the board-level [alias] table: name -> a command string that
 	// `furrow <name> …` expands to, git-style. A map decodes any [alias] key.
 	Alias map[string]string `toml:"alias"`
@@ -170,6 +173,16 @@ func fromRaw(r raw) (*Config, []string, error) {
 			c.UITheme = r.UI.Theme
 		} else {
 			warn = append(warn, fmt.Sprintf("ui.theme %q is not auto|dark|light; using %q", r.UI.Theme, DefaultUITheme))
+		}
+	}
+
+	// [lint].archive_done: a count knob — 0 (default) disables the archive nudge;
+	// a negative value clamps to 0 (disabled) with a warning.
+	if r.Lint.ArchiveDone != nil {
+		if *r.Lint.ArchiveDone < 0 {
+			warn = append(warn, fmt.Sprintf("lint.archive_done %d < 0; disabling (0)", *r.Lint.ArchiveDone))
+		} else {
+			c.LintArchiveDone = *r.Lint.ArchiveDone
 		}
 	}
 

@@ -7,6 +7,28 @@ import (
 	"testing"
 )
 
+// TestLintArchiveDoneParsing pins t-0051: [lint].archive_done parses, defaults to
+// 0 (disabled), and a negative value clamps to 0 with a warning.
+func TestLintArchiveDoneParsing(t *testing.T) {
+	cfg, _, err := Load(writeTOML(t, "[lint]\narchive_done = 25\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LintArchiveDone != 25 {
+		t.Errorf("archive_done = %d, want 25", cfg.LintArchiveDone)
+	}
+	if Default().LintArchiveDone != 0 {
+		t.Errorf("default archive_done should be 0 (disabled), got %d", Default().LintArchiveDone)
+	}
+	cfg, warn, _ := Load(writeTOML(t, "[lint]\narchive_done = -3\n"))
+	if cfg.LintArchiveDone != 0 {
+		t.Errorf("a negative archive_done should clamp to 0, got %d", cfg.LintArchiveDone)
+	}
+	if len(warn) == 0 {
+		t.Error("a negative archive_done should warn")
+	}
+}
+
 // TestAliasParsing pins t-awsb: the board [alias] table parses, and a
 // blank-value entry drops with a clamp warning (clamp-don't-reject).
 func TestAliasParsing(t *testing.T) {
