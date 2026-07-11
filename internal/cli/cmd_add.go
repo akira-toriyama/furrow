@@ -74,10 +74,7 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flagJSON {
-				printJSON(t)
-				return nil
-			}
+			// printOK renders JSON (--json / --ndjson) or the human line.
 			printOK("added", t)
 			return nil
 		},
@@ -140,8 +137,8 @@ func newEditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flagJSON {
-				printJSON(map[string]string{"path": path})
+			if jsonMode() {
+				emitObject(map[string]string{"path": path})
 				return nil
 			}
 			// Non-interactive: emit the path; the caller (or Claude) edits it.

@@ -48,14 +48,14 @@ func newArchiveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flagJSON {
+			if jsonMode() {
 				if moved == nil {
 					moved = []core.Task{} // array shape, never null
 				}
 				if repos == nil {
 					repos = []string{} // array shape, never null
 				}
-				printJSON(map[string]any{"dry_run": dry, "older_than_days": days, "repos": repos, "tasks": moved})
+				emitObject(map[string]any{"dry_run": dry, "older_than_days": days, "repos": repos, "tasks": moved})
 				return nil
 			}
 			verb := "archived"

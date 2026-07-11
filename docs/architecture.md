@@ -410,9 +410,17 @@ except where noted:
 ### Output, errors, and exit codes
 
 - `--json` (persistent flag) emits JSON to **stdout only**; logs and errors go to
-  stderr (so a caller piping stdout to `jq` is unaffected). `--ndjson` emits one
-  compact task object per line. CLI JSON uses the same `SetEscapeHTML(false)` /
-  2-space encoding as the shards.
+  stderr (so a caller piping stdout to `jq` is unaffected). Both `--json` and
+  `--ndjson` are honored **wherever furrow emits JSON**, not just the read/list
+  commands: `jsonMode()` (`internal/cli/output.go`) is the single predicate every
+  command gates on, and `emitObject` prints one value either indented (`--json`)
+  or compact-one-line (`--ndjson`). A list command streams one record per line
+  under `--ndjson`; a single-object command (a mutation's
+  `{before,after,changed}`, `board`, `attach`, `init`, `version`, the `apply`
+  report) prints one compact line; `lint` streams one problem per line. This
+  closes the old gap where a non-read command silently degraded to human prose at
+  exit 0 under `--ndjson`. CLI JSON uses the same `SetEscapeHTML(false)` /
+  2-space (indented) encoding as the shards.
 - Read filters: `--status`/`-s`, `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`,
   `--drafts` on `ls`; `-l`/`-r`/`-n` on `next` and `revisit` (plus
   `--stale-days` on `revisit`). `-r` is the scope control (an

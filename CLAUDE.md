@@ -32,10 +32,15 @@ the user-level config. When you work with any furrow store:
   unions the scope repo into `repos` (`--draft` suppresses exactly that); `ls
   --drafts` lists the repo-less tasks; `furrow repo <id> --add|--rm`
   attaches/detaches later.
-- `--json` is available on read commands; **JSON goes to stdout only** (logs and
-  errors go to stderr). Use `--ndjson` for one task per line and
-  `--status/-s`, `--label/-l`, `--repo/-r`, `--limit/-n` to filter — so you
-  rarely need jq.
+- `--json` and `--ndjson` are honored **wherever furrow emits JSON** — reads,
+  mutations, and reports alike (not just the list commands); **JSON goes to
+  stdout only** (logs and errors go to stderr). `--ndjson` is the same payload
+  compact, one value per line: a list command streams one record per line, a
+  single-object command (a mutation's `{before,after,changed}`, `board`,
+  `attach`, `init`, `version`, the `apply` report) prints one compact line, and
+  `lint` streams one problem per line — so a line-oriented reader never gets a
+  silent human-prose degrade. Filter reads with `--status/-s`, `--label/-l`,
+  `--repo/-r`, `--limit/-n` — so you rarely need jq.
   Mutations (`done|move|reorder|value|effort|check|dep|label|repo`) with
   `--json` emit
   `{before, after, changed}`; `add --stdin` bulk-creates one task per stdin line;

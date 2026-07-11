@@ -24,8 +24,8 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flagJSON {
-				printJSON(map[string]string{"dir": a.Dir})
+			if jsonMode() {
+				emitObject(map[string]string{"dir": a.Dir})
 				return nil
 			}
 			fmt.Fprintf(out, "initialized furrow store at %s\n", a.Dir)

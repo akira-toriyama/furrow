@@ -81,8 +81,8 @@ func newRootCmd() *cobra.Command {
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: false},
 	}
 	root.SetVersionTemplate("{{.Version}}\n")
-	root.PersistentFlags().BoolVar(&flagJSON, "json", false, "output JSON to stdout (read commands)")
-	root.PersistentFlags().BoolVar(&flagNDJSON, "ndjson", false, "output newline-delimited JSON, one task per line (list commands)")
+	root.PersistentFlags().BoolVar(&flagJSON, "json", false, "output JSON to stdout (reads, mutations, and reports)")
+	root.PersistentFlags().BoolVar(&flagNDJSON, "ndjson", false, "compact JSON, one value per line — honored wherever --json is")
 
 	root.AddCommand(
 		newInitCmd(),

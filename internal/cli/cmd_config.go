@@ -42,8 +42,8 @@ func newConfigPathCmd() *cobra.Command {
 			for _, w := range app.GlobalConfigWarnings() {
 				fmt.Fprintln(errOut, w)
 			}
-			if flagJSON {
-				printJSON(map[string]string{"path": p})
+			if jsonMode() {
+				emitObject(map[string]string{"path": p})
 				return nil
 			}
 			fmt.Fprintln(out, p)
@@ -74,8 +74,8 @@ func newConfigInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flagJSON {
-				printJSON(map[string]any{"path": p, "derived": derived})
+			if jsonMode() {
+				emitObject(map[string]any{"path": p, "derived": derived})
 				return nil
 			}
 			if derived {
