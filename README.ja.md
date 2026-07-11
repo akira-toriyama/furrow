@@ -140,7 +140,7 @@ furrow done t-0001
 | コマンド | 説明 |
 |---|---|
 | `init` | カレントディレクトリに `.furrow` ストアを作る（`config.toml` + `meta.json` + 空の `tasks/` + `bodies/`） |
-| `add <title>...` | タスクを追加（`--stdin` で標準入力から1行1タスクを一括作成）。id を自動採番し `bodies/<id>.md` を作る |
+| `add <title>...` | タスクを追加（`--stdin` で標準入力から1行1タスクを一括作成）。id を自動採番し `bodies/<id>.md` を作る。`--check`（反復可）で checklist 項目を seed（body prose だけでは shard checklist に入らない）。範囲外 `--value`/`--effort` は clamp＋stderr note。`-` 始まり title は `--` 区切りが必要（エラーが案内） |
 | `ls`（別名 `list`） | タスクを正準順で一覧。`--drafts` で repo 未付与のタスク（draft）だけを一覧（ボードのスコープは無視） |
 | `show <id>...` | タスク（複数可）を markdown 本文付きで 1 回の読みで表示（入力順。複数 id は `--json` で配列／human は `---` 区切り、1 id は従来どおり単一オブジェクト。`--ndjson` は個数によらず 1 行 1 タスク）。`--no-body` で本文（`body_text`）を省く＝agent 向けの軽量メタデータ読み。一部 id が見つからなくても見つかった分は出力し、exit 1 のエラーに `details.missing` が載る。`--backlinks` を付けると、本文でこのタスクを `[[id]]` で参照している他タスクも列挙する（「Mentioned in」節／`--json` では `mentioned_by` 配列。GitHub の "mentioned in" のローカル・レート制限なし版） |
 | `next` | 着手可能なタスク（設定 `[next].lanes` — 既定 `ready` + `in-progress`、intake レーンは出ない — にあり、依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
@@ -152,10 +152,10 @@ furrow done t-0001
 | `move <id> <lane>` | 任意のレーンへ移動 |
 | `reorder <id> <priority>` | priority（疎な整数）を設定 |
 | `retitle <id> <title...>` | タイトルを変更。シャードの title **と** body 先頭の `# ` 見出しを両方更新して食い違わせない（末尾の引数は空白で連結するのでクォート不要） |
-| `value <id> <1-5>` | 粗い value（重要度）見積もりを設定（範囲外は 1..5 に丸め）。`--clear` で未設定に戻す |
-| `effort <id> <1-5>` | 粗い effort（手間）見積もりを設定（1..5 に丸め）。`--clear` で未設定に戻す |
+| `value <id> <1-5>` | 粗い value（重要度）見積もりを設定。範囲外は 1..5 に丸め、**さらに signal**（`--json` の mutation 封筒に `clamped {requested, stored}` キー＋stderr note＝明示引数を黙って丸めない）。`--clear` で未設定に戻す |
+| `effort <id> <1-5>` | 粗い effort（手間）見積もりを設定。`value` 同様 1..5 に丸め＋`clamped` signal。`--clear` で未設定に戻す |
 | `set <id>` | routine triage（lane・value・effort・label）を **1 回の write** でまとめて適用（`move`+`value`+`effort`+`label` の 4 コマンドを 1 つに）。最低 1 変更が必要。未知レーンは `move` 同様 exit 2＋`candidates`。`[labels].required` 下で最後のラベルを剥がす set は拒否 |
-| `check <id> [index]` | チェックリスト項目を 0 始まり index で done にする（トグルでなく冪等な set。`--off` で外す・`--add` で追加＝反復可、テキストはカンマ含めそのまま） |
+| `check <id> [index]` | チェックリストを編集: 0 始まり index の項目を done にする（トグルでなく冪等 set。`--off` で外す）・`--add` で追加（反復可・verbatim）・`--rm` で index の項目を削除・`--reword <text>` で index の項目テキストを差し替え。mode フラグは排他、範囲外 index は exit 2 |
 | `dep <id> <dep-id>...` | 依存を 1 つ以上まとめて追加（id がそれらを待つ）。`--rm` で削除。循環防止・冪等・all-or-nothing（不正 dep-id は部分適用せず abort） |
 | `label <id>` | ラベルを追加／削除（`--add`・`--remove`、いずれも反復可・併用可）。冪等 |
 | `repo <id>` | repo（`owner/repo`）を追加／削除（`--add`・`--rm`、反復可・併用可）。値は完全な `owner/repo` か、ボード既知の repo に一意に解決する短名のみ（それ以外は exit 2・`candidates` 付き）。冪等。repos が空のタスクは draft |

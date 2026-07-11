@@ -560,6 +560,78 @@ func TestCLIAddDashTitleHint(t *testing.T) {
 	}
 }
 
+// TestCLIChecklistModes pins t-abj3 (c-extra): `add --check` seeds items, and
+// `check --reword`/`--rm` edit them by index.
+func TestCLIChecklistModes(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "steps", "--check", "one", "--check", "two")
+
+	out, _ := run(t, "--json", "show", id)
+	if !strings.Contains(out, "one") || !strings.Contains(out, "two") {
+		t.Fatalf("add --check should seed items:\n%s", out)
+	}
+
+	if _, code := run(t, "check", id, "0", "--reword", "ONE"); code != 0 {
+		t.Fatalf("check --reword exit %d", code)
+	}
+	if _, code := run(t, "check", id, "1", "--rm"); code != 0 {
+		t.Fatalf("check --rm exit %d", code)
+	}
+	out, _ = run(t, "--json", "show", id)
+	var task struct {
+		Checklist []struct {
+			Text string `json:"text"`
+		} `json:"checklist"`
+	}
+	if err := json.Unmarshal([]byte(out), &task); err != nil {
+		t.Fatalf("parse show --json: %v\n%s", err, out)
+	}
+	if len(task.Checklist) != 1 || task.Checklist[0].Text != "ONE" {
+		t.Errorf("after reword+rm want [ONE], got %+v", task.Checklist)
+	}
+	// mode flags are mutually exclusive.
+	if _, code := run(t, "check", id, "0", "--rm", "--reword", "x"); code != int(core.CodeValidation) {
+		t.Errorf("--rm + --reword should be exit 2, got %d", code)
+	}
+}
+
+// TestCLIClampSignal pins t-abj3 (d): an out-of-range value/effort is clamped to
+// 1..5 AND signaled — a `clamped` key in the --json envelope; an in-range value
+// carries no such key.
+func TestCLIClampSignal(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "x")
+
+	out, code := run(t, "--json", "value", id, "9")
+	if code != 0 {
+		t.Fatalf("value exit %d:\n%s", code, out)
+	}
+	var res struct {
+		After struct {
+			Value int `json:"value"`
+		} `json:"after"`
+		Clamped map[string]struct {
+			Requested int `json:"requested"`
+			Stored    int `json:"stored"`
+		} `json:"clamped"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("parse value --json: %v\n%s", err, out)
+	}
+	if res.After.Value != 5 {
+		t.Errorf("value 9 should clamp to 5, got %d", res.After.Value)
+	}
+	if res.Clamped["value"].Requested != 9 || res.Clamped["value"].Stored != 5 {
+		t.Errorf("clamped signal missing/wrong: %+v", res.Clamped)
+	}
+
+	// an in-range value emits no clamped key.
+	out, _ = run(t, "--json", "value", id, "3")
+	if strings.Contains(out, "clamped") {
+		t.Errorf("in-range value must not emit a clamped key:\n%s", out)
+	}
+}
+
 // TestCLICheckAddRepeatable pins that `check --add A --add B` appends BOTH items
 // (was: cobra StringVar kept only the last), and that a comma inside an item is
 // preserved verbatim — i.e. the flag is StringArrayVar, not StringSliceVar which

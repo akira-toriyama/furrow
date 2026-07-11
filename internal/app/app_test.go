@@ -651,6 +651,39 @@ func titlesOf(ts []core.Task) []string {
 	return out
 }
 
+// TestChecklistEditSurface pins t-abj3 (c-extra): add --check seeds items, and
+// RewordCheck/RemoveCheck edit them (out-of-range / empty are validation errors).
+func TestChecklistEditSurface(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("has steps", AddOpts{Checklist: []string{"one", "", "two", "three"}})
+	if len(tk.Checklist) != 3 {
+		t.Fatalf("add --check should seed 3 items (blank dropped): %+v", tk.Checklist)
+	}
+
+	got, err := a.RewordCheck(tk.ID, 1, "TWO")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Checklist[1].Text != "TWO" {
+		t.Errorf("reword should replace item 1's text: %+v", got.Checklist)
+	}
+
+	got, err = a.RemoveCheck(tk.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Checklist) != 2 || got.Checklist[0].Text != "TWO" {
+		t.Errorf("remove should delete item 0: %+v", got.Checklist)
+	}
+
+	if _, err := a.RemoveCheck(tk.ID, 9); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("out-of-range remove should be a validation error, got %v", err)
+	}
+	if _, err := a.RewordCheck(tk.ID, 0, "  "); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("empty reword should be a validation error, got %v", err)
+	}
+}
+
 func TestCheckTogglesChecklist(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("with steps", AddOpts{})

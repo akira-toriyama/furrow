@@ -25,6 +25,7 @@ func newAddCmd() *cobra.Command {
 		deps     []string
 		refs     []string
 		body     string
+		checks   []string
 		stdin    bool
 	)
 	cmd := &cobra.Command{
@@ -46,7 +47,7 @@ func newAddCmd() *cobra.Command {
 			}
 			opts := app.AddOpts{
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
-				Parent: parent, Deps: deps, Refs: refs, Body: body,
+				Parent: parent, Deps: deps, Refs: refs, Body: body, Checklist: checks,
 			}
 			if cmd.Flags().Changed("priority") {
 				p := priority
@@ -74,6 +75,11 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Signal a clamped estimate on stderr (an explicit --value/--effort
+			// silently rounded to 1..5), matching value/effort/set. stdout stays
+			// the created task.
+			warnClamp("value", opts.Value, t.Value)
+			warnClamp("effort", opts.Effort, t.Effort)
 			// printOK renders JSON (--json / --ndjson) or the human line.
 			printOK("added", t)
 			return nil
@@ -90,6 +96,7 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
 	cmd.Flags().StringSliceVar(&refs, "ref", nil, "reference (file:line or URL, repeatable)")
 	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (default: a heading from the title)")
+	cmd.Flags().StringArrayVar(&checks, "check", nil, "seed an unchecked checklist item (repeatable; text verbatim)")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "read one task title per line from stdin; create all in one write")
 	// A title that begins with '-' (e.g. `add --ndjson-ish title`) is parsed as a
 	// flag → "unknown flag". Steer the caller to the `--` separator instead of a

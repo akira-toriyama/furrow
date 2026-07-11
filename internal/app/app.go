@@ -449,6 +449,12 @@ type AddOpts struct {
 	Deps   []string
 	Refs   []string
 	Body   string // initial body markdown; "" seeds a heading from the title
+	// Checklist seeds unchecked checklist items at creation (repeatable --check).
+	// A plain `add --body '- [ ] x'` does NOT populate the shard's checklist —
+	// the body is prose — so this makes a seed-time checklist first-class. Blank
+	// entries are dropped; text is taken verbatim (commas included), like
+	// `check --add`.
+	Checklist []string
 	// Draft marks the task as deliberately repo-less (repos == [], the
 	// issue-draft analogue). It conflicts with explicit Repos, and it
 	// suppresses exactly the board-scope repo union (see withBoardRepo) — the
@@ -521,11 +527,19 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	if status == a.Cfg.DoneLane {
 		closed = &now
 	}
+	var checklist []core.ChecklistItem
+	for _, text := range o.Checklist {
+		if strings.TrimSpace(text) == "" {
+			continue // drop blank --check values, like check --add
+		}
+		checklist = append(checklist, core.ChecklistItem{Text: text})
+	}
 	t := core.Task{
 		ID: id, Title: title, Status: status, Priority: prio,
 		Value: cloneIntp(o.Value), Effort: cloneIntp(o.Effort),
 		Labels: o.Labels, Repos: repos, Parent: o.Parent, Deps: o.Deps, Refs: o.Refs,
-		Created: now, Updated: now, Closed: closed, Body: core.BodyPath(id),
+		Checklist: checklist,
+		Created:   now, Updated: now, Closed: closed, Body: core.BodyPath(id),
 	}
 	idx.Add(t)
 
@@ -956,6 +970,48 @@ func (a *App) Check(id string, item int, done bool) (*core.Task, error) {
 		return nil, core.Validationf(id, "checklist index %d out of range (have %d item(s))", item, len(t.Checklist))
 	}
 	return a.mutate(id, func(t *core.Task) { t.Checklist[item].Done = done })
+}
+
+// RemoveCheck deletes the checklist item at the zero-based index. An
+// out-of-range index is a validation error (never a silent no-op), mirroring
+// Check — so an agent's exit code and envelope honor the contract.
+func (a *App) RemoveCheck(id string, item int) (*core.Task, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	if item < 0 || item >= len(t.Checklist) {
+		return nil, core.Validationf(id, "checklist index %d out of range (have %d item(s))", item, len(t.Checklist))
+	}
+	return a.mutate(id, func(t *core.Task) {
+		t.Checklist = append(t.Checklist[:item], t.Checklist[item+1:]...)
+	})
+}
+
+// RewordCheck replaces the text of the checklist item at the zero-based index,
+// preserving its done state. Out-of-range index and empty text are validation
+// errors.
+func (a *App) RewordCheck(id string, item int, text string) (*core.Task, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, core.Validationf(id, "checklist item text must not be empty")
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	if item < 0 || item >= len(t.Checklist) {
+		return nil, core.Validationf(id, "checklist index %d out of range (have %d item(s))", item, len(t.Checklist))
+	}
+	return a.mutate(id, func(t *core.Task) { t.Checklist[item].Text = text })
 }
 
 // AddDep makes `id` depend on `dep` (id waits on dep). Both ids must exist, a

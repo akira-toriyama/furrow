@@ -394,17 +394,51 @@ func printOK(verb string, t *core.Task) {
 // printMutation reports a single-task edit. In machine mode it emits
 // {before, after, changed} so an agent sees the effect of a mutation inline,
 // without a follow-up `show` — indented under --json, compact one-line under
-// --ndjson. In human mode it prints the short verb line.
-func printMutation(verb string, before, after *core.Task) {
+// --ndjson. Any `extra` keys (e.g. a `clamped` signal) are merged into that
+// envelope. In human mode it prints the short verb line.
+func printMutation(verb string, before, after *core.Task, extra map[string]any) {
 	if jsonMode() {
-		emitObject(map[string]any{
+		m := map[string]any{
 			"before":  before,
 			"after":   after,
 			"changed": changedFields(before, after),
-		})
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		emitObject(m)
 		return
 	}
 	fmt.Fprintf(out, "%s %s  %s\n", verb, after.ID, after.Title)
+}
+
+// warnClamp writes a stderr note when an explicit 1..5 estimate was silently
+// rounded by the marshaller's clamp (nil requested / in-range = no-op). An
+// explicit CLI arg deserves a signal — clamp-don't-reject is a config-file
+// policy, not for a typed command argument (t-abj3). stdout stays pure.
+func warnClamp(field string, requested, stored *int) {
+	if requested == nil || (*requested >= core.EstimateMin && *requested <= core.EstimateMax) {
+		return
+	}
+	s := 0
+	if stored != nil {
+		s = *stored
+	}
+	fmt.Fprintf(errOut, "note: %s %d clamped to %d (valid range %d..%d)\n", field, *requested, s, core.EstimateMin, core.EstimateMax)
+}
+
+// clampEntry returns the {requested, stored} envelope entry when an explicit
+// estimate was clamped, else nil — the machine-readable twin of warnClamp for
+// the mutation's --json/--ndjson `clamped` field.
+func clampEntry(requested, stored *int) map[string]any {
+	if requested == nil || (*requested >= core.EstimateMin && *requested <= core.EstimateMax) {
+		return nil
+	}
+	s := 0
+	if stored != nil {
+		s = *stored
+	}
+	return map[string]any{"requested": *requested, "stored": s}
 }
 
 // changedFields lists the task fields that differ between before and after
