@@ -61,7 +61,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 	}
 
 	now := a.Clock.Now()
-	created := make([]core.Task, 0, len(specs))
+	ids := make([]string, 0, len(specs))
 	for _, s := range specs {
 		lane := s.Status
 		if lane == "" {
@@ -79,6 +79,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		}
 		t := core.Task{
 			ID: id, Title: strings.TrimSpace(s.Title), Status: lane, Priority: prio,
+			Value: cloneIntp(s.Value), Effort: cloneIntp(s.Effort),
 			Labels: s.Labels, Repos: s.Repos, Parent: s.Parent, Deps: s.Deps, Refs: s.Refs,
 			Created: now, Updated: now, Body: core.BodyPath(id),
 		}
@@ -90,10 +91,25 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 			return nil, err
 		}
 		idx.Add(t)
-		created = append(created, t)
+		ids = append(ids, id)
 	}
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
+	}
+	// Return the tasks as a subsequent read emits them. Save canonicalizes the
+	// index only as a side effect of fsstore marshalling each shard in place;
+	// the memstore twin doesn't, so canonicalize here explicitly ([]-not-null
+	// slices, sorted+deduped sets) and return those. This keeps bulk-add's JSON
+	// deep-equal to a following `ls` for any Store — without the pre-Save
+	// structs' `null` slices leaking out, and without a redundant store reload.
+	core.Canonicalize(idx, a.Cfg.Lanes)
+	created := make([]core.Task, 0, len(ids))
+	for _, id := range ids {
+		t, _ := idx.Find(id)
+		if t == nil {
+			return nil, core.Internalf(id, "bulk-added task missing after save")
+		}
+		created = append(created, *t)
 	}
 	return created, nil
 }
