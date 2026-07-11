@@ -66,7 +66,9 @@ reported in `pending_bodies`; then `fetch` + `rebase --autostash @{u}`,
 watcher, no hosted relay, and none is planned: git is already the
 synchronization layer, and per-task shards already make concurrent writes
 merge cleanly. — *A daemon would add an always-on failure mode to a tool whose
-whole premise is "plain files in your repo".*
+whole premise is "plain files in your repo".* To run furrow **on a schedule**
+(periodic archive, a `next` digest), the trigger lives outside furrow in your OS
+scheduler — see [scheduling.md](scheduling.md) for launchd recipes.
 
 ## Storage format
 
