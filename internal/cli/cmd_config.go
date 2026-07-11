@@ -20,7 +20,16 @@ func newConfigCmd() *cobra.Command {
 			"central board backs the repos under your tree. `config init` writes the\n" +
 			"template; `config path` prints where it lives. (Board rules live in each\n" +
 			"board's own .furrow/config.toml, not here.)",
-		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
+		// `furrow config` alone prints help (exit 0); an unknown subcommand
+		// (`config show`) is exit 2 with the known names in candidates, matching
+		// the root's unknown-command contract instead of swallowing it as exit-0
+		// help prose.
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return cmd.Help()
+			}
+			return unknownSubcommandErr(cmd, args[0])
+		},
 	}
 	cmd.AddCommand(newConfigInitCmd(), newConfigPathCmd())
 	return cmd

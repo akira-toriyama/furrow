@@ -47,7 +47,7 @@ func newLsCmd() *cobra.Command {
 			}
 			hintHiddenDrafts(o, a.List)
 			// An empty listing is a valid result (exit 0), not a miss.
-			return emitTasks(tasks, false)
+			return emitTasks(tasks)
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "filter by lane (comma-separated = OR, e.g. -s inbox,backlog)")
@@ -139,7 +139,8 @@ func newNextCmd() *cobra.Command {
 			"([next].lanes in config.toml, default ready + in-progress) and with every\n" +
 			"dependency already in the done lane, in canonical order. Use --repo to\n" +
 			"restrict to a repo (a unique short name works) and --label to AND a tag\n" +
-			"filter on top.",
+			"filter on top. An empty result is healthy (nothing to pick up right now)\n" +
+			"and exits 0 — the same contract as ls/revisit.",
 		Example: "  furrow next               # what to pick up now\n" +
 			"  furrow next -n1 --json    # just the top task, with a reason\n" +
 			"  furrow next -r furrow -l bug",
@@ -162,8 +163,8 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 			hintHiddenDrafts(o, a.Next)
-			// "nothing actionable" is the empty arm of the contract -> exit 1.
-			// --json/--ndjson attach a reason per task (why it is actionable).
+			// "nothing actionable" is a healthy empty result -> exit 0 (same as
+			// ls/revisit). --json/--ndjson attach a reason per task.
 			return emitActionable(tasks)
 		},
 	}

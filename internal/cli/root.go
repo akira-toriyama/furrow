@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sort"
+	"strings"
 	"syscall"
 
 	"github.com/akira-toriyama/furrow/internal/app"
@@ -69,7 +71,12 @@ func newRootCmd() *cobra.Command {
 			"Structured metadata lives in one .furrow/tasks/<id>.json shard per task\n" +
 			"(deterministic, machine-written); long-form prose lives in .furrow/bodies/<id>.md\n" +
 			"(hand-editable). Drive it from the CLI or the TUI (furrow ui). Both you and Claude\n" +
-			"Code can edit the store cleanly.",
+			"Code can edit the store cleanly.\n\n" +
+			"Exit codes: 0 ok (an empty query result is still 0) · 1 a specifically requested\n" +
+			"id was not found (e.g. show <id>) · 2 bad usage / validation (fix the args, do\n" +
+			"not retry) · 3+ internal / IO. On a non-zero exit an\n" +
+			"{\"error\":{code,id,message[,details][,candidates]}} object is written to stderr;\n" +
+			"stdout stays pure data (JSON with --json), so piping stdout to jq is always clean.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// Version holds the full human line (e.g. "furrow v1.2.3 (abc1234, ...)")
@@ -115,6 +122,27 @@ func newRootCmd() *cobra.Command {
 		newUICmd(),
 	)
 	return root
+}
+
+// unknownSubcommandErr is the validation error a parent command returns for an
+// unrecognized subcommand: exit 2 with the known subcommand names in
+// candidates, so an agent branches on the array instead of the exit-0 help
+// prose cobra prints by default (the root's own unknown-command path already
+// exits 2 — this gives a parent like `config` the same contract).
+func unknownSubcommandErr(cmd *cobra.Command, sub string) error {
+	var names []string
+	for _, c := range cmd.Commands() {
+		if c.Hidden || c.Name() == "help" || c.Name() == "completion" {
+			continue
+		}
+		names = append(names, c.Name())
+	}
+	sort.Strings(names)
+	return &core.Error{
+		Code:       core.CodeValidation,
+		Msg:        fmt.Sprintf("unknown subcommand %q for %q (known: %s)", sub, cmd.CommandPath(), strings.Join(names, ", ")),
+		Candidates: names,
+	}
 }
 
 // openApp discovers the .furrow store from the current directory. Any

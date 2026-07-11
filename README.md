@@ -229,10 +229,12 @@ furrow is **non-interactive by default** — it never prompts. Destructive opera
 
 | Code | Meaning |
 |---|---|
-| `0` | OK |
-| `1` | not found / empty result |
+| `0` | OK — **including an empty query result** (`ls`/`next`/`revisit` matching nothing still succeeded) |
+| `1` | a **specifically requested id** was not found (e.g. `show <id>`) — never an empty list |
 | `2` | bad usage / validation |
 | `3+` | internal / I/O error |
+
+The same contract is printed by `furrow --help` (and each affected command's help), so it is discoverable from the binary, not just here.
 
 On a non-zero exit, furrow prints a structured error object to stderr:
 
@@ -240,10 +242,11 @@ On a non-zero exit, furrow prints a structured error object to stderr:
 {"error":{"code":2,"id":"t-0001","message":"unknown lane \"backlogg\""}}
 ```
 
-When an input almost resolved — an ambiguous repo short name, or a label that
-uniquely names a repo (the did-you-mean guard) — the envelope also carries
-`"candidates": ["owner/repo", …]`, so a script picks an alternative from the
-array instead of parsing the message prose. Likewise a partial `show` batch
+When an input almost resolved — an ambiguous repo short name, an unknown lane, a
+parent command's unknown subcommand (`config show`), or a label that uniquely
+names a repo (the did-you-mean guard) — the envelope also carries
+`"candidates": [ … ]`, so a script picks an alternative from the array instead
+of parsing the message prose. Likewise a partial `show` batch
 (some ids unknown) still prints the found tasks and exits 1 with
 `"details": {"missing": ["t-…", …]}` — branch on the array, never the message.
 
