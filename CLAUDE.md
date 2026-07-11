@@ -189,8 +189,10 @@ clash; `furrow lint` flags any duplicate as a backstop). Legacy numeric ids
 unknown keys and out-of-range values fall back to defaults with a warning that
 `furrow lint` surfaces. Read it through `internal/config`. Two additive,
 off-by-default switches: `[next].lanes` (which lanes `furrow next` shows;
-default ready+in-progress) and `[labels].required` (a label-less task errors on
-`add` and in `lint`; default false). A board `[alias]` table (`name = "command
+default ready+in-progress), `[labels].required` (a label-less task errors on
+`add` and in `lint`; default false), and `[lint].archive_done` (a count that
+makes `lint` warn `archive-backlog` once that many done tasks are archivable;
+default 0 = off). A board `[alias]` table (`name = "command
 string"`) lets `furrow <name> …` expand git-style before dispatch (the rest of
 argv appends); a builtin always wins (a shadowing alias is inert and `lint`
 warns `alias-shadow`), and it lives in the **board** config so it syncs. The

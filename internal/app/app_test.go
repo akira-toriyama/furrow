@@ -637,6 +637,46 @@ func TestBoardInfo(t *testing.T) {
 	}
 }
 
+// TestLintArchiveBacklogNudge pins t-0051: `furrow lint` warns (archive-backlog)
+// when the archivable-done pile reaches [lint].archive_done, and 0 disables it.
+func TestLintArchiveBacklogNudge(t *testing.T) {
+	a := newApp()
+	a.Cfg.LintArchiveDone = 2
+	// Under the fixed clock a task done "now" is closed now; a negative window
+	// pushes the cutoff into the future so those done tasks count as archivable
+	// (the age mechanics themselves are covered by Archivable's own tests).
+	a.Cfg.ArchiveOlderThanDays = -1
+
+	hasNudge := func() bool {
+		ps, err := a.Lint()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range ps {
+			if p.Code == "archive-backlog" {
+				return true
+			}
+		}
+		return false
+	}
+
+	if hasNudge() {
+		t.Fatal("no done tasks -> no archive nudge")
+	}
+	a.Add("d1", AddOpts{Status: "done"})
+	if hasNudge() {
+		t.Error("1 archivable done < threshold 2 -> no nudge yet")
+	}
+	a.Add("d2", AddOpts{Status: "done"})
+	if !hasNudge() {
+		t.Error("2 archivable done >= threshold 2 -> nudge should fire")
+	}
+	a.Cfg.LintArchiveDone = 0
+	if hasNudge() {
+		t.Error("[lint].archive_done=0 disables the nudge")
+	}
+}
+
 func sortedCopy(s []string) []string {
 	out := append([]string(nil), s...)
 	sort.Strings(out)

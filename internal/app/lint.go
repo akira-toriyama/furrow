@@ -164,6 +164,17 @@ func (a *App) Lint() ([]core.Problem, error) {
 		}
 	}
 
+	// archive-backlog nudge ([lint].archive_done, off by default): warn when the
+	// pile of archivable done tasks (closed before the archive cutoff) reaches the
+	// threshold — a prompt to run `furrow archive` so the hot board stays legible.
+	// Visualization only; the pressure valve (archive) already exists.
+	if a.Cfg.LintArchiveDone > 0 {
+		cutoff := a.Clock.Now().AddDate(0, 0, -a.Cfg.ArchiveOlderThanDays)
+		if n := len(Archivable(idx, a.Cfg.DoneLane, cutoff)); n >= a.Cfg.LintArchiveDone {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "archive-backlog", ID: "archive", Msg: fmt.Sprintf("%d done task(s) closed over %dd ago are ready to archive (>= [lint].archive_done=%d) — run `furrow archive --yes`", n, a.Cfg.ArchiveOlderThanDays, a.Cfg.LintArchiveDone)})
+		}
+	}
+
 	// required-label rule (config [labels].required).
 	if a.Cfg.LabelsRequired {
 		for _, t := range idx.Tasks {

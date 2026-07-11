@@ -66,6 +66,11 @@ type Config struct {
 
 	LabelsRequired bool // when true, a task with zero labels is rejected/flagged
 
+	// LintArchiveDone is the [lint].archive_done nudge threshold: `furrow lint`
+	// warns when at least this many done tasks are older than ArchiveOlderThanDays
+	// and ready to archive. 0 (default) disables the nudge.
+	LintArchiveDone int
+
 	// Alias is the board-level [alias] table (name -> command string) that
 	// `furrow <name> …` expands git-style. Empty when unset; a nil map is fine to
 	// range over. Builtin-shadowing entries are inert (expansion checks builtins
