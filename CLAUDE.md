@@ -22,9 +22,16 @@ the user-level config. When you work with any furrow store:
   `owner/repo` or a short name resolving uniquely against the board's repos;
   an explicit `-r` overrides the board scope, `-r ''` = the whole board. `-l`
   filters by tag and ANDs with the scope. Within a single `-s` or `-l`, a comma
-  is OR (`-s inbox,backlog`); flags still AND across fields. On a board, `add` unions the scope
-  repo into `repos` (`--draft` suppresses exactly that); `ls --drafts` lists
-  the repo-less tasks; `furrow repo <id> --add|--rm` attaches/detaches later.
+  is OR (`-s inbox,backlog`); flags still AND across fields. `-s` and `-l` diverge
+  on an unknown token: a lane is a closed vocabulary, so an unknown `-s` lane is
+  **exit 2 with the configured lanes in `candidates`** (symmetric with move/add — a
+  typo never returns a silent `[]`), while an unknown `-l` tag just matches
+  nothing. `furrow board [--json]` prints the store path, discovery source, repo
+  scope, and lane vocabulary (lanes/next/default/done/terminal) — read it to
+  learn the lanes and active scope without provoking an error. On a board, `add`
+  unions the scope repo into `repos` (`--draft` suppresses exactly that); `ls
+  --drafts` lists the repo-less tasks; `furrow repo <id> --add|--rm`
+  attaches/detaches later.
 - `--json` is available on read commands; **JSON goes to stdout only** (logs and
   errors go to stderr). Use `--ndjson` for one task per line and
   `--status/-s`, `--label/-l`, `--repo/-r`, `--limit/-n` to filter — so you

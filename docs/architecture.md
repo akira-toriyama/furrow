@@ -419,14 +419,24 @@ except where noted:
   explicit `-r` overrides the board scope; `-r ''` shows the whole board);
   `-l` is a pure tag filter that ANDs with the scope. Within a single `-s` or
   `-l`, a comma is OR (`-s inbox,backlog`, `-l bug,urgent`; tokens are trimmed,
-  empties dropped, an unknown token just matches nothing) — the flags still AND
-  across fields. Comma is the reserved separator, so a lane/label whose name
-  contains one can't be selected this way (lane/label names with commas are not
-  a supported shape). `ls --drafts` lists only the repo-less tasks. When an input *almost* resolved — an ambiguous repo
-  short name, or a label that uniquely names a repo (the did-you-mean guard) —
-  the error envelope carries a `candidates` array; when a repo scope — explicit `-r`
-  or the board's auto scope — hides drafts, a one-line stderr hint points at
-  `--drafts` (stdout stays pure data).
+  empties dropped) — the flags still AND across fields. `-s` and `-l` differ on
+  an *unknown* token, because a lane is a closed vocabulary and a label is not:
+  an unknown `-s` lane **fails fast (exit 2)** carrying the configured lanes in
+  `candidates` — the read-side symmetry with `move`/`add`, so a typo like
+  `-s in_progress` never masquerades as a healthy empty result — while an
+  unknown `-l` tag just matches nothing (clamp-don't-reject, an open vocabulary).
+  Comma is the reserved separator, so a lane/label whose name contains one can't
+  be selected this way (lane/label names with commas are not a supported shape).
+  `ls --drafts` lists only the repo-less tasks. When an input *almost* resolved —
+  an ambiguous repo short name, a label that uniquely names a repo (the
+  did-you-mean guard), or an unknown lane — the error envelope carries a
+  `candidates` array; when a repo scope — explicit `-r` or the board's auto
+  scope — hides drafts, a one-line stderr hint points at `--drafts` (stdout
+  stays pure data). `furrow board [--json]` prints the resolved store path,
+  discovery source (`env|local|pointer|user-config`), repo scope, and the full
+  lane vocabulary (lanes / next-lanes / default / done / terminal) — the
+  introspection call that answers "what lanes exist and what scope is active"
+  without provoking an error.
 - **Non-interactive by default.** No prompts; the TUI is `furrow ui` only.
   `furrow edit` on a non-TTY prints the absolute body path instead of launching
   an editor, so an agent can edit the file directly. `NO_COLOR` and non-TTY

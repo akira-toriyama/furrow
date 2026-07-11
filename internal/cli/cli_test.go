@@ -308,6 +308,61 @@ func TestCLIListMultiValueOR(t *testing.T) {
 	}
 }
 
+// TestCLILsUnknownLaneExit2 pins that a typo'd -s lane fails fast (exit 2)
+// carrying the configured lanes in the error's candidates array — not a silent
+// [] exit 0 — even when a comma filter mixes a known and an unknown token. This
+// is the read-side symmetry with move/add (t-bec7 案B).
+func TestCLILsUnknownLaneExit2(t *testing.T) {
+	initStore(t)
+	addTask(t, "i", "-s", "inbox")
+
+	for _, bad := range []string{"in_progress", "inbox,ghost"} {
+		fe, _ := runErr(t, "ls", "-s", bad)
+		if fe == nil || fe.Code != core.CodeValidation {
+			t.Fatalf("ls -s %q should exit 2, got %+v", bad, fe)
+		}
+		if len(fe.Candidates) == 0 {
+			t.Errorf("ls -s %q error should carry lane candidates, got %+v", bad, fe)
+		}
+	}
+}
+
+// TestCLIBoard pins `furrow board --json`: the lane-vocabulary/scope
+// introspection an agent reads instead of provoking an unknown-lane error. The
+// store points at FURROW_DIR, so source is "env".
+func TestCLIBoard(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "board", "--json")
+	if code != 0 {
+		t.Fatalf("board --json exit = %d:\n%s", code, out)
+	}
+	var b struct {
+		Store       string   `json:"store"`
+		Source      string   `json:"source"`
+		Lanes       []string `json:"lanes"`
+		NextLanes   []string `json:"next_lanes"`
+		DefaultLane string   `json:"default_lane"`
+		DoneLane    string   `json:"done_lane"`
+	}
+	if err := json.Unmarshal([]byte(out), &b); err != nil {
+		t.Fatalf("parse board --json: %v\n%s", err, out)
+	}
+	if b.Source != "env" {
+		t.Errorf("board source = %q, want env (FURROW_DIR)", b.Source)
+	}
+	if len(b.Lanes) == 0 || b.DefaultLane != "inbox" || b.DoneLane != "done" {
+		t.Errorf("board vocabulary looks wrong: %+v", b)
+	}
+	if b.Store == "" {
+		t.Error("board store path should be set")
+	}
+	// --ndjson emits the same object as one compact line (no indent).
+	nd, code := run(t, "board", "--ndjson")
+	if code != 0 || strings.Contains(nd, "\n  ") {
+		t.Errorf("board --ndjson should be one compact line, got code=%d:\n%s", code, nd)
+	}
+}
+
 // TestCLICheckAddRepeatable pins that `check --add A --add B` appends BOTH items
 // (was: cobra StringVar kept only the last), and that a comma inside an item is
 // preserved verbatim — i.e. the flag is StringArrayVar, not StringSliceVar which
