@@ -447,6 +447,119 @@ func TestCLINDJSONEverywhere(t *testing.T) {
 	}
 }
 
+// TestCLISetVerb pins t-kx76 (e): `set` applies lane+value+effort+label in one
+// command and reports {before,after,changed} under --json.
+func TestCLISetVerb(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "triage", "-s", "inbox")
+
+	out, code := run(t, "--json", "set", id, "-s", "ready", "--value", "4", "--effort", "2", "--add-label", "bug")
+	if code != 0 {
+		t.Fatalf("set exit %d:\n%s", code, out)
+	}
+	var res struct {
+		After struct {
+			Status string   `json:"status"`
+			Value  int      `json:"value"`
+			Effort int      `json:"effort"`
+			Labels []string `json:"labels"`
+		} `json:"after"`
+		Changed []string `json:"changed"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("parse set --json: %v\n%s", err, out)
+	}
+	if res.After.Status != "ready" || res.After.Value != 4 || res.After.Effort != 2 {
+		t.Errorf("set did not apply all fields: %+v", res.After)
+	}
+	if len(res.After.Labels) != 1 || res.After.Labels[0] != "bug" {
+		t.Errorf("set --add-label failed: %v", res.After.Labels)
+	}
+	// unknown lane is exit 2 with candidates, like move.
+	fe, _ := runErr(t, "set", id, "-s", "ghost")
+	if fe == nil || fe.Code != core.CodeValidation || len(fe.Candidates) == 0 {
+		t.Errorf("set to an unknown lane should exit 2 with candidates, got %+v", fe)
+	}
+	// no change is a validation error.
+	if _, code := run(t, "set", id); code != int(core.CodeValidation) {
+		t.Errorf("`set` with no change should exit 2, got %d", code)
+	}
+}
+
+// TestCLIDepVariadic pins that `dep <id> <d1> <d2>` adds both in one call.
+func TestCLIDepVariadic(t *testing.T) {
+	initStore(t)
+	base := addTask(t, "base", "-s", "ready")
+	d1 := addTask(t, "d1", "-s", "ready")
+	d2 := addTask(t, "d2", "-s", "ready")
+
+	out, code := run(t, "--json", "dep", base, d1, d2)
+	if code != 0 {
+		t.Fatalf("dep variadic exit %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, d1) || !strings.Contains(out, d2) {
+		t.Errorf("dep should add both deps:\n%s", out)
+	}
+	// remove both.
+	out, _ = run(t, "--json", "dep", base, d1, d2, "--rm")
+	var res struct {
+		After struct {
+			Deps []string `json:"deps"`
+		} `json:"after"`
+	}
+	json.Unmarshal([]byte(out), &res)
+	if len(res.After.Deps) != 0 {
+		t.Errorf("dep --rm should drop both: %v", res.After.Deps)
+	}
+}
+
+// TestCLIArchiveByID pins t-kx76 (e): `archive <id> --yes` retires exactly that
+// task; a non-done id is exit 2; --older-than/-r can't combine with an id list.
+func TestCLIArchiveByID(t *testing.T) {
+	initStore(t)
+	doneID := addTask(t, "finished", "-s", "ready")
+	run(t, "done", doneID)
+	openID := addTask(t, "in flight", "-s", "ready")
+
+	// a non-done id is refused (exit 2) — you can't strand live work in archive/.
+	if _, code := run(t, "archive", openID, "--yes"); code != int(core.CodeValidation) {
+		t.Errorf("archiving a non-done id should exit 2, got %d", code)
+	}
+	// combining an id with the sweep knobs is refused.
+	if _, code := run(t, "archive", doneID, "--older-than", "0", "--yes"); code != int(core.CodeValidation) {
+		t.Errorf("archive <id> --older-than should exit 2, got %d", code)
+	}
+	// retire the done one by id.
+	out, code := run(t, "--json", "archive", doneID, "--yes")
+	if code != 0 {
+		t.Fatalf("archive by id exit %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, doneID) {
+		t.Errorf("archive --json should list the retired id:\n%s", out)
+	}
+	// it's gone from the hot store now.
+	if _, code := run(t, "show", doneID); code != int(core.CodeNotFound) {
+		t.Errorf("archived task should be not-found in the hot store, got %d", code)
+	}
+}
+
+// TestCLIAddDashTitleHint pins the おまけ: a title starting with '-' errors with
+// a `--` hint, not a bare cobra usage error.
+func TestCLIAddDashTitleHint(t *testing.T) {
+	initStore(t)
+	fe, _ := runErr(t, "add", "--bogus-title")
+	if fe == nil || fe.Code != core.CodeValidation {
+		t.Fatalf("a dash-leading title should exit 2, got %+v", fe)
+	}
+	if !strings.Contains(fe.Msg, "--") {
+		t.Errorf("the error should hint at the `--` separator: %q", fe.Msg)
+	}
+	// the `--` separator makes it work.
+	if _, code := run(t, "add", "--", "-a real title"); code != 0 {
+		t.Errorf("`add -- \"-title\"` should succeed, got %d", code)
+	}
+}
+
 // TestCLICheckAddRepeatable pins that `check --add A --add B` appends BOTH items
 // (was: cobra StringVar kept only the last), and that a comma inside an item is
 // preserved verbatim — i.e. the flag is StringArrayVar, not StringSliceVar which

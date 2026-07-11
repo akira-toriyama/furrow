@@ -91,6 +91,15 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&refs, "ref", nil, "reference (file:line or URL, repeatable)")
 	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (default: a heading from the title)")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "read one task title per line from stdin; create all in one write")
+	// A title that begins with '-' (e.g. `add --ndjson-ish title`) is parsed as a
+	// flag → "unknown flag". Steer the caller to the `--` separator instead of a
+	// bare cobra usage error, so an agent recovers without guessing.
+	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		if msg := err.Error(); strings.HasPrefix(msg, "unknown flag") || strings.HasPrefix(msg, "unknown shorthand flag") {
+			return core.Validationf("", "%s — a title starting with '-' needs a `--` separator: furrow add -- \"<title>\"", msg)
+		}
+		return err
+	})
 	return cmd
 }
 

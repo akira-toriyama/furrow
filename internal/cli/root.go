@@ -105,6 +105,7 @@ func newRootCmd() *cobra.Command {
 		newMoveCmd(),
 		newReorderCmd(),
 		newRetitleCmd(),
+		newSetCmd(),
 		newValueCmd(),
 		newEffortCmd(),
 		newCheckCmd(),

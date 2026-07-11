@@ -184,26 +184,93 @@ func newCheckCmd() *cobra.Command {
 func newDepCmd() *cobra.Command {
 	var rm bool
 	cmd := &cobra.Command{
-		Use:   "dep <id> <dep-id>",
-		Short: "Add a dependency to a task (or remove it with --rm)",
-		Long: "Make <id> depend on <dep-id> (id waits on dep-id). With --rm, remove that\n" +
-			"dependency instead. Both ids must exist; adding is acyclic and idempotent.",
-		Args: cobra.ExactArgs(2),
+		Use:   "dep <id> <dep-id>...",
+		Short: "Add one or more dependencies to a task (or remove with --rm)",
+		Long: "Make <id> depend on each <dep-id> (id waits on them). Several dep-ids in one\n" +
+			"call apply in a single write. With --rm, remove those dependencies instead.\n" +
+			"Every dep must exist; adding is acyclic and idempotent, and the batch is\n" +
+			"all-or-nothing (a bad dep-id aborts without a partial change).",
+		Example: "  furrow dep t-k3m9p t-a1b2c\n" +
+			"  furrow dep t-k3m9p t-a1b2c t-d4e5f    # depend on both in one write\n" +
+			"  furrow dep t-k3m9p t-a1b2c --rm",
+		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
+			id, deps := args[0], args[1:]
 			verb := "dep+"
-			mutate := func() (*core.Task, error) { return a.AddDep(args[0], args[1]) }
+			mutate := func() (*core.Task, error) { return a.AddDeps(id, deps) }
 			if rm {
 				verb = "dep-"
-				mutate = func() (*core.Task, error) { return a.RemoveDep(args[0], args[1]) }
+				mutate = func() (*core.Task, error) { return a.RemoveDeps(id, deps) }
 			}
-			return emitMutation(a, verb, args[0], mutate)
+			return emitMutation(a, verb, id, mutate)
 		},
 	}
-	cmd.Flags().BoolVar(&rm, "rm", false, "remove the dependency instead of adding it")
+	cmd.Flags().BoolVar(&rm, "rm", false, "remove the dependencies instead of adding them")
+	return cmd
+}
+
+// newSetCmd combines the routine triage edits (lane, value, effort, labels) into
+// one write, so triaging a task no longer means running move + value + effort +
+// label as four separate commands.
+func newSetCmd() *cobra.Command {
+	var (
+		status      string
+		value       int
+		effort      int
+		clearValue  bool
+		clearEffort bool
+		addLabels   []string
+		rmLabels    []string
+	)
+	cmd := &cobra.Command{
+		Use:   "set <id>",
+		Short: "Apply several triage edits at once (lane, value, effort, labels)",
+		Long: "Combine the routine triage edits into a single write: move a lane (-s), set\n" +
+			"or clear the 1..5 value/effort estimates, and add/remove labels — instead of\n" +
+			"running move + value + effort + label as four commands. At least one change\n" +
+			"is required; an unknown lane is exit 2 with candidates (like move), and under\n" +
+			"[labels].required a set that would strip the last label is refused.",
+		Example: "  furrow set t-k3m9p -s ready --value 4 --effort 2 --add-label bug\n" +
+			"  furrow set t-k3m9p --clear-value --rm-label wip",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			o := app.SetOpts{
+				AddLabels:   addLabels,
+				RmLabels:    rmLabels,
+				ClearValue:  clearValue,
+				ClearEffort: clearEffort,
+			}
+			if cmd.Flags().Changed("status") {
+				o.Status = &status
+			}
+			if cmd.Flags().Changed("value") {
+				v := value
+				o.Value = &v
+			}
+			if cmd.Flags().Changed("effort") {
+				e := effort
+				o.Effort = &e
+			}
+			return emitMutation(a, "set", args[0], func() (*core.Task, error) { return a.Set(args[0], o) })
+		},
+	}
+	cmd.Flags().StringVarP(&status, "status", "s", "", "move to this lane")
+	cmd.Flags().IntVar(&value, "value", 0, "set the 1..5 value estimate")
+	cmd.Flags().IntVar(&effort, "effort", 0, "set the 1..5 effort estimate")
+	cmd.Flags().BoolVar(&clearValue, "clear-value", false, "clear the value estimate")
+	cmd.Flags().BoolVar(&clearEffort, "clear-effort", false, "clear the effort estimate")
+	cmd.Flags().StringArrayVar(&addLabels, "add-label", nil, "add a label (repeatable)")
+	cmd.Flags().StringArrayVar(&rmLabels, "rm-label", nil, "remove a label (repeatable)")
+	cmd.MarkFlagsMutuallyExclusive("value", "clear-value")
+	cmd.MarkFlagsMutuallyExclusive("effort", "clear-effort")
 	return cmd
 }
 

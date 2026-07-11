@@ -68,10 +68,53 @@ func (a *App) Archive(olderThanDays int, dryRun bool, repos ...string) ([]core.T
 			moved = append(moved, *t)
 		}
 	}
+	return a.archiveMove(idx, moved, dryRun)
+}
+
+// ArchiveIDs archives exactly the named tasks — retiring specific done tasks by
+// id, the targeted counterpart to the age sweep (so folding one finished task no
+// longer needs a board-wide `--older-than 0`). Every id must exist AND be in the
+// done lane; a non-done id is a validation error naming it (archiving an
+// in-progress task would strand live work in archive/). Duplicate ids collapse.
+// dryRun reports without moving. Uses the same destination-before-source move as
+// Archive.
+func (a *App) ArchiveIDs(ids []string, dryRun bool) ([]core.Task, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	var moved []core.Task
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		t, i := idx.Find(id)
+		if i < 0 {
+			return nil, core.NotFound(id)
+		}
+		if t.Status != a.Cfg.DoneLane {
+			return nil, core.Validationf(id, "only done-lane tasks can be archived by id; %s is in %q (move it to %s first)", id, t.Status, a.Cfg.DoneLane)
+		}
+		moved = append(moved, *t)
+	}
+	return a.archiveMove(idx, moved, dryRun)
+}
+
+// archiveMove commits `moved` (tasks currently in the loaded hot index idx) to
+// the sibling .furrow/archive/ store and removes them from the hot store — the
+// shared engine behind the age sweep (Archive) and by-id retire (ArchiveIDs).
+// With dryRun (or nothing to move) it just returns moved. It commits the
+// destination BEFORE destroying the source: copy every body into the archive and
+// update both in-memory indexes, persist both, and only after BOTH succeed
+// delete the hot bodies. An interrupted run then leaves at worst a harmless
+// duplicate body in archive/ (lint-visible) — it never deletes a hot body while
+// the hot index still references it.
+func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]core.Task, error) {
 	if dryRun || len(moved) == 0 {
 		return moved, nil
 	}
-
 	if a.Dir == "" {
 		return nil, core.Internalf("", "archive requires a file-backed store")
 	}
@@ -80,12 +123,6 @@ func (a *App) Archive(olderThanDays int, dryRun bool, repos ...string) ([]core.T
 	if err != nil {
 		return nil, err
 	}
-
-	// Commit the destination BEFORE destroying the source: copy every body into
-	// the archive and update both in-memory indexes, then persist both indexes,
-	// and only after BOTH succeed delete the hot bodies. An interrupted run then
-	// leaves at worst a harmless duplicate body in archive/ (lint-visible) — it
-	// never deletes a hot body while the hot index still references it.
 	for _, t := range moved {
 		body, err := a.Store.LoadBody(t.ID)
 		if err != nil {

@@ -359,12 +359,17 @@ A few app-level rules worth stating, all verified against the code:
 Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
 except where noted:
 
-`init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `edit`, `attach`,
-`done`, `move`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
+`init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `board`, `edit`, `attach`,
+`done`, `move`, `set`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
 `sync`, `archive`, `lint`, `config` (`init`/`path`), `schema`, `version`, `ui`,
 `migrate`.
 
-- **`dep`** adds or removes a dependency edge on an existing task (`--rm`).
+- **`set`** applies the routine triage quartet — lane, value, effort, labels — in
+  one write (the combined-edit funnel `App.Set`), so triage isn't move+value+
+  effort+label as four commands. It reuses `applyLane`/`labelDelta`, the helpers
+  shared with `Move`/`Relabel`, so the invariants can't diverge.
+- **`dep`** adds or removes dependency edges on an existing task (`--rm`); it is
+  variadic (`dep a b c`), applying/removing several in one all-or-nothing write.
   Adding is acyclic (rejects self- and cycle-creating edges) and idempotent.
 - **`repo`** attaches/detaches `owner/repo` values on a task (`--add`/`--rm`,
   both repeatable); short names resolve against the board's known repos or
