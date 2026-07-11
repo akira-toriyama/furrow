@@ -21,6 +21,7 @@ func newLsCmd() *cobra.Command {
 		Short:   "List tasks (canonical lane->priority->id order)",
 		Example: "  furrow ls                 # this repo's board, canonical order\n" +
 			"  furrow ls -s ready --json\n" +
+			"  furrow ls -s inbox,backlog     # comma = OR within a field\n" +
 			"  furrow ls -l bug -r furrow\n" +
 			"  furrow ls --drafts        # only repo-less draft tasks",
 		Args: cobra.NoArgs,
@@ -49,8 +50,8 @@ func newLsCmd() *cobra.Command {
 			return emitTasks(tasks, false)
 		},
 	}
-	cmd.Flags().StringVarP(&status, "status", "s", "", "filter by lane")
-	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (a pure tag; ANDs with the board scope)")
+	cmd.Flags().StringVarP(&status, "status", "s", "", "filter by lane (comma-separated = OR, e.g. -s inbox,backlog)")
+	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (comma-separated = OR); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
 	cmd.Flags().BoolVar(&drafts, "drafts", false, "list only drafts (tasks with no repo); bypasses the board scope")
@@ -166,7 +167,7 @@ func newNextCmd() *cobra.Command {
 			return emitActionable(tasks)
 		},
 	}
-	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (a pure tag; ANDs with the board scope)")
+	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (comma-separated = OR); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; use -n1 for just the top)")
 	return cmd
@@ -216,7 +217,7 @@ func newRevisitCmd() *cobra.Command {
 			return emitRevisit(items)
 		},
 	}
-	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (a pure tag; ANDs with the board scope)")
+	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (comma-separated = OR); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
 	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")

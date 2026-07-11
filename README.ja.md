@@ -170,8 +170,8 @@ furrow done t-0001
 
 ### 主なフラグ
 
-- `--status, -s <lane>` — レーンで絞り込み（`ls`）
-- `--label, -l <label>` — ラベル（純粋なタグ）で絞り込み（`ls`/`next`/`revisit`。スコープと AND）。`add` では `-l` 繰り返しでラベルを付与
+- `--status, -s <lane>` — レーンで絞り込み（`ls`）。1 つの値の中でカンマは OR（`-s inbox,backlog`。トリムし空要素は無視、未知レーンは単に無マッチ）
+- `--label, -l <label>` — ラベル（純粋なタグ）で絞り込み（`ls`/`next`/`revisit`。スコープと AND、値内はカンマで OR＝`-l bug,urgent`）。`add` では `-l` 繰り返しでラベルを付与
 - `--repo, -r <owner/repo|短名>` — repos フィールドで絞り込み（`ls`/`next`/`revisit`）。短名は `/` 境界で大文字小文字を無視して解決（`-r furrow` → `akira-toriyama/furrow`。曖昧なら exit 2・`candidates` 付き）。明示 `-r` はボードのスコープを上書きし、`-r ''` で全件。`add` では `-r` 繰り返しで repo を付与
 - `--drafts`（`ls`）/ `--draft`（`add`） — draft（repo 未付与タスク）だけを一覧／draft として作成（`--draft` は `-r` と併用不可）
 - `--limit, -n <N>` — 行数の上限（`ls` / `next`。`0` は全件、`next` は `-n1` で先頭だけ）
@@ -194,7 +194,7 @@ furrow は **非対話がデフォルト**。プロンプトは出さない（TT
 - **`--json`** — read コマンドが JSON を **stdout のみ**に出す。ログ・エラーは stderr へ。
 - **`--ndjson`** — タスクを 1 行 1 JSON で出す（list 系・`show` は個数によらず 1 行 1 タスク）。
 - **id 集合の一括読み** — `show <id>... --no-body` で任意の id 集合を 1 プロセス・本文なしで横断取得（監査・依存チェック向け。`--ndjson` 併用で shape が個数非依存に）。
-- **フィルタ** — `--status/-s`・`--label/-l`・`--repo/-r`・`--limit/-n`。明示 `-l X` が 0 件で、X がタスクを持つ repo 短名に一意解決するときは exit 2 で `-r X` へ誘導する（did-you-mean ガード）。明示 `-r` が draft を隠したときは stderr に `N draft(s) hidden — furrow ls --drafts` を 1 行出す。
+- **フィルタ** — `--status/-s`・`--label/-l`・`--repo/-r`・`--limit/-n`（`-s`/`-l` は値内のカンマが field 内 OR）。明示 `-l X` が 0 件で、X がタスクを持つ repo 短名に一意解決するときは exit 2 で `-r X` へ誘導する（did-you-mean ガード）。明示 `-r` が draft を隠したときは stderr に `N draft(s) hidden — furrow ls --drafts` を 1 行出す。
 - **破壊操作ガード** — `archive` は `--yes` がない限りプレビュー（dry-run）に留まる。
 - **exit code 契約**:
 
