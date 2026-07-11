@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -74,6 +75,10 @@ type ApplyOutcome struct {
 	Note   string `json:"note,omitempty"`  // body line appended (if any)
 	Error  string `json:"error,omitempty"` // message when Action == error
 	Code   int    `json:"code,omitempty"`  // furrow exit code for this directive's error
+	// Candidates carries the concrete alternatives when a directive's error
+	// almost resolved (an unknown lane → the configured lanes), so an agent
+	// triaging a batch branches on the array rather than regexing the message.
+	Candidates []string `json:"candidates,omitempty"`
 }
 
 // ApplyResult is the full report — the JSON output of `furrow apply`.
@@ -124,7 +129,7 @@ func (a *App) ApplyDirectives(text, ref string, mode ApplyMode, openLane string)
 		case !a.exists(d.ID):
 			fail(&out, core.NotFound(d.ID))
 		case d.Lane != "" && !a.Cfg.IsLane(d.Lane):
-			fail(&out, core.Validationf(d.ID, "unknown lane %q (configured: %s)", d.Lane, strings.Join(a.Cfg.Lanes, ", ")))
+			fail(&out, a.unknownLaneErr(d.ID, d.Lane))
 		default:
 			if err := a.applyOne(&out, d, ref, mode, openLane); err != nil {
 				return res, err // IO failure: abort
@@ -154,7 +159,12 @@ func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMod
 	case OnOpen:
 		if d.Lane != "" && !a.Cfg.IsTerminal(t.Status) {
 			if !a.Cfg.IsLane(openLane) {
-				fail(out, core.Validationf(d.ID, "--open-lane %q is not a configured lane", openLane))
+				fail(out, &core.Error{
+					Code:       core.CodeValidation,
+					ID:         d.ID,
+					Msg:        fmt.Sprintf("--open-lane %q is not a configured lane (configured: %s)", openLane, strings.Join(a.Cfg.Lanes, ", ")),
+					Candidates: append([]string(nil), a.Cfg.Lanes...),
+				})
 				return nil
 			}
 			target = openLane
@@ -197,11 +207,16 @@ func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMod
 	return nil
 }
 
-// fail records a per-directive error onto out.
+// fail records a per-directive error onto out, carrying any machine-actionable
+// candidates (e.g. the configured lanes for an unknown-lane directive) through
+// to the outcome so a batch consumer branches on the array, not the prose.
 func fail(out *ApplyOutcome, err error) {
 	out.Action = "error"
 	out.Error = err.Error()
 	out.Code = core.ExitCode(err)
+	if fe := core.AsError(err); fe != nil && len(fe.Candidates) > 0 {
+		out.Candidates = fe.Candidates
+	}
 }
 
 // exists reports whether a task id is present, cheaply (no body load).

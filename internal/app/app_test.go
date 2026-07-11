@@ -463,9 +463,10 @@ func TestNextFiltersByLabel(t *testing.T) {
 
 // TestListMultiValueOR covers the comma = OR-within-a-field, flags-AND-across
 // semantics for -s and -l: `-s inbox,backlog` matches either lane, `-l a,b`
-// matches either tag, and combining them ANDs. Whitespace is trimmed, empty
-// tokens dropped, and unknown tokens match nothing (no error), consistent with
-// clamp-don't-reject. Regression for t-25qt.
+// matches either tag, and combining them ANDs. Whitespace is trimmed and empty
+// tokens dropped. Labels stay lenient (an open vocabulary): an unknown tag just
+// matches nothing. Lanes are a closed vocabulary, so an unknown -s token now
+// fails fast — pinned separately below. Regression for t-25qt / t-bec7.
 func TestListMultiValueOR(t *testing.T) {
 	a := newApp()
 	a.Add("i-bug", AddOpts{Status: "inbox", Labels: []string{"bug"}})
@@ -484,8 +485,7 @@ func TestListMultiValueOR(t *testing.T) {
 		{"single status unchanged", QueryOpts{Status: "inbox"}, []string{"i-bug"}},
 		{"single label unchanged", QueryOpts{Label: "chore"}, []string{"done-chore"}},
 		{"whitespace + empty tokens", QueryOpts{Status: " inbox , , backlog "}, []string{"i-bug", "b-urgent"}},
-		{"known + unknown token", QueryOpts{Status: "inbox,ghost"}, []string{"i-bug"}},
-		{"unknown tokens match nothing", QueryOpts{Status: "ghost,phantom"}, nil},
+		{"unknown label matches nothing (labels stay lenient)", QueryOpts{Label: "nonexistent"}, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -501,6 +501,71 @@ func TestListMultiValueOR(t *testing.T) {
 				t.Errorf("%s: got %v, want %v", tc.name, titles, tc.want)
 			}
 		})
+	}
+
+	// -s is a closed vocabulary: an unknown token fails fast (exit 2) with the
+	// configured lanes in Candidates, symmetric with move/add — NOT a silent []
+	// (t-bec7 案B). A comma filter fails on the FIRST unknown token even when a
+	// known token is also present.
+	for _, bad := range []string{"ghost", "inbox,ghost", "ghost,phantom"} {
+		_, err := a.List(QueryOpts{Status: bad})
+		fe := core.AsError(err)
+		if fe == nil || fe.Code != core.CodeValidation {
+			t.Fatalf("-s %q should be a validation error, got %v", bad, err)
+		}
+		if !reflect.DeepEqual(fe.Candidates, a.Cfg.Lanes) {
+			t.Errorf("-s %q error should carry the lanes in candidates, got %v", bad, fe.Candidates)
+		}
+	}
+}
+
+// TestUnknownLaneCandidates pins that every lane gate (add -s, move) returns the
+// same "unknown lane" validation error carrying the configured lanes in
+// Candidates — so an agent branches on the array, never the prose (t-bec7).
+func TestUnknownLaneCandidates(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("t", AddOpts{})
+
+	if _, err := a.Add("x", AddOpts{Status: "ghost"}); !hasLaneCandidates(a, err) {
+		t.Errorf("add -s ghost should carry lane candidates, got %v", err)
+	}
+	if _, err := a.Move(tk.ID, "ghost"); !hasLaneCandidates(a, err) {
+		t.Errorf("move to ghost should carry lane candidates, got %v", err)
+	}
+}
+
+func hasLaneCandidates(a *App, err error) bool {
+	fe := core.AsError(err)
+	return fe != nil && fe.Code == core.CodeValidation && reflect.DeepEqual(fe.Candidates, a.Cfg.Lanes)
+}
+
+// TestBoardInfo pins the introspection snapshot: it mirrors the effective config
+// (lanes/next/default/done) and orders terminal lanes canonically (t-bec7).
+func TestBoardInfo(t *testing.T) {
+	a := newApp()
+	b := a.Board()
+	if !reflect.DeepEqual(b.Lanes, a.Cfg.Lanes) {
+		t.Errorf("board lanes = %v, want %v", b.Lanes, a.Cfg.Lanes)
+	}
+	if !reflect.DeepEqual(b.NextLanes, a.Cfg.NextLanes) {
+		t.Errorf("board next_lanes = %v, want %v", b.NextLanes, a.Cfg.NextLanes)
+	}
+	if b.DefaultLane != a.Cfg.DefaultLane || b.DoneLane != a.Cfg.DoneLane {
+		t.Errorf("board default/done mismatch: %+v", b)
+	}
+	want := []string{}
+	for _, l := range a.Cfg.Lanes {
+		if a.Cfg.IsTerminal(l) {
+			want = append(want, l)
+		}
+	}
+	if !reflect.DeepEqual(b.Terminal, want) {
+		t.Errorf("board terminal = %v, want %v (canonical lane order)", b.Terminal, want)
+	}
+	// The snapshot must be a copy — mutating it can't reach the live config.
+	b.Lanes[0] = "MUTATED"
+	if a.Cfg.Lanes[0] == "MUTATED" {
+		t.Error("Board() leaked the live Cfg.Lanes slice")
 	}
 }
 

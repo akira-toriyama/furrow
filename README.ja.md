@@ -145,6 +145,7 @@ furrow done t-0001
 | `show <id>...` | タスク（複数可）を markdown 本文付きで 1 回の読みで表示（入力順。複数 id は `--json` で配列／human は `---` 区切り、1 id は従来どおり単一オブジェクト。`--ndjson` は個数によらず 1 行 1 タスク）。`--no-body` で本文（`body_text`）を省く＝agent 向けの軽量メタデータ読み。一部 id が見つからなくても見つかった分は出力し、exit 1 のエラーに `details.missing` が載る。`--backlinks` を付けると、本文でこのタスクを `[[id]]` で参照している他タスクも列挙する（「Mentioned in」節／`--json` では `mentioned_by` 配列。GitHub の "mentioned in" のローカル・レート制限なし版） |
 | `next` | 着手可能なタスク（設定 `[next].lanes` — 既定 `ready` + `in-progress`、intake レーンは出ない — にあり、依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
 | `revisit` | read-only。再評価すべき open タスクを一覧。`--json`/`--ndjson` は各タスクに `revisit` 配列 `{code, detail}`（`no_repo`・`value_unset`・`effort_unset`・`stale`・`dep_done`）を付与し、エージェントが何を直すか分かる。draft はスコープに関係なく浮上する。空でも exit 0。`-l/--label`・`-r/--repo`・`-n/--limit`・`--stale-days <n>`（0 で stale 無効） |
+| `board` | アクティブなボードの introspection スナップショットを出す: store パス・discovery `source`（`env`/`local`/`pointer`/`user-config`）・repo スコープ・レーン語彙（`lanes`/`next_lanes`/`default_lane`/`done_lane`/`terminal`）＋ stale/archive の窓。**エラーを起こさずレーンを知る**手段。`--json`（or `--ndjson`）でオブジェクトを出力 |
 | `edit <id>` | `bodies/<id>.md` を `$EDITOR` で開く（非対話ならパスを出力） |
 | `attach <id> <file>` | 画像/動画を `bodies/assets/<id>-*` にコピーし、body に相対 markdown 参照を追記する。画像は埋め込み（`![…]`）・その他媒体はリンク（`[…]`）。衝突しない名前（`…-2`, `…-3`）で既存アセットを上書きしない。body は commit される markdown なので、web アップロード無しに端末だけで attach 全体が git に載る。LFS 非依存。`--json` は `{id, asset, ref, line}` を出力 |
 | `done <id>` | done レーンへ移動し `closed` を打刻 |
@@ -170,7 +171,7 @@ furrow done t-0001
 
 ### 主なフラグ
 
-- `--status, -s <lane>` — レーンで絞り込み（`ls`）。1 つの値の中でカンマは OR（`-s inbox,backlog`。トリムし空要素は無視、未知レーンは単に無マッチ）
+- `--status, -s <lane>` — レーンで絞り込み（`ls`）。1 つの値の中でカンマは OR（`-s inbox,backlog`。トリムし空要素は無視）。レーンは閉じた語彙なので**未知レーンは exit 2**（設定済みレーンを `candidates` に載せる。`move`/`add` と対称＝`-s in_progress` の打ち間違いが `[]` に化けない）。一方 `-l`（ラベル）は開いた語彙で未知タグは無マッチのまま。レーン一覧は `furrow board` でエラーを起こさず確認できる
 - `--label, -l <label>` — ラベル（純粋なタグ）で絞り込み（`ls`/`next`/`revisit`。スコープと AND、値内はカンマで OR＝`-l bug,urgent`）。`add` では `-l` 繰り返しでラベルを付与
 - `--repo, -r <owner/repo|短名>` — repos フィールドで絞り込み（`ls`/`next`/`revisit`）。短名は `/` 境界で大文字小文字を無視して解決（`-r furrow` → `akira-toriyama/furrow`。曖昧なら exit 2・`candidates` 付き）。明示 `-r` はボードのスコープを上書きし、`-r ''` で全件。`add` では `-r` 繰り返しで repo を付与
 - `--drafts`（`ls`）/ `--draft`（`add`） — draft（repo 未付与タスク）だけを一覧／draft として作成（`--draft` は `-r` と併用不可）
@@ -194,7 +195,7 @@ furrow は **非対話がデフォルト**。プロンプトは出さない（TT
 - **`--json`** — read コマンドが JSON を **stdout のみ**に出す。ログ・エラーは stderr へ。
 - **`--ndjson`** — タスクを 1 行 1 JSON で出す（list 系・`show` は個数によらず 1 行 1 タスク）。
 - **id 集合の一括読み** — `show <id>... --no-body` で任意の id 集合を 1 プロセス・本文なしで横断取得（監査・依存チェック向け。`--ndjson` 併用で shape が個数非依存に）。
-- **フィルタ** — `--status/-s`・`--label/-l`・`--repo/-r`・`--limit/-n`（`-s`/`-l` は値内のカンマが field 内 OR）。明示 `-l X` が 0 件で、X がタスクを持つ repo 短名に一意解決するときは exit 2 で `-r X` へ誘導する（did-you-mean ガード）。明示 `-r` が draft を隠したときは stderr に `N draft(s) hidden — furrow ls --drafts` を 1 行出す。
+- **フィルタ** — `--status/-s`・`--label/-l`・`--repo/-r`・`--limit/-n`（`-s`/`-l` は値内のカンマが field 内 OR）。未知トークンの扱いは非対称: `-s` の未知レーンは exit 2＋`candidates`（閉じた語彙・`move`/`add` と対称）、`-l` の未知タグは無マッチ（開いた語彙）。明示 `-l X` が 0 件で、X がタスクを持つ repo 短名に一意解決するときは exit 2 で `-r X` へ誘導する（did-you-mean ガード）。レーンとスコープは `furrow board` でエラーを起こさず一覧できる。明示 `-r` が draft を隠したときは stderr に `N draft(s) hidden — furrow ls --drafts` を 1 行出す。
 - **破壊操作ガード** — `archive` は `--yes` がない限りプレビュー（dry-run）に留まる。
 - **exit code 契約**:
 

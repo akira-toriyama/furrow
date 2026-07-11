@@ -1,6 +1,7 @@
 package app
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -146,6 +147,11 @@ func TestApplyUnknownIDAndLaneAreNonFatal(t *testing.T) {
 	}
 	if res.Outcomes[1].Code != 2 {
 		t.Errorf("unknown lane should be code 2 (validation), got %+v", res.Outcomes[1])
+	}
+	// the unknown-lane directive carries the configured lanes as candidates, so a
+	// batch consumer branches on the array not the prose (t-bec7).
+	if !reflect.DeepEqual(res.Outcomes[1].Candidates, a.Cfg.Lanes) {
+		t.Errorf("unknown-lane outcome should carry lane candidates, got %v", res.Outcomes[1].Candidates)
 	}
 	if res.Outcomes[2].Action != "moved" || res.Outcomes[2].To != "done" {
 		t.Errorf("the valid directive should still apply, got %+v", res.Outcomes[2])

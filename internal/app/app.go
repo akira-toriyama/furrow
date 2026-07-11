@@ -77,6 +77,12 @@ type App struct {
 	// names even before its first task exists.
 	BoardRepos []string
 
+	// Source records how the store was discovered — "env" (FURROW_DIR or
+	// FURROW_BOARD), "local" (an ancestor .furrow), "pointer" (a
+	// .furrow-pointer.toml), or "user-config" (a global [[board]]). `furrow
+	// board` surfaces it so an agent sees why this store/scope is active.
+	Source string
+
 	// sleep is the backoff sleeper used by Sync's transient-rebase retry. nil
 	// means the real cancellable timer (see ctxSleep); tests set a no-op to run
 	// the retry budget instantly.
@@ -123,6 +129,7 @@ func Open(startDir string) (*App, error) {
 	a.DefaultRepo = res.DefaultRepo
 	a.AutoFilter = res.AutoFilter
 	a.ScopeWarnings = res.ScopeWarn
+	a.Source = res.Source
 	if res.DefaultRepo != "" {
 		a.BoardRepos = []string{res.DefaultRepo}
 	}
@@ -151,6 +158,7 @@ type resolution struct {
 	DefaultRepo  string // board-scope repo ("" = none)
 	AutoFilter   bool   // scope reads by DefaultRepo (pointer: always; board: its auto_filter)
 	ScopeWarn    []string
+	Source       string // discovery mechanism: env|local|pointer|user-config
 }
 
 // discover finds the store: FURROW_DIR if set (no scope injection), else walk up
@@ -167,7 +175,7 @@ func discover(startDir string) (resolution, error) {
 		if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
 			return resolution{}, core.Validationf("", "%s=%q is not an existing directory", EnvDir, abs)
 		}
-		return resolution{Dir: abs}, nil
+		return resolution{Dir: abs, Source: "env"}, nil
 	}
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
@@ -176,7 +184,7 @@ func discover(startDir string) (resolution, error) {
 	for {
 		cand := filepath.Join(dir, DirName)
 		if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
-			return resolution{Dir: cand}, nil
+			return resolution{Dir: cand, Source: "local"}, nil
 		}
 		ptr := filepath.Join(dir, PointerName)
 		if fi, err := os.Stat(ptr); err == nil && !fi.IsDir() {
@@ -211,7 +219,7 @@ func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
 		return resolution{}, core.Validationf("", "%s: board %q is not an existing directory", pointerPath, board)
 	}
 	repo, rwarn := deriveScopeRepo(p.DefaultRepo, pointerDir)
-	return resolution{Dir: board, DefaultRepo: repo, AutoFilter: true, ScopeWarn: append(pwarn, rwarn...)}, nil
+	return resolution{Dir: board, DefaultRepo: repo, AutoFilter: true, ScopeWarn: append(pwarn, rwarn...), Source: "pointer"}, nil
 }
 
 // resolvePathRelTo turns a path (bare ~ or ~/path, relative to baseDir, or
@@ -300,7 +308,14 @@ func resolveGlobalBoard(startDir string) (resolution, bool, error) {
 		return resolution{}, false, core.Validationf("", "central board %q is not an existing directory", winBoard)
 	}
 	repo, rwarn := deriveScopeRepo(winner.Repo, abs)
-	return resolution{Dir: winBoard, DefaultLabel: winner.Label, DefaultRepo: repo, AutoFilter: winner.AutoFilter, ScopeWarn: append(warn, rwarn...)}, true, nil
+	// FURROW_BOARD enters through loadGlobalBoards as a synthetic board, so a
+	// winning board is "env" when that override is set, else a real user-config
+	// [[board]] entry.
+	source := "user-config"
+	if os.Getenv(EnvBoard) != "" {
+		source = "env"
+	}
+	return resolution{Dir: winBoard, DefaultLabel: winner.Label, DefaultRepo: repo, AutoFilter: winner.AutoFilter, ScopeWarn: append(warn, rwarn...), Source: source}, true, nil
 }
 
 // boardScopes returns the scopes to match a board against. A board loaded from
@@ -454,7 +469,7 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 		status = a.Cfg.DefaultLane
 	}
 	if !a.Cfg.IsLane(status) {
-		return nil, core.Validationf("", "unknown lane %q (configured: %s)", status, strings.Join(a.Cfg.Lanes, ", "))
+		return nil, a.unknownLaneErr("", status)
 	}
 	if a.Cfg.LabelsRequired && len(o.Labels) == 0 {
 		return nil, core.Validationf("", "a label is required ([labels].required); add -l <label>")
@@ -753,8 +768,14 @@ func (o QueryOpts) matchRevisit(t *core.Task) bool {
 	return d.match(t)
 }
 
-// List returns tasks in canonical order, after applying the filters.
+// List returns tasks in canonical order, after applying the filters. A -s
+// filter naming an unknown lane fails fast (validateLaneFilter) rather than
+// silently returning [] — `ls` is the only read carrying -s, so this is its
+// guard.
 func (a *App) List(o QueryOpts) ([]core.Task, error) {
+	if err := a.validateLaneFilter(o.Status); err != nil {
+		return nil, err
+	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -811,7 +832,7 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 // parked in the done lane with no timestamp now stamps one instead of no-opping.
 func (a *App) Move(id, lane string) (*core.Task, error) {
 	if !a.Cfg.IsLane(lane) {
-		return nil, core.Validationf(id, "unknown lane %q (configured: %s)", lane, strings.Join(a.Cfg.Lanes, ", "))
+		return nil, a.unknownLaneErr(id, lane)
 	}
 	return a.mutate(id, func(t *core.Task) {
 		was := t.Status
@@ -1125,7 +1146,8 @@ func contains(ss []string, s string) bool {
 // matchAnyLane reports whether lane satisfies the -s filter. A comma splits the
 // filter into an OR-set: an empty filter (or one that trims to no tokens) is no
 // constraint; otherwise lane must equal one of the trimmed, non-empty tokens.
-// An unknown token simply matches nothing (clamp-don't-reject — never an error).
+// Unknown tokens are rejected upstream (validateLaneFilter, called by List), so
+// this membership pass never has to distinguish "unknown" from "no match".
 // Re-splitting per task is negligible at furrow's board scale.
 func matchAnyLane(filter, lane string) bool {
 	matched := false
@@ -1140,6 +1162,40 @@ func matchAnyLane(filter, lane string) bool {
 		}
 	}
 	return !any || matched
+}
+
+// unknownLaneErr is the shared "unknown lane" validation error. Every lane gate
+// (add -s, move, ls -s) returns it, so the message is identical and the
+// configured lanes ride along in Candidates — an agent branches on the array
+// instead of regexing the prose, the same did-you-mean contract the repo path
+// already honors. id tags the offending task ("" when the lane came from a
+// filter, not a task).
+func (a *App) unknownLaneErr(id, lane string) *core.Error {
+	return &core.Error{
+		Code:       core.CodeValidation,
+		ID:         id,
+		Msg:        fmt.Sprintf("unknown lane %q (configured: %s)", lane, strings.Join(a.Cfg.Lanes, ", ")),
+		Candidates: append([]string(nil), a.Cfg.Lanes...),
+	}
+}
+
+// validateLaneFilter checks each comma token of a -s filter against the
+// configured lanes, returning unknownLaneErr on the first unknown token.
+// Empty/whitespace tokens are dropped (no constraint). Only `ls` exposes -s, so
+// this is its fail-fast guard: a lane is a closed vocabulary, so a typo'd -s
+// must not silently return [] (clamp-don't-reject is a config-file policy, not
+// for an explicit CLI argument — that is symmetric with move/add). Labels stay
+// lenient by design (an open vocabulary), so matchAnyLabel is untouched.
+func (a *App) validateLaneFilter(filter string) error {
+	for _, tok := range strings.Split(filter, ",") {
+		if tok = strings.TrimSpace(tok); tok == "" {
+			continue
+		}
+		if !a.Cfg.IsLane(tok) {
+			return a.unknownLaneErr("", tok)
+		}
+	}
+	return nil
 }
 
 // matchAnyLabel is matchAnyLane for tags: comma = OR, and a task passes when it
