@@ -208,6 +208,7 @@ furrow は **非対話がデフォルト**。プロンプトは出さない（TT
   | `1` | **名指しした id** が見つからない（`show <id>` 等）。空リストではない |
   | `2` | bad-usage / バリデーション失敗（引数を直す。リトライしない） |
   | `3+` | 内部 / IO 障害 |
+  | `130` / `143` | `SIGINT` / `SIGTERM` で実行が中断された（Unix 慣習の 128+signal）—— 例: `furrow sync` 中の Ctrl-C。`sync-interrupted`（retryable）を返す。意図的な `sync-conflict` は中断ではないので exit `3` のまま |
 
   この契約は binary の `--help`（root の long help・各コマンドの help）にも載る（ここだけでない）。
 

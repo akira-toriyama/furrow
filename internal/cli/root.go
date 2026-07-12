@@ -11,6 +11,8 @@ import (
 	"os/signal"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/akira-toriyama/furrow/internal/app"
@@ -29,6 +31,7 @@ var (
 // exit-code contract:
 //
 //	0 ok / 1 not-found|empty / 2 bad-usage|validation / 3+ internal|IO
+//	(130/143 when a SIGINT/SIGTERM interrupted the run — see below)
 //
 // On a non-zero exit it prints {"error":{...}} to stderr. It is the only place
 // that calls os.Exit-worthy logic; main is just os.Exit(cli.Execute()).
@@ -37,14 +40,14 @@ var (
 // unwinds any in-flight subprocess (e.g. `furrow sync`'s git via
 // exec.CommandContext) gracefully. Once cancelled, the default signal
 // disposition is restored, so a SECOND Ctrl-C hard-kills a wedged process
-// instead of being swallowed.
+// instead of being swallowed. When such a signal is what interrupted the run
+// (the returned error is "sync-interrupted"), Execute returns 128+signal by
+// Unix convention — 130 for SIGINT, 143 for SIGTERM — instead of the interior
+// exit 3, keeping the error id/message (and its retryable meaning) unchanged. A
+// deliberate sync-conflict is not a cancellation, so it keeps its exit 3.
 func Execute() int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, caught, stop := installSignalTrap(context.Background())
 	defer stop()
-	go func() {
-		<-ctx.Done() // first signal (or normal completion) — restore default so a
-		stop()       // second signal terminates hard rather than being buffered
-	}()
 
 	root := newRootCmd()
 	// Board-config [alias] expansion (git-style): a leading token that names an
@@ -61,8 +64,57 @@ func Execute() int {
 	if fe == nil {
 		fe = &core.Error{Code: core.CodeValidation, Msg: err.Error()}
 	}
+	// Remap a signal-caused interruption to 128+signal, leaving the envelope's
+	// code field consistent with the process exit code.
+	fe.Code = interruptedExitCode(fe, caught.Load())
 	renderError(fe)
 	return int(fe.Code)
+}
+
+// installSignalTrap wires SIGINT/SIGTERM to cancel the returned context and
+// records which signal arrived first (caught stores its numeric value, 0 =
+// none) so Execute can map it to a 128+signal exit code. After the first signal
+// it restores the default disposition, so a SECOND Ctrl-C hard-kills a wedged
+// process instead of being buffered. stop() detaches the handler and is
+// idempotent; it also unblocks the watcher goroutine when no signal ever came.
+func installSignalTrap(parent context.Context) (ctx context.Context, caught *atomic.Int64, stop func()) {
+	ctx, cancel := context.WithCancel(parent)
+	caught = &atomic.Int64{}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	done := make(chan struct{})
+	go func() {
+		select {
+		case s := <-sigCh:
+			if sysSig, ok := s.(syscall.Signal); ok {
+				caught.Store(int64(sysSig))
+			}
+			signal.Stop(sigCh) // restore default: a 2nd signal terminates hard
+			cancel()           // unwind in-flight subprocess gracefully
+		case <-done:
+		}
+	}()
+	var once sync.Once
+	stop = func() {
+		once.Do(func() {
+			signal.Stop(sigCh)
+			close(done)
+			cancel()
+		})
+	}
+	return ctx, caught, stop
+}
+
+// interruptedExitCode remaps a signal-caused sync interruption to the Unix
+// 128+signal convention (130 for SIGINT, 143 for SIGTERM) when a signal was
+// caught. Every other outcome keeps its normal code — including a deliberate
+// sync-conflict racing a signal, which is a definitive result, not a
+// cancellation (see app.interruptError). caughtSig is 0 when no signal arrived.
+func interruptedExitCode(fe *core.Error, caughtSig int64) core.Code {
+	if caughtSig != 0 && fe.ID == "sync-interrupted" {
+		return core.Code(128 + caughtSig)
+	}
+	return fe.Code
 }
 
 func newRootCmd() *cobra.Command {
@@ -78,7 +130,8 @@ func newRootCmd() *cobra.Command {
 			"Code can edit the store cleanly.\n\n" +
 			"Exit codes: 0 ok (an empty query result is still 0) · 1 a specifically requested\n" +
 			"id was not found (e.g. show <id>) · 2 bad usage / validation (fix the args, do\n" +
-			"not retry) · 3+ internal / IO. On a non-zero exit an\n" +
+			"not retry) · 3+ internal / IO (130/143 when a SIGINT/SIGTERM interrupted the\n" +
+			"run — 128+signal by Unix convention). On a non-zero exit an\n" +
 			"{\"error\":{code,id,message[,details][,candidates]}} object is written to stderr;\n" +
 			"stdout stays pure data (JSON with --json), so piping stdout to jq is always clean.",
 		SilenceUsage:  true,

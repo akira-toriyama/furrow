@@ -91,9 +91,10 @@ the user-level config. When you work with any furrow store:
   fetch/ref-lock race during the pull is retried and, if a lock still blocks
   past the budget (a likely-stale `.git/*.lock`), fails terminally (id `sync`)
   naming the lock to remove, NOT `sync-busy`. A SIGINT/SIGTERM cancels the
-  in-flight git and exits 3 with id `sync-interrupted` — retryable, just re-run
-  (a genuine conflict is never masked by the signal: it still surfaces as
-  `sync-conflict` with its `details.paths`). Branch on the `id`, not the exit
+  in-flight git and exits **128+signal (130 for SIGINT, 143 for SIGTERM)** with id
+  `sync-interrupted` — retryable, just re-run (a genuine conflict is never masked
+  by the signal: it still surfaces as `sync-conflict` with its `details.paths`,
+  keeping its exit 3). Branch on the `id`, not the exit
   code, to tell these apart. A successful sync also gains a `revisit` key
   (`{dep_done:[ids], stale:[ids]}`, repo-scoped, omitted when empty) — the
   loop-visible staleness nudge; run `furrow revisit` for detail.
@@ -102,8 +103,9 @@ the user-level config. When you work with any furrow store:
 - Exit codes: `0` ok — **including an empty query result** (`ls`/`next`/`revisit`
   matching nothing still succeeded, so `set -e` never trips on "no work") / `1` a
   **specifically requested id** was not found (e.g. `show <id>`), never an empty
-  list / `2` bad-usage|validation / `3+` internal|IO. The contract is also in the
-  binary's own `--help`. On non-zero, an `{"error":{"code","id","message"}}`
+  list / `2` bad-usage|validation / `3+` internal|IO (a signal-interrupted run is
+  `130`/`143` = 128+signal, not `3` — see `sync-interrupted` above). The contract
+  is also in the binary's own `--help`. On non-zero, an `{"error":{"code","id","message"}}`
   object is on stderr — plus an optional machine-actionable `details` (see `sync`
   above) and an optional `candidates` array when an input almost resolved (an
   ambiguous repo short name, an unknown lane, a parent command's unknown
