@@ -33,6 +33,12 @@ jobs:
           go-version: 'stable'
           cache: true
 
+      # syft is required by GoReleaser's `sboms` pipe (it is NOT preinstalled on
+      # the runner); without it the release fails when it tries to catalog each
+      # archive. download-syft only fetches the binary (no cataloging here).
+      - name: install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+
       - name: generate release notes (git-cliff)
         uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
         with:
@@ -67,3 +73,29 @@ jobs:
           subject-path: |
             dist/*.tar.gz
             dist/checksums.txt
+
+      # Sign each archive's SBOM with a Sigstore attestation, binding it to the
+      # SAME digest the provenance step attested (subject = the tar.gz). The
+      # action takes exactly one sbom-path per call, so there is one step per
+      # archive (4 platforms). Each subject-path glob resolves to a single
+      # tar.gz, its sbom-path to that archive's spdx-json document.
+      - name: Attest SBOM (linux amd64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/furrow_*_linux_amd64.tar.gz
+          sbom-path: dist/furrow_*_linux_amd64.tar.gz.spdx.sbom.json
+      - name: Attest SBOM (linux arm64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/furrow_*_linux_arm64.tar.gz
+          sbom-path: dist/furrow_*_linux_arm64.tar.gz.spdx.sbom.json
+      - name: Attest SBOM (darwin amd64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/furrow_*_darwin_amd64.tar.gz
+          sbom-path: dist/furrow_*_darwin_amd64.tar.gz.spdx.sbom.json
+      - name: Attest SBOM (darwin arm64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/furrow_*_darwin_arm64.tar.gz
+          sbom-path: dist/furrow_*_darwin_arm64.tar.gz.spdx.sbom.json
