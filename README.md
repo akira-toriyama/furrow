@@ -236,6 +236,7 @@ furrow is **non-interactive by default** — it never prompts. Destructive opera
 | `1` | a **specifically requested id** was not found (e.g. `show <id>`) — never an empty list |
 | `2` | bad usage / validation |
 | `3+` | internal / I/O error |
+| `130` / `143` | a `SIGINT` / `SIGTERM` interrupted the run (128+signal by Unix convention) — e.g. Ctrl-C during `furrow sync`, which returns `sync-interrupted` (retryable). A deliberate `sync-conflict` is not a cancellation and keeps its exit `3`. |
 
 The same contract is printed by `furrow --help` (and each affected command's help), so it is discoverable from the binary, not just here.
 

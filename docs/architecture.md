@@ -396,8 +396,9 @@ except where noted:
   aborted automatically, conflicted paths in `details`), `sync-busy` (exit 3,
   retryable — a foreign in-progress rebase outlived the bounded backoff),
   `sync` (terminal — a likely-stale `.git/*.lock`, named in the message), and
-  `sync-interrupted` (exit 3, retryable — SIGINT/SIGTERM cancelled the
-  in-flight git; a genuine conflict is never masked by the signal).
+  `sync-interrupted` (exit 130/143 = 128+signal, retryable — SIGINT/SIGTERM
+  cancelled the in-flight git; a genuine conflict is never masked by the signal,
+  keeping its exit 3).
 - **`apply`** parses `SetStatus-task:` directives out of PR/commit text (stdin
   or `--body-file`) and reflects them onto the board — the CI hook behind the
   task-status workflow. Validation is non-blocking by design.
@@ -460,7 +461,9 @@ except where noted:
   empty query result** (a match of nothing still succeeded, so `ls`/`next`/
   `revisit` all exit 0 when empty) / `1` a **specifically requested id** was not
   found (e.g. `show <id>`), never an empty list / `2` bad-usage or validation /
-  `3+` internal or IO. The exit-code contract also lives in the binary's own
+  `3+` internal or IO — with `130`/`143` (128+signal) carved out for a run a
+  SIGINT/SIGTERM interrupted (`sync-interrupted`; see the `sync` failure modes
+  above). The exit-code contract also lives in the binary's own
   `--help` (the root command's long help) and each affected command's help, not
   just here. On a non-zero exit the CLI prints `{"error":{"code","id","message"}}`
   to stderr, plus optional machine-actionable fields: `candidates` (a near-miss
