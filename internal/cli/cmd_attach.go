@@ -27,6 +27,8 @@ func newAttachCmd() *cobra.Command {
 				return err
 			}
 			id, src := args[0], args[1]
+			// #nosec G304 -- src is the operator's own attach argument;
+			// reading the file they named is the command's purpose.
 			data, err := os.ReadFile(src)
 			if err != nil {
 				return core.Validationf("", "read %q: %v", src, err)

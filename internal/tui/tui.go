@@ -362,6 +362,8 @@ func (m *model) editSelected() tea.Cmd {
 	editor := firstNonEmpty(os.Getenv("FURROW_EDITOR"), os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
 	parts := strings.Fields(editor)
 	parts = append(parts, path)
+	// #nosec G204 -- the command is the operator's own $EDITOR
+	// (FURROW_EDITOR/VISUAL/EDITOR), same trust model as git commit.
 	c := exec.Command(parts[0], parts[1:]...)
 	return tea.ExecProcess(c, func(err error) tea.Msg { return editedMsg{id: t.ID, err: err} })
 }
