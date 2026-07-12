@@ -34,6 +34,8 @@ type rawPointer struct {
 // Resolving the board path (relative/~/abs) and checking it exists is the
 // caller's job — only the caller knows the pointer file's directory.
 func LoadPointer(path string) (*Pointer, []string, error) {
+	// #nosec G304 -- path is a furrow .furrow-pointer.toml discovered by the
+	// app layer walking up from cwd, not attacker-supplied.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, err

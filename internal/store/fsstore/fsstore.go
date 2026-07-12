@@ -177,6 +177,9 @@ func (s *Store) Save(idx *core.Index) error {
 // disk. Comparing bytes first is what makes a no-op Save produce zero git churn:
 // an unchanged shard keeps its exact contents and mtime.
 func (s *Store) writeIfChanged(path string, data []byte) error {
+	// #nosec G304 -- path is a furrow-internal store path (store dir joined
+	// with a validated id), read back only to compare against what we are
+	// about to write; not attacker-influenced.
 	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, data) {
 		return nil
 	}
@@ -231,6 +234,8 @@ func (s *Store) SaveAsset(id, srcName string, data []byte) (string, error) {
 // LoadAsset returns the bytes of bodies/assets/<name>. Missing is a NotFound
 // error (archive lists first, so absence here is unexpected).
 func (s *Store) LoadAsset(name string) ([]byte, error) {
+	// #nosec G304 -- name is a store-internal asset name under assetsDir; the
+	// path stays within furrow's own store, not attacker-supplied.
 	data, err := os.ReadFile(filepath.Join(s.assetsDir(), name))
 	if err != nil {
 		if os.IsNotExist(err) {

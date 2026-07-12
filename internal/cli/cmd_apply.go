@@ -70,6 +70,8 @@ func newApplyCmd() *cobra.Command {
 // flag is empty.
 func readBodyText(cmd *cobra.Command, path string) (string, error) {
 	if path != "" {
+		// #nosec G304 -- path is the operator's own --body-file argument;
+		// reading the file they named is the command's purpose.
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return "", core.Internalf("", "read --body-file %q: %v", path, err)

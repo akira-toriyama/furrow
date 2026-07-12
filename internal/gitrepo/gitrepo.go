@@ -306,6 +306,8 @@ func (r *Repo) absGitPath(out string) string {
 // Ctrl-C/SIGTERM-cancelled sync), so a long fetch/push unwinds promptly instead
 // of hanging.
 func runGit(ctx context.Context, git, dir string, args ...string) (stdout, stderr string, err error) {
+	// #nosec G204 -- git is resolved from PATH; args are furrow-built git
+	// subcommands and refs/paths, never an unescaped user shell string.
 	cmd := exec.CommandContext(ctx, git, args...)
 	cmd.Dir = dir
 	var so, se strings.Builder

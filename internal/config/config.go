@@ -55,6 +55,8 @@ type raw struct {
 // error: it returns Default() with no warnings. A malformed file IS an error
 // (the user wrote broken TOML — that is worth stopping for).
 func Load(path string) (*Config, []string, error) {
+	// #nosec G304 -- path is furrow's own config location, resolved by the
+	// app layer from the store dir / XDG (never attacker-supplied).
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return Default(), nil, nil

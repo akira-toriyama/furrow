@@ -165,6 +165,8 @@ func newEditCmd() *cobra.Command {
 			editor := firstNonEmpty(os.Getenv("FURROW_EDITOR"), os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
 			parts := strings.Fields(editor)
 			parts = append(parts, path)
+			// #nosec G204 -- the command is the operator's own $EDITOR
+			// (FURROW_EDITOR/VISUAL/EDITOR), same trust model as git commit.
 			ed := exec.Command(parts[0], parts[1:]...)
 			ed.Stdin, ed.Stdout, ed.Stderr = os.Stdin, os.Stdout, os.Stderr
 			if err := ed.Run(); err != nil {

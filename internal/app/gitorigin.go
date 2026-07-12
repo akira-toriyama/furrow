@@ -74,6 +74,8 @@ func originRepo(repoDir string) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	// #nosec G304 -- cfg is a git config path resolved from repoDir (cwd),
+	// read only to derive owner/repo; not attacker-supplied.
 	data, err := os.ReadFile(cfg)
 	if err != nil {
 		return "", false
@@ -100,6 +102,8 @@ func gitConfigPath(repoDir string) (string, bool) {
 	if fi.IsDir() {
 		return filepath.Join(gitPath, "config"), true
 	}
+	// #nosec G304 -- gitPath is repoDir/.git (a git-managed pointer file), read
+	// to follow the worktree gitdir redirect; not attacker-supplied.
 	data, err := os.ReadFile(gitPath)
 	if err != nil {
 		return "", false
@@ -113,6 +117,8 @@ func gitConfigPath(repoDir string) (string, bool) {
 	if !filepath.IsAbs(gitdir) {
 		gitdir = filepath.Join(repoDir, gitdir)
 	}
+	// #nosec G304 -- gitdir comes from the .git pointer file above; reading its
+	// commondir follows git's own worktree layout, not attacker-supplied input.
 	if cd, err := os.ReadFile(filepath.Join(gitdir, "commondir")); err == nil {
 		common := strings.TrimSpace(string(cd))
 		if !filepath.IsAbs(common) {

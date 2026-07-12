@@ -65,6 +65,8 @@ type rawBoard struct {
 // that the chosen board exists are the caller's job (only the app layer knows
 // cwd and the config file's directory).
 func LoadGlobalBoards(path string) ([]GlobalBoard, []string, error) {
+	// #nosec G304 -- path is furrow's own user-level config location
+	// (~/.config/furrow/config.toml), resolved by the app layer, not attacker-supplied.
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, nil, nil
