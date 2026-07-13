@@ -16,16 +16,29 @@ import (
 func newBoardCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "board",
-		Short: "Print the active board: store path, scope, and lane vocabulary",
+		Short: "Print the active board: store path, scope, lane vocabulary, and schema state",
 		Long: "Print the resolved board furrow is acting on: the store path (where writes\n" +
 			"land), how it was discovered (env | local | pointer | user-config), the repo\n" +
 			"scope that filters reads, and the lane vocabulary (lanes / next-lanes /\n" +
 			"default / done / terminal) plus the stale/archive windows. It is the\n" +
 			"introspection call for \"what lanes exist and what scope is active\" — so a\n" +
 			"typo'd `-s`/`move` need not be provoked to learn the lanes. --json emits the\n" +
-			"object; --ndjson emits it as one compact line.",
+			"object; --ndjson emits it as one compact line.\n\n" +
+			"It also answers \"can I write here, and if not, which side is stale?\" without\n" +
+			"provoking an error:\n" +
+			"  schema_version         the layout the BOARD declares (0 = unstamped)\n" +
+			"  binary_schema_version  the layout THIS furrow writes\n" +
+			"  schema_state           current | outdated | too-new | unreadable\n" +
+			"  writable               true only when the two agree\n" +
+			"Both stores are covered — a board that has archived anything is TWO stores\n" +
+			"(.furrow/ and .furrow/archive/), each with its own layout version; the worst\n" +
+			"state wins. This command NEVER fails on a version mismatch — it reports it, so\n" +
+			"it is the one thing that still answers when nothing else can. Read it as a\n" +
+			"pre-flight (`writable != true` -> stop) instead of watching every task read\n" +
+			"fail with \"task not found\".",
 		Example: "  furrow board            # human summary\n" +
-			"  furrow board --json     # {store, source, scope_repo, lanes, next_lanes, ...}",
+			"  furrow board --json     # {store, source, scope_repo, lanes, schema_state, writable, ...}\n" +
+			"  furrow board --json | jq -e '.writable'   # CI pre-flight: is this board writable?",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()

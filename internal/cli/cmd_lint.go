@@ -15,8 +15,14 @@ func newLintCmd() *cobra.Command {
 			"index<->body 1:1 mapping, dep/parent references, dependency cycles (error),\n" +
 			"dangling [[id]] body links (warn), reconcile gaps — an open task whose done\n" +
 			"dependency closed after its last update (warn), asset hygiene — dangling\n" +
-			"refs, orphan and oversized assets (warn), and config clamp warnings.\n" +
-			"Exits 2 if any errors are found; warnings alone exit 0.",
+			"refs, orphan and oversized assets (warn), an outdated board layout —\n" +
+			"schema-outdated, i.e. writes are refused until `furrow upgrade` runs (warn,\n" +
+			"never an error: a read-only board is the legitimate middle of a flag day), and\n" +
+			"config clamp warnings.\n" +
+			"Exits 2 if any errors are found; warnings alone exit 0.\n\n" +
+			"Every problem carries a stable kebab-case `code` — branch on that, never on the\n" +
+			"message (the `id` field is contextual: a task id, an asset name, `meta`, or\n" +
+			"`config`).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()

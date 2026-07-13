@@ -113,12 +113,18 @@ The seams between the pure core and the outside world are interfaces declared in
 - **`Store`** — persists the per-task metadata shards and per-task bodies. It owns
   *all* path construction (callers never assemble `".furrow/bodies/<id>.md"` by
   hand) and *all* atomicity. Methods: `Load`, `Save`, `BoardVersion`,
-  `SetBoardVersion`, `LoadBody`, `SaveBody`,
+  `Writable`, `SetBoardVersion`, `LoadBody`, `SaveBody`,
   `BodyExists`, `ListBodyIDs`, `ListTaskIDs`, `SaveAsset`, `ListAssets`,
   `NextID`. `BoardVersion` reads the layout version the board *declares*
   (ungated, so `furrow board` can diagnose a board nothing else can open);
-  `SetBoardVersion` is the **one deliberate raiser**, called by `furrow upgrade`
-  and nothing else. The two asset methods are the store half of `furrow attach` /
+  **`Writable`** is the side-effect-free predicate behind the write gate — it
+  answers "may this binary write this board?" (`nil` = yes, else the refusal every
+  mutation would raise), so the callers that only need to *report* the state
+  (`furrow board`, `furrow lint`, and `archive`, which must gate the hot board
+  before it touches the sibling archive store) ask it instead of re-deriving the
+  rule; a second copy of the rule is how the reporting and the enforcement drift
+  apart. `SetBoardVersion` is the **one deliberate raiser**, called by
+  `furrow upgrade` and nothing else. The two asset methods are the store half of `furrow attach` /
   `furrow lint`'s asset checks: `SaveAsset` copies media into the task's asset
   area `bodies/assets/<id>-<name>` (sanitized, collision-free, atomic) and
   returns the final basename; `ListAssets` enumerates `bodies/assets/` as
