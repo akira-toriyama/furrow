@@ -97,7 +97,7 @@ go install github.com/akira-toriyama/furrow/cmd/furrow@latest
 nix run github:akira-toriyama/furrow
 ```
 
-配布は GoReleaser から Homebrew tap（`akira-toriyama/homebrew-tap`）と nix flake へ流す（公開済みリリースは [Releases ページ](https://github.com/akira-toriyama/furrow/releases) を参照）。nix flake の `vendorHash` は `v0.4.0` で実 hash 化済み（`flake.lock` も commit 済み）。リリースパイプラインは各成果物に GitHub の build-provenance attestation を付与する（`gh attestation verify <file> --repo akira-toriyama/furrow` で検証）。
+配布は GoReleaser から Homebrew tap（`akira-toriyama/homebrew-tap`）と nix flake へ流す（公開済みリリースは [Releases ページ](https://github.com/akira-toriyama/furrow/releases) を参照）。nix flake の `vendorHash` は `v0.4.0` で実 hash 化済み（`flake.lock` も commit 済み）。リリースパイプラインは各成果物に GitHub の build-provenance attestation を付与する（`gh attestation verify <file> --repo akira-toriyama/furrow` で検証）。各 archive には SPDX SBOM（`<archive>.spdx.sbom.json`。release assets と `checksums.txt` に載る）も付き、それ自体に署名付き attestation が付く（`gh attestation verify <archive> --repo akira-toriyama/furrow --predicate-type https://spdx.dev/Document` で検証）。
 
 ---
 

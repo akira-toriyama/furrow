@@ -24,6 +24,20 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# SBOM per archive (audit F10 follow-up to the build-provenance work in #77).
+# syft catalogs each tar.gz and writes an SPDX-JSON document beside it;
+# GoReleaser adds these to the release assets and to checksums.txt, and
+# release.yml then attests each one (actions/attest-sbom) so the SBOM is both
+# discoverable (a release asset) and verifiable (a signed attestation). The
+# runner installs syft via download-syft (it is not preinstalled — without it
+# this pipe fails the release). Args are pinned to a deterministic spdx-json
+# output (no network enrichment) to keep the release reproducible.
+sboms:
+  - artifacts: archive
+    documents:
+      - "${artifact}.spdx.sbom.json"
+    args: ["$artifact", "--output", "spdx-json=$document"]
+
 # Homebrew cask pushed to the family tap on release. GoReleaser v2 ships
 # prebuilt binaries as CASKS (the old `brews:` formula path is deprecated); the
 # live Casks/furrow.rb in akira-toriyama/homebrew-tap is regenerated each
