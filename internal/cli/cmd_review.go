@@ -47,11 +47,20 @@ func newReviewCmd() *cobra.Command {
 				return err
 			}
 			arg := args[0]
-			// Task mode when the argument is id-shaped; otherwise repo mode. A repo
-			// (owner/repo, or a short name) is never id-shaped, so the split is
-			// unambiguous for the real inputs.
+			// Dispatch task-vs-repo. Shape alone is NOT enough: the id pattern is
+			// just the configured prefix + base32 (^t-[0-9a-z]+$), so a repo short
+			// name that happens to start with it — t-digest, t-rex, t-io — is
+			// id-shaped too. So an id-shaped token only takes task mode when a task
+			// with that id actually EXISTS; otherwise it falls through to repo mode,
+			// and if it is not a resolvable repo either we report the more useful
+			// error (task not found, since it looked like an id).
 			if a.Cfg.IDPattern().MatchString(arg) {
-				return emitMutation(a, "reviewed", arg, func() (*core.Task, error) { return a.ReviewTask(arg) })
+				if _, _, err := a.Get(arg); err == nil {
+					return emitMutation(a, "reviewed", arg, func() (*core.Task, error) { return a.ReviewTask(arg) })
+				}
+				if _, rerr := a.ResolveRepo(arg); rerr != nil {
+					return core.NotFound(arg)
+				}
 			}
 			rec, err := a.ReviewRepo(arg, by == "agent")
 			if err != nil {

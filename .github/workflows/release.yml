@@ -74,28 +74,43 @@ jobs:
             dist/*.tar.gz
             dist/checksums.txt
 
+      # The SBOM attest steps need CONCRETE paths. actions/attest glob-expands
+      # `subject-path` but NOT `sbom-path` (it fs.stat()s the raw string), so a
+      # wildcard there would stat a literal "*" filename, throw "SBOM file not
+      # found", and fail the release AFTER GoReleaser has already published the
+      # draft and pushed the Homebrew cask — a half-shipped release. Derive the
+      # version from the archives GoReleaser actually produced (rather than the
+      # ref) so the paths are exact and a missing archive fails loudly here.
+      - name: Resolve release version (concrete artifact paths)
+        id: rel
+        run: |
+          set -euo pipefail
+          f="$(ls dist/furrow_*_linux_amd64.tar.gz)"
+          v="${f#dist/furrow_}"
+          v="${v%_linux_amd64.tar.gz}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
       # Sign each archive's SBOM with a Sigstore attestation, binding it to the
       # SAME digest the provenance step attested (subject = the tar.gz). The
       # action takes exactly one sbom-path per call, so there is one step per
-      # archive (4 platforms). Each subject-path glob resolves to a single
-      # tar.gz, its sbom-path to that archive's spdx-json document.
+      # archive (4 platforms).
       - name: Attest SBOM (linux amd64)
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: dist/furrow_*_linux_amd64.tar.gz
-          sbom-path: dist/furrow_*_linux_amd64.tar.gz.spdx.sbom.json
+          subject-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_amd64.tar.gz
+          sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_amd64.tar.gz.spdx.sbom.json
       - name: Attest SBOM (linux arm64)
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: dist/furrow_*_linux_arm64.tar.gz
-          sbom-path: dist/furrow_*_linux_arm64.tar.gz.spdx.sbom.json
+          subject-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_arm64.tar.gz
+          sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_arm64.tar.gz.spdx.sbom.json
       - name: Attest SBOM (darwin amd64)
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: dist/furrow_*_darwin_amd64.tar.gz
-          sbom-path: dist/furrow_*_darwin_amd64.tar.gz.spdx.sbom.json
+          subject-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_amd64.tar.gz
+          sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_amd64.tar.gz.spdx.sbom.json
       - name: Attest SBOM (darwin arm64)
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: dist/furrow_*_darwin_arm64.tar.gz
-          sbom-path: dist/furrow_*_darwin_arm64.tar.gz.spdx.sbom.json
+          subject-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_arm64.tar.gz
+          sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_arm64.tar.gz.spdx.sbom.json

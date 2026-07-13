@@ -101,3 +101,33 @@ func TestSchemaRepoKind(t *testing.T) {
 		t.Errorf("schema repo missing expected content:\n%s", out)
 	}
 }
+
+// An id-SHAPED argument that is not an existing task must fall through to repo
+// mode: a repo short name like "t-digest" is id-shaped (^t-[0-9a-z]+$) but is a
+// repo, not a task. And an id-shaped token that is neither a task nor a repo
+// reports task-not-found (exit 1), which is the useful error.
+func TestReviewIDShapedRepoShortNameFallsThroughToRepo(t *testing.T) {
+	initStore(t)
+	// A repo whose SHORT NAME is id-shaped.
+	addTask(t, "a task", "-r", "tdunning/t-digest")
+
+	out, code := run(t, "--json", "review", "t-digest")
+	if code != 0 {
+		t.Fatalf("review t-digest exit = %d (should be repo mode):\n%s", code, out)
+	}
+	var rec struct {
+		Repo         string  `json:"repo"`
+		LastReviewed *string `json:"last_reviewed"`
+	}
+	if err := json.Unmarshal([]byte(out), &rec); err != nil {
+		t.Fatalf("expected a repo record, got:\n%s", out)
+	}
+	if rec.Repo != "tdunning/t-digest" || rec.LastReviewed == nil {
+		t.Errorf("t-digest should have been reviewed as a REPO, got %+v", rec)
+	}
+
+	// id-shaped, but neither an existing task nor a resolvable repo -> not found.
+	if _, code := run(t, "review", "t-zzzz9"); code != 1 {
+		t.Errorf("unknown id-shaped token exit = %d, want 1 (task not found)", code)
+	}
+}
