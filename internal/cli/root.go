@@ -133,7 +133,20 @@ func newRootCmd() *cobra.Command {
 			"not retry) · 3+ internal / IO (130/143 when a SIGINT/SIGTERM interrupted the\n" +
 			"run — 128+signal by Unix convention). On a non-zero exit an\n" +
 			"{\"error\":{code,id,message[,details][,candidates]}} object is written to stderr;\n" +
-			"stdout stays pure data (JSON with --json), so piping stdout to jq is always clean.",
+			"stdout stays pure data (JSON with --json), so piping stdout to jq is always clean.\n\n" +
+			"The board's layout version gates writes, and it is an INPUT — an ordinary write\n" +
+			"never raises it (only `furrow upgrade` does). Two ids say which side is stale,\n" +
+			"and the exit code alone tells them apart:\n" +
+			"  schema-upgrade-required (exit 2) the BOARD is behind this binary. It stays\n" +
+			"                                   fully READABLE but is read-only until\n" +
+			"                                   `furrow upgrade` runs.\n" +
+			"  schema-too-new          (exit 3) the BINARY is behind the board — update\n" +
+			"                                   furrow (in CI: bump the pin). Note this is a\n" +
+			"                                   deliberate refusal that nonetheless exits 3:\n" +
+			"                                   the fix is the binary, not the input.\n" +
+			"Both carry details {board_schema, binary_schema}. `furrow board` reports the\n" +
+			"state (schema_state / writable) WITHOUT failing — read it as a pre-flight rather\n" +
+			"than provoking an error; `furrow lint` warns schema-outdated.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// Version holds the full human line (e.g. "furrow v1.2.3 (abc1234, ...)")

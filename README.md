@@ -265,6 +265,15 @@ furrow is **non-interactive by default** — it never prompts. Destructive opera
 | `3+` | internal / I/O error |
 | `130` / `143` | a `SIGINT` / `SIGTERM` interrupted the run (128+signal by Unix convention) — e.g. Ctrl-C during `furrow sync`, which returns `sync-interrupted` (retryable). A deliberate `sync-conflict` is not a cancellation and keeps its exit `3`. |
 
+The **schema gate** is the one place where the exit code, not the id, is what tells you which side is stale — so it is worth stating explicitly:
+
+| id | Code | Which side is stale | What to do |
+|---|---|---|---|
+| `schema-upgrade-required` | `2` | the **board** — it is behind this binary. Fully readable, but **read-only** | `furrow upgrade` (a flag day: bump every pinned caller **first**) |
+| `schema-too-new` | `3` | the **binary** — the board declares a layout it does not know | update furrow; in CI, bump the `sync-task-status.yml@vX.Y.Z` pin |
+
+Both carry `details {board_schema, binary_schema}`. Note `schema-too-new` is a *deliberate* refusal that still exits `3`: the fix is the binary, not the input. To ask "can I write here?" **without provoking an error**, read `furrow board --json`'s `writable` / `schema_state` (it never fails on a mismatch — see [The layout version gates writes](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)); `furrow lint` warns `schema-outdated`.
+
 The same contract is printed by `furrow --help` (and each affected command's help), so it is discoverable from the binary, not just here.
 
 On a non-zero exit, furrow prints a structured error object to stderr:

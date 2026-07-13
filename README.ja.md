@@ -213,6 +213,15 @@ furrow は **非対話がデフォルト**。プロンプトは出さない（TT
   | `3+` | 内部 / IO 障害 |
   | `130` / `143` | `SIGINT` / `SIGTERM` で実行が中断された（Unix 慣習の 128+signal）—— 例: `furrow sync` 中の Ctrl-C。`sync-interrupted`（retryable）を返す。意図的な `sync-conflict` は中断ではないので exit `3` のまま |
 
+  **スキーマゲート**だけは「id ではなく exit code が、どちら側が古いかを告げる」唯一の場所なので、明示しておく:
+
+  | id | code | 古いのはどちら | どうするか |
+  |---|---|---|---|
+  | `schema-upgrade-required` | `2` | **board** —— この binary より古い。読めるが **read-only** | `furrow upgrade`（flag day: pin している呼び出し側を**先に**全部上げる） |
+  | `schema-too-new` | `3` | **binary** —— board が知らないレイアウトを宣言している | furrow を更新する。CI なら `sync-task-status.yml@vX.Y.Z` の pin を上げる |
+
+  どちらも `details {board_schema, binary_schema}` を持つ。`schema-too-new` は**意図的な拒否なのに exit 3** である点に注意 —— 直すべきは入力ではなく binary だから。「ここに書けるか？」を**エラーを起こさずに**問うなら `furrow board --json` の `writable` / `schema_state` を読む（版ズレでも失敗しない）。`furrow lint` は `schema-outdated` を warn する。
+
   この契約は binary の `--help`（root の long help・各コマンドの help）にも載る（ここだけでない）。
 
 - **エラー出力** — 非ゼロ時は stderr に次の形を出す（stdout を `jq` に流していても汚染しない）。
