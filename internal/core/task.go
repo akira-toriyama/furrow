@@ -58,13 +58,34 @@ type Index struct {
 // once (turning it into a git-conflict point). MetaPath names it.
 type Meta struct {
 	SchemaVersion int `json:"schema_version"`
+
+	// extras holds keys this binary does not know — a field written by a NEWER
+	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,
+	// one ordinary write would silently destroy that field (see passthrough.go).
+	// nil when there were none, which is the normal case.
+	//
+	// UNEXPORTED on purpose, and it is structural, not stylistic: encoding/json
+	// cannot see it, so it can never surface as a literal "extras" key, and it can
+	// never leak into internal/cli/output.go's --json views. Which leads to the
+	// rule that must not be broken:
+	//
+	//   *** Task must NEVER grow a MarshalJSON method. ***
+	//
+	// internal/cli's views EMBED core.Task to put body_text / reason / revisit /
+	// snippet / mentioned_by beside it. A MarshalJSON on Task would be PROMOTED to
+	// those outer structs, Go would call it for the whole view, and every sibling
+	// field would vanish — with no compile error. The splice happens on the store's
+	// write path instead (core.MarshalTask).
+	extras Extras
 }
 
 // CheckSchemaVersion is the READ half of the version gate: it rejects a board
-// whose meta.json declares a layout NEWER than this binary knows. Without it, an
-// old binary's lenient json.Unmarshal would load such a board, silently drop
-// every field it doesn't know (e.g. repos), and write the loss back on the next
-// Save. Both stores call this on Load; the CLI surfaces it as exit 3 (internal —
+// whose meta.json declares a layout NEWER than this binary knows. It guards
+// against MISREADING such a board — a v3-only binary would happily load a v4
+// shard and then act as if `reviewed` did not exist. (It no longer guards against
+// DESTROYING the fields it doesn't know: passthrough.go now preserves those. But
+// preserving is not understanding, which is exactly why this gate stays.) Both
+// stores call it on Load; the CLI surfaces it as exit 3 (internal —
 // the fix is updating the binary, not the input). An OLDER board loads fine:
 // forward-compat is the store's normal lenient read. Writing one is a different
 // question — see CheckWritable.
@@ -149,6 +170,22 @@ type Task struct {
 	// pointer so "never reviewed" serializes to explicit null, like Closed.
 	Reviewed *time.Time `json:"reviewed"`
 	Body     string     `json:"body"` // relative path, e.g. "bodies/t-0042.md"
+
+	// extras holds keys this binary does not know — a field written by a NEWER
+	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,
+	// one ordinary write would silently destroy that field (see passthrough.go).
+	// nil when the shard had no unknown keys, which is the normal case.
+	//
+	// UNEXPORTED, and structurally so — the same rule Meta.extras spells out above,
+	// and it binds hardest HERE: encoding/json cannot see this field, so it can
+	// never surface as a literal "extras" key, and *** Task must NEVER grow a
+	// MarshalJSON method *** to re-emit it. Go would PROMOTE that method to
+	// internal/cli's --json views (they embed core.Task to put body_text / reason /
+	// revisit / snippet / mentioned_by beside it), call it for the whole view, and
+	// drop every sibling field with no compile error. The splice happens on the
+	// store's write path instead — core.MarshalTask -> encodeCanonicalWithExtras.
+	// Read it back with ExtraKeys().
+	extras Extras
 }
 
 // ChecklistItem mirrors a GitHub "Sub-issues progress" line: a piece of work

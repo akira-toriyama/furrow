@@ -24,7 +24,8 @@ const TaskV2 = `{
   "title": "furrow task shard v2",
   "description": "Schema for one .furrow/tasks/<id>.json shard (a single task's metadata). The board-wide schema_version lives in .furrow/meta.json, never in a shard. v2 adds the required repos set (owner/repo identifiers; [] = draft, attached to no repo). Pin to a tagged URL or vendor this file.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
+  "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a shard furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (naming the task) — nothing else can, since nothing ever deletes an extra. NOTE $defs/checklistItem below keeps additionalProperties:false, because passthrough is TOP-LEVEL ONLY — an unknown key inside a checklist item really is still dropped, and this schema must not promise what the marshaller does not do.",
   "required": ["id", "title", "status", "priority", "labels", "repos", "deps", "refs", "checklist", "created", "updated", "closed", "reviewed", "body"],
   "properties": {
     "id": { "type": "string", "description": "frozen id; == the shard filename stem and bodies/<id>.md stem" },
@@ -72,7 +73,8 @@ const MetaV2 = `{
   "title": "furrow meta v2",
   "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 4 = adds the per-repo review shards (repos/) and the per-task reviewed timestamp (3 = the repos pivot, 2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
+  "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a meta.json furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (blamed on the id \"meta\", since meta.json belongs to no task) — nothing else can, since nothing ever deletes an extra. This document has no nested objects, so the top-level-only limit of the passthrough has nothing to qualify here; the task shard's schema explains it.",
   "required": ["schema_version"],
   "properties": {
     "schema_version": { "const": 4 }
@@ -93,7 +95,8 @@ const RepoV1 = `{
   "title": "furrow repo review shard v1",
   "description": "Schema for one .furrow/repos/<owner>__<repo>.json shard (a single repo's review record). The board-wide schema_version lives in .furrow/meta.json, never in a shard. Pin to a tagged URL or vendor this file.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
+  "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a shard furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (naming the owner/repo) — nothing else can, since nothing ever deletes an extra. This document has no nested objects, so the top-level-only limit of the passthrough has nothing to qualify here; the task shard's schema explains it.",
   "required": ["repo", "last_reviewed", "last_agent_reviewed"],
   "properties": {
     "repo": { "type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+$", "description": "the owner/repo this record reviews" },

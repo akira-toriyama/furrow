@@ -37,6 +37,9 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// signal, so an epic whose slice shipped never silently keeps a stale body.
 	doneIDs := map[string]bool{}
 	for _, t := range idx.Tasks {
+		if p, ok := unknownKeyProblem(t.ID, "task shard "+core.TaskPath(t.ID), t.ExtraKeys()); ok {
+			ps = append(ps, p)
+		}
 		if t.Status == a.Cfg.DoneLane {
 			doneIDs[t.ID] = true
 			// A done task with no closed timestamp is a zombie: `archive` skips it
@@ -48,6 +51,30 @@ func (a *App) Lint() ([]core.Problem, error) {
 		}
 	}
 	ps = append(ps, core.StaleDepProblems(idx, a.Cfg.Terminal, doneIDs)...)
+
+	// The same unknown-key sweep over the OTHER two machine-written file kinds.
+	// The passthrough parks unknown keys in repo review shards and meta.json too,
+	// and their published schemas had to flip to additionalProperties:true along
+	// with the task shard's — which removed the only thing that ever rejected a
+	// typo in them. Without these two loops, a fat-fingered key in a repo shard or
+	// in meta.json would be preserved forever and reported by NOTHING: a detection
+	// regression hiding inside a data-preservation fix.
+	repos, err := a.Store.ListRepos()
+	if err != nil {
+		return nil, err
+	}
+	for i := range repos {
+		if p, ok := unknownKeyProblem(repos[i].Repo, "repo review shard "+core.RepoRecordPath(repos[i].Repo), repos[i].ExtraKeys()); ok {
+			ps = append(ps, p)
+		}
+	}
+	meta, err := a.Store.LoadMeta()
+	if err != nil {
+		return nil, err
+	}
+	if p, ok := unknownKeyProblem("meta", "meta.json", meta.ExtraKeys()); ok {
+		ps = append(ps, p)
+	}
 
 	// tasks/ <-> bodies/ 1:1 + shard filename/id integrity — all by directory
 	// enumeration. Sharding makes a duplicate filename impossible; a duplicate id
@@ -246,6 +273,33 @@ func assetOwner(name string, taskIDs map[string]bool) string {
 		}
 	}
 	return ""
+}
+
+// unknownKeyProblem is the one wording for the three machine-written file kinds
+// (task shard, repo review shard, meta.json), which all park unknown top-level
+// keys now (core/passthrough.go). ok=false when the record carried none — the
+// normal case — so callers stay a two-line `if`.
+//
+// furrow PRESERVES a key it does not know rather than silently destroying it on
+// the next write. But preserving is not understanding, and silence is not safety,
+// so say so. Two causes, both worth seeing:
+//
+//   - A field a NEWER furrow wrote without bumping the layout version, so no gate
+//     fired. This binary carries it faithfully and IGNORES it: the task may be
+//     sorted, filtered, or closed as if the field were not there. Update furrow.
+//   - A typo in a hand-edited file ("lables"). It is now PERMANENT — nothing ever
+//     removes an extra, because auto-deleting a key we don't understand IS the bug
+//     the passthrough fixes. CLAUDE.md says never hand-edit these files; this is why.
+//
+// A warning, never an error: the data is intact, and a board being read by a
+// slightly older binary must not red anyone's CI.
+func unknownKeyProblem(id, what string, keys []string) (core.Problem, bool) {
+	if len(keys) == 0 {
+		return core.Problem{}, false
+	}
+	return core.Problem{Severity: core.SevWarn, Code: "unknown-shard-key", ID: id,
+		Msg: fmt.Sprintf("%s carries %d key(s) this furrow does not know (%s) — preserved on write, but IGNORED: update furrow, or fix the hand-edit",
+			what, len(keys), strings.Join(keys, ", "))}, true
 }
 
 // humanBytes renders a byte count as a compact IEC size (B/KiB/MiB/…) for the

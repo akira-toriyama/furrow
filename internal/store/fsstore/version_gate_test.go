@@ -288,3 +288,40 @@ func TestSetBoardVersionUnblocksWrites(t *testing.T) {
 		t.Errorf("meta.json = %q, want the single-marshaller bytes %q", got, want)
 	}
 }
+
+// SetBoardVersion is the one writer of meta.json, and it must RAISE the version
+// without eating the rest of the file. Building a fresh core.Meta{SchemaVersion:v}
+// discards every key the file had — so `furrow upgrade`, the command whose entire
+// job is to move a board FORWARD, would destroy the forward-compatible keys a
+// newer furrow had written there. The passthrough is worthless if the upgrade
+// path is the thing that strips.
+func TestSetBoardVersionPreservesUnknownMetaKeys(t *testing.T) {
+	root := t.TempDir()
+	s := New(root, gateLanes, "t-", 5)
+	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
+		t.Fatal(err)
+	}
+	meta := filepath.Join(root, "meta.json")
+	if err := os.WriteFile(meta, []byte("{\n  \"schema_version\": "+strconv.Itoa(core.SchemaVersion-1)+",\n  \"min_reader\": 3\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.SetBoardVersion(core.SchemaVersion); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(got, []byte("min_reader")) {
+		t.Errorf("raising the board ate a key it did not understand:\n%s", got)
+	}
+	v, err := s.BoardVersion()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != core.SchemaVersion {
+		t.Errorf("board version = %d, want %d — the raise itself must still happen", v, core.SchemaVersion)
+	}
+}

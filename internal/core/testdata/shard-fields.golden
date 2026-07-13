@@ -1,0 +1,34 @@
+# The on-disk shape of every furrow shard. See TestShardFieldsGolden.
+# Changing this file means changing what other furrows read.
+schema_version 4
+
+Task
+  id string
+  title string
+  status string
+  priority int
+  value *int (omitempty)
+  effort *int (omitempty)
+  labels []string
+  repos []string
+  parent string (omitempty)
+  deps []string
+  refs []string
+  checklist []core.ChecklistItem
+  created time.Time
+  updated time.Time
+  closed *time.Time
+  reviewed *time.Time
+  body string
+
+Meta
+  schema_version int
+
+RepoRecord
+  repo string
+  last_reviewed *time.Time
+  last_agent_reviewed *time.Time
+
+ChecklistItem
+  text string
+  done bool

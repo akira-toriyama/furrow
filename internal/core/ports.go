@@ -30,6 +30,18 @@ type Store interface {
 	// a guess. Ungated is load-bearing — it is what lets `furrow board` diagnose
 	// a board that no other command can open.
 	BoardVersion() (int, error)
+	// LoadMeta returns meta.json as a record: the declared layout version PLUS the
+	// top-level keys this binary does not know (parked by the passthrough). An
+	// absent file yields a zero-valued Meta, not an error — the same "0 means no
+	// meta.json" contract BoardVersion has, which is derived from this.
+	//
+	// It exists because BoardVersion cannot answer the question lint needs to ask:
+	// it projects the one field it wants and throws the rest away, so a typo in
+	// meta.json would be invisible. meta.json's published schema now declares
+	// additionalProperties:true (furrow legitimately writes unknown keys back), so
+	// `furrow lint` is the only check left that can flag one — and nothing ever
+	// deletes an extra, so an unflagged typo is permanent.
+	LoadMeta() (*Meta, error)
 	// Writable reports whether this binary may write the board: nil = yes, else
 	// the refusal every mutation would raise (schema-upgrade-required /
 	// schema-too-new). It has no side effects, so callers that only want to
