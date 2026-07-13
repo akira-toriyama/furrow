@@ -96,23 +96,38 @@ jobs:
       # SAME digest the provenance step attested (subject = the tar.gz). The
       # action takes exactly one sbom-path per call, so there is one step per
       # archive (4 platforms).
+      #
+      # actions/attest, not actions/attest-sbom: the latter is deprecated and now
+      # only a composite wrapper that prints a warning and forwards to
+      # actions/attest@a1948c3f (v4.1.1) — this exact SHA — with the inputs
+      # unchanged. So this is a pure `uses:` swap: `sbom-path` is a first-class
+      # input of actions/attest ("when provided, creates an SBOM attestation"),
+      # NOT something to rewrite as predicate-type/predicate-path. The
+      # predicateType is still derived from the document's SPDX version
+      # (SPDX-2.3 -> https://spdx.dev/Document/v2.3), which is the value the
+      # READMEs tell users to pass to `gh attestation verify` — pinned in
+      # .goreleaser.yaml's syft args and asserted by check-release-artifacts.sh.
+      #
+      # sbom-path is NOT glob-expanded (subject-path is) — the paths below must
+      # stay concrete. That is v0.8.0's first CRITICAL; the `rel` step above now
+      # asserts every one of them resolves, on this run and on every PR.
       - name: Attest SBOM (linux amd64)
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_amd64.tar.gz
           sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_amd64.tar.gz.spdx.sbom.json
       - name: Attest SBOM (linux arm64)
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_arm64.tar.gz
           sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_arm64.tar.gz.spdx.sbom.json
       - name: Attest SBOM (darwin amd64)
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_amd64.tar.gz
           sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_amd64.tar.gz.spdx.sbom.json
       - name: Attest SBOM (darwin arm64)
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_arm64.tar.gz
           sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_arm64.tar.gz.spdx.sbom.json
