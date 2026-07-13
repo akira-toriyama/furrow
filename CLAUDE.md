@@ -157,9 +157,10 @@ go test ./...                           # all packages (see Verify for the TUI)
 ## Verify (how to confirm a change works — runnable headless)
 
 ```sh
-sh scripts/check.sh   # the one command: marshaller guard + build/vet/test +
-                      # golangci + schema/config drift + a CLI smoke. Green here
-                      # == green CI. Run this before finishing a turn.
+sh scripts/check.sh   # the one command: marshaller + schema-write guards +
+                      # build/vet/test + golangci + schema/config drift + a CLI
+                      # smoke + (if goreleaser & syft are installed) a release
+                      # dry-run. Green here == green CI. Run it before finishing.
 ```
 
 Everything is verifiable without a terminal, including the interactive UI:
@@ -173,6 +174,19 @@ Everything is verifiable without a terminal, including the interactive UI:
   `scripts/check-marshal-singlepath.sh`, `scripts/check-schema-write-guard.sh`
   (no ordinary write may name `core.SchemaVersion`), and the schema/config drift
   diffs (in `check.sh`) guard the load-bearing invariants.
+- **The release pipeline**: it used to run only on a tag, so a defect in
+  `.goreleaser.yaml`/`release.yml` surfaced *after* GoReleaser had published the
+  draft and pushed the cask (v0.8.0 shipped broken twice). `build.yml` now runs a
+  real `--snapshot` build (with syft, so the `sboms:` pipe actually runs) on every
+  PR and asserts the artifact shape with
+  **`scripts/check-release-artifacts.sh`** — every path the attest steps feed to
+  `actions/attest` resolves to a real file (`sbom-path` is NOT glob-expanded), each
+  SBOM is SPDX-2.3 (the predicate type the READMEs document is derived from it),
+  and `checksums.txt` names each archive exactly once as a whole field (a
+  substring match also hits the SBOM line). `release.yml` runs the SAME script to
+  derive its version, so the paths asserted on the PR are the paths it attests.
+  Note `goreleaser check` does NOT cover any of this — it only validates the
+  config's schema.
 
 ## Source-of-truth references
 

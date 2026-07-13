@@ -77,3 +77,50 @@ jobs:
           /tmp/furrow add "smoke task" -s ready
           /tmp/furrow ls --json | grep -q '"smoke task"'
           /tmp/furrow lint
+
+  # Exercise the RELEASE pipeline on every PR.
+  #
+  # release.yml and .goreleaser.yaml only ever run when a tag is pushed, so a
+  # defect in them is discovered by tagging — and by then GoReleaser has already
+  # published the draft and pushed the Homebrew cask, so a later step failing
+  # means a half-shipped release. That is exactly how v0.8.0 went out: the SBOM
+  # work (#108) shipped two defects that `goreleaser check` cannot see (it only
+  # validates the config's schema), the first tag failed after the cask was
+  # pushed, and the tap pointed at a 404 until #111 re-cut it.
+  #
+  # So: build the real artifacts with a snapshot, run the real SBOM pipe, and
+  # assert that what lands in dist/ is what release.yml's next step actually
+  # consumes. Publishing is skipped; nothing leaves the runner.
+  release-dryrun:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # GoReleaser derives the snapshot version from git history
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: 'stable'
+          cache: true
+
+      # Same pin as release.yml — syft is not preinstalled, and without it the
+      # `sboms:` pipe (the thing that broke v0.8.0) would not run at all here.
+      - name: install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+
+      - name: GoReleaser (snapshot — build + SBOM, no publish)
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: "~> 2"
+          args: release --snapshot --clean --skip=publish,announce
+        env:
+          # --snapshot already skips the publishing pipes; the dummy keeps a
+          # config change that moves token resolution earlier from failing here
+          # for the wrong reason (a missing secret, not a real defect).
+          HOMEBREW_TAP_TOKEN: dry-run-not-a-real-token
+
+      - name: assert the artifacts match what release.yml attests
+        run: sh scripts/check-release-artifacts.sh dist

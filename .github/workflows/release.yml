@@ -81,14 +81,16 @@ jobs:
       # draft and pushed the Homebrew cask — a half-shipped release. Derive the
       # version from the archives GoReleaser actually produced (rather than the
       # ref) so the paths are exact and a missing archive fails loudly here.
-      - name: Resolve release version (concrete artifact paths)
+      # Resolve the version from the artifacts that actually exist, and assert in
+      # the same breath that every path the attest steps below are about to use
+      # resolves to a real file (sbom-path is NOT glob-expanded) and that
+      # checksums.txt names each archive exactly once as a whole field. This is
+      # the same script build.yml runs against a snapshot on every PR — sharing it
+      # is the point: the paths asserted there are literally the paths attested
+      # here, so the two cannot drift.
+      - name: Resolve release version + assert the artifact shape
         id: rel
-        run: |
-          set -euo pipefail
-          f="$(ls dist/furrow_*_linux_amd64.tar.gz)"
-          v="${f#dist/furrow_}"
-          v="${v%_linux_amd64.tar.gz}"
-          echo "version=$v" >> "$GITHUB_OUTPUT"
+        run: sh scripts/check-release-artifacts.sh dist
 
       # Sign each archive's SBOM with a Sigstore attestation, binding it to the
       # SAME digest the provenance step attested (subject = the tar.gz). The

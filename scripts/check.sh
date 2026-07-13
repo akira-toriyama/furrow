@@ -51,6 +51,19 @@ else
   echo "→ govulncheck (skipped — not installed; CI runs it)"
 fi
 
+# The release pipeline only ever runs on a tag, so a defect in .goreleaser.yaml /
+# release.yml normally surfaces AFTER the draft is published and the cask pushed
+# (v0.8.0). A snapshot build exercises it for real — the same job runs on every
+# PR, so this is just the local mirror. Needs syft: without it the `sboms:` pipe
+# (the thing that broke) does not run at all.
+if command -v goreleaser >/dev/null 2>&1 && command -v syft >/dev/null 2>&1; then
+  echo "→ release dry-run (goreleaser snapshot + artifact-shape assertions)"
+  goreleaser release --snapshot --clean --skip=publish,announce >/dev/null
+  sh scripts/check-release-artifacts.sh dist
+else
+  echo "→ release dry-run (skipped — needs goreleaser + syft; CI runs it on every PR)"
+fi
+
 echo "→ build binary for live checks"
 go build -o bin/furrow ./cmd/furrow
 BIN="$(pwd)/bin/furrow"
