@@ -118,7 +118,19 @@ jobs:
           file="furrow_${ver#v}_linux_amd64.tar.gz"
           curl -fsSL --retry 3 -o "/tmp/$file" "$base/$file"
           curl -fsSL --retry 3 -o /tmp/furrow-checksums.txt "$base/checksums.txt"
-          ( cd /tmp && grep -F "  $file" furrow-checksums.txt | sha256sum -c - )
+          # Match the filename as a WHOLE FIELD, not a substring. Since v0.8.0 the
+          # release also ships per-archive SBOMs, and checksums.txt lists them —
+          # their names EXTEND the archive's ("…tar.gz.spdx.sbom.json"), so an
+          # unanchored `grep -F "  $file"` matches the SBOM line too and hands
+          # sha256sum a checksum for a file we never downloaded, failing the gate.
+          # awk on $2 pins it to exactly the archive line; the empty check keeps it
+          # fail-closed explicitly rather than trusting sha256sum's empty-input
+          # behavior (which is not portable).
+          ( cd /tmp
+            line="$(awk -v f="$file" '$2 == f' furrow-checksums.txt)"
+            [ -n "$line" ] || { echo "no checksum line for $file in checksums.txt" >&2; exit 1; }
+            printf '%s\n' "$line" | sha256sum -c -
+          )
           # Provenance gate (audit F10): the sha256 above only proves the tarball
           # matches THIS release's own checksums.txt (self-consistent — a forged
           # release could ship a matching pair). `gh attestation verify` also proves

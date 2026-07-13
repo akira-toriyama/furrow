@@ -32,11 +32,18 @@ checksum:
 # runner installs syft via download-syft (it is not preinstalled — without it
 # this pipe fails the release). Args are pinned to a deterministic spdx-json
 # output (no network enrichment) to keep the release reproducible.
+#
+# The SPDX version is pinned to 2.3 on purpose: actions/attest derives the
+# attestation's predicateType FROM the document ("SPDX-2.3" ->
+# https://spdx.dev/Document/v2.3), so letting syft's default float would silently
+# change the predicate type users must pass to `gh attestation verify` — the
+# command the READMEs document. Pinning keeps doc and artifact in lockstep. A
+# syft failure here aborts GoReleaser BEFORE anything is published (safe).
 sboms:
   - artifacts: archive
     documents:
       - "${artifact}.spdx.sbom.json"
-    args: ["$artifact", "--output", "spdx-json=$document"]
+    args: ["$artifact", "--output", "spdx-json@2.3=$document"]
 
 # Homebrew cask pushed to the family tap on release. GoReleaser v2 ships
 # prebuilt binaries as CASKS (the old `brews:` formula path is deprecated); the

@@ -135,3 +135,41 @@ func TestRevisitSummaryUnreviewedScoped(t *testing.T) {
 		t.Errorf("board-wide Unreviewed = %+v, want both repos", board.Unreviewed)
 	}
 }
+
+// TestReviewRepoResolvesAgainstExistingShards: a repo that exists ONLY as a
+// review shard (never attached to a task, not the checkout's repo) must still
+// resolve — by short name, and to its canonical casing — so a second review
+// never forks a duplicate shard for the same repo.
+func TestReviewRepoResolvesAgainstExistingShards(t *testing.T) {
+	a, _ := revisitApp()
+
+	// First review creates the shard. The repo is in no task and no board scope.
+	first, err := a.ReviewRepo("akira-toriyama/Chord", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Repo != "akira-toriyama/Chord" {
+		t.Fatalf("first review repo = %q", first.Repo)
+	}
+
+	// A short name must now resolve against that existing shard.
+	byShort, err := a.ReviewRepo("chord", false)
+	if err != nil {
+		t.Fatalf("short name should resolve against the existing review shard: %v", err)
+	}
+	if byShort.Repo != "akira-toriyama/Chord" {
+		t.Errorf("short-name review resolved to %q, want the canonical %q", byShort.Repo, "akira-toriyama/Chord")
+	}
+
+	// A differently-cased full name must canonicalize, not fork a second shard.
+	if _, err := a.ReviewRepo("akira-toriyama/chord", false); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := a.Store.ListRepos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 {
+		t.Errorf("expected exactly 1 repo shard (no fork), got %d: %+v", len(recs), recs)
+	}
+}

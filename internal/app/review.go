@@ -34,7 +34,7 @@ func (a *App) ReviewTask(id string) (*core.Task, error) {
 // clock (the actor separation the review design turns on). Returns the saved
 // record.
 func (a *App) ReviewRepo(repo string, byAgent bool) (*core.RepoRecord, error) {
-	canonical, err := a.ResolveRepo(repo)
+	canonical, err := a.resolveReviewRepo(repo)
 	if err != nil {
 		return nil, err
 	}
@@ -55,4 +55,27 @@ func (a *App) ReviewRepo(repo string, byAgent bool) (*core.RepoRecord, error) {
 		return nil, err
 	}
 	return rec, nil
+}
+
+// resolveReviewRepo resolves a review's repo argument against a universe that
+// ALSO includes the repos already carrying a review shard — not just the ones
+// named by a task or derived from the checkout (ResolveRepo's universe). Without
+// this, a repo reviewed but not yet attached to any task is invisible to
+// resolution: its short name would not resolve, and a differently-cased full
+// owner/repo would pass through verbatim and fork a SECOND shard for the same
+// repo. Including the existing records keeps one repo == one shard.
+func (a *App) resolveReviewRepo(repo string) (string, error) {
+	idx, err := a.load()
+	if err != nil {
+		return "", err
+	}
+	universe := repoUniverse(idx, a.BoardRepos)
+	recs, err := a.Store.ListRepos()
+	if err != nil {
+		return "", err
+	}
+	for _, r := range recs {
+		universe = append(universe, r.Repo)
+	}
+	return resolveRepoIn(repo, "", universe)
 }
