@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.repo.v1.json",
+  "title": "furrow repo review shard v1",
+  "description": "Schema for one .furrow/repos/<owner>__<repo>.json shard (a single repo's review record). The board-wide schema_version lives in .furrow/meta.json, never in a shard. Pin to a tagged URL or vendor this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repo", "last_reviewed", "last_agent_reviewed"],
+  "properties": {
+    "repo": { "type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+$", "description": "the owner/repo this record reviews" },
+    "last_reviewed": { "type": ["string", "null"], "format": "date-time", "description": "when a human last reviewed this repo's backlog (the staleness-nudge clock); null = never" },
+    "last_agent_reviewed": { "type": ["string", "null"], "format": "date-time", "description": "when an agent last swept this repo; recorded but does not advance the human nudge clock; null = never" }
+  }
+}

@@ -59,7 +59,7 @@ library.
                   imports: stdlib only
 
    leaves (imported where needed, depend on nothing internal of note):
-     internal/schema   JSON Schema source ( `furrow schema [task|meta]` )
+     internal/schema   JSON Schema source ( `furrow schema [task|meta|repo]` )
      internal/version  build version string (ldflags-injected)
      internal/migrate  pure Task.md parser behind `furrow migrate`
 ```
@@ -82,7 +82,7 @@ directly for mutation — they go through `internal/app`.
 | `internal/store/memstore` | In-memory `core.Store` for tests and `migrate --dry-run`. A normal non-test package. |
 | `internal/gitrepo` | git subprocess adapter behind `furrow sync` (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers (and the in-memory `Marshal`), the `Store`/`Clock` ports, `Validate`, and in-memory index ops. |
-| `internal/schema` | The JSON Schemas for a task shard and `meta.json` as Go constants; emitted by `furrow schema [task|meta]`. |
+| `internal/schema` | The JSON Schemas for a task shard, `meta.json`, and a repo review shard as Go constants; emitted by `furrow schema [task|meta|repo]`. |
 | `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |
 | `internal/gittest` | Test-only helper: `Isolate()` neutralizes global/system git config at the process-env level (called from `TestMain`) so real-git tests — especially `App.Sync`'s subprocess — don't flake on a developer's `commit.gpgsign`/`core.hooksPath`. Imported only by `_test.go` files. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |
@@ -196,7 +196,7 @@ error (the file is malformed input), not an internal fault.
 - **Golden round-trip test.** `internal/core/core_test.go` asserts that marshalling
   the fixture index produces `testdata/index.golden.json` byte-for-byte (write →
   read → write stays identical).
-- **Schema drift test.** `furrow schema [task|meta]` prints
+- **Schema drift test.** `furrow schema [task|meta|repo]` prints
   `internal/schema.TaskV2` / `internal/schema.MetaV2` (JSON Schema draft 2020-12);
   `docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v2.json` are
   committed copies of the same bytes, and CI diffs both so they cannot drift.
@@ -252,7 +252,8 @@ A `.furrow/` store directory contains:
     t-k3m9p-shot.png     written ONLY via Store.SaveAsset (atomic, collision-free
                          basename); linked from the body by `furrow attach`; scanned
                          by `furrow lint` (dangling / orphan / oversized warnings)
-  meta.json            board-wide layout version {"schema_version": 3} — MarshalMeta
+  meta.json            board-wide layout version {"schema_version": 4} — MarshalMeta
+  repos/               one review shard per repo (repos/<owner>__<repo>.json) — MarshalRepo
   config.toml          human config (read-only from furrow's side)
   archive/             a sibling sharded store: aged done tasks moved out of the hot store
 ```

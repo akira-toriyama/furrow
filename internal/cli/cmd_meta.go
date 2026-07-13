@@ -32,15 +32,16 @@ func newVersionCmd() *cobra.Command {
 
 func newSchemaCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "schema [task|meta]",
-		Short: "Print the JSON Schema for a task shard or meta.json",
+		Use:   "schema [task|meta|repo]",
+		Short: "Print the JSON Schema for a task shard, meta.json, or a repo review shard",
 		Long: "Print the JSON Schema (draft 2020-12) for the store's files. With no\n" +
 			"argument (or \"task\") it prints the schema for one .furrow/tasks/<id>.json\n" +
-			"shard; \"meta\" prints the schema for .furrow/meta.json. These are the single\n" +
-			"source of truth; docs/schema/furrow.task.v2.json and furrow.meta.v2.json are\n" +
+			"shard; \"meta\" prints the schema for .furrow/meta.json; \"repo\" prints the\n" +
+			"schema for one .furrow/repos/<owner>__<repo>.json review shard. These are the\n" +
+			"single source of truth; docs/schema/furrow.{task.v2,meta.v2,repo.v1}.json are\n" +
 			"committed copies and CI diffs them so they cannot drift.",
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: []string{"task", "meta"},
+		ValidArgs: []string{"task", "meta", "repo"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kind := "task"
 			if len(args) == 1 {
@@ -53,8 +54,10 @@ func newSchemaCmd() *cobra.Command {
 				fmt.Fprint(out, schema.TaskV2)
 			case "meta":
 				fmt.Fprint(out, schema.MetaV2)
+			case "repo":
+				fmt.Fprint(out, schema.RepoV1)
 			default:
-				return core.Validationf("", "unknown schema kind %q (want \"task\" or \"meta\")", kind)
+				return core.Validationf("", "unknown schema kind %q (want \"task\", \"meta\", or \"repo\")", kind)
 			}
 			return nil
 		},

@@ -42,6 +42,9 @@ type raw struct {
 	Revisit struct {
 		StaleDays *int `toml:"stale_days"`
 	} `toml:"revisit"`
+	Review struct {
+		StaleAfterDays *int `toml:"stale_after_days"`
+	} `toml:"review"`
 	Lint struct {
 		ArchiveDone *int `toml:"archive_done"`
 	} `toml:"lint"`
@@ -167,6 +170,17 @@ func fromRaw(r raw) (*Config, []string, error) {
 			warn = append(warn, fmt.Sprintf("revisit.stale_days %d < 0; using %d", *r.Revisit.StaleDays, DefaultRevisitStaleDays))
 		} else {
 			c.RevisitStaleDays = *r.Revisit.StaleDays
+		}
+	}
+
+	// [review].stale_after_days: a "days" knob like revisit.stale_days — 0 is
+	// valid (it disables the per-repo unreviewed nudge); only a negative value
+	// clamps to the default.
+	if r.Review.StaleAfterDays != nil {
+		if *r.Review.StaleAfterDays < 0 {
+			warn = append(warn, fmt.Sprintf("review.stale_after_days %d < 0; using %d", *r.Review.StaleAfterDays, DefaultReviewStaleAfterDays))
+		} else {
+			c.ReviewStaleAfterDays = *r.Review.StaleAfterDays
 		}
 	}
 

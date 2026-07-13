@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.meta.v2.json",
   "title": "furrow meta v2",
-  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 3 = shards whose tasks carry the required first-class repos set (2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
+  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 4 = adds the per-repo review shards (repos/) and the per-task reviewed timestamp (3 = the repos pivot, 2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version"],
   "properties": {
-    "schema_version": { "const": 3 }
+    "schema_version": { "const": 4 }
   }
 }

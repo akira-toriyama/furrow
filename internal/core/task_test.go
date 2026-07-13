@@ -11,13 +11,15 @@ import (
 // sampleTask is one deliberately-noisy task covering the same tricky cases the
 // index golden does, but for a single shard: CJK + HTML-ish title (must survive
 // SetEscapeHTML(false)), a set value/effort, labels that are unsorted AND
-// duplicated (must sort+dedupe), populated deps/refs/checklist, and an open task
-// (closed == null).
+// duplicated (must sort+dedupe), populated deps/refs/checklist, an open task
+// (closed == null), and a set reviewed timestamp (the non-null pointer path,
+// while closed exercises the null one).
 func sampleTask() *Task {
 	mk := func(y int, mo time.Month, d int) time.Time {
 		return time.Date(y, mo, d, 1, 2, 3, 0, time.UTC)
 	}
 	vi := func(n int) *int { return &n }
+	tp := func(t time.Time) *time.Time { return &t }
 	return &Task{
 		ID: "t-0001", Title: "畝を一本進める <b>&amp;</b> 完了", Status: "in-progress",
 		Priority: 110, Value: vi(4), Effort: vi(2),
@@ -27,7 +29,8 @@ func sampleTask() *Task {
 		Refs:      []string{"docs/x.md#L10", "https://example.com"},
 		Checklist: []ChecklistItem{{Text: "design", Done: true}, {Text: "ship", Done: false}},
 		Created:   mk(2026, 6, 2), Updated: mk(2026, 6, 21), Closed: nil,
-		Body: BodyPath("t-0001"),
+		Reviewed: tp(mk(2026, 6, 20)),
+		Body:     BodyPath("t-0001"),
 	}
 }
 

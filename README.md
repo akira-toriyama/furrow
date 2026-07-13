@@ -93,10 +93,12 @@ furrow uses a **hybrid** layout: one machine-written JSON shard per task for str
 ```text
 .furrow/
 ├── config.toml          # human config (furrow only READS this; never rewrites it)
-├── meta.json            # board-wide layout version {"schema_version": 3} — written ONLY by furrow
+├── meta.json            # board-wide layout version {"schema_version": 4} — written ONLY by furrow
 ├── tasks/
 │   ├── t-0001.json      # one metadata shard per task — written ONLY by the single core.MarshalTask path
 │   └── t-0002.json
+├── repos/               # one review shard per repo — furrow review <repo> (last_reviewed clock)
+│   └── akira-toriyama__furrow.json
 ├── bodies/
 │   ├── t-0001.md        # long-form prose for t-0001 (hand/agent editable)
 │   └── t-0002.md
@@ -135,7 +137,7 @@ The board-wide layout version lives on its own in `meta.json` (never inside a sh
 
 ```json
 {
-  "schema_version": 3
+  "schema_version": 4
 }
 ```
 
@@ -200,6 +202,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `dep <id> [<dep-id>...]` | Add one or more dependencies (id waits on them) in a single write, or remove them with `--rm`; acyclic, idempotent, all-or-nothing (a bad dep-id aborts without a partial change). `--list` instead reads (never mutates) `<id>`'s dependency neighborhood **both ways** — `depends_on` (what it waits on) and `blocks` (the reverse edge: what waits on it, the "what unblocks if I finish this" view) — each resolved to id+title+lane; `--json`/`--ndjson` emit one object with both arrays (`[]` when empty). A dangling dep resolves to its id alone (lint flags it). `--list` takes just the id and can't combine with `--rm` | `--rm`, `--list` |
 | `label <id>` | Add and/or remove labels on a task (both repeatable, combinable); idempotent | `--add <label>`, `--remove <label>` |
 | `repo <id>` | Attach and/or detach repos (`owner/repo`) on a task; each value must be a full `owner/repo` or a short name uniquely resolving against the board's repos (else exit 2 with `candidates`); idempotent. A task with no repos is a draft | `--add <repo>`, `--rm <repo>` |
+| `review <repo\|id>` | Record a review (non-interactive). An id-shaped argument stamps that task's `reviewed` timestamp (tracked separately from `updated` — a review changes no content); anything else records a per-repo review clock (a full `owner/repo` or a unique short name). `--by human` (default) advances the staleness-nudge clock (`last_reviewed`); `--by agent` logs a sweep (`last_agent_reviewed`) without advancing it, so an autonomous re-evaluation never stops furrow nudging a human | `--by human\|agent` |
 | `apply` | Apply `SetStatus-task: <body-link> [<lane>]` directives parsed from PR/commit text (stdin or `--body-file`) — the CI hook for auto status updates. `--on open` nudges to in-progress; `--on merge` applies the lane. Validation is non-blocking | `--on open\|merge`, `--ref`, `--body-file`, `--open-lane` |
 | `sync` | The multi-machine board ritual as one command: auto-commit scoped to `.furrow/` (machine-written shards always; a hand-edited `bodies/<id>.md` only when new or named with `-b`, else left for its author in `pending_bodies` — so a shared checkout never sweeps a co-located operator's WIP; `--all-bodies` restores the old sweep), `fetch` + `rebase --autostash @{u}` (onto the tracking ref, not `FETCH_HEAD`, so a co-writer's fetch can't race it), `push` (one pull→push retry on non-fast-forward). On conflict it aborts the rebase automatically (`sync-conflict` error carries the paths); a foreign rebase caught by the pre-flight is waited out, else retryable `sync-busy` (exit 3); a fetch/lock race during the pull is retried, and if it persists (a likely-stale `.git/*.lock`) fails terminally naming the lock to remove. Progress `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` goes to stdout even on failure. A successful sync also adds a repo-scoped `revisit` summary (`dep_done`/`stale` id lists; omitted when empty) | `-m/--message`, `-b/--body`, `--all-bodies` |
 | `archive [<id>...]` | Retire done tasks to `.furrow/archive/` (preview unless `--yes`). With `<id>`s it retires exactly those (each must be in the done lane, else exit 2 — no stranding live work); with no id it sweeps aged done. The sweep is board-wide by default; `-r/--repo` (repeatable) scopes it to one repo's aged done, ANDed with the age guard. `--older-than`/`-r` apply to the sweep only (combining them with an id list is exit 2). A task's `attach`ed media (`bodies/assets/<id>-*`) travels with it into `.furrow/archive/`, never orphaned in the hot store | `--older-than <days>`, `-r/--repo <repo>` (repeatable), `--yes` |

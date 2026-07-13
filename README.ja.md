@@ -38,7 +38,8 @@ furrow はこれを Go で実装する。外部サービス連携は持たず、
     t-0001.json     # 1 タスク 1 つの構造化メタデータシャード（機械が書く・決定論シリアライズ）
     t-0002.json
   bodies/<id>.md    # 1 タスク 1 つの長文 markdown 本文（人/エージェントが編集可）
-  meta.json         # ボード全体のレイアウト版（{"schema_version": 3}）
+  repos/<owner>__<repo>.json  # repo ごとのレビュー shard（furrow review <repo>）
+  meta.json         # ボード全体のレイアウト版（{"schema_version": 4}）
   config.toml       # 人が編集する設定（furrow からは READ のみ）
   archive/          # 退避した古い done タスク（独自の tasks/ + meta.json + bodies/）
 ```
@@ -47,7 +48,7 @@ furrow はこれを Go で実装する。外部サービス連携は持たず、
 
 - **`tasks/<id>.json`** = 構造化メタデータだけ、1 タスク 1 ファイル。小さく、`jq` や Go で即クエリでき、フィールド単位で diff できる。**唯一の決定論マーシャラ（`core.MarshalTask`）からしか書かれない。**
 - **`bodies/<id>.md`** = 素の markdown。エスケープなし、タスク単位で diff できる。**手でも Claude でも自由に編集してよい。**
-- **`meta.json`** = ボード全体のレイアウト版（`{"schema_version": 3}`）だけを持つ専用ファイル。**シャードの中には決して入れない**ので、版を上げても触るのは 1 ファイルだけで、どのシャードも git のマージ点にならない。
+- **`meta.json`** = ボード全体のレイアウト版（`{"schema_version": 4}`）だけを持つ専用ファイル。**シャードの中には決して入れない**ので、版を上げても触るのは 1 ファイルだけで、どのシャードも git のマージ点にならない。
 - **`config.toml`** = 人が編集する設定。furrow は書き換えず、READ するだけ。
 - **`archive/`** = 古くなった done タスクの退避先（独自の `tasks/` + `meta.json` + `bodies/` を持つ兄弟シャードストア）。
 
@@ -161,6 +162,7 @@ furrow done t-0001
 | `dep <id> [<dep-id>...]` | 依存を 1 つ以上まとめて追加（id がそれらを待つ）。`--rm` で削除。循環防止・冪等・all-or-nothing（不正 dep-id は部分適用せず abort）。`--list` は mutate せず `<id>` の依存近傍を**両方向**で読む —— `depends_on`（待っている先＝自分の deps）と `blocks`（逆辺＝このタスクを待っている側。「これを終わらせたら何が解ける？」ビュー）を id+title+lane に解決。`--json`/`--ndjson` は両配列を持つ 1 オブジェクトを出力（空は `[]`）。dangling dep は id だけに解決（lint が指摘）。`--list` は id のみで `--rm` とは併用不可 |
 | `label <id>` | ラベルを追加／削除（`--add`・`--remove`、いずれも反復可・併用可）。冪等 |
 | `repo <id>` | repo（`owner/repo`）を追加／削除（`--add`・`--rm`、反復可・併用可）。値は完全な `owner/repo` か、ボード既知の repo に一意に解決する短名のみ（それ以外は exit 2・`candidates` 付き）。冪等。repos が空のタスクは draft |
+| `review <repo\|id>` | レビューを記録（非対話）。id 形の引数はそのタスクの `reviewed` タイムスタンプを打つ（`updated` とは別管理＝レビューは内容を変えない）。それ以外（完全な `owner/repo` か一意な短名）は repo 単位のレビュー時計を記録。`--by human`（既定）は staleness nudge の時計（`last_reviewed`）を進め、`--by agent` は sweep（`last_agent_reviewed`）を記録するが人間の時計は進めない（自律再評価が人間への nudge を止めない） |
 | `apply` | PR/コミット本文から `SetStatus-task: <body-link> [<lane>]` ディレクティブを解析して適用（stdin または `--body-file`）。status 自動更新の CI フック。`--on open` は in-progress へ寄せ、`--on merge` は lane を適用。検証は非ブロッキング |
 | `sync` | マルチマシン運用の儀式を 1 コマンドで: `.furrow/` 限定の auto-commit（機械が書く shard は常に commit、手編集の `bodies/<id>.md` は新規か `-b` 明示時だけ・それ以外は `pending_bodies` に残して作者に委ね、共有 checkout が他人の WIP を巻き込まない。`--all-bodies` で従来の全 sweep）→ `fetch` + `rebase --autostash @{u}`（`FETCH_HEAD` でなく追跡 ref に rebase、他 writer の fetch と race しない）→ `push`（non-fast-forward 時は pull→push を 1 回リトライ）。conflict 時は自動 abort（`sync-conflict` エラーにパス一覧）。pre-flight が捕まえた他人の rebase は待って吸収、超過時は retryable `sync-busy`（exit 3）。pull 中の fetch/ロック競合はリトライし、解消しなければ（stale な `.git/*.lock` の可能性）除去すべきロックを名指して terminal に失敗。進捗 `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` は失敗時も stdout に出る。成功時は repo スコープの `revisit` サマリ（`dep_done`/`stale` の id 一覧。空なら省略）も付く |
 | `archive [<id>...]` | done タスクを `.furrow/archive/` へ退避（`--yes` なしはプレビュー）。`<id>` 指定でそれらを名指し退避（各々 done レーン必須・違えば exit 2＝進行中を stranding しない）／id 無しは古い done を sweep。sweep は既定で全 repo 対象、`-r/--repo`（繰り返し可）で 1 repo に絞る（age ガードと AND）。`--older-than`/`-r` は sweep 専用（id 列との併用は exit 2）。タスクの `attach` した媒体（`bodies/assets/<id>-*`）はタスクと一緒に `.furrow/archive/` へ移動し、hot store に取り残されない |
@@ -416,10 +418,10 @@ git config core.hooksPath scripts/hooks   # hook を置いたあと
 ボード全体のレイアウト版は `meta.json` に独立して持つ（シャードには入れない）:
 
 ```json
-{ "schema_version": 3 }
+{ "schema_version": 4 }
 ```
 
-正準スキーマは `furrow schema [task|meta]` が出力する（draft 2020-12）。これが正本で、`docs/schema/furrow.task.v2.json` と `docs/schema/furrow.meta.v2.json` が commit 済みのコピー。CI が両者を diff して drift を防ぐ（`v2` はスキーマ**文書**の版号で、ボードのレイアウト版＝`meta.json` の `schema_version` は 3）。
+正準スキーマは `furrow schema [task|meta|repo]` が出力する（draft 2020-12）。これが正本で、`docs/schema/furrow.task.v2.json`・`furrow.meta.v2.json`・`furrow.repo.v1.json` が commit 済みのコピー。CI が三者を diff して drift を防ぐ（`v2`/`v1` はスキーマ**文書**の版号で、ボードのレイアウト版＝`meta.json` の `schema_version` は 4）。
 
 `value` / `effort` は、エージェント（や自分）が「次に何をやるか」を毎回見積もり直すのではなく**記録済みデータから選ぶ**ための任意フィールド。**ROI = value ÷ effort は導出で保存しない**（どちらを直しても常に最新の ROI になり、古い数字が残らない）。`next` はあえて据え置き——ROI 並べ替えは呼ぶ側の選択：
 
