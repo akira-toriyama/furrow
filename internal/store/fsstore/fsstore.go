@@ -116,19 +116,37 @@ func (s *Store) Load() (*core.Index, error) {
 // the board was exactly as new as itself. A version we cannot read is a question
 // for the operator, not something to guess.
 func (s *Store) BoardVersion() (int, error) {
+	m, err := s.LoadMeta()
+	if err != nil {
+		return 0, err
+	}
+	return m.SchemaVersion, nil
+}
+
+// LoadMeta reads meta.json whole — the declared version AND the unknown top-level
+// keys the passthrough parked. An absent file is a zero-valued Meta (version 0),
+// which is what gives BoardVersion its "0 means absent" contract; an unreadable
+// one is an error, never a guess.
+//
+// Everything that touches meta.json goes through here (BoardVersion, lint's
+// unknown-key check, SetBoardVersion's read-raise-write): one parse, one error
+// message, and no second place that could decide to fall back to "whatever
+// version this binary is" — the fallback that silently disabled the gate on
+// 2026-07-13.
+func (s *Store) LoadMeta() (*core.Meta, error) {
 	// #nosec G304 -- metaPath is a furrow-internal store path, not attacker-supplied.
 	b, err := os.ReadFile(s.metaPath())
 	if os.IsNotExist(err) {
-		return 0, nil
+		return &core.Meta{}, nil
 	}
 	if err != nil {
-		return 0, core.Internalf("meta", "read meta.json: %v", err)
+		return nil, core.Internalf("meta", "read meta.json: %v", err)
 	}
 	m, err := core.UnmarshalMeta(b)
 	if err != nil {
-		return 0, core.Internalf("meta", "meta.json is unreadable: %v — restore it from git, or delete it and re-stamp with `furrow upgrade --yes`", err)
+		return nil, core.Internalf("meta", "meta.json is unreadable: %v — restore it from git, or delete it and re-stamp with `furrow upgrade --yes`", err)
 	}
-	return m.SchemaVersion, nil
+	return m, nil
 }
 
 // Writable answers "may this binary write this board?" without touching it —
@@ -194,7 +212,18 @@ func (s *Store) gateWrite() error {
 // — every binary still on the old layout (a pinned CI's included) loses write
 // access to this board the moment it lands.
 func (s *Store) SetBoardVersion(v int) error {
-	b, err := core.MarshalMeta(&core.Meta{SchemaVersion: v})
+	// Read the meta we are about to raise, rather than building a fresh one: a
+	// fresh core.Meta carries no unknown keys, so writing it would EAT anything a
+	// newer furrow had put in meta.json. `furrow upgrade` — the one command whose
+	// whole job is to move a board forward — would be the thing that destroys the
+	// forward-compatible keys. Read, raise, write back (core/passthrough.go).
+	m, err := s.LoadMeta() // absent file -> zero Meta, which is the fresh-store case
+	if err != nil {
+		return err
+	}
+	m.SchemaVersion = v
+
+	b, err := core.MarshalMeta(m)
 	if err != nil {
 		return err
 	}

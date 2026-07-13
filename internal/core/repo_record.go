@@ -23,6 +23,17 @@ type RepoRecord struct {
 	Repo              string     `json:"repo"`                // "owner/repo"
 	LastReviewed      *time.Time `json:"last_reviewed"`       // last human review; nil (-> null) = never
 	LastAgentReviewed *time.Time `json:"last_agent_reviewed"` // last agent sweep; nil (-> null) = never
+
+	// extras holds keys this binary does not know — a field written by a NEWER
+	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,
+	// one ordinary write would silently destroy that field (see passthrough.go).
+	// nil when the shard had no unknown keys, which is the normal case.
+	//
+	// UNEXPORTED, like Task's and Meta's: encoding/json cannot see it, so it never
+	// becomes a key of its own, and no MarshalJSON re-emits it — the splice happens
+	// on the store's write path (core.MarshalRepo -> encodeCanonicalWithExtras).
+	// Read it back with ExtraKeys(); `furrow lint` warns unknown-shard-key on it.
+	extras Extras
 }
 
 // RepoRecordPath returns the canonical relative shard path for a repo record:

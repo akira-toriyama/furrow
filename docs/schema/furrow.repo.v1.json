@@ -4,7 +4,8 @@
   "title": "furrow repo review shard v1",
   "description": "Schema for one .furrow/repos/<owner>__<repo>.json shard (a single repo's review record). The board-wide schema_version lives in .furrow/meta.json, never in a shard. Pin to a tagged URL or vendor this file.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
+  "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a shard furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (naming the owner/repo) — nothing else can, since nothing ever deletes an extra. This document has no nested objects, so the top-level-only limit of the passthrough has nothing to qualify here; the task shard's schema explains it.",
   "required": ["repo", "last_reviewed", "last_agent_reviewed"],
   "properties": {
     "repo": { "type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+$", "description": "the owner/repo this record reviews" },

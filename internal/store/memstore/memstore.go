@@ -52,6 +52,15 @@ func New(idPrefix string, idLen int) *Store {
 // twin of reading meta.json. Never an error here: memory cannot be garbled.
 func (s *Store) BoardVersion() (int, error) { return s.schemaVersion, nil }
 
+// LoadMeta returns the board's meta record. A memstore has no meta.json to hand-
+// edit and no bytes to parse, so it can never carry an unknown key: the record is
+// synthesized from the version alone and its ExtraKeys() is always empty. That is
+// faithful, not a shortcut — the passthrough is a property of the FILE format, so
+// the in-memory twin has nothing to preserve.
+func (s *Store) LoadMeta() (*core.Meta, error) {
+	return &core.Meta{SchemaVersion: s.schemaVersion}, nil
+}
+
 // SetBoardVersion raises the board's layout version. As in fsstore, this is the
 // ONE deliberate raiser (`furrow upgrade`'s engine) — Save never touches it, so
 // a memstore seeded to an older version behaves exactly like an outdated board

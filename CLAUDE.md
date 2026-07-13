@@ -49,9 +49,9 @@ the user-level config. When you work with any furrow store:
   `lint` streams one problem per line — so a line-oriented reader never gets a
   silent human-prose degrade. Filter reads with `--status/-s`, `--label/-l`,
   `--repo/-r`, `--limit/-n` — so you rarely need jq. Each `lint` problem carries
-  a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `orphan-asset`, …) —
-  branch on it, not the message, since the `id` field is contextual (a task id,
-  an asset name, or `config`).
+  a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `orphan-asset`,
+  `unknown-shard-key`, …) — branch on it, not the message, since the `id` field
+  is contextual (a task id, an asset name, an `owner/repo`, `meta`, or `config`).
   Mutations (`done|move|set|reorder|value|effort|check|dep|label|repo`) with
   `--json` emit
   `{before, after, changed}`; an out-of-range `value`/`effort` (also via `set`/
@@ -115,6 +115,32 @@ the user-level config. When you work with any furrow store:
   board and binary disagree, so read it as a pre-flight instead of watching every
   task read fail with "task not found". `furrow lint` warns `schema-outdated`
   (never errors) meanwhile.
+- **A shard key this binary does not know is PRESERVED, not dropped.** The gate
+  above only fires when someone BUMPS the version; a field added without a bump
+  would be silently destroyed by the next ordinary write (`encoding/json`'s
+  lenient unmarshal drops it, the marshaller writes the loss back — one `retitle`,
+  one dead field, no error). So `core.Unmarshal*` now parks every unknown
+  **top-level** key and `core.Marshal*` re-emits it, sorted, after the known ones —
+  in all **three** machine-written files: a task shard, a `repos/` review shard,
+  and `meta.json`.
+  Four things it does NOT mean, all load-bearing for an agent: (a) it is **not
+  retroactive** — every furrow ≤ v0.9.0 still destroys those keys on write, so a
+  shared board is safe only once EVERY writer has passthrough, including every
+  pinned `sync-task-status.yml@vX.Y.Z` CI caller; (b) **top-level only** — an
+  unknown key inside a known nested object (`checklist[]`) is still dropped;
+  (c) **preserved ≠ honoured** — an older binary carries a future `"blocked": true`
+  faithfully and still hands you that task in `furrow next` and lets you close it,
+  so `furrow lint` warns **`unknown-shard-key`** (SevWarn, naming the keys and
+  blaming the task id / the `owner/repo` / `meta`) to make "carried but IGNORED —
+  update furrow" visible; (d) the `--json`
+  views project the keys THIS binary knows — an unknown key lives on disk, not in
+  the view (preserving beats displaying). Corollary for hand-edits: a typo in a
+  hand-edited shard (`"lables"`) is now **permanent** — nothing removes it, because
+  auto-deleting a key we don't understand IS the bug being fixed. That is also why
+  `lint` must cover all three files and the published schemas all declare
+  `additionalProperties: true`: the flip made the schema stop rejecting a typo, so
+  `lint` is the only detector left. One more reason
+  the shards are furrow's to write, not yours.
 - `furrow edit <id>` with no TTY **prints the body file path** instead of opening
   an editor — read/edit that file directly.
 - Exit codes: `0` ok — **including an empty query result** (`ls`/`next`/`revisit`
@@ -171,9 +197,13 @@ Everything is verifiable without a terminal, including the interactive UI:
   both the rendered frame and the persisted mutation. A raw PTY is flaky on macOS —
   use teatest. Only the visual *aesthetics* need a human eye (`./run.sh ui`).
 - **Determinism / drift**: the golden round-trip test,
-  `scripts/check-marshal-singlepath.sh`, `scripts/check-schema-write-guard.sh`
-  (no ordinary write may name `core.SchemaVersion`), and the schema/config drift
-  diffs (in `check.sh`) guard the load-bearing invariants.
+  `scripts/check-marshal-singlepath.sh` (encoders **and** decoders — a raw
+  `json.Unmarshal` would drop a shard's unknown keys),
+  `scripts/check-schema-write-guard.sh` (no ordinary write may name
+  `core.SchemaVersion`), `TestShardFieldsGolden` (the shard's on-disk shape is
+  frozen; changing it demands a deliberate `-update-fields` + a version-bump
+  decision), and the schema/config drift diffs (in `check.sh`) guard the
+  load-bearing invariants.
 - **The release pipeline**: it used to run only on a tag, so a defect in
   `.goreleaser.yaml`/`release.yml` surfaced *after* GoReleaser had published the
   draft and pushed the cask (v0.8.0 shipped broken twice). `build.yml` now runs a
@@ -216,6 +246,60 @@ sorted+deduped label/dep sets, UTC whole-second timestamps, trailing newline.
 This is what makes app-writes equal hand-edits byte-for-byte, and Save writes
 only the shards whose bytes changed (zero git churn on a no-op save). A golden
 round-trip test and `scripts/check-marshal-singlepath.sh` guard all three.
+
+**Unknown-key passthrough — the other half of the version gate.**
+`internal/core/passthrough.go`: `core.UnmarshalTask`/`UnmarshalRepo`/`UnmarshalMeta`
+park every **top-level** key the binary does not know in an **unexported** `extras`
+field, and the matching `Marshal*` re-emit them, **sorted, after the known keys**.
+The gate (below) stops a *bumped* layout from being misread; the passthrough stops
+an *unbumped* one from being destroyed — because a field added without a bump
+leaves `meta.json` still saying v4, so no gate fires anywhere and an old binary's
+lenient unmarshal drops the key and writes the loss back on the next ordinary
+write. Two rules make it safe, and both are load-bearing:
+
+- **"Is this key known?" must be answered with `encoding/json`'s OWN matcher, not
+  an approximation of it.** json matches struct fields case-**IN**sensitively (a
+  shard key `"BODY"` populates `Task.Body`), so a case-SENSITIVE set would park
+  `BODY`, re-emit it, and leave a shard carrying both `body` and `BODY`. But the
+  obvious fix — a `strings.ToLower` set — is **also wrong**, and worse, because
+  json matches by Unicode simple case-**FOLDING**, and lowercasing is a different
+  function. They disagree in both directions, and each direction is a corruption
+  bug that shipped-and-was-caught in review:
+  - json folds it, `ToLower` doesn't — `"statuſ"` (U+017F) is fed to `Task.Status`
+    by json *and* parked as unknown. Extras are re-emitted LAST, so the stale copy
+    wins on the next read: `furrow move` never takes and the task wedges forever.
+  - `ToLower` folds it, json doesn't — `"İd"` (U+0130) lowercases to `id` but has
+    an empty fold orbit, so json never matches it. A `ToLower` set calls it known
+    and DROPS it while `Task.ID` stays empty: the key and the task's identity,
+    destroyed. That is the very loss this file exists to prevent.
+  `core.isKnown` therefore uses **`strings.EqualFold`** — json's own relation — so
+  a key is parked **iff** json ignored it. `TestKnownKeysFoldExactlyLikeEncodingJSON`
+  pins both directions and fails if the stdlib's matcher ever moves.
+- **`Task` must NEVER grow a `MarshalJSON` method.** The `extras` carrier is
+  unexported *structurally*, not stylistically: `encoding/json` cannot see it, so
+  it can never surface as a literal `"extras"` key and can never leak into
+  `internal/cli`'s `--json` views. Those views **embed** `core.Task` to put
+  `body_text` / `reason` / `revisit` / `snippet` / `mentioned_by` beside it — a
+  `MarshalJSON` on `Task` would be **promoted** to those outer structs, Go would
+  call it for the whole view, and every sibling field would silently vanish **with
+  no compile error**. (The first implementation did exactly that and emptied 10 CLI
+  tests.) The splice therefore happens on the store's write path, in
+  `core.MarshalTask`, where the data actually lives.
+
+The byte recipe is untouched: the object is composed **compactly** and indented
+once as a finished document, so the 2-space / no-HTML-escape / trailing-newline
+rules still live in exactly one place. A shard with **no** extras marshals
+byte-identically to what v0.9.0 wrote, so no existing board sees a single
+rewritten shard. `fsstore.SetBoardVersion` **reads** `meta.json` and raises its
+version rather than building a fresh `core.Meta` — otherwise `furrow upgrade`, the
+one command whose whole job is to move a board FORWARD, would itself eat
+`meta.json`'s forward-compatible keys.
+
+`scripts/check-marshal-singlepath.sh` now guards **decoders too**
+(`json.Unmarshal` / `json.NewDecoder`), not just encoders: a raw `json.Unmarshal`
+into a `Task` bypasses `core.UnmarshalTask`, so the unknown keys are never parked
+and the next write destroys them. A decoder that skips the single path is exactly
+as lossy as an encoder that does.
 
 Its sibling guard, **`scripts/check-schema-write-guard.sh`** (also in
 `scripts/check.sh` + CI), greps the *other* single path: `core.SchemaVersion` —
@@ -263,7 +347,35 @@ schema; `meta` = the `meta.json` schema) and CI diffs them against
 struct → update the schema const, the committed file, and the golden together.
 A task carries a first-class `repos` set (owner/repo identifiers, same
 sorted+deduped/[]-not-null semantics as labels; `[]` = draft). Labels are pure
-free-form tags — a repo is NOT a label.
+free-form tags — a repo is NOT a label. The three top-level objects declare
+`"additionalProperties": true` — furrow now legitimately writes shards carrying
+keys it does not know (see the passthrough), and leaving it `false` would make the
+published schema call furrow's own output invalid. `$defs.checklistItem` **stays
+`false`**: passthrough is TOP-LEVEL ONLY, an unknown key inside a checklist item
+really is still dropped, and the schema must not promise what the marshaller does
+not do.
+
+**Adding a shard field? The default answer is BUMP.** Passthrough makes an old
+binary **preserve** a field it does not know. It does not make it **honour** one:
+an old furrow carries a future `"blocked": true` faithfully through every write —
+and then still surfaces that task in `furrow next` and still lets you close it, as
+if the field were not there. Preservation downgrades silent DATA LOSS to silent
+SEMANTIC MISBEHAVIOR — a real improvement (loss is unrecoverable; misbehavior is
+fixed by updating the binary), but only `core.SchemaVersion` can say "refuse to
+operate". So the rule "bump when the shard layout changes" now has **teeth**:
+**`TestShardFieldsGolden`** (`internal/core/schema_fields_test.go` +
+`testdata/shard-fields.golden`) freezes every persisted type's json keys, in struct
+order, plus the layout version. Change a shard's shape and it FAILS, naming the
+version to bump. Skip the bump only if **no** query, sort, filter, or lane decision
+reads the new field — and note that every field ever added to `Task` (value,
+effort, repos, reviewed, deps, refs, checklist, parent) is read by one: the "safe
+for an old binary to ignore" class has never had a member. Accept a new shape with
+`go test ./internal/core -run TestShardFieldsGolden -update-fields`, in the same
+change as the schema const, the committed `docs/schema/` file, and the goldens.
+New shard fields go at the **END** of the struct: a field declared mid-struct is
+written there by a new binary and re-emitted at the end by an old one (extras are
+appended), so alternating writes churn a one-line move — churn, not loss, but
+avoidable.
 
 **The version gate is two-sided, and `core.SchemaVersion` is what THIS BINARY
 writes — not what the board declares.** The board's number lives in `meta.json`
@@ -271,8 +383,11 @@ and is an **input** to every write:
 
 - `core.CheckSchemaVersion(v)` — the READ gate. A board NEWER than the binary is
   refused (id **`schema-too-new`**, exit 3 — the fix is the binary, not the
-  input), so an old binary can never lenient-parse away fields it doesn't know
-  and write the loss back.
+  input), so an old binary can never MISREAD such a board: a v3-only binary would
+  happily load a v4 shard and then act as if `reviewed` did not exist. (It no
+  longer guards against DESTROYING the fields it doesn't know — the passthrough
+  preserves those. But preserving is not understanding, which is exactly why this
+  gate stays.)
 - `core.CheckWritable(v)` — the WRITE gate. A binary may write only a board that
   already declares exactly its own layout. An OLDER board — or one with shards
   but no `meta.json` at all — is fully READABLE but READ-ONLY (id

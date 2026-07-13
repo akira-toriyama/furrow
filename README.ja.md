@@ -167,7 +167,7 @@ furrow done t-0001
 | `sync` | マルチマシン運用の儀式を 1 コマンドで: `.furrow/` 限定の auto-commit（機械が書く shard は常に commit、手編集の `bodies/<id>.md` は新規か `-b` 明示時だけ・それ以外は `pending_bodies` に残して作者に委ね、共有 checkout が他人の WIP を巻き込まない。`--all-bodies` で従来の全 sweep）→ `fetch` + `rebase --autostash @{u}`（`FETCH_HEAD` でなく追跡 ref に rebase、他 writer の fetch と race しない）→ `push`（non-fast-forward 時は pull→push を 1 回リトライ）。conflict 時は自動 abort（`sync-conflict` エラーにパス一覧）。pre-flight が捕まえた他人の rebase は待って吸収、超過時は retryable `sync-busy`（exit 3）。pull 中の fetch/ロック競合はリトライし、解消しなければ（stale な `.git/*.lock` の可能性）除去すべきロックを名指して terminal に失敗。進捗 `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` は失敗時も stdout に出る。成功時は repo スコープの `revisit` サマリ（`dep_done`/`stale` の id 一覧。空なら省略）も付く |
 | `archive [<id>...]` | done タスクを `.furrow/archive/` へ退避（`--yes` なしはプレビュー）。`<id>` 指定でそれらを名指し退避（各々 done レーン必須・違えば exit 2＝進行中を stranding しない）／id 無しは古い done を sweep。sweep は既定で全 repo 対象、`-r/--repo`（繰り返し可）で 1 repo に絞る（age ガードと AND）。`--older-than`/`-r` は sweep 専用（id 列との併用は exit 2）。タスクの `attach` した媒体（`bodies/assets/<id>-*`）はタスクと一緒に `.furrow/archive/` へ移動し、hot store に取り残されない |
 | `upgrade` | ボードの on-disk レイアウト版（`.furrow/meta.json`。archive ストアがあれば `archive/meta.json` も）をこのバイナリが書く版へ引き上げ、全 shard を現行マーシャラで再シリアライズして 1 回の意図的な commit にまとめる。**ボードの版を動かす唯一の手段**——通常の write は代わりに拒否する（`schema-upgrade-required`・exit 2）ので、レイアウト移行が `sync` の副作用で起きることは二度とない。`--yes` が無ければ preview（`archive` と同じ破壊操作ガード）で、flag-day チェックリスト（furrow を release → 全 caller の pin を上げる → その後に upgrade）を印字する。既に現行版なら綺麗な no-op（`changed:false`・exit 0・書き込み 0 バイト）。ボードの方が新しければ拒否（`schema-too-new`・exit 3）——**降格は無い**ので、戻すならボード repo を `git revert` する。`--json`/`--ndjson` は `{from, to, changed, applied, stores:[{path, from, to, tasks}]}` |
-| `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環は error、closed 無しの done レーンタスクも error＝`furrow done` で backfill、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。done な依存が最終更新後に閉じた open タスク＝reconcile gap も warn。アセット衛生＝参照先が存在しない body の asset 参照・どの body からも参照されない orphan asset・5 MiB 以上の oversized asset はいずれも warn（生 blob は commit 後に消せないので着地前に検出。Git LFS 追跡か縮小を促す）。バイナリより古いレイアウトのボードは `schema-outdated` を warn（error にしない＝read-only なボードは flag day の正当な途中経過で、全 repo の CI を赤くする話ではない）。書きかけのユーザー設定の clamp 警告も含む。`[lint].archive_done` 設定時は、archive 可能な done がその件数に達すると `archive-backlog` nudge も出す。各 finding は安定した kebab-case の `code`（`dangling-link`・`dep-cycle`・`orphan-asset`・`archive-backlog`・`schema-outdated` …）を持ち、`--json`/`--ndjson` の triage は message 文でなく code で分岐できる＝`id` は文脈依存（task id・asset 名・`config`）） |
+| `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環は error、closed 無しの done レーンタスクも error＝`furrow done` で backfill、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。done な依存が最終更新後に閉じた open タスク＝reconcile gap も warn。アセット衛生＝参照先が存在しない body の asset 参照・どの body からも参照されない orphan asset・5 MiB 以上の oversized asset はいずれも warn（生 blob は commit 後に消せないので着地前に検出。Git LFS 追跡か縮小を促す）。バイナリより古いレイアウトのボードは `schema-outdated` を warn（error にしない＝read-only なボードは flag day の正当な途中経過で、全 repo の CI を赤くする話ではない）。furrow が知らないキーを持つファイルは `unknown-shard-key` を warn（機械が書く 3 種すべて＝task shard・`repos/` review shard・`meta.json` を検査。[保持](#未知のキーは捨てずに保持する)はされるが**無視**されており、スキーマ側が未知キーを許すようになった今これが唯一の検出器＝furrow を更新するか、手編集のタイポを直すか）。書きかけのユーザー設定の clamp 警告も含む。`[lint].archive_done` 設定時は、archive 可能な done がその件数に達すると `archive-backlog` nudge も出す。各 finding は安定した kebab-case の `code`（`dangling-link`・`dep-cycle`・`orphan-asset`・`archive-backlog`・`schema-outdated`・`unknown-shard-key` …）を持ち、`--json`/`--ndjson` の triage は message 文でなく code で分岐できる＝`id` は文脈依存（task id・asset 名・`owner/repo`・`meta`・`config`）） |
 | `config init` | ユーザー設定 `~/.config/furrow/config.toml`（中央ボード雛形）を書き出す。ボード内で実行すると最寄りの `.furrow` から path/scopes を文脈導出、離れていればコメント付き placeholder。既存ファイルは上書きしない（`--path`・`--scope`（複数可）） |
 | `config path` | 解決されるユーザー設定パスを表示。書きかけ設定の clamp 警告は stderr へ（stdout は path のみ） |
 | `schema [task\|meta]` | JSON Schema を出力（引数なし or `task` = シャード（`tasks/<id>.json`）のスキーマ・`meta` = `meta.json` のスキーマ） |
@@ -442,8 +442,10 @@ git config core.hooksPath scripts/hooks   # hook を置いたあと
 「入力」であって「出力」ではない**。ゲートは両側にある:
 
 - **ボードがバイナリより新しい** → read も write も拒否する（id `schema-too-new`・**exit 3**）。直すのは
-  バイナリ側（CI なら `sync-task-status.yml@vX.Y.Z` の pin を上げる）。寛容にパースすれば、知らない
-  フィールドを黙って落としたまま書き戻してしまう——それを防ぐのがこのゲート。
+  バイナリ側（CI なら `sync-task-status.yml@vX.Y.Z` の pin を上げる）。寛容にパースすれば、そのボードを
+  **誤読**する——知らないフィールドが「無い」かのように振る舞い、その欠けた像のまま並べ替え・絞り込み・
+  クローズしてしまう。**破壊**はもうしない（下の[未知キーの passthrough](#未知のキーは捨てずに保持する)が
+  保持する）が、**保持することは理解することではない**——だからこのゲートは残る。
 - **ボードがバイナリより古い** → **読めるが read-only**。write は id `schema-upgrade-required`・
   **exit 2** で拒否される（古いのはボード側で、明示コマンドで直せる＝バリデーション扱い）。`meta.json`
   が無い（shard はあるのに未 stamp の）ボードも同じ扱い。
@@ -476,6 +478,42 @@ workflow はこれを pre-flight に使い、id ごとの謎の「task not found
 未 release の source build から回した**ただ 1 回の `furrow sync`** が共有中央ボードを 3 → 4 へ移行させ、
 fleet の pin 済み release が一斉にボードを失った（v0.6.1 は全 id が "task not found"、v0.7.0 は exit 3）。
 `furrow upgrade` に**降格（downgrade）はない**——戻すならボード repo の `git revert` である。
+
+### 未知のキーは捨てずに保持する
+
+上のゲートが火を吹くのは、誰かが版を**上げたとき**だけである。将来の furrow がフィールドを足して版を
+**上げなかったら**——「追加なだけだから安全」に見えるから——`meta.json` は v4 のままで、どのゲートも
+鳴らない。そして古いバイナリは shard を読み、知らないキーを落とし（`encoding/json` の寛容な unmarshal
+がそうする）、次の save でその欠損を書き戻す。**通常の write 1 回、フィールド 1 個の消滅、エラーなし。**
+
+だから、そうしない。furrow は**知らないトップレベルのキーを退避し、そのまま書き戻す**（既知キーの後ろに
+sorted で）。対象は機械が書く 3 種すべて——task shard・`repos/` の review shard・`meta.json`。古いバイナリは
+未来のフィールドを、見つけたときのまま返す。対にして言えば: **ゲートは「上げられた」レイアウトの誤読を
+防ぎ、passthrough は「上げられていない」レイアウトの破壊を防ぐ。**
+
+限界は 4 つ。どれも隠さない:
+
+- **遡及しない。** `v0.9.0` までの release は今も write で未知キーを破壊する。共有ボードが安全になるのは
+  **全ての書き手**（各 repo の pin 済み `sync-task-status.yml@vX.Y.Z` CI を含む）がこれを持ってから。
+  最後の pin がこの release を越えるまでは、フィールド追加のたびにレイアウト版を上げ続けること。
+- **トップレベル限定。** 既知のネストしたオブジェクト（`checklist` の要素）の中の未知キーは今も落ちる。
+  公開スキーマもそう言っている: トップレベルの 3 オブジェクトは `"additionalProperties": true`（furrow 自身が
+  知らないキーを正当に書くのだから、`false` は自分の出力を invalid と呼ぶ嘘になる）で、
+  `$defs/checklistItem` は `false` のまま。
+- **保持は尊重ではない。** 古いバイナリは未来の `"blocked": true` を忠実に運びながら、そのタスクを
+  `furrow next` に出し、クローズもさせる。passthrough が下げるのは「静かなデータ損失」から
+  「静かな意味的誤動作」へ——本物の改善だが（損失は回復不能、誤動作はバイナリ更新で直る）、
+  「動作を拒否する」と言えるのはレイアウト版だけ。`furrow lint` が **`unknown-shard-key`** を warn するのは、
+  この「運ばれているが無視されている」状態を可視化するため。
+- **手編集のタイポは永久に残る。** キーを打ち間違えれば（`"lables"`）furrow は永久に保持する——
+  理解できないキーを勝手に消すことこそ、passthrough が直している当のバグだからで、誰も掃除してくれない。
+  `furrow lint` が指摘するので、消すのは自分の手編集で。**shard は furrow が書くもので、あなたが書くものではない**
+  もう 1 つの理由。
+
+なお「そのキーは既知か？」の判定には **`strings.EqualFold`**（`encoding/json` 自身の Unicode simple
+case-**folding**）を使う。`strings.ToLower` は**別の関数**で、json と双方向にズレ、どちらのズレも
+データ破壊になる（`"statuſ"` U+017F は json が `status` に食わせるのに ToLower は畳まない＝キーが
+二重化してレーンが固着する。`"İd"` U+0130 は ToLower が `id` に畳むのに json は畳まない＝キーが消える）。
 
 `value` / `effort` は、エージェント（や自分）が「次に何をやるか」を毎回見積もり直すのではなく**記録済みデータから選ぶ**ための任意フィールド。**ROI = value ÷ effort は導出で保存しない**（どちらを直しても常に最新の ROI になり、古い数字が残らない）。`next` はあえて据え置き——ROI 並べ替えは呼ぶ側の選択：
 

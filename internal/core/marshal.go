@@ -47,7 +47,10 @@ func Marshal(idx *Index, laneOrder []string) ([]byte, error) {
 // a programmer error, mirroring Marshal's contract for a nil index.
 func MarshalTask(t *Task) ([]byte, error) {
 	canonicalizeTask(t)
-	data, err := encodeCanonical(t)
+	// …WithExtras: any key this binary does not know came off disk in t.extras and
+	// goes back out, sorted, after the known ones. Dropping it would destroy a
+	// field a newer furrow wrote — see passthrough.go.
+	data, err := encodeCanonicalWithExtras(t, t.extras)
 	if err != nil {
 		return nil, Internalf(t.ID, "marshal task: %v", err)
 	}
@@ -88,6 +91,13 @@ func UnmarshalTask(data []byte) (*Task, error) {
 	if err := json.Unmarshal(data, &t); err != nil {
 		return nil, Validationf("task", "task shard is not valid JSON: %v", err)
 	}
+	// Park the keys we do not know instead of dropping them: this is what makes a
+	// round-trip through an older binary lossless (passthrough.go).
+	extra, err := splitExtras(data, taskKnownKeys)
+	if err != nil {
+		return nil, Validationf("task", "task shard is not valid JSON: %v", err)
+	}
+	t.extras = extra
 	return &t, nil
 }
 
@@ -99,7 +109,7 @@ func UnmarshalTask(data []byte) (*Task, error) {
 // non-nil.
 func MarshalRepo(r *RepoRecord) ([]byte, error) {
 	canonicalizeRepo(r)
-	data, err := encodeCanonical(r)
+	data, err := encodeCanonicalWithExtras(r, r.extras)
 	if err != nil {
 		return nil, Internalf(r.Repo, "marshal repo: %v", err)
 	}
@@ -127,6 +137,11 @@ func UnmarshalRepo(data []byte) (*RepoRecord, error) {
 	if err := json.Unmarshal(data, &r); err != nil {
 		return nil, Validationf("repo", "repo shard is not valid JSON: %v", err)
 	}
+	extra, err := splitExtras(data, repoKnownKeys)
+	if err != nil {
+		return nil, Validationf("repo", "repo shard is not valid JSON: %v", err)
+	}
+	r.extras = extra
 	return &r, nil
 }
 
@@ -135,7 +150,7 @@ func UnmarshalRepo(data []byte) (*RepoRecord, error) {
 // the shards (2-space indent, no HTML escaping, trailing newline) — a hand-edit
 // equals a furrow write. This is the ONE path that serializes Meta.
 func MarshalMeta(m *Meta) ([]byte, error) {
-	data, err := encodeCanonical(m)
+	data, err := encodeCanonicalWithExtras(m, m.extras)
 	if err != nil {
 		return nil, Internalf("meta", "marshal meta: %v", err)
 	}
@@ -149,6 +164,11 @@ func UnmarshalMeta(data []byte) (*Meta, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, Validationf("meta", "meta.json is not valid JSON: %v", err)
 	}
+	extra, err := splitExtras(data, metaKnownKeys)
+	if err != nil {
+		return nil, Validationf("meta", "meta.json is not valid JSON: %v", err)
+	}
+	m.extras = extra
 	return &m, nil
 }
 
