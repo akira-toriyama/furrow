@@ -9,13 +9,24 @@
 // layer means a port is missing, not that core should grow an import.
 package core
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
-// SchemaVersion is the current on-disk layout version. It lives in exactly one
-// file, .furrow/meta.json (see Meta) — never in a task shard, so a version bump
-// is a single-file change and no shard becomes a cross-write merge point. Bump
-// only on a breaking layout change, and update docs/schema/ + goldens in the
-// same change. v4 = adds the per-task `reviewed` timestamp AND the per-repo
+// SchemaVersion is the layout this BINARY writes. The board's own version lives
+// in exactly one file, .furrow/meta.json (see Meta) — never in a task shard, so a
+// version bump is a single-file change and no shard becomes a cross-write merge
+// point. The two are not the same number, and that distinction is the whole
+// point: a binary may only write a board that already declares this exact
+// version (CheckWritable), and nothing but `furrow upgrade` may raise a board.
+//
+// Bumping this const is therefore a FLAG DAY, not a code change: it makes every
+// board still on the old layout read-only, including for anyone running a pinned
+// release (the fleet's task-status CI). Order matters — release furrow, bump
+// every caller's pin, THEN `furrow upgrade --yes` the board. Bump only on a
+// read-breaking layout change, and update docs/schema/ + goldens in the same
+// change. v4 = adds the per-task `reviewed` timestamp AND the per-repo
 // review shards (.furrow/repos/<owner>__<repo>.json); a v3-only binary must
 // refuse it, or its lenient unmarshal would strip `reviewed` and write the loss
 // back. v3 = shards whose tasks carry the required first-class repos set (the
@@ -30,6 +41,12 @@ const SchemaVersion = 4
 // test/inspection-only canonical form; the store never persists these bytes), so
 // reordering fields changes the determinism golden — don't reorder without a
 // schema bump and a golden-file update.
+//
+// SchemaVersion here is INFORMATIONAL — what the board declared when Load read
+// it. Save ignores it and consults the board on disk (Store.BoardVersion),
+// because an in-memory field defaults to the binary's version at marshal time
+// (Canonicalize) and trusting it is exactly how a routine write once migrated a
+// shared board behind its owner's back.
 type Index struct {
 	SchemaVersion int    `json:"schema_version"`
 	Tasks         []Task `json:"tasks"`
@@ -43,16 +60,52 @@ type Meta struct {
 	SchemaVersion int `json:"schema_version"`
 }
 
-// CheckSchemaVersion is the version gate: it rejects a board whose meta.json
-// declares a layout NEWER than this binary knows. Without it, an old binary's
-// lenient json.Unmarshal would load such a board, silently drop every field it
-// doesn't know (e.g. repos), and write the loss back on the next Save. Both
-// stores call this on Load AND Save; the CLI surfaces it as exit 3 (internal —
-// the fix is updating the binary, not the input). Older versions load fine:
-// forward-compat is the store's normal lenient read.
+// CheckSchemaVersion is the READ half of the version gate: it rejects a board
+// whose meta.json declares a layout NEWER than this binary knows. Without it, an
+// old binary's lenient json.Unmarshal would load such a board, silently drop
+// every field it doesn't know (e.g. repos), and write the loss back on the next
+// Save. Both stores call this on Load; the CLI surfaces it as exit 3 (internal —
+// the fix is updating the binary, not the input). An OLDER board loads fine:
+// forward-compat is the store's normal lenient read. Writing one is a different
+// question — see CheckWritable.
 func CheckSchemaVersion(v int) error {
 	if v > SchemaVersion {
-		return Internalf("meta", "board is schema v%d; this furrow is too old (it knows v%d) — update the binary", v, SchemaVersion)
+		return &Error{
+			Code: CodeInternal,
+			ID:   "schema-too-new",
+			Msg: fmt.Sprintf("board is schema v%d; this furrow knows only v%d — update the binary (in CI: bump the sync-task-status.yml@vX.Y.Z pin)",
+				v, SchemaVersion),
+			Details: map[string]any{"board_schema": v, "binary_schema": SchemaVersion},
+		}
+	}
+	return nil
+}
+
+// CheckWritable is the WRITE half of the gate, and the fix for the 2026-07-13
+// outage: a binary may write ONLY a board that already declares exactly its own
+// layout. Reading an older board is fine (lenient, above); silently REWRITING it
+// is not, because the shards would then carry fields the board never promised —
+// which is precisely how one routine `furrow sync` from a source build migrated
+// the shared tracker 3->4 and locked out every release the fleet's CI pinned.
+//
+// So: newer board -> schema-too-new (exit 3, "I am stale"); older board, or one
+// with shards but no meta at all (v == 0) -> schema-upgrade-required (exit 2,
+// "the BOARD is stale — an explicit command fixes it"). The two are told apart by
+// exit code alone, and both carry {board_schema, binary_schema} for a machine.
+// Raising a board's version is never a side effect: `furrow upgrade` is the only
+// caller that may do it, and it is a deliberate flag day.
+func CheckWritable(v int) error {
+	if err := CheckSchemaVersion(v); err != nil {
+		return err
+	}
+	if v < SchemaVersion {
+		return &Error{
+			Code: CodeValidation,
+			ID:   "schema-upgrade-required",
+			Msg: fmt.Sprintf("board is schema v%d but this furrow writes v%d; an ordinary write never raises a board's layout — run `furrow upgrade` (a flag day: release furrow and bump every caller's sync-task-status.yml pin FIRST, or their pinned CI loses the board)",
+				v, SchemaVersion),
+			Details: map[string]any{"board_schema": v, "binary_schema": SchemaVersion},
+		}
 	}
 	return nil
 }

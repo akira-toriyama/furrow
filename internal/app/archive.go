@@ -119,6 +119,15 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 	if a.Dir == "" {
 		return nil, core.Internalf("", "archive requires a file-backed store")
 	}
+	// Gate the HOT board before touching anything, because this is the one flow
+	// that writes two stores and it commits the destination first. Without this,
+	// a read-only board still got an archive/ born under it: that sibling store is
+	// fresh, so it passed the store's fresh-stamp exemption and was stamped with
+	// the BINARY's layout — one ahead of the board that owns it — and the task was
+	// copied in before the hot store's own gate refused. A refusal has to be total.
+	if err := a.Store.Writable(); err != nil {
+		return nil, err
+	}
 	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.IDWidth)
 	arcIdx, err := arc.Load()
 	if err != nil {

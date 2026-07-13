@@ -1,5 +1,7 @@
 package app
 
+import "github.com/akira-toriyama/furrow/internal/core"
+
 // BoardInfo is the machine-readable snapshot `furrow board` prints: where writes
 // land (Store), how the board was discovered (Source), what scope filters reads
 // (ScopeRepo/AutoFilter), and the full lane vocabulary — so an agent learns the
@@ -20,10 +22,34 @@ type BoardInfo struct {
 	StaleDays            int      `json:"stale_days"`    // revisit staleness window (0 disables)
 	ArchiveOlderThanDays int      `json:"archive_older_than_days"`
 	LabelsRequired       bool     `json:"labels_required"` // add/lint reject a label-less task
+
+	// The schema triple: what the BOARD declares, what this BINARY writes, and
+	// whether the two agree (only then are writes allowed). This is the one place
+	// an agent can ask "can I write here, and if not, which side is stale?"
+	// WITHOUT provoking an error — `board` answers even on a board no other
+	// command can open, which is what makes it usable as a CI pre-flight.
+	SchemaVersion       int    `json:"schema_version"`        // the board's declared layout (0 = absent or unreadable)
+	BinarySchemaVersion int    `json:"binary_schema_version"` // the layout this furrow writes
+	SchemaState         string `json:"schema_state"`          // current|outdated|too-new|unreadable
+	Writable            bool   `json:"writable"`              // == (schema_state == "current")
 }
 
-// Board returns the active board's introspection snapshot. It reads only the
-// already-resolved App/Config — no store load — so it is cheap and never fails.
+// Board schema states. Stable kebab-case tokens — branch on these, not on the
+// two integers, so the remediation ("upgrade the board" vs "update the binary")
+// is never derived by accident.
+const (
+	SchemaCurrent    = "current"    // board == binary; writes allowed
+	SchemaOutdated   = "outdated"   // board < binary; readable, read-only until `furrow upgrade`
+	SchemaTooNew     = "too-new"    // board > binary; refused both ways — update furrow
+	SchemaUnreadable = "unreadable" // meta.json is corrupt; restore it from git
+)
+
+// Board returns the active board's introspection snapshot. It reads the config
+// (already resolved) plus one small meta.json probe, and it NEVER fails: a
+// too-new or corrupt board is REPORTED here, not raised. That contract is
+// load-bearing — `furrow board --json` is the last thing that still works when
+// the board and the binary disagree, so it is what CI reads to diagnose the
+// mismatch instead of watching every task read fail with "task not found".
 func (a *App) Board() BoardInfo {
 	// Terminal lanes in canonical (lane-order) form, not the config membership
 	// map's random iteration order, so the output is deterministic.
@@ -32,6 +58,25 @@ func (a *App) Board() BoardInfo {
 		if a.Cfg.IsTerminal(l) {
 			terminal = append(terminal, l)
 		}
+	}
+	// Ask the store whether it is writable rather than re-deriving the rule from
+	// the two integers: an unstamped but EMPTY board (a fresh `.furrow/`, or an
+	// interrupted `init`) is version 0 yet perfectly writable — the first write
+	// stamps it. Comparing versions alone reported that board as outdated and
+	// unwritable, which would have failed the CI pre-flight on a board that would
+	// have accepted the write.
+	ver, err := a.Store.BoardVersion()
+	writable := err == nil && a.Store.Writable() == nil
+	var state string
+	switch {
+	case err != nil:
+		ver, state = 0, SchemaUnreadable
+	case writable:
+		state = SchemaCurrent
+	case ver > core.SchemaVersion:
+		state = SchemaTooNew
+	default:
+		state = SchemaOutdated // ver < SchemaVersion, or 0 with shards (unstamped)
 	}
 	return BoardInfo{
 		Store:                a.Dir,
@@ -47,5 +92,9 @@ func (a *App) Board() BoardInfo {
 		StaleDays:            a.Cfg.RevisitStaleDays,
 		ArchiveOlderThanDays: a.Cfg.ArchiveOlderThanDays,
 		LabelsRequired:       a.Cfg.LabelsRequired,
+		SchemaVersion:        ver,
+		BinarySchemaVersion:  core.SchemaVersion,
+		SchemaState:          state,
+		Writable:             writable,
 	}
 }

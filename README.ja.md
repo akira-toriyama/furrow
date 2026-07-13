@@ -39,7 +39,7 @@ furrow はこれを Go で実装する。外部サービス連携は持たず、
     t-0002.json
   bodies/<id>.md    # 1 タスク 1 つの長文 markdown 本文（人/エージェントが編集可）
   repos/<owner>__<repo>.json  # repo ごとのレビュー shard（furrow review <repo>）
-  meta.json         # ボード全体のレイアウト版（{"schema_version": 4}）
+  meta.json         # ボード全体のレイアウト版（{"schema_version": 4}）。上げるのは `furrow upgrade` だけ
   config.toml       # 人が編集する設定（furrow からは READ のみ）
   archive/          # 退避した古い done タスク（独自の tasks/ + meta.json + bodies/）
 ```
@@ -48,7 +48,7 @@ furrow はこれを Go で実装する。外部サービス連携は持たず、
 
 - **`tasks/<id>.json`** = 構造化メタデータだけ、1 タスク 1 ファイル。小さく、`jq` や Go で即クエリでき、フィールド単位で diff できる。**唯一の決定論マーシャラ（`core.MarshalTask`）からしか書かれない。**
 - **`bodies/<id>.md`** = 素の markdown。エスケープなし、タスク単位で diff できる。**手でも Claude でも自由に編集してよい。**
-- **`meta.json`** = ボード全体のレイアウト版（`{"schema_version": 4}`）だけを持つ専用ファイル。**シャードの中には決して入れない**ので、版を上げても触るのは 1 ファイルだけで、どのシャードも git のマージ点にならない。
+- **`meta.json`** = ボード全体のレイアウト版（`{"schema_version": 4}`）だけを持つ専用ファイル。**シャードの中には決して入れない**ので、版を上げても触るのは 1 ファイルだけで、どのシャードも git のマージ点にならない。この版は**書き込みの入力であって出力ではない**——通常の write は決してこの数字を動かさず、上げられるのは `furrow upgrade` だけ（[レイアウト版ゲート](#レイアウト版ゲート書き込みを止めるのは版が違うとき)を参照）。
 - **`config.toml`** = 人が編集する設定。furrow は書き換えず、READ するだけ。
 - **`archive/`** = 古くなった done タスクの退避先（独自の `tasks/` + `meta.json` + `bodies/` を持つ兄弟シャードストア）。
 
@@ -81,7 +81,7 @@ Markdown が描画される場所（GitHub・Obsidian・エディタのプレビ
 - タイムスタンプは UTC・秒単位（RFC3339 の `...Z`、ナノ秒なし）
 - 末尾改行あり
 
-この結果、**`furrow` が書いたバイト列と、人や Claude が手編集したバイト列が一致する**。しかも Save はバイト列が変わったシャードだけを書くので、no-op の保存では git の churn はゼロになる。
+この結果、**`furrow` が書いたバイト列と、人や Claude が手編集したバイト列が一致する**。しかも Save はバイト列が変わったシャードだけを書くので、no-op の保存では git の churn はゼロになる。`meta.json` はさらに徹底していて、Save は**そもそも書き換えない**（ボードの申告版は write の検査対象＝入力である）。この 1 ファイルに commit が立つのは `furrow init` と `furrow upgrade` のときだけ。
 
 ---
 
@@ -148,7 +148,7 @@ furrow done t-0001
 | `revisit` | read-only。再評価すべき open タスクを一覧。`--json`/`--ndjson` は各タスクに `revisit` 配列 `{code, detail}`（`no_repo`・`value_unset`・`effort_unset`・`stale`・`dep_done`）を付与し、エージェントが何を直すか分かる。draft はスコープに関係なく浮上する。空でも exit 0。`-l/--label`・`-r/--repo`・`-n/--limit`・`--stale-days <n>`（0 で stale 無効） |
 | `search <term>` | タスクの**タイトルと markdown 本文**を全文検索（大文字小文字を無視した部分一致）、canonical 順。`.furrow/bodies` を `grep` する寄り道でなく 1 コマンドで探せる。`ls` と同じ `-s/-l/-r/-n` スコープを尊重（素の `search` はこの repo のボード内。`-r ''` で全ボード）。各ヒットは `matched_field`（`title`\|`body`）と、語を文脈付きで示す 1 行 `snippet` を返す。タイトル一致なら本文は読まない。複数語は 1 つのリテラル句。空でも exit 0。`-s/--status`・`-l/--label`・`-r/--repo`・`-n/--limit` |
 | `stats` | スコープ内でボードを集計: `total`・`drafts`、および `by_lane`（設定レーン順の完全ヒストグラム。件数 0 のレーンも含む）・`by_repo`・`by_label`（使用語彙＝多い順）。素の `stats` はこの repo の断面、`stats -r ''` は全ボード —— `-l`/`-r` を推測する前に label/repo 語彙を知る呼び出し。`--json`/`--ndjson` は 1 オブジェクト。全 0 のボードでも exit 0。`-s/--status`・`-l/--label`・`-r/--repo` |
-| `board` | アクティブなボードの introspection スナップショットを出す: store パス・discovery `source`（`env`/`local`/`pointer`/`user-config`）・repo スコープ・レーン語彙（`lanes`/`next_lanes`/`default_lane`/`done_lane`/`terminal`）＋ stale/archive の窓。**エラーを起こさずレーンを知る**手段。`--json`（or `--ndjson`）でオブジェクトを出力 |
+| `board` | アクティブなボードの introspection スナップショットを出す: store パス・discovery `source`（`env`/`local`/`pointer`/`user-config`）・repo スコープ・レーン語彙（`lanes`/`next_lanes`/`default_lane`/`done_lane`/`terminal`）＋ stale/archive の窓＋**スキーマ三つ組**（`schema_version`＝ボードの申告値（0 = 不在または読めない）・`binary_schema_version`・`schema_state`＝`current`/`outdated`/`too-new`/`unreadable`・`writable`）。**エラーを起こさずレーンを知る**手段であり、**版の食い違いでも失敗せず報告する**——他のどのコマンドも開けないボードを診断できる唯一の pre-flight。`--json`（or `--ndjson`）でオブジェクトを出力 |
 | `edit <id>` | `bodies/<id>.md` を `$EDITOR` で開く（非対話ならパスを出力） |
 | `attach <id> <file>` | 画像/動画を `bodies/assets/<id>-*` にコピーし、body に相対 markdown 参照を追記する。画像は埋め込み（`![…]`）・その他媒体はリンク（`[…]`）。衝突しない名前（`…-2`, `…-3`）で既存アセットを上書きしない。body は commit される markdown なので、web アップロード無しに端末だけで attach 全体が git に載る。LFS 非依存。`--json` は `{id, asset, ref, line}` を出力 |
 | `done <id>` | done レーンへ移動し `closed` を打刻 |
@@ -166,7 +166,8 @@ furrow done t-0001
 | `apply` | PR/コミット本文から `SetStatus-task: <body-link> [<lane>]` ディレクティブを解析して適用（stdin または `--body-file`）。status 自動更新の CI フック。`--on open` は in-progress へ寄せ、`--on merge` は lane を適用。検証は非ブロッキング |
 | `sync` | マルチマシン運用の儀式を 1 コマンドで: `.furrow/` 限定の auto-commit（機械が書く shard は常に commit、手編集の `bodies/<id>.md` は新規か `-b` 明示時だけ・それ以外は `pending_bodies` に残して作者に委ね、共有 checkout が他人の WIP を巻き込まない。`--all-bodies` で従来の全 sweep）→ `fetch` + `rebase --autostash @{u}`（`FETCH_HEAD` でなく追跡 ref に rebase、他 writer の fetch と race しない）→ `push`（non-fast-forward 時は pull→push を 1 回リトライ）。conflict 時は自動 abort（`sync-conflict` エラーにパス一覧）。pre-flight が捕まえた他人の rebase は待って吸収、超過時は retryable `sync-busy`（exit 3）。pull 中の fetch/ロック競合はリトライし、解消しなければ（stale な `.git/*.lock` の可能性）除去すべきロックを名指して terminal に失敗。進捗 `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` は失敗時も stdout に出る。成功時は repo スコープの `revisit` サマリ（`dep_done`/`stale` の id 一覧。空なら省略）も付く |
 | `archive [<id>...]` | done タスクを `.furrow/archive/` へ退避（`--yes` なしはプレビュー）。`<id>` 指定でそれらを名指し退避（各々 done レーン必須・違えば exit 2＝進行中を stranding しない）／id 無しは古い done を sweep。sweep は既定で全 repo 対象、`-r/--repo`（繰り返し可）で 1 repo に絞る（age ガードと AND）。`--older-than`/`-r` は sweep 専用（id 列との併用は exit 2）。タスクの `attach` した媒体（`bodies/assets/<id>-*`）はタスクと一緒に `.furrow/archive/` へ移動し、hot store に取り残されない |
-| `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環は error、closed 無しの done レーンタスクも error＝`furrow done` で backfill、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。done な依存が最終更新後に閉じた open タスク＝reconcile gap も warn。アセット衛生＝参照先が存在しない body の asset 参照・どの body からも参照されない orphan asset・5 MiB 以上の oversized asset はいずれも warn（生 blob は commit 後に消せないので着地前に検出。Git LFS 追跡か縮小を促す）。書きかけのユーザー設定の clamp 警告も含む。`[lint].archive_done` 設定時は、archive 可能な done がその件数に達すると `archive-backlog` nudge も出す。各 finding は安定した kebab-case の `code`（`dangling-link`・`dep-cycle`・`orphan-asset`・`archive-backlog` …）を持ち、`--json`/`--ndjson` の triage は message 文でなく code で分岐できる＝`id` は文脈依存（task id・asset 名・`config`）） |
+| `upgrade` | ボードの on-disk レイアウト版（`.furrow/meta.json`。archive ストアがあれば `archive/meta.json` も）をこのバイナリが書く版へ引き上げ、全 shard を現行マーシャラで再シリアライズして 1 回の意図的な commit にまとめる。**ボードの版を動かす唯一の手段**——通常の write は代わりに拒否する（`schema-upgrade-required`・exit 2）ので、レイアウト移行が `sync` の副作用で起きることは二度とない。`--yes` が無ければ preview（`archive` と同じ破壊操作ガード）で、flag-day チェックリスト（furrow を release → 全 caller の pin を上げる → その後に upgrade）を印字する。既に現行版なら綺麗な no-op（`changed:false`・exit 0・書き込み 0 バイト）。ボードの方が新しければ拒否（`schema-too-new`・exit 3）——**降格は無い**ので、戻すならボード repo を `git revert` する。`--json`/`--ndjson` は `{from, to, changed, applied, stores:[{path, from, to, tasks}]}` |
+| `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環は error、closed 無しの done レーンタスクも error＝`furrow done` で backfill、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。done な依存が最終更新後に閉じた open タスク＝reconcile gap も warn。アセット衛生＝参照先が存在しない body の asset 参照・どの body からも参照されない orphan asset・5 MiB 以上の oversized asset はいずれも warn（生 blob は commit 後に消せないので着地前に検出。Git LFS 追跡か縮小を促す）。バイナリより古いレイアウトのボードは `schema-outdated` を warn（error にしない＝read-only なボードは flag day の正当な途中経過で、全 repo の CI を赤くする話ではない）。書きかけのユーザー設定の clamp 警告も含む。`[lint].archive_done` 設定時は、archive 可能な done がその件数に達すると `archive-backlog` nudge も出す。各 finding は安定した kebab-case の `code`（`dangling-link`・`dep-cycle`・`orphan-asset`・`archive-backlog`・`schema-outdated` …）を持ち、`--json`/`--ndjson` の triage は message 文でなく code で分岐できる＝`id` は文脈依存（task id・asset 名・`config`）） |
 | `config init` | ユーザー設定 `~/.config/furrow/config.toml`（中央ボード雛形）を書き出す。ボード内で実行すると最寄りの `.furrow` から path/scopes を文脈導出、離れていればコメント付き placeholder。既存ファイルは上書きしない（`--path`・`--scope`（複数可）） |
 | `config path` | 解決されるユーザー設定パスを表示。書きかけ設定の clamp 警告は stderr へ（stdout は path のみ） |
 | `schema [task\|meta]` | JSON Schema を出力（引数なし or `task` = シャード（`tasks/<id>.json`）のスキーマ・`meta` = `meta.json` のスキーマ） |
@@ -221,6 +222,8 @@ furrow は **非対話がデフォルト**。プロンプトは出さない（TT
   ```
 
   入力が「あと一歩で解決できた」とき（repo 短名の曖昧・未知レーン・親コマンドの未知サブコマンド `config show`・ラベルが repo を一意に指す did-you-mean ガード）は、封筒に `"candidates": [ … ]` も載る。スクリプトはメッセージ文をパースせず、この配列から選べばよい。同様に `show` の一括読みで一部 id が見つからないときは、見つかった分を stdout に出した上で exit 1 になり、封筒に `"details": {"missing": ["t-…", …]}` が載る — 判定は配列で、メッセージ文では行わない。
+
+- **レイアウト版ゲート** — 書く前に `furrow board --json` を pre-flight に読む（版が食い違っても失敗せず報告する唯一のコマンド）。`writable` / `schema_state`（`current`/`outdated`/`too-new`/`unreadable`）で分岐すればよく、失敗した write で気付く必要はない。ボードがバイナリより古ければ write は `schema-upgrade-required`（exit 2＝`furrow upgrade` を回す）、新しければ `schema-too-new`（exit 3＝furrow を更新する）。どちらの封筒にも `"details": {"board_schema": N, "binary_schema": M}` が載る。詳しくは[レイアウト版ゲート](#レイアウト版ゲート書き込みを止めるのは版が違うとき)。
 
 JSON 出力例:
 
@@ -391,6 +394,7 @@ git config core.hooksPath scripts/hooks   # hook を置いたあと
 - **`done` への移動は `closed` を打刻**。done から外へ移動すると `closed` をクリアする。icebox（温存）のような他の terminal レーンは `closed` を打刻しない（parked と closed は別物）。
 - **`next` の定義** = レーンが `[next].lanes`（既定 `ready` + `in-progress` — inbox/backlog などの intake レーンは対象外）にあり、かつ依存（`deps`）が全て done レーンにあるタスク。
 - **shard ↔ body は 1:1**。`furrow lint` が、本文ファイルのないタスクと、タスクのない孤立本文の双方を報告する。
+- **ボードのレイアウト版は write の入力**。バイナリは、自分と同じ版を申告しているボードにしか書かない（古いボードは読めるが read-only、新しいボードは read も拒否）。版を上げるのは `furrow upgrade` だけで、通常のコマンドの副作用では決して動かない（下の[レイアウト版ゲート](#レイアウト版ゲート書き込みを止めるのは版が違うとき)）。
 
 ### スキーマ（`.furrow/tasks/<id>.json`）
 
@@ -422,6 +426,47 @@ git config core.hooksPath scripts/hooks   # hook を置いたあと
 ```
 
 正準スキーマは `furrow schema [task|meta|repo]` が出力する（draft 2020-12）。これが正本で、`docs/schema/furrow.task.v2.json`・`furrow.meta.v2.json`・`furrow.repo.v1.json` が commit 済みのコピー。CI が三者を diff して drift を防ぐ（`v2`/`v1` はスキーマ**文書**の版号で、ボードのレイアウト版＝`meta.json` の `schema_version` は 4）。
+
+### レイアウト版ゲート（書き込みを止めるのは版が違うとき）
+
+`meta.json` の数字は **ボードのもの**であって、バイナリのものではない。そして**あらゆる書き込みの
+「入力」であって「出力」ではない**。ゲートは両側にある:
+
+- **ボードがバイナリより新しい** → read も write も拒否する（id `schema-too-new`・**exit 3**）。直すのは
+  バイナリ側（CI なら `sync-task-status.yml@vX.Y.Z` の pin を上げる）。寛容にパースすれば、知らない
+  フィールドを黙って落としたまま書き戻してしまう——それを防ぐのがこのゲート。
+- **ボードがバイナリより古い** → **読めるが read-only**。write は id `schema-upgrade-required`・
+  **exit 2** で拒否される（古いのはボード側で、明示コマンドで直せる＝バリデーション扱い）。`meta.json`
+  が無い（shard はあるのに未 stamp の）ボードも同じ扱い。
+
+どちらのエラー封筒にも `"details": {"board_schema": N, "binary_schema": M}` が載り、**exit code だけで
+どちら側が古いか分かる**（3 = バイナリが古い / 2 = ボードが古い）。
+
+したがって**通常のコマンドは副作用でボードを移行しない**。`meta.json` に版が stamp されるのは、
+本当に空のストアを作るとき（`furrow init`）だけ。版を上げる唯一の手段が `furrow upgrade` で、これは
+**flag day** である——実行後、それより古い furrow はそのボードに**書けなくなる**（古い release に
+pin した CI を含む）。furrow は他 repo の pin を見られないので、**順序は人間が守る**:
+
+```sh
+furrow board                # schema:   v3 (board) / v4 (binary) — READ-ONLY: run `furrow upgrade`
+# 1. 新レイアウトを載せた furrow を release する
+# 2. 全 caller の sync-task-status.yml@vX.Y.Z pin（と workflow の furrow-version 既定値）をそれへ上げる
+furrow upgrade              # 3. まず preview（どのストアが・何 shard 変わるか）
+furrow upgrade --yes && furrow sync
+```
+
+`furrow board` は三つ組（`schema_version`＝ボードの申告値・`binary_schema_version`・`schema_state`
+＝`current`/`outdated`/`too-new`/`unreadable`・`writable`）を出し、**版が食い違っても失敗せず「報告」する**
+——ボードとバイナリが噛み合わないときに**唯一まだ答えられるコマンド**だからで、同梱の task-status
+workflow はこれを pre-flight に使い、id ごとの謎の「task not found」を N 個出す代わりに、両方の版と
+対処（この repo の pin を上げよ）を名指しした 1 つのエラーで落ちる。`furrow lint` はその間
+`schema-outdated` を **warn**（error にしない——read-only なボードは flag day の正当な途中経過であって、
+全 repo の CI を赤くしてよい状態ではない）。
+
+これは傷跡である: ゲート以前は `Save` が**バイナリの**版で `meta.json` を毎回 stamp していたため、
+未 release の source build から回した**ただ 1 回の `furrow sync`** が共有中央ボードを 3 → 4 へ移行させ、
+fleet の pin 済み release が一斉にボードを失った（v0.6.1 は全 id が "task not found"、v0.7.0 は exit 3）。
+`furrow upgrade` に**降格（downgrade）はない**——戻すならボード repo の `git revert` である。
 
 `value` / `effort` は、エージェント（や自分）が「次に何をやるか」を毎回見積もり直すのではなく**記録済みデータから選ぶ**ための任意フィールド。**ROI = value ÷ effort は導出で保存しない**（どちらを直しても常に最新の ROI になり、古い数字が残らない）。`next` はあえて据え置き——ROI 並べ替えは呼ぶ側の選択：
 
@@ -516,9 +561,10 @@ furrow の連携層は意図的に薄い。**MCP も plugin も作らない**—
 
 Claude（やエージェント）に守らせるルール:
 
-- **`tasks/<id>.json` と `meta.json` を手編集しない。** 単一のマーシャラが所有しており、手編集は git の churn を生む。`add` / `move` / `reorder` / `retitle` / `done` / `check` などのコマンドで変更する（タイトル変更は `retitle`——シャードと body 見出しを一括更新）。
+- **`tasks/<id>.json` と `meta.json` を手編集しない。** 単一のマーシャラが所有しており、手編集は git の churn を生む。`add` / `move` / `reorder` / `retitle` / `done` / `check` などのコマンドで変更する（タイトル変更は `retitle`——シャードと body 見出しを一括更新）。`meta.json` の `schema_version` を上げられるのは `furrow upgrade` だけで、他のどのコマンドも触らない。
 - **`bodies/*.md` は編集してよい。** 長文の散文はここに置く。
 - 状態変更は必ずコマンド経由。出力を機械処理するなら `--json` / `--ndjson` を使う。
+- **書く前に `furrow board --json` を pre-flight する。** `writable` / `schema_state` で分岐する（`schema-upgrade-required` = exit 2・ボードが古い / `schema-too-new` = exit 3・バイナリが古い）。ボードの版を勝手に上げるコマンドは存在しない——それは `furrow upgrade`（flag day）の仕事である。
 
 ### CI: PR から tracker を自動更新
 
@@ -560,6 +606,13 @@ workflow は**自身の tag と一致する furrow release バイナリ**を DL 
 tracker repo の Contents Read & write のみ）。未設定の間は job は green のまま
 スキップ（dormant）。検証は非ブロッキング: 不正な id/lane は報告されるが merge は止めない。
 
+この pin こそがボードの upgrade で壊れる当のものなので、workflow は**スキーマを pre-flight する**:
+tracker に対して `furrow board --json` を実行し、`.writable != true` なら、両方の版と対処
+（この repo の pin を上げよ）を名指した 1 つの annotation で hard-fail する —— pin 済みの古い
+バイナリが全 id に「task not found」を返すのを眺めることにならない。だから
+[レイアウト版ゲート](#レイアウト版ゲート書き込みを止めるのは版が違うとき)の順序（release → 全 caller の
+pin を上げる → **その後に** `furrow upgrade`）は任意ではない。
+
 ---
 
 ## 開発
@@ -592,7 +645,7 @@ gitmoji + Conventional Commits。形式は次のとおり（gitmoji は `:code:`
 
 ## ステータス
 
-core（一級の `repos`・board layout v3・version gate）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは GoReleaser → Homebrew tap で公開する（[Releases ページ](https://github.com/akira-toriyama/furrow/releases) 参照・task-status Action は `v0.5.0` から同梱）。将来（低優先）: read-only の Web ビューア。
+core（一級の `repos`・board layout v4・両側 version gate＝新しいボードは read 拒否／古いボードは write 拒否、版を上げるのは `furrow upgrade` だけ）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync`・`upgrade` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは GoReleaser → Homebrew tap で公開する（[Releases ページ](https://github.com/akira-toriyama/furrow/releases) 参照・task-status Action は `v0.5.0` から同梱・一級の `repos` は `v0.6.0` から・board layout v4 は `v0.8.0` から）。将来（低優先）: read-only の Web ビューア。
 
 ## ライセンス
 

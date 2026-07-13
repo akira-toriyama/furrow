@@ -70,9 +70,17 @@ func (s *Store) BodyFile(id string) string {
 // keeps every shard as a separate array entry, so a duplicate id introduced by a
 // hand-edit surfaces to `furrow lint` rather than being silently merged.
 func (s *Store) Load() (*core.Index, error) {
-	ver := s.metaVersion()
+	ver, err := s.BoardVersion()
+	if err != nil {
+		return nil, err
+	}
 	if err := core.CheckSchemaVersion(ver); err != nil {
 		return nil, err
+	}
+	if ver == 0 {
+		// No meta.json (a fresh store, or one predating the file): read leniently
+		// and report the layout we understand. Only WRITING such a board is gated.
+		ver = core.SchemaVersion
 	}
 	entries, err := os.ReadDir(s.tasksDir())
 	if os.IsNotExist(err) {
@@ -99,29 +107,110 @@ func (s *Store) Load() (*core.Index, error) {
 	return &core.Index{SchemaVersion: ver, Tasks: tasks}, nil
 }
 
-// metaVersion returns meta.json's schema version, defaulting to the current
-// SchemaVersion when meta.json is absent or unreadable (a fresh store, or one
-// written before meta.json existed). A missing/garbled meta must not fail a
-// Load — the shards are the data — but a READABLE version feeds the gate:
-// Load/Save refuse a board declaring a newer layout (core.CheckSchemaVersion).
-func (s *Store) metaVersion() int {
+// BoardVersion returns the layout version meta.json DECLARES — the board's own
+// number, never this binary's. 0 means the file is absent (a fresh store, or one
+// predating meta.json); an unreadable file is an error.
+//
+// The old code defaulted BOTH of those cases to core.SchemaVersion, which
+// quietly disabled the version gate: a corrupt meta.json made any binary believe
+// the board was exactly as new as itself. A version we cannot read is a question
+// for the operator, not something to guess.
+func (s *Store) BoardVersion() (int, error) {
+	// #nosec G304 -- metaPath is a furrow-internal store path, not attacker-supplied.
 	b, err := os.ReadFile(s.metaPath())
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
 	if err != nil {
-		return core.SchemaVersion
+		return 0, core.Internalf("meta", "read meta.json: %v", err)
 	}
 	m, err := core.UnmarshalMeta(b)
 	if err != nil {
-		return core.SchemaVersion
+		return 0, core.Internalf("meta", "meta.json is unreadable: %v — restore it from git, or delete it and re-stamp with `furrow upgrade --yes`", err)
 	}
-	return m.SchemaVersion
+	return m.SchemaVersion, nil
 }
 
-// Save splits the index into per-task shards under tasks/, writes meta.json, and
-// deletes the shards of any ids no longer present. Two properties matter:
+// Writable answers "may this binary write this board?" without touching it —
+// the predicate half of gateWrite, so `furrow board` / `furrow lint` / the
+// archive flow can ask the question without performing the write.
+//
+// A GENUINELY fresh store — no version AND no shards — is writable: there is no
+// prior layout to misrepresent, so the first write may stamp it. That is `furrow
+// init`, and it is how .furrow/archive/ comes into being on its first archive. A
+// store with shards but NO meta.json is the opposite: a board of unknown layout,
+// and stamping it with our version would be a lie — refuse.
+func (s *Store) Writable() error {
+	v, err := s.BoardVersion()
+	if err != nil {
+		return err
+	}
+	if v == 0 {
+		ids, err := s.ListTaskIDs()
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return nil // fresh: the one board a write may stamp
+		}
+	}
+	return core.CheckWritable(v) // v == 0 here means "shards but no meta" -> refuse
+}
+
+// gateWrite is the check every mutating method runs first, and the enforcement
+// half of Writable: refuse, or (on a genuinely fresh store) stamp meta.json so
+// the board declares the layout it is about to be written in.
+//
+// It guards the WHOLE store, not just the task shards, because "read-only board"
+// has to mean read-only. repos/<owner>__<repo>.json in particular exists only
+// from schema v4 (`furrow review`) — writing one onto a v3 board would plant a
+// field that board never promised, which is the very lie the shard gate exists to
+// prevent, just through a different door. And a body/asset write that succeeded
+// while its shard write was refused would leave an orphan behind, so a refusal
+// would not be total.
+//
+// SetBoardVersion is the sole exemption from this gate; it is the raiser.
+func (s *Store) gateWrite() error {
+	if err := s.Writable(); err != nil {
+		return err
+	}
+	v, err := s.BoardVersion()
+	if err != nil {
+		return err
+	}
+	if v == 0 {
+		if err := os.MkdirAll(s.root, 0o755); err != nil {
+			return core.Internalf("meta", "create %s: %v", s.root, err)
+		}
+		return s.SetBoardVersion(core.SchemaVersion)
+	}
+	return nil
+}
+
+// SetBoardVersion stamps meta.json with a layout version, through the single
+// marshaller path like every other write. This is the ONLY way a board's version
+// ever moves: `furrow upgrade` calls it, ordinary mutations never do (they are
+// all behind gateWrite, which this deliberately skips). Raising it is a flag day
+// — every binary still on the old layout (a pinned CI's included) loses write
+// access to this board the moment it lands.
+func (s *Store) SetBoardVersion(v int) error {
+	b, err := core.MarshalMeta(&core.Meta{SchemaVersion: v})
+	if err != nil {
+		return err
+	}
+	return s.writeIfChanged(s.metaPath(), b)
+}
+
+// Save splits the index into per-task shards under tasks/ and deletes the shards
+// of any ids no longer present. It does NOT write meta.json — it READS it
+// (gateWrite), and the only board it may stamp is a genuinely fresh one. Three
+// properties matter:
+//   - The board's layout version is an input, never an output: an ordinary write
+//     never raises it. That one line — stamping meta.json with the binary's
+//     version on every Save — is what took the shared board down on 2026-07-13.
 //   - Determinism/no churn: each shard is serialized via the single
 //     core.MarshalTask path and written ONLY when its bytes differ from disk, so
-//     re-saving an untouched board rewrites nothing (zero git churn) and meta.json
-//     — constant content — is written once and then skipped.
+//     re-saving an untouched board rewrites nothing (zero git churn).
 //   - Atomicity: every file is written tmp+rename, so a crash never leaves a
 //     half-written shard. A single-task change (the common case) is one shard =
 //     fully atomic; a bulk change is per-shard atomic (each shard independently
@@ -129,23 +218,16 @@ func (s *Store) metaVersion() int {
 //
 // index.json is never read or written — the abolished monolith stays abolished.
 func (s *Store) Save(idx *core.Index) error {
-	// Version gate on the write side too: never let this binary rewrite (and
-	// silently strip fields from) a board written by a newer furrow.
-	if err := core.CheckSchemaVersion(s.metaVersion()); err != nil {
+	// The write gate. The board's declared version is an INPUT here, never an
+	// output: this binary writes only a board that already speaks its exact
+	// layout. Too new -> refuse (we'd strip fields we don't know). Too old ->
+	// refuse (we'd write fields the board never promised, and silently perform a
+	// flag day that locks out every pinned reader — the 2026-07-13 outage).
+	if err := s.gateWrite(); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(s.tasksDir(), 0o755); err != nil {
 		return core.Internalf("index", "create tasks/: %v", err)
-	}
-
-	// meta.json carries the version of the layout furrow writes (always current),
-	// held in one file so it never becomes a per-shard merge point.
-	metaB, err := core.MarshalMeta(&core.Meta{SchemaVersion: core.SchemaVersion})
-	if err != nil {
-		return err
-	}
-	if err := s.writeIfChanged(s.metaPath(), metaB); err != nil {
-		return err
 	}
 
 	// One shard per task, written only when it differs from disk.
@@ -214,6 +296,10 @@ func (s *Store) LoadRepo(repo string) (*core.RepoRecord, bool, error) {
 // atomically and only when its bytes changed (zero git churn on a no-op), the
 // repos/ twin of a task Save.
 func (s *Store) SaveRepo(rec *core.RepoRecord) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(s.reposDir(), 0o755); err != nil {
 		return core.Internalf(rec.Repo, "create repos/: %v", err)
 	}
@@ -269,6 +355,10 @@ func (s *Store) LoadBody(id string) (string, error) {
 
 // SaveBody writes bodies/<id>.md atomically, creating bodies/ as needed.
 func (s *Store) SaveBody(id, content string) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(s.bodiesDir(), 0o755); err != nil {
 		return core.Internalf(id, "create bodies/: %v", err)
 	}
@@ -285,6 +375,10 @@ func (s *Store) BodyExists(id string) bool {
 // collision-free basename so an existing asset is never overwritten, and returns
 // the final basename. The write is atomic (temp + rename), mirroring SaveBody.
 func (s *Store) SaveAsset(id, srcName string, data []byte) (string, error) {
+	if err := s.gateWrite(); err != nil {
+		return "", err
+	}
+
 	if err := os.MkdirAll(s.assetsDir(), 0o755); err != nil {
 		return "", core.Internalf(id, "create bodies/assets/: %v", err)
 	}
@@ -319,6 +413,10 @@ func (s *Store) LoadAsset(name string) ([]byte, error) {
 // asset while preserving its filename. (SaveAsset is the attach path, which
 // derives a fresh collision-free name instead.)
 func (s *Store) SaveAssetRaw(name string, data []byte) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(s.assetsDir(), 0o755); err != nil {
 		return core.Internalf(name, "create bodies/assets/: %v", err)
 	}
@@ -328,6 +426,10 @@ func (s *Store) SaveAssetRaw(name string, data []byte) error {
 // DeleteAsset removes bodies/assets/<name>. Absent is not an error (mirrors
 // DeleteBody), so a re-run after a partial archive is idempotent.
 func (s *Store) DeleteAsset(name string) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+
 	err := os.Remove(filepath.Join(s.assetsDir(), name))
 	if err != nil && !os.IsNotExist(err) {
 		return core.Internalf(name, "delete asset: %v", err)
@@ -337,6 +439,10 @@ func (s *Store) DeleteAsset(name string) error {
 
 // DeleteBody removes bodies/<id>.md (used by archive). Absent is not an error.
 func (s *Store) DeleteBody(id string) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+
 	err := os.Remove(s.bodyPath(id))
 	if err != nil && !os.IsNotExist(err) {
 		return core.Internalf(id, "delete body: %v", err)

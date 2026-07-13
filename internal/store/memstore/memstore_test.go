@@ -1,14 +1,15 @@
 package memstore
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// memstore mirrors fsstore's version gate so app/cli tests can exercise the
-// "board newer than binary" path without a disk.
+// memstore mirrors fsstore's version gate so app/cli tests can exercise both
+// refusal directions without a disk.
 func TestVersionGate(t *testing.T) {
 	s := New("t-", 5)
 
@@ -16,7 +17,9 @@ func TestVersionGate(t *testing.T) {
 		t.Fatalf("default store must load: %v", err)
 	}
 
-	s.SetSchemaVersion(core.SchemaVersion + 1)
+	if err := s.SetBoardVersion(core.SchemaVersion + 1); err != nil {
+		t.Fatal(err)
+	}
 	_, err := s.Load()
 	if err == nil {
 		t.Fatal("Load of a newer board must fail")
@@ -31,9 +34,37 @@ func TestVersionGate(t *testing.T) {
 		t.Fatal("Save onto a newer board must fail")
 	}
 
-	s.SetSchemaVersion(core.SchemaVersion)
+	if err := s.SetBoardVersion(core.SchemaVersion); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.Load(); err != nil {
 		t.Fatalf("restored version must load again: %v", err)
+	}
+}
+
+// The twin of fsstore's TestSaveNeverRaisesBoardVersion: an OLDER board reads
+// fine but refuses writes, and Save leaves its version exactly where it was.
+func TestSaveNeverRaisesBoardVersion(t *testing.T) {
+	s := New("t-", 5)
+	old := core.SchemaVersion - 1
+	if err := s.SetBoardVersion(old); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.Load(); err != nil {
+		t.Fatalf("an outdated board must still load: %v", err)
+	}
+
+	err := s.Save(&core.Index{Tasks: []core.Task{{ID: "t-0001", Title: "x"}}})
+	var fe *core.Error
+	if !errors.As(err, &fe) || fe.ID != "schema-upgrade-required" {
+		t.Fatalf("Save error = %v, want id schema-upgrade-required", err)
+	}
+	if fe.Code != core.CodeValidation {
+		t.Errorf("exit code = %d, want %d", fe.Code, core.CodeValidation)
+	}
+	if v, _ := s.BoardVersion(); v != old {
+		t.Errorf("board version = %d, want it untouched at %d", v, old)
 	}
 }
 

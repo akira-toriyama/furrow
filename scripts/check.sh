@@ -9,6 +9,9 @@ export GOTOOLCHAIN=local
 echo "→ marshaller single-path guard"
 sh scripts/check-marshal-singlepath.sh
 
+echo "→ schema write guard (no ordinary write may raise a board's layout)"
+sh scripts/check-schema-write-guard.sh
+
 echo "→ board-hook template syntax guard (POSIX sh -n)"
 for h in scripts/board-hooks/post-merge scripts/board-hooks/post-rewrite scripts/board-hooks/pre-push; do
   sh -n "$h"
@@ -85,7 +88,7 @@ sh scripts/check-readme-parity.sh
 echo "→ nix flake version ⇄ release-pin lockstep guard"
 sh scripts/check-version-lockstep.sh
 
-echo "→ smoke: init / add / ls --json / next / done / lint / config init|path"
+echo "→ smoke: init / add / ls --json / next / done / lint / board / upgrade / config init|path"
 sb="$(mktemp -d)"
 ( cd "$sb"
   export XDG_CONFIG_HOME="$sb/xdg"   # isolate from the dev's real ~/.config/furrow
@@ -95,6 +98,10 @@ sb="$(mktemp -d)"
   "$BIN" next --json | grep -q '"smoke"'
   "$BIN" done "$id" >/dev/null
   "$BIN" lint
+  # A fresh init must land WRITABLE under the strict write gate (it is the one
+  # place Save may stamp meta.json), and upgrade must be a clean no-op on it.
+  "$BIN" board --json | grep -q '"writable": true'
+  "$BIN" upgrade --json | grep -q '"changed": false'
   "$BIN" config init >/dev/null
   "$BIN" config path | grep -q "furrow/config.toml"
 )

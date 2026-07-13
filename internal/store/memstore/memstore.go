@@ -48,9 +48,26 @@ func New(idPrefix string, idLen int) *Store {
 	return s
 }
 
-// SetSchemaVersion overrides the board's layout version — the in-memory twin of
-// hand-editing meta.json. Tests use it to exercise the version gate.
-func (s *Store) SetSchemaVersion(v int) { s.schemaVersion = v }
+// BoardVersion returns the layout version this board declares — the in-memory
+// twin of reading meta.json. Never an error here: memory cannot be garbled.
+func (s *Store) BoardVersion() (int, error) { return s.schemaVersion, nil }
+
+// SetBoardVersion raises the board's layout version. As in fsstore, this is the
+// ONE deliberate raiser (`furrow upgrade`'s engine) — Save never touches it, so
+// a memstore seeded to an older version behaves exactly like an outdated board
+// on disk and the app layer can be tested against the real refusal.
+func (s *Store) SetBoardVersion(v int) error { s.schemaVersion = v; return nil }
+
+// Writable mirrors fsstore's predicate: may this binary write the board? (No
+// fresh-store case here — New always seeds a version, so a memstore is never
+// unstamped.)
+func (s *Store) Writable() error { return core.CheckWritable(s.schemaVersion) }
+
+// gateWrite mirrors fsstore's: every mutating method refuses a board that does
+// not declare this binary's exact layout, so the fake is faithful where it
+// matters most — the app layer's tests exercise the SAME refusal the real store
+// performs.
+func (s *Store) gateWrite() error { return s.Writable() }
 
 // Load folds the per-id task entries into one Index, in id order (deterministic;
 // the app canonicalizes into display order afterward), mirroring fsstore's
@@ -76,7 +93,9 @@ func (s *Store) Load() (*core.Index, error) {
 // id no longer present is dropped — the in-memory twin of writing one shard per
 // task and deleting the shards of removed ids.
 func (s *Store) Save(idx *core.Index) error {
-	if err := core.CheckSchemaVersion(s.schemaVersion); err != nil {
+	// The write gate, same as fsstore: write only a board that already declares
+	// this binary's layout — never raise it as a side effect.
+	if err := s.gateWrite(); err != nil {
 		return err
 	}
 	next := make(map[string]core.Task, len(idx.Tasks))
@@ -101,6 +120,10 @@ func (s *Store) LoadRepo(repo string) (*core.RepoRecord, bool, error) {
 // repos/ shard. The record is canonicalized through the single MarshalRepo path
 // (then re-parsed) so the in-memory copy matches what fsstore would persist.
 func (s *Store) SaveRepo(rec *core.RepoRecord) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+
 	data, err := core.MarshalRepo(rec)
 	if err != nil {
 		return err
@@ -130,6 +153,10 @@ func (s *Store) ListRepos() ([]core.RepoRecord, error) {
 func (s *Store) LoadBody(id string) (string, error) { return s.bodies[id], nil }
 
 func (s *Store) SaveBody(id, content string) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+
 	s.bodies[id] = content
 	return nil
 }
@@ -143,6 +170,10 @@ func (s *Store) BodyExists(id string) bool {
 // fsstore copying into bodies/assets/<id>-<name>. Bytes are copied so a caller
 // mutating its slice afterward cannot alter the store.
 func (s *Store) SaveAsset(id, srcName string, data []byte) (string, error) {
+	if err := s.gateWrite(); err != nil {
+		return "", err
+	}
+
 	base := id + "-" + core.SanitizeAssetName(srcName)
 	name := core.NextAssetName(base, func(cand string) bool {
 		_, ok := s.assets[cand]
@@ -180,6 +211,10 @@ func (s *Store) LoadAsset(name string) ([]byte, error) {
 
 // DeleteAsset removes the stored asset; absent is not an error (mirrors fsstore).
 func (s *Store) DeleteAsset(name string) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+
 	delete(s.assets, name)
 	return nil
 }
@@ -189,6 +224,10 @@ func (s *Store) DeleteAsset(name string) error {
 func (s *Store) BodyFile(id string) string { return "" }
 
 func (s *Store) DeleteBody(id string) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+
 	delete(s.bodies, id)
 	return nil
 }

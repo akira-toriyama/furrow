@@ -433,7 +433,11 @@ func Init(dir string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := a.Store.Save(&core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{}}); err != nil {
+	// The store stamps meta.json itself on a fresh board. Naming the binary's
+	// layout version here would be both decorative (Save ignores the field) and a
+	// second place that knows how to raise a board. There is exactly one, and it
+	// is `furrow upgrade` — see scripts/check-schema-write-guard.sh.
+	if err := a.Store.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		return nil, err
 	}
 	return a, nil

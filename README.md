@@ -12,7 +12,8 @@
 
 Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.25+). No database, no daemon, no cloud.
 
-> **Status:** core (first-class `repos`, schema v2 + version gate), CLI (incl.
+> **Status:** core (first-class `repos`, schema v2 + the two-sided version
+> gate), CLI (incl.
 > `repo`, drafts, `-r` scoping, `sync`, `apply`), the bubbletea TUI
 > (`furrow ui`), and `migrate` all work (`go test ./...` + golangci green).
 > Releases are published — see the [Releases page](https://github.com/akira-toriyama/furrow/releases) and [Status](#status).
@@ -93,7 +94,7 @@ furrow uses a **hybrid** layout: one machine-written JSON shard per task for str
 ```text
 .furrow/
 ├── config.toml          # human config (furrow only READS this; never rewrites it)
-├── meta.json            # board-wide layout version {"schema_version": 4} — written ONLY by furrow
+├── meta.json            # board-wide layout version {"schema_version": 4} — written ONLY by furrow, raised ONLY by `furrow upgrade`
 ├── tasks/
 │   ├── t-0001.json      # one metadata shard per task — written ONLY by the single core.MarshalTask path
 │   └── t-0002.json
@@ -140,6 +141,27 @@ The board-wide layout version lives on its own in `meta.json` (never inside a sh
   "schema_version": 4
 }
 ```
+
+### The layout version gates writes (and only `furrow upgrade` raises it)
+
+That number is the **board's** — not the binary's — and it is an **input** to every write, never an output. The gate has two sides:
+
+- **The board is newer than your furrow** → every read and write is refused: `schema-too-new`, exit 3. Update the binary (in CI: bump the `sync-task-status.yml@vX.Y.Z` pin). A lenient parse would silently drop the fields this binary doesn't know and write the loss back.
+- **The board is older than your furrow** → it stays fully **readable**, but it is **read-only**: a write fails with `schema-upgrade-required`, exit 2. The board is the stale side, and an explicit command fixes it. Both errors carry `"details": {"board_schema": N, "binary_schema": M}`, and the exit code alone says which side to fix.
+
+So an ordinary command **never** migrates a board as a side effect — `meta.json` is stamped only when a genuinely empty store is created (`furrow init`). `furrow upgrade` is the one deliberate raiser, and it is a **flag day**: once it lands, no older furrow can write that board — including any CI pinned to an older release. furrow cannot see those pins, so you keep the order:
+
+```sh
+furrow board                # schema:   v3 (board) / v4 (binary) — READ-ONLY: run `furrow upgrade`
+# 1. release a furrow that ships the new layout
+# 2. bump every caller's sync-task-status.yml@vX.Y.Z pin to it
+furrow upgrade              # 3. preview: which stores change, and how many shards
+furrow upgrade --yes && furrow sync
+```
+
+`furrow board` reports the whole triple (`schema_version`, `binary_schema_version`, `schema_state` = `current`/`outdated`/`too-new`/`unreadable`, `writable`) and — by design — **never fails on a mismatch**: it is the one command that still answers when board and binary disagree, which is why the bundled task-status workflow pre-flights it and fails with one legible error instead of N mysterious "task not found"s. `furrow lint` warns (`schema-outdated`) while a board waits to be upgraded; it does not error, because a read-only board is the legitimate middle of a flag day.
+
+This is a scar: before the gate, `Save` stamped `meta.json` with the *binary's* version on every write, so a single routine `furrow sync` from an unreleased source build migrated a shared central board and every pinned release in the fleet lost it at once.
 
 Notes on the fields: `id` is frozen and is the stem of both the shard file (`tasks/t-0001.json`) and the body file (`bodies/t-0001.md`); `priority` is a sparse 10-step integer so reordering edits one field instead of renumbering; `status` is a lane defined in `config.toml`; `repos` is the first-class set of repositories the task relates to (`owner/repo` identifiers, 0..N — an empty set means a **draft**, the GitHub-Issues-draft analogue; labels are pure tags, a repo is *not* a label); `closed` is `null` while open and stamped when a task enters the done lane; empty collections serialize as `[]`, never `null`. `value` and `effort` are an optional coarse 1..5 estimate (importance and cost) — both omitted while unset, so dropping an idea into the inbox stays friction-free — and out-of-range scores clamp to 1..5. The JSON Schema for a shard lives at [`docs/schema/furrow.task.v2.json`](docs/schema/furrow.task.v2.json) and for `meta.json` at [`docs/schema/furrow.meta.v2.json`](docs/schema/furrow.meta.v2.json); both are emitted by `furrow schema` (`task` by default, `meta` for the board version).
 
@@ -188,7 +210,7 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `revisit` | Read-only; list open tasks needing re-evaluation. `--json`/`--ndjson` attach a `revisit` array of `{code, detail}` (`no_repo`, `value_unset`, `effort_unset`, `stale`, `dep_done`) so an agent knows what to fix. Drafts surface regardless of scope. Empty result exits 0 | `-l/--label`, `-r/--repo`, `-n/--limit`, `--stale-days <n>` (0 disables stale) |
 | `search <term>` | Full-text search over every task's title **and** Markdown body (case-insensitive substring), in canonical order — so finding a term is one command, not a `grep .furrow/bodies` detour. Honors the same `-s/-l/-r/-n` scope as `ls` (a bare `search` stays within this repo's board; `-r ''` searches everything). Each hit reports `matched_field` (`title`\|`body`) and a one-line `snippet` with the term in context; a title match never reads the body. Several words are one literal phrase. Empty result exits 0 | `-s/--status`, `-l/--label`, `-r/--repo`, `-n/--limit` |
 | `stats` | Summarize the board within scope: `total`, `drafts`, and counts `by_lane` (a complete histogram in configured lane order — 0-count lanes included), `by_repo`, and `by_label` (the used vocabulary, most-used first). A bare `stats` describes this repo's slice; `stats -r ''` describes the whole board — the call that learns the label/repo vocabulary before guessing a `-l`/`-r`. `--json`/`--ndjson` emit one object; an all-zero board exits 0 | `-s/--status`, `-l/--label`, `-r/--repo` |
-| `board` | Print the active board's introspection snapshot: store path, discovery `source` (`env`/`local`/`pointer`/`user-config`), repo scope, and the lane vocabulary (`lanes`/`next_lanes`/`default_lane`/`done_lane`/`terminal`) plus the stale/archive windows. The way to learn the lanes without provoking an error; `--json` (or `--ndjson`) emits the object | `--json`, `--ndjson` |
+| `board` | Print the active board's introspection snapshot: store path, discovery `source` (`env`/`local`/`pointer`/`user-config`), repo scope, the lane vocabulary (`lanes`/`next_lanes`/`default_lane`/`done_lane`/`terminal`), the stale/archive windows, and the **schema triple** — `schema_version` (what the board declares; 0 = absent/unreadable), `binary_schema_version`, `schema_state` (`current`/`outdated`/`too-new`/`unreadable`) and `writable`. The way to learn the lanes without provoking an error — and it **never fails on a version mismatch, it reports one**, so it is the pre-flight that diagnoses a board no other command can open; `--json` (or `--ndjson`) emits the object | `--json`, `--ndjson` |
 | `edit <id>` | Open `bodies/<id>.md` in `$EDITOR`; prints the path when non-interactive | — |
 | `attach <id> <file>` | Copy an image/video into `bodies/assets/<id>-*` and append a relative markdown reference to the body — images embed (`![…]`), other media link (`[…]`); a collision-free name (`…-2`, `…-3`) never overwrites an existing asset. Because the body is committed markdown, the whole attach lands in git from the terminal alone (no web upload). LFS-independent. `--json` emits `{id, asset, ref, line}` | — |
 | `done <id>` | Move a task into the done lane (stamps `closed`) | — |
@@ -206,7 +228,8 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `apply` | Apply `SetStatus-task: <body-link> [<lane>]` directives parsed from PR/commit text (stdin or `--body-file`) — the CI hook for auto status updates. `--on open` nudges to in-progress; `--on merge` applies the lane. Validation is non-blocking | `--on open\|merge`, `--ref`, `--body-file`, `--open-lane` |
 | `sync` | The multi-machine board ritual as one command: auto-commit scoped to `.furrow/` (machine-written shards always; a hand-edited `bodies/<id>.md` only when new or named with `-b`, else left for its author in `pending_bodies` — so a shared checkout never sweeps a co-located operator's WIP; `--all-bodies` restores the old sweep), `fetch` + `rebase --autostash @{u}` (onto the tracking ref, not `FETCH_HEAD`, so a co-writer's fetch can't race it), `push` (one pull→push retry on non-fast-forward). On conflict it aborts the rebase automatically (`sync-conflict` error carries the paths); a foreign rebase caught by the pre-flight is waited out, else retryable `sync-busy` (exit 3); a fetch/lock race during the pull is retried, and if it persists (a likely-stale `.git/*.lock`) fails terminally naming the lock to remove. Progress `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies}` goes to stdout even on failure. A successful sync also adds a repo-scoped `revisit` summary (`dep_done`/`stale` id lists; omitted when empty) | `-m/--message`, `-b/--body`, `--all-bodies` |
 | `archive [<id>...]` | Retire done tasks to `.furrow/archive/` (preview unless `--yes`). With `<id>`s it retires exactly those (each must be in the done lane, else exit 2 — no stranding live work); with no id it sweeps aged done. The sweep is board-wide by default; `-r/--repo` (repeatable) scopes it to one repo's aged done, ANDed with the age guard. `--older-than`/`-r` apply to the sweep only (combining them with an id list is exit 2). A task's `attach`ed media (`bodies/assets/<id>-*`) travels with it into `.furrow/archive/`, never orphaned in the hot store | `--older-than <days>`, `-r/--repo <repo>` (repeatable), `--yes` |
-| `lint` | Check shard↔body 1:1, id shape, lanes, deps/parent refs, dependency cycles (error), a done-lane task with no `closed` timestamp (error — a `furrow done` backfills it), dangling `[[id]]` body links (warn; archived ids are not dangling), reconcile gaps (an open task whose done dependency closed after its last update; warn), asset hygiene — a body referencing a missing asset, an asset no body references, or an asset ≥5 MiB (all warn; a raw blob can't be un-committed, so it's flagged before it lands), config clamp warnings (incl. a half-written user-level config), and — when `[lint].archive_done` is set — an `archive-backlog` nudge once that many done tasks are old enough to archive. Every finding carries a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `orphan-asset`, `archive-backlog`, …) so `--json`/`--ndjson` triage branches on the code, not the message prose — the `id` field is contextual (a task id, an asset name, or `config`) | — |
+| `upgrade` | Raise the board's on-disk layout (`.furrow/meta.json`, plus `archive/meta.json` when the archive store exists) to the one this binary writes, re-serializing every shard through the current marshaller in one deliberate commit. **The only thing that moves a board's version** — an ordinary write refuses instead (`schema-upgrade-required`, exit 2), so a migration can never again be the side effect of a `sync`. Previews unless `--yes` (the `archive` guard), and the preview prints the flag-day checklist: release furrow → bump every caller's pin → then upgrade. A board already current is a clean no-op (`changed:false`, exit 0, zero bytes written); a board newer than the binary is refused (`schema-too-new`, exit 3) — there is no downgrade, recovery is `git revert` on the board repo. `--json`/`--ndjson` emit `{from, to, changed, applied, stores:[{path, from, to, tasks}]}` | `--yes` |
+| `lint` | Check shard↔body 1:1, id shape, lanes, deps/parent refs, dependency cycles (error), a done-lane task with no `closed` timestamp (error — a `furrow done` backfills it), dangling `[[id]]` body links (warn; archived ids are not dangling), reconcile gaps (an open task whose done dependency closed after its last update; warn), asset hygiene — a body referencing a missing asset, an asset no body references, or an asset ≥5 MiB (all warn; a raw blob can't be un-committed, so it's flagged before it lands), a board whose layout is behind the binary (`schema-outdated`; warn, not error — a read-only board is the legitimate middle of a flag day and must not red every repo's CI), config clamp warnings (incl. a half-written user-level config), and — when `[lint].archive_done` is set — an `archive-backlog` nudge once that many done tasks are old enough to archive. Every finding carries a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `orphan-asset`, `archive-backlog`, `schema-outdated`, …) so `--json`/`--ndjson` triage branches on the code, not the message prose — the `id` field is contextual (a task id, an asset name, or `config`) | — |
 | `config init` | Write the user-level `~/.config/furrow/config.toml` (central-board template); fills the board path/scopes from the nearest `.furrow` when run inside a board, else a placeholder. Never overwrites an existing file | `--path`, `--scope` (repeatable) |
 | `config path` | Print the resolved user-level config path; a half-written config's clamp warnings go to stderr (stdout stays the bare path) | — |
 | `schema [task\|meta]` | Print the JSON Schema for a task shard (no arg or `task`) or for `meta.json` (`meta`); matches the committed copy | — |
@@ -224,7 +247,8 @@ Global flags: `--json` and `--ndjson` are honored **wherever furrow emits JSON**
 
 furrow needs no MCP server and no plugin — the plain CLI **is** the agent interface: `--json`/`--ndjson` on every read, machine-actionable error envelopes, and a clonable plain-text store the agent can read (and, for bodies, write) directly. A daemon or a second protocol would add operational surface without adding a capability (see [docs/non-goals.md](docs/non-goals.md)). The integration is just a small `CLAUDE.md` block plus the `--json` flag. The rules:
 
-- **Never hand-edit `tasks/<id>.json` (or `meta.json`).** A single deterministic marshaller owns those files; a manual edit will churn the diff (and likely lose the canonical ordering). Mutate tasks through the commands above.
+- **Never hand-edit `tasks/<id>.json` (or `meta.json`).** A single deterministic marshaller owns those files; a manual edit will churn the diff (and likely lose the canonical ordering). Mutate tasks through the commands above. `meta.json`'s `schema_version` is raised by **`furrow upgrade` alone** — no other command touches it.
+- **Pre-flight a board you are about to write with `furrow board --json`.** It never fails on a version mismatch, it reports one: branch on `writable` / `schema_state` (`current`/`outdated`/`too-new`/`unreadable`) rather than discovering the problem as a failed write. A write to a board behind the binary is `schema-upgrade-required` (exit 2 — run `furrow upgrade`); a board ahead of it is `schema-too-new` (exit 3 — update furrow). Both carry `details {board_schema, binary_schema}`.
 - **`bodies/*.md` are yours to edit.** Prose lives there and is plain Markdown — edit it directly, or via `furrow edit <id>` (which prints the absolute path in a non-interactive context).
 - **Use `--json` for machine reads (and writes).** JSON is written to **stdout only**; logs, confirmations, and errors go to **stderr**, so piping stdout into `jq` is always clean. `--ndjson` is the compact one-value-per-line form and is honored on every command that emits JSON (mutations and reports included), so a line-oriented agent never gets a silent human-prose degrade. Filters: `--status/-s`, `--label/-l`, `--repo/-r`, `--limit/-n` (a comma within `-s`/`-l` is OR within that field).
 - **Batch by id with `show <id>... --no-body`.** Cross-checking a specific id set (audit sweeps, dependency checks) is one process, metadata only — no `body_text` bloating the output. Add `--ndjson` for an arity-independent one-task-per-line shape; a partial miss still emits the found tasks and reports the rest in `details.missing`.
@@ -256,6 +280,9 @@ names a repo (the did-you-mean guard) — the envelope also carries
 of parsing the message prose. Likewise a partial `show` batch
 (some ids unknown) still prints the found tasks and exits 1 with
 `"details": {"missing": ["t-…", …]}` — branch on the array, never the message.
+The version gate uses the same shape: `schema-upgrade-required` (exit 2) and
+`schema-too-new` (exit 3) both carry
+`"details": {"board_schema": N, "binary_schema": M}`.
 
 ### CI: auto-update a tracker from PRs
 
@@ -297,6 +324,13 @@ diverge, and CI upgrades only when you bump the pin. Auth is one fine-grained
 PAT (`PROJECTS_WRITE_PAT`: Contents Read & write on the tracker repo only);
 until it exists the job skips cleanly. Validation is non-blocking: an unknown
 id or lane is reported, never a merge blocker.
+
+That pin is exactly what a board upgrade breaks, so the workflow **pre-flights
+the schema**: it runs `furrow board --json` against the tracker and, when
+`.writable != true`, fails with one annotated error naming both versions and the
+remedy (bump this repo's pin) — instead of letting a pinned-but-outdated binary
+report "task not found" for every id. Which is why the ordering above is not
+optional: release furrow → bump every caller's pin → *then* `furrow upgrade`.
 
 ---
 
@@ -527,20 +561,25 @@ A board `[alias]` names a frequent command string; `furrow <name> <extra args>` 
 
 furrow's write path is byte-stable on purpose. Every shard write goes through one marshaller (`core.MarshalTask`) with a fixed contract: struct-field key order, 2-space indent, `SetEscapeHTML(false)` (so CJK and `< > &` survive verbatim), empty collections as `[]` not `null`, sorted-and-deduped label/dep sets, whole-second UTC RFC3339 timestamps, and a trailing newline. The result is that the bytes furrow writes are identical to what a human or an agent would hand-edit, and a `Save` rewrites only the shards whose bytes actually changed — so re-saving an untouched store produces **zero git churn** — diffs show only the field you actually changed.
 
+`meta.json` goes further: a `Save` does not rewrite it *at all* (the board's declared version is what the write is checked against — see [the layout version gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)), so the only commits that ever touch it come from `furrow init` and `furrow upgrade`.
+
 ---
 
 ## Status
 
 - **Working:** the core domain (`internal/core`) with the first-class `repos`
-  field (board layout v3 + the version gate), config loader, filesystem store, app
+  field (board layout v4 + the two-sided version gate: read-refuse a newer board,
+  write-refuse an older one, and `furrow upgrade` as the only raiser), config
+  loader, filesystem store, app
   coordinator, the full CLI (incl. `repo`, drafts, `-r` scoping, `apply`, and
   `sync`), the bubbletea **TUI** (`furrow ui`), and **`migrate`** (importing a
   legacy `Task.md`). `go test ./...` + golangci clean; `sh scripts/check.sh`
   runs the full verification (incl. a teatest TUI e2e).
 - **Released:** tags are cut with GoReleaser → the Homebrew tap (see the
   [Releases page](https://github.com/akira-toriyama/furrow/releases); the
-  bundled task-status Action ships since `v0.5.0`, board layout v3 since
-  `v0.6.0`). The nix `flake.nix` carries a real, pinned `vendorHash` with a
+  bundled task-status Action ships since `v0.5.0`, the first-class `repos` field
+  since `v0.6.0`, board layout v4 since `v0.8.0`). The nix `flake.nix` carries a
+  real, pinned `vendorHash` with a
   committed `flake.lock` (since `v0.4.0`).
 - **Future (low priority):** a read-only web viewer / React UI over the task shards.
 

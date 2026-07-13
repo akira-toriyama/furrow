@@ -18,10 +18,31 @@ type Store interface {
 	// empty, well-formed Index (SchemaVersion set, Tasks == []) rather than an
 	// error, so `furrow add` works in a fresh repo.
 	Load() (*Index, error)
-	// Save writes each task as its own shard (via core.MarshalTask), writes the
-	// board-wide meta, and deletes shards for ids no longer present — all
-	// atomically and writing only what changed.
+	// Save writes each task as its own shard (via core.MarshalTask) and deletes
+	// shards for ids no longer present — all atomically and writing only what
+	// changed. It does NOT raise the board's layout version: it refuses a board
+	// that does not already declare this binary's SchemaVersion (CheckWritable),
+	// and stamps meta.json only for a genuinely fresh store.
 	Save(idx *Index) error
+
+	// BoardVersion is the layout version the board DECLARES (meta.json), read
+	// ungated: 0 means no meta.json at all, and a garbled one is an error, never
+	// a guess. Ungated is load-bearing — it is what lets `furrow board` diagnose
+	// a board that no other command can open.
+	BoardVersion() (int, error)
+	// Writable reports whether this binary may write the board: nil = yes, else
+	// the refusal every mutation would raise (schema-upgrade-required /
+	// schema-too-new). It has no side effects, so callers that only want to
+	// REPORT the state (`furrow board`, `furrow lint`, and the archive flow,
+	// which must gate the hot board before it writes a sibling store) ask this
+	// instead of re-deriving the rule — a second copy of the rule is how the two
+	// halves drift apart.
+	Writable() error
+	// SetBoardVersion raises the board to a layout version. It is the ONE
+	// deliberate raiser (the engine of `furrow upgrade`); no ordinary mutation
+	// may call it, because doing so locks out every binary still on the old
+	// layout — including a pinned CI's.
+	SetBoardVersion(v int) error
 
 	// LoadBody returns the markdown body for id, or "" if the file is absent.
 	LoadBody(id string) (string, error)
