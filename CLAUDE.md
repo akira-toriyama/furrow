@@ -16,7 +16,7 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|attach|done|move|set|reorder|retitle|value|effort|check|dep|label|repo|review|sync|apply|archive|lint|config|init`.
+- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|attach|done|move|set|reorder|retitle|value|effort|check|dep|label|repo|review|sync|apply|archive|upgrade|lint|config|init`.
   `set <id>` combines lane/value/effort/labels in one write (the triage
   shortcut for move+value+effort+label); `dep <id> <dep-id>...` is variadic
   (add/remove several in one write), and `dep <id> --list` is the read-only
@@ -100,6 +100,21 @@ the user-level config. When you work with any furrow store:
   (`{dep_done:[ids], stale:[ids], unreviewed:[{repo,days}]}`, repo-scoped,
   omitted when empty) — the loop-visible staleness nudge; run `furrow revisit`
   for task detail, `furrow review <repo>` to reset a repo's `unreviewed` clock.
+- **The board's layout version gates writes, and it is an INPUT — never an
+  output.** A binary writes only a board whose `meta.json` already declares
+  exactly its own `schema_version`; an ordinary write NEVER raises it (that is
+  what `furrow upgrade` is for). Two stable ids, told apart by exit code alone:
+  **`schema-upgrade-required`** (exit 2 — the BOARD is behind this binary; it
+  stays fully readable but is read-only until `furrow upgrade` runs) and
+  **`schema-too-new`** (exit 3 — the BINARY is behind the board; update furrow /
+  bump the pin). Both carry `details {board_schema, binary_schema}` — branch on
+  the id, not the message. **`furrow board [--json]` reports the state without
+  failing**: `schema_version` (what the board declares; 0 = absent/unreadable),
+  `binary_schema_version`, `schema_state` (`current`|`outdated`|`too-new`|
+  `unreadable`) and `writable` — it is the last command that still works when
+  board and binary disagree, so read it as a pre-flight instead of watching every
+  task read fail with "task not found". `furrow lint` warns `schema-outdated`
+  (never errors) meanwhile.
 - `furrow edit <id>` with no TTY **prints the body file path** instead of opening
   an editor — read/edit that file directly.
 - Exit codes: `0` ok — **including an empty query result** (`ls`/`next`/`revisit`
@@ -154,8 +169,10 @@ Everything is verifiable without a terminal, including the interactive UI:
   boots the real `tea.Program` in a simulated terminal, sends keys, and asserts
   both the rendered frame and the persisted mutation. A raw PTY is flaky on macOS —
   use teatest. Only the visual *aesthetics* need a human eye (`./run.sh ui`).
-- **Determinism / drift**: the golden round-trip test, `scripts/check-marshal-singlepath.sh`,
-  and the schema/config drift diffs (in `check.sh`) guard the load-bearing invariants.
+- **Determinism / drift**: the golden round-trip test,
+  `scripts/check-marshal-singlepath.sh`, `scripts/check-schema-write-guard.sh`
+  (no ordinary write may name `core.SchemaVersion`), and the schema/config drift
+  diffs (in `check.sh`) guard the load-bearing invariants.
 
 ## Source-of-truth references
 
@@ -185,6 +202,15 @@ sorted+deduped label/dep sets, UTC whole-second timestamps, trailing newline.
 This is what makes app-writes equal hand-edits byte-for-byte, and Save writes
 only the shards whose bytes changed (zero git churn on a no-op save). A golden
 round-trip test and `scripts/check-marshal-singlepath.sh` guard all three.
+
+Its sibling guard, **`scripts/check-schema-write-guard.sh`** (also in
+`scripts/check.sh` + CI), greps the *other* single path: `core.SchemaVersion` —
+the layout THIS BINARY writes — may only be named in `internal/core/*`,
+`fsstore.go`, `memstore.go`, `internal/app/{upgrade,board,lint}.go`,
+`internal/cli/cmd_board.go`, `internal/schema/schema.go`, and tests. Anywhere
+else fails the build: an ordinary write must never name it (see Schema below —
+that one line is what took the shared board down on 2026-07-13, and it fails
+silently, since every test on a fresh store still passes).
 
 ### Frozen, collision-free ids & sparse priority
 ids (`t-k3m9p`) are **frozen**: never reused, never renumbered. They are
@@ -223,9 +249,43 @@ schema; `meta` = the `meta.json` schema) and CI diffs them against
 struct → update the schema const, the committed file, and the golden together.
 A task carries a first-class `repos` set (owner/repo identifiers, same
 sorted+deduped/[]-not-null semantics as labels; `[]` = draft). Labels are pure
-free-form tags — a repo is NOT a label. The store refuses (exit 3) a board whose
-`meta.json` version is newer than the binary (`core.CheckSchemaVersion`), so an
-old binary can never lenient-parse away fields it doesn't know.
+free-form tags — a repo is NOT a label.
+
+**The version gate is two-sided, and `core.SchemaVersion` is what THIS BINARY
+writes — not what the board declares.** The board's number lives in `meta.json`
+and is an **input** to every write:
+
+- `core.CheckSchemaVersion(v)` — the READ gate. A board NEWER than the binary is
+  refused (id **`schema-too-new`**, exit 3 — the fix is the binary, not the
+  input), so an old binary can never lenient-parse away fields it doesn't know
+  and write the loss back.
+- `core.CheckWritable(v)` — the WRITE gate. A binary may write only a board that
+  already declares exactly its own layout. An OLDER board — or one with shards
+  but no `meta.json` at all — is fully READABLE but READ-ONLY (id
+  **`schema-upgrade-required`**, exit 2: the BOARD is stale and an explicit
+  command fixes it). Both ids carry `details {board_schema, binary_schema}`; the
+  exit code alone says which side is stale.
+- Consequently **an ordinary write never touches `meta.json`'s
+  `schema_version`.** `fsstore.Save` stamps it in exactly one case: a genuinely
+  fresh, empty store (what `furrow init` hits). A garbled `meta.json` is an error
+  (exit 3, id `meta`), never a fallback to "whatever version this binary is" —
+  that old fallback silently DISABLED the gate.
+
+**The only raiser is `furrow upgrade`** (preview unless `--yes`; raises
+`.furrow/meta.json` and the `archive/` store's, re-serializes every shard through
+`core.MarshalTask`, idempotent no-op on a current board; JSON
+`{from,to,changed,applied,stores}`). It is a **flag day**: afterwards no older
+furrow can write the board, including a CI pinned to an older release — and
+furrow cannot see those pins, so the ORDER is the human's: (1) release a furrow
+shipping the schema, (2) bump every caller's `sync-task-status.yml@vX.Y.Z` pin
+**and** that workflow's `furrow-version` default, (3) only THEN `furrow upgrade
+--yes` + `furrow sync`. There is no downgrade — recovery is `git revert` on the
+board repo. Why all this: on 2026-07-13 `fsstore.Save` stamped `meta.json` with
+the binary's version on every write, so one routine `furrow sync` from an
+unreleased source build migrated the shared central board 3 → 4 and every pinned
+release in the fleet lost it at once (v0.6.1 reported "task not found" for every
+id; v0.7.0 exited 3). `scripts/check-schema-write-guard.sh` greps that guarantee
+back into place — see the marshaller-path section.
 
 ## Conventions
 
@@ -235,9 +295,14 @@ old binary can never lenient-parse away fields it doesn't know.
 - `go build ./...` and `go test ./...` must pass before finishing a turn.
 - Keep [README.md](README.md) / [README.ja.md](README.ja.md) carrying the same
   FACTS, not the same STRUCTURE, on any user-visible change (bilingual is the
-  house style; JA is intentionally a superset). Only shared load-bearing facts —
-  the `sync-task-status.yml@vX.Y.Z` workflow-pin tag and `schema_version` — stay
-  in lockstep, enforced by [`scripts/check-readme-parity.sh`](scripts/check-readme-parity.sh).
+  house style; JA is intentionally a superset). Two shared load-bearing facts
+  stay in lockstep, and
+  [`scripts/check-readme-parity.sh`](scripts/check-readme-parity.sh) enforces
+  both by pure text extraction: the `sync-task-status.yml@vX.Y.Z` workflow-pin
+  tag must be **identical in the two READMEs** (a reader copies it verbatim), and
+  the `{"schema_version": N}` literal in each must equal `const SchemaVersion` in
+  `internal/core/task.go` (the claim used to be made and NOT checked — which is
+  exactly how both READMEs came to say "board layout v3" against a v4 board).
 - **Don't push without explicit OK.** 1 item = 1 PR (squash); update docs
   in the same PR.
 

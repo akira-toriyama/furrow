@@ -29,6 +29,18 @@ name: sync-task-status
 # diverge, and CI (the "third writer" of the tracker) upgrades only when a
 # caller's pin is bumped deliberately (one fleet-sync PR per furrow release).
 #
+# ORDERING RULE (learned the hard way on 2026-07-13). CI is the board's THIRD
+# WRITER and it runs a PINNED, therefore possibly older, binary. A board's layout
+# version is shared mutable state between it and whatever the operator runs
+# locally. So a board upgrade must FOLLOW the fleet pin bump, never precede it:
+#   1. release a furrow that ships the new schema
+#   2. bump every caller's pin (and this file's furrow-version default) to it
+#   3. only then `furrow upgrade --yes` the board
+# Reversing 2 and 3 takes every repo's task-status sync down at once. furrow
+# itself now refuses to raise a board as a side effect of an ordinary write, and
+# the pre-flight below turns a mismatch into one legible error instead of N
+# "task not found"s.
+#
 # Auth is a fine-grained PAT (credential only — no server, no token minting).
 # Set it as a secret on each calling repo:
 #   PROJECTS_WRITE_PAT   fine-grained PAT scoped to the tracker repo with
@@ -158,6 +170,32 @@ jobs:
           tar -xzf "/tmp/$file" -C "$HOME/.local/bin" furrow
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/furrow" version
+
+      # Pre-flight: does this PINNED binary still speak the board's layout?
+      #
+      # On 2026-07-13 it did not, and the symptom was unreadable: a routine local
+      # write had raised the board's schema, and every pinned caller reported
+      # "task not found" for every id (or a bare exit 3) across the whole fleet at
+      # once. furrow now refuses to raise a board as a side effect — but a
+      # DELIBERATE `furrow upgrade` still, by design, locks out every caller whose
+      # pin predates it. This step makes that state say so in one line.
+      #
+      # `furrow board --json` is the right probe precisely because it answers even
+      # when nothing else can: it never fails on a version mismatch, it reports it.
+      - name: Pre-flight — the pinned furrow must speak the board's schema
+        if: steps.gate.outputs.proceed == 'true'
+        working-directory: tracker
+        run: |
+          set -euo pipefail
+          board="$(furrow board --json)"
+          writable="$(printf '%s' "$board" | jq -r '.writable // false')"
+          if [ "$writable" != "true" ]; then
+            b="$(printf '%s' "$board" | jq -r '.schema_version')"
+            m="$(printf '%s' "$board" | jq -r '.binary_schema_version')"
+            echo "::error title=furrow schema mismatch::board is schema v$b, this pinned furrow writes v$m — bump this repo's sync-task-status.yml@vX.Y.Z pin (and the furrow-version default) to a release that speaks v$b"
+            exit 1
+          fi
+          echo "board schema v$(printf '%s' "$board" | jq -r '.schema_version') — writable"
 
       - name: Apply SetStatus-task directives
         if: steps.gate.outputs.proceed == 'true'

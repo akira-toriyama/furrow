@@ -114,6 +114,32 @@ rewrite many files. The hybrid keeps small structured metadata in per-task
 JSON shards (fast `jq`/Go queries, field-level diffs) and prose in per-task
 markdown (no escaping, task-level diffs).
 
+### No automatic schema migration
+furrow never raises a board's layout version on its own. An ordinary write to a
+board older than the binary is **refused** (`schema-upgrade-required`, exit 2 —
+the board stays fully readable, just read-only) rather than silently upgraded;
+only the explicit `furrow upgrade` (preview unless `--yes`) moves the number. —
+*A board is shared: one clone, many machines, and — through each repo's pinned
+`sync-task-status.yml@vX.Y.Z` — many binaries that are deliberately NOT the
+newest. Raising the layout is therefore a **flag day** for every one of them, and
+a flag day cannot be a side effect. It was one, once: on 2026-07-13 a routine
+`furrow sync` from an unreleased source build migrated the shared central board
+3 → 4 because `Save` stamped `meta.json` with the binary's version on every
+write, and every pinned release in the fleet lost the board within the hour.
+"Helpfully" auto-migrating is exactly the convenience that broke it.* The
+ordering the tool cannot enforce (it cannot see other repos' pins) is stated by
+the `upgrade` preview itself: release furrow → bump every caller's pin → then
+upgrade.
+
+### No downgrade path
+There is no `furrow downgrade`, and `upgrade` refuses a board newer than the
+binary (`schema-too-new`, exit 3) rather than rewriting it downwards. — *A
+downgrade would have to drop the fields the older layout has no place for —
+which is the precise damage the version gate exists to prevent, performed on
+purpose. And it is unnecessary: the board is a git repo, so the honest undo of a
+flag day is the one git already provides — `git revert` the upgrade commit on the
+board repo (every machine then wants the matching older binary again).*
+
 ---
 
 ## Backend & UI
@@ -146,12 +172,15 @@ keeping them as plain JSON.
 To keep this list honest about today's reality (not aspirations):
 
 - **Built and real today** (`internal/cli`): `init`, `add`, `ls` (alias
-  `list`), `show`, `next`, `revisit`, `edit`, `attach`, `done`, `move`, `reorder`,
-  `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`, `sync`,
-  `migrate`, `archive`, `lint`, `config init|path`, `schema`, `version`, `ui`.
+  `list`), `show`, `next`, `revisit`, `search`, `stats`, `board`, `edit`,
+  `attach`, `done`, `move`, `set`, `reorder`,
+  `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `review`,
+  `apply`, `sync`,
+  `migrate`, `archive`, `upgrade`, `lint`, `config init|path`, `schema`, `version`, `ui`.
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
   `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, and `--drafts`.
-  Destructive ops are guarded: `archive` previews unless `--yes`. Exit-code
+  Destructive ops are guarded: `archive` and `upgrade` preview unless `--yes`.
+  Exit-code
   contract: `0` ok / `1` not-found|empty / `2` bad-usage|validation / `3+`
   internal|IO, with `{"error":{"code","id","message"}}` to stderr
   (`internal/core/errors.go`), plus optional `candidates` / `details` fields

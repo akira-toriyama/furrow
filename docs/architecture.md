@@ -112,9 +112,13 @@ The seams between the pure core and the outside world are interfaces declared in
 
 - **`Store`** — persists the per-task metadata shards and per-task bodies. It owns
   *all* path construction (callers never assemble `".furrow/bodies/<id>.md"` by
-  hand) and *all* atomicity. Methods: `Load`, `Save`, `LoadBody`, `SaveBody`,
+  hand) and *all* atomicity. Methods: `Load`, `Save`, `BoardVersion`,
+  `SetBoardVersion`, `LoadBody`, `SaveBody`,
   `BodyExists`, `ListBodyIDs`, `ListTaskIDs`, `SaveAsset`, `ListAssets`,
-  `NextID`. The two asset methods are the store half of `furrow attach` /
+  `NextID`. `BoardVersion` reads the layout version the board *declares*
+  (ungated, so `furrow board` can diagnose a board nothing else can open);
+  `SetBoardVersion` is the **one deliberate raiser**, called by `furrow upgrade`
+  and nothing else. The two asset methods are the store half of `furrow attach` /
   `furrow lint`'s asset checks: `SaveAsset` copies media into the task's asset
   area `bodies/assets/<id>-<name>` (sanitized, collision-free, atomic) and
   returns the final basename; `ListAssets` enumerates `bodies/assets/` as
@@ -148,7 +152,9 @@ The serializers in
 [`internal/core/marshal.go`](../internal/core/marshal.go) are the **one and only**
 paths that serialize task metadata to bytes. Persistence goes per shard:
 `core.MarshalTask(Task) ([]byte, error)` writes one `tasks/<id>.json`, and
-`core.MarshalMeta(...) ([]byte, error)` writes `meta.json`. Every writer —
+`core.MarshalMeta(...) ([]byte, error)` writes `meta.json` — the latter only from
+`Store.SetBoardVersion` (i.e. `furrow upgrade`) and the fresh-store stamp, never
+on the ordinary write path (see the version gate). Every writer —
 `fsstore.Save`, and `migrate` — goes through them. `core.Marshal(*Index, laneOrder
 []string) ([]byte, error)` still exists, but it is now the **in-memory canonical
 form** (used by the determinism golden and by inspection), *not* a persistence
@@ -204,10 +210,19 @@ error (the file is malformed input), not an internal fault.
   stray `json.Marshal` calls on a `Task`/`Index`/meta outside `core`'s serializers
   (all in `internal/core/marshal.go`) and fails CI if any appear; it runs as part
   of `scripts/check.sh`.
+- **Schema write guard.** Its sibling `scripts/check-schema-write-guard.sh` greps
+  the *other* single path: `core.SchemaVersion` — the layout **this binary**
+  writes — may only be named in `internal/core/*`, `fsstore.go`, `memstore.go`,
+  `internal/app/{upgrade,board,lint}.go`, `internal/cli/cmd_board.go`,
+  `internal/schema/schema.go`, and tests. Any other reference fails the build: an
+  ordinary write must never name it. The regression it guards is one line long
+  and fails **silently** (every test on a fresh store still passes) — see the
+  version gate below for the outage that proved it. Also in `scripts/check.sh`
+  and `.github/workflows/build.yml`.
 
 ---
 
-## The `repos` field and the version gate
+## The `repos` field and the two-sided version gate
 
 A task carries a **first-class `repos` set**: the repositories it relates to,
 as `owner/repo` identifiers, 0..N per task, with the same set semantics as
@@ -220,16 +235,88 @@ free-form tags — a repo is **not** a label. An empty `repos` set is a
 
 Promoting `repos` to a schema field is what let the schema *document* bump to
 **v2** (`internal/schema.TaskV2`, `docs/schema/furrow.task.v2.json`) — and it
-motivated the **version gate**: `core.CheckSchemaVersion` rejects a board
-whose `meta.json` declares a `schema_version` **newer than the binary knows**
-(`core.SchemaVersion`) — surfaced as exit 3 (internal: the fix is updating
-the binary, not the input). Both
-store adapters enforce it on `Load` *and* `Save` (`fsstore`, `memstore`).
-Without the gate, an old binary's lenient unmarshal would silently drop the
-fields it doesn't know — a re-save would strip every task's `repos` and git
-would dutifully commit the damage. Older versions load fine (the store's
-normal lenient read is the forward-compat path); only *newer* boards are
-refused.
+motivated the **version gate**. The gate's governing idea:
+`core.SchemaVersion` is the layout **this binary writes**; `meta.json`'s
+`schema_version` is what **the board declares**. They are two different numbers,
+and the board's is an **INPUT to every write, never an output**.
+
+- **`core.CheckSchemaVersion(v)` — the READ gate.** A board declaring a layout
+  *newer* than the binary knows is refused: error id **`schema-too-new`**, exit 3
+  (internal — the fix is updating the binary, not the input), carrying
+  `details {board_schema, binary_schema}`. Without it, an old binary's lenient
+  unmarshal would silently drop the fields it doesn't know and a re-save would
+  strip every task's `repos`/`reviewed` — git dutifully committing the damage.
+- **`core.CheckWritable(v)` — the WRITE gate.** A binary may write only a board
+  that already declares *exactly* its own layout. An *older* board — or one with
+  shards but no `meta.json` at all (`v == 0`) — is fully **readable** (lenient
+  forward-compat is the store's normal read) but **read-only**: error id
+  **`schema-upgrade-required`**, exit 2 (validation — the *board* is stale and an
+  explicit command fixes it), same `details` payload. Exit code alone therefore
+  says which side is stale: 3 = the binary, 2 = the board.
+
+Both store adapters (`fsstore`, `memstore`) enforce the read gate on `Load` and
+the write gate on `Save`. **No ordinary write raises `meta.json`'s version**;
+`Save` stamps it in exactly one case, a genuinely fresh, empty store (what
+`furrow init` hits) — there is no prior layout to misrepresent. A garbled
+`meta.json` is an **error** (exit 3, id `meta`), never a fall back to "whatever
+version this binary is": that fallback quietly *disabled* the gate, making any
+binary believe the board was exactly as new as itself.
+
+This is the fix for a real outage. `fsstore.Save` used to stamp `meta.json` with
+`core.SchemaVersion` on every write, so on 2026-07-13 one routine `furrow sync`
+from an unreleased source build migrated the **shared** central board 3 → 4 as a
+side effect. Every released furrow then lost it at once: v0.6.1 — the version the
+whole fleet's `task-status` CI pinned — reported "task not found" for every id,
+and v0.7.0 exited 3. `scripts/check-schema-write-guard.sh` (below) makes the
+regression un-writable rather than merely unlikely.
+
+### `furrow upgrade` — the one raiser, and a flag day
+
+`App.Upgrade` ([`internal/app/upgrade.go`](../internal/app/upgrade.go)) is the
+only code that may move a board's version, via the `SetBoardVersion` port method
+that nothing else calls. It:
+
+- **previews unless `--yes`** (the `furrow archive` guard), printing the flag-day
+  checklist;
+- raises `.furrow/meta.json` **and `.furrow/archive/meta.json` when the archive
+  store exists** — a board is two stores on disk, and raising only the hot one
+  would leave the next `furrow archive` meeting the write gate on a store nobody
+  remembers exists;
+- **re-serializes every shard** through `core.MarshalTask`, so the on-disk bytes
+  become canonical for the new layout in one deliberate commit;
+- is **idempotent**: a current board is a clean no-op (`changed:false`, exit 0,
+  zero bytes written);
+- **refuses a board newer than the binary** (`schema-too-new`, exit 3) — there is
+  **no downgrade path**, since inventing one would strip the very fields the gate
+  exists to protect; recovery is `git revert` on the board repo;
+- emits `{from, to, changed, applied, stores:[{path, from, to, tasks}]}` under
+  `--json`/`--ndjson` (`changed` = anything is behind; `applied` = `--yes` was
+  passed and the write happened, so "nothing to do" and "I would do this" are
+  distinguishable without parsing prose).
+
+It is a **flag day**: once it lands, no older furrow can write that board —
+including a CI pinned to an older release. furrow cannot see the fleet's pins, so
+the **ordering is the human's**: (1) release a furrow shipping the layout, (2)
+bump every caller's `sync-task-status.yml@vX.Y.Z` pin *and* that workflow's
+`furrow-version` default, (3) only **then** `furrow upgrade --yes` + `furrow
+sync`. The preview prints exactly this checklist, and
+`.github/workflows/sync-task-status.yml` pre-flights `furrow board --json`,
+failing with one annotated error (`::error title=furrow schema mismatch::`) when
+`.writable != true` rather than letting a pinned binary emit N "task not found"s.
+
+### `board` reports; it never fails
+
+`App.Board` appends the schema triple to its snapshot — `schema_version` (what
+the board declares; `0` = absent or unreadable), `binary_schema_version`, and a
+stable kebab-case `schema_state` (`current` | `outdated` | `too-new` |
+`unreadable`) plus `writable` (== `schema_state == "current"`). It reads the
+version **ungated** (`Store.BoardVersion`) and **reports** a mismatch instead of
+raising it. That is load-bearing, not a nicety: `board` is the last command that
+still works when board and binary disagree, which is what makes it usable as the
+CI pre-flight and the human's first diagnosis (`schema:   v4 (board) / v4
+(binary) — writable`). `furrow lint` complements it with a `schema-outdated`
+**warning** (`SevWarn`, id `meta`) — warn, not error, because a read-only board
+is the legitimate middle of a flag day and must not red every repo's CI.
 
 ---
 
@@ -252,7 +339,9 @@ A `.furrow/` store directory contains:
     t-k3m9p-shot.png     written ONLY via Store.SaveAsset (atomic, collision-free
                          basename); linked from the body by `furrow attach`; scanned
                          by `furrow lint` (dangling / orphan / oversized warnings)
-  meta.json            board-wide layout version {"schema_version": 4} — MarshalMeta
+  meta.json            board-wide layout version {"schema_version": 4} — MarshalMeta,
+                         stamped only on a fresh store (`init`) or by `furrow upgrade`;
+                         an ordinary Save READS it (the write gate) and leaves it alone
   repos/               one review shard per repo (repos/<owner>__<repo>.json) — MarshalRepo
   config.toml          human config (read-only from furrow's side)
   archive/             a sibling sharded store: aged done tasks moved out of the hot store
@@ -261,12 +350,21 @@ A `.furrow/` store directory contains:
 ### Load and Save (shard fold / split)
 
 `fsstore.Load` globs `tasks/*.json`, unmarshals each shard, and folds every one
-into a single in-memory `core.Index`; the `schema_version` is read from
-`meta.json`. `fsstore.Save` is the inverse: it splits the `Index` back into
-per-task shards and writes **only the shards whose bytes changed** (a byte-compare
-against what is already on disk) plus `meta.json`, and **deletes** the shards of
-any ids no longer present. So a no-op save touches no files and produces zero git
-churn.
+into a single in-memory `core.Index`; the board's `schema_version` is read from
+`meta.json` via `Store.BoardVersion` (0 = no `meta.json`; unreadable = an error)
+and checked against the read gate. `fsstore.Save` is the inverse: it splits the
+`Index` back into per-task shards and writes **only the shards whose bytes
+changed** (a byte-compare against what is already on disk), and **deletes** the
+shards of any ids no longer present. So a no-op save touches no files and
+produces zero git churn.
+
+`Save` does **not** write `meta.json` on this path — it *reads* it, as the write
+gate's input (`core.CheckWritable`), and stamps it only when the store is
+genuinely empty (no shards, no meta — `furrow init`). The `Index.SchemaVersion`
+field is informational: it is whatever `Load` saw, and `Save` deliberately
+ignores it, because an in-memory field defaults to the binary's version at
+`Canonicalize` time and trusting it is precisely how a routine write once
+migrated a shared board behind its owner's back.
 
 ### Atomic writes (tmp + rename)
 
@@ -323,8 +421,8 @@ not file-backed — so `$EDITOR` shell-out is unsupported against it, which the
 `internal/app` is the **only mutation funnel**. The CLI (and, later, the TUI)
 call `App` methods — `Add`, `Move`, `Done`, `Reorder`, `SetTitle`, `SetValue`,
 `SetEffort`, `Check`, `AddCheck`, `AddDep`/`RemoveDep`, `Relabel`, `Rerepo`,
-`Attach`, `ApplyDirectives`, `Sync`, `Archive`, `Lint`, `EditPath`, plus the read methods
-`Get`, `List`, `Next`, `Revisit`. Keeping every edit in one place is what keeps
+`Attach`, `ApplyDirectives`, `Sync`, `Archive`, `Upgrade`, `Lint`, `EditPath`, plus the read methods
+`Get`, `List`, `Next`, `Revisit`, `Board`. Keeping every edit in one place is what keeps
 the invariants (frozen
 ids, canonical order, closed-timestamp rules, body↔index pairing) from being
 re-implemented across two presentation layers. `App.load()` canonicalizes on
@@ -354,6 +452,10 @@ A few app-level rules worth stating, all verified against the code:
 - **`Archive`** selects done-lane tasks whose `Closed` is older than the cutoff
   and moves them (shard + body) into the sibling `.furrow/archive/` store (its own
   `tasks/`, `meta.json`, and `bodies/`).
+- **`Upgrade`** raises the board's declared layout — both stores, hot and
+  `archive/` — to `core.SchemaVersion` and re-serializes every shard. It is the
+  only caller of `Store.SetBoardVersion`, previews unless `--yes`, and is a flag
+  day (see the version gate).
 
 ### CLI commands
 
@@ -362,7 +464,7 @@ except where noted:
 
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `board`, `edit`, `attach`,
 `done`, `move`, `set`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
-`sync`, `archive`, `lint`, `config` (`init`/`path`), `schema`, `version`, `ui`,
+`sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`), `schema`, `version`, `ui`,
 `migrate`.
 
 - **`set`** applies the routine triage quartet — lane, value, effort, labels — in
@@ -403,6 +505,9 @@ except where noted:
 - **`apply`** parses `SetStatus-task:` directives out of PR/commit text (stdin
   or `--body-file`) and reflects them onto the board — the CI hook behind the
   task-status workflow. Validation is non-blocking by design.
+- **`upgrade`** raises the board's on-disk layout to this binary's — the only
+  command that may, previewing unless `--yes`, idempotent, no downgrade. A flag
+  day; see the version gate.
 - **`revisit`** is the read-only, agent-facing counterpart to `next`: it lists
   open tasks needing re-evaluation (`no_repo` — a draft, surfaced regardless
   of scope — plus unset value/effort, stale, or a done dependency), attaching a
@@ -448,16 +553,18 @@ except where noted:
   `candidates` array; when a repo scope — explicit `-r` or the board's auto
   scope — hides drafts, a one-line stderr hint points at `--drafts` (stdout
   stays pure data). `furrow board [--json]` prints the resolved store path,
-  discovery source (`env|local|pointer|user-config`), repo scope, and the full
-  lane vocabulary (lanes / next-lanes / default / done / terminal) — the
-  introspection call that answers "what lanes exist and what scope is active"
-  without provoking an error.
+  discovery source (`env|local|pointer|user-config`), repo scope, the full
+  lane vocabulary (lanes / next-lanes / default / done / terminal), and the
+  schema triple (`schema_version` / `binary_schema_version` / `schema_state` /
+  `writable`) — the introspection call that answers "what lanes exist, what scope
+  is active, and can I write here" without provoking an error.
 - **Non-interactive by default.** No prompts; the TUI is `furrow ui` only.
   `furrow edit` on a non-TTY prints the absolute body path instead of launching
   an editor, so an agent can edit the file directly. `NO_COLOR` and non-TTY
   suppress color.
 - **Destructive-op guard.** `furrow archive` previews ("would archive …") unless
-  `--yes` is passed.
+  `--yes` is passed; `furrow upgrade` previews the same way (and prints the
+  flag-day checklist), because it is irreversible for every older binary.
 - **Exit-code contract** (`internal/core/errors.go`): `0` ok — **including an
   empty query result** (a match of nothing still succeeded, so `ls`/`next`/
   `revisit` all exit 0 when empty) / `1` a **specifically requested id** was not
@@ -470,7 +577,8 @@ except where noted:
   to stderr, plus optional machine-actionable fields: `candidates` (a near-miss
   that almost resolved — an ambiguous repo short name, an unknown lane, or a
   parent command's unknown subcommand) and `details` (e.g. `sync-conflict`
-  carries the conflicted paths). A parent command like `config` treats an unknown
+  carries the conflicted paths; the version gate's `schema-too-new` /
+  `schema-upgrade-required` carry `{board_schema, binary_schema}`). A parent command like `config` treats an unknown
   subcommand as exit 2 with `candidates`, not the exit-0 help prose cobra
   defaults to. `cmd/furrow/main.go` is literally `os.Exit(cli.Execute())`.
 
@@ -671,16 +779,16 @@ This document covers the *built* architecture. Several things are deliberately
 
 | Area | Status |
 |---|---|
-| `internal/core` (structs incl. `repos`, `Marshal`, ports, validate, index ops, version gate) | **Built** |
+| `internal/core` (structs incl. `repos`, `Marshal`, ports, validate, index ops, the two-sided version gate: `CheckSchemaVersion` + `CheckWritable`) | **Built** |
 | `internal/config` (TOML load, clamp; user-level `[[board]]` with `repo = "auto"`) | **Built** |
 | `internal/store/fsstore`, `internal/store/memstore` | **Built** |
-| `internal/app` (mutation funnel, board discovery + repo derivation, archive, lint) | **Built** |
+| `internal/app` (mutation funnel, board discovery + repo derivation, archive, upgrade, lint) | **Built** |
 | `internal/gitrepo` (git subprocess adapter behind `furrow sync`) | **Built** |
 | `internal/cli` (cobra: all commands above, including `repo`, `sync`, `apply`, `ui`, `migrate`) | **Built** |
 | `internal/tui` (bubbletea v1, `furrow ui`) | **Built** |
 | `internal/schema` + `docs/schema/furrow.task.v2.json` / `furrow.meta.v2.json` | **Built** |
 | Golden round-trip + schema drift tests | **Built** |
-| `scripts/check-marshal-singlepath.sh` | **Built** |
+| `scripts/check-marshal-singlepath.sh`, `scripts/check-schema-write-guard.sh` | **Built** |
 | Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0`–`v0.8.0` published (task-status Action bundled since `v0.5.0`) |
 | nix flake | **Built** — real pinned `vendorHash` + committed `flake.lock` (since `v0.4.0`) |
 | Read-only web / React viewer | **Future, low priority** |

@@ -64,6 +64,27 @@ func printBoardHuman(b app.BoardInfo) {
 	fmt.Fprintf(out, "default:  %s\n", b.DefaultLane)
 	fmt.Fprintf(out, "done:     %s\n", b.DoneLane)
 	fmt.Fprintf(out, "terminal: %s\n", strings.Join(b.Terminal, ", "))
+	fmt.Fprintf(out, "schema:   %s\n", schemaLine(b))
 	fmt.Fprintf(out, "stale_days: %d, archive_older_than_days: %d, labels_required: %t\n",
 		b.StaleDays, b.ArchiveOlderThanDays, b.LabelsRequired)
+}
+
+// schemaLine says which side is stale and what to do about it. `board` is the
+// one command that still answers on a board no other command can open, so this
+// line is the human's first diagnosis when furrow starts refusing writes.
+func schemaLine(b app.BoardInfo) string {
+	switch b.SchemaState {
+	case app.SchemaOutdated:
+		return fmt.Sprintf("v%d (board) / v%d (binary) — READ-ONLY: run `furrow upgrade`",
+			b.SchemaVersion, b.BinarySchemaVersion)
+	case app.SchemaTooNew:
+		// Not "read-only" — this binary cannot read it either; every command but
+		// this one exits 3.
+		return fmt.Sprintf("v%d (board) / v%d (binary) — UNREADABLE: this furrow is too old; update it",
+			b.SchemaVersion, b.BinarySchemaVersion)
+	case app.SchemaUnreadable:
+		return fmt.Sprintf("unreadable meta.json / v%d (binary) — restore it from git", b.BinarySchemaVersion)
+	default:
+		return fmt.Sprintf("v%d (board) / v%d (binary) — writable", b.SchemaVersion, b.BinarySchemaVersion)
+	}
 }
