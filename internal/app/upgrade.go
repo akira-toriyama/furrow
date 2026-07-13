@@ -1,11 +1,7 @@
 package app
 
 import (
-	"os"
-	"path/filepath"
-
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/fsstore"
 )
 
 // UpgradeStore is one store's part of a flag day. A board is usually two stores
@@ -51,45 +47,41 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 		return nil, core.Internalf("", "upgrade requires a file-backed store")
 	}
 
-	type target struct {
-		path  string
-		store Store
-	}
-	targets := []target{{path: a.Dir, store: a.Store}}
-	arcDir := filepath.Join(a.Dir, "archive")
-	if fi, err := os.Stat(arcDir); err == nil && fi.IsDir() {
-		targets = append(targets, target{
-			path:  arcDir,
-			store: fsstore.New(arcDir, a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.IDWidth),
-		})
-	}
-
+	// Every store the board is made of — the hot one and, when it exists, the
+	// archive. Both carry a meta.json; raising only the hot one would leave the
+	// archive on the old layout, where the next `furrow archive` meets its own
+	// write gate and fails on a store nobody remembers exists.
 	rep := &UpgradeReport{To: core.SchemaVersion, Stores: []UpgradeStore{}}
-	for i, t := range targets {
-		ver, err := t.store.BoardVersion()
-		if err != nil {
-			return nil, err
+	// `from` is the OLDEST store's version, not the hot one's. Taking it from the
+	// hot store alone made a board whose only outdated store was the archive report
+	// {"from":4,"to":4,"changed":true} — two keys contradicting each other, and a
+	// machine branching on from != to reads "nothing to do".
+	rep.From = core.SchemaVersion
+
+	for _, t := range a.boardStores() {
+		if t.Err != nil {
+			return nil, t.Err
 		}
 		// A board NEWER than this binary is not an upgrade problem — it is a stale
 		// binary. Refuse loudly (schema-too-new, exit 3) rather than "downgrading"
 		// it: there is no downgrade path, and inventing one would strip the very
 		// fields the gate exists to protect. Recovery is `git revert` on the board.
-		if err := core.CheckSchemaVersion(ver); err != nil {
+		if err := core.CheckSchemaVersion(t.Version); err != nil {
 			return nil, err
 		}
-		if i == 0 {
-			rep.From = ver
+		if t.Version < rep.From {
+			rep.From = t.Version
 		}
-		if ver == core.SchemaVersion {
+		if t.Version == core.SchemaVersion {
 			continue
 		}
-		idx, err := t.store.Load()
+		idx, err := t.Store.Load()
 		if err != nil {
 			return nil, err
 		}
 		rep.Changed = true
 		rep.Stores = append(rep.Stores, UpgradeStore{
-			Path: t.path, From: ver, To: core.SchemaVersion, Tasks: len(idx.Tasks),
+			Path: t.Path, From: t.Version, To: core.SchemaVersion, Tasks: len(idx.Tasks),
 		})
 		if !apply {
 			continue
@@ -97,10 +89,10 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 		// Raise the version FIRST, then re-save: Save's own gate now passes, and
 		// every shard is re-serialized through core.MarshalTask, so the bytes on
 		// disk become canonical for the new layout in one deliberate commit.
-		if err := t.store.SetBoardVersion(core.SchemaVersion); err != nil {
+		if err := t.Store.SetBoardVersion(core.SchemaVersion); err != nil {
 			return nil, err
 		}
-		if err := t.store.Save(idx); err != nil {
+		if err := t.Store.Save(idx); err != nil {
 			return nil, err
 		}
 		rep.Applied = true

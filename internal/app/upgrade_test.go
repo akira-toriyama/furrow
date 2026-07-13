@@ -319,3 +319,91 @@ func TestLintWarnsOnOutdatedBoard(t *testing.T) {
 		}
 	}
 }
+
+// A board is TWO stores on disk once anything has been archived, and both carry a
+// meta.json. Reporting only the hot one's version makes `board` claim a board is
+// writable when the next `furrow archive` will refuse — and the CI pre-flight
+// added in #112 branches on exactly that `writable` key, so it would wave through
+// a board that is not, in fact, fully writable.
+func TestBoardAndLintSeeAnOutdatedArchive(t *testing.T) {
+	dir, a := boardWithOutdatedArchive(t)
+	_ = dir
+
+	b := a.Board()
+	if b.Writable || b.SchemaState != SchemaOutdated {
+		t.Errorf("board = {state:%q writable:%t}, want {%q false} — the archive store is behind",
+			b.SchemaState, b.Writable, SchemaOutdated)
+	}
+
+	ps, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, p := range ps {
+		if p.Code == "schema-outdated" {
+			found = true
+			if p.Severity != core.SevWarn {
+				t.Errorf("severity = %v, want SevWarn", p.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("lint = %+v, want a schema-outdated warning for the archive store", ps)
+	}
+}
+
+// The report's top-level from/to must not contradict `changed`. It used to take
+// `from` from the hot store alone, so a board whose ONLY outdated store was the
+// archive emitted {"from":4,"to":4,"changed":true} — a machine branching on
+// from != to reads "nothing to do" while changed says otherwise.
+func TestUpgradeReportFromIsTheOldestStore(t *testing.T) {
+	_, a := boardWithOutdatedArchive(t)
+
+	rep, err := a.Upgrade(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Changed {
+		t.Fatal("precondition: the archive store is behind, so something changed")
+	}
+	if rep.From != 3 {
+		t.Errorf("report.from = %d, want 3 (the OLDEST store, not the hot one) — from == to would contradict changed:true", rep.From)
+	}
+	if rep.From == rep.To {
+		t.Error("from == to while changed is true — the two keys contradict each other")
+	}
+
+	if _, err := a.Upgrade(true); err != nil {
+		t.Fatal(err)
+	}
+	if b := a.Board(); !b.Writable || b.SchemaState != SchemaCurrent {
+		t.Errorf("after upgrade: board = {state:%q writable:%t}, want current/true", b.SchemaState, b.Writable)
+	}
+}
+
+// boardWithOutdatedArchive builds the divergent state: a CURRENT hot store with an
+// archive store one layout behind.
+func boardWithOutdatedArchive(t *testing.T) (string, *App) {
+	t.Helper()
+	dir := t.TempDir()
+	a, err := Init(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk, err := a.Add("done thing", AddOpts{Status: "done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ArchiveIDs([]string{tk.ID}, false); err != nil {
+		t.Fatal(err)
+	}
+	arcMeta := filepath.Join(dir, DirName, "archive", "meta.json")
+	if _, err := os.Stat(arcMeta); err != nil {
+		t.Fatalf("precondition: the archive store must exist: %v", err)
+	}
+	if err := os.WriteFile(arcMeta, []byte("{\n  \"schema_version\": 3\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir, a
+}

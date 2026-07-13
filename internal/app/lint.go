@@ -201,15 +201,13 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// hits the store's gate). Warn, don't error: that state is the legitimate
 	// middle of a flag day, and erroring would red every repo's board-lint CI for
 	// the whole window. The write gate is already the hard stop — this is just the
-	// thing that makes the state visible before someone runs into it. Ask the
-	// store, not the two version integers: an unstamped but EMPTY board is version
-	// 0 and perfectly writable.
-	if werr := a.Store.Writable(); werr != nil {
-		if fe := core.AsError(werr); fe != nil && fe.ID == "schema-upgrade-required" {
-			bv, _ := a.Store.BoardVersion()
-			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "schema-outdated", ID: "meta",
-				Msg: fmt.Sprintf("board is schema v%d; this furrow writes v%d — writes are refused until `furrow upgrade` runs (a flag day: bump every pinned caller FIRST)", bv, core.SchemaVersion)})
-		}
+	// thing that makes the state visible before someone runs into it.
+	//
+	// schemaState covers BOTH stores (the archive carries its own meta.json), and
+	// it knows that an unstamped but EMPTY board is version 0 yet writable.
+	if bv, state, _ := a.schemaState(); state == SchemaOutdated {
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "schema-outdated", ID: "meta",
+			Msg: fmt.Sprintf("board is schema v%d; this furrow writes v%d — writes are refused until `furrow upgrade` runs (a flag day: bump every pinned caller FIRST)", bv, core.SchemaVersion)})
 	}
 
 	sort.SliceStable(ps, func(i, j int) bool {
