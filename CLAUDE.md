@@ -9,13 +9,14 @@ furrow's own tasks live on the **central board** (the private
 `.furrow/`**, so `furrow` commands run here resolve to the central board via
 the user-level config. When you work with any furrow store:
 
-- furrow **OWNS the `.furrow/tasks/*.json` shards** (one per task) **and
+- furrow **OWNS the `.furrow/tasks/*.json` shards** (one per task), the
+  `.furrow/repos/*.json` review shards (one per repo — `furrow review`), **and
   `.furrow/meta.json`**. **Never hand-edit them.** They are written by a
   single deterministic marshaller; manual edits will fight the next `furrow`
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|attach|done|move|set|reorder|retitle|value|effort|check|dep|label|repo|sync|apply|archive|lint|config|init`.
+- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|attach|done|move|set|reorder|retitle|value|effort|check|dep|label|repo|review|sync|apply|archive|lint|config|init`.
   `set <id>` combines lane/value/effort/labels in one write (the triage
   shortcut for move+value+effort+label); `dep <id> <dep-id>...` is variadic
   (add/remove several in one write), and `dep <id> --list` is the read-only
@@ -96,8 +97,9 @@ the user-level config. When you work with any furrow store:
   by the signal: it still surfaces as `sync-conflict` with its `details.paths`,
   keeping its exit 3). Branch on the `id`, not the exit
   code, to tell these apart. A successful sync also gains a `revisit` key
-  (`{dep_done:[ids], stale:[ids]}`, repo-scoped, omitted when empty) — the
-  loop-visible staleness nudge; run `furrow revisit` for detail.
+  (`{dep_done:[ids], stale:[ids], unreviewed:[{repo,days}]}`, repo-scoped,
+  omitted when empty) — the loop-visible staleness nudge; run `furrow revisit`
+  for task detail, `furrow review <repo>` to reset a repo's `unreviewed` clock.
 - `furrow edit <id>` with no TTY **prints the body file path** instead of opening
   an editor — read/edit that file directly.
 - Exit codes: `0` ok — **including an empty query result** (`ls`/`next`/`revisit`
@@ -123,7 +125,7 @@ their repositories in the first-class `repos` field) or a store can live
 repo-local. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
-(`{"schema_version": 3}`); long-form prose lives in
+(`{"schema_version": 4}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI and a bubbletea TUI drive it. Go,
 cross-platform, brew/nix packaged.
@@ -215,7 +217,7 @@ ignored).
 
 ### Schema
 `internal/schema.TaskV2` and `internal/schema.MetaV2` are the sources of the JSON
-Schemas; `furrow schema [task|meta]` prints them (no arg or `task` = the shard
+Schemas; `furrow schema [task|meta|repo]` prints them (no arg or `task` = the shard
 schema; `meta` = the `meta.json` schema) and CI diffs them against
 `docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v2.json`. Change a
 struct → update the schema const, the committed file, and the golden together.

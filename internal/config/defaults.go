@@ -38,6 +38,13 @@ var (
 	// `furrow revisit` flags it stale. A config stale_days of 0 disables the
 	// stale signal (the other revisit signals still fire).
 	DefaultRevisitStaleDays = 30
+
+	// DefaultReviewStaleAfterDays is how long a repo may go without a human
+	// review before `furrow sync` nudges "N days unreviewed" (the per-repo
+	// staleness clock a `furrow review <repo>` resets). A config
+	// stale_after_days of 0 disables the nudge. The GTD weekly-review cadence
+	// motivates the 14-day default (two missed weeks).
+	DefaultReviewStaleAfterDays = 14
 )
 
 // validThemes is the closed set for [ui].theme.
@@ -63,6 +70,10 @@ type Config struct {
 	UITheme              string
 
 	RevisitStaleDays int // days without update before `revisit` flags stale; 0 disables
+
+	// ReviewStaleAfterDays is how many days a repo may go without a human review
+	// before `furrow sync` nudges it as unreviewed; 0 disables the nudge.
+	ReviewStaleAfterDays int
 
 	LabelsRequired bool // when true, a task with zero labels is rejected/flagged
 
@@ -96,6 +107,7 @@ func Default() *Config {
 		ArchiveOlderThanDays: DefaultArchiveOlderThanDays,
 		UITheme:              DefaultUITheme,
 		RevisitStaleDays:     DefaultRevisitStaleDays,
+		ReviewStaleAfterDays: DefaultReviewStaleAfterDays,
 	}
 	c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)
 	c.compile()

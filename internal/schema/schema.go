@@ -1,13 +1,14 @@
 // Package schema is the single source of the JSON Schema for furrow's on-disk
-// store. `furrow schema [task|meta]` prints TaskV2 / MetaV2; docs/schema/*.json
-// are committed copies of the same bytes, and CI diffs them so they can never
-// drift.
+// store. `furrow schema [task|meta|repo]` prints TaskV2 / MetaV2 / RepoV1;
+// docs/schema/*.json are committed copies of the same bytes, and CI diffs them
+// so they can never drift.
 //
-// The store is per-task shards (tasks/<id>.json, described by TaskV2) plus one
+// The store is per-task shards (tasks/<id>.json, described by TaskV2), per-repo
+// review shards (repos/<owner>__<repo>.json, described by RepoV1), plus one
 // board-wide meta.json (described by MetaV2). Versioning: the version here
 // numbers each schema document; the board LAYOUT version lives in meta.json's
-// schema_version (currently 3 — 2 was pre-repos shards, 1 the monolithic
-// index.json).
+// schema_version (currently 4 — 3 was the repos pivot, 2 pre-repos shards, 1 the
+// monolithic index.json).
 package schema
 
 // TaskV2 is the JSON Schema (draft 2020-12) for one task shard: the object in a
@@ -24,7 +25,7 @@ const TaskV2 = `{
   "description": "Schema for one .furrow/tasks/<id>.json shard (a single task's metadata). The board-wide schema_version lives in .furrow/meta.json, never in a shard. v2 adds the required repos set (owner/repo identifiers; [] = draft, attached to no repo). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "title", "status", "priority", "labels", "repos", "deps", "refs", "checklist", "created", "updated", "closed", "body"],
+  "required": ["id", "title", "status", "priority", "labels", "repos", "deps", "refs", "checklist", "created", "updated", "closed", "reviewed", "body"],
   "properties": {
     "id": { "type": "string", "description": "frozen id; == the shard filename stem and bodies/<id>.md stem" },
     "title": { "type": "string" },
@@ -41,6 +42,7 @@ const TaskV2 = `{
     "created": { "type": "string", "format": "date-time" },
     "updated": { "type": "string", "format": "date-time" },
     "closed": { "type": ["string", "null"], "format": "date-time" },
+    "reviewed": { "type": ["string", "null"], "format": "date-time", "description": "when a human last reviewed this task (furrow review <id>); null = never. Tracked separately from updated." },
     "body": { "type": "string", "description": "relative path, e.g. bodies/t-0042.md" }
   },
   "$defs": {
@@ -60,20 +62,43 @@ const TaskV2 = `{
 // MetaV2 is the JSON Schema (draft 2020-12) for .furrow/meta.json: the one
 // board-wide schema version, kept in its own file so a version bump touches one
 // file and no shard becomes a merge point. Keep the const in lockstep with
-// internal/core.Meta and core.SchemaVersion. v2 pins layout version 3 (the
-// repos pivot flag-day); v1 (which pinned layout 2) is retired, not
-// dual-supported — the published v1 document is deleted rather than silently
-// rewritten.
+// internal/core.Meta and core.SchemaVersion. The schema DOCUMENT stays v2 (its
+// filename never changes) while the pinned layout version advances: it now pins
+// layout version 4 (the review shards + per-task reviewed field); 3 was the
+// repos pivot. v1 (which pinned layout 2) is retired, not dual-supported.
 const MetaV2 = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.meta.v2.json",
   "title": "furrow meta v2",
-  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 3 = shards whose tasks carry the required first-class repos set (2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
+  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 4 = adds the per-repo review shards (repos/) and the per-task reviewed timestamp (3 = the repos pivot, 2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version"],
   "properties": {
-    "schema_version": { "const": 3 }
+    "schema_version": { "const": 4 }
+  }
+}
+`
+
+// RepoV1 is the JSON Schema (draft 2020-12) for one per-repo review shard: the
+// object in a single .furrow/repos/<owner>__<repo>.json file. Like a task shard
+// it is one entity per file and carries NO schema_version (meta.json owns the
+// board-wide version). Keep it in lockstep with internal/core.RepoRecord's json
+// tags. Both timestamps are nullable (null = never reviewed by that actor);
+// last_reviewed is the human review clock the staleness nudge reads,
+// last_agent_reviewed logs an agent sweep without advancing it.
+const RepoV1 = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.repo.v1.json",
+  "title": "furrow repo review shard v1",
+  "description": "Schema for one .furrow/repos/<owner>__<repo>.json shard (a single repo's review record). The board-wide schema_version lives in .furrow/meta.json, never in a shard. Pin to a tagged URL or vendor this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repo", "last_reviewed", "last_agent_reviewed"],
+  "properties": {
+    "repo": { "type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+$", "description": "the owner/repo this record reviews" },
+    "last_reviewed": { "type": ["string", "null"], "format": "date-time", "description": "when a human last reviewed this repo's backlog (the staleness-nudge clock); null = never" },
+    "last_agent_reviewed": { "type": ["string", "null"], "format": "date-time", "description": "when an agent last swept this repo; recorded but does not advance the human nudge clock; null = never" }
   }
 }
 `

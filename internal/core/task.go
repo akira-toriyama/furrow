@@ -15,11 +15,13 @@ import "time"
 // file, .furrow/meta.json (see Meta) — never in a task shard, so a version bump
 // is a single-file change and no shard becomes a cross-write merge point. Bump
 // only on a breaking layout change, and update docs/schema/ + goldens in the
-// same change. v3 = shards whose tasks carry the required first-class repos
-// set (the repos pivot; a v2-only binary must refuse it, or its lenient
-// unmarshal would strip repos and write the loss back). v2 = per-task shards
-// (tasks/<id>.json) + meta.json (v1 was the monolithic index.json).
-const SchemaVersion = 3
+// same change. v4 = adds the per-task `reviewed` timestamp AND the per-repo
+// review shards (.furrow/repos/<owner>__<repo>.json); a v3-only binary must
+// refuse it, or its lenient unmarshal would strip `reviewed` and write the loss
+// back. v3 = shards whose tasks carry the required first-class repos set (the
+// repos pivot). v2 = per-task shards (tasks/<id>.json) + meta.json (v1 was the
+// monolithic index.json).
+const SchemaVersion = 4
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into
@@ -88,7 +90,12 @@ type Task struct {
 	Created   time.Time       `json:"created"`
 	Updated   time.Time       `json:"updated"`
 	Closed    *time.Time      `json:"closed"` // nil (-> null) while open; set when moved to a terminal lane
-	Body      string          `json:"body"`   // relative path, e.g. "bodies/t-0042.md"
+	// Reviewed is when a human last reviewed this task (a `furrow review <id>`
+	// stamp), tracked SEPARATELY from Updated: reviewing changes no content, so
+	// it must not bump `updated` and disturb staleness/`--sort updated`. A
+	// pointer so "never reviewed" serializes to explicit null, like Closed.
+	Reviewed *time.Time `json:"reviewed"`
+	Body     string     `json:"body"` // relative path, e.g. "bodies/t-0042.md"
 }
 
 // ChecklistItem mirrors a GitHub "Sub-issues progress" line: a piece of work

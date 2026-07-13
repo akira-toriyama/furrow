@@ -48,6 +48,10 @@ func (s *Store) bodyPath(id string) string {
 	return filepath.Join(s.bodiesDir(), id+".md")
 }
 func (s *Store) assetsDir() string { return filepath.Join(s.bodiesDir(), "assets") }
+func (s *Store) reposDir() string  { return filepath.Join(s.root, "repos") }
+func (s *Store) repoPath(repo string) string {
+	return filepath.Join(s.reposDir(), core.RepoStem(repo)+".json")
+}
 
 // BodyFile returns the absolute path of bodies/<id>.md for the CLI to hand to
 // $EDITOR. It does not create the file.
@@ -184,6 +188,70 @@ func (s *Store) writeIfChanged(path string, data []byte) error {
 		return nil
 	}
 	return s.atomicWrite(path, data)
+}
+
+// LoadRepo returns the review record for owner/repo, or ok=false when no shard
+// exists yet (the repo has never been reviewed). The per-repo twin of loading a
+// task shard.
+func (s *Store) LoadRepo(repo string) (*core.RepoRecord, bool, error) {
+	// #nosec G304 -- repoPath is a furrow-internal store path (repos/ joined
+	// with an owner/repo-derived stem), not attacker-supplied.
+	b, err := os.ReadFile(s.repoPath(repo))
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, core.Internalf(repo, "read repo shard: %v", err)
+	}
+	rec, err := core.UnmarshalRepo(b)
+	if err != nil {
+		return nil, false, err
+	}
+	return rec, true, nil
+}
+
+// SaveRepo writes one repo review shard via the single core.MarshalRepo path,
+// atomically and only when its bytes changed (zero git churn on a no-op), the
+// repos/ twin of a task Save.
+func (s *Store) SaveRepo(rec *core.RepoRecord) error {
+	if err := os.MkdirAll(s.reposDir(), 0o755); err != nil {
+		return core.Internalf(rec.Repo, "create repos/: %v", err)
+	}
+	data, err := core.MarshalRepo(rec)
+	if err != nil {
+		return err
+	}
+	return s.writeIfChanged(s.repoPath(rec.Repo), data)
+}
+
+// ListRepos returns every repo review record, sorted by Repo. A missing repos/
+// dir yields nil (a board that never reviewed), not an error.
+func (s *Store) ListRepos() ([]core.RepoRecord, error) {
+	entries, err := os.ReadDir(s.reposDir())
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, core.Internalf("repos", "read repos/: %v", err)
+	}
+	var recs []core.RepoRecord
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		// #nosec G304 -- repos/ entry path is store-internal, not attacker-supplied.
+		b, err := os.ReadFile(filepath.Join(s.reposDir(), e.Name()))
+		if err != nil {
+			return nil, core.Internalf("repos", "read repo shard %s: %v", e.Name(), err)
+		}
+		rec, err := core.UnmarshalRepo(b)
+		if err != nil {
+			return nil, err
+		}
+		recs = append(recs, *rec)
+	}
+	sort.Slice(recs, func(i, j int) bool { return recs[i].Repo < recs[j].Repo })
+	return recs, nil
 }
 
 // LoadBody returns bodies/<id>.md, or "" when absent (a task may legitimately

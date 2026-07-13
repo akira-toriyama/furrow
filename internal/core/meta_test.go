@@ -10,7 +10,7 @@ func TestMarshalMetaCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"schema_version\": 3\n}\n"
+	want := "{\n  \"schema_version\": 4\n}\n"
 	if string(b) != want {
 		t.Errorf("MarshalMeta bytes = %q, want %q", b, want)
 	}
@@ -31,11 +31,12 @@ func TestUnmarshalMetaRejectsGarbage(t *testing.T) {
 	}
 }
 
-// SchemaVersion is 3: the repos pivot made repos a required first-class field,
-// and the flag-day bumped every board so pre-repos binaries refuse it (the
-// version gate) instead of lenient-parsing repos away.
-func TestSchemaVersionIsThree(t *testing.T) {
-	if SchemaVersion != 3 {
-		t.Errorf("SchemaVersion = %d, want 3 (repos-required shards)", SchemaVersion)
+// SchemaVersion is 4: the review shards (repos/) plus the per-task reviewed
+// timestamp were additive but layout-breaking, so the flag-day bumped every
+// board — a v3 binary refuses it (the version gate) instead of lenient-parsing
+// the new fields away and writing the loss back.
+func TestSchemaVersionIsFour(t *testing.T) {
+	if SchemaVersion != 4 {
+		t.Errorf("SchemaVersion = %d, want 4 (review shards + per-task reviewed)", SchemaVersion)
 	}
 }

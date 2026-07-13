@@ -53,6 +53,7 @@ jobs:
         run: |
           /tmp/furrow schema task | diff -u docs/schema/furrow.task.v2.json -
           /tmp/furrow schema meta | diff -u docs/schema/furrow.meta.v2.json -
+          /tmp/furrow schema repo | diff -u docs/schema/furrow.repo.v1.json -
 
       - name: config template drift guard
         run: |

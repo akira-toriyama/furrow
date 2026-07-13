@@ -683,6 +683,9 @@ func changedFields(before, after *core.Task) []string {
 	if !timeEq(before.Closed, after.Closed) {
 		ch = append(ch, "closed")
 	}
+	if !timeEq(before.Reviewed, after.Reviewed) {
+		ch = append(ch, "reviewed")
+	}
 	return ch
 }
 

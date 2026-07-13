@@ -393,3 +393,56 @@ func TestListAssets(t *testing.T) {
 		}
 	}
 }
+
+// Repo review shards round-trip: SaveRepo writes repos/<owner>__<repo>.json
+// byte-identical to MarshalRepo, LoadRepo reads it back (ok=false when absent),
+// and ListRepos returns every record sorted by Repo. A fresh store (no repos/)
+// lists nothing without error.
+func TestRepoShardRoundTrip(t *testing.T) {
+	s := newStore(t)
+
+	// Absent repo, empty list: no error before anything is reviewed.
+	if _, ok, err := s.LoadRepo("o/none"); err != nil || ok {
+		t.Fatalf("LoadRepo on a fresh store: ok=%v err=%v, want ok=false err=nil", ok, err)
+	}
+	if recs, err := s.ListRepos(); err != nil || recs != nil {
+		t.Fatalf("ListRepos on a fresh store = %v, %v; want nil, nil", recs, err)
+	}
+
+	now := time.Date(2026, 6, 25, 1, 2, 3, 0, time.UTC)
+	rec := &core.RepoRecord{Repo: "akira-toriyama/furrow", LastReviewed: &now}
+	if err := s.SaveRepo(rec); err != nil {
+		t.Fatal(err)
+	}
+
+	// On-disk bytes equal the canonical MarshalRepo output.
+	want, _ := core.MarshalRepo(&core.RepoRecord{Repo: "akira-toriyama/furrow", LastReviewed: &now})
+	got, err := os.ReadFile(filepath.Join(s.root, "repos", "akira-toriyama__furrow.json"))
+	if err != nil {
+		t.Fatalf("read repo shard: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("repo shard bytes != MarshalRepo\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+
+	// LoadRepo reads it back.
+	loaded, ok, err := s.LoadRepo("akira-toriyama/furrow")
+	if err != nil || !ok {
+		t.Fatalf("LoadRepo after save: ok=%v err=%v", ok, err)
+	}
+	if loaded.Repo != "akira-toriyama/furrow" || loaded.LastReviewed == nil || !loaded.LastReviewed.Equal(now) {
+		t.Errorf("loaded record wrong: %+v", loaded)
+	}
+
+	// A second repo, then ListRepos is sorted by Repo.
+	if err := s.SaveRepo(&core.RepoRecord{Repo: "akira-toriyama/chord", LastReviewed: &now}); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := s.ListRepos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 2 || recs[0].Repo != "akira-toriyama/chord" || recs[1].Repo != "akira-toriyama/furrow" {
+		t.Errorf("ListRepos = %+v, want [chord, furrow] sorted", recs)
+	}
+}

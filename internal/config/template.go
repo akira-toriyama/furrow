@@ -66,6 +66,11 @@ older_than_days = 30
 # stale. 0 disables the stale signal (the other revisit signals still fire).
 stale_days = 30
 
+[review]
+# Days a repo may go without a human ` + "`furrow review <repo>`" + ` before
+# ` + "`furrow sync`" + ` nudges it as unreviewed (on the revisit line). 0 disables.
+stale_after_days = 14
+
 [ui]
 # bubbletea TUI. NO_COLOR is always respected regardless of this value.
 theme = "auto" # auto | dark | light

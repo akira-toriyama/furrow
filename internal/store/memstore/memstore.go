@@ -19,7 +19,8 @@ import (
 type Store struct {
 	tasks    map[string]core.Task // id -> task, one entry per shard
 	bodies   map[string]string
-	assets   map[string][]byte // basename -> bytes, the in-memory twin of bodies/assets/<name>
+	assets   map[string][]byte          // basename -> bytes, the in-memory twin of bodies/assets/<name>
+	repos    map[string]core.RepoRecord // owner/repo -> review record, one entry per repos/ shard
 	idPrefix string
 	idLen    int
 	nextID   func() (string, error) // id generator; random by default
@@ -38,6 +39,7 @@ func New(idPrefix string, idLen int) *Store {
 		tasks:         map[string]core.Task{},
 		bodies:        map[string]string{},
 		assets:        map[string][]byte{},
+		repos:         map[string]core.RepoRecord{},
 		idPrefix:      idPrefix,
 		idLen:         idLen,
 		schemaVersion: core.SchemaVersion,
@@ -83,6 +85,46 @@ func (s *Store) Save(idx *core.Index) error {
 	}
 	s.tasks = next
 	return nil
+}
+
+// LoadRepo returns a copy of the repo review record, or ok=false when absent —
+// the in-memory twin of reading repos/<owner>__<repo>.json.
+func (s *Store) LoadRepo(repo string) (*core.RepoRecord, bool, error) {
+	rec, ok := s.repos[repo]
+	if !ok {
+		return nil, false, nil
+	}
+	return &rec, true, nil
+}
+
+// SaveRepo stores one repo review record — the in-memory twin of writing a
+// repos/ shard. The record is canonicalized through the single MarshalRepo path
+// (then re-parsed) so the in-memory copy matches what fsstore would persist.
+func (s *Store) SaveRepo(rec *core.RepoRecord) error {
+	data, err := core.MarshalRepo(rec)
+	if err != nil {
+		return err
+	}
+	norm, err := core.UnmarshalRepo(data)
+	if err != nil {
+		return err
+	}
+	s.repos[norm.Repo] = *norm
+	return nil
+}
+
+// ListRepos returns every repo review record, sorted by Repo — the in-memory
+// twin of listing repos/. An empty store yields nil (never reviewed).
+func (s *Store) ListRepos() ([]core.RepoRecord, error) {
+	if len(s.repos) == 0 {
+		return nil, nil
+	}
+	recs := make([]core.RepoRecord, 0, len(s.repos))
+	for _, rec := range s.repos {
+		recs = append(recs, rec)
+	}
+	sort.Slice(recs, func(i, j int) bool { return recs[i].Repo < recs[j].Repo })
+	return recs, nil
 }
 
 func (s *Store) LoadBody(id string) (string, error) { return s.bodies[id], nil }

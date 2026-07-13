@@ -64,6 +64,18 @@ type Store interface {
 	// concurrent adds in separate worktrees won't collide. The caller (app) is
 	// responsible for ensuring the id is not already present in the index.
 	NextID() (string, error)
+
+	// LoadRepo returns the review record for an owner/repo, or ok=false when the
+	// repo has never been reviewed (no shard yet). One shard per repo under
+	// repos/, the per-repo twin of a task shard.
+	LoadRepo(repo string) (rec *RepoRecord, ok bool, err error)
+	// SaveRepo writes one repo review shard (via core.MarshalRepo), atomically
+	// and only when its bytes changed — the repos/ twin of a task Save.
+	SaveRepo(rec *RepoRecord) error
+	// ListRepos returns every repo review record, sorted by Repo. A store that
+	// has never recorded a review yields nil, not an error (the repos/ dir may
+	// not exist), so the staleness nudge works on a board that never reviewed.
+	ListRepos() ([]RepoRecord, error)
 }
 
 // Clock supplies the current time. Injected so tests get deterministic

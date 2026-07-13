@@ -91,6 +91,45 @@ func UnmarshalTask(data []byte) (*Task, error) {
 	return &t, nil
 }
 
+// MarshalRepo is the per-repo twin of MarshalTask: the ONE path that serializes
+// a RepoRecord to its shard bytes (repos/<owner>__<repo>.json). It shares the
+// byte recipe (encodeCanonical) and normalizes its timestamps (canonicalizeRepo)
+// so a repo shard written by furrow equals a hand-edit byte-for-byte, exactly as
+// task shards do, and — like them — carries no schema_version. r must be
+// non-nil.
+func MarshalRepo(r *RepoRecord) ([]byte, error) {
+	canonicalizeRepo(r)
+	data, err := encodeCanonical(r)
+	if err != nil {
+		return nil, Internalf(r.Repo, "marshal repo: %v", err)
+	}
+	return data, nil
+}
+
+// canonicalizeRepo enforces the per-repo determinism invariants in place:
+// whole-second UTC timestamps, nil-guarded so an unset clock stays nil (-> null).
+func canonicalizeRepo(r *RepoRecord) {
+	if r.LastReviewed != nil {
+		t := normTime(*r.LastReviewed)
+		r.LastReviewed = &t
+	}
+	if r.LastAgentReviewed != nil {
+		t := normTime(*r.LastAgentReviewed)
+		r.LastAgentReviewed = &t
+	}
+}
+
+// UnmarshalRepo parses one repo shard's bytes into a RepoRecord, the per-repo
+// twin of UnmarshalTask. A parse failure is a validation error (malformed
+// input), not an internal fault.
+func UnmarshalRepo(data []byte) (*RepoRecord, error) {
+	var r RepoRecord
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, Validationf("repo", "repo shard is not valid JSON: %v", err)
+	}
+	return &r, nil
+}
+
 // MarshalMeta serializes the board-wide Meta (schema version) to its meta.json
 // bytes. It shares encodeCanonical so meta.json obeys the same byte recipe as
 // the shards (2-space indent, no HTML escaping, trailing newline) — a hand-edit
@@ -176,6 +215,10 @@ func canonicalizeTask(t *Task) {
 	if t.Closed != nil {
 		c := normTime(*t.Closed)
 		t.Closed = &c
+	}
+	if t.Reviewed != nil {
+		r := normTime(*t.Reviewed)
+		t.Reviewed = &r
 	}
 
 	// value/effort are clamp-don't-reject: an out-of-range estimate (from a

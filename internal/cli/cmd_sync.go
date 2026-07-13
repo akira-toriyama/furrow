@@ -40,13 +40,40 @@ func revisitScopeLabel(a *app.App) string {
 }
 
 // revisitLine is the one human line appended after the sync summary. Empty
-// summary -> "" (the caller prints nothing, so a clean board stays quiet).
+// summary -> "" (the caller prints nothing, so a clean board stays quiet). When
+// a repo's human review has gone stale it appends an unreviewed nudge (the
+// oldest few, so the line stays short).
 func revisitLine(sum app.RevisitSummary, scope string) string {
 	if sum.Empty() {
 		return ""
 	}
-	return fmt.Sprintf("revisit: %d dep_done, %d stale (%s) — furrow revisit",
+	line := fmt.Sprintf("revisit: %d dep_done, %d stale (%s) — furrow revisit",
 		len(sum.DepDone), len(sum.Stale), scope)
+	if len(sum.Unreviewed) > 0 {
+		line += "\n" + unreviewedLine(sum.Unreviewed)
+	}
+	return line
+}
+
+// unreviewedLine renders the per-repo staleness nudge: "⚠ N repo(s) unreviewed:
+// owner/repo (21d), … — furrow review <repo>". At most three repos are named
+// (the store-sorted first few) so the line stays legible; the count is exact.
+func unreviewedLine(repos []app.UnreviewedRepo) string {
+	const maxNamed = 3
+	named := repos
+	if len(named) > maxNamed {
+		named = named[:maxNamed]
+	}
+	parts := make([]string, len(named))
+	for i, r := range named {
+		parts[i] = fmt.Sprintf("%s (%dd)", r.Repo, r.Days)
+	}
+	suffix := ""
+	if len(repos) > len(named) {
+		suffix = fmt.Sprintf(", +%d more", len(repos)-len(named))
+	}
+	return fmt.Sprintf("⚠ %d repo(s) unreviewed: %s%s — furrow review <repo>",
+		len(repos), strings.Join(parts, ", "), suffix)
 }
 
 // syncScope builds the strict repo scope for the post-sync summary: the board's
@@ -89,9 +116,10 @@ func newSyncCmd() *cobra.Command {
 			"object {committed, pulled, pushed, conflict, committed_bodies, pending_bodies}\n" +
 			"goes to stdout even on failure. After a successful sync it also reports a\n" +
 			"revisit summary (repo-scoped counts of tasks with a done dependency or gone\n" +
-			"stale) so freshly-pulled staleness surfaces in the loop; the JSON gains a\n" +
-			"\"revisit\" key when non-empty. It is a thin git wrapper — not a daemon or a\n" +
-			"sync server (see docs/non-goals.md).",
+			"stale, plus any repos whose human review is older than [review].stale_after_days\n" +
+			"— run furrow review <repo>) so freshly-pulled staleness surfaces in the loop;\n" +
+			"the JSON gains a \"revisit\" key when non-empty. It is a thin git wrapper — not a\n" +
+			"daemon or a sync server (see docs/non-goals.md).",
 		Example: "  furrow sync                   # commit shards + new bodies, pull --rebase, push\n" +
 			"  furrow sync -m \"triage inbox\"\n" +
 			"  furrow sync -b t-k3m9p        # also commit that task's edited body\n" +
