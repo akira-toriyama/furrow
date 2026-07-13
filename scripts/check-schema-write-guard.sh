@@ -21,6 +21,8 @@ cd "$(dirname "$0")/.."
 #   - internal/store/fsstore/fsstore.go    the fresh-store stamp + SetBoardVersion
 #   - internal/store/memstore/memstore.go  its in-memory twin
 #   - internal/app/upgrade.go              the ONE deliberate raiser
+#   - internal/app/schema_state.go         folds the board's stores into one state
+#                                          (REPORTING only — it never writes)
 #   - internal/app/board.go                reports board-vs-binary (never writes)
 #   - internal/app/lint.go                 warns when they diverge (never writes)
 #   - internal/cli/cmd_board.go            renders that report
@@ -31,7 +33,7 @@ hits="$(grep -rnE '(core\.)?SchemaVersion' --include='*.go' internal cmd \
   | grep -vE '^internal/core/' \
   | grep -vE '^internal/store/fsstore/fsstore\.go' \
   | grep -vE '^internal/store/memstore/memstore\.go' \
-  | grep -vE '^internal/app/(upgrade|board|lint)\.go' \
+  | grep -vE '^internal/app/(upgrade|schema_state|board|lint)\.go' \
   | grep -vE '^internal/cli/cmd_board\.go' \
   | grep -vE '^internal/schema/schema\.go' || true)"
 

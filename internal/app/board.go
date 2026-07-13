@@ -59,25 +59,11 @@ func (a *App) Board() BoardInfo {
 			terminal = append(terminal, l)
 		}
 	}
-	// Ask the store whether it is writable rather than re-deriving the rule from
-	// the two integers: an unstamped but EMPTY board (a fresh `.furrow/`, or an
-	// interrupted `init`) is version 0 yet perfectly writable — the first write
-	// stamps it. Comparing versions alone reported that board as outdated and
-	// unwritable, which would have failed the CI pre-flight on a board that would
-	// have accepted the write.
-	ver, err := a.Store.BoardVersion()
-	writable := err == nil && a.Store.Writable() == nil
-	var state string
-	switch {
-	case err != nil:
-		ver, state = 0, SchemaUnreadable
-	case writable:
-		state = SchemaCurrent
-	case ver > core.SchemaVersion:
-		state = SchemaTooNew
-	default:
-		state = SchemaOutdated // ver < SchemaVersion, or 0 with shards (unstamped)
-	}
+	// The schema state of the WHOLE board — hot store and, when it exists, the
+	// sibling archive store, which carries its own meta.json and its own write
+	// gate. Folding them is schemaState's job (schema_state.go); doing it here
+	// would mean lint and upgrade each re-derive the rule and drift from it.
+	ver, state, writable := a.schemaState()
 	return BoardInfo{
 		Store:                a.Dir,
 		Source:               a.Source,
