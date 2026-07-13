@@ -789,7 +789,7 @@ This document covers the *built* architecture. Several things are deliberately
 | `internal/schema` + `docs/schema/furrow.task.v2.json` / `furrow.meta.v2.json` | **Built** |
 | Golden round-trip + schema drift tests | **Built** |
 | `scripts/check-marshal-singlepath.sh`, `scripts/check-schema-write-guard.sh` | **Built** |
-| Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0`–`v0.8.0` published (task-status Action bundled since `v0.5.0`) |
+| Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0`–`v0.9.0` published (task-status Action bundled since `v0.5.0`) |
 | nix flake | **Built** — real pinned `vendorHash` + committed `flake.lock` (since `v0.4.0`) |
 | Read-only web / React viewer | **Future, low priority** |
 
