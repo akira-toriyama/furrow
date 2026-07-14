@@ -1,0 +1,27 @@
+{
+  "id": "t-frzn3",
+  "title": "a closed task — closed and reviewed both stamped",
+  "status": "done",
+  "priority": 90,
+  "value": 5,
+  "effort": 1,
+  "labels": [
+    "bug"
+  ],
+  "repos": [
+    "akira-toriyama/furrow"
+  ],
+  "deps": [],
+  "refs": [],
+  "checklist": [
+    {
+      "text": "shipped",
+      "done": true
+    }
+  ],
+  "created": "2026-06-20T12:00:00Z",
+  "updated": "2026-07-02T08:30:00Z",
+  "closed": "2026-07-02T08:30:00Z",
+  "reviewed": "2026-07-02T09:00:00Z",
+  "body": "bodies/t-frzn3.md"
+}

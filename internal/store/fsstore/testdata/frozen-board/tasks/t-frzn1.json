@@ -1,0 +1,43 @@
+{
+  "id": "t-frzn1",
+  "title": "a frozen task carrying every field furrow persists",
+  "status": "in-progress",
+  "priority": 100,
+  "value": 4,
+  "effort": 2,
+  "labels": [
+    "cli",
+    "dx"
+  ],
+  "repos": [
+    "akira-toriyama/furrow"
+  ],
+  "parent": "t-frzn2",
+  "deps": [
+    "t-frzn3"
+  ],
+  "refs": [
+    "internal/core/marshal.go:42",
+    "https://example.invalid/spec"
+  ],
+  "checklist": [
+    {
+      "text": "freeze a real board",
+      "done": true
+    },
+    {
+      "text": "pin its bytes",
+      "done": false
+    }
+  ],
+  "created": "2026-07-01T09:00:00Z",
+  "updated": "2026-07-13T04:15:00Z",
+  "closed": null,
+  "reviewed": "2026-07-10T00:00:00Z",
+  "body": "bodies/t-frzn1.md",
+  "blocked": true,
+  "blocked_by": {
+    "kind": "review",
+    "since": "2026-07-13T00:00:00Z"
+  }
+}

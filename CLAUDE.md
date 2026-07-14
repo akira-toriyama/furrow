@@ -224,8 +224,10 @@ Everything is verifiable without a terminal, including the interactive UI:
   `scripts/check-schema-write-guard.sh` (no ordinary write may name
   `core.SchemaVersion`), `TestShardFieldsGolden` (the shard's on-disk shape is
   frozen; changing it demands a deliberate `-update-fields` + a version-bump
-  decision), and the schema/config drift diffs (in `check.sh`) guard the
-  load-bearing invariants.
+  decision), **`TestFrozenBoardRoundTripsByteIdentical`** (a real board's BYTES,
+  committed under `internal/store/fsstore/testdata/frozen-board/`, that Load→Save
+  must reproduce exactly — the one fixture the code under test did not write), and
+  the schema/config drift diffs (in `check.sh`) guard the load-bearing invariants.
 - **The release pipeline**: it used to run only on a tag, so a defect in
   `.goreleaser.yaml`/`release.yml` surfaced *after* GoReleaser had published the
   draft and pushed the cask (v0.8.0 shipped broken twice). `build.yml` now runs a
@@ -398,6 +400,26 @@ New shard fields go at the **END** of the struct: a field declared mid-struct is
 written there by a new binary and re-emitted at the end by an old one (extras are
 appended), so alternating writes churn a one-line move — churn, not loss, but
 avoidable.
+
+**The teeth have a second row: the FROZEN BOARD.**
+`TestShardFieldsGolden` reads the Go structs, so both sides of it move together —
+it FAILS on a shape change, but `-update-fields` makes it green again whether or
+not you bumped, because the teeth are the failure *message*, not a mechanical
+check. `internal/store/fsstore/testdata/frozen-board/` is a real board's **bytes**,
+written by an earlier furrow and committed;
+**`TestFrozenBoardRoundTripsByteIdentical`** copies it, runs Load → Save →
+SaveRepo → SetBoardVersion, and requires every file to come back **byte-identical**,
+with the same file set and untouched mtimes. It is the only fixture in the repo the
+code under test did not write, and it is what shows the DAMAGE rather than the
+diff: add a non-`omitempty` field and it prints `+ "sprint": ""` appearing in every
+shard — i.e. every board in the fleet rewritten on its next ordinary write, and
+silently dropped by every older binary. Rename or remove a key and the on-disk key
+becomes unknown, so the passthrough parks it and re-emits it *after* the known ones
+— a key-ORDER change no in-memory test can see. It also pins the only two things
+with no committed coverage at all: `meta.json`'s bytes, and the extras splice as it
+actually lands on disk. Regenerate with `go test ./internal/store/fsstore -run
+TestFrozenBoard -update-board` — which rewrites a committed board, so the diff makes
+the decision visible in review, exactly as a flag day should be.
 
 **The version gate is two-sided, and `core.SchemaVersion` is what THIS BINARY
 writes — not what the board declares.** The board's number lives in `meta.json`
