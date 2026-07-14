@@ -841,9 +841,18 @@ Sections and their defaults:
 | `[revisit]` | `stale_days` | `30` (`0` disables the stale signal) |
 | `[ui]` | `theme` | `auto` (one of `auto`/`dark`/`light`) |
 | `[alias]` | `<name> = "<command string>"` | none (a `name -> command` map) |
+| (top-level) | `standalone` | `false` (a local single-machine board: no remote / `furrow sync` / CI) |
 
 `status` is just a lane from `[lanes].order`; that list is simultaneously the
 status enum and the top-to-bottom sort rank.
+
+`standalone` is **presentation-only**: it changes no behavior, no schema gate,
+and no on-disk byte — the CLI reads it (`cmd_upgrade.go`) to drop the
+shared-board flag-day / `furrow sync` wording that only misdirects a
+single-machine operator. It lives in `config.toml` (not `meta.json`), so it is
+clamp-don't-reject and needs **no** `SchemaVersion` bump. `internal/core` stays
+CI-agnostic: the `schema-upgrade-required` / `schema-too-new` messages name no
+workflow; any pinned-CI guidance is added above core.
 
 `[alias]` names frequent command strings. `cli.expandAlias` runs before cobra
 dispatch: when the first argv token is not a flag and not a builtin command, it

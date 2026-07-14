@@ -22,8 +22,13 @@ func TestCheckSchemaVersion(t *testing.T) {
 	if got := ExitCode(err); got != int(CodeInternal) {
 		t.Errorf("exit code = %d, want %d (internal)", got, CodeInternal)
 	}
-	if !strings.Contains(err.Error(), "update the binary") {
-		t.Errorf("message should tell the agent the fix (update the binary): %q", err.Error())
+	// CI-agnostic on purpose (core is pure): the fix is stated as "update furrow",
+	// not "bump the sync-task-status.yml pin" — presentation adds any CI specifics.
+	if !strings.Contains(err.Error(), "update furrow") {
+		t.Errorf("message should tell the agent the fix (update furrow): %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "sync-task-status.yml") {
+		t.Errorf("core is pure and must not name a CI workflow: %q", err.Error())
 	}
 	fe := AsError(err)
 	if fe == nil || fe.ID != "schema-too-new" {
