@@ -49,6 +49,41 @@ func TestCLILintFlagsDanglingAsset(t *testing.T) {
 	}
 }
 
+// A body left half-merged is broken data on the board, so lint FAILS on it (exit
+// 2) — the whole point being that the last time this happened, a marker-carrying
+// body was committed and nobody found out.
+func TestCLILintFailsOnConflictMarkerBody(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "half-merged body")
+
+	bodyPath := filepath.Join(os.Getenv(app.EnvDir), "bodies", id+".md")
+	body := "# t\n\n<<<<<<< Updated upstream\n- [x] shipped\n=======\n- [ ] still writing\n>>>>>>> Stashed changes\n"
+	if err := os.WriteFile(bodyPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, code := run(t, "--json", "lint")
+	if code != int(core.CodeValidation) {
+		t.Fatalf("a conflict-marker body must fail lint (exit 2), got %d:\n%s", code, out)
+	}
+	var ps []core.Problem
+	if err := json.Unmarshal([]byte(out), &ps); err != nil {
+		t.Fatalf("parse lint --json: %v\n%s", err, out)
+	}
+	found := false
+	for _, p := range ps {
+		if p.Code == "conflict-marker" {
+			found = true
+			if p.Severity != core.SevError || p.ID != id {
+				t.Errorf("want an error blamed on %s, got %+v", id, p)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("lint --json did not surface conflict-marker:\n%s", out)
+	}
+}
+
 // TestCLILintRuleCode pins that lint problems carry a stable kebab-case `code`
 // (t-kx76 d): induce a dangling [[id]] link and assert code=dangling-link, so
 // agent triage branches on the code, not an English regex.

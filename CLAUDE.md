@@ -50,7 +50,7 @@ the user-level config. When you work with any furrow store:
   silent human-prose degrade. Filter reads with `--status/-s`, `--label/-l`,
   `--repo/-r`, `--limit/-n` — so you rarely need jq. Each `lint` problem carries
   a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `orphan-asset`,
-  `unknown-shard-key`, …) — branch on it, not the message, since the `id` field
+  `conflict-marker`, `unknown-shard-key`, …) — branch on it, not the message, since the `id` field
   is contextual (a task id, an asset name, an `owner/repo`, `meta`, or `config`).
   Mutations (`done|move|set|reorder|value|effort|check|dep|label|repo`) with
   `--json` emit
@@ -96,7 +96,29 @@ the user-level config. When you work with any furrow store:
   `sync-interrupted` — retryable, just re-run (a genuine conflict is never masked
   by the signal: it still surfaces as `sync-conflict` with its `details.paths`,
   keeping its exit 3). Branch on the `id`, not the exit
-  code, to tell these apart. A successful sync also gains a `revisit` key
+  code, to tell these apart.
+  **A sync can lose your WORK without losing the BOARD, and git's exit code only
+  ever talks about the board.** `--autostash` stashes your other dirty files for
+  the rebase; when the re-apply conflicts with what was pulled, git keeps them **in
+  the stash**, warns on stderr, and **exits 0** — the edits are just gone from the
+  working tree, and if one was a half-written body, that is furrow's progress
+  record hanging in mid-air. So sync probes the stash: the run that strands one
+  fails with id **`sync-stash-stranded`** (exit 3, nothing pushed) carrying
+  `details.pending_stash` (`[{ref, commit, paths}]`), and ANY leftover autostash is
+  re-reported by **every** subsequent sync in the `pending_stash` progress key until
+  it is popped or dropped (your own `git stash` entries are never reported). The
+  index that failure leaves behind (unmerged, no operation in progress) is explained
+  by a pre-flight — id **`sync-unmerged`** (exit 2), naming the paths AND the stash
+  still holding the other half — instead of relaying git's opaque `notes.md:
+  unmerged (…)`. The
+  wreckage such a failed re-apply leaves in the file — conflict markers — is refused
+  at the door: a body carrying `<<<<<<<`/`=======`/`>>>>>>>` is **never**
+  auto-committed (id **`body-conflict-marker`**, exit 2, `details.bodies`
+  `[{id, path, lines}]`, nothing committed), because a commit cannot be
+  un-published; `furrow lint` flags any that got in already (`conflict-marker`,
+  **error**). A marker inside a fenced code block is documentation, not corruption,
+  and is not flagged.
+  A successful sync also gains a `revisit` key
   (`{dep_done:[ids], stale:[ids], unreviewed:[{repo,days}]}`, repo-scoped,
   omitted when empty) — the loop-visible staleness nudge; run `furrow revisit`
   for task detail, `furrow review <repo>` to reset a repo's `unreviewed` clock.

@@ -632,14 +632,34 @@ except where noted:
   co-writer's fetch can't race it), `push` (one retry on non-fast-forward), via
   the `internal/gitrepo` adapter. The progress object — stdout on success AND
   failure — carries `{committed, pulled, pushed, conflict, committed_bodies,
-  pending_bodies}` (the body lists omitted when empty). Failure modes, branch
+  pending_bodies, pending_stash}` (the lists omitted when empty). Failure modes, branch
   on the error `id`: `sync-conflict` (exit 3, definitive — the rebase is
   aborted automatically, conflicted paths in `details`), `sync-busy` (exit 3,
   retryable — a foreign in-progress rebase outlived the bounded backoff),
-  `sync` (terminal — a likely-stale `.git/*.lock`, named in the message), and
+  `sync` (terminal — a likely-stale `.git/*.lock`, named in the message),
   `sync-interrupted` (exit 130/143 = 128+signal, retryable — SIGINT/SIGTERM
   cancelled the in-flight git; a genuine conflict is never masked by the signal,
-  keeping its exit 3).
+  keeping its exit 3), `sync-stash-stranded` (exit 3 — see below), `sync-unmerged`
+  (exit 2 — a pre-flight: unmerged paths with no operation in progress, the state a
+  stranded autostash leaves behind), and
+  `body-conflict-marker` (exit 2 — a body carrying conflict markers is refused
+  BEFORE the commit; `details.bodies` names them with line numbers).
+
+  **The autostash is the one way a sync can lose WORK without losing the BOARD,
+  and it is silent by construction.** `git rebase --autostash` re-applies the
+  stash at the end; when that apply conflicts with what was just pulled, git
+  stores the entry back (`git stash store -m autostash`), warns on **stderr**,
+  and **exits 0**. There is no failing exit code and no in-progress rebase — the
+  only witness is the stash itself, which is why `app.Sync` probes it around
+  every pull attempt (`strandedStash`, comparing the autostash entry set before
+  and after, since git localizes its warning prose but not the `autostash`
+  reflog subject). A newly stranded entry fails the sync (`sync-stash-stranded`,
+  nothing pushed); a pre-existing one is re-reported in `pending_stash` on every
+  sync until it is popped — an operator's own `git stash` ("WIP on …") is never
+  reported. `DirtyChanges` passes `-uall` for the same reason: git's default
+  collapses a wholly-untracked directory into one `?? .furrow/bodies/` entry,
+  which would hide every body of a fresh board behind a path that classifies as
+  neither body nor shard — committed, but counted as nothing and checked by nothing.
 - **`apply`** parses `SetStatus-task:` directives out of PR/commit text (stdin
   or `--body-file`) and reflects them onto the board — the CI hook behind the
   task-status workflow. Validation is non-blocking by design.

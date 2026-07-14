@@ -112,8 +112,18 @@ func newSyncCmd() *cobra.Command {
 			"backoff; a live race clears in under a second, so a lock that persists is a\n" +
 			"likely-stale .git/*.lock and sync fails terminally naming it (a pre-flight\n" +
 			"foreign rebase that stays stuck instead exits with the retryable id\n" +
-			"\"sync-busy\"). The progress\n" +
-			"object {committed, pulled, pushed, conflict, committed_bodies, pending_bodies}\n" +
+			"\"sync-busy\").\n\n" +
+			"Your OWN dirty files are autostashed for the rebase. If git cannot put them\n" +
+			"back (its re-apply conflicts with what was pulled), it keeps them in the stash,\n" +
+			"warns only on stderr, and exits 0 — so sync probes the stash itself and fails\n" +
+			"with id \"sync-stash-stranded\" (nothing is pushed), reporting them in\n" +
+			"pending_stash until they are popped. The unmerged index that failure leaves\n" +
+			"behind is explained by a pre-flight (id \"sync-unmerged\", exit 2), not relayed\n" +
+			"as git's opaque \"<path>: unmerged\". Relatedly, a body still carrying conflict\n" +
+			"markers is never auto-committed (id \"body-conflict-marker\", exit 2): a commit\n" +
+			"cannot be un-published, and `furrow lint` flags any that got in already.\n\n" +
+			"The progress object {committed, pulled, pushed, conflict, committed_bodies,\n" +
+			"pending_bodies, pending_stash}\n" +
 			"goes to stdout even on failure. After a successful sync it also reports a\n" +
 			"revisit summary (repo-scoped counts of tasks with a done dependency or gone\n" +
 			"stale, plus any repos whose human review is older than [review].stale_after_days\n" +
@@ -157,6 +167,15 @@ func newSyncCmd() *cobra.Command {
 					fmt.Fprintf(errOut, "note: %d body edit(s) left uncommitted (rerun with -b <id> or --all-bodies): %s\n",
 						len(prog.PendingBodies), strings.Join(prog.PendingBodies, ", "))
 				}
+				// A stranded autostash is reported on EVERY sync, not just the one that
+				// stranded it: the entry sits there silently until someone pops it, and
+				// the whole defect this guards against is a leftover nobody was told about.
+				// (The sync that created it also fails — see sync-stash-stranded.)
+				if len(prog.PendingStash) > 0 {
+					fmt.Fprintf(errOut, "warning: %d autostash entr(ies) hold working-tree changes git could not restore — %s\n"+
+						"  recover with `git stash pop` (or `git stash drop` if the changes are already in the tree)\n",
+						len(prog.PendingStash), stashNote(prog.PendingStash))
+				}
 			}
 			return syncErr
 		},
@@ -165,6 +184,20 @@ func newSyncCmd() *cobra.Command {
 	c.Flags().StringSliceVarP(&bodies, "body", "b", nil, "also commit these task ids' hand-edited bodies/<id>.md (repeatable)")
 	c.Flags().BoolVar(&allBodies, "all-bodies", false, "commit every dirty body (the pre-scoping sweep; only on a checkout that is yours alone)")
 	return c
+}
+
+// stashNote renders the stranded autostash entries for the human warning:
+// "stash@{0}: .furrow/bodies/t-k3m9p.md, notes.md". The paths are the point — they
+// answer "is my body in there?" without a second command.
+func stashNote(entries []app.StashEntry) string {
+	parts := make([]string, len(entries))
+	for i, e := range entries {
+		parts[i] = e.Ref
+		if len(e.Paths) > 0 {
+			parts[i] += ": " + strings.Join(e.Paths, ", ")
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // summaryPtr returns nil for an empty summary so the revisit JSON key is omitted.
