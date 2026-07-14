@@ -903,7 +903,10 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 		if !o.match(t) {
 			continue
 		}
-		if a.Cfg.IsNextLane(t.Status) && idx.Actionable(t, a.Cfg.Terminal, doneIDs) {
+		// The same predicate `ls --tree` stars a node with (see App.actionable):
+		// one definition of "you could pick this up now", or the two views would
+		// eventually disagree about it.
+		if a.actionable(idx, t, doneIDs) {
 			out = append(out, *t)
 			if o.Limit > 0 && len(out) >= o.Limit {
 				break

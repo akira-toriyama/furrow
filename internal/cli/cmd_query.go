@@ -22,25 +22,46 @@ func newLsCmd() *cobra.Command {
 		sortBy   string
 		reverse  bool
 		archived bool
+		tree     bool
 	)
 	cmd := &cobra.Command{
-		Use:     "ls",
+		Use:     "ls [<id>]",
 		Aliases: []string{"list"},
-		Short:   "List tasks (canonical lane->priority->id order)",
+		Short:   "List tasks (canonical lane->priority->id order), or draw the hierarchy with --tree",
 		Long: "List tasks in canonical lane->priority->id order (or reordered with\n" +
 			"--sort). --since/--until window by the updated timestamp (a bare\n" +
 			"YYYY-MM-DD, or a full RFC3339 instant; a bare --until includes the whole\n" +
 			"day). --sort reorders by updated|created|value|effort (newest/highest\n" +
 			"first; --reverse flips it, and an unset value/effort stays last either\n" +
-			"way); with --sort, -n takes the top N of the sorted set.",
+			"way); with --sort, -n takes the top N of the sorted set.\n\n" +
+			"--tree draws the parent hierarchy instead of a flat table: one tree per\n" +
+			"top-level task, or the subtree under <id> when given. Every filter still\n" +
+			"applies, and the forest is built over what matched — a task whose parent was\n" +
+			"filtered out becomes a root rather than disappearing, so --tree never shows\n" +
+			"fewer tasks than the same flags without it. With --tree, -n caps the number\n" +
+			"of TREES (never the tasks: truncating mid-hierarchy would amputate children\n" +
+			"from the trees it did show).\n\n" +
+			"The tree carries the two facts a flat list can't: a ★ marks a task `furrow\n" +
+			"next` would hand you right now (in a next lane, every dep done), and a\n" +
+			"blocked task names what is in its way. Glyphs: ★ actionable, ✓ done, ~ parked\n" +
+			"(a terminal lane that is not done), · open but not available. --json nests\n" +
+			"children and adds `actionable` + `blocked_by` to each node; --ndjson streams\n" +
+			"one whole tree per line.",
 		Example: "  furrow ls                 # this repo's board, canonical order\n" +
 			"  furrow ls -s ready --json\n" +
 			"  furrow ls -s inbox,backlog     # comma = OR within a field\n" +
 			"  furrow ls -l bug -r furrow\n" +
 			"  furrow ls --since 2026-07-08   # touched on/after a date\n" +
 			"  furrow ls --sort value -n5     # top 5 by value\n" +
-			"  furrow ls --drafts        # only repo-less draft tasks",
-		Args: cobra.NoArgs,
+			"  furrow ls --drafts        # only repo-less draft tasks\n" +
+			"  furrow ls --tree          # the hierarchy, ★ = pick this up now\n" +
+			"  furrow ls --tree t-k3m9p  # just what leads to (and hangs under) that goal",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("tree") {
+				return cobra.MaximumNArgs(1)(cmd, args)
+			}
+			return cobra.NoArgs(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -69,6 +90,17 @@ func newLsCmd() *cobra.Command {
 				}
 				o.Until = &ts
 			}
+			if tree {
+				root := ""
+				if len(args) == 1 {
+					root = args[0]
+				}
+				nodes, err := a.Tree(o, root)
+				if err != nil {
+					return err
+				}
+				return emitTree(a, nodes)
+			}
 			tasks, err := a.List(o)
 			if err != nil {
 				return err
@@ -91,6 +123,7 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sortBy, "sort", "", "reorder by updated|created|value|effort (default: canonical lane->priority->id)")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "reverse the --sort direction (oldest/lowest first; unset value/effort stay last)")
 	cmd.Flags().BoolVar(&archived, "archived", false, "list from the archive store (.furrow/archive/) instead of the hot board")
+	cmd.Flags().BoolVar(&tree, "tree", false, "draw the parent hierarchy (★ = actionable now); with an <id>, just that subtree")
 	return cmd
 }
 

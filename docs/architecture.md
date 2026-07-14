@@ -603,7 +603,24 @@ A few app-level rules worth stating, all verified against the code:
   excluded) and with every named dependency already in the done lane. Lane
   semantics live in config, not core — `Index.Actionable` takes the terminal
   set and the done-id set as arguments, and the `[next].lanes` gate is applied
-  in `app` via `Config.IsNextLane`.
+  in `app` via `Config.IsNextLane`. The composed predicate is `App.actionable`,
+  shared with `Tree` so the two can never drift into disagreeing about what "you
+  could pick this up now" means.
+- **`Tree`** (`ls --tree`) builds the **parent** forest — furrow stores two
+  relations between tasks and this is the one that nests. `parent` is the SKELETON
+  (one parent, many children: a real tree); `deps` are the GATE (a DAG *across* the
+  tree — a task in one branch can wait on one in another), so they can't nest and
+  ride along as each node's `blocked_by`. Every node carries the two derived facts
+  the drawing exists to convey: `Actionable` (the `App.actionable` predicate above)
+  and `BlockedBy` (deps not yet done). Three deliberate properties: the forest is
+  built over the FILTERED set, and a task whose parent was filtered out becomes a
+  root rather than disappearing (a `--tree` that shows fewer tasks than the same
+  flags without it would be lying); `Limit` caps ROOTS, not tasks (truncating
+  mid-hierarchy would amputate children from the trees it did show); and a **parent
+  cycle** — which only a git merge of two half-edges can create — leaves every task
+  in it parented-but-unreachable, i.e. invisible, so those are surfaced as roots and
+  the descent carries a visited set. A corrupt hierarchy renders, truncated at the
+  loop; it never vanishes and never hangs.
 - **`Archive`** selects done-lane tasks whose `Closed` is older than the cutoff
   and moves them (shard + body) into the sibling `.furrow/archive/` store (its own
   `tasks/`, `meta.json`, and `bodies/`).

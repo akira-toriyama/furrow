@@ -24,6 +24,16 @@ the user-level config. When you work with any furrow store:
   id+title+lane, one `--json` object — so "what waits on this?" is a command,
   not a full-board dump; `archive <id>...` retires specific done
   tasks by id (vs the age sweep).
+- **`ls --tree [<id>]` draws the parent hierarchy** — one tree per top-level task,
+  or just the subtree under `<id>`. It answers "what leads to this goal?", which was
+  otherwise a full-board dump and a script. Every filter still applies, and the
+  forest is built over what MATCHED: a task whose parent was filtered out becomes a
+  root, never disappears (so `--tree` can't show fewer tasks than the same flags
+  without it), and `-n` caps the number of TREES, not tasks. Each node carries the
+  two facts a flat list can't: **`actionable`** (exactly what `furrow next` would
+  hand you — in a next lane, every dep done; shown as ★) and **`blocked_by`** (the
+  deps that are NOT done — what is actually in the way). `--json` nests `children`;
+  `--ndjson` streams one whole tree per line.
 - **`parent <id> <parent-id>` moves a task in the HIERARCHY; `--rm` detaches it
   (top-level); `--list` is its read-only both-directions view (`parent`, which is
   `null` for a top-level task, and `children`, `[]` when none — same shape as `dep
