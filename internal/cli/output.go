@@ -277,6 +277,98 @@ func printSearchTable(hits []app.SearchHit) {
 	}
 }
 
+// treeView is one node of `ls --tree`'s JSON: the whole task (embedded, so the
+// tree is a superset of `ls --json` and no field is lost by asking for the shape),
+// plus the two DERIVED facts the drawing exists to convey — can this be worked on
+// now, and if not, what is in the way — and the children.
+//
+// core.Task is embedded, which is exactly why it must never grow a MarshalJSON:
+// Go would promote it here and every sibling field (actionable, blocked_by,
+// children) would silently vanish. See the note on core.Task.
+type treeView struct {
+	core.Task
+	Actionable bool       `json:"actionable"`
+	BlockedBy  []string   `json:"blocked_by"`
+	Children   []treeView `json:"children"`
+}
+
+func toTreeViews(nodes []app.TreeNode) []treeView {
+	out := make([]treeView, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, treeView{
+			Task:       n.Task,
+			Actionable: n.Actionable,
+			BlockedBy:  n.BlockedBy,
+			Children:   toTreeViews(n.Children),
+		})
+	}
+	return out
+}
+
+// emitTree renders the hierarchy. --json nests (children inside children);
+// --ndjson streams one ROOT per line (a tree is a value, and the line-oriented
+// contract is one value per line — flattening it would destroy the very structure
+// that was asked for).
+func emitTree(a *app.App, nodes []app.TreeNode) error {
+	views := toTreeViews(nodes)
+	switch {
+	case flagNDJSON:
+		for _, v := range views {
+			printNDJSONValue(v)
+		}
+	case flagJSON:
+		printJSON(views)
+	default:
+		if len(views) == 0 {
+			fmt.Fprintln(out, "(no tasks)")
+			return nil
+		}
+		for _, n := range nodes {
+			printTreeNode(a, n, 0)
+		}
+	}
+	return nil
+}
+
+// printTreeNode draws one node and its subtree. Indentation carries the structure
+// (no box-drawing: the output stays greppable and copy-pastable, like every other
+// human view here), and one glyph per node carries the state at a glance:
+//
+//	★  actionable — in a next lane with every dep done; `furrow next` would hand
+//	   you this one. Seeing WHERE in the shape of the work you can pick it up is
+//	   the reason to draw the tree at all.
+//	✓  done
+//	~  parked in a terminal lane that is not done (icebox, waiting)
+//	·  open, but not available: blocked by a dep, or not in a next lane
+//
+// The lane is printed too: a glyph is a summary, not a substitute, and `[ready]`
+// is what greps.
+func printTreeNode(a *app.App, n app.TreeNode, depth int) {
+	line := strings.Repeat("   ", depth) + treeGlyph(a, n) + " " + n.Task.ID + "  [" + n.Task.Status + "]  " + n.Task.Title
+	if len(n.BlockedBy) > 0 {
+		line += "  ← blocked by: " + strings.Join(n.BlockedBy, ", ")
+	}
+	fmt.Fprintln(out, line)
+	for _, c := range n.Children {
+		printTreeNode(a, c, depth+1)
+	}
+}
+
+// treeGlyph classifies a node against the BOARD's lane vocabulary (which lane is
+// done, which are terminal — both configurable), never a hardcoded lane name.
+func treeGlyph(a *app.App, n app.TreeNode) string {
+	switch {
+	case n.Actionable:
+		return "★"
+	case n.Task.Status == a.Cfg.DoneLane:
+		return "✓"
+	case a.Cfg.IsTerminal(n.Task.Status):
+		return "~"
+	default:
+		return "·"
+	}
+}
+
 // taskRefView is one resolved edge (JSON shape): the referenced task's id, title,
 // and lane. A dangling ref (an id naming no task) has an empty title/status. Shared
 // by `dep --list` and `parent --list` — a dep, a parent, and a child are the same
