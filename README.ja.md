@@ -150,6 +150,7 @@ furrow done t-0001
 | `stats` | スコープ内でボードを集計: `total`・`drafts`、および `by_lane`（設定レーン順の完全ヒストグラム。件数 0 のレーンも含む）・`by_repo`・`by_label`（使用語彙＝多い順）。素の `stats` はこの repo の断面、`stats -r ''` は全ボード —— `-l`/`-r` を推測する前に label/repo 語彙を知る呼び出し。`--json`/`--ndjson` は 1 オブジェクト。全 0 のボードでも exit 0。`-s/--status`・`-l/--label`・`-r/--repo` |
 | `board` | アクティブなボードの introspection スナップショットを出す: store パス・discovery `source`（`env`/`local`/`pointer`/`user-config`）・repo スコープ・レーン語彙（`lanes`/`next_lanes`/`default_lane`/`done_lane`/`terminal`）＋ stale/archive の窓＋**スキーマ三つ組**（`schema_version`＝ボードの申告値（0 = 不在または読めない）・`binary_schema_version`・`schema_state`＝`current`/`outdated`/`too-new`/`unreadable`・`writable`）。**エラーを起こさずレーンを知る**手段であり、**版の食い違いでも失敗せず報告する**——他のどのコマンドも開けないボードを診断できる唯一の pre-flight。`--json`（or `--ndjson`）でオブジェクトを出力 |
 | `edit <id>` | `bodies/<id>.md` を `$EDITOR` で開く（非対話ならパスを出力） |
+| `note <id> <text>` | `<text>` を body に新しい段落として追記し、**同時に** タスクの `updated` を進める（1コマンドで）。セッションを跨ぐ経過・停止点・次の一手を残す in-band な手段。`edit` でファイルを直接編集した場合と違い `updated` が正しく進むので、body だけで reconcile 済みのタスクに `lint` の `reconcile-gap` が誤発火しない。`<text>` に `-` を渡すと stdin から読む（複数行・長文用）。`--json` は `{before,after,changed}` に加えて `appended`（追記テキスト）を出す（body だけ動いたときメタの `changed` は `[]`） |
 | `attach <id> <file>` | 画像/動画を `bodies/assets/<id>-*` にコピーし、body に相対 markdown 参照を追記する。画像は埋め込み（`![…]`）・その他媒体はリンク（`[…]`）。衝突しない名前（`…-2`, `…-3`）で既存アセットを上書きしない。body は commit される markdown なので、web アップロード無しに端末だけで attach 全体が git に載る。LFS 非依存。`--json` は `{id, asset, ref, line}` を出力 |
 | `done <id>` | done レーンへ移動し `closed` を打刻 |
 | `move <id> <lane>` | 任意のレーンへ移動 |

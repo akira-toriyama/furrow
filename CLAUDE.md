@@ -16,7 +16,7 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|review|sync|apply|archive|upgrade|lint|config|init`.
+- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|review|sync|apply|archive|upgrade|lint|config|init`.
   `set <id>` combines lane/value/effort/labels in one write (the triage
   shortcut for move+value+effort+label); `dep <id> <dep-id>...` is variadic
   (add/remove several in one write), and `dep <id> --list` is the read-only
@@ -186,7 +186,15 @@ the user-level config. When you work with any furrow store:
   `lint` is the only detector left. One more reason
   the shards are furrow's to write, not yours.
 - `furrow edit <id>` with no TTY **prints the body file path** instead of opening
-  an editor — read/edit that file directly.
+  an editor — read/edit that file directly. But a direct file edit does NOT touch
+  the shard's `updated`, so it goes stale and `lint`'s `reconcile-gap` (a done
+  dep's `closed` vs. `updated`) misfires on a task reconciled only in prose. To
+  record progress/stop-points/next-steps across sessions, prefer **`furrow note
+  <id> "<text>"`**: it appends the text as a new paragraph to the body AND stamps
+  `updated`, in one write (`-` reads the note from stdin for multi-line). Unlike the
+  `apply` annotation path it never dedupes and always advances `updated`, so the
+  time-based lint stays honest. `--json` emits the `{before,after,changed}`
+  envelope plus `appended` (the text), since `changed` tracks metadata only.
 - Exit codes: `0` ok — **including an empty query result** (`ls`/`next`/`revisit`
   matching nothing still succeeded, so `set -e` never trips on "no work") / `1` a
   **specifically requested id** was not found (e.g. `show <id>`), never an empty

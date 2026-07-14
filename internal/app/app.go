@@ -1354,6 +1354,68 @@ func (a *App) EditPath(id string) (string, error) {
 	return p, nil
 }
 
+// AddNote appends text as a new paragraph to a task's body AND stamps Updated,
+// in one call — the body is written first, then the shard. It is the in-band way
+// to record progress / stop-points / next steps across sessions. The two writes
+// are NOT transactional (this per-file-rename store has no cross-file txn), but
+// the ordering is the safe one: if the shard write fails after the body was
+// written, the note is saved without Updated advancing — a partial failure costs
+// a timestamp, never content, and a re-run re-appends and fixes Updated.
+//
+// It differs from AppendBody (the `apply` annotation helper) on both counts,
+// deliberately: AppendBody dedupes an identical line and leaves Updated alone,
+// because a re-run of `apply` for the same PR event must be idempotent. A note
+// is the opposite — a progress note repeating an earlier one is still a distinct
+// event, so it always appends — and it MUST move Updated, because the body is
+// the task's content. Hand-editing the file (via EditPath) does not touch the
+// shard, which lets Updated go stale and makes lint's reconcile-gap (a dep's
+// Closed time vs. Updated) misfire on a task whose progress was recorded only in
+// prose; a note keeps Updated honest, so that check stays trustworthy.
+//
+// NotFound (exit 1) when id names no task; an empty/whitespace-only note is a
+// validation error (exit 2).
+func (a *App) AddNote(id, text string) (*core.Task, error) {
+	text = strings.TrimRight(text, "\n")
+	if strings.TrimSpace(text) == "" {
+		return nil, core.Validationf(id, "note text is empty")
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	body, err := a.Store.LoadBody(id)
+	if err != nil {
+		return nil, err
+	}
+	var b strings.Builder
+	b.WriteString(body)
+	// Separate the new paragraph from existing content with exactly one blank
+	// line, whatever the body's current trailing whitespace.
+	if body != "" {
+		if !strings.HasSuffix(body, "\n") {
+			b.WriteString("\n")
+		}
+		if !strings.HasSuffix(body, "\n\n") {
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString(text)
+	b.WriteString("\n")
+	if err := a.Store.SaveBody(id, b.String()); err != nil {
+		return nil, err
+	}
+	t.Updated = a.Clock.Now()
+	if err := a.Store.Save(idx); err != nil {
+		return nil, err
+	}
+	saved, _ := idx.Find(id)
+	return saved, nil
+}
+
 // cloneIntp returns a copy of an optional int so callers and the store never
 // alias the same *int (Canonicalize clamps in place).
 func cloneIntp(p *int) *int {

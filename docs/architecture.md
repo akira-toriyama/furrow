@@ -634,7 +634,7 @@ A few app-level rules worth stating, all verified against the code:
 Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
 except where noted:
 
-`init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `board`, `edit`, `attach`,
+`init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `board`, `edit`, `note`, `attach`,
 `done`, `move`, `set`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
 `sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`), `schema`, `version`, `ui`,
 `migrate`.
