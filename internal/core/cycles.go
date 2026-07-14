@@ -26,18 +26,47 @@ import (
 // cycle. The walk is deterministic: nodes and each node's deps are visited in
 // sorted order, and the output is sorted by message.
 func CycleProblems(idx *Index) []Problem {
+	return cycleProblems(idx, "dep-cycle", "dependency cycle", "mutually blocking",
+		func(t *Task) []string { return t.Deps })
+}
+
+// ParentCycleProblems is the same rule over the OTHER edge furrow stores: the
+// `parent` hierarchy. Reparent refuses an edge that would close a loop, so — as
+// with deps — the only way one appears is two operators committing the two
+// half-edges on separate shards that git merges silently. It is an error for a
+// sharper reason than deps: a hierarchy cycle has no root, so a task in it belongs
+// to no tree and appears under nothing, and every walker (`parent --list`, a tree
+// view) has to defend itself against a hang instead of trusting the data.
+//
+// `parent` is single-valued, so a node has at most one out-edge and any SCC of
+// size >= 2 is exactly one loop — the same SCC machinery, no special-casing.
+func ParentCycleProblems(idx *Index) []Problem {
+	return cycleProblems(idx, "parent-cycle", "parent cycle", "entangled",
+		func(t *Task) []string {
+			if t.Parent == "" {
+				return nil
+			}
+			return []string{t.Parent}
+		})
+}
+
+// cycleProblems is the shared engine: build the adjacency from `edges`, decompose
+// into SCCs, and report each cyclic region once. Sharing it is what keeps the two
+// rules from drifting — the graph is the same shape, only the edge and the words
+// differ.
+func cycleProblems(idx *Index, code, label, knot string, edges func(*Task) []string) []Problem {
 	ids := make(map[string]bool, len(idx.Tasks))
 	for i := range idx.Tasks {
 		ids[idx.Tasks[i].ID] = true
 	}
-	// Adjacency limited to known ids, each node's deps sorted for determinism.
+	// Adjacency limited to known ids, each node's edges sorted for determinism.
 	adj := make(map[string][]string, len(idx.Tasks))
 	order := make([]string, 0, len(idx.Tasks))
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
 		order = append(order, t.ID)
 		var outs []string
-		for _, d := range t.Deps {
+		for _, d := range edges(t) {
 			if ids[d] {
 				outs = append(outs, d)
 			}
@@ -58,14 +87,14 @@ func CycleProblems(idx *Index) []Problem {
 			member[id] = true
 		}
 		cyc := representativeCycle(scc[0], adj, member)
-		msg := fmt.Sprintf("dependency cycle: %s -> %s", strings.Join(cyc, " -> "), cyc[0])
+		msg := fmt.Sprintf("%s: %s -> %s", label, strings.Join(cyc, " -> "), cyc[0])
 		// When the region is bigger than the representative path, the path alone
 		// would leave some entangled tasks unnamed — list the whole knot so an
-		// operator sees every mutually-blocked task, not just one example loop.
+		// operator sees every task caught in it, not just one example loop.
 		if len(cyc) < len(scc) {
-			msg += fmt.Sprintf(" (mutually blocking: %s)", strings.Join(scc, ", "))
+			msg += fmt.Sprintf(" (%s: %s)", knot, strings.Join(scc, ", "))
 		}
-		out = append(out, Problem{SevError, "dep-cycle", scc[0], msg})
+		out = append(out, Problem{SevError, code, scc[0], msg})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Msg < out[j].Msg })
 	return out

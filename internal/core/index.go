@@ -90,6 +90,58 @@ func (idx *Index) Dependents(id string) []Task {
 	return out
 }
 
+// Children returns the tasks whose Parent is id — the reverse edge of the
+// hierarchy — in index (canonical) order. It is the parent twin of Dependents and
+// the shared helper behind `furrow parent --list` and any hierarchy view, so the
+// relation is computed in ONE place. An unknown id simply has no children.
+func (idx *Index) Children(id string) []Task {
+	var out []Task
+	for i := range idx.Tasks {
+		if idx.Tasks[i].Parent == id {
+			out = append(out, idx.Tasks[i])
+		}
+	}
+	return out
+}
+
+// Ancestors returns id's parent chain, nearest first (its parent, that parent's
+// parent, …), following only edges to tasks that exist.
+//
+// Cycle-SAFE by construction, and that is not paranoia: a parent cycle cannot be
+// created through the app (Reparent refuses one), but two operators can commit the
+// two half-edges on separate shards that git merges silently — the same hole
+// lint's parent-cycle rule backstops. A walker that trusted the data would hang;
+// this one stops the first time it revisits an id.
+func (idx *Index) Ancestors(id string) []string {
+	var out []string
+	seen := map[string]bool{id: true}
+	for cur := id; ; {
+		t, i := idx.Find(cur)
+		if i < 0 || t.Parent == "" {
+			return out
+		}
+		p := t.Parent
+		if seen[p] {
+			return out // a cycle merged in from elsewhere: report what we walked, never loop
+		}
+		seen[p] = true
+		out = append(out, p)
+		cur = p
+	}
+}
+
+// HasAncestor reports whether ancestor sits somewhere up id's parent chain. It is
+// the predicate that keeps re-parenting acyclic: setting id's parent to p closes a
+// cycle exactly when id is already an ancestor of p.
+func (idx *Index) HasAncestor(id, ancestor string) bool {
+	for _, a := range idx.Ancestors(id) {
+		if a == ancestor {
+			return true
+		}
+	}
+	return false
+}
+
 // DependsOn reports whether task `a` reaches task `b` by following dependency
 // edges transitively (a depends on b, directly or indirectly). It underpins
 // acyclic dep edits: adding a->b is safe only when b does not already depend on

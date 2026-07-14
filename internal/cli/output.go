@@ -277,10 +277,11 @@ func printSearchTable(hits []app.SearchHit) {
 	}
 }
 
-// depRefView is one resolved dependency edge (JSON shape): the referenced
-// task's id, title, and lane. A dangling ref (an id naming no task) has an empty
-// title/status.
-type depRefView struct {
+// taskRefView is one resolved edge (JSON shape): the referenced task's id, title,
+// and lane. A dangling ref (an id naming no task) has an empty title/status. Shared
+// by `dep --list` and `parent --list` — a dep, a parent, and a child are the same
+// shape, and one view keeps them reading the same.
+type taskRefView struct {
 	ID     string `json:"id"`
 	Title  string `json:"title"`
 	Status string `json:"status"`
@@ -290,16 +291,27 @@ type depRefView struct {
 // directions — depends_on (what it waits on) and blocks (what waits on it).
 // Both arrays are always present (empty -> [], never null).
 type depListView struct {
-	ID        string       `json:"id"`
-	Title     string       `json:"title"`
-	DependsOn []depRefView `json:"depends_on"`
-	Blocks    []depRefView `json:"blocks"`
+	ID        string        `json:"id"`
+	Title     string        `json:"title"`
+	DependsOn []taskRefView `json:"depends_on"`
+	Blocks    []taskRefView `json:"blocks"`
 }
 
-func toDepRefViews(refs []app.DepRef) []depRefView {
-	out := make([]depRefView, 0, len(refs))
+// parentListView is `parent --list`'s JSON object: the subject task plus both
+// directions of the hierarchy edge. `parent` is null for a top-level task (0-or-1,
+// so a null says "no parent" unambiguously); `children` is 0..N and is always an
+// array, empty -> [] never null.
+type parentListView struct {
+	ID       string        `json:"id"`
+	Title    string        `json:"title"`
+	Parent   *taskRefView  `json:"parent"`
+	Children []taskRefView `json:"children"`
+}
+
+func toTaskRefViews(refs []app.TaskRef) []taskRefView {
+	out := make([]taskRefView, 0, len(refs))
 	for _, r := range refs {
-		out = append(out, depRefView{ID: r.ID, Title: r.Title, Status: r.Status})
+		out = append(out, taskRefView{ID: r.ID, Title: r.Title, Status: r.Status})
 	}
 	return out
 }
@@ -313,22 +325,46 @@ func emitDepList(r app.DepListResult) error {
 		emitObject(depListView{
 			ID:        r.ID,
 			Title:     r.Title,
-			DependsOn: toDepRefViews(r.DependsOn),
-			Blocks:    toDepRefViews(r.Blocks),
+			DependsOn: toTaskRefViews(r.DependsOn),
+			Blocks:    toTaskRefViews(r.Blocks),
 		})
 		return nil
 	}
 	fmt.Fprintf(out, "%s  %s\n", r.ID, r.Title)
 	fmt.Fprintf(out, "depends on (%d):\n", len(r.DependsOn))
-	printDepRefs(r.DependsOn)
+	printTaskRefs(r.DependsOn)
 	fmt.Fprintf(out, "blocks (%d):\n", len(r.Blocks))
-	printDepRefs(r.Blocks)
+	printTaskRefs(r.Blocks)
 	return nil
 }
 
-// printDepRefs prints one dependency edge per line as `id  [lane]  title`; a
-// dangling ref (empty status) shows `[?]`. Plain so it greps and copies cleanly.
-func printDepRefs(refs []app.DepRef) {
+// emitParentList renders `parent --list` — the hierarchy twin of emitDepList, in
+// the same two-labelled-sections shape so the two reads look alike.
+func emitParentList(r app.ParentListResult) error {
+	if jsonMode() {
+		v := parentListView{ID: r.ID, Title: r.Title, Children: toTaskRefViews(r.Children)}
+		if r.Parent != nil {
+			p := taskRefView{ID: r.Parent.ID, Title: r.Parent.Title, Status: r.Parent.Status}
+			v.Parent = &p
+		}
+		emitObject(v)
+		return nil
+	}
+	fmt.Fprintf(out, "%s  %s\n", r.ID, r.Title)
+	fmt.Fprintln(out, "parent:")
+	if r.Parent == nil {
+		fmt.Fprintln(out, "  (none — top-level)")
+	} else {
+		printTaskRefs([]app.TaskRef{*r.Parent})
+	}
+	fmt.Fprintf(out, "children (%d):\n", len(r.Children))
+	printTaskRefs(r.Children)
+	return nil
+}
+
+// printTaskRefs prints one edge per line as `id  [lane]  title`; a dangling ref
+// (empty status) shows `[?]`. Plain so it greps and copies cleanly.
+func printTaskRefs(refs []app.TaskRef) {
 	if len(refs) == 0 {
 		fmt.Fprintln(out, "  (none)")
 		return
@@ -336,7 +372,7 @@ func printDepRefs(refs []app.DepRef) {
 	for _, r := range refs {
 		st := r.Status
 		if st == "" {
-			st = "?" // a dangling ref: an id in Deps that names no task
+			st = "?" // a dangling ref: an id naming no task
 		}
 		fmt.Fprintf(out, "  %s  [%s]  %s\n", r.ID, st, r.Title)
 	}

@@ -12,7 +12,10 @@ func newLintCmd() *cobra.Command {
 		Use:   "lint",
 		Short: "Check index<->body consistency, lanes, deps, links, assets, and config",
 		Long: "Validate the store: id shape and uniqueness, status lanes, body path, the\n" +
-			"index<->body 1:1 mapping, dep/parent references, dependency cycles (error),\n" +
+			"index<->body 1:1 mapping, dep/parent references, dependency and hierarchy\n" +
+			"cycles — dep-cycle / parent-cycle (both error; a parent cycle has no root, so\n" +
+			"every task in it belongs to no tree), an open task still under a done parent\n" +
+			"— parent-done (warn: the epic closed with work left under it),\n" +
 			"git conflict markers left in a body — conflict-marker, a half-merged progress\n" +
 			"record (error; `furrow sync` refuses to commit one, this catches the ones\n" +
 			"already on the board), dangling [[id]] body links (warn), reconcile gaps — an open task whose done\n" +
