@@ -31,6 +31,10 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// two half-edges on separate shards can slip one in silently (the tasks then
 	// wait on each other forever and never surface in `next`). lint is the backstop.
 	ps = append(ps, core.CycleProblems(idx)...)
+	// The same backstop on the hierarchy edge. Reparent refuses a loop, but a git
+	// merge of two half-edges can still close one — and a parent cycle has no root,
+	// so every task in it belongs to no tree and appears under nothing.
+	ps = append(ps, core.ParentCycleProblems(idx)...)
 
 	// Reconcile gaps (warn): a non-terminal task whose done dependency closed
 	// after the task was last touched. This is the structural backstop for
@@ -52,6 +56,10 @@ func (a *App) Lint() ([]core.Problem, error) {
 		}
 	}
 	ps = append(ps, core.StaleDepProblems(idx, a.Cfg.Terminal, doneIDs)...)
+	// The hierarchy twin of the reconcile gap: an open task still hanging under a
+	// DONE parent — an epic closed with work left under it. Nothing reported this
+	// before, and until `furrow parent` there was no way to fix it once you noticed.
+	ps = append(ps, core.ParentDoneProblems(idx, a.Cfg.Terminal, doneIDs)...)
 
 	// The same unknown-key sweep over the OTHER two machine-written file kinds.
 	// The passthrough parks unknown keys in repo review shards and meta.json too,

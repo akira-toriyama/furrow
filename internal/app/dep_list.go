@@ -2,11 +2,14 @@ package app
 
 import "github.com/akira-toriyama/furrow/internal/core"
 
-// DepRef is a dependency edge resolved for legibility: the referenced task's id
-// plus its title and lane, so a reader (agent or human) sees what an edge points
-// at without a second lookup. A dangling ref (an id in Deps that names no task —
-// lint's dangling-dep) resolves to the id with an empty Title and Status.
-type DepRef struct {
+// TaskRef is an EDGE resolved for legibility: the referenced task's id plus its
+// title and lane, so a reader (agent or human) sees what an edge points at without
+// a second lookup. It is edge-agnostic on purpose — a dep, a parent, and a child
+// are all "a task this one is wired to", and one shape for all three is what keeps
+// `dep --list` and `parent --list` reading the same. A dangling ref (an id naming
+// no task — lint's dep-missing / parent-missing) resolves to the id with an empty
+// Title and Status, so a broken edge is still reported rather than vanishing.
+type TaskRef struct {
 	ID     string
 	Title  string
 	Status string
@@ -19,8 +22,8 @@ type DepRef struct {
 type DepListResult struct {
 	ID        string
 	Title     string
-	DependsOn []DepRef
-	Blocks    []DepRef
+	DependsOn []TaskRef
+	Blocks    []TaskRef
 }
 
 // DepList resolves a task's dependency neighborhood in both directions in one
@@ -38,23 +41,23 @@ func (a *App) DepList(id string) (DepListResult, error) {
 	if i < 0 {
 		return DepListResult{}, core.NotFound(id)
 	}
-	res := DepListResult{ID: t.ID, Title: t.Title, DependsOn: []DepRef{}, Blocks: []DepRef{}}
+	res := DepListResult{ID: t.ID, Title: t.Title, DependsOn: []TaskRef{}, Blocks: []TaskRef{}}
 	for _, depID := range t.Deps {
-		res.DependsOn = append(res.DependsOn, resolveDepRef(idx, depID))
+		res.DependsOn = append(res.DependsOn, resolveTaskRef(idx, depID))
 	}
 	for _, dt := range idx.Dependents(id) {
-		res.Blocks = append(res.Blocks, DepRef{ID: dt.ID, Title: dt.Title, Status: dt.Status})
+		res.Blocks = append(res.Blocks, TaskRef{ID: dt.ID, Title: dt.Title, Status: dt.Status})
 	}
 	return res, nil
 }
 
-// resolveDepRef looks up id in the index, returning its id+title+status. A
+// resolveTaskRef looks up id in the index, returning its id+title+status. A
 // dangling id (no such task) yields the id alone with an empty title/status, so
-// the edge is still reported (faithful to the shard) and lint's dangling-dep
-// finding is the place that flags it as a problem.
-func resolveDepRef(idx *core.Index, id string) DepRef {
+// the edge is still reported (faithful to the shard) and lint's dep-missing /
+// parent-missing finding is the place that flags it as a problem.
+func resolveTaskRef(idx *core.Index, id string) TaskRef {
 	if t, i := idx.Find(id); i >= 0 {
-		return DepRef{ID: t.ID, Title: t.Title, Status: t.Status}
+		return TaskRef{ID: t.ID, Title: t.Title, Status: t.Status}
 	}
-	return DepRef{ID: id}
+	return TaskRef{ID: id}
 }

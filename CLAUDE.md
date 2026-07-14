@@ -16,7 +16,7 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|attach|done|move|set|reorder|retitle|value|effort|check|dep|label|repo|review|sync|apply|archive|upgrade|lint|config|init`.
+- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|review|sync|apply|archive|upgrade|lint|config|init`.
   `set <id>` combines lane/value/effort/labels in one write (the triage
   shortcut for move+value+effort+label); `dep <id> <dep-id>...` is variadic
   (add/remove several in one write), and `dep <id> --list` is the read-only
@@ -24,6 +24,17 @@ the user-level config. When you work with any furrow store:
   id+title+lane, one `--json` object — so "what waits on this?" is a command,
   not a full-board dump; `archive <id>...` retires specific done
   tasks by id (vs the age sweep).
+- **`parent <id> <parent-id>` moves a task in the HIERARCHY; `--rm` detaches it
+  (top-level); `--list` is its read-only both-directions view (`parent`, which is
+  `null` for a top-level task, and `children`, `[]` when none — same shape as `dep
+  --list`).** Before it, `parent` was write-once at `add --parent`, so re-filing a
+  task meant hand-editing a shard — the thing this file tells you never to do; if
+  you ever reached for `sed` on a `tasks/*.json`, this is the command you wanted.
+  Re-parenting is acyclic (missing parent / self / a loop = exit 2), and a **done**
+  parent is deliberately allowed — filing a leftover under the epic it came from is
+  a legitimate record. `lint` names the two states that follow: `parent-cycle`
+  (error, the git-merge backstop) and `parent-done` (warn — an open task under a
+  closed epic).
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
   issue-draft analogue). `-r` is the scope control on reads: a full
@@ -49,10 +60,11 @@ the user-level config. When you work with any furrow store:
   `lint` streams one problem per line — so a line-oriented reader never gets a
   silent human-prose degrade. Filter reads with `--status/-s`, `--label/-l`,
   `--repo/-r`, `--limit/-n` — so you rarely need jq. Each `lint` problem carries
-  a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `orphan-asset`,
+  a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `parent-cycle`,
+  `parent-done`, `orphan-asset`,
   `conflict-marker`, `unknown-shard-key`, …) — branch on it, not the message, since the `id` field
   is contextual (a task id, an asset name, an `owner/repo`, `meta`, or `config`).
-  Mutations (`done|move|set|reorder|value|effort|check|dep|label|repo`) with
+  Mutations (`done|move|set|reorder|value|effort|check|dep|parent|label|repo`) with
   `--json` emit
   `{before, after, changed}`; an out-of-range `value`/`effort` (also via `set`/
   `add`) clamps to 1..5 and is signaled — a `clamped {requested, stored}` key in

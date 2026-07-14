@@ -612,6 +612,21 @@ except where noted:
 - **`dep`** adds or removes dependency edges on an existing task (`--rm`); it is
   variadic (`dep a b c`), applying/removing several in one all-or-nothing write.
   Adding is acyclic (rejects self- and cycle-creating edges) and idempotent.
+- **`parent`** is the same command shape for the OTHER edge furrow stores — the
+  hierarchy: `parent <id> <parent-id>` files a task under another, `--rm` detaches
+  it to top-level, and `--list` reads both directions (the parent, `null` when
+  top-level; the children, `[]` when none) resolved to id+title+lane, exactly like
+  `dep --list`. It exists because `parent` was the one persisted field with no
+  command: settable at `add --parent` and never again, so the only way to re-file a
+  task was to hand-edit a machine-written shard. Re-parenting is acyclic (`core.
+  Index.HasAncestor` is the predicate: setting id's parent to p closes a loop
+  exactly when id is already p's ancestor), and it deliberately ALLOWS a done
+  parent — refusing would make "this leftover belongs to the epic that shipped"
+  unrepresentable. The two states that follow are lint's: `parent-cycle` (error;
+  `core.ParentCycleProblems`, which shares the SCC engine with `dep-cycle`) and
+  `parent-done` (warn; `core.ParentDoneProblems`, the hierarchy twin of the
+  reconcile gap). Every hierarchy walker (`core.Index.Ancestors`) carries a visited
+  set, because a git merge of two half-edges can close a cycle behind the app.
 - **`repo`** attaches/detaches `owner/repo` values on a task (`--add`/`--rm`,
   both repeatable); short names resolve against the board's known repos or
   fail with `candidates`. A task with no repos is a **draft** (`ls --drafts`).

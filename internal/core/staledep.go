@@ -27,6 +27,42 @@ import (
 // an unknown or not-yet-done dep contributes nothing (Validate reports unknown
 // deps separately). Findings are one per (task, stale dep), matching Validate's
 // per-dep style, in a deterministic order (by task id, then message).
+// ParentDoneProblems is reconcile-gap's twin on the OTHER edge: an open task whose
+// PARENT is already done. The epic was closed with work still under it — either the
+// child belongs somewhere else now, or the parent was closed too early.
+//
+// Deps and parent both express "this belongs to that", and the house convention
+// wires an epic's slices as deps — which is why reconcile-gap only ever looked at
+// deps, and why the hierarchy could rot unwatched: nothing reported a done epic
+// with live children, and there was no way to re-parent them even once you noticed
+// (that is the gap `furrow parent` closes). Now that re-parenting is one command,
+// the state is worth naming.
+//
+// Deliberately NOT time-gated the way reconcile-gap is: a stale dep is a moment
+// (the dep closed after you last looked), while a live child under a done parent is
+// a STANDING misfiling — it does not become correct by touching the child. It stays
+// a warn: the data is intact, and closing an epic ahead of its tail is a legitimate
+// (if untidy) thing to do. It clears when the child closes, moves to a terminal
+// lane, is re-parented, or the parent is reopened. An unknown parent is skipped —
+// Validate's parent-missing already owns that.
+func ParentDoneProblems(idx *Index, terminal, doneIDs map[string]bool) []Problem {
+	var out []Problem
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if t.Parent == "" || terminal[t.Status] {
+			continue
+		}
+		if !doneIDs[t.Parent] {
+			continue
+		}
+		out = append(out, Problem{SevWarn, "parent-done", t.ID, fmt.Sprintf(
+			"parent %s is done but this task is still open — the epic closed with work left under it; re-parent it (`furrow parent %s <new-parent>` or `--rm`) or reopen %s",
+			t.Parent, t.ID, t.Parent)})
+	}
+	sort.SliceStable(out, func(a, b int) bool { return out[a].ID < out[b].ID })
+	return out
+}
+
 func StaleDepProblems(idx *Index, terminal, doneIDs map[string]bool) []Problem {
 	closedOf := make(map[string]*time.Time, len(idx.Tasks))
 	for i := range idx.Tasks {
