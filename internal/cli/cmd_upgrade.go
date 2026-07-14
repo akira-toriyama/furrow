@@ -45,7 +45,7 @@ func newUpgradeCmd() *cobra.Command {
 			case flagNDJSON, flagJSON:
 				emitObject(rep)
 			default:
-				printUpgradeHuman(rep)
+				printUpgradeHuman(rep, a.Cfg.Standalone)
 			}
 			return nil
 		},
@@ -54,7 +54,12 @@ func newUpgradeCmd() *cobra.Command {
 	return cmd
 }
 
-func printUpgradeHuman(rep *app.UpgradeReport) {
+// printUpgradeHuman renders the upgrade preview/result. On a standalone board
+// (config `standalone = true`) it drops the shared-board flag-day checklist and
+// the `furrow sync` publish line — a single-machine board with no remote has no
+// pinned CI to coordinate and nothing to publish, so that guidance only
+// misdirects. Behavior is identical; only the wording differs.
+func printUpgradeHuman(rep *app.UpgradeReport, standalone bool) {
 	if !rep.Changed {
 		fmt.Fprintf(out, "board is already schema v%d — nothing to do\n", rep.To)
 		return
@@ -67,6 +72,12 @@ func printUpgradeHuman(rep *app.UpgradeReport) {
 		fmt.Fprintf(out, "%s\n  schema: %s -> v%d (%d shard(s) re-serialized)\n", s.Path, from, s.To, s.Tasks)
 	}
 	if !rep.Applied {
+		if standalone {
+			fmt.Fprint(out, "\nstandalone board — no CI or other machines depend on it, so there is no\n")
+			fmt.Fprint(out, "flag day to coordinate. Back up the board dir if you like, then apply.\n")
+			fmt.Fprint(out, "\npreview — re-run with --yes to apply\n")
+			return
+		}
 		fmt.Fprintf(out, "\nFLAG DAY — after --yes, only furrow releases that know schema v%d can write this\n", rep.To)
 		fmt.Fprint(out, "board. Anything pinned to an older release loses it (that is how the fleet's\n")
 		fmt.Fprint(out, "task-status CI broke on 2026-07-13). Do this first:\n")
@@ -74,6 +85,10 @@ func printUpgradeHuman(rep *app.UpgradeReport) {
 		fmt.Fprint(out, "  2. bump every caller's sync-task-status.yml@vX.Y.Z pin to it\n")
 		fmt.Fprint(out, "  3. re-run with --yes, then `furrow sync`\n")
 		fmt.Fprint(out, "\npreview — re-run with --yes to apply\n")
+		return
+	}
+	if standalone {
+		fmt.Fprint(out, "\nupgraded.\n")
 		return
 	}
 	fmt.Fprint(out, "\nupgraded — run `furrow sync` to publish it\n")

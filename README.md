@@ -52,6 +52,10 @@ A from-source build reports its version as `dev`, with the build commit/date fil
   `.furrow/` next to the code (`furrow init` and go). Fully supported; the
   Quickstart below runs this way, and everything except the board scoping
   works identically on a central board.
+- **Standalone (local, no remote)** — a board you keep on one machine, under
+  its own git, and never push: no `furrow sync`, no CI. The common shape on a
+  work machine where you can't create a shared tracker repo — see
+  [Standalone](#standalone-a-local-board-with-no-remote).
 
 ---
 
@@ -158,6 +162,8 @@ furrow board                # schema:   v3 (board) / v4 (binary) — READ-ONLY: 
 furrow upgrade              # 3. preview: which stores change, and how many shards
 furrow upgrade --yes && furrow sync
 ```
+
+On a **standalone board** (`standalone = true`, see [Standalone](#standalone-a-local-board-with-no-remote)) there is no fleet to coordinate, so `furrow upgrade` skips the flag-day checklist and the `furrow sync` step — a single-machine board has no pinned CI and no remote. The gate itself is unchanged; only the guidance differs.
 
 `furrow board` reports the whole triple (`schema_version`, `binary_schema_version`, `schema_state` = `current`/`outdated`/`too-new`/`unreadable`, `writable`) and — by design — **never fails on a mismatch**: it is the one command that still answers when board and binary disagree, which is why the bundled task-status workflow pre-flights it and fails with one legible error instead of N mysterious "task not found"s. `furrow lint` warns (`schema-outdated`) while a board waits to be upgraded; it does not error, because a read-only board is the legitimate middle of a flag day.
 
@@ -565,11 +571,44 @@ collision to **compose** — keep the existing body and add the furrow-lint bloc
 not to replace. Each hook also **skips cleanly** when `furrow` is absent from
 `PATH` or the repo has no `.furrow/`, so it never wedges a checkout.
 
+## Standalone: a local board with no remote
+
+The common setup on a work machine, where you can't create a shared tracker repo: keep a board on **one machine, under its own git, never pushed** — no `furrow sync`, no CI. Everything in [The store](#the-store) works identically; you just don't sync. Two small pieces of config make it seamless for you and a coding agent.
+
+1. **Give the board its own git repo, ignored by the code repo.** A workspace dir beside the code, with its own `git init` and no remote, keeps the board's history out of the code repo:
+
+   ```
+   <code-repo>/                     # has its own remote (e.g. github.com/acme/app)
+   ├── .git/info/exclude    →  claude_workspace/     # keep the board out of the code repo
+   └── claude_workspace/            # its own `git init`, no remote, never pushed
+       └── .furrow/
+           ├── config.toml          # standalone = true
+           └── meta.json, tasks/, bodies/
+   ```
+
+2. **Register it in your user-level config so it resolves from inside the checkout.** A board in a subdirectory isn't found by walking up from the code (that finds the *code* repo's git), so scope it explicitly — the same `[[board]]` mechanism as a [central board](#user-level-config-no-per-repo-file):
+
+   ```toml
+   # ~/.config/furrow/config.toml
+   [[board]]
+   path   = "/abs/path/to/<code-repo>/claude_workspace/.furrow"
+   scopes = ["/abs/path/to/<code-repo>"]   # `furrow` run anywhere under here uses this board
+   repo   = "auto"                          # auto-tag new tasks with the checkout's owner/repo
+   ```
+
+Then set **`standalone = true`** in the board's `config.toml` (see [Configuration](#configuration)). It changes **only wording, never behavior**: `furrow upgrade` drops the shared-board flag-day checklist and the "run `furrow sync` to publish" line — a single-machine board has no pinned CI to coordinate and no remote to publish to. The write gate, schema, and on-disk format are byte-for-byte identical to a shared board.
+
+A fully separate directory (e.g. `~/furrow-boards/app/.furrow`, outside the code repo) works too — same two-config setup, just a different `path`/`scopes`.
+
+---
+
 ## Configuration
 
 `.furrow/config.toml` is the one human-edited file in the store. furrow only **reads** it (it never rewrites it) and applies a **clamp-don't-reject** policy: unknown keys are ignored and out-of-range values fall back to a safe default with a warning surfaced by `furrow lint` — so a typo can never break the tool.
 
 ```toml
+# standalone = false              # a local single-machine board (no remote / `furrow sync` / CI);
+                                  # when true, `furrow upgrade` drops the shared-board flag-day wording
 [lanes]
 # The status enum AND the top->bottom sort rank.
 order   = ["inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"]
@@ -607,6 +646,8 @@ wip    = "ls -s in-progress"       #   the remaining args append, so all existin
 ```
 
 A board `[alias]` names a frequent command string; `furrow <name> <extra args>` expands it git-style (the alias tokens replace the name, the rest of the argv is appended), so every flag, board scope, and auto-filter composes for free. It lives in the **board** config (not the user-level one), so it syncs with the board and every machine/agent shares it. A real command always wins — an alias that shadows a builtin (`ls`, `next`, …) is inert and `furrow lint` flags it (`alias-shadow`); a blank alias value is dropped with a clamp warning. Put global flags *after* the alias (`furrow triage --json`), as with git.
+
+`standalone = true` marks a local single-machine board (no remote / `furrow sync` / CI). It changes **only wording** — never behavior, the schema gate, or the on-disk format: `furrow upgrade` drops the shared-board flag-day checklist and the `furrow sync` publish line, which would only misdirect a solo operator with no fleet to coordinate. Default `false` (shared board). See [Standalone](#standalone-a-local-board-with-no-remote).
 
 `done` stamps `closed`; moving a task *out* of the done lane clears it. Other terminal lanes (e.g. `icebox` — parked, not finished; `waiting` — the GTD *Waiting-For* lane for work delegated or blocked on someone external) do **not** stamp `closed`, which is why parked tasks are never archived.
 

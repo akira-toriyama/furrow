@@ -51,6 +51,11 @@ type raw struct {
 	// Alias is the board-level [alias] table: name -> a command string that
 	// `furrow <name> …` expands to, git-style. A map decodes any [alias] key.
 	Alias map[string]string `toml:"alias"`
+	// Standalone marks a local single-machine board (no remote / no `furrow
+	// sync` / no CI). A pointer so "absent" (the shared-board default) is
+	// distinguishable; any bool value is accepted (clamp-don't-reject — a bool
+	// has no out-of-range value).
+	Standalone *bool `toml:"standalone"`
 }
 
 // Load reads config.toml at path and returns the effective config plus any
@@ -220,6 +225,12 @@ func fromRaw(r raw) (*Config, []string, error) {
 			c.Alias = map[string]string{}
 		}
 		c.Alias[name] = cmd
+	}
+
+	// standalone: absent -> false (shared board, the default). A bool has no
+	// out-of-range value, so there is nothing to clamp or warn about.
+	if r.Standalone != nil {
+		c.Standalone = *r.Standalone
 	}
 
 	c.compile()

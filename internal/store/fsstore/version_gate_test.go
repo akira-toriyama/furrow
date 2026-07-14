@@ -44,7 +44,7 @@ func TestVersionGateRefusesNewerBoard(t *testing.T) {
 	if got := core.ExitCode(err); got != int(core.CodeInternal) {
 		t.Errorf("Load exit code = %d, want %d", got, core.CodeInternal)
 	}
-	if !strings.Contains(err.Error(), "update the binary") {
+	if !strings.Contains(err.Error(), "update furrow") {
 		t.Errorf("Load error should say the fix: %q", err.Error())
 	}
 

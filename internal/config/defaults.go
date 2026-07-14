@@ -88,6 +88,16 @@ type Config struct {
 	// first) and flagged by lint.
 	Alias map[string]string
 
+	// Standalone marks a board used on a single machine with no remote, no
+	// `furrow sync`, and no CI. It changes only USER-FACING GUIDANCE — never
+	// behavior, the schema gate, or the on-disk format: `furrow upgrade` drops the
+	// shared-board flag-day / pinned-CI checklist and the `furrow sync` publish
+	// line that misdirect a standalone operator. (The write-block error itself is
+	// CI-agnostic for every board; it just points at `furrow upgrade`.) Default
+	// false = shared-board behavior. Declared in config.toml (not meta.json), so it
+	// needs no schema bump.
+	Standalone bool
+
 	idPattern *regexp.Regexp  // compiled from IDPrefix, cached
 	nextSet   map[string]bool // membership set built from NextLanes
 }

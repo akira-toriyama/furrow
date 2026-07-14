@@ -59,6 +59,31 @@ func writeTOML(t *testing.T, body string) string {
 	return p
 }
 
+// standalone is the local single-machine opt-in: absent -> false (shared board,
+// the default), and a bool has no out-of-range value so it never warns.
+func TestStandaloneParsing(t *testing.T) {
+	if c, _, err := Load(writeTOML(t, "")); err != nil {
+		t.Fatal(err)
+	} else if c.Standalone {
+		t.Errorf("absent standalone must default to false (shared board)")
+	}
+
+	c, warn, err := Load(writeTOML(t, "standalone = true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Standalone {
+		t.Errorf("standalone = true must parse as true")
+	}
+	if len(warn) != 0 {
+		t.Errorf("a valid standalone bool must not warn: %v", warn)
+	}
+
+	if c, _, _ := Load(writeTOML(t, "standalone = false\n")); c.Standalone {
+		t.Errorf("standalone = false must parse as false")
+	}
+}
+
 func TestLoadMissingIsDefault(t *testing.T) {
 	c, warn, err := Load(filepath.Join(t.TempDir(), "nope.toml"))
 	if err != nil {

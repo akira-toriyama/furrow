@@ -94,7 +94,10 @@ func CheckSchemaVersion(v int) error {
 		return &Error{
 			Code: CodeInternal,
 			ID:   "schema-too-new",
-			Msg: fmt.Sprintf("board is schema v%d; this furrow knows only v%d — update the binary (in CI: bump the sync-task-status.yml@vX.Y.Z pin)",
+			// Message is deliberately CI-agnostic: core is pure and must not name a
+			// specific CI workflow. The presentation layer (which can read config)
+			// adds any shared-board / pinned-CI guidance.
+			Msg: fmt.Sprintf("board is schema v%d; this furrow knows only v%d — update furrow",
 				v, SchemaVersion),
 			Details: map[string]any{"board_schema": v, "binary_schema": SchemaVersion},
 		}
@@ -123,7 +126,11 @@ func CheckWritable(v int) error {
 		return &Error{
 			Code: CodeValidation,
 			ID:   "schema-upgrade-required",
-			Msg: fmt.Sprintf("board is schema v%d but this furrow writes v%d; an ordinary write never raises a board's layout — run `furrow upgrade` (a flag day: release furrow and bump every caller's sync-task-status.yml pin FIRST, or their pinned CI loses the board)",
+			// Message is deliberately CI-agnostic: core is pure and must not name a
+			// specific CI workflow. It just points at `furrow upgrade`, which is
+			// where the standalone-vs-shared guidance (flag-day checklist vs a plain
+			// apply) actually differs — the presentation layer reads config there.
+			Msg: fmt.Sprintf("board is schema v%d but this furrow writes v%d; an ordinary write never raises a board's layout — run `furrow upgrade`",
 				v, SchemaVersion),
 			Details: map[string]any{"board_schema": v, "binary_schema": SchemaVersion},
 		}

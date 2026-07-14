@@ -156,3 +156,69 @@ func TestUpgradeCLIPreviewsThenApplies(t *testing.T) {
 		t.Errorf("a current board = %v, want changed:false", rep)
 	}
 }
+
+// setStandalone marks the active board standalone by hand-writing its
+// config.toml — the same one-line edit the docs tell a single-machine operator
+// to make. Clamp-don't-reject fills every other key with its default.
+func setStandalone(t *testing.T) {
+	t.Helper()
+	cfg := filepath.Join(os.Getenv(app.EnvDir), "config.toml")
+	if err := os.WriteFile(cfg, []byte("standalone = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// On a standalone board `furrow upgrade` drops the shared-board flag-day
+// checklist and the `furrow sync` publish line: a single-machine board has no
+// pinned CI to coordinate and no remote to publish to, so that guidance only
+// misdirects. The gate itself is unchanged — the wording is all that differs.
+func TestStandaloneUpgradeDropsFlagDay(t *testing.T) {
+	initStore(t)
+	setStandalone(t)
+	setBoardSchema(t, "3")
+
+	out, code := run(t, "upgrade")
+	if code != 0 {
+		t.Fatalf("standalone upgrade preview: exit %d\n%s", code, out)
+	}
+	if strings.Contains(out, "FLAG DAY") || strings.Contains(out, "sync-task-status.yml") {
+		t.Errorf("a standalone board has no flag day / CI pins to coordinate:\n%s", out)
+	}
+	if !strings.Contains(out, "standalone board") || !strings.Contains(out, "--yes") {
+		t.Errorf("standalone preview must say it is standalone and how to apply:\n%s", out)
+	}
+
+	// Completion (human) drops the `furrow sync` publish line — nothing to publish.
+	out, code = run(t, "upgrade", "--yes")
+	if code != 0 {
+		t.Fatalf("standalone upgrade --yes: exit %d\n%s", code, out)
+	}
+	if strings.Contains(out, "furrow sync") {
+		t.Errorf("a standalone board has nothing to publish:\n%s", out)
+	}
+	if !strings.Contains(out, "upgraded") {
+		t.Errorf("completion must confirm the upgrade:\n%s", out)
+	}
+}
+
+// The write-block error (schema-upgrade-required) is now CI-agnostic: it no
+// longer carries the sync-task-status.yml / flag-day narrative that misled a
+// standalone operator (who has no CI to coordinate). It simply points at `furrow
+// upgrade`, which is where the board-type guidance — shared flag day vs
+// standalone — now lives (see TestStandaloneUpgradeDropsFlagDay). This holds
+// regardless of board type; only `furrow upgrade`'s own output differs.
+func TestSchemaBlockIsCIAgnostic(t *testing.T) {
+	initStore(t)
+	setBoardSchema(t, "3")
+
+	fe, _ := runErr(t, "add", "nope")
+	if fe == nil || fe.ID != "schema-upgrade-required" {
+		t.Fatalf("want schema-upgrade-required, got %+v", fe)
+	}
+	if !strings.Contains(fe.Msg, "furrow upgrade") {
+		t.Errorf("the block must point at the fix (`furrow upgrade`): %q", fe.Msg)
+	}
+	if strings.Contains(fe.Msg, "sync-task-status.yml") || strings.Contains(fe.Msg, "flag day") {
+		t.Errorf("the block must not carry CI / flag-day prose (it misled standalone boards): %q", fe.Msg)
+	}
+}
