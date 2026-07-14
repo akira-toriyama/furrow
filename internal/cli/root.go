@@ -172,6 +172,7 @@ func newRootCmd() *cobra.Command {
 		newStatsCmd(),
 		newBoardCmd(),
 		newEditCmd(),
+		newNoteCmd(),
 		newAttachCmd(),
 		newDoneCmd(),
 		newMoveCmd(),

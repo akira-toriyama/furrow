@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"io"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/app"
@@ -69,6 +70,44 @@ func newMoveCmd() *cobra.Command {
 				return err
 			}
 			return emitMutation(a, "moved", args[0], func() (*core.Task, error) { return a.Move(args[0], args[1]) })
+		},
+	}
+}
+
+func newNoteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "note <id> <text>",
+		Short: "Append a paragraph to a task's body and advance its updated time",
+		Long: "Append <text> as a new paragraph to bodies/<id>.md AND stamp the task's\n" +
+			"`updated` time, in one command — the in-band way to record progress, stop-points,\n" +
+			"and next steps across sessions. Unlike hand-editing the file (what `furrow\n" +
+			"edit` hands an agent), it keeps `updated` honest, so `furrow lint`'s\n" +
+			"reconcile-gap check does not misfire on a task whose progress lives only in\n" +
+			"its body. Pass `-` as <text> to read the note from stdin (for multi-line or\n" +
+			"long notes).",
+		Example: "  furrow note t-k3m9p \"検証完了。次: アダプタ選定。\"\n" +
+			"  git log -1 --format=%B | furrow note t-k3m9p -",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			text := args[1]
+			if text == "-" {
+				data, rerr := io.ReadAll(cmd.InOrStdin())
+				if rerr != nil {
+					return core.Internalf(args[0], "read stdin: %v", rerr)
+				}
+				text = string(data)
+			}
+			return emitMutationWith(a, "noted", args[0],
+				func() (*core.Task, error) { return a.AddNote(args[0], text) },
+				func(after *core.Task) map[string]any {
+					// `changed` tracks metadata fields only, so a note (body +
+					// updated) would show changed:[] — surface the effect instead.
+					return map[string]any{"appended": strings.TrimRight(text, "\n")}
+				})
 		},
 	}
 }
