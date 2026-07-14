@@ -13,7 +13,9 @@ func newLintCmd() *cobra.Command {
 		Short: "Check index<->body consistency, lanes, deps, links, assets, and config",
 		Long: "Validate the store: id shape and uniqueness, status lanes, body path, the\n" +
 			"index<->body 1:1 mapping, dep/parent references, dependency cycles (error),\n" +
-			"dangling [[id]] body links (warn), reconcile gaps — an open task whose done\n" +
+			"git conflict markers left in a body — conflict-marker, a half-merged progress\n" +
+			"record (error; `furrow sync` refuses to commit one, this catches the ones\n" +
+			"already on the board), dangling [[id]] body links (warn), reconcile gaps — an open task whose done\n" +
 			"dependency closed after its last update (warn), asset hygiene — dangling\n" +
 			"refs, orphan and oversized assets (warn), an outdated board layout —\n" +
 			"schema-outdated, i.e. writes are refused until `furrow upgrade` runs (warn,\n" +

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -159,6 +160,20 @@ func (a *App) Lint() ([]core.Problem, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Conflict markers (ERROR): a body carrying git's <<<<<<< / ======= / >>>>>>>
+		// is a half-merged progress record — and since the body is where furrow keeps
+		// "what's done, what's next", the half that is missing is usually the half
+		// someone had just written. It reaches the board when a rebase's autostash
+		// re-apply conflicts: git leaves the merged mess in the working tree, exits 0,
+		// and the next sync commits it. That is not "suspicious but tolerated" (warn) —
+		// it is broken data sitting on the board, so it fails lint. `furrow sync`
+		// refuses to commit one in the first place (guardBodyMarkers); this is the
+		// backstop for the bodies that got in before the guard existed, or by hand.
+		if lines := core.ConflictMarkerLines(body); len(lines) > 0 {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "conflict-marker", ID: bid,
+				Msg: fmt.Sprintf("body %s carries git conflict markers on line(s) %s — a half-merged record; resolve them (the other half may still be in `git stash`)",
+					core.BodyPath(bid), joinInts(lines))})
+		}
 		for _, ref := range core.ExtractLinks(body, linkRe) {
 			if !known[ref] {
 				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "dangling-link", ID: bid, Msg: fmt.Sprintf("body links to %s via [[%s]] but no such task exists", ref, ref)})
@@ -300,6 +315,17 @@ func unknownKeyProblem(id, what string, keys []string) (core.Problem, bool) {
 	return core.Problem{Severity: core.SevWarn, Code: "unknown-shard-key", ID: id,
 		Msg: fmt.Sprintf("%s carries %d key(s) this furrow does not know (%s) — preserved on write, but IGNORED: update furrow, or fix the hand-edit",
 			what, len(keys), strings.Join(keys, ", "))}, true
+}
+
+// joinInts renders line numbers for a message: "3, 7, 11". Shared by the
+// conflict-marker lint rule and sync's pre-commit guard, so the two ways an
+// operator meets the same defect read the same way.
+func joinInts(ns []int) string {
+	parts := make([]string, len(ns))
+	for i, n := range ns {
+		parts[i] = strconv.Itoa(n)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // humanBytes renders a byte count as a compact IEC size (B/KiB/MiB/…) for the

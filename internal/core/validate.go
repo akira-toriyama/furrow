@@ -15,8 +15,8 @@ import (
 // vocabulary: empty-id, id-pattern, duplicate-id, unknown-lane, body-path,
 // parent-missing, dep-missing, repo-shape, value-range, effort-range, dep-cycle,
 // reconcile-gap, done-unclosed, missing-body, orphan-body, shard-misnamed,
-// dangling-link, asset-missing, orphan-asset, oversized-asset, label-required,
-// config-clamp, alias-shadow, archive-backlog.
+// conflict-marker, dangling-link, asset-missing, orphan-asset, oversized-asset,
+// label-required, config-clamp, alias-shadow, archive-backlog.
 type Problem struct {
 	Severity string `json:"severity"`
 	Code     string `json:"code"`

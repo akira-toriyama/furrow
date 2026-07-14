@@ -140,7 +140,15 @@ func (r *Repo) DirtyChanges(ctx context.Context, pathspec string) ([]Change, err
 	// core.quotepath=false keeps non-ASCII paths literal (unquoted) so the parse
 	// below is a plain byte-slice; furrow's own ids are ASCII, but a repo may hold
 	// other files under the pathspec.
-	out, stderr, err := runGit(ctx, r.git, r.top, "-c", "core.quotepath=false", "status", "--porcelain", "--", pathspec)
+	//
+	// -uall is load-bearing, not tidiness: git's DEFAULT collapses a wholly-untracked
+	// directory to one "?? .furrow/bodies/" entry, so on a board whose bodies/ has no
+	// tracked file yet (a fresh one — git cannot track an empty dir), every body is
+	// hidden behind the directory. The caller classifies paths (body vs machine-written
+	// shard) to decide what to commit and what to check, and a directory is neither: the
+	// bodies would be committed while being counted as no body at all — invisible to
+	// committed_bodies AND to the conflict-marker guard. Enumerate files, always.
+	out, stderr, err := runGit(ctx, r.git, r.top, "-c", "core.quotepath=false", "status", "--porcelain", "-uall", "--", pathspec)
 	if err != nil {
 		return nil, core.Internalf("sync", "git status: %s", firstLine(stderr))
 	}
@@ -194,6 +202,15 @@ func (r *Repo) Commit(ctx context.Context, message string, pathspecs ...string) 
 // concurrent-access race (a co-writer's fetch clobbering a ref/index lock, or
 // the residual multiple-branches window) leaves NO rebase in progress and is
 // returned wrapped in ErrTransientFetchRace so app.Sync retries it.
+//
+// A THIRD shape hides inside SUCCESS, and it is why the caller must probe the
+// stash afterwards (see app.Sync / StashEntries). git re-applies the autostash at
+// the very end, onto the freshly-rebased tree — which now carries upstream's
+// changes, so that apply can CONFLICT even though the rebase itself did not. When
+// it does, git keeps the changes in the stash (`git stash store -m autostash`),
+// warns on stderr, and STILL EXITS 0: the dirty files are simply not in the
+// working tree any more. No exit code, no in-progress rebase — nothing here can
+// see it, which is exactly how hand-edited prose gets silently stranded.
 func (r *Repo) PullRebase(ctx context.Context) error {
 	// fetch updates the remote-tracking ref; a co-writer's concurrent fetch can
 	// transiently lose a ref/index-lock race here — retryable, not fatal.
@@ -243,6 +260,66 @@ func (r *Repo) ConflictedPaths(ctx context.Context) []string {
 	for _, l := range strings.Split(out, "\n") {
 		if l = strings.TrimSpace(l); l != "" {
 			paths = append(paths, l)
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+// AutostashSubject is the reflog subject git gives an autostash it could not put
+// back: `git stash store -m autostash`. It is how an autostash entry is told apart
+// from an operator's own `git stash` (whose subject is "WIP on <branch>: …"), and
+// it is git's own literal, not a message we format — so matching it is stable
+// across locales (git localizes prose, not this).
+const AutostashSubject = "autostash"
+
+// StashEntry is one entry of `git stash list`: its ref spelling at the time of the
+// listing (stash@{N} — an index that SHIFTS as entries are pushed and dropped), the
+// stash commit oid (the stable handle), and the reflog subject that says where it
+// came from (AutostashSubject for one git stored on our behalf).
+type StashEntry struct {
+	Ref     string
+	Commit  string
+	Subject string
+}
+
+// StashEntries lists the repo's stash entries, newest first (git's own order). A
+// repo with no stash yields none. Errors are swallowed to an empty list on
+// purpose: this is a REPORTING probe on the failure path of a sync that has
+// already decided its outcome — a repo whose stash cannot be listed must not turn
+// a conflict report into a different error.
+func (r *Repo) StashEntries(ctx context.Context) []StashEntry {
+	// %gd = the stash@{N} selector, %H = the commit, %gs = the reflog subject.
+	out, _, err := runGit(ctx, r.git, r.top, "stash", "list", "--format=%gd%x09%H%x09%gs")
+	if err != nil {
+		return nil
+	}
+	var entries []StashEntry
+	for _, l := range strings.Split(out, "\n") {
+		if l = strings.TrimSpace(l); l == "" {
+			continue
+		}
+		parts := strings.SplitN(l, "\t", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		entries = append(entries, StashEntry{Ref: parts[0], Commit: parts[1], Subject: parts[2]})
+	}
+	return entries
+}
+
+// StashedPaths lists the files a stash commit carries, sorted — the payload that
+// makes a stranded stash actionable ("which of my edits are in there?"). Same
+// swallow-to-empty contract as StashEntries.
+func (r *Repo) StashedPaths(ctx context.Context, commit string) []string {
+	out, _, err := runGit(ctx, r.git, r.top, "stash", "show", "--name-only", commit)
+	if err != nil {
+		return nil
+	}
+	paths := []string{} // [] not null in the envelope, matching the store's slice style
+	for _, l := range strings.Split(out, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			paths = append(paths, filepath.ToSlash(l))
 		}
 	}
 	sort.Strings(paths)
