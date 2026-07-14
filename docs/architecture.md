@@ -328,6 +328,23 @@ feature to exactly the binaries that do not have it.
   `go test ./internal/core -run TestShardFieldsGolden -update-fields`. This is the
   teeth on a rule that otherwise fails **silently**: add a field, forget the bump,
   and every test on a fresh store still passes.
+- **Frozen board.** `TestFrozenBoardRoundTripsByteIdentical`
+  (`internal/store/fsstore/frozen_board_test.go`, fixture in
+  `internal/store/fsstore/testdata/frozen-board/`) is the byte-level twin of the
+  above, and the only fixture in the repo **the code under test did not write**.
+  Every other determinism test builds its board with the current marshaller, so
+  both sides move together; these bytes were written by an earlier furrow and are
+  committed, so they cannot. Copy → `Load` → `Save` + `SaveRepo` +
+  `SetBoardVersion` → every file must come back byte-identical, with the same file
+  set and **untouched mtimes** (a no-op save that rewrites is git churn on every
+  board in the fleet). It shows the *damage*, not just the diff: a new
+  non-`omitempty` field prints as `+ "sprint": ""` appearing in **every** shard — a
+  fleet-wide rewrite on the next ordinary write, silently dropped by every older
+  binary. A renamed/removed key becomes unknown, so the passthrough parks it and
+  re-emits it *after* the known keys — a key-ORDER change no in-memory test can
+  see. It also pins the two things nothing else covers: `meta.json`'s bytes, and
+  where the extras splice actually lands on disk. Regenerate with `-update-board`,
+  which rewrites a committed board and so puts the flag-day decision in the diff.
 - **Single-path grep guard.** `scripts/check-marshal-singlepath.sh` greps for
   stray `encoding/json` calls on a `Task`/`Index`/meta/repo outside `core`'s
   serializers (`internal/core/marshal.go` + its passthrough half) and fails CI if
@@ -945,7 +962,7 @@ This document covers the *built* architecture. Several things are deliberately
 | `internal/cli` (cobra: all commands above, including `repo`, `sync`, `apply`, `ui`, `migrate`) | **Built** |
 | `internal/tui` (bubbletea v1, `furrow ui`) | **Built** |
 | `internal/schema` + `docs/schema/furrow.task.v2.json` / `furrow.meta.v2.json` | **Built** |
-| Golden round-trip + schema drift tests + `TestShardFieldsGolden` (the shard's frozen on-disk shape) | **Built** |
+| Golden round-trip + schema drift tests + `TestShardFieldsGolden` (the shard's frozen on-disk shape) + `TestFrozenBoardRoundTripsByteIdentical` (a committed board's bytes) | **Built** |
 | `scripts/check-marshal-singlepath.sh` (encoders **and** decoders), `scripts/check-schema-write-guard.sh` | **Built** |
 | Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0`–`v0.9.0` published (task-status Action bundled since `v0.5.0`) |
 | nix flake | **Built** — real pinned `vendorHash` + committed `flake.lock` (since `v0.4.0`) |

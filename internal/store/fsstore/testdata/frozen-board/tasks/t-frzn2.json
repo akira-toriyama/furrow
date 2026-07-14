@@ -1,0 +1,16 @@
+{
+  "id": "t-frzn2",
+  "title": "a draft with nothing set — the minimal shard",
+  "status": "inbox",
+  "priority": 110,
+  "labels": [],
+  "repos": [],
+  "deps": [],
+  "refs": [],
+  "checklist": [],
+  "created": "2026-07-01T09:00:00Z",
+  "updated": "2026-07-01T09:00:00Z",
+  "closed": null,
+  "reviewed": null,
+  "body": "bodies/t-frzn2.md"
+}
