@@ -23,6 +23,8 @@ func newLsCmd() *cobra.Command {
 		reverse  bool
 		archived bool
 		tree     bool
+		typ      string
+		progRec  bool
 	)
 	cmd := &cobra.Command{
 		Use:     "ls [<id>]",
@@ -76,6 +78,7 @@ func newLsCmd() *cobra.Command {
 			}
 			o.Status, o.Limit, o.Drafts = status, limit, drafts
 			o.Sort, o.Reverse, o.Archived = sortBy, reverse, archived
+			o.Type = typ
 			if cmd.Flags().Changed("since") {
 				ts, err := parseDateBound(since, false)
 				if err != nil {
@@ -95,7 +98,7 @@ func newLsCmd() *cobra.Command {
 				if len(args) == 1 {
 					root = args[0]
 				}
-				nodes, err := a.Tree(o, root)
+				nodes, err := a.Tree(o, root, progRec)
 				if err != nil {
 					return err
 				}
@@ -124,6 +127,8 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "reverse the --sort direction (oldest/lowest first; unset value/effort stay last)")
 	cmd.Flags().BoolVar(&archived, "archived", false, "list from the archive store (.furrow/archive/) instead of the hot board")
 	cmd.Flags().BoolVar(&tree, "tree", false, "draw the parent hierarchy (★ = actionable now); with an <id>, just that subtree")
+	cmd.Flags().StringVar(&typ, "type", "", "filter by work-item type (a value from [types].order, e.g. epic; unknown = exit 2 + candidates)")
+	cmd.Flags().BoolVar(&progRec, "progress-recursive", false, "with --tree, roll up container progress over the whole subtree (default: direct children only)")
 	return cmd
 }
 

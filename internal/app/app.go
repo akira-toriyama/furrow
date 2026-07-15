@@ -777,6 +777,7 @@ func (a *App) BacklinksBatch(ids []string) (map[string][]core.Task, error) {
 type QueryOpts struct {
 	Status    string
 	Label     string // explicit tag filter; ANDs with ScopeRepo
+	Type      string // filter by work-item type ([types].order); "" = no type filter
 	ScopeRepo string // board-scope repo (a pointer's / central board's DefaultRepo)
 	Repo      string // owner/repo filter on the repos field (already resolved)
 	Drafts    bool   // only tasks with repos == []; ignores ScopeRepo/Repo
@@ -861,6 +862,9 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 	if err := validateSortField(o.Sort); err != nil {
 		return nil, err
 	}
+	if err := a.validateTypeFilter(o.Type); err != nil {
+		return nil, err
+	}
 	idx, err := a.listIndex(o)
 	if err != nil {
 		return nil, err
@@ -868,7 +872,7 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 	var out []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if o.match(t) {
+		if o.match(t) && a.matchType(o, t) {
 			out = append(out, *t)
 		}
 	}
@@ -879,6 +883,23 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 		out = out[:o.Limit]
 	}
 	return out, nil
+}
+
+// validateTypeFilter rejects an unknown --type filter with the configured types
+// in Candidates (symmetric with the unknown-lane guard) — a typo'd `--type epci`
+// must not silently return []. Empty = no type filter, always valid.
+func (a *App) validateTypeFilter(typ string) error {
+	if typ == "" || a.Cfg.IsType(typ) {
+		return nil
+	}
+	return a.unknownTypeErr("", typ)
+}
+
+// matchType applies a --type filter by EFFECTIVE type, so `--type task` matches
+// the type-less majority (whose effective type is the default) as well as tasks
+// explicitly typed "task". "" = no filter.
+func (a *App) matchType(o QueryOpts, t *core.Task) bool {
+	return o.Type == "" || a.Cfg.EffectiveType(t.Type) == o.Type
 }
 
 // validateSortField rejects an unknown --sort key with the valid fields in

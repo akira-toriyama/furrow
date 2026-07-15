@@ -287,9 +287,12 @@ func printSearchTable(hits []app.SearchHit) {
 // children) would silently vanish. See the note on core.Task.
 type treeView struct {
 	core.Task
-	Actionable bool       `json:"actionable"`
-	BlockedBy  []string   `json:"blocked_by"`
-	Children   []treeView `json:"children"`
+	Actionable bool          `json:"actionable"`
+	BlockedBy  []string      `json:"blocked_by"`
+	Container  bool          `json:"container"`
+	Progress   *app.Progress `json:"progress,omitempty"`
+	Stuck      bool          `json:"stuck"`
+	Children   []treeView    `json:"children"`
 }
 
 func toTreeViews(nodes []app.TreeNode) []treeView {
@@ -299,6 +302,9 @@ func toTreeViews(nodes []app.TreeNode) []treeView {
 			Task:       n.Task,
 			Actionable: n.Actionable,
 			BlockedBy:  n.BlockedBy,
+			Container:  n.Container,
+			Progress:   n.Progress,
+			Stuck:      n.Stuck,
 			Children:   toTreeViews(n.Children),
 		})
 	}
@@ -345,6 +351,12 @@ func emitTree(a *app.App, nodes []app.TreeNode) error {
 // is what greps.
 func printTreeNode(a *app.App, n app.TreeNode, depth int) {
 	line := strings.Repeat("   ", depth) + treeGlyph(a, n) + " " + n.Task.ID + "  [" + n.Task.Status + "]  " + n.Task.Title
+	if n.Container && n.Progress != nil {
+		line += fmt.Sprintf("  (%d/%d)", n.Progress.Done, n.Progress.Total)
+	}
+	if n.Stuck {
+		line += "  ⚠ stuck"
+	}
 	if len(n.BlockedBy) > 0 {
 		line += "  ← blocked by: " + strings.Join(n.BlockedBy, ", ")
 	}
@@ -364,6 +376,8 @@ func treeGlyph(a *app.App, n app.TreeNode) string {
 		return "✓"
 	case a.Cfg.IsTerminal(n.Task.Status):
 		return "~"
+	case n.Container:
+		return "▣" // a box (a container is never actionable): its progress is the signal
 	default:
 		return "·"
 	}
