@@ -634,6 +634,9 @@ func emitShow(items []app.ShowItem, mentions [][]core.Task, single, noBody, back
 func printTaskDetail(t *core.Task, body string) {
 	fmt.Fprintf(out, "%s  %s\n", t.ID, t.Title)
 	fmt.Fprintf(out, "status:   %s\n", t.Status)
+	if t.Type != "" {
+		fmt.Fprintf(out, "type:     %s\n", t.Type)
+	}
 	fmt.Fprintf(out, "priority: %d\n", t.Priority)
 	if t.Value != nil {
 		fmt.Fprintf(out, "value:    %d\n", *t.Value)
@@ -806,6 +809,9 @@ func changedFields(before, after *core.Task) []string {
 	}
 	if before.Parent != after.Parent {
 		ch = append(ch, "parent")
+	}
+	if before.Type != after.Type {
+		ch = append(ch, "type")
 	}
 	if !strsEq(before.Labels, after.Labels) {
 		ch = append(ch, "labels")

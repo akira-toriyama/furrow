@@ -187,6 +187,11 @@ func fromRaw(r raw) (*Config, []string, error) {
 	if !contains(c.Types, typeFallback) || c.Containers[typeFallback] {
 		if nc := firstNonContainer(c.Types, c.Containers); nc != "" {
 			typeFallback = nc
+		} else {
+			// Every configured type is a container — a nonsensical vocabulary. Keep a
+			// safe non-container default (the const) so type-less tasks never vanish
+			// from `next`, but warn: that fallback is not in [types].order.
+			warn = append(warn, fmt.Sprintf("types.containers marks every type a container; using non-container default %q (outside types.order) so type-less tasks stay actionable", typeFallback))
 		}
 	}
 	c.DefaultType = clampType(r.Types.Default, typeFallback, c.Types, c.Containers, "types.default", &warn)

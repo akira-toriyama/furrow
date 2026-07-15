@@ -1,7 +1,6 @@
 package app
 
 import (
-	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
@@ -132,10 +131,16 @@ func (a *App) Tree(o QueryOpts, rootID string, progressRecursive bool) ([]TreeNo
 		}
 	}
 
+	// Container roll-ups (progress/stuck) are computed over each task's REAL children
+	// from the FULL index — never the filtered/rendered subtree — so a read filter
+	// (`--type epic`, `-s ready`) that hides some children cannot under-count a box's
+	// progress or flip its stuck flag. This mirrors how Actionable/BlockedBy already
+	// use the full idx; the filtered `children` map drives only what the tree DRAWS.
+	kids := childrenMap(idx)
 	out := make([]TreeNode, 0, len(roots))
 	seen := map[string]bool{}
 	for _, r := range roots {
-		out = append(out, a.treeNode(idx, r, children, doneIDs, seen, progressRecursive))
+		out = append(out, a.treeNode(idx, r, children, kids, doneIDs, seen, progressRecursive))
 	}
 	return out, nil
 }
@@ -143,7 +148,7 @@ func (a *App) Tree(o QueryOpts, rootID string, progressRecursive bool) ([]TreeNo
 // treeNode renders one node and descends. seen is the cycle guard: a task already
 // placed in this forest is never expanded twice, so a merged-in parent cycle
 // truncates instead of recursing forever.
-func (a *App) treeNode(idx *core.Index, t core.Task, children map[string][]core.Task, doneIDs, seen map[string]bool, progressRecursive bool) TreeNode {
+func (a *App) treeNode(idx *core.Index, t core.Task, children map[string][]core.Task, kids map[string][]*core.Task, doneIDs, seen map[string]bool, progressRecursive bool) TreeNode {
 	n := TreeNode{
 		Task:       t,
 		Actionable: a.actionable(idx, &t, doneIDs),
@@ -161,62 +166,48 @@ func (a *App) treeNode(idx *core.Index, t core.Task, children map[string][]core.
 	}
 	seen[t.ID] = true
 	for _, c := range children[t.ID] {
-		n.Children = append(n.Children, a.treeNode(idx, c, children, doneIDs, seen, progressRecursive))
+		n.Children = append(n.Children, a.treeNode(idx, c, children, kids, doneIDs, seen, progressRecursive))
 	}
-	// Derived roll-ups for a container, computed bottom-up from the built subtree.
-	// Progress honours the direct/recursive scope; Stuck is ALWAYS the whole subtree
-	// (recursing through container children to any actionable leaf), so a box whose
-	// only child is a sub-epic with a ready task under it is NOT stuck.
+	// Derived roll-ups for a container, over its REAL children (kids = full index),
+	// NOT the filtered/rendered subtree — so a read filter can't distort them. Stuck
+	// reuses `revisit`'s descendant helpers, so tree and revisit never drift on what
+	// "stuck" means. Progress honours the direct/recursive scope; Stuck ALWAYS walks
+	// the whole subtree (recursing through sub-epics to any actionable leaf), so a box
+	// whose only child is a sub-epic with a ready task under it is NOT stuck.
 	if n.Container {
-		done, total := progressCount(n.Children, progressRecursive, a.Cfg.DoneLane)
+		done, total := rollupProgress(kids, t.ID, progressRecursive, a.Cfg.DoneLane)
 		n.Progress = &Progress{Done: done, Total: total}
-		n.Stuck = anyOpen(n.Children, a.Cfg) && !anyActionable(n.Children)
+		n.Stuck = a.hasOpenDescendant(t.ID, kids, map[string]bool{}) && !a.hasActionableDescendant(t.ID, kids, idx, doneIDs, map[string]bool{})
 	}
 	return n
 }
 
-// progressCount tallies done/total children. recursive walks the whole subtree
-// (counting every descendant, container or not); otherwise only direct children.
-func progressCount(nodes []TreeNode, recursive bool, doneLane string) (done, total int) {
-	for _, n := range nodes {
+// rollupProgress tallies done/total over a container's REAL children (kids, the
+// full index) — not the filtered/rendered subtree — so a read filter that hides
+// some children never under-counts a box. recursive walks the whole subtree; the
+// seen set survives a merged-in parent cycle. (Stuck reuses revisit's
+// hasOpenDescendant/hasActionableDescendant, so tree and revisit share one notion.)
+func rollupProgress(kids map[string][]*core.Task, id string, recursive bool, doneLane string) (done, total int) {
+	return rollupProgressSeen(kids, id, recursive, doneLane, map[string]bool{})
+}
+
+func rollupProgressSeen(kids map[string][]*core.Task, id string, recursive bool, doneLane string, seen map[string]bool) (done, total int) {
+	for _, k := range kids[id] {
+		if seen[k.ID] {
+			continue
+		}
+		seen[k.ID] = true
 		total++
-		if n.Task.Status == doneLane {
+		if k.Status == doneLane {
 			done++
 		}
 		if recursive {
-			d, t := progressCount(n.Children, true, doneLane)
+			d, t := rollupProgressSeen(kids, k.ID, true, doneLane, seen)
 			done += d
 			total += t
 		}
 	}
 	return done, total
-}
-
-// anyActionable reports whether any descendant is actionable — the "has a next
-// action" test that keeps a container off the stuck list.
-func anyActionable(nodes []TreeNode) bool {
-	for _, n := range nodes {
-		if n.Actionable || anyActionable(n.Children) {
-			return true
-		}
-	}
-	return false
-}
-
-// anyOpen reports whether any descendant sits in a non-terminal lane — i.e. there
-// is genuinely open work under the box. Parked descendants (done, icebox, waiting)
-// do not count, so a box whose remaining children are all iceboxed is finished-ish,
-// not stuck.
-func anyOpen(nodes []TreeNode, cfg *config.Config) bool {
-	for _, n := range nodes {
-		if !cfg.IsTerminal(n.Task.Status) {
-			return true
-		}
-		if anyOpen(n.Children, cfg) {
-			return true
-		}
-	}
-	return false
 }
 
 // orphanedByCycle returns the tasks that no root can reach — every task in a parent

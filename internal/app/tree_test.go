@@ -107,6 +107,43 @@ func TestTreeStuckRecursesThroughSubEpics(t *testing.T) {
 	}
 }
 
+// TestTreeRollupIgnoresReadFilter pins the review fix: a container's progress/stuck
+// roll up over its REAL children (the full index), NOT the filtered/rendered
+// subtree. So `ls --tree --type epic` (which filters the task-typed children out of
+// the drawing) must still report the epic's true child count and stuck state — the
+// same full-index basis Actionable/BlockedBy already use.
+func TestTreeRollupIgnoresReadFilter(t *testing.T) {
+	a := newApp()
+	mk := func(title string, o AddOpts) string {
+		task, err := a.Add(title, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return task.ID
+	}
+	epic := mk("epic", AddOpts{Type: "epic", Status: "backlog"})
+	mk("task child", AddOpts{Parent: epic, Status: "backlog"}) // task-typed, open, not actionable
+
+	// Filter to epics only: the child is excluded from what the tree DRAWS.
+	nodes, err := a.Tree(QueryOpts{Type: "epic"}, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := findNode(nodes, epic)
+	if e == nil {
+		t.Fatal("the epic must appear in a --type epic tree")
+	}
+	if len(e.Children) != 0 {
+		t.Errorf("the task-typed child must be filtered OUT of the drawing, got %d drawn children", len(e.Children))
+	}
+	if e.Progress == nil || e.Progress.Total != 1 {
+		t.Errorf("progress must roll up over the REAL child (full index) despite the filter, want total 1, got %+v", e.Progress)
+	}
+	if !e.Stuck {
+		t.Error("the epic has an open non-actionable child, so it must still be stuck even though the child is filtered from the drawing")
+	}
+}
+
 // TestTreeProgressRecursive pins the direct-vs-subtree scope of the roll-up.
 func TestTreeProgressRecursive(t *testing.T) {
 	a := newApp()
