@@ -63,14 +63,3 @@ func newSchemaCmd() *cobra.Command {
 		},
 	}
 }
-
-func newUICmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "ui",
-		Short: "Launch the interactive TUI (bubbletea)",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUI()
-		},
-	}
-}

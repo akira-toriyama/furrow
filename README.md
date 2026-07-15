@@ -12,11 +12,12 @@
 
 Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.25+). No database, no daemon, no cloud.
 
-> **Status:** core (first-class `repos`, schema v2 + the two-sided version
-> gate), CLI (incl.
-> `repo`, drafts, `-r` scoping, `sync`, `apply`), the bubbletea TUI
-> (`furrow ui`), and `migrate` all work (`go test ./...` + golangci green).
-> Releases are published — see the [Releases page](https://github.com/akira-toriyama/furrow/releases) and [Status](#status).
+> **Status:** furrow is **CLI-only** — core (first-class `repos`, schema v2 +
+> the two-sided version gate), CLI (incl.
+> `repo`, drafts, `-r` scoping, `sync`, `apply`), and `migrate` all work
+> (`go test ./...` + golangci green). A TUI/GUI is a separate, planned
+> front-end that drives furrow through its CLI/JSON contract, not a part of
+> this binary. Releases are published — see the [Releases page](https://github.com/akira-toriyama/furrow/releases) and [Status](#status).
 
 [日本語版 README →](README.ja.md)
 
@@ -206,7 +207,7 @@ A task body is plain Markdown, so you can attach a screenshot or diagram by comm
 ![repro](assets/t-0001-bug.png)
 ```
 
-It renders wherever Markdown does (GitHub, Obsidian, an editor preview) — but **not in the terminal** (`furrow ui`/`show` print the text, not the picture). furrow itself does nothing special with these files; they are just part of your repo. A few practical notes:
+It renders wherever Markdown does (GitHub, Obsidian, an editor preview) — but **not in the terminal** (`show` prints the text, not the picture). furrow itself does nothing special with these files; they are just part of your repo. A few practical notes:
 
 - Keep screenshots small and scrub anything secret — git history is permanent.
 - On a **private** repo, committing the image in-repo and linking it relatively is the reliable option; external/raw image URLs typically need auth and expire. On a public repo you can also link an external host.
@@ -217,7 +218,7 @@ It renders wherever Markdown does (GitHub, Obsidian, an editor preview) — but 
 
 ## Command reference
 
-All commands below are implemented and working today, including the `ui` TUI and `migrate`. (A read-only web viewer is the only remaining future work — see [Status](#status).)
+All commands below are implemented and working today, including `migrate`. furrow is CLI-only; a TUI/GUI is a separate, planned front-end that drives it through the CLI/JSON contract (see [Status](#status)).
 
 | Command | What it does | Key flags / args |
 |---|---|---|
@@ -255,7 +256,6 @@ All commands below are implemented and working today, including the `ui` TUI and
 | `config path` | Print the resolved user-level config path; a half-written config's clamp warnings go to stderr (stdout stays the bare path) | — |
 | `schema [task\|meta]` | Print the JSON Schema for a task shard (no arg or `task`) or for `meta.json` (`meta`); matches the committed copy | — |
 | `version` | Print the furrow version (plus the build commit/date when stamped); `--version` on the root command prints the same line, and `--json` emits `{version, commit, date, modified}` for scripts/agents | `--json`, or `furrow --version` |
-| `ui` | Launch the interactive TUI (list + detail panes): navigate, filter, done, move lane, reorder (`K`/`J`), toggle checklist, edit body | — |
 | `migrate <file>` | Import an existing `Task.md` etc. (dry-run by default; unmapped headings & `[[wikilink]]`s reported, never dropped) | `--write`, `-l/--label` |
 
 On the read commands, `-r/--repo` filters by the first-class `repos` field and is the scope control: a short name resolves case-insensitively at a `/` boundary (`-r furrow` → `akira-toriyama/furrow`; ambiguity is exit 2 with `candidates`), an explicit `-r` overrides the board scope, and `-r ''` shows the whole board. `-l/--label` is a pure tag filter that ANDs with the scope. Within a single `-s` or `-l`, a comma is OR (`-s inbox,backlog`, `-l bug,urgent`); the flags still AND across fields. `-s` and `-l` part ways on an *unknown* token: a lane is a closed vocabulary, so an unknown `-s` lane **exits 2 with the configured lanes in `candidates`** (symmetric with `move`/`add` — a typo like `-s in_progress` never silently returns `[]`), whereas an unknown `-l` tag just matches nothing (labels are open). When a label filter matches nothing but the name uniquely resolves to a repo that has tasks, furrow exits 2 pointing you at `-r` (the did-you-mean guard). Run `furrow board` to see the lanes and the active scope without provoking an error. When an explicit `-r` hides drafts on `ls`/`next`, one stderr hint line (`N draft(s) hidden — furrow ls --drafts`) points at them; stdout stays pure data.
@@ -638,7 +638,7 @@ older_than_days = 30              # default window for `furrow archive --older-t
 stale_days = 30                   # `furrow revisit` flags a task with no update in this many days (0 disables)
 
 [ui]
-theme = "auto"                    # auto | dark | light (NO_COLOR is always respected)
+theme = "auto"                    # front-end display preference: auto | dark | light (NO_COLOR is always respected)
 
 [alias]                           # name your frequent filters; `furrow <name> …` expands git-style
 triage = "ls -s inbox,backlog"    #   `furrow triage -r app` -> `furrow ls -s inbox,backlog -r app`
@@ -663,21 +663,24 @@ furrow's write path is byte-stable on purpose. Every shard write goes through on
 
 ## Status
 
-- **Working:** the core domain (`internal/core`) with the first-class `repos`
+- **Working:** furrow is **CLI-only** — the core domain (`internal/core`) with
+  the first-class `repos`
   field (board layout v5 + the two-sided version gate: read-refuse a newer board,
   write-refuse an older one, and `furrow upgrade` as the only raiser), config
   loader, filesystem store, app
   coordinator, the full CLI (incl. `repo`, drafts, `-r` scoping, `apply`, and
-  `sync`), the bubbletea **TUI** (`furrow ui`), and **`migrate`** (importing a
+  `sync`), and **`migrate`** (importing a
   legacy `Task.md`). `go test ./...` + golangci clean; `sh scripts/check.sh`
-  runs the full verification (incl. a teatest TUI e2e).
+  runs the full verification (core + store + app + cli + migrate).
 - **Released:** tags are cut with GoReleaser → the Homebrew tap (see the
   [Releases page](https://github.com/akira-toriyama/furrow/releases); the
   bundled task-status Action ships since `v0.5.0`, the first-class `repos` field
   since `v0.6.0`, board layout v4 since `v0.8.0`, board layout v5 since `v0.10.0`). The nix `flake.nix` carries a
   real, pinned `vendorHash` with a
   committed `flake.lock` (since `v0.4.0`).
-- **Future (low priority):** a read-only web viewer / React UI over the task shards.
+- **Future (low priority):** an interactive TUI/GUI as a **separate front-end**
+  that drives furrow through its CLI/JSON contract (it does not import furrow's
+  Go packages), and a read-only web viewer over the task shards.
 
 Design notes: architecture in [`docs/architecture.md`](docs/architecture.md),
 terms in [`docs/glossary.md`](docs/glossary.md), and what furrow deliberately

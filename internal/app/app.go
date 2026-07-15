@@ -1,8 +1,8 @@
 // Package app is the coordinator layer: it wires a Store and Config together
 // and exposes every task mutation as a method. It is the ONLY mutation funnel —
-// the CLI and TUI call App, never the store directly. That keeps invariants
+// the CLI calls App, never the store directly. That keeps invariants
 // (frozen ids, canonical order, closed-timestamp rules, body<->index pairing)
-// in one place instead of scattered across two presentation layers.
+// in one place instead of scattered across the presentation layer.
 package app
 
 import (
@@ -1007,7 +1007,7 @@ func (a *App) SetEffort(id string, v *int) (*core.Task, error) {
 }
 
 // SetTitle renames a task's one-line summary. It touches only the shard; use
-// Retitle from the CLI/TUI so the body's heading is kept in step.
+// Retitle from the CLI so the body's heading is kept in step.
 func (a *App) SetTitle(id, title string) (*core.Task, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {

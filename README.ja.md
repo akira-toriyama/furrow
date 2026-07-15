@@ -63,7 +63,7 @@ furrow はこれを Go で実装する。外部サービス連携は持たず、
 ![repro](assets/t-0001-bug.png)
 ```
 
-Markdown が描画される場所（GitHub・Obsidian・エディタのプレビュー）では表示されるが、**端末では表示されない**（`furrow ui`/`show` は絵ではなくテキストを出す）。furrow 自体はこれらのファイルを特別扱いせず、ただの repo の一部として扱う。実務上の注意：
+Markdown が描画される場所（GitHub・Obsidian・エディタのプレビュー）では表示されるが、**端末では表示されない**（`show` は絵ではなくテキストを出す）。furrow 自体はこれらのファイルを特別扱いせず、ただの repo の一部として扱う。実務上の注意：
 
 - スクショは小さく保ち、秘匿情報はマスクする（git 履歴は永久）。
 - **private** repo では、画像を repo 内に commit して相対リンクするのが確実（外部/raw の画像 URL は認証が要り失効する）。public repo なら外部ホストへのリンクも可。
@@ -137,7 +137,7 @@ furrow done t-0001
 
 ## コマンド
 
-今日時点で**実装済み**のコマンド（全て動作する）。
+今日時点で**実装済み**のコマンド（全て動作する）。furrow は **CLI 専用**で、TUI/GUI は CLI/JSON 契約経由で furrow を駆動する別立ての（予定の）フロントエンド。
 
 | コマンド | 説明 |
 |---|---|
@@ -175,7 +175,6 @@ furrow done t-0001
 | `config path` | 解決されるユーザー設定パスを表示。書きかけ設定の clamp 警告は stderr へ（stdout は path のみ） |
 | `schema [task\|meta]` | JSON Schema を出力（引数なし or `task` = シャード（`tasks/<id>.json`）のスキーマ・`meta` = `meta.json` のスキーマ） |
 | `version` | furrow のバージョンを出力（stamp 済みならビルド commit/date も）。root の `--version` フラグでも同じ行を出力。`--json` は `{version, commit, date, modified}` を出力（スクリプト／エージェント向け） |
-| `ui` | 対話 TUI を起動（一覧＋詳細ペイン：移動・フィルタ・done・レーン移動・並べ替え（`K`/`J`）・チェックリストトグル・本文編集） |
 | `migrate <file>` | 既存の `Task.md` などを取り込む（dry-run 既定／`--write` で作成・未対応の見出しや `[[wikilink]]` は破棄せず報告） |
 
 ### 主なフラグ
@@ -199,7 +198,7 @@ furrow done t-0001
 
 ## CLI 契約（Claude Code / スクリプト向け）
 
-furrow は **非対話がデフォルト**。プロンプトは出さない（TTY 検出は `golang.org/x/term`）。対話 UI は `furrow ui` だけ。
+furrow は **非対話がデフォルト**。プロンプトは出さない（TTY 検出は `golang.org/x/term`）。furrow は **CLI 専用**で、対話 UI（TUI/GUI）は CLI/JSON 契約経由で駆動する別立ての（予定の）フロントエンド。
 
 - **`--json`** — JSON を **stdout のみ**に出す。ログ・エラーは stderr へ。read だけでなく **JSON を出す全コマンド**で効く（mutation の `{before,after,changed}`・`apply` の `{on,ref,outcomes}`・`add`/`attach`/`init`/`lint`/`archive`/`migrate`/`version`/`board` も含む）。
 - **`--ndjson`** — `--json` と同じ payload を **compact に 1 行 1 値**で出す。`--json` が効く全コマンドで honor（list 系は 1 行 1 レコード、単一オブジェクト系＝mutation・`board` 等は compact 1 行、`lint` は 1 problem 1 行）。line 志向の agent が human prose に silent degrade しない。
@@ -568,9 +567,8 @@ ports & adapters。依存は内向きにのみ流れる。詳細図は [`docs/ar
 
 ```
 cmd/furrow/main.go                 = os.Exit(cli.Execute()) のみ
-  └─ internal/cli   (cobra アダプタ)        ┐
-     internal/tui   (bubbletea v1・対話 UI)         ┘ presentation
-        └─ internal/app   (唯一の mutation funnel・CLI/TUI 共通)
+  └─ internal/cli   (cobra アダプタ・唯一の presentation 層)
+        └─ internal/app   (唯一の mutation funnel)
               ├─ internal/config        (config.toml ロード・clamp-don't-reject)
               ├─ internal/store/fsstore (FS に触る唯一の package)
               ├─ internal/store/memstore (in-memory fake)
@@ -578,14 +576,13 @@ cmd/furrow/main.go                 = os.Exit(cli.Execute()) のみ
                     └─ internal/core  (純ドメイン・stdlib のみ)
 ```
 
-- **`internal/core`** — 純ドメイン。`Index` / `Task` 構造体、唯一の `core.MarshalTask` 経路、`Store` / `Clock` などの port（interface）、validate、index 操作を持つ。**標準ライブラリしか import しない**（cobra・bubbletea・os・filepath は禁止）。
+- **`internal/core`** — 純ドメイン。`Index` / `Task` 構造体、唯一の `core.MarshalTask` 経路、`Store` / `Clock` などの port（interface）、validate、index 操作を持つ。**標準ライブラリしか import しない**（cobra・os・filepath は禁止）。
 - **`internal/config`** — `config.toml` を読むだけ。clamp-don't-reject。
 - **`internal/store/fsstore`** — **FS に触る唯一の package**。atomic write（同一ディレクトリの tmp + rename）、本文の lazy load、ランダム id 生成（`NextID`、共有カウンタなし）。
 - **`internal/store/memstore`** — in-memory の fake（テスト・dry-run 用）。
 - **`internal/gitrepo`** — `furrow sync` の背後にある git subprocess アダプタ（コマンド組み立て＋エラー分類だけの薄い wrapper）。`internal/app` からのみ駆動され、ストアのファイルには触れない（FS は fsstore の専権のまま）。
-- **`internal/app`** — **唯一の mutation funnel**。CLI も TUI も必ずここを経由する。frozen id・正準順・closed 打刻・body↔shard の対応をここで一括管理する。
-- **`internal/cli`** — cobra アダプタ。
-- **`internal/tui`** — bubbletea v1 の対話 UI（`furrow ui`）。CLI と同じく presentation 層で、mutation は必ず `internal/app` 経由。
+- **`internal/app`** — **唯一の mutation funnel**。CLI は必ずここを経由する。frozen id・正準順・closed 打刻・body↔shard の対応をここで一括管理する。
+- **`internal/cli`** — cobra アダプタ。furrow の唯一の presentation 層。TUI/GUI は CLI/JSON 契約経由で駆動する別立てのフロントエンド（このリポには含まれない）。
 - **`internal/schema`** — JSON Schema のソース。`internal/version` — ビルドバージョン（リンカ注入。from-source は `dev`）。
 
 ---
@@ -653,7 +650,7 @@ older_than_days = 30
 stale_days = 30             # `furrow revisit` が「更新なし」を stale 扱いする日数（0 で無効）
 
 [ui]
-theme = "auto"              # auto | dark | light
+theme = "auto"              # フロントエンドの表示設定: auto | dark | light
 
 [alias]                     # よく使うフィルタに名前を付ける。`furrow <name> …` が git 風に展開
 triage = "ls -s inbox,backlog"   #   `furrow triage -r app` → `furrow ls -s inbox,backlog -r app`
@@ -758,7 +755,7 @@ gitmoji + Conventional Commits。形式は次のとおり（gitmoji は `:code:`
 
 ## ステータス
 
-core（一級の `repos`・board layout v5・両側 version gate＝新しいボードは read 拒否／古いボードは write 拒否、版を上げるのは `furrow upgrade` だけ）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync`・`upgrade` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは GoReleaser → Homebrew tap で公開する（[Releases ページ](https://github.com/akira-toriyama/furrow/releases) 参照・task-status Action は `v0.5.0` から同梱・一級の `repos` は `v0.6.0` から・board layout v4 は `v0.8.0` から・board layout v5 は `v0.10.0` から）。将来（低優先）: read-only の Web ビューア。
+furrow は **CLI 専用**。core（一級の `repos`・board layout v5・両側 version gate＝新しいボードは read 拒否／古いボードは write 拒否、版を上げるのは `furrow upgrade` だけ）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync`・`upgrade` 含む）・`migrate` が動作する（テストは core + store + app + cli + migrate）。TUI/GUI は CLI/JSON 契約経由で furrow を駆動する**別立ての**（予定の）フロントエンドで、この binary の一部ではない。リリースは GoReleaser → Homebrew tap で公開する（[Releases ページ](https://github.com/akira-toriyama/furrow/releases) 参照・task-status Action は `v0.5.0` から同梱・一級の `repos` は `v0.6.0` から・board layout v4 は `v0.8.0` から・board layout v5 は `v0.10.0` から）。将来（低優先）: 別立てフロントエンドの TUI/GUI、read-only の Web ビューア。
 
 ## ライセンス
 

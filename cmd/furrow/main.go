@@ -1,7 +1,7 @@
 // Command furrow is a repo-local, plain-text task tracker: a JSON index plus
-// per-task markdown bodies, driven from a cobra CLI and a bubbletea TUI.
+// per-task markdown bodies, driven from a cobra CLI.
 //
-// All logic lives in internal/{core,config,store,app,cli,tui}; main only maps
+// All logic lives in internal/{core,config,store,app,cli}; main only maps
 // the CLI's resolved exit code to the process. See docs/architecture.md.
 package main
 

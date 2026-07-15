@@ -26,14 +26,12 @@ library.
                          cmd/furrow/main.go
                      os.Exit(cli.Execute())
                                  |
-              +------------------+------------------+
-              |                                     |
-              v                                     v
-     internal/cli (cobra)                  internal/tui (bubbletea v1)
-     command/flag parsing,                 interactive UI (furrow ui)
-     human/JSON rendering
-              |                                     |
-              +------------------+------------------+
+                                 v
+     internal/cli (cobra) — the ONLY presentation layer in-repo
+     command/flag parsing, human/JSON rendering
+     (a TUI/GUI is a SEPARATE front-end repo — ridge / loom —
+      that drives furrow through its CLI/JSON contract, not its Go packages)
+                                 |
                                  |  (every mutation & query)
                                  v
                           internal/app
@@ -65,17 +63,21 @@ library.
 ```
 
 A dependency arrow means "imports". Note what is **absent**: `internal/core`
-imports no other furrow package and no third-party library; `internal/cli` and
-`internal/tui` never import a store adapter or `internal/core`'s siblings
-directly for mutation — they go through `internal/app`.
+imports no other furrow package and no third-party library; `internal/cli` never
+imports a store adapter or `internal/core`'s siblings directly for mutation — it
+goes through `internal/app`. furrow is **CLI-only**: the interactive TUI once in
+`internal/tui` has been removed, and any TUI/GUI now lives in a separate front-end
+repo (**ridge** — `github.com/akira-toriyama/ridge`, a charm-v2 TUI that is a
+CLI/JSON client of furrow; and **loom** — `github.com/akira-toriyama/loom`, a
+from-scratch TUI framework, future/gated) that consumes the same `--json`/`--ndjson`
+contract an agent does.
 
 ### Package responsibilities
 
 | Package | Role |
 |---|---|
 | `cmd/furrow/main.go` | Entry point. Just `os.Exit(cli.Execute())` — no logic. |
-| `internal/cli` | cobra adapter: parse flags, call `app`, render (human table or `--json`/`--ndjson`), map errors to exit codes. Holds no task logic. |
-| `internal/tui` | bubbletea v1 interactive UI (`furrow ui`): list + glamour detail, navigate / filter / done / move / reorder (`K`/`J`) / checklist toggle / edit body. |
+| `internal/cli` | cobra adapter and the **only** in-repo presentation layer: parse flags, call `app`, render (human table or `--json`/`--ndjson`), map errors to exit codes. Holds no task logic. A TUI/GUI is an out-of-repo front-end (ridge / loom) driving this same CLI/JSON contract. |
 | `internal/app` | Coordinator. Wires a `Store` + `Config` + `Clock`; exposes every mutation/query as a method. The **only** place that mutates state. |
 | `internal/config` | Loads `.furrow/config.toml` (read-only, clamp-don't-reject). Produces an effective `Config`. |
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
@@ -95,12 +97,13 @@ directly for mutation — they go through `internal/app`.
 standard library (`encoding/json`, `sort`, `time`, `fmt`, `errors`, `regexp`).
 It must **not** import:
 
-- `cobra` or `bubbletea` (those are presentation concerns), or
+- `cobra` (a presentation concern), or
 - `os` or `path/filepath` (filesystem access is an adapter concern).
 
 Filesystem access lives in `internal/store/fsstore`. Presentation lives in
-`internal/cli` and `internal/tui`. The domain reaches the outside world only
-through interfaces it declares itself.
+`internal/cli` (the only in-repo presentation layer; a TUI/GUI is an out-of-repo
+front-end). The domain reaches the outside world only through interfaces it
+declares itself.
 
 > The doc comment at the top of `internal/core/task.go` states this rule
 > in-code, so it travels with the source.
@@ -143,9 +146,9 @@ The seams between the pure core and the outside world are interfaces declared in
 
 These interfaces are implemented by adapters: `internal/store/fsstore` (the real
 filesystem) and `internal/store/memstore` (an in-memory fake). Both carry a
-compile-time assertion `var _ core.Store = (*Store)(nil)`. The `app`, `cli`, and
-`tui` layers depend on the *interface*, never on a concrete adapter — that is
-what keeps the core testable without touching disk.
+compile-time assertion `var _ core.Store = (*Store)(nil)`. The `app` and `cli`
+layers depend on the *interface*, never on a concrete adapter — that is what
+keeps the core testable without touching disk.
 
 `internal/app` widens the port slightly with its own `app.Store` interface
 (`core.Store` plus `DeleteBody` and `BodyFile` for `$EDITOR` shell-out); both
@@ -573,14 +576,16 @@ not file-backed — so `$EDITOR` shell-out is unsupported against it, which the
 
 ## The coordinator and the CLI contract
 
-`internal/app` is the **only mutation funnel**. The CLI (and, later, the TUI)
-call `App` methods — `Add`, `Move`, `Done`, `Reorder`, `SetTitle`, `SetValue`,
+`internal/app` is the **only mutation funnel**. The CLI (and any out-of-repo
+front-end, through the same CLI/JSON contract) calls `App` methods — `Add`, `Move`, `Done`, `Reorder`, `SetTitle`, `SetValue`,
 `SetEffort`, `Check`, `AddCheck`, `AddDep`/`RemoveDep`, `Relabel`, `Rerepo`,
 `Attach`, `ApplyDirectives`, `Sync`, `Archive`, `Upgrade`, `Lint`, `EditPath`, plus the read methods
 `Get`, `List`, `Next`, `Revisit`, `Board`. Keeping every edit in one place is what keeps
 the invariants (frozen
 ids, canonical order, closed-timestamp rules, body↔index pairing) from being
-re-implemented across two presentation layers. `App.load()` canonicalizes on
+re-implemented — and from being reinvented by an out-of-repo front-end, which
+reaches the same funnel through the CLI/JSON contract rather than the Go API.
+`App.load()` canonicalizes on
 every read, so reads see the same lane→priority→id order regardless of any
 hand-edit.
 
@@ -645,7 +650,7 @@ except where noted:
 
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `board`, `edit`, `note`, `attach`,
 `done`, `move`, `set`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
-`sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`), `schema`, `version`, `ui`,
+`sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`), `schema`, `version`,
 `migrate`.
 
 - **`set`** applies the routine triage quartet — lane, value, effort, labels — in
@@ -729,9 +734,6 @@ except where noted:
   of scope — plus unset value/effort, stale, or a done dependency), attaching a
   `revisit` reason array in `--json` so an agent fixes them via the setters
   (`value`/`effort`/`dep`/`repo --add`). An empty result exits 0 (nothing to revisit is healthy).
-- **`ui`** launches the bubbletea TUI (`internal/tui`): list + glamour detail,
-  navigate / filter / done / move lane / reorder (`K`/`J`) / checklist toggle /
-  edit body.
 - **`migrate`** parses a hand-maintained `Task.md` into furrow tasks (dry-run by
   default; `--write` to apply; `--label` to stamp imported tasks).
 
@@ -774,7 +776,9 @@ except where noted:
   schema triple (`schema_version` / `binary_schema_version` / `schema_state` /
   `writable`) — the introspection call that answers "what lanes exist, what scope
   is active, and can I write here" without provoking an error.
-- **Non-interactive by default.** No prompts; the TUI is `furrow ui` only.
+- **Non-interactive by default.** furrow is CLI-only: no prompts, and no
+  interactive UI ships in this repo (a TUI/GUI is an out-of-repo front-end —
+  ridge / loom — over the CLI/JSON contract).
   `furrow edit` on a non-TTY prints the absolute body path instead of launching
   an editor, so an agent can edit the file directly. `NO_COLOR` and non-TTY
   suppress color.
@@ -848,7 +852,7 @@ Sections and their defaults:
 | `[labels]` | `required` | `false` |
 | `[archive]` | `older_than_days` | `30` |
 | `[revisit]` | `stale_days` | `30` (`0` disables the stale signal) |
-| `[ui]` | `theme` | `auto` (one of `auto`/`dark`/`light`) |
+| `[ui]` | `theme` | `auto` (one of `auto`/`dark`/`light`) — a front-end display preference (the CLI itself does not render a themed UI; an out-of-repo TUI/GUI reads it) |
 | `[alias]` | `<name> = "<command string>"` | none (a `name -> command` map) |
 | (top-level) | `standalone` | `false` (a local single-machine board: no remote / `furrow sync` / CI) |
 
@@ -994,8 +998,9 @@ This document covers the *built* architecture. Several things are deliberately
   client: a clonable plain-text store. "GitHub friendly" means "diffs cleanly",
   not "syncs to Issues" (see docs/non-goals.md for the boundary with the
   task-status Action).
-- **No interactive prompting from the CLI.** Interactivity is confined to
-  `furrow ui`.
+- **No interactive prompting from the CLI, and no in-repo UI.** furrow is
+  CLI-only; an interactive TUI/GUI is an out-of-repo front-end (ridge / loom)
+  that drives the CLI/JSON contract rather than importing furrow's packages.
 - **Web / React UI is out of scope for now** (parked): a future read-only viewer
   would simply read the `tasks/*.json` shards, which is exactly why clean JSON
   shards matter.
@@ -1009,8 +1014,8 @@ This document covers the *built* architecture. Several things are deliberately
 | `internal/store/fsstore`, `internal/store/memstore` | **Built** |
 | `internal/app` (mutation funnel, board discovery + repo derivation, archive, upgrade, lint) | **Built** |
 | `internal/gitrepo` (git subprocess adapter behind `furrow sync`) | **Built** |
-| `internal/cli` (cobra: all commands above, including `repo`, `sync`, `apply`, `ui`, `migrate`) | **Built** |
-| `internal/tui` (bubbletea v1, `furrow ui`) | **Built** |
+| `internal/cli` (cobra: all commands above, including `repo`, `sync`, `apply`, `migrate`) — the only in-repo presentation layer | **Built** |
+| Interactive TUI/GUI | **Out of repo** — a separate front-end (ridge / loom) over the CLI/JSON contract; furrow itself is CLI-only |
 | `internal/schema` + `docs/schema/furrow.task.v2.json` / `furrow.meta.v2.json` | **Built** |
 | Golden round-trip + schema drift tests + `TestShardFieldsGolden` (the shard's frozen on-disk shape) + `TestFrozenBoardRoundTripsByteIdentical` (a committed board's bytes) | **Built** |
 | `scripts/check-marshal-singlepath.sh` (encoders **and** decoders), `scripts/check-schema-write-guard.sh` | **Built** |

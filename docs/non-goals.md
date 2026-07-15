@@ -152,9 +152,14 @@ not a service. Cloud-/Issue-/account-backed candidates (Linear, Notion, GitHub
 Projects, CCPM, Spec Kit) were explicitly dropped for assuming a remote
 backend.*
 
-### Web / React UI is low priority, not a near-term goal
-A rich web or React UI is deliberately deferred. — *CLI and TUI are the
-high-priority surfaces; web/React is low priority and explicitly future-only.*
+### Any UI is a separate front-end, not part of this repo
+furrow is **CLI-only**. The one presentation layer in-repo is `internal/cli`;
+any interactive TUI or GUI lives in its own front-end repo and drives furrow
+through the **CLI/JSON contract** (it does not import furrow's Go packages). —
+*Planned front-ends: **ridge** (a charm-v2 TUI, a CLI/JSON client of furrow) and
+**loom** (a from-scratch TUI framework, future/gated). A rich hosted web or React
+UI remains out of scope; cloud-/Issue-/account-backed candidates were dropped for
+assuming a remote backend.*
 
 If web does happen, the first step is a *read-only* static viewer built on Go
 `net/http` + `embed.FS` that simply reads the `tasks/*.json` shards — no Node
@@ -163,7 +168,8 @@ single binary. `templ+htmx`, `Wails`, and the React + Electron stack are out of
 scope for that viewer (the React *component shape* may be borrowed later; the
 host — Electron vs. Go static — is held open). A future React UI works precisely
 because it only has to read the JSON shards — which is itself an argument for
-keeping them as plain JSON.
+keeping them as plain JSON. Every such front-end consumes furrow's `--json` /
+`--ndjson` output rather than linking its packages.
 
 ---
 
@@ -176,7 +182,7 @@ To keep this list honest about today's reality (not aspirations):
   `attach`, `done`, `move`, `set`, `reorder`,
   `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `review`,
   `apply`, `sync`,
-  `migrate`, `archive`, `upgrade`, `lint`, `config init|path`, `schema`, `version`, `ui`.
+  `migrate`, `archive`, `upgrade`, `lint`, `config init|path`, `schema`, `version`.
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
   `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, and `--drafts`.
   Destructive ops are guarded: `archive` and `upgrade` preview unless `--yes`.
@@ -184,11 +190,12 @@ To keep this list honest about today's reality (not aspirations):
   contract: `0` ok / `1` not-found|empty / `2` bad-usage|validation / `3+`
   internal|IO, with `{"error":{"code","id","message"}}` to stderr
   (`internal/core/errors.go`), plus optional `candidates` / `details` fields
-  when there is something machine-actionable to say. The bubbletea TUI
-  (`internal/tui`, `furrow ui`)
-  and `furrow migrate` (importing a legacy `Task.md`) are wired and working too.
-- **Not built** — a hosted/web backend and a rich React UI remain out of scope
-  for now (see *Backend & UI* above); the optional `furrow import
+  when there is something machine-actionable to say. `furrow migrate`
+  (importing a legacy `Task.md`) is wired and working too.
+- **Not built here** — furrow is CLI-only: any interactive TUI/GUI is a separate
+  front-end repo consuming the CLI/JSON contract (planned: **ridge**, **loom**);
+  a hosted/web backend and a rich React UI remain out of scope for now (see
+  *Backend & UI* above); the optional `furrow import
   --from-gh-project` seed is also unbuilt.
 - **Planned, not a non-goal** — the per-person collaboration niceties, namely an
   `@mention` (a *person*-directed notation, distinct from the task→task `[[id]]`

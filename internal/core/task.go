@@ -3,9 +3,11 @@
 //
 // PURITY RULE (the spine — see docs/architecture.md): this package imports only
 // the standard library (encoding/json, sort, time, fmt, errors, regexp). It
-// must NOT import cobra, bubbletea, os, or filepath. Filesystem access lives in
-// internal/store; presentation lives in internal/cli and internal/tui; they
-// reach the filesystem through the ports declared here (ports.go). Crossing a
+// must NOT import cobra, os, or filepath. Filesystem access lives in
+// internal/store; presentation lives in internal/cli (furrow is CLI-only — any
+// TUI/GUI front-end is a separate repo that drives furrow through its CLI/JSON
+// contract). They reach the filesystem through the ports declared here
+// (ports.go). Crossing a
 // layer means a port is missing, not that core should grow an import.
 package core
 
