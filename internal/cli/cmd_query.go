@@ -23,6 +23,8 @@ func newLsCmd() *cobra.Command {
 		reverse  bool
 		archived bool
 		tree     bool
+		typ      string
+		progRec  bool
 	)
 	cmd := &cobra.Command{
 		Use:     "ls [<id>]",
@@ -76,6 +78,7 @@ func newLsCmd() *cobra.Command {
 			}
 			o.Status, o.Limit, o.Drafts = status, limit, drafts
 			o.Sort, o.Reverse, o.Archived = sortBy, reverse, archived
+			o.Type = typ
 			if cmd.Flags().Changed("since") {
 				ts, err := parseDateBound(since, false)
 				if err != nil {
@@ -95,7 +98,7 @@ func newLsCmd() *cobra.Command {
 				if len(args) == 1 {
 					root = args[0]
 				}
-				nodes, err := a.Tree(o, root)
+				nodes, err := a.Tree(o, root, progRec)
 				if err != nil {
 					return err
 				}
@@ -124,6 +127,8 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "reverse the --sort direction (oldest/lowest first; unset value/effort stay last)")
 	cmd.Flags().BoolVar(&archived, "archived", false, "list from the archive store (.furrow/archive/) instead of the hot board")
 	cmd.Flags().BoolVar(&tree, "tree", false, "draw the parent hierarchy (★ = actionable now); with an <id>, just that subtree")
+	cmd.Flags().StringVar(&typ, "type", "", "filter by work-item type (a value from [types].order, e.g. epic; unknown = exit 2 + candidates)")
+	cmd.Flags().BoolVar(&progRec, "progress-recursive", false, "with --tree, roll up container progress over the whole subtree (default: direct children only)")
 	return cmd
 }
 
@@ -255,21 +260,25 @@ func archivedSuffix(inArchive []string) string {
 
 func newNextCmd() *cobra.Command {
 	var (
-		label string
-		repo  string
-		limit int
+		label      string
+		repo       string
+		limit      int
+		containers bool
 	)
 	cmd := &cobra.Command{
 		Use:   "next",
 		Short: "Show actionable tasks (in the next-lanes, all deps done)",
 		Long: "List the tasks ready to pick up: status in the configured next-lanes\n" +
 			"([next].lanes in config.toml, default ready + in-progress) and with every\n" +
-			"dependency already in the done lane, in canonical order. Use --repo to\n" +
+			"dependency already in the done lane, in canonical order. Container types\n" +
+			"(epics — see [types].containers) are boxes, not work, so they are excluded\n" +
+			"by default; pass --containers to surface a ready one too. Use --repo to\n" +
 			"restrict to a repo (a unique short name works) and --label to AND a tag\n" +
 			"filter on top. An empty result is healthy (nothing to pick up right now)\n" +
 			"and exits 0 — the same contract as ls/revisit.",
 		Example: "  furrow next               # what to pick up now\n" +
 			"  furrow next -n1 --json    # just the top task, with a reason\n" +
+			"  furrow next --containers  # include ready epics (boxes)\n" +
 			"  furrow next -r furrow -l bug",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -282,6 +291,7 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 			o.Limit = limit
+			o.IncludeContainers = containers
 			tasks, err := a.Next(o)
 			if err != nil {
 				return err
@@ -298,6 +308,7 @@ func newNextCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (comma-separated = OR); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; use -n1 for just the top)")
+	cmd.Flags().BoolVar(&containers, "containers", false, "also surface ready container types (epics), which next hides by default")
 	return cmd
 }
 

@@ -481,6 +481,10 @@ type AddOpts struct {
 	// suppresses exactly the board-scope repo union (see withBoardRepo) — the
 	// escape hatch for "note this on the board, attach it later".
 	Draft bool
+	// Type is the work-item type ([types].order). "" leaves the shard type-less
+	// (it reads as the configured default). A non-empty value must be in the
+	// vocabulary or Add returns unknownTypeErr (exit 2 + candidates).
+	Type string
 }
 
 // Add creates a task, writes its body file, and saves the index. Returns the
@@ -503,6 +507,9 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	}
 	if o.Draft && len(o.Repos) > 0 {
 		return nil, core.Validationf("", "--draft cannot be combined with an explicit repo (-r): a draft is attached to no repo")
+	}
+	if !a.Cfg.IsType(o.Type) {
+		return nil, a.unknownTypeErr("", o.Type)
 	}
 
 	idx, err := a.load()
@@ -561,6 +568,7 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 		Labels: o.Labels, Repos: repos, Parent: o.Parent, Deps: o.Deps, Refs: o.Refs,
 		Checklist: checklist,
 		Created:   now, Updated: now, Closed: closed, Body: core.BodyPath(id),
+		Type: o.Type,
 	}
 	idx.Add(t)
 
@@ -769,6 +777,7 @@ func (a *App) BacklinksBatch(ids []string) (map[string][]core.Task, error) {
 type QueryOpts struct {
 	Status    string
 	Label     string // explicit tag filter; ANDs with ScopeRepo
+	Type      string // filter by work-item type ([types].order); "" = no type filter
 	ScopeRepo string // board-scope repo (a pointer's / central board's DefaultRepo)
 	Repo      string // owner/repo filter on the repos field (already resolved)
 	Drafts    bool   // only tasks with repos == []; ignores ScopeRepo/Repo
@@ -785,7 +794,12 @@ type QueryOpts struct {
 	// index (the `ls --archived` browse of retired tasks). The same filters/sort
 	// apply; only the source index changes.
 	Archived bool
-	Limit    int
+	// IncludeContainers relaxes `furrow next`: by default a container type (an
+	// epic) is never handed out as work; with this set, a container that is
+	// otherwise ready (in a next lane, deps done) is surfaced too (the Jira-style
+	// "show me the boxes" escape hatch). Only `next` reads it; List/Tree ignore it.
+	IncludeContainers bool
+	Limit             int
 }
 
 // match reports whether t passes the query's filters (Limit excluded — that is
@@ -848,6 +862,9 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 	if err := validateSortField(o.Sort); err != nil {
 		return nil, err
 	}
+	if err := a.validateTypeFilter(o.Type); err != nil {
+		return nil, err
+	}
 	idx, err := a.listIndex(o)
 	if err != nil {
 		return nil, err
@@ -855,7 +872,7 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 	var out []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if o.match(t) {
+		if o.match(t) && a.matchType(o, t) {
 			out = append(out, *t)
 		}
 	}
@@ -866,6 +883,23 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 		out = out[:o.Limit]
 	}
 	return out, nil
+}
+
+// validateTypeFilter rejects an unknown --type filter with the configured types
+// in Candidates (symmetric with the unknown-lane guard) — a typo'd `--type epci`
+// must not silently return []. Empty = no type filter, always valid.
+func (a *App) validateTypeFilter(typ string) error {
+	if typ == "" || a.Cfg.IsType(typ) {
+		return nil
+	}
+	return a.unknownTypeErr("", typ)
+}
+
+// matchType applies a --type filter by EFFECTIVE type, so `--type task` matches
+// the type-less majority (whose effective type is the default) as well as tasks
+// explicitly typed "task". "" = no filter.
+func (a *App) matchType(o QueryOpts, t *core.Task) bool {
+	return o.Type == "" || a.Cfg.EffectiveType(t.Type) == o.Type
 }
 
 // validateSortField rejects an unknown --sort key with the valid fields in
@@ -884,8 +918,9 @@ func validateSortField(field string) error {
 
 // Next returns the actionable tasks in canonical order — the work that is ready
 // to pick up: status in the configured next-lanes ([next].lanes, default
-// ready+in-progress) AND every dependency already done. The query's filters
-// restrict the result with the same semantics as List.
+// ready+in-progress) AND every dependency already done AND not a container type
+// (an epic is a box, not work — surface boxes with o.IncludeContainers). The
+// query's filters restrict the result with the same semantics as List.
 func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 	idx, err := a.load()
 	if err != nil {
@@ -905,8 +940,13 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 		}
 		// The same predicate `ls --tree` stars a node with (see App.actionable):
 		// one definition of "you could pick this up now", or the two views would
-		// eventually disagree about it.
-		if a.actionable(idx, t, doneIDs) {
+		// eventually disagree about it. --containers relaxes to the type-blind
+		// workable test so a ready epic is surfaced when explicitly asked for.
+		ready := a.actionable(idx, t, doneIDs)
+		if o.IncludeContainers {
+			ready = a.workable(idx, t, doneIDs)
+		}
+		if ready {
 			out = append(out, *t)
 			if o.Limit > 0 && len(out) >= o.Limit {
 				break
@@ -1234,13 +1274,15 @@ type SetOpts struct {
 	ClearEffort bool     // unset the effort estimate (wins over Effort)
 	AddLabels   []string // labels to union on
 	RmLabels    []string // labels to drop
+	Type        *string  // set the work-item type (validated against [types].order)
 }
 
 // empty reports whether o requests no change at all — Set rejects that rather
 // than silently touching only the `updated` stamp.
 func (o SetOpts) empty() bool {
 	return o.Status == nil && o.Value == nil && !o.ClearValue &&
-		o.Effort == nil && !o.ClearEffort && len(o.AddLabels) == 0 && len(o.RmLabels) == 0
+		o.Effort == nil && !o.ClearEffort && len(o.AddLabels) == 0 && len(o.RmLabels) == 0 &&
+		o.Type == nil
 }
 
 // Set applies several triage edits to one task in a single load/save: move a
@@ -1254,8 +1296,11 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, error) {
 	if o.Status != nil && !a.Cfg.IsLane(*o.Status) {
 		return nil, a.unknownLaneErr(id, *o.Status)
 	}
+	if o.Type != nil && !a.Cfg.IsType(*o.Type) {
+		return nil, a.unknownTypeErr(id, *o.Type)
+	}
 	if o.empty() {
-		return nil, core.Validationf(id, "set needs at least one change (-s / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label)")
+		return nil, core.Validationf(id, "set needs at least one change (-s / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / --type)")
 	}
 	idx, err := a.load()
 	if err != nil {
@@ -1286,6 +1331,9 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, error) {
 		t.Effort = nil
 	case o.Effort != nil:
 		t.Effort = cloneIntp(o.Effort)
+	}
+	if o.Type != nil {
+		t.Type = *o.Type
 	}
 	t.Labels = nextLabels
 	t.Updated = a.Clock.Now()
@@ -1490,6 +1538,19 @@ func (a *App) unknownLaneErr(id, lane string) *core.Error {
 		ID:         id,
 		Msg:        fmt.Sprintf("unknown lane %q (configured: %s)", lane, strings.Join(a.Cfg.Lanes, ", ")),
 		Candidates: append([]string(nil), a.Cfg.Lanes...),
+	}
+}
+
+// unknownTypeErr is the type-side twin of unknownLaneErr: every type gate (add
+// --type, set --type, ls --type) returns it, so a typo'd `--type epci` is exit 2
+// with the configured types in Candidates rather than a silent bogus type. The
+// empty string is always valid (it means the default type) and never reaches here.
+func (a *App) unknownTypeErr(id, typ string) *core.Error {
+	return &core.Error{
+		Code:       core.CodeValidation,
+		ID:         id,
+		Msg:        fmt.Sprintf("unknown type %q (configured: %s)", typ, strings.Join(a.Cfg.Types, ", ")),
+		Candidates: append([]string(nil), a.Cfg.Types...),
 	}
 }
 

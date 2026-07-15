@@ -26,7 +26,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// canonicalize after and validate as before.
 	ps := core.EstimateProblems(idx)
 	core.Canonicalize(idx, a.Cfg.Lanes)
-	ps = append(ps, core.Validate(idx, a.Cfg.Lanes, a.Cfg.IDPattern())...)
+	ps = append(ps, core.Validate(idx, a.Cfg.Lanes, a.Cfg.Types, a.Cfg.IDPattern())...)
 	// Dependency cycles: prevented at mutation time, but a concurrent merge of
 	// two half-edges on separate shards can slip one in silently (the tasks then
 	// wait on each other forever and never surface in `next`). lint is the backstop.

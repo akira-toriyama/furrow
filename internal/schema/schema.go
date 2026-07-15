@@ -7,8 +7,8 @@
 // review shards (repos/<owner>__<repo>.json, described by RepoV1), plus one
 // board-wide meta.json (described by MetaV2). Versioning: the version here
 // numbers each schema document; the board LAYOUT version lives in meta.json's
-// schema_version (currently 4 — 3 was the repos pivot, 2 pre-repos shards, 1 the
-// monolithic index.json).
+// schema_version (currently 5 — 4 added the review shards + per-task reviewed,
+// 3 was the repos pivot, 2 pre-repos shards, 1 the monolithic index.json).
 package schema
 
 // TaskV2 is the JSON Schema (draft 2020-12) for one task shard: the object in a
@@ -44,7 +44,8 @@ const TaskV2 = `{
     "updated": { "type": "string", "format": "date-time" },
     "closed": { "type": ["string", "null"], "format": "date-time" },
     "reviewed": { "type": ["string", "null"], "format": "date-time", "description": "when a human last reviewed this task (furrow review <id>); null = never. Tracked separately from updated." },
-    "body": { "type": "string", "description": "relative path, e.g. bodies/t-0042.md" }
+    "body": { "type": "string", "description": "relative path, e.g. bodies/t-0042.md" },
+    "type": { "type": "string", "description": "work-item type (e.g. task, epic) — a value from config.toml [types].order; absent = the configured default (normally task). Containers (epics) are skipped by furrow next. Optional (not required): absent is the common case." }
   },
   "$defs": {
     "checklistItem": {
@@ -65,19 +66,20 @@ const TaskV2 = `{
 // file and no shard becomes a merge point. Keep the const in lockstep with
 // internal/core.Meta and core.SchemaVersion. The schema DOCUMENT stays v2 (its
 // filename never changes) while the pinned layout version advances: it now pins
-// layout version 4 (the review shards + per-task reviewed field); 3 was the
-// repos pivot. v1 (which pinned layout 2) is retired, not dual-supported.
+// layout version 5 (the per-task type field); 4 was the review shards +
+// per-task reviewed field, 3 the repos pivot. v1 (which pinned layout 2) is
+// retired, not dual-supported.
 const MetaV2 = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.meta.v2.json",
   "title": "furrow meta v2",
-  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 4 = adds the per-repo review shards (repos/) and the per-task reviewed timestamp (3 = the repos pivot, 2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
+  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 5 = adds the per-task type field (task/epic; container skipped by next); 4 = the per-repo review shards (repos/) and the per-task reviewed timestamp (3 = the repos pivot, 2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": true,
   "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a meta.json furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (blamed on the id \"meta\", since meta.json belongs to no task) — nothing else can, since nothing ever deletes an extra. This document has no nested objects, so the top-level-only limit of the passthrough has nothing to qualify here; the task shard's schema explains it.",
   "required": ["schema_version"],
   "properties": {
-    "schema_version": { "const": 4 }
+    "schema_version": { "const": 5 }
   }
 }
 `

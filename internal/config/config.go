@@ -36,6 +36,11 @@ type raw struct {
 	Next struct {
 		Lanes []string `toml:"lanes"`
 	} `toml:"next"`
+	Types struct {
+		Order      []string `toml:"order"`
+		Default    string   `toml:"default"`
+		Containers []string `toml:"containers"`
+	} `toml:"types"`
 	Labels struct {
 		Required *bool `toml:"required"`
 	} `toml:"labels"`
@@ -148,6 +153,49 @@ func fromRaw(r raw) (*Config, []string, error) {
 		c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)
 	}
 
+	// types: the work-item type vocabulary, same closed-vocab discipline as lanes.
+	if len(r.Types.Order) > 0 {
+		c.Types = dedupeNonEmpty(r.Types.Order)
+		if len(c.Types) == 0 {
+			c.Types = append([]string(nil), DefaultTypes...)
+			warn = append(warn, "types.order was empty after cleaning; using defaults")
+		}
+	}
+	// containers: keep only real types; absent -> the default container set
+	// intersected with the vocabulary.
+	var containers []string
+	if r.Types.Containers != nil {
+		for _, ty := range r.Types.Containers {
+			if contains(c.Types, ty) {
+				containers = append(containers, ty)
+			} else {
+				warn = append(warn, fmt.Sprintf("types.containers entry %q is not a type; ignored", ty))
+			}
+		}
+	} else {
+		for _, ty := range DefaultContainers {
+			if contains(c.Types, ty) {
+				containers = append(containers, ty)
+			}
+		}
+	}
+	c.Containers = setOf(containers)
+	// default type: must be a real type AND not a container — otherwise every
+	// type-less shard would resolve to a container and vanish from `furrow next`.
+	// Clamp to the first non-container type (the const default preferred).
+	typeFallback := DefaultType
+	if !contains(c.Types, typeFallback) || c.Containers[typeFallback] {
+		if nc := firstNonContainer(c.Types, c.Containers); nc != "" {
+			typeFallback = nc
+		} else {
+			// Every configured type is a container — a nonsensical vocabulary. Keep a
+			// safe non-container default (the const) so type-less tasks never vanish
+			// from `next`, but warn: that fallback is not in [types].order.
+			warn = append(warn, fmt.Sprintf("types.containers marks every type a container; using non-container default %q (outside types.order) so type-less tasks stay actionable", typeFallback))
+		}
+	}
+	c.DefaultType = clampType(r.Types.Default, typeFallback, c.Types, c.Containers, "types.default", &warn)
+
 	c.PriorityStep = clampPositive(r.Priority.Step, DefaultPriorityStep, "priority.step", &warn)
 	c.PriorityDefault = clampPositive(r.Priority.Default, DefaultPriorityDefault, "priority.default", &warn)
 
@@ -246,6 +294,37 @@ func clampLane(v, fallback string, lanes []string, key string, warn *[]string) s
 	}
 	*warn = append(*warn, fmt.Sprintf("%s %q is not in lanes.order; using %q", key, v, fallback))
 	return fallback
+}
+
+// clampType enforces the two invariants on [types].default: it must be a real
+// type, and it must NOT be a container. A container default would resolve every
+// type-less shard to a box and hide it from `furrow next` — the silent
+// misbehavior the whole type feature exists to prevent — so it clamps (with a
+// warning) to a known-safe non-container fallback.
+func clampType(v, fallback string, types []string, containers map[string]bool, key string, warn *[]string) string {
+	if v == "" {
+		return fallback
+	}
+	if !contains(types, v) {
+		*warn = append(*warn, fmt.Sprintf("%s %q is not in types.order; using %q", key, v, fallback))
+		return fallback
+	}
+	if containers[v] {
+		*warn = append(*warn, fmt.Sprintf("%s %q is a container type; a type-less task would vanish from next, so using %q", key, v, fallback))
+		return fallback
+	}
+	return v
+}
+
+// firstNonContainer returns the first vocabulary type that is not a container,
+// or "" if every type is a container (a pathological hand-config).
+func firstNonContainer(types []string, containers map[string]bool) string {
+	for _, ty := range types {
+		if !containers[ty] {
+			return ty
+		}
+	}
+	return ""
 }
 
 func clampPositive(v *int, fallback int, key string, warn *[]string) int {

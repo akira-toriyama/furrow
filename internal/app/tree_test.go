@@ -28,6 +28,145 @@ func findNode(nodes []TreeNode, id string) *TreeNode {
 	return nil
 }
 
+// treeFind builds the whole forest and returns the node for id (t.Fatal if absent).
+func treeFind(t *testing.T, a *App, id string, recursive bool) *TreeNode {
+	t.Helper()
+	nodes, err := a.Tree(QueryOpts{}, "", recursive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := findNode(nodes, id)
+	if n == nil {
+		t.Fatalf("node %s not found in tree", id)
+	}
+	return n
+}
+
+// TestTreeContainerProgressAndStuck pins t-3jd1 §3(c/d): a container shows rolled-up
+// child progress and is "stuck" when it has open work but no actionable descendant.
+func TestTreeContainerProgressAndStuck(t *testing.T) {
+	a := newApp()
+	mk := func(title string, o AddOpts) string {
+		task, err := a.Add(title, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return task.ID
+	}
+	epic := mk("epic", AddOpts{Type: "epic", Status: "backlog"})
+	mk("done child", AddOpts{Parent: epic, Status: "done"})
+	back := mk("backlog child", AddOpts{Parent: epic, Status: "backlog"})
+
+	e := treeFind(t, a, epic, false)
+	if !e.Container {
+		t.Error("a type=epic task must be a container")
+	}
+	if e.Progress == nil || e.Progress.Done != 1 || e.Progress.Total != 2 {
+		t.Errorf("progress = %+v, want 1/2", e.Progress)
+	}
+	if !e.Stuck {
+		t.Error("an epic with an open child and no actionable descendant must be stuck")
+	}
+
+	// Moving the open child into a next lane gives the box an actionable descendant.
+	if _, err := a.Move(back, "ready"); err != nil {
+		t.Fatal(err)
+	}
+	if treeFind(t, a, epic, false).Stuck {
+		t.Error("an epic with a ready (actionable) descendant must NOT be stuck")
+	}
+}
+
+// TestTreeStuckRecursesThroughSubEpics pins the design's §3(c) clarification: stuck
+// walks the whole subtree, so a top epic whose only actionable work sits under a
+// SUB-epic is not stuck. And a freshly-declared empty epic is never stuck.
+func TestTreeStuckRecursesThroughSubEpics(t *testing.T) {
+	a := newApp()
+	mk := func(title string, o AddOpts) string {
+		task, err := a.Add(title, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return task.ID
+	}
+	top := mk("top epic", AddOpts{Type: "epic", Status: "backlog"})
+	sub := mk("sub epic", AddOpts{Type: "epic", Status: "backlog", Parent: top})
+	mk("ready leaf", AddOpts{Status: "ready", Parent: sub})
+
+	if treeFind(t, a, top, false).Stuck {
+		t.Error("a top epic with a ready leaf under a sub-epic must NOT be stuck (stuck recurses through containers)")
+	}
+
+	empty := mk("empty epic", AddOpts{Type: "epic", Status: "backlog"})
+	ee := treeFind(t, a, empty, false)
+	if ee.Progress == nil || ee.Progress.Total != 0 {
+		t.Errorf("empty epic progress = %+v, want 0/0", ee.Progress)
+	}
+	if ee.Stuck {
+		t.Error("an empty epic (zero children) must NOT be stuck — it is a fresh declaration, not a stalled box")
+	}
+}
+
+// TestTreeRollupIgnoresReadFilter pins the review fix: a container's progress/stuck
+// roll up over its REAL children (the full index), NOT the filtered/rendered
+// subtree. So `ls --tree --type epic` (which filters the task-typed children out of
+// the drawing) must still report the epic's true child count and stuck state — the
+// same full-index basis Actionable/BlockedBy already use.
+func TestTreeRollupIgnoresReadFilter(t *testing.T) {
+	a := newApp()
+	mk := func(title string, o AddOpts) string {
+		task, err := a.Add(title, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return task.ID
+	}
+	epic := mk("epic", AddOpts{Type: "epic", Status: "backlog"})
+	mk("task child", AddOpts{Parent: epic, Status: "backlog"}) // task-typed, open, not actionable
+
+	// Filter to epics only: the child is excluded from what the tree DRAWS.
+	nodes, err := a.Tree(QueryOpts{Type: "epic"}, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := findNode(nodes, epic)
+	if e == nil {
+		t.Fatal("the epic must appear in a --type epic tree")
+	}
+	if len(e.Children) != 0 {
+		t.Errorf("the task-typed child must be filtered OUT of the drawing, got %d drawn children", len(e.Children))
+	}
+	if e.Progress == nil || e.Progress.Total != 1 {
+		t.Errorf("progress must roll up over the REAL child (full index) despite the filter, want total 1, got %+v", e.Progress)
+	}
+	if !e.Stuck {
+		t.Error("the epic has an open non-actionable child, so it must still be stuck even though the child is filtered from the drawing")
+	}
+}
+
+// TestTreeProgressRecursive pins the direct-vs-subtree scope of the roll-up.
+func TestTreeProgressRecursive(t *testing.T) {
+	a := newApp()
+	mk := func(title string, o AddOpts) string {
+		task, err := a.Add(title, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return task.ID
+	}
+	top := mk("top", AddOpts{Type: "epic", Status: "backlog"})
+	sub := mk("sub", AddOpts{Type: "epic", Status: "done", Parent: top})
+	mk("leaf done", AddOpts{Status: "done", Parent: sub})
+	mk("leaf open", AddOpts{Status: "backlog", Parent: sub})
+
+	if e := treeFind(t, a, top, false); e.Progress.Done != 1 || e.Progress.Total != 1 {
+		t.Errorf("direct progress = %+v, want 1/1 (the one direct child, done)", e.Progress)
+	}
+	if e := treeFind(t, a, top, true); e.Progress.Done != 2 || e.Progress.Total != 3 {
+		t.Errorf("recursive progress = %+v, want 2/3 (sub + 2 leaves, two done)", e.Progress)
+	}
+}
+
 func TestTreeNestsTheHierarchy(t *testing.T) {
 	a := newApp()
 	ids := mkParentTasks(t, a, "epic", "slice", "sub-slice", "unrelated")
@@ -39,7 +178,7 @@ func TestTreeNestsTheHierarchy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nodes, err := a.Tree(QueryOpts{}, "")
+	nodes, err := a.Tree(QueryOpts{}, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +217,7 @@ func TestTreeStarsExactlyWhatNextWouldHand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nodes, err := a.Tree(QueryOpts{}, "")
+	nodes, err := a.Tree(QueryOpts{}, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +252,7 @@ func TestTreeStarsExactlyWhatNextWouldHand(t *testing.T) {
 	if _, err := a.Done(gate); err != nil {
 		t.Fatal(err)
 	}
-	nodes, err = a.Tree(QueryOpts{}, "")
+	nodes, err = a.Tree(QueryOpts{}, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +278,7 @@ func TestTreeNeverHidesAMatchWhoseParentWasFiltered(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nodes, err := a.Tree(QueryOpts{Status: "ready"}, "")
+	nodes, err := a.Tree(QueryOpts{Status: "ready"}, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +300,7 @@ func TestTreeLimitCapsRootsNotTasks(t *testing.T) {
 		}
 	}
 
-	nodes, err := a.Tree(QueryOpts{Limit: 1}, "")
+	nodes, err := a.Tree(QueryOpts{Limit: 1}, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +320,7 @@ func TestTreeRootArgumentAndItsErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nodes, err := a.Tree(QueryOpts{}, epic)
+	nodes, err := a.Tree(QueryOpts{}, epic, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,12 +329,12 @@ func TestTreeRootArgumentAndItsErrors(t *testing.T) {
 	}
 
 	// An unknown id is a MISS (exit 1).
-	if _, err := a.Tree(QueryOpts{}, "t-404"); core.AsError(err) == nil || core.AsError(err).Code != core.CodeNotFound {
+	if _, err := a.Tree(QueryOpts{}, "t-404", false); core.AsError(err) == nil || core.AsError(err).Code != core.CodeNotFound {
 		t.Errorf("an unknown root is exit 1, got %v", err)
 	}
 	// An id that EXISTS but the filters exclude is a validation error — an empty
 	// tree would read as "this task has nothing under it", which is a different fact.
-	if _, err := a.Tree(QueryOpts{Status: "done"}, epic); core.AsError(err) == nil || core.AsError(err).Code != core.CodeValidation {
+	if _, err := a.Tree(QueryOpts{Status: "done"}, epic, false); core.AsError(err) == nil || core.AsError(err).Code != core.CodeValidation {
 		t.Errorf("a filtered-out root must say so (exit 2), got %v", err)
 	}
 }
@@ -221,7 +360,7 @@ func TestTreeSurvivesAParentCycleMergedInBehindUs(t *testing.T) {
 
 	done := make(chan []string, 1)
 	go func() {
-		nodes, err := a.Tree(QueryOpts{}, "")
+		nodes, err := a.Tree(QueryOpts{}, "", false)
 		if err != nil {
 			done <- nil
 			return

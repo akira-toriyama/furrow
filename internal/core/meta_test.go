@@ -10,7 +10,7 @@ func TestMarshalMetaCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"schema_version\": 4\n}\n"
+	want := "{\n  \"schema_version\": 5\n}\n"
 	if string(b) != want {
 		t.Errorf("MarshalMeta bytes = %q, want %q", b, want)
 	}
@@ -31,12 +31,12 @@ func TestUnmarshalMetaRejectsGarbage(t *testing.T) {
 	}
 }
 
-// SchemaVersion is 4: the review shards (repos/) plus the per-task reviewed
-// timestamp were additive but layout-breaking, so the flag-day bumped every
-// board — a v3 binary refuses it (the version gate) instead of lenient-parsing
-// the new fields away and writing the loss back.
-func TestSchemaVersionIsFour(t *testing.T) {
-	if SchemaVersion != 4 {
-		t.Errorf("SchemaVersion = %d, want 4 (review shards + per-task reviewed)", SchemaVersion)
+// SchemaVersion is 5: the per-task `type` field was additive but layout-breaking
+// (next reads it to skip containers, so a v4 binary that merely preserved it
+// would still hand you an epic as work), so the flag-day bumped every board — a
+// v4 binary refuses it (the version gate) instead of ignoring the new field.
+func TestSchemaVersionIsFive(t *testing.T) {
+	if SchemaVersion != 5 {
+		t.Errorf("SchemaVersion = %d, want 5 (per-task type field)", SchemaVersion)
 	}
 }

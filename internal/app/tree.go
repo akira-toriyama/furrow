@@ -22,19 +22,41 @@ import (
 // facts, so the node carries them: Actionable (nothing is stopping this — the exact
 // predicate `furrow next` uses) and BlockedBy (what is).
 
-// TreeNode is one task in the hierarchy, with its children and the two derived
-// facts about whether it can be worked on right now.
+// Progress is a container's rolled-up child completion — a DERIVED value, never
+// stored (all prior art computes it), so editing a child always yields a current
+// count with no stale number to reconcile. Done/Total count children in the done
+// lane vs all children; the scope is direct children by default, the whole subtree
+// with ls --tree --progress-recursive.
+type Progress struct {
+	Done  int `json:"done"`
+	Total int `json:"total"`
+}
+
+// TreeNode is one task in the hierarchy, with its children and the derived facts
+// about whether it can be worked on right now and, for a container, how its work
+// is progressing.
 type TreeNode struct {
 	Task core.Task
-	// Actionable is `furrow next`'s own predicate: the task sits in a next lane and
-	// every dep it names is done. In a tree it is what turns "here is the shape of
-	// the work" into "here is where you can pick it up".
+	// Actionable is `furrow next`'s own predicate: workable AND not a container. In
+	// a tree it is what turns "here is the shape of the work" into "here is where
+	// you can pick it up". A container is never actionable (a box is not work).
 	Actionable bool
 	// BlockedBy names the deps that are NOT yet done — what is actually stopping
 	// this task. A done dep is history and is left out: the question a reader has in
 	// front of a tree is "what is in the way", not "what was".
 	BlockedBy []string
-	Children  []TreeNode
+	// Container reports whether this node's type is a container (an epic): a box
+	// that groups child work and is itself skipped by `furrow next`.
+	Container bool
+	// Progress is the child-completion roll-up, non-nil only for a container (a box
+	// is the thing a count is ABOUT). Derived, never stored.
+	Progress *Progress
+	// Stuck marks a container that has open (non-terminal) work under it but NO
+	// actionable descendant anywhere in its subtree — org-mode's "stuck project".
+	// The one state a box can be in that `furrow next` cannot show (a box is never
+	// in next), so the tree and `revisit` surface it instead.
+	Stuck    bool
+	Children []TreeNode
 }
 
 // Tree builds the parent forest over the tasks matching o. rootID (optional) picks
@@ -55,7 +77,7 @@ type TreeNode struct {
 // parentless-but-unreachable, i.e. invisible. Those tasks are surfaced as roots and
 // the descent carries a visited set, so a corrupt hierarchy renders — truncated at
 // the loop — rather than vanishing or hanging.
-func (a *App) Tree(o QueryOpts, rootID string) ([]TreeNode, error) {
+func (a *App) Tree(o QueryOpts, rootID string, progressRecursive bool) ([]TreeNode, error) {
 	limit := o.Limit
 	o.Limit = 0 // the limit is on roots, applied after the forest is built
 	tasks, err := a.List(o)
@@ -109,10 +131,16 @@ func (a *App) Tree(o QueryOpts, rootID string) ([]TreeNode, error) {
 		}
 	}
 
+	// Container roll-ups (progress/stuck) are computed over each task's REAL children
+	// from the FULL index — never the filtered/rendered subtree — so a read filter
+	// (`--type epic`, `-s ready`) that hides some children cannot under-count a box's
+	// progress or flip its stuck flag. This mirrors how Actionable/BlockedBy already
+	// use the full idx; the filtered `children` map drives only what the tree DRAWS.
+	kids := childrenMap(idx)
 	out := make([]TreeNode, 0, len(roots))
 	seen := map[string]bool{}
 	for _, r := range roots {
-		out = append(out, a.treeNode(idx, r, children, doneIDs, seen))
+		out = append(out, a.treeNode(idx, r, children, kids, doneIDs, seen, progressRecursive))
 	}
 	return out, nil
 }
@@ -120,10 +148,11 @@ func (a *App) Tree(o QueryOpts, rootID string) ([]TreeNode, error) {
 // treeNode renders one node and descends. seen is the cycle guard: a task already
 // placed in this forest is never expanded twice, so a merged-in parent cycle
 // truncates instead of recursing forever.
-func (a *App) treeNode(idx *core.Index, t core.Task, children map[string][]core.Task, doneIDs, seen map[string]bool) TreeNode {
+func (a *App) treeNode(idx *core.Index, t core.Task, children map[string][]core.Task, kids map[string][]*core.Task, doneIDs, seen map[string]bool, progressRecursive bool) TreeNode {
 	n := TreeNode{
 		Task:       t,
 		Actionable: a.actionable(idx, &t, doneIDs),
+		Container:  a.Cfg.IsContainerType(t.Type),
 		BlockedBy:  []string{},
 		Children:   []TreeNode{},
 	}
@@ -137,9 +166,48 @@ func (a *App) treeNode(idx *core.Index, t core.Task, children map[string][]core.
 	}
 	seen[t.ID] = true
 	for _, c := range children[t.ID] {
-		n.Children = append(n.Children, a.treeNode(idx, c, children, doneIDs, seen))
+		n.Children = append(n.Children, a.treeNode(idx, c, children, kids, doneIDs, seen, progressRecursive))
+	}
+	// Derived roll-ups for a container, over its REAL children (kids = full index),
+	// NOT the filtered/rendered subtree — so a read filter can't distort them. Stuck
+	// reuses `revisit`'s descendant helpers, so tree and revisit never drift on what
+	// "stuck" means. Progress honours the direct/recursive scope; Stuck ALWAYS walks
+	// the whole subtree (recursing through sub-epics to any actionable leaf), so a box
+	// whose only child is a sub-epic with a ready task under it is NOT stuck.
+	if n.Container {
+		done, total := rollupProgress(kids, t.ID, progressRecursive, a.Cfg.DoneLane)
+		n.Progress = &Progress{Done: done, Total: total}
+		n.Stuck = a.hasOpenDescendant(t.ID, kids, map[string]bool{}) && !a.hasActionableDescendant(t.ID, kids, idx, doneIDs, map[string]bool{})
 	}
 	return n
+}
+
+// rollupProgress tallies done/total over a container's REAL children (kids, the
+// full index) — not the filtered/rendered subtree — so a read filter that hides
+// some children never under-counts a box. recursive walks the whole subtree; the
+// seen set survives a merged-in parent cycle. (Stuck reuses revisit's
+// hasOpenDescendant/hasActionableDescendant, so tree and revisit share one notion.)
+func rollupProgress(kids map[string][]*core.Task, id string, recursive bool, doneLane string) (done, total int) {
+	return rollupProgressSeen(kids, id, recursive, doneLane, map[string]bool{})
+}
+
+func rollupProgressSeen(kids map[string][]*core.Task, id string, recursive bool, doneLane string, seen map[string]bool) (done, total int) {
+	for _, k := range kids[id] {
+		if seen[k.ID] {
+			continue
+		}
+		seen[k.ID] = true
+		total++
+		if k.Status == doneLane {
+			done++
+		}
+		if recursive {
+			d, t := rollupProgressSeen(kids, k.ID, true, doneLane, seen)
+			done += d
+			total += t
+		}
+	}
+	return done, total
 }
 
 // orphanedByCycle returns the tasks that no root can reach — every task in a parent
@@ -171,9 +239,20 @@ func orphanedByCycle(tasks []core.Task, children map[string][]core.Task, roots [
 	return out
 }
 
-// actionable is `furrow next`'s membership test, extracted so `next` and `--tree`
-// cannot drift into disagreeing about what "you could pick this up now" means: in a
-// next lane, and every dep done.
-func (a *App) actionable(idx *core.Index, t *core.Task, doneIDs map[string]bool) bool {
+// workable is the type-BLIND readiness test: the task sits in a next lane and
+// every dep it names is done. It says nothing about whether the task is a box.
+// `furrow next --containers` surfaces on this directly — a ready epic IS "next"
+// when you explicitly ask to see boxes.
+func (a *App) workable(idx *core.Index, t *core.Task, doneIDs map[string]bool) bool {
 	return a.Cfg.IsNextLane(t.Status) && idx.Actionable(t, a.Cfg.Terminal, doneIDs)
+}
+
+// actionable is `furrow next`'s default membership test AND `ls --tree`'s ★, kept
+// as one definition so the two views cannot drift on what "you could pick this up
+// now" means: workable AND not a container. A container (an epic) is a box that
+// groups child work — never a thing you pick up — so it is never starred in a tree
+// and never handed out by a plain `next`. `next --containers` relaxes this to
+// workable (see App.Next); the tree ★ never does (a box is never actionable).
+func (a *App) actionable(idx *core.Index, t *core.Task, doneIDs map[string]bool) bool {
+	return a.workable(idx, t, doneIDs) && !a.Cfg.IsContainerType(t.Type)
 }

@@ -350,6 +350,7 @@ func newSetCmd() *cobra.Command {
 		clearEffort bool
 		addLabels   []string
 		rmLabels    []string
+		typ         string
 	)
 	cmd := &cobra.Command{
 		Use:   "set <id>",
@@ -384,6 +385,9 @@ func newSetCmd() *cobra.Command {
 				e := effort
 				o.Effort = &e
 			}
+			if cmd.Flags().Changed("type") {
+				o.Type = &typ
+			}
 			return emitMutationWith(a, "set", args[0],
 				func() (*core.Task, error) { return a.Set(args[0], o) },
 				func(after *core.Task) map[string]any {
@@ -404,6 +408,7 @@ func newSetCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "move to this lane")
+	cmd.Flags().StringVar(&typ, "type", "", "set the work-item type (a value from [types].order, e.g. epic)")
 	cmd.Flags().IntVar(&value, "value", 0, "set the 1..5 value estimate")
 	cmd.Flags().IntVar(&effort, "effort", 0, "set the 1..5 effort estimate")
 	cmd.Flags().BoolVar(&clearValue, "clear-value", false, "clear the value estimate")

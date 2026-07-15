@@ -19,6 +19,9 @@ type BoardInfo struct {
 	DefaultLane          string   `json:"default_lane"`  // lane `add` assigns
 	DoneLane             string   `json:"done_lane"`     // lane `done` moves into
 	Terminal             []string `json:"terminal"`      // lanes excluded from `next`, in lane order
+	Types                []string `json:"types"`         // the closed work-item type vocabulary, in order
+	DefaultType          string   `json:"default_type"`  // type an empty shard resolves to (never a container)
+	Containers           []string `json:"containers"`    // container types (skipped by `next`), in vocab order
 	StaleDays            int      `json:"stale_days"`    // revisit staleness window (0 disables)
 	ArchiveOlderThanDays int      `json:"archive_older_than_days"`
 	LabelsRequired       bool     `json:"labels_required"` // add/lint reject a label-less task
@@ -75,6 +78,9 @@ func (a *App) Board() BoardInfo {
 		DefaultLane:          a.Cfg.DefaultLane,
 		DoneLane:             a.Cfg.DoneLane,
 		Terminal:             terminal,
+		Types:                append([]string(nil), a.Cfg.Types...),
+		DefaultType:          a.Cfg.DefaultType,
+		Containers:           a.Cfg.ContainerTypes(),
 		StaleDays:            a.Cfg.RevisitStaleDays,
 		ArchiveOlderThanDays: a.Cfg.ArchiveOlderThanDays,
 		LabelsRequired:       a.Cfg.LabelsRequired,

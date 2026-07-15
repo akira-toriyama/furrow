@@ -33,6 +33,20 @@ terminal = ["done", "icebox", "waiting"]
 # non-terminal lanes if you want next to show everything actionable.
 lanes = ["ready", "in-progress"]
 
+[types]
+# Work-item type vocabulary (a closed set like [lanes].order). "task" is an
+# ordinary item; "epic" is a container — a box that groups child tasks (via
+# ` + "`furrow parent`" + `) and is itself skipped by ` + "`furrow next`" + ` (surface boxes with
+# ` + "`furrow next --containers`" + `). An unknown --type is rejected with the configured
+# types as candidates, exactly like an unknown lane.
+order = ["task", "epic"]
+# Type a task gets when --type is omitted. MUST NOT be a container, or every
+# type-less task would disappear from next (furrow clamps it back if it is).
+default = "task"
+# Types that are containers (boxes): excluded from next; ` + "`furrow ls --tree`" + `
+# shows their rolled-up child progress instead.
+containers = ["epic"]
+
 [priority]
 # Sparse integer step so reordering edits one field instead of renumbering.
 step = 10

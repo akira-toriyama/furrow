@@ -27,6 +27,7 @@ func newAddCmd() *cobra.Command {
 		body     string
 		checks   []string
 		stdin    bool
+		typ      string
 	)
 	cmd := &cobra.Command{
 		Use:   "add <title>...",
@@ -48,6 +49,7 @@ func newAddCmd() *cobra.Command {
 			opts := app.AddOpts{
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
 				Parent: parent, Deps: deps, Refs: refs, Body: body, Checklist: checks,
+				Type: typ,
 			}
 			if cmd.Flags().Changed("priority") {
 				p := priority
@@ -86,6 +88,7 @@ func newAddCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "lane (default: config lanes.default)")
+	cmd.Flags().StringVar(&typ, "type", "", "work-item type (a value from [types].order, e.g. epic; unknown = exit 2 + candidates)")
 	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "explicit priority (default: append in lane)")
 	cmd.Flags().IntVar(&value, "value", 0, "coarse 1..5 value estimate (clamped; omit to leave unset)")
 	cmd.Flags().IntVar(&effort, "effort", 0, "coarse 1..5 effort estimate (clamped; omit to leave unset)")

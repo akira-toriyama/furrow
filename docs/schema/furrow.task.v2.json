@@ -24,7 +24,8 @@
     "updated": { "type": "string", "format": "date-time" },
     "closed": { "type": ["string", "null"], "format": "date-time" },
     "reviewed": { "type": ["string", "null"], "format": "date-time", "description": "when a human last reviewed this task (furrow review <id>); null = never. Tracked separately from updated." },
-    "body": { "type": "string", "description": "relative path, e.g. bodies/t-0042.md" }
+    "body": { "type": "string", "description": "relative path, e.g. bodies/t-0042.md" },
+    "type": { "type": "string", "description": "work-item type (e.g. task, epic) — a value from config.toml [types].order; absent = the configured default (normally task). Containers (epics) are skipped by furrow next. Optional (not required): absent is the common case." }
   },
   "$defs": {
     "checklistItem": {

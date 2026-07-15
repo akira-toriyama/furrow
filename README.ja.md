@@ -40,7 +40,7 @@ furrow はこれを Go で実装する。外部サービス連携は持たず、
     t-0002.json
   bodies/<id>.md    # 1 タスク 1 つの長文 markdown 本文（人/エージェントが編集可）
   repos/<owner>__<repo>.json  # repo ごとのレビュー shard（furrow review <repo>）
-  meta.json         # ボード全体のレイアウト版（{"schema_version": 4}）。上げるのは `furrow upgrade` だけ
+  meta.json         # ボード全体のレイアウト版（{"schema_version": 5}）。上げるのは `furrow upgrade` だけ
   config.toml       # 人が編集する設定（furrow からは READ のみ）
   archive/          # 退避した古い done タスク（独自の tasks/ + meta.json + bodies/）
 ```
@@ -49,7 +49,7 @@ furrow はこれを Go で実装する。外部サービス連携は持たず、
 
 - **`tasks/<id>.json`** = 構造化メタデータだけ、1 タスク 1 ファイル。小さく、`jq` や Go で即クエリでき、フィールド単位で diff できる。**唯一の決定論マーシャラ（`core.MarshalTask`）からしか書かれない。**
 - **`bodies/<id>.md`** = 素の markdown。エスケープなし、タスク単位で diff できる。**手でも Claude でも自由に編集してよい。**
-- **`meta.json`** = ボード全体のレイアウト版（`{"schema_version": 4}`）だけを持つ専用ファイル。**シャードの中には決して入れない**ので、版を上げても触るのは 1 ファイルだけで、どのシャードも git のマージ点にならない。この版は**書き込みの入力であって出力ではない**——通常の write は決してこの数字を動かさず、上げられるのは `furrow upgrade` だけ（[レイアウト版ゲート](#レイアウト版ゲート書き込みを止めるのは版が違うとき)を参照）。
+- **`meta.json`** = ボード全体のレイアウト版（`{"schema_version": 5}`）だけを持つ専用ファイル。**シャードの中には決して入れない**ので、版を上げても触るのは 1 ファイルだけで、どのシャードも git のマージ点にならない。この版は**書き込みの入力であって出力ではない**——通常の write は決してこの数字を動かさず、上げられるのは `furrow upgrade` だけ（[レイアウト版ゲート](#レイアウト版ゲート書き込みを止めるのは版が違うとき)を参照）。
 - **`config.toml`** = 人が編集する設定。furrow は書き換えず、READ するだけ。
 - **`archive/`** = 古くなった done タスクの退避先（独自の `tasks/` + `meta.json` + `bodies/` を持つ兄弟シャードストア）。
 
@@ -142,10 +142,10 @@ furrow done t-0001
 | コマンド | 説明 |
 |---|---|
 | `init` | カレントディレクトリに `.furrow` ストアを作る（`config.toml` + `meta.json` + 空の `tasks/` + `bodies/`） |
-| `add <title>...` | タスクを追加（`--stdin` で標準入力から1行1タスクを一括作成）。id を自動採番し `bodies/<id>.md` を作る。`--check`（反復可）で checklist 項目を seed（body prose だけでは shard checklist に入らない）。範囲外 `--value`/`--effort` は clamp＋stderr note。`-` 始まり title は `--` 区切りが必要（エラーが案内） |
-| `ls`（別名 `list`） | タスクを正準順（`lane -> priority -> id`）で一覧。`--drafts` で repo 未付与のタスク（draft）だけを一覧（ボードのスコープは無視）。`--since`/`--until` は `updated` で期間フィルタ（素の `YYYY-MM-DD`、または RFC3339。素の `--until` はその日を丸ごと含む）。`--sort updated\|created\|value\|effort` で並べ替え（新しい/大きい順。`--reverse` で反転、未設定 `value`/`effort` はどちら向きでも末尾）。`--sort` 時は `-n` がソート後の上位 N。未知 `--sort` フィールド・不正な日付は exit 2。`--archived` は hot ボードでなく archive store（`.furrow/archive/`）から一覧（同じフィルタ/sort が効く）。**`--tree`** はフラットな表でなく **parent の階層**を描く —— top-level タスクごとに 1 本の木、`<id>` を渡せばその部分木（`furrow ls --tree <id>`）。フィルタはそのまま効き、森は**マッチした集合の上に**組む —— 親がフィルタで落ちた子は「消える」のではなく root になる（`--tree` を付けたせいで見えるタスクが減ることは無い）。`--tree` 時の `-n` は**木の本数**の上限（タスク数ではない＝途中で切ると見せた木から子を切断してしまう）。★ は `furrow next` が今その場で渡すタスク（next レーンかつ依存が全部 done）、ブロックされたタスクは**何に塞がれているか**を行末に出す —— フラットな一覧が運べない 2 つの事実（記号: ★ 着手可能 / ✓ done / ~ 保留（done でない terminal レーン）/ · 着手不可）。`--json` は children を入れ子にし、各ノードに `actionable` と `blocked_by` を付ける。`--ndjson` は 1 行 1 本の木 |
+| `add <title>...` | タスクを追加（`--stdin` で標準入力から1行1タスクを一括作成）。id を自動採番し `bodies/<id>.md` を作る。`--check`（反復可）で checklist 項目を seed（body prose だけでは shard checklist に入らない）。範囲外 `--value`/`--effort` は clamp＋stderr note。`-` 始まり title は `--` 区切りが必要（エラーが案内）。`--type` で work-item 型を設定（`[types].order` の値、例 `epic`。未知型は exit 2＋`candidates`） |
+| `ls`（別名 `list`） | タスクを正準順（`lane -> priority -> id`）で一覧。`--drafts` で repo 未付与のタスク（draft）だけを一覧（ボードのスコープは無視）。`--since`/`--until` は `updated` で期間フィルタ（素の `YYYY-MM-DD`、または RFC3339。素の `--until` はその日を丸ごと含む）。`--sort updated\|created\|value\|effort` で並べ替え（新しい/大きい順。`--reverse` で反転、未設定 `value`/`effort` はどちら向きでも末尾）。`--sort` 時は `-n` がソート後の上位 N。未知 `--sort` フィールド・不正な日付は exit 2。`--archived` は hot ボードでなく archive store（`.furrow/archive/`）から一覧（同じフィルタ/sort が効く）。**`--tree`** はフラットな表でなく **parent の階層**を描く —— top-level タスクごとに 1 本の木、`<id>` を渡せばその部分木（`furrow ls --tree <id>`）。フィルタはそのまま効き、森は**マッチした集合の上に**組む —— 親がフィルタで落ちた子は「消える」のではなく root になる（`--tree` を付けたせいで見えるタスクが減ることは無い）。`--tree` 時の `-n` は**木の本数**の上限（タスク数ではない＝途中で切ると見せた木から子を切断してしまう）。★ は `furrow next` が今その場で渡すタスク（next レーンかつ依存が全部 done）、ブロックされたタスクは**何に塞がれているか**を行末に出す —— フラットな一覧が運べない 2 つの事実（記号: ★ 着手可能 / ✓ done / ~ 保留（done でない terminal レーン）/ · 着手不可）。`--json` は children を入れ子にし、各ノードに `actionable` と `blocked_by` を付ける。`--ndjson` は 1 行 1 本の木。**container**（epic）のノードは子の進捗ロールアップ（`progress` = `done/total`、既定は直下の子・`--progress-recursive` で部分木全体）と `stuck`（配下に open な仕事があるが actionable な子孫が無い）も持つ。`--type` で型フィルタ（effective 型で照合＝`--type task` は型無しの多数派も含む） |
 | `show <id>...` | タスク（複数可）を markdown 本文付きで 1 回の読みで表示（入力順。複数 id は `--json` で配列／human は `---` 区切り、1 id は従来どおり単一オブジェクト。`--ndjson` は個数によらず 1 行 1 タスク）。`--no-body` で本文（`body_text`）を省く＝agent 向けの軽量メタデータ読み。一部 id が見つからなくても見つかった分は出力し、exit 1 のエラーに `details.missing` が載る。見つからない id が実は **archive 済み**なら、`details.archived` に載せ、メッセージが `--archived` での再試行を促す。`--archived` は archive store（`.furrow/archive/`）から読むので、退避済みタスク（と `[[id]]`/`SetStatus-task` リンク）が引き続き辿れる。`--backlinks` は本文でこのタスクを `[[id]]` で参照する他タスクを列挙（「Mentioned in」節／`--json` では `mentioned_by` 配列。GitHub の "mentioned in" のローカル・レート制限なし版）。`--archived` とは併用不可 |
-| `next` | 着手可能なタスク（設定 `[next].lanes` — 既定 `ready` + `in-progress`、intake レーンは出ない — にあり、依存が全部 done）を表示。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
+| `next` | 着手可能なタスク（設定 `[next].lanes` — 既定 `ready` + `in-progress`、intake レーンは出ない — にあり、依存が全部 done）を表示。**container** 型（epic）は箱であって仕事ではないので出さない —— `--containers` で着手可能な箱も出す。`--json`/`--ndjson` は各タスクに `reason`（`in_next_lane`・`deps_satisfied`）を付与 |
 | `revisit` | read-only。再評価すべき open タスクを一覧。`--json`/`--ndjson` は各タスクに `revisit` 配列 `{code, detail}`（`no_repo`・`value_unset`・`effort_unset`・`stale`・`dep_done`）を付与し、エージェントが何を直すか分かる。draft はスコープに関係なく浮上する。空でも exit 0。`-l/--label`・`-r/--repo`・`-n/--limit`・`--stale-days <n>`（0 で stale 無効） |
 | `search <term>` | タスクの**タイトルと markdown 本文**を全文検索（大文字小文字を無視した部分一致）、canonical 順。`.furrow/bodies` を `grep` する寄り道でなく 1 コマンドで探せる。`ls` と同じ `-s/-l/-r/-n` スコープを尊重（素の `search` はこの repo のボード内。`-r ''` で全ボード）。各ヒットは `matched_field`（`title`\|`body`）と、語を文脈付きで示す 1 行 `snippet` を返す。タイトル一致なら本文は読まない。複数語は 1 つのリテラル句。空でも exit 0。`-s/--status`・`-l/--label`・`-r/--repo`・`-n/--limit` |
 | `stats` | スコープ内でボードを集計: `total`・`drafts`、および `by_lane`（設定レーン順の完全ヒストグラム。件数 0 のレーンも含む）・`by_repo`・`by_label`（使用語彙＝多い順）。素の `stats` はこの repo の断面、`stats -r ''` は全ボード —— `-l`/`-r` を推測する前に label/repo 語彙を知る呼び出し。`--json`/`--ndjson` は 1 オブジェクト。全 0 のボードでも exit 0。`-s/--status`・`-l/--label`・`-r/--repo` |
@@ -159,7 +159,7 @@ furrow done t-0001
 | `retitle <id> <title...>` | タイトルを変更。シャードの title **と** body 先頭の `# ` 見出しを両方更新して食い違わせない（末尾の引数は空白で連結するのでクォート不要） |
 | `value <id> <1-5>` | 粗い value（重要度）見積もりを設定。範囲外は 1..5 に丸め、**さらに signal**（`--json` の mutation 封筒に `clamped {requested, stored}` キー＋stderr note＝明示引数を黙って丸めない）。`--clear` で未設定に戻す |
 | `effort <id> <1-5>` | 粗い effort（手間）見積もりを設定。`value` 同様 1..5 に丸め＋`clamped` signal。`--clear` で未設定に戻す |
-| `set <id>` | routine triage（lane・value・effort・label）を **1 回の write** でまとめて適用（`move`+`value`+`effort`+`label` の 4 コマンドを 1 つに）。最低 1 変更が必要。未知レーンは `move` 同様 exit 2＋`candidates`。`[labels].required` 下で最後のラベルを剥がす set は拒否 |
+| `set <id>` | routine triage（lane・value・effort・label・type）を **1 回の write** でまとめて適用（`move`+`value`+`effort`+`label` を 1 つに）。最低 1 変更が必要。未知レーン/型は `move` 同様 exit 2＋`candidates`。`[labels].required` 下で最後のラベルを剥がす set は拒否 |
 | `check <id> [index]` | チェックリストを編集: 0 始まり index の項目を done にする（トグルでなく冪等 set。`--off` で外す）・`--add` で追加（反復可・verbatim）・`--rm` で index の項目を削除・`--reword <text>` で index の項目テキストを差し替え。mode フラグは排他、範囲外 index は exit 2 |
 | `dep <id> [<dep-id>...]` | 依存を 1 つ以上まとめて追加（id がそれらを待つ）。`--rm` で削除。循環防止・冪等・all-or-nothing（不正 dep-id は部分適用せず abort）。`--list` は mutate せず `<id>` の依存近傍を**両方向**で読む —— `depends_on`（待っている先＝自分の deps）と `blocks`（逆辺＝このタスクを待っている側。「これを終わらせたら何が解ける？」ビュー）を id+title+lane に解決。`--json`/`--ndjson` は両配列を持つ 1 オブジェクトを出力（空は `[]`）。dangling dep は id だけに解決（lint が指摘）。`--list` は id のみで `--rm` とは併用不可 |
 | `parent <id> [<parent-id>]` | `<id>` を `<parent-id>` の下に置く（階層）。`--rm` で親を外して top-level に戻す。これまで `parent` は `add --parent` の書き切りで、間違えたら**機械が書く shard を手編集**するしかなかった（CLAUDE.md が禁じている行為）。循環防止: 親は存在必須・自分自身は不可・ループを閉じる辺は exit 2（**循環した階層は root を持たない**＝その中の全タスクがどの木にも属さなくなる）。**done な親は許可**する —— 終わった epic の下に取りこぼしを戻すのは正当な記録だから。開いたままの子は `lint` の `parent-done`（warn）が知らせる。`--list` は mutate せず階層近傍を**両方向**で読む —— ぶら下がっている `parent`（top-level なら `null`）と、下にいる `children`（無ければ `[]`）を id+title+lane に解決 | `--rm`, `--list` |
@@ -460,10 +460,10 @@ git config core.hooksPath scripts/hooks   # hook を置いたあと
 ボード全体のレイアウト版は `meta.json` に独立して持つ（シャードには入れない）:
 
 ```json
-{ "schema_version": 4 }
+{ "schema_version": 5 }
 ```
 
-正準スキーマは `furrow schema [task|meta|repo]` が出力する（draft 2020-12）。これが正本で、`docs/schema/furrow.task.v2.json`・`furrow.meta.v2.json`・`furrow.repo.v1.json` が commit 済みのコピー。CI が三者を diff して drift を防ぐ（`v2`/`v1` はスキーマ**文書**の版号で、ボードのレイアウト版＝`meta.json` の `schema_version` は 4）。
+正準スキーマは `furrow schema [task|meta|repo]` が出力する（draft 2020-12）。これが正本で、`docs/schema/furrow.task.v2.json`・`furrow.meta.v2.json`・`furrow.repo.v1.json` が commit 済みのコピー。CI が三者を diff して drift を防ぐ（`v2`/`v1` はスキーマ**文書**の版号で、ボードのレイアウト版＝`meta.json` の `schema_version` は 5）。
 
 ### レイアウト版ゲート（書き込みを止めるのは版が違うとき）
 
@@ -758,7 +758,7 @@ gitmoji + Conventional Commits。形式は次のとおり（gitmoji は `:code:`
 
 ## ステータス
 
-core（一級の `repos`・board layout v4・両側 version gate＝新しいボードは read 拒否／古いボードは write 拒否、版を上げるのは `furrow upgrade` だけ）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync`・`upgrade` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは GoReleaser → Homebrew tap で公開する（[Releases ページ](https://github.com/akira-toriyama/furrow/releases) 参照・task-status Action は `v0.5.0` から同梱・一級の `repos` は `v0.6.0` から・board layout v4 は `v0.8.0` から）。将来（低優先）: read-only の Web ビューア。
+core（一級の `repos`・board layout v5・両側 version gate＝新しいボードは read 拒否／古いボードは write 拒否、版を上げるのは `furrow upgrade` だけ）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync`・`upgrade` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは GoReleaser → Homebrew tap で公開する（[Releases ページ](https://github.com/akira-toriyama/furrow/releases) 参照・task-status Action は `v0.5.0` から同梱・一級の `repos` は `v0.6.0` から・board layout v4 は `v0.8.0` から・board layout v5 は `v0.10.0` から）。将来（低優先）: read-only の Web ビューア。
 
 ## ライセンス
 

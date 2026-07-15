@@ -17,7 +17,7 @@ the user-level config. When you work with any furrow store:
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
 - Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|review|sync|apply|archive|upgrade|lint|config|init`.
-  `set <id>` combines lane/value/effort/labels in one write (the triage
+  `set <id>` combines lane/value/effort/labels/**type** in one write (the triage
   shortcut for move+value+effort+label); `dep <id> <dep-id>...` is variadic
   (add/remove several in one write), and `dep <id> --list` is the read-only
   reverse-deps view — both directions (`depends_on` / `blocks`) resolved to
@@ -45,6 +45,28 @@ the user-level config. When you work with any furrow store:
   a legitimate record. `lint` names the two states that follow: `parent-cycle`
   (error, the git-merge backstop) and `parent-done` (warn — an open task under a
   closed epic).
+- **`type` is first-class; an epic is a container, declared not inferred (schema
+  v5).** A task carries a `type` from the closed `[types].order` vocabulary
+  (default `task`, `epic`; `default`/`containers` alongside it, same
+  clamp-don't-reject + exit-2-with-`candidates` discipline as lanes — and the
+  built-in default applies on a board with no `[types]` block, so an old board's
+  epics are containers the moment its binary is v5). A **container** type (default:
+  `epic`) is a box: `furrow next` SKIPS it (a box is not work — surface a ready one
+  with `next --containers`), `ls --tree` shows its rolled-up child `progress`
+  (`{done,total}`, direct children by default, whole subtree with
+  `--progress-recursive`) and a `stuck` flag (open work under it but no actionable
+  descendant, org-mode's stuck-project — always walks the subtree, through
+  sub-epics), and `revisit`/`sync` gain `children_done` (all children done —
+  consider closing) and `stuck_container`. Set with `add --type` / `set --type`,
+  filter with `ls --type` (by EFFECTIVE type, so `--type task` includes the
+  type-less majority), read the vocab with `furrow board`. **Not inferred from
+  structure**: an empty epic is a legitimate declaration (never nags
+  `children_done`), and a plain task that happens to have children is NOT a box.
+  furrow never auto-closes a container. `lint` warns `unknown-type` (a stray type)
+  and `dep-mirrors-children` (a task whose deps point at its own children — the
+  pre-v5 epic↔slice workaround; unwind with `dep <id> --rm`). The invariant
+  `[types].default ∉ [types].containers` is enforced (a container default is
+  clamped, else every type-less shard would vanish from `next`).
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
   issue-draft analogue). `-r` is the scope control on reads: a full
@@ -218,7 +240,7 @@ their repositories in the first-class `repos` field) or a store can live
 repo-local. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
-(`{"schema_version": 4}`); long-form prose lives in
+(`{"schema_version": 5}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI and a bubbletea TUI drive it. Go,
 cross-platform, brew/nix packaged.

@@ -26,13 +26,17 @@ import (
 // release (the fleet's task-status CI). Order matters — release furrow, bump
 // every caller's pin, THEN `furrow upgrade --yes` the board. Bump only on a
 // read-breaking layout change, and update docs/schema/ + goldens in the same
-// change. v4 = adds the per-task `reviewed` timestamp AND the per-repo
-// review shards (.furrow/repos/<owner>__<repo>.json); a v3-only binary must
-// refuse it, or its lenient unmarshal would strip `reviewed` and write the loss
-// back. v3 = shards whose tasks carry the required first-class repos set (the
-// repos pivot). v2 = per-task shards (tasks/<id>.json) + meta.json (v1 was the
-// monolithic index.json).
-const SchemaVersion = 4
+// change. v5 = adds the per-task `type` field (the work-item type; empty == the
+// config default, normally "task"). `next` reads it to skip containers (epics),
+// so an older binary that merely PRESERVED it would still hand you an epic as
+// work — a query reads the field, so by the bump rule it is a schema field, not
+// a label, and the layout goes up. v4 = adds the per-task `reviewed` timestamp
+// AND the per-repo review shards (.furrow/repos/<owner>__<repo>.json); a v3-only
+// binary must refuse it, or its lenient unmarshal would strip `reviewed` and
+// write the loss back. v3 = shards whose tasks carry the required first-class
+// repos set (the repos pivot). v2 = per-task shards (tasks/<id>.json) +
+// meta.json (v1 was the monolithic index.json).
+const SchemaVersion = 5
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into
@@ -177,6 +181,16 @@ type Task struct {
 	// pointer so "never reviewed" serializes to explicit null, like Closed.
 	Reviewed *time.Time `json:"reviewed"`
 	Body     string     `json:"body"` // relative path, e.g. "bodies/t-0042.md"
+
+	// Type is the work-item TYPE — the DECLARATION that a task is a container (an
+	// epic), not an inference from whether it happens to have children. `next`
+	// reads it to skip containers, so it is a schema field, not a free-form label:
+	// a typo'd `epci` must not silently produce a workable task. Empty (omitempty)
+	// == the default type from config ([types].default, normally "task"), so every
+	// pre-v5 shard is byte-unchanged on disk. It lives at the END of the struct per
+	// the shard-shape rule — a mid-struct field churns key order against an old
+	// binary's extras re-emit (see the extras note below).
+	Type string `json:"type,omitempty"`
 
 	// extras holds keys this binary does not know — a field written by a NEWER
 	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,
