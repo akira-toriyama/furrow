@@ -102,6 +102,12 @@ type Config struct {
 	// and ready to archive. 0 (default) disables the nudge.
 	LintArchiveDone int
 
+	// LintIgnoreCodes are the [lint].ignore_codes: lint codes suppressed on every
+	// `furrow lint`. Trimmed + deduped, stored verbatim (config is core-free and
+	// cannot know the code vocabulary); an entry naming no real code is a no-op the
+	// app-layer lint warns about (clamp-don't-reject). Empty = suppress nothing.
+	LintIgnoreCodes []string
+
 	// Alias is the board-level [alias] table (name -> command string) that
 	// `furrow <name> …` expands git-style. Empty when unset; a nil map is fine to
 	// range over. Builtin-shadowing entries are inert (expansion checks builtins

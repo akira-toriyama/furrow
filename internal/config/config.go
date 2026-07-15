@@ -51,7 +51,8 @@ type raw struct {
 		StaleAfterDays *int `toml:"stale_after_days"`
 	} `toml:"review"`
 	Lint struct {
-		ArchiveDone *int `toml:"archive_done"`
+		ArchiveDone *int     `toml:"archive_done"`
+		IgnoreCodes []string `toml:"ignore_codes"`
 	} `toml:"lint"`
 	// Alias is the board-level [alias] table: name -> a command string that
 	// `furrow <name> …` expands to, git-style. A map decodes any [alias] key.
@@ -253,6 +254,20 @@ func fromRaw(r raw) (*Config, []string, error) {
 		} else {
 			c.LintArchiveDone = *r.Lint.ArchiveDone
 		}
+	}
+
+	// [lint].ignore_codes: lint codes to suppress everywhere `furrow lint` runs.
+	// Trimmed + deduped only — config stays core-free, so it cannot know the code
+	// vocabulary; an entry naming no real code is a harmless no-op that app.Lint
+	// warns about (clamp-don't-reject, deferred to the layer that knows the codes).
+	if len(r.Lint.IgnoreCodes) > 0 {
+		var codes []string
+		for _, code := range r.Lint.IgnoreCodes {
+			if c := strings.TrimSpace(code); c != "" {
+				codes = append(codes, c)
+			}
+		}
+		c.LintIgnoreCodes = dedupeNonEmpty(codes)
 	}
 
 	// [alias]: keep only entries with a non-blank name AND a non-blank command

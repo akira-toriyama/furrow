@@ -74,6 +74,11 @@ older_than_days = 30
 # [archive].older_than_days and ready to archive — a nudge to run ` + "`furrow archive`" + `.
 # 0 (the default) disables the nudge.
 # archive_done = 0
+# Lint codes to suppress on every run (a permanently-dead check that keeps firing).
+# An entry naming no real code only warns (clamp-don't-reject). Filtering drives the
+# exit code, so ignoring the last error makes lint exit 0. CLI twins: ` + "`--code`" + ` /
+# ` + "`--exclude-code`" + ` / ` + "`--severity error`" + ` (those reject an unknown code with exit 2).
+# ignore_codes = ["reconcile-gap", "dep-mirrors-children"]
 
 [revisit]
 # Days a task may go without an update before ` + "`furrow revisit`" + ` flags it

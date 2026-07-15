@@ -239,6 +239,17 @@ func (a *App) Lint() ([]core.Problem, error) {
 		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "config", Msg: w})
 	}
 
+	// [lint].ignore_codes clamp: config stays core-free, so it cannot tell a typo'd
+	// ignore code from a real one — that check lands here, where the code vocabulary
+	// lives. An unknown entry suppresses nothing (it matches no real code), so this
+	// is the only signal that "ignore_codes = ["reconile-gap"]" is a dead no-op.
+	for _, code := range a.Cfg.LintIgnoreCodes {
+		if !core.IsLintCode(code) {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "config",
+				Msg: fmt.Sprintf("lint.ignore_codes entry %q is not a known lint code; it suppresses nothing", code)})
+		}
+	}
+
 	// surface user-level (home) config clamp warnings too. Discovery drops these
 	// on its inert path — a half-written ~/.config/furrow/config.toml whose boards
 	// all clamp away leaves no board AND no signal — so lint is where they land
