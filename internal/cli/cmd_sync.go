@@ -47,8 +47,16 @@ func revisitLine(sum app.RevisitSummary, scope string) string {
 	if sum.Empty() {
 		return ""
 	}
-	line := fmt.Sprintf("revisit: %d dep_done, %d stale (%s) — furrow revisit",
-		len(sum.DepDone), len(sum.Stale), scope)
+	line := fmt.Sprintf("revisit: %d dep_done, %d stale", len(sum.DepDone), len(sum.Stale))
+	// Container counts ride the same line, but only when non-zero — so a board with
+	// no containers (every board before v5) prints the exact prior nudge.
+	if len(sum.ChildrenDone) > 0 {
+		line += fmt.Sprintf(", %d children_done", len(sum.ChildrenDone))
+	}
+	if len(sum.StuckContainer) > 0 {
+		line += fmt.Sprintf(", %d stuck", len(sum.StuckContainer))
+	}
+	line += fmt.Sprintf(" (%s) — furrow revisit", scope)
 	if len(sum.Unreviewed) > 0 {
 		line += "\n" + unreviewedLine(sum.Unreviewed)
 	}

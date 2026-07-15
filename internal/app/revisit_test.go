@@ -32,6 +32,53 @@ func codesByID(items []RevisitItem) map[string][]string {
 
 func p(n int) *int { return &n }
 
+// TestRevisitContainerSignals pins t-3jd1 §3(d): children_done fires for an open
+// container whose children are all done, stuck_container for one with open work but
+// no actionable descendant, a fresh EMPTY epic gets neither (hole ①), and a plain
+// (non-container) parent never gets a container signal.
+func TestRevisitContainerSignals(t *testing.T) {
+	a, _ := revisitApp()
+	mk := func(title string, o AddOpts) string {
+		task, err := a.Add(title, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return task.ID
+	}
+	allDone := mk("epic all done", AddOpts{Type: "epic", Status: "backlog"})
+	mk("done kid", AddOpts{Parent: allDone, Status: "done"})
+	stuck := mk("epic stuck", AddOpts{Type: "epic", Status: "backlog"})
+	mk("backlog kid", AddOpts{Parent: stuck, Status: "backlog"})
+	empty := mk("epic empty", AddOpts{Type: "epic", Status: "backlog"})
+	plain := mk("plain parent", AddOpts{Status: "backlog"})
+	mk("done kid 2", AddOpts{Parent: plain, Status: "done"})
+
+	sum, err := a.RevisitSummary(QueryOpts{}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	has := func(ids []string, id string) bool {
+		for _, x := range ids {
+			if x == id {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(sum.ChildrenDone, allDone) || has(sum.StuckContainer, allDone) {
+		t.Errorf("all-done epic: want children_done only; done=%v stuck=%v", sum.ChildrenDone, sum.StuckContainer)
+	}
+	if !has(sum.StuckContainer, stuck) || has(sum.ChildrenDone, stuck) {
+		t.Errorf("stuck epic: want stuck_container only; done=%v stuck=%v", sum.ChildrenDone, sum.StuckContainer)
+	}
+	if has(sum.ChildrenDone, empty) || has(sum.StuckContainer, empty) {
+		t.Error("an empty epic (zero children) must get NEITHER container signal — hole ①")
+	}
+	if has(sum.ChildrenDone, plain) || has(sum.StuckContainer, plain) {
+		t.Error("a non-container parent must get NO container signal")
+	}
+}
+
 func TestRevisitSignalsAndExclusions(t *testing.T) {
 	a, clk := revisitApp()
 

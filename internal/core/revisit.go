@@ -14,6 +14,12 @@ const (
 	RevisitStale       = "stale"        // not updated within the stale threshold
 	RevisitDepDone     = "dep_done"     // a dependency is already in the done lane
 	RevisitNoRepo      = "no_repo"      // repos is empty — the task is a draft awaiting a repo
+	// RevisitChildrenDone and RevisitStuckContainer are CONTAINER signals: they
+	// need the parent→children graph, so RevisitReasons (pure, per-task) does not
+	// compute them — the app layer does, where the index lives. They exist here so
+	// the `furrow revisit --json` reason vocabulary has one home.
+	RevisitChildrenDone   = "children_done"   // an open container whose children are ALL done — consider closing it
+	RevisitStuckContainer = "stuck_container" // an open container with open work under it but no actionable descendant
 )
 
 // RevisitReason is one signal that a task's metadata may need a fresh judgment.

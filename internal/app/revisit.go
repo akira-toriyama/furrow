@@ -1,10 +1,86 @@
 package app
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
+
+// childrenMap indexes tasks by their parent id (pointers into idx.Tasks). The
+// container revisit signals need the hierarchy, which the pure per-task
+// core.RevisitReasons cannot see — this is why they live in the app layer.
+func childrenMap(idx *core.Index) map[string][]*core.Task {
+	m := map[string][]*core.Task{}
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if t.Parent != "" {
+			m[t.Parent] = append(m[t.Parent], t)
+		}
+	}
+	return m
+}
+
+// containerReasons computes the container-only revisit signals for an OPEN
+// container: children_done (has children, all done → consider closing) and
+// stuck_container (open work under it but no actionable descendant). It returns
+// nil for a non-container OR a container with zero children — a freshly-declared
+// empty box must never nag (the flagship "declare the epic first" use-case).
+func (a *App) containerReasons(t *core.Task, kids map[string][]*core.Task, idx *core.Index, doneIDs map[string]bool) []core.RevisitReason {
+	if !a.Cfg.IsContainerType(t.Type) {
+		return nil
+	}
+	children := kids[t.ID]
+	if len(children) == 0 {
+		return nil
+	}
+	allDone := true
+	for _, k := range children {
+		if k.Status != a.Cfg.DoneLane {
+			allDone = false
+			break
+		}
+	}
+	if allDone {
+		return []core.RevisitReason{{Code: core.RevisitChildrenDone, Detail: fmt.Sprintf("all %d children done — consider closing", len(children))}}
+	}
+	// Not all done: it is stuck iff there is open work under it but nothing
+	// actionable anywhere in the subtree (recursing through sub-containers).
+	if a.hasOpenDescendant(t.ID, kids, map[string]bool{}) && !a.hasActionableDescendant(t.ID, kids, idx, doneIDs, map[string]bool{}) {
+		return []core.RevisitReason{{Code: core.RevisitStuckContainer, Detail: "open children but no actionable descendant"}}
+	}
+	return nil
+}
+
+// hasActionableDescendant reports whether any descendant of id is actionable
+// (`next`'s own predicate). seen guards a merged-in parent cycle from looping.
+func (a *App) hasActionableDescendant(id string, kids map[string][]*core.Task, idx *core.Index, doneIDs, seen map[string]bool) bool {
+	for _, k := range kids[id] {
+		if seen[k.ID] {
+			continue
+		}
+		seen[k.ID] = true
+		if a.actionable(idx, k, doneIDs) || a.hasActionableDescendant(k.ID, kids, idx, doneIDs, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasOpenDescendant reports whether any descendant of id sits in a non-terminal
+// lane — genuinely open work, as opposed to parked (done/icebox/waiting).
+func (a *App) hasOpenDescendant(id string, kids map[string][]*core.Task, seen map[string]bool) bool {
+	for _, k := range kids[id] {
+		if seen[k.ID] {
+			continue
+		}
+		seen[k.ID] = true
+		if !a.Cfg.IsTerminal(k.Status) || a.hasOpenDescendant(k.ID, kids, seen) {
+			return true
+		}
+	}
+	return false
+}
 
 // RevisitItem pairs a task with the re-evaluation signals it triggered. It is the
 // read-only counterpart to an actionable `next` row: the cli layer renders it
@@ -34,6 +110,7 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 		}
 	}
 	now := a.Clock.Now()
+	kids := childrenMap(idx)
 	var out []RevisitItem
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
@@ -44,6 +121,7 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 			continue
 		}
 		reasons := core.RevisitReasons(*t, now, staleDays, doneIDs)
+		reasons = append(reasons, a.containerReasons(t, kids, idx, doneIDs)...)
 		if len(reasons) == 0 {
 			continue
 		}
@@ -71,11 +149,16 @@ type RevisitSummary struct {
 	DepDone    []string         `json:"dep_done"`             // task ids with >=1 dependency in the done lane
 	Stale      []string         `json:"stale"`                // task ids not updated within staleDays
 	Unreviewed []UnreviewedRepo `json:"unreviewed,omitempty"` // repos past [review].stale_after_days (omitted when none, so the existing JSON shape is unchanged)
+	// ChildrenDone / StuckContainer are the container signals. omitempty so a board
+	// with no containers (every board before v5) keeps the exact prior JSON shape.
+	ChildrenDone   []string `json:"children_done,omitempty"`   // open container ids whose children are all done
+	StuckContainer []string `json:"stuck_container,omitempty"` // open container ids with open work but no actionable descendant
 }
 
 // Empty reports whether nothing is worth surfacing (a clean board).
 func (s RevisitSummary) Empty() bool {
-	return len(s.DepDone) == 0 && len(s.Stale) == 0 && len(s.Unreviewed) == 0
+	return len(s.DepDone) == 0 && len(s.Stale) == 0 && len(s.Unreviewed) == 0 &&
+		len(s.ChildrenDone) == 0 && len(s.StuckContainer) == 0
 }
 
 // RevisitSummary tallies the dep_done and stale signals over the open
@@ -96,6 +179,7 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 		}
 	}
 	now := a.Clock.Now()
+	kids := childrenMap(idx)
 	sum := RevisitSummary{}
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
@@ -116,6 +200,14 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 		}
 		if stale {
 			sum.Stale = append(sum.Stale, t.ID)
+		}
+		for _, r := range a.containerReasons(t, kids, idx, doneIDs) {
+			switch r.Code {
+			case core.RevisitChildrenDone:
+				sum.ChildrenDone = append(sum.ChildrenDone, t.ID)
+			case core.RevisitStuckContainer:
+				sum.StuckContainer = append(sum.StuckContainer, t.ID)
+			}
 		}
 	}
 	unrev, err := a.unreviewedRepos(o, now)
