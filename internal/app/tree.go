@@ -171,9 +171,20 @@ func orphanedByCycle(tasks []core.Task, children map[string][]core.Task, roots [
 	return out
 }
 
-// actionable is `furrow next`'s membership test, extracted so `next` and `--tree`
-// cannot drift into disagreeing about what "you could pick this up now" means: in a
-// next lane, and every dep done.
-func (a *App) actionable(idx *core.Index, t *core.Task, doneIDs map[string]bool) bool {
+// workable is the type-BLIND readiness test: the task sits in a next lane and
+// every dep it names is done. It says nothing about whether the task is a box.
+// `furrow next --containers` surfaces on this directly — a ready epic IS "next"
+// when you explicitly ask to see boxes.
+func (a *App) workable(idx *core.Index, t *core.Task, doneIDs map[string]bool) bool {
 	return a.Cfg.IsNextLane(t.Status) && idx.Actionable(t, a.Cfg.Terminal, doneIDs)
+}
+
+// actionable is `furrow next`'s default membership test AND `ls --tree`'s ★, kept
+// as one definition so the two views cannot drift on what "you could pick this up
+// now" means: workable AND not a container. A container (an epic) is a box that
+// groups child work — never a thing you pick up — so it is never starred in a tree
+// and never handed out by a plain `next`. `next --containers` relaxes this to
+// workable (see App.Next); the tree ★ never does (a box is never actionable).
+func (a *App) actionable(idx *core.Index, t *core.Task, doneIDs map[string]bool) bool {
+	return a.workable(idx, t, doneIDs) && !a.Cfg.IsContainerType(t.Type)
 }
