@@ -45,6 +45,18 @@ var (
 	// stale_after_days of 0 disables the nudge. The GTD weekly-review cadence
 	// motivates the 14-day default (two missed weeks).
 	DefaultReviewStaleAfterDays = 14
+
+	// DefaultTypes is the work-item type vocabulary ([types].order): a closed set
+	// like the lanes. "task" is an ordinary work item; "epic" is a container (a
+	// box that groups children via parent and is itself skipped by `furrow next`).
+	DefaultTypes = []string{"task", "epic"}
+	// DefaultType is the type an empty shard resolves to ([types].default). It must
+	// never be a container (fromRaw enforces the invariant), or every type-less
+	// task would vanish from `furrow next`.
+	DefaultType = "task"
+	// DefaultContainers are the types that are boxes ([types].containers): excluded
+	// from `furrow next`, they group work rather than being worked themselves.
+	DefaultContainers = []string{"epic"}
 )
 
 // validThemes is the closed set for [ui].theme.
@@ -59,6 +71,14 @@ type Config struct {
 	DoneLane    string
 	Terminal    map[string]bool // membership set built from the terminal lane list
 	NextLanes   []string        // lanes `furrow next` considers (besides deps-done)
+
+	// Types is the work-item type vocabulary ([types].order). DefaultType is the
+	// type an empty shard resolves to (never a container). Containers is the set
+	// of container types (epics) that `furrow next` skips — the type-side twin of
+	// Terminal for lanes.
+	Types       []string
+	DefaultType string
+	Containers  map[string]bool
 
 	PriorityStep    int
 	PriorityDefault int
@@ -118,6 +138,9 @@ func Default() *Config {
 		UITheme:              DefaultUITheme,
 		RevisitStaleDays:     DefaultRevisitStaleDays,
 		ReviewStaleAfterDays: DefaultReviewStaleAfterDays,
+		Types:                append([]string(nil), DefaultTypes...),
+		DefaultType:          DefaultType,
+		Containers:           setOf(DefaultContainers),
 	}
 	c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)
 	c.compile()
@@ -164,6 +187,42 @@ func (c *Config) IsLane(lane string) bool {
 
 // IsTerminal reports whether tasks in lane are excluded from `next`.
 func (c *Config) IsTerminal(lane string) bool { return c.Terminal[lane] }
+
+// EffectiveType resolves a shard's type: the stored value, or the configured
+// default ([types].default) when empty. Every task therefore has a type even
+// though most shards store none.
+func (c *Config) EffectiveType(typ string) string {
+	if typ == "" {
+		return c.DefaultType
+	}
+	return typ
+}
+
+// IsContainerType reports whether a task of this (raw, possibly empty) type is a
+// container — a box like an epic that `furrow next` skips. Empty resolves to the
+// default type first, and the default is never a container (fromRaw enforces it),
+// so a type-less task is never a container. The type-side twin of IsTerminal.
+func (c *Config) IsContainerType(typ string) bool {
+	return c.Containers[c.EffectiveType(typ)]
+}
+
+// IsType reports whether typ is in the configured vocabulary ([types].order).
+// The empty string is always valid — it means "the default type".
+func (c *Config) IsType(typ string) bool {
+	return typ == "" || contains(c.Types, typ)
+}
+
+// ContainerTypes returns the container type names in vocabulary order — the
+// list form of the Containers set, for `furrow board` reporting.
+func (c *Config) ContainerTypes() []string {
+	var out []string
+	for _, ty := range c.Types {
+		if c.Containers[ty] {
+			out = append(out, ty)
+		}
+	}
+	return out
+}
 
 // IDPattern is the regexp a frozen id must match: the configured prefix
 // followed by one or more lowercase base32 chars. It is intentionally permissive
