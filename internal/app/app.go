@@ -568,7 +568,7 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 		Labels: o.Labels, Repos: repos, Parent: o.Parent, Deps: o.Deps, Refs: o.Refs,
 		Checklist: checklist,
 		Created:   now, Updated: now, Closed: closed, Body: core.BodyPath(id),
-		Type:      o.Type,
+		Type: o.Type,
 	}
 	idx.Add(t)
 
