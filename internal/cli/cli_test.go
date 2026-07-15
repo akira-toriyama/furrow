@@ -298,10 +298,13 @@ func TestCLIArchiveRepoScope(t *testing.T) {
 }
 
 // TestCLIListMultiValueOR pins the -s/-l comma = OR plumbing end-to-end through
-// the real cobra flags. The OR semantics rely on -s/-l staying raw-string
-// passthrough (StringVarP): if a maintainer ever switched to StringSliceVarP or
-// added a CLI-layer split, cobra would consume the comma and this test would
-// fail where the app-level TestListMultiValueOR could not see it.
+// the real cobra flags. The OR semantics rely on the comma reaching the app layer
+// intact: -l is a raw-string passthrough (StringVarP) and -s is a StringArrayVar
+// (which, unlike StringSliceVar, does NOT split on commas — joinStatus re-joins
+// the repeats and the single app-layer split stays the one parser). If a
+// maintainer ever switched either to StringSliceVarP or added a CLI-layer split,
+// cobra would consume the comma and this test would fail where the app-level
+// TestListMultiValueOR could not see it.
 func TestCLIListMultiValueOR(t *testing.T) {
 	initStore(t)
 	addTask(t, "i-bug", "-s", "inbox", "-l", "bug")
@@ -329,6 +332,56 @@ func TestCLIListMultiValueOR(t *testing.T) {
 	out, _ = run(t, "--ndjson", "ls", "-s", "inbox,backlog", "-l", "bug")
 	if !strings.Contains(out, "i-bug") || strings.Contains(out, "b-urgent") || strings.Contains(out, "r-bug") {
 		t.Errorf("`ls -s inbox,backlog -l bug` should AND to i-bug only:\n%s", out)
+	}
+}
+
+// TestCLILsStatusRepeatUnion pins t-1bwc: a REPEATED -s (as opposed to a single
+// comma-joined -s) unions its lanes instead of silently keeping only the last —
+// the "silent last-wins" trap of the old StringVarP flag. It is order-independent,
+// composes with a comma within one -s, and is shared by every -s command (ls +
+// search proven here; stats reuses the same joinStatus helper).
+func TestCLILsStatusRepeatUnion(t *testing.T) {
+	initStore(t)
+	addTask(t, "i-task", "-s", "inbox")
+	addTask(t, "b-task", "-s", "backlog")
+	addTask(t, "r-task", "-s", "ready")
+
+	// repeated -s unions (the fix): -s inbox -s backlog matches the first two, not
+	// just the last (which was the pre-fix behavior: backlog only).
+	out, code := run(t, "--ndjson", "ls", "-s", "inbox", "-s", "backlog")
+	if code != 0 {
+		t.Fatalf("ls -s inbox -s backlog exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "i-task") || !strings.Contains(out, "b-task") || strings.Contains(out, "r-task") {
+		t.Errorf("repeated -s should OR to i-task + b-task only:\n%s", out)
+	}
+
+	// order-independent: the reversed spelling must union identically (the old bug
+	// was order-sensitive — the LAST -s won).
+	out, _ = run(t, "--ndjson", "ls", "-s", "backlog", "-s", "inbox")
+	if !strings.Contains(out, "i-task") || !strings.Contains(out, "b-task") || strings.Contains(out, "r-task") {
+		t.Errorf("reversed repeated -s should union identically:\n%s", out)
+	}
+
+	// comma and repeat compose: -s inbox,backlog -s ready spans all three.
+	out, _ = run(t, "--ndjson", "ls", "-s", "inbox,backlog", "-s", "ready")
+	for _, want := range []string{"i-task", "b-task", "r-task"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("comma+repeat -s should include %q:\n%s", want, out)
+		}
+	}
+
+	// an unknown token in ANY repeat still fails fast (exit 2 + candidates), the
+	// same closed-vocabulary contract a single -s honors.
+	fe, _ := runErr(t, "ls", "-s", "inbox", "-s", "ghost")
+	if fe == nil || fe.Code != core.CodeValidation || len(fe.Candidates) == 0 {
+		t.Errorf("a bad lane in a repeated -s should exit 2 with candidates, got %+v", fe)
+	}
+
+	// the fix is shared by every -s command via joinStatus: search unions too.
+	out, _ = run(t, "--ndjson", "search", "task", "-s", "inbox", "-s", "backlog")
+	if !strings.Contains(out, "i-task") || !strings.Contains(out, "b-task") || strings.Contains(out, "r-task") {
+		t.Errorf("search should honor repeated -s the same way:\n%s", out)
 	}
 }
 

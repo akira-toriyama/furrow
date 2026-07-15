@@ -73,7 +73,9 @@ the user-level config. When you work with any furrow store:
   `owner/repo` or a short name resolving uniquely against the board's repos;
   an explicit `-r` overrides the board scope, `-r ''` = the whole board. `-l`
   filters by tag and ANDs with the scope. Within a single `-s` or `-l`, a comma
-  is OR (`-s inbox,backlog`); flags still AND across fields. `-s` and `-l` diverge
+  is OR (`-s inbox,backlog`); flags still AND across fields. `-s` additionally
+  unions when **repeated** (`-s inbox -s backlog` == `-s inbox,backlog`), so a
+  repeated `-s` no longer silently keeps only the last value. `-s` and `-l` diverge
   on an unknown token: a lane is a closed vocabulary, so an unknown `-s` lane is
   **exit 2 with the configured lanes in `candidates`** (symmetric with move/add — a
   typo never returns a silent `[]`), while an unknown `-l` tag just matches

@@ -12,7 +12,7 @@ import (
 
 func newLsCmd() *cobra.Command {
 	var (
-		status   string
+		status   []string
 		label    string
 		repo     string
 		limit    int
@@ -76,7 +76,7 @@ func newLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o.Status, o.Limit, o.Drafts = status, limit, drafts
+			o.Status, o.Limit, o.Drafts = joinStatus(status), limit, drafts
 			o.Sort, o.Reverse, o.Archived = sortBy, reverse, archived
 			o.Type = typ
 			if cmd.Flags().Changed("since") {
@@ -116,7 +116,7 @@ func newLsCmd() *cobra.Command {
 			return emitTasks(tasks)
 		},
 	}
-	cmd.Flags().StringVarP(&status, "status", "s", "", "filter by lane (comma-separated = OR, e.g. -s inbox,backlog)")
+	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
 	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (comma-separated = OR); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; with --sort, the top N)")
@@ -147,6 +147,18 @@ func parseDateBound(s string, endOfDay bool) (time.Time, error) {
 		return ts.UTC(), nil
 	}
 	return time.Time{}, core.Validationf("", "invalid date %q (want YYYY-MM-DD or RFC3339)", s)
+}
+
+// joinStatus flattens the repeatable -s/--status flag into the single
+// comma-delimited string the lane filter parses (matchAnyLane and
+// validateLaneFilter both split on ","). Every spelling converges on the same
+// OR-set: `-s a,b`, `-s a -s b`, and `-s a,b -s c` all become "a,b" / "a,b,c".
+// Before this, -s was a plain string flag, so a repeated -s silently kept only
+// the last value — the "silent last-wins" trap (t-1bwc). Kept as a comma-join so
+// the downstream split stays the one lane-filter parser (whitespace trimming,
+// empty-token dropping) rather than duplicating it here.
+func joinStatus(status []string) string {
+	return strings.Join(status, ",")
 }
 
 func newShowCmd() *cobra.Command {
@@ -365,7 +377,7 @@ func newRevisitCmd() *cobra.Command {
 
 func newStatsCmd() *cobra.Command {
 	var (
-		status string
+		status []string
 		label  string
 		repo   string
 	)
@@ -392,7 +404,7 @@ func newStatsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o.Status = status
+			o.Status = joinStatus(status)
 			s, err := a.Stats(o)
 			if err != nil {
 				return err
@@ -400,7 +412,7 @@ func newStatsCmd() *cobra.Command {
 			return emitStats(s)
 		},
 	}
-	cmd.Flags().StringVarP(&status, "status", "s", "", "filter by lane (comma-separated = OR, e.g. -s inbox,backlog)")
+	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
 	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (comma-separated = OR); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "scope to a repo (owner/repo or a unique short name; '' = whole board)")
 	return cmd
@@ -408,7 +420,7 @@ func newStatsCmd() *cobra.Command {
 
 func newSearchCmd() *cobra.Command {
 	var (
-		status string
+		status []string
 		label  string
 		repo   string
 		limit  int
@@ -439,7 +451,7 @@ func newSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o.Status, o.Limit = status, limit
+			o.Status, o.Limit = joinStatus(status), limit
 			hits, err := a.Search(o, strings.Join(args, " "))
 			if err != nil {
 				return err
@@ -448,7 +460,7 @@ func newSearchCmd() *cobra.Command {
 			return emitSearch(hits)
 		},
 	}
-	cmd.Flags().StringVarP(&status, "status", "s", "", "filter by lane (comma-separated = OR, e.g. -s inbox,backlog)")
+	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
 	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label (comma-separated = OR); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
