@@ -179,7 +179,7 @@ furrow done t-0001
 
 ### 主なフラグ
 
-- `--status, -s <lane>` — レーンで絞り込み（`ls`）。1 つの値の中でカンマは OR（`-s inbox,backlog`。トリムし空要素は無視）。レーンは閉じた語彙なので**未知レーンは exit 2**（設定済みレーンを `candidates` に載せる。`move`/`add` と対称＝`-s in_progress` の打ち間違いが `[]` に化けない）。一方 `-l`（ラベル）は開いた語彙で未知タグは無マッチのまま。レーン一覧は `furrow board` でエラーを起こさず確認できる
+- `--status, -s <lane>` — レーンで絞り込み（`ls`）。1 つの値の中でカンマは OR（`-s inbox,backlog`。トリムし空要素は無視）。**`-s` は繰り返しても union**（`-s inbox -s backlog` == `-s inbox,backlog`）＝繰り返しが黙って最後の1つだけになる（last-wins）ことはもう無い。レーンは閉じた語彙なので**未知レーンは exit 2**（設定済みレーンを `candidates` に載せる。`move`/`add` と対称＝`-s in_progress` の打ち間違いが `[]` に化けない）。一方 `-l`（ラベル）は開いた語彙で未知タグは無マッチのまま。レーン一覧は `furrow board` でエラーを起こさず確認できる
 - `--label, -l <label>` — ラベル（純粋なタグ）で絞り込み（`ls`/`next`/`revisit`。スコープと AND、値内はカンマで OR＝`-l bug,urgent`）。`add` では `-l` 繰り返しでラベルを付与
 - `--repo, -r <owner/repo|短名>` — repos フィールドで絞り込み（`ls`/`next`/`revisit`）。短名は `/` 境界で大文字小文字を無視して解決（`-r furrow` → `akira-toriyama/furrow`。曖昧なら exit 2・`candidates` 付き）。明示 `-r` はボードのスコープを上書きし、`-r ''` で全件。`add` では `-r` 繰り返しで repo を付与
 - `--drafts`（`ls`）/ `--draft`（`add`） — draft（repo 未付与タスク）だけを一覧／draft として作成（`--draft` は `-r` と併用不可）

@@ -757,7 +757,11 @@ except where noted:
   explicit `-r` overrides the board scope; `-r ''` shows the whole board);
   `-l` is a pure tag filter that ANDs with the scope. Within a single `-s` or
   `-l`, a comma is OR (`-s inbox,backlog`, `-l bug,urgent`; tokens are trimmed,
-  empties dropped) — the flags still AND across fields. `-s` and `-l` differ on
+  empties dropped) — the flags still AND across fields. `-s` also unions when
+  **repeated** (`-s inbox -s backlog` == `-s inbox,backlog`): the repeats are
+  comma-joined into that same OR-set, so a repeated `-s` no longer silently
+  last-wins (it is a `StringArray`, not a `StringSlice`, so a comma inside one
+  `-s` is not double-split). `-s` and `-l` differ on
   an *unknown* token, because a lane is a closed vocabulary and a label is not:
   an unknown `-s` lane **fails fast (exit 2)** carrying the configured lanes in
   `candidates` — the read-side symmetry with `move`/`add`, so a typo like
