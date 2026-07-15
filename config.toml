@@ -78,5 +78,6 @@ stale_days = 30
 stale_after_days = 14
 
 [ui]
-# bubbletea TUI. NO_COLOR is always respected regardless of this value.
+# Display-theme preference for a furrow front-end (furrow itself is CLI-only; a
+# TUI/GUI lives in a separate repo). NO_COLOR is always respected regardless.
 theme = "auto" # auto | dark | light

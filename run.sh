@@ -5,7 +5,6 @@
 #
 #   ./run.sh                 build + run with no args (prints help)
 #   ./run.sh ls --json       build + run a CLI subcommand (args passed through)
-#   ./run.sh ui              build + launch the TUI
 set -euo pipefail
 cd "$(dirname "$0")"
 

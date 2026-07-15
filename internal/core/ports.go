@@ -5,7 +5,7 @@ import "time"
 // Ports. These interfaces are the seams between the pure core and the outside
 // world. They are declared HERE (in core) and implemented by adapters
 // (internal/store/fsstore for the real filesystem, internal/store/memstore for
-// an in-memory fake used by tests and dry-runs). The app/CLI/TUI layers depend
+// an in-memory fake used by tests and dry-runs). The app/CLI layers depend
 // on these interfaces, never on a concrete adapter — that is what keeps core
 // testable without touching disk.
 

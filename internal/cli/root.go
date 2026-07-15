@@ -126,8 +126,9 @@ func newRootCmd() *cobra.Command {
 			"code repo itself).\n\n" +
 			"Structured metadata lives in one .furrow/tasks/<id>.json shard per task\n" +
 			"(deterministic, machine-written); long-form prose lives in .furrow/bodies/<id>.md\n" +
-			"(hand-editable). Drive it from the CLI or the TUI (furrow ui). Both you and Claude\n" +
-			"Code can edit the store cleanly.\n\n" +
+			"(hand-editable). Drive it from the CLI — furrow is CLI-only; any TUI/GUI is a\n" +
+			"separate front-end that speaks this CLI's JSON. Both you and Claude Code can\n" +
+			"edit the store cleanly.\n\n" +
 			"Exit codes: 0 ok (an empty query result is still 0) · 1 a specifically requested\n" +
 			"id was not found (e.g. show <id>) · 2 bad usage / validation (fix the args, do\n" +
 			"not retry) · 3+ internal / IO (130/143 when a SIGINT/SIGTERM interrupted the\n" +
@@ -154,7 +155,7 @@ func newRootCmd() *cobra.Command {
 		// the template below prints it verbatim instead of cobra's default
 		// "furrow version <x>" form.
 		Version: version.Resolve().String(),
-		// non-interactive by default: never prompt; the TUI is `furrow ui` only.
+		// non-interactive by default: never prompt (furrow is CLI-only).
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: false},
 	}
 	root.SetVersionTemplate("{{.Version}}\n")
@@ -196,7 +197,6 @@ func newRootCmd() *cobra.Command {
 		newConfigCmd(),
 		newSchemaCmd(),
 		newVersionCmd(),
-		newUICmd(),
 	)
 	return root
 }

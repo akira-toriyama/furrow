@@ -1,6 +1,6 @@
 #!/bin/sh
 # install.sh — build furrow and place it at ~/.local/bin/furrow. It is a
-# single-shot CLI/TUI (no daemon), so there is no launchd/service to manage.
+# single-shot CLI (no daemon), so there is no launchd/service to manage.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN="$HOME/.local/bin/furrow"

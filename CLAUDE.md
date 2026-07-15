@@ -229,8 +229,12 @@ the user-level config. When you work with any furrow store:
   subcommand like `config show`, or `-l <x>` matching nothing while `x` uniquely
   names a repo — the did-you-mean guard). Branch on the array, never regex the
   message.
-- furrow is **non-interactive by default**; the TUI is `furrow ui` only.
-  Destructive ops guard themselves: `furrow archive` previews unless `--yes`.
+- furrow is **CLI-only and non-interactive**; there is no in-repo TUI. A TUI/GUI
+  is a **separate front-end** that drives furrow through its CLI/JSON contract —
+  planned: **ridge** (github.com/akira-toriyama/ridge, a charm-v2 TUI, a CLI/JSON
+  client) and **loom** (github.com/akira-toriyama/loom, a from-scratch TUI
+  framework, future/gated). Destructive ops guard themselves: `furrow archive`
+  previews unless `--yes`.
 
 ## What this is
 
@@ -242,16 +246,16 @@ one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
 (`{"schema_version": 5}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
-`.furrow/config.toml`. A cobra CLI and a bubbletea TUI drive it. Go,
+`.furrow/config.toml`. A cobra CLI drives it (CLI-only — any TUI/GUI is a
+separate out-of-repo front-end that speaks the CLI/JSON contract). Go,
 cross-platform, brew/nix packaged.
 
 ## Build / run
 
 ```sh
 go build ./...                          # compile (use GOTOOLCHAIN=local on Go 1.25+)
-go test ./...                           # all packages (see Verify for the TUI)
+go test ./...                           # all packages
 ./run.sh ls --json                      # build + run a subcommand
-./run.sh ui                             # build + launch the TUI (needs a TTY)
 ```
 
 ## Verify (how to confirm a change works — runnable headless)
@@ -263,13 +267,9 @@ sh scripts/check.sh   # the one command: marshaller + schema-write guards +
                       # dry-run. Green here == green CI. Run it before finishing.
 ```
 
-Everything is verifiable without a terminal, including the interactive UI:
+Everything is verifiable without a terminal:
 - **CLI**: directly runnable headless (`init/add/ls --json/next/done/migrate/lint`).
-- **TUI**: do NOT need a real terminal to verify it. `internal/tui` has model-level
-  tests (send key messages, assert state) AND a **teatest** end-to-end test that
-  boots the real `tea.Program` in a simulated terminal, sends keys, and asserts
-  both the rendered frame and the persisted mutation. A raw PTY is flaky on macOS —
-  use teatest. Only the visual *aesthetics* need a human eye (`./run.sh ui`).
+  Tests cover core + store + app + cli + migrate.
 - **Determinism / drift**: the golden round-trip test,
   `scripts/check-marshal-singlepath.sh` (encoders **and** decoders — a raw
   `json.Unmarshal` would drop a shard's unknown keys),
@@ -303,13 +303,14 @@ Consult these before adding behavior, and keep terms consistent with them:
 ## Non-obvious constraints — read before editing
 
 ### Layer rules (the spine)
-`internal/core` is **pure** (stdlib only — no cobra, bubbletea, os, or filepath).
+`internal/core` is **pure** (stdlib only — no cobra, os, or filepath).
 Ports (`Store`, `Clock`) are interfaces **defined in core**;
 `internal/store/fsstore` is the **only** package that touches the filesystem;
-`internal/store/memstore` is its in-memory twin for tests. `internal/cli` and
-`internal/tui` are presentation and mutate **only** through `internal/app.App`
-(the single mutation funnel). Crossing a layer means a port is missing — add the
-interface, don't add the import.
+`internal/store/memstore` is its in-memory twin for tests. `internal/cli` is the
+only presentation layer and mutates **only** through `internal/app.App` (the
+single mutation funnel); any TUI/GUI front-end (e.g. ridge/loom) lives out-of-repo
+and drives the CLI, not these packages. Crossing a layer means a port is missing —
+add the interface, don't add the import.
 
 ### The single marshaller path — DO NOT regress this
 `core.Marshal` is the **only** function that serializes the in-memory index;
@@ -536,7 +537,6 @@ back into place — see the marshaller-path section.
 <!-- broad → narrow; tag each (reviewed YYYY-MM-DD); re-check on a 6-month gap. -->
 - clig.dev — CLI design guidelines (reviewed 2026-06-25)
 - Conventional Commits 1.0.0; gitmoji.dev (reviewed 2026-06-25)
-- charmbracelet bubbletea/bubbles/lipgloss/glamour — v1 line (reviewed 2026-06-25)
 - GoReleaser brews/nix; git-cliff (reviewed 2026-06-25)
 
 ## Multi-session work policy

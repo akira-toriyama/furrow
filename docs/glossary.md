@@ -100,10 +100,12 @@ Non-canonical synonyms, mapped to the term to use. Prefer the right word.
 ## What's built
 
 Every term above is backed by shipped code (`internal/core`, `internal/app`,
-`internal/cli`, `internal/tui`, `internal/gitrepo`) — including the interactive
-TUI (`furrow ui`), `furrow sync`, drafts/`-r` scoping,
+`internal/cli`, `internal/gitrepo`) — furrow is **CLI-only**; the sole
+presentation layer is `internal/cli`. Any interactive TUI/GUI is a separate
+front-end repo that drives furrow through its CLI/JSON contract (planned:
+**ridge**, a charm-v2 TUI). Shipped here: `furrow sync`, drafts/`-r` scoping,
 and `furrow migrate` (importing a legacy `Task.md`). `[ui].theme` in
-`config.toml` drives the TUI's colour scheme (`auto`/`dark`/`light`, with
+`config.toml` is a front-end display preference (`auto`/`dark`/`light`, with
 `NO_COLOR` always honoured).
 
 ---
