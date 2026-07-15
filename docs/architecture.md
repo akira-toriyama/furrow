@@ -600,19 +600,28 @@ A few app-level rules worth stating, all verified against the code:
   `icebox`) leave `Closed` alone — *parked is not closed*.
 - **`Next`** returns actionable tasks: in one of the configured `[next].lanes`
   (default `ready` + `in-progress` — intake lanes like `inbox` are deliberately
-  excluded) and with every named dependency already in the done lane. Lane
-  semantics live in config, not core — `Index.Actionable` takes the terminal
-  set and the done-id set as arguments, and the `[next].lanes` gate is applied
-  in `app` via `Config.IsNextLane`. The composed predicate is `App.actionable`,
-  shared with `Tree` so the two can never drift into disagreeing about what "you
-  could pick this up now" means.
+  excluded), with every named dependency already in the done lane, **and not a
+  container type**. Lane semantics live in config, not core — `Index.Actionable`
+  takes the terminal set and the done-id set as arguments, the `[next].lanes` gate
+  is applied in `app` via `Config.IsNextLane`, and the container gate via
+  `Config.IsContainerType` (a `[types].containers` type, e.g. `epic`, is a box, not
+  work). `App.workable` is the type-blind readiness test (lane + deps); the composed
+  predicate `App.actionable` = `workable && !container`, shared with `Tree` so the
+  two never drift on "you could pick this up now". `furrow next --containers`
+  relaxes `Next` to `workable` so a ready box surfaces on request; the tree ★ never
+  does (a box is never actionable).
 - **`Tree`** (`ls --tree`) builds the **parent** forest — furrow stores two
   relations between tasks and this is the one that nests. `parent` is the SKELETON
   (one parent, many children: a real tree); `deps` are the GATE (a DAG *across* the
   tree — a task in one branch can wait on one in another), so they can't nest and
-  ride along as each node's `blocked_by`. Every node carries the two derived facts
+  ride along as each node's `blocked_by`. Every node carries the derived facts
   the drawing exists to convey: `Actionable` (the `App.actionable` predicate above)
-  and `BlockedBy` (deps not yet done). Three deliberate properties: the forest is
+  and `BlockedBy` (deps not yet done); a **container** node additionally carries
+  `Container`, a `Progress {done,total}` roll-up (direct children, or the whole
+  subtree with `--progress-recursive`), and `Stuck` (open work under it but no
+  actionable descendant — always a subtree walk, recursing through sub-epics, so a
+  box with a ready task under a child epic is not stuck; a zero-child epic is never
+  stuck). These are DERIVED, never stored. Three deliberate properties: the forest is
   built over the FILTERED set, and a task whose parent was filtered out becomes a
   root rather than disappearing (a `--tree` that shows fewer tasks than the same
   flags without it would be lying); `Limit` caps ROOTS, not tasks (truncating
