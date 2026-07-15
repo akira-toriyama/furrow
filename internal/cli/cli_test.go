@@ -299,12 +299,11 @@ func TestCLIArchiveRepoScope(t *testing.T) {
 
 // TestCLIListMultiValueOR pins the -s/-l comma = OR plumbing end-to-end through
 // the real cobra flags. The OR semantics rely on the comma reaching the app layer
-// intact: -l is a raw-string passthrough (StringVarP) and -s is a StringArrayVar
-// (which, unlike StringSliceVar, does NOT split on commas — joinStatus re-joins
-// the repeats and the single app-layer split stays the one parser). If a
-// maintainer ever switched either to StringSliceVarP or added a CLI-layer split,
-// cobra would consume the comma and this test would fail where the app-level
-// TestListMultiValueOR could not see it.
+// intact: both -s and -l are StringArrayVar (which, unlike StringSliceVar, does
+// NOT split on commas — joinOrFilter re-joins the repeats and the single
+// app-layer split stays the one parser). If a maintainer ever switched either to
+// StringSliceVarP or added a CLI-layer split, cobra would consume the comma and
+// this test would fail where the app-level TestListMultiValueOR could not see it.
 func TestCLIListMultiValueOR(t *testing.T) {
 	initStore(t)
 	addTask(t, "i-bug", "-s", "inbox", "-l", "bug")
@@ -339,7 +338,7 @@ func TestCLIListMultiValueOR(t *testing.T) {
 // comma-joined -s) unions its lanes instead of silently keeping only the last —
 // the "silent last-wins" trap of the old StringVarP flag. It is order-independent,
 // composes with a comma within one -s, and is shared by every -s command (ls +
-// search proven here; stats reuses the same joinStatus helper).
+// search proven here; stats reuses the same joinOrFilter helper).
 func TestCLILsStatusRepeatUnion(t *testing.T) {
 	initStore(t)
 	addTask(t, "i-task", "-s", "inbox")
@@ -378,10 +377,97 @@ func TestCLILsStatusRepeatUnion(t *testing.T) {
 		t.Errorf("a bad lane in a repeated -s should exit 2 with candidates, got %+v", fe)
 	}
 
-	// the fix is shared by every -s command via joinStatus: search unions too.
+	// the fix is shared by every -s command via joinOrFilter: search unions too.
 	out, _ = run(t, "--ndjson", "search", "task", "-s", "inbox", "-s", "backlog")
 	if !strings.Contains(out, "i-task") || !strings.Contains(out, "b-task") || strings.Contains(out, "r-task") {
 		t.Errorf("search should honor repeated -s the same way:\n%s", out)
+	}
+}
+
+// TestCLILabelRepeatUnion pins t-k1sr: a REPEATED -l unions its tags instead of
+// silently keeping only the last — the same "silent last-wins" trap #128 fixed
+// for -s, now closed for -l. It is order-independent, composes with a comma
+// within one -l, is shared by every -l command (ls/next/search proven here;
+// revisit/stats reuse the same joinOrFilter), and does NOT regress the
+// single-token DidYouMeanRepo guard (the -l-specific risk of comma-joining).
+func TestCLILabelRepeatUnion(t *testing.T) {
+	initStore(t)
+	addTask(t, "wip bug", "-s", "ready", "-l", "bug")
+	addTask(t, "wip urgent", "-s", "ready", "-l", "urgent")
+	addTask(t, "wip chore", "-s", "ready", "-l", "chore")
+
+	// repeated -l unions (the fix): -l bug -l urgent matches the first two, not
+	// just the last (the pre-fix behavior was chore/urgent-only, order-dependent).
+	out, code := run(t, "--ndjson", "ls", "-l", "bug", "-l", "urgent")
+	if code != 0 {
+		t.Fatalf("ls -l bug -l urgent exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "wip bug") || !strings.Contains(out, "wip urgent") || strings.Contains(out, "wip chore") {
+		t.Errorf("repeated -l should OR to bug + urgent only:\n%s", out)
+	}
+
+	// order-independent: the old bug kept whichever -l came LAST.
+	out, _ = run(t, "--ndjson", "ls", "-l", "urgent", "-l", "bug")
+	if !strings.Contains(out, "wip bug") || !strings.Contains(out, "wip urgent") || strings.Contains(out, "wip chore") {
+		t.Errorf("reversed repeated -l should union identically:\n%s", out)
+	}
+
+	// comma and repeat compose: -l bug,urgent -l chore spans all three.
+	out, _ = run(t, "--ndjson", "ls", "-l", "bug,urgent", "-l", "chore")
+	for _, want := range []string{"wip bug", "wip urgent", "wip chore"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("comma+repeat -l should include %q:\n%s", want, out)
+		}
+	}
+
+	// shared by every -l command via joinOrFilter: next (a different scopedQuery
+	// consumer than ls) unions too — all three are in a next lane with no deps.
+	out, _ = run(t, "--ndjson", "next", "-l", "bug", "-l", "urgent")
+	if !strings.Contains(out, "wip bug") || !strings.Contains(out, "wip urgent") || strings.Contains(out, "wip chore") {
+		t.Errorf("next should honor repeated -l the same way:\n%s", out)
+	}
+	// and search (a positional term + -l filter).
+	out, _ = run(t, "--ndjson", "search", "wip", "-l", "bug", "-l", "urgent")
+	if !strings.Contains(out, "wip bug") || !strings.Contains(out, "wip urgent") || strings.Contains(out, "wip chore") {
+		t.Errorf("search should honor repeated -l the same way:\n%s", out)
+	}
+	// and revisit (all three are open with unset estimates, so all surface; the -l
+	// repeat must narrow to bug+urgent, not last-wins to one).
+	out, _ = run(t, "--ndjson", "revisit", "-l", "bug", "-l", "urgent")
+	if !strings.Contains(out, "wip bug") || !strings.Contains(out, "wip urgent") || strings.Contains(out, "wip chore") {
+		t.Errorf("revisit should honor repeated -l the same way:\n%s", out)
+	}
+	// and stats: the aggregate total counts the union (2), not a single -l (1).
+	out, code = run(t, "--json", "stats", "-l", "bug", "-l", "urgent")
+	if code != 0 {
+		t.Fatalf("stats -l bug -l urgent exit = %d:\n%s", code, out)
+	}
+	var st struct {
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(out), &st); err != nil {
+		t.Fatalf("parse stats --json: %v\n%s", err, out)
+	}
+	if st.Total != 2 {
+		t.Errorf("stats repeated -l should total the union (2), got %d:\n%s", st.Total, out)
+	}
+
+	// DidYouMeanRepo must NOT regress. Seed a repo-scoped task so a label that
+	// happens to name that repo triggers the did-you-mean guard.
+	addTask(t, "in webapp", "-s", "ready", "-r", "owner/webapp")
+	// a SINGLE -l naming a repo (and matching no tag) still exits 2 pointing at -r.
+	fe, _ := runErr(t, "ls", "-l", "webapp")
+	if fe == nil || fe.Code != core.CodeValidation || len(fe.Candidates) == 0 {
+		t.Errorf("single -l naming a repo should still exit 2 with candidates, got %+v", fe)
+	}
+	// a REPEATED -l that matches nothing must NOT misfire the guard: the joined
+	// "webapp,ghost" resolves to no repo, so it is a clean empty result (exit 0).
+	out, code = run(t, "--ndjson", "ls", "-l", "webapp", "-l", "ghost")
+	if code != 0 {
+		t.Errorf("repeated -l matching nothing should be a clean empty result, got %d:\n%s", code, out)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("repeated -l webapp -l ghost should match nothing:\n%s", out)
 	}
 }
 
