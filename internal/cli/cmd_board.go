@@ -77,6 +77,11 @@ func printBoardHuman(b app.BoardInfo) {
 	fmt.Fprintf(out, "default:  %s\n", b.DefaultLane)
 	fmt.Fprintf(out, "done:     %s\n", b.DoneLane)
 	fmt.Fprintf(out, "terminal: %s\n", strings.Join(b.Terminal, ", "))
+	containers := strings.Join(b.Containers, ", ")
+	if containers == "" {
+		containers = "(none)"
+	}
+	fmt.Fprintf(out, "types:    %s (default: %s, containers: %s)\n", strings.Join(b.Types, ", "), b.DefaultType, containers)
 	fmt.Fprintf(out, "schema:   %s\n", schemaLine(b))
 	fmt.Fprintf(out, "stale_days: %d, archive_older_than_days: %d, labels_required: %t\n",
 		b.StaleDays, b.ArchiveOlderThanDays, b.LabelsRequired)
