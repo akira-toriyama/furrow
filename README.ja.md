@@ -40,7 +40,7 @@ furrow はこれを Go で実装する。外部サービス連携は持たず、
     t-0002.json
   bodies/<id>.md    # 1 タスク 1 つの長文 markdown 本文（人/エージェントが編集可）
   repos/<owner>__<repo>.json  # repo ごとのレビュー shard（furrow review <repo>）
-  meta.json         # ボード全体のレイアウト版（{"schema_version": 4}）。上げるのは `furrow upgrade` だけ
+  meta.json         # ボード全体のレイアウト版（{"schema_version": 5}）。上げるのは `furrow upgrade` だけ
   config.toml       # 人が編集する設定（furrow からは READ のみ）
   archive/          # 退避した古い done タスク（独自の tasks/ + meta.json + bodies/）
 ```
@@ -49,7 +49,7 @@ furrow はこれを Go で実装する。外部サービス連携は持たず、
 
 - **`tasks/<id>.json`** = 構造化メタデータだけ、1 タスク 1 ファイル。小さく、`jq` や Go で即クエリでき、フィールド単位で diff できる。**唯一の決定論マーシャラ（`core.MarshalTask`）からしか書かれない。**
 - **`bodies/<id>.md`** = 素の markdown。エスケープなし、タスク単位で diff できる。**手でも Claude でも自由に編集してよい。**
-- **`meta.json`** = ボード全体のレイアウト版（`{"schema_version": 4}`）だけを持つ専用ファイル。**シャードの中には決して入れない**ので、版を上げても触るのは 1 ファイルだけで、どのシャードも git のマージ点にならない。この版は**書き込みの入力であって出力ではない**——通常の write は決してこの数字を動かさず、上げられるのは `furrow upgrade` だけ（[レイアウト版ゲート](#レイアウト版ゲート書き込みを止めるのは版が違うとき)を参照）。
+- **`meta.json`** = ボード全体のレイアウト版（`{"schema_version": 5}`）だけを持つ専用ファイル。**シャードの中には決して入れない**ので、版を上げても触るのは 1 ファイルだけで、どのシャードも git のマージ点にならない。この版は**書き込みの入力であって出力ではない**——通常の write は決してこの数字を動かさず、上げられるのは `furrow upgrade` だけ（[レイアウト版ゲート](#レイアウト版ゲート書き込みを止めるのは版が違うとき)を参照）。
 - **`config.toml`** = 人が編集する設定。furrow は書き換えず、READ するだけ。
 - **`archive/`** = 古くなった done タスクの退避先（独自の `tasks/` + `meta.json` + `bodies/` を持つ兄弟シャードストア）。
 
@@ -460,10 +460,10 @@ git config core.hooksPath scripts/hooks   # hook を置いたあと
 ボード全体のレイアウト版は `meta.json` に独立して持つ（シャードには入れない）:
 
 ```json
-{ "schema_version": 4 }
+{ "schema_version": 5 }
 ```
 
-正準スキーマは `furrow schema [task|meta|repo]` が出力する（draft 2020-12）。これが正本で、`docs/schema/furrow.task.v2.json`・`furrow.meta.v2.json`・`furrow.repo.v1.json` が commit 済みのコピー。CI が三者を diff して drift を防ぐ（`v2`/`v1` はスキーマ**文書**の版号で、ボードのレイアウト版＝`meta.json` の `schema_version` は 4）。
+正準スキーマは `furrow schema [task|meta|repo]` が出力する（draft 2020-12）。これが正本で、`docs/schema/furrow.task.v2.json`・`furrow.meta.v2.json`・`furrow.repo.v1.json` が commit 済みのコピー。CI が三者を diff して drift を防ぐ（`v2`/`v1` はスキーマ**文書**の版号で、ボードのレイアウト版＝`meta.json` の `schema_version` は 5）。
 
 ### レイアウト版ゲート（書き込みを止めるのは版が違うとき）
 
@@ -758,7 +758,7 @@ gitmoji + Conventional Commits。形式は次のとおり（gitmoji は `:code:`
 
 ## ステータス
 
-core（一級の `repos`・board layout v4・両側 version gate＝新しいボードは read 拒否／古いボードは write 拒否、版を上げるのは `furrow upgrade` だけ）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync`・`upgrade` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは GoReleaser → Homebrew tap で公開する（[Releases ページ](https://github.com/akira-toriyama/furrow/releases) 参照・task-status Action は `v0.5.0` から同梱・一級の `repos` は `v0.6.0` から・board layout v4 は `v0.8.0` から）。将来（低優先）: read-only の Web ビューア。
+core（一級の `repos`・board layout v5・両側 version gate＝新しいボードは read 拒否／古いボードは write 拒否、版を上げるのは `furrow upgrade` だけ）・config・store・app・CLI（`repo`・draft・`-r` スコープ・`apply`・`sync`・`upgrade` 含む）・TUI（`furrow ui`）・`migrate` が動作する。リリースは GoReleaser → Homebrew tap で公開する（[Releases ページ](https://github.com/akira-toriyama/furrow/releases) 参照・task-status Action は `v0.5.0` から同梱・一級の `repos` は `v0.6.0` から・board layout v4 は `v0.8.0` から・board layout v5 は `v0.10.0` から）。将来（低優先）: read-only の Web ビューア。
 
 ## ライセンス
 

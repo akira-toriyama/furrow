@@ -218,7 +218,7 @@ their repositories in the first-class `repos` field) or a store can live
 repo-local. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
-(`{"schema_version": 4}`); long-form prose lives in
+(`{"schema_version": 5}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI and a bubbletea TUI drive it. Go,
 cross-platform, brew/nix packaged.

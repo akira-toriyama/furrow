@@ -1,6 +1,6 @@
 # The on-disk shape of every furrow shard. See TestShardFieldsGolden.
 # Changing this file means changing what other furrows read.
-schema_version 4
+schema_version 5
 
 Task
   id string
@@ -20,6 +20,7 @@ Task
   closed *time.Time
   reviewed *time.Time
   body string
+  type string (omitempty)
 
 Meta
   schema_version int

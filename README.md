@@ -98,7 +98,7 @@ furrow uses a **hybrid** layout: one machine-written JSON shard per task for str
 ```text
 .furrow/
 ├── config.toml          # human config (furrow only READS this; never rewrites it)
-├── meta.json            # board-wide layout version {"schema_version": 4} — written ONLY by furrow, raised ONLY by `furrow upgrade`
+├── meta.json            # board-wide layout version {"schema_version": 5} — written ONLY by furrow, raised ONLY by `furrow upgrade`
 ├── tasks/
 │   ├── t-0001.json      # one metadata shard per task — written ONLY by the single core.MarshalTask path
 │   └── t-0002.json
@@ -142,7 +142,7 @@ The board-wide layout version lives on its own in `meta.json` (never inside a sh
 
 ```json
 {
-  "schema_version": 4
+  "schema_version": 5
 }
 ```
 
@@ -664,7 +664,7 @@ furrow's write path is byte-stable on purpose. Every shard write goes through on
 ## Status
 
 - **Working:** the core domain (`internal/core`) with the first-class `repos`
-  field (board layout v4 + the two-sided version gate: read-refuse a newer board,
+  field (board layout v5 + the two-sided version gate: read-refuse a newer board,
   write-refuse an older one, and `furrow upgrade` as the only raiser), config
   loader, filesystem store, app
   coordinator, the full CLI (incl. `repo`, drafts, `-r` scoping, `apply`, and
@@ -674,7 +674,7 @@ furrow's write path is byte-stable on purpose. Every shard write goes through on
 - **Released:** tags are cut with GoReleaser → the Homebrew tap (see the
   [Releases page](https://github.com/akira-toriyama/furrow/releases); the
   bundled task-status Action ships since `v0.5.0`, the first-class `repos` field
-  since `v0.6.0`, board layout v4 since `v0.8.0`). The nix `flake.nix` carries a
+  since `v0.6.0`, board layout v4 since `v0.8.0`, board layout v5 since `v0.10.0`). The nix `flake.nix` carries a
   real, pinned `vendorHash` with a
   committed `flake.lock` (since `v0.4.0`).
 - **Future (low priority):** a read-only web viewer / React UI over the task shards.
