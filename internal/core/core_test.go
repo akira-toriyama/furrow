@@ -171,7 +171,7 @@ func TestValidate(t *testing.T) {
 			{ID: "BAD", Status: "ready", Body: BodyPath("BAD")},                     // id pattern fail
 		},
 	}
-	ps := Validate(idx, testLanes, pat)
+	ps := Validate(idx, testLanes, []string{"task", "epic"}, pat)
 
 	want := map[string]bool{
 		"duplicate id: t-0001":                                   false,
@@ -427,5 +427,30 @@ func TestActionable(t *testing.T) {
 		if got := idx.Actionable(tk, terminal, doneIDs); got != want {
 			t.Errorf("Actionable(%s) = %v, want %v", id, got, want)
 		}
+	}
+}
+
+// TestValidateTypeAndDepMirror pins t-3jd1 §3(d/i): an unknown per-task type warns
+// (a known type does not), and a task whose deps point at its own children warns
+// dep-mirrors-children — the epic-waits-on-slices workaround type/parent replaces.
+func TestValidateTypeAndDepMirror(t *testing.T) {
+	pat := regexp.MustCompile(`^t-[0-9]+$`)
+	idx := &Index{Tasks: []Task{
+		{ID: "t-0001", Status: "ready", Body: BodyPath("t-0001"), Type: "epic", Deps: []string{"t-0002"}},
+		{ID: "t-0002", Status: "ready", Body: BodyPath("t-0002"), Parent: "t-0001"},
+		{ID: "t-0003", Status: "ready", Body: BodyPath("t-0003"), Type: "frob"},
+	}}
+	got := map[string]bool{}
+	for _, p := range Validate(idx, testLanes, []string{"task", "epic"}, pat) {
+		got[p.Code+"/"+p.ID] = true
+	}
+	if !got["unknown-type/t-0003"] {
+		t.Errorf("want unknown-type on t-0003 (type frob); got %v", got)
+	}
+	if got["unknown-type/t-0001"] {
+		t.Error("epic is a configured type; must NOT warn unknown-type")
+	}
+	if !got["dep-mirrors-children/t-0001"] {
+		t.Errorf("want dep-mirrors-children on t-0001 (deps on its child t-0002); got %v", got)
 	}
 }
