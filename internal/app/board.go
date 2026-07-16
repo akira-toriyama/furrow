@@ -103,6 +103,15 @@ func schemaTriple(ver int, state string, writable bool) SchemaTriple {
 	}
 }
 
+// schemaVersions unpacks an introspection triple's (board, binary) layout
+// versions for callers that only render them — e.g. doctor's findings. It
+// lives HERE, in the one introspection site already on
+// check-schema-write-guard.sh's allowlist, so a renderer never has to name the
+// version fields itself (the guard's grep is deliberately textual and blunt).
+func schemaVersions(t SchemaTriple) (board, binary int) {
+	return t.SchemaVersion, t.BinarySchemaVersion
+}
+
 // boardVocab snapshots the resolved config's vocabulary. Every field is a copy,
 // so a caller can never mutate the live config through it.
 func (a *App) boardVocab() BoardVocab {

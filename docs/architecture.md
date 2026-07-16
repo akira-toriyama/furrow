@@ -82,7 +82,7 @@ contract an agent does.
 | `internal/config` | Loads `.furrow/config.toml` (read-only, clamp-don't-reject). Produces an effective `Config`. |
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
 | `internal/store/memstore` | In-memory `core.Store` for tests and `migrate --dry-run`. A normal non-test package. |
-| `internal/gitrepo` | git subprocess adapter behind `furrow sync` (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
+| `internal/gitrepo` | git subprocess adapter behind `furrow sync` and `furrow doctor`'s freshness probe (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough), the in-memory `Marshal`, the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard, `meta.json`, and a repo review shard as Go constants; emitted by `furrow schema [task|meta|repo]`. |
 | `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |

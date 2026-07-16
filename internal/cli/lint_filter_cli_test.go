@@ -177,6 +177,15 @@ func TestLintCodeRegistryCoversEmitted(t *testing.T) {
 		if strings.HasSuffix(path, "lint_filter.go") {
 			return nil // the registry itself
 		}
+		if strings.HasSuffix(path, filepath.Join("app", "doctor.go")) {
+			// doctor's findings are a SEPARATE closed vocabulary: they never flow
+			// through lint's --code/--exclude-code/ignore_codes filter, so
+			// registering them would make `lint --code board-behind` a valid
+			// filter that can never match — the exact confusion the registry
+			// exists to prevent. (schema-outdated, which lint ALSO emits, is
+			// registered via lint's own emission site.)
+			return nil
+		}
 		data, err := os.ReadFile(path) //nolint:gosec // test walks its own repo
 		if err != nil {
 			return err

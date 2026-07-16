@@ -16,7 +16,7 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|boards|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
+- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
   `set <id>` combines lane/**priority**/value/effort/labels/**type** in one
   write (the triage shortcut for move+reorder+value+effort+label): `--priority`
   is absolute, `--before/--after <ref>` relative in the DESTINATION lane — a
@@ -208,7 +208,18 @@ the user-level config. When you work with any furrow store:
   `board` plus resolved `store`/`scopes`, the declared `repo`/`label`, and
   `exists` — the diagnosis call for "this machine has no scopes configured" and
   the bootstrap for a front-end running outside every scope (FURROW_BOARD, a
-  per-invocation override, is not listed).
+  per-invocation override, is not listed). **`furrow doctor [dir...]` is the
+  OPINIONATED version of that diagnosis** — the machine-wide health check
+  (read-only, no fetch): config parses / a usable `[[board]]` exists
+  (`no-boards`) / every board on disk + readable + on this binary's schema /
+  scopes exist / git freshness vs upstream as of the last fetch
+  (`board-behind`/`board-ahead` → `furrow sync`) / where a nearer
+  `.furrow`/pointer shadows the board inside its own scopes (severity `info`,
+  never unhealthy). It simulates discovery at cwd (informational) and at each
+  argument dir (an assertion — `dir-unresolved` is an error with the fix).
+  Exit 0 = healthy, exit 1 = problems (id `doctor-unhealthy`; branch on each
+  finding's kebab-case `code`) — so `furrow doctor --json | jq -e '.healthy'`
+  is the setup pre-flight on a new machine.
 - **A shard key this binary does not know is PRESERVED, not dropped.** The gate
   above only fires when someone BUMPS the version; a field added without a bump
   would be silently destroyed by the next ordinary write (`encoding/json`'s

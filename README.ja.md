@@ -154,6 +154,7 @@ furrow done t-0001
 | `stats` | Summarize the board: counts by lane, repo, and label | `-l/--label`, `-r/--repo`, `-s/--status` |
 | `board` | Print the active board: store path, scope, lane vocabulary, and schema state | — |
 | `boards` | List the configured boards (user-level config), independent of cwd | — |
+| `doctor [dir...]` | Diagnose this machine's board setup: config, boards, scopes, git freshness | — |
 | `edit <id>` | Edit a task's markdown body in $EDITOR | — |
 | `note <id> <text>` | Append a paragraph to a task's body and advance its updated time | — |
 | `attach <id> <file>` | Attach a media file to a task (copies into bodies/assets/, links it from the body) | — |
@@ -196,6 +197,7 @@ furrow done t-0001
 - **`stats`** — `total`・`drafts`・`by_lane`（設定レーン順の完全ヒストグラム、0 件レーンも含む）・`by_repo`・`by_label`（多い順）。`stats -r ''` は全ボード——`-l`/`-r` を推測する前に語彙を知る呼び出し。
 - **`board`** — introspection スナップショット: store パス・discovery `source`（`env`/`local`/`pointer`/`user-config`）・repo スコープ・レーン語彙・stale/archive の窓・スキーマ三つ組（`schema_version`・`binary_schema_version`・`schema_state`・`writable`）。**版の食い違いでも失敗せず報告する**——他のどのコマンドも開けないボードを診断できる唯一の pre-flight。
 - **`boards`** — `board` のマシン全体版: user-level config の全 `[[board]]` をファイル順に、**cwd 解決なしで**列挙する。他のコマンドが「board なし」で exit 2 になる場所でも exit 0（空でもリスト）で答えるので、scope 未設定マシンの診断であり、どの scope の外でも動く GUI front-end の bootstrap 呼び出しになる。JSON は `{config, boards: []}`——`config` は読んだファイル（不在でもパスを報告）、各 entry は解決済みの `store`/`scopes`・**宣言どおり**の `repo`/`label`（`"auto"` は checkout なしでは解決できない）・`exists`・`board` と同一の語彙/スキーマキー（struct 共有＝1 つのパーサで両ビューを読める。不在ボードの語彙は**空**——推測でなく報告）。`FURROW_BOARD`（呼び出し単位の override でありマシン設定ではない）は載せない。
+- **`doctor`** — `boards` の「意見を言う」版: マシン単位のボード設定**健診**。読み取り専用・ネットワークなし（fetch しない）。検査項目: user config がパースでき usable な `[[board]]` が 1 つ以上あるか（`no-boards` — furrow もボードも入っているのに scope 未設定で、使う瞬間に何も名指さない exit 2 だけが返る「半セットアップ」マシンの本体）／各ボードがディスク上に存在し・読めて・このバイナリの schema か／各 scope ディレクトリの実在／git 併設ボードの upstream との鮮度（**最後の fetch 時点**の知識で `board-behind` → 読む前に sync・`board-ahead` → 未 push の書き込み・rebase/merge 進行中も warn）／scope 内で discovery がこのボードを**選ばない**場所（より近い `.furrow`/pointer が勝つ — severity `info`＝知るべき事実であって不健全ではない）。discovery のシミュレーションは cwd（情報表示）と引数の各 dir（**アサーション**: 解決しなければ `dir-unresolved` エラー＋修正提案）で行う。全 finding は安定した kebab-case `code` を持ち、exit は `0`＝健全（info は含んでよい）／`1`＝問題あり（`doctor-unhealthy`）——shell init や CI に置ける: `furrow doctor --json | jq -e '.healthy'`。
 - **`edit`** — `bodies/<id>.md` をエディタで開く（非対話ならパスを出力）。経過の記録には `note` を推奨——ファイル直編集は `updated` を進めない。
 - **`note`** — テキストを body に新しい段落として追記し、**同時に** `updated` を進める（1 write）。body だけで reconcile 済みのタスクに `lint` の `reconcile-gap` が誤発火しない。`<text>` に `-` で stdin から読む（複数行用）。`--json` は封筒に加え `appended` を出す（メタの `changed` は body だけ動いたとき `[]`）。
 - **`move`** — done レーンから出るとき `closed` をクリアする（`done` が打刻する）。
@@ -245,7 +247,7 @@ furrow は **非対話がデフォルト**。プロンプトは出さない（TT
   | code | 意味 |
   |---|---|
   | `0` | 成功 —— **空のクエリ結果も含む**（`ls`/`next`/`revisit` が何にもマッチしなくても成功。`set -e` が「仕事なし」で止まらない） |
-  | `1` | **名指しした id** が見つからない（`show <id>` 等）。空リストではない |
+  | `1` | **名指しした id** が見つからない（`show <id>` 等）。空リストではない。`furrow doctor` の**問題あり**（id `doctor-unhealthy`、health-check の慣例）もここ |
   | `2` | bad-usage / バリデーション失敗（引数を直す。リトライしない） |
   | `3+` | 内部 / IO 障害 |
   | `130` / `143` | `SIGINT` / `SIGTERM` で実行が中断された（Unix 慣習の 128+signal）—— 例: `furrow sync` 中の Ctrl-C。`sync-interrupted`（retryable）を返す。意図的な `sync-conflict` は中断ではないので exit `3` のまま |

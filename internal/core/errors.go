@@ -15,6 +15,13 @@ const (
 	CodeNotFound   Code = 1 // a specifically requested id was not found (e.g. `show <id>`); NOT an empty list
 	CodeValidation Code = 2 // bad usage or invalid input — fix the args, do not retry
 	CodeInternal   Code = 3 // internal / IO failure
+
+	// CodeUnhealthy is `furrow doctor`'s "problems found" (the health-check
+	// convention: brew doctor, git fsck). It deliberately shares exit 1 with
+	// CodeNotFound — both mean "the thing you asked about is not in the state
+	// you asked for", never bad usage (2) and never an internal failure (3) —
+	// while the error id ("doctor-unhealthy") keeps the two distinguishable.
+	CodeUnhealthy Code = 1
 )
 
 // Error is furrow's structured error. On a non-zero exit the CLI prints it to
