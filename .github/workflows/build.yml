@@ -46,6 +46,15 @@ jobs:
       - name: schema write guard
         run: sh scripts/check-schema-write-guard.sh
 
+      - name: board-hook template syntax guard
+        run: |
+          for h in scripts/board-hooks/post-merge scripts/board-hooks/post-rewrite scripts/board-hooks/pre-push; do
+            sh -n "$h"
+          done
+
+      - name: nix flake lockstep guard (version pin + vendorHash freshness)
+        run: sh scripts/check-version-lockstep.sh
+
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: 'stable'
@@ -65,6 +74,12 @@ jobs:
           tmp="$(mktemp -d)"
           ( cd "$tmp" && /tmp/furrow init >/dev/null )
           diff -u config.toml "$tmp/.furrow/config.toml"
+
+      - name: global config template drift guard
+        run: |
+          gtmp="$(mktemp -d)"
+          ( cd "$gtmp" && XDG_CONFIG_HOME="$gtmp/xdg" /tmp/furrow config init >/dev/null )
+          diff -u config.global.toml "$gtmp/xdg/furrow/config.toml"
 
       - name: README EN/JA pin-parity guard
         run: sh scripts/check-readme-parity.sh

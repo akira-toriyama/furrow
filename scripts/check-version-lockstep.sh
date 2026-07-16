@@ -38,8 +38,43 @@ if [ "$flake_ver" != "$pin_ver" ]; then
   echo "  sync-task-status furrow-version: $pin_ver" >&2
   echo >&2
   echo "Bump flake.nix's version to match right before tagging (release-prep)," >&2
-  echo "so 'nix run/install' reports the real release version (not a stale one)." >&2
+  echo "so 'nix run/install' reports the real version (not a stale one)." >&2
   exit 1
 fi
 
 echo "ok — nix flake version matches the release pin ($flake_ver)"
+
+# vendorHash freshness. A flake cannot re-derive the vendored-module hash at
+# eval time, so flake.nix carries a stamp of the go.sum its vendorHash was
+# computed against; when go.mod/go.sum change and the re-pin ritual (fakeHash →
+# nix build → paste) is skipped, every `nix build`/`nix run` is already failing
+# with a fixed-output hash mismatch — this catches it at check/CI time, with no
+# nix on the runner (#127 shipped exactly that breakage: it dropped every charm
+# module from go.sum and left the pre-removal vendorHash in place).
+stamp="$(sed -n 's/^[[:space:]]*# go\.sum sha256: \([0-9a-f]\{64\}\).*/\1/p' flake.nix | head -1)"
+if command -v shasum >/dev/null 2>&1; then
+  gosum="$(shasum -a 256 go.sum | cut -d' ' -f1)"
+else
+  gosum="$(sha256sum go.sum | cut -d' ' -f1)"
+fi
+
+if [ -z "$stamp" ]; then
+  echo "✖ flake.nix carries no '# go.sum sha256: <hash>' stamp — the vendorHash" >&2
+  echo "  freshness guard has nothing to compare. Re-add the stamp line:" >&2
+  echo "  # go.sum sha256: $gosum" >&2
+  exit 1
+fi
+
+if [ "$stamp" != "$gosum" ]; then
+  echo "✖ go.sum changed but flake.nix's vendorHash was not re-pinned:" >&2
+  echo "  stamped go.sum sha256: $stamp" >&2
+  echo "  actual  go.sum sha256: $gosum" >&2
+  echo >&2
+  echo "nix build is broken right now (fixed-output hash mismatch). Re-pin:" >&2
+  echo "  1. set vendorHash = pkgs.lib.fakeHash in flake.nix" >&2
+  echo "  2. nix build .#   # copy the 'got: sha256-...' hash into vendorHash" >&2
+  echo "  3. update the '# go.sum sha256:' stamp to $gosum" >&2
+  exit 1
+fi
+
+echo "ok — flake.nix vendorHash stamp matches go.sum (re-pin ritual not skipped)"
