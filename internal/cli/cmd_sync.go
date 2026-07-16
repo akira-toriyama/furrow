@@ -161,12 +161,9 @@ func newSyncCmd() *cobra.Command {
 				}
 			}
 
-			switch {
-			case flagNDJSON:
-				printNDJSONValue(syncOutput{prog, summaryPtr(sum)})
-			case flagJSON:
-				printJSON(syncOutput{prog, summaryPtr(sum)})
-			default:
+			if jsonMode() {
+				emitObject(syncOutput{prog, summaryPtr(sum)})
+			} else {
 				fmt.Fprintln(out, prog.SyncSummary())
 				if line := revisitLine(sum, revisitScopeLabel(a)); line != "" {
 					fmt.Fprintln(out, line)

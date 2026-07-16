@@ -41,12 +41,11 @@ func newUpgradeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			switch {
-			case flagNDJSON, flagJSON:
+			if jsonMode() {
 				emitObject(rep)
-			default:
-				printUpgradeHuman(rep, a.Cfg.Standalone)
+				return nil
 			}
+			printUpgradeHuman(rep, a.Cfg.Standalone)
 			return nil
 		},
 	}
