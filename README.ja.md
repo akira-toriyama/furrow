@@ -158,7 +158,7 @@ furrow done t-0001
 | `attach <id> <file>` | Attach a media file to a task (copies into bodies/assets/, links it from the body) | — |
 | `done <id>` | Move a task into the done lane (stamps closed) | — |
 | `move <id> <lane>` | Move a task to a lane | — |
-| `reorder <id> <priority>` | Set a task's priority (sparse integer; lower = higher up) | — |
+| `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before` |
 | `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | — |
 | `set <id>` | Apply several triage edits at once (lane, value, effort, labels) | `--add-label`, `--clear-effort`, `--clear-value`, `--effort`, `--rm-label`, `-s/--status`, `--type`, `--value` |
 | `value <id> <1-5>` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear` |
@@ -183,7 +183,7 @@ furrow done t-0001
 
 ### コマンド補足
 
-生成表は機械保証されたリファレンス。一行に収まらない挙動契約はここにある（表の行だけで話が完結するコマンド——`init`・`done`・`reorder`・`retitle`・`label`・`schema`・`version`——には項が無く、`attach` は[画像・メディアの添付](#画像メディアの添付)、`sync`・`config` は[中央ボード](#中央ボード)、`upgrade` は[レイアウト版ゲート](#レイアウト版ゲート書き込みを止めるのは版が違うとき)の節が正）。
+生成表は機械保証されたリファレンス。一行に収まらない挙動契約はここにある（表の行だけで話が完結するコマンド——`init`・`done`・`retitle`・`label`・`schema`・`version`——には項が無く、`attach` は[画像・メディアの添付](#画像メディアの添付)、`sync`・`config` は[中央ボード](#中央ボード)、`upgrade` は[レイアウト版ゲート](#レイアウト版ゲート書き込みを止めるのは版が違うとき)の節が正）。
 
 - **`add`** — `--stdin` で標準入力から 1 行 1 タスクを一括作成。`--check`（反復可）で checklist 項目を seed（body prose だけでは shard checklist に入らない）。範囲外 `--value`/`--effort` は clamp＋stderr note。`-` 始まりの title は `--` 区切りが必要（エラーが案内）。`--type` で work-item 型を設定（`[types].order` の値、例 `epic`。未知型は exit 2＋`candidates`）。
 - **`ls`** — 正準順（`lane -> priority -> id`）で一覧。`--drafts` は repo 未付与のタスクだけ（ボードのスコープは無視）。`--since`/`--until` は `updated` で期間フィルタ（素の `YYYY-MM-DD` または RFC3339。素の `--until` はその日を丸ごと含む）。`--sort updated|created|value|effort` で並べ替え（新しい/大きい順、`--reverse` で反転、未設定の見積もりはどちら向きでも末尾）、`--sort` 時は `-n` がソート後の上位 N。未知の `--sort` フィールド・不正な日付は exit 2。`--archived` は archive store から同じフィルタ/sort で一覧。フラットな各行は 1 文字の**状態記号**を持つ——★ 着手可能（next レーンかつ依存が全部 done＝まさに `furrow next` が渡すもの）・✓ done・~ 保留・▣ container の箱・· 着手不可——`--json`/`--ndjson` は各行に `actionable`・`blocked_by`・`container`・`stuck` を付ける。状態で絞るには `--actionable`（★ だけ）か `--blocked`（依存が満たされていない行だけ）——排他で、どちらも `-s/-l/-r` と AND（`-s ready --blocked` = ready なのに実は詰まっている行）。**`--tree`** は同じ事実を **parent の階層**として描く——top-level タスクごとに 1 本の木、`<id>` を渡せばその部分木。フィルタはそのまま効き、森は**マッチした集合の上に**組む——親がフィルタで落ちた子は消えずに root になる（`--tree` で見えるタスクが減ることは無い）。`--tree` 時の `-n` は**木の本数**の上限（タスク数ではない）。`--tree` では `--json` が `children` を入れ子にし、`--ndjson` は 1 行 1 本の木。**container**（epic）のノードは子の進捗ロールアップ（`progress` = `done/total`、既定は直下の子・`--progress-recursive` で部分木全体）と `stuck`（配下に open な仕事があるが actionable な子孫が無い）も持つ。`--type` は effective 型で照合（`--type task` は型無しの多数派も含む）。
@@ -196,6 +196,7 @@ furrow done t-0001
 - **`edit`** — `bodies/<id>.md` をエディタで開く（非対話ならパスを出力）。経過の記録には `note` を推奨——ファイル直編集は `updated` を進めない。
 - **`note`** — テキストを body に新しい段落として追記し、**同時に** `updated` を進める（1 write）。body だけで reconcile 済みのタスクに `lint` の `reconcile-gap` が誤発火しない。`<text>` に `-` で stdin から読む（複数行用）。`--json` は封筒に加え `appended` を出す（メタの `changed` は body だけ動いたとき `[]`）。
 - **`move`** — done レーンから出るとき `closed` をクリアする（`done` が打刻する）。
+- **`reorder`** — 絶対値指定は疎な整数をそのまま書く。`--before`/`--after <id>` は計算を furrow に任せ、同一レーンの相手のすぐ前/後ろへ差し込む（レーンを跨ぐ相対位置は無意味なので相手は同レーン必須——違えば exit 2）。相手の隣の隙間が枯渇していたら**同じ 1 write の中で**レーン全体を respace する（all-or-nothing）——`--json` は隣人たちの移動を `renumbered` 配列（`{id, from, to}`）で返し、stderr note が件数を知らせる。respace された隣人の `updated` は**意図的に進めない**（並びの帳簿づけは進捗ではない——staleness シグナルを守るため）。
 - **`value` / `effort`** — 範囲外は 1..5 に丸め、**さらに signal**——`--json` 封筒にフィールド名でネストした `clamped`（`clamped.value.{requested, stored}` / `clamped.effort.{…}`）＋stderr note＝明示引数を黙って丸めない。`add` 経由の clamp は stderr note のみ（`add --json` は作成タスクを出し、封筒は無い）。`--clear` で未設定に戻す。
 - **`set`** — routine triage（lane・value・effort・label・type）を **1 回の write** でまとめて適用。最低 1 変更が必要。未知レーン/型は exit 2＋`candidates`。`[labels].required` 下で最後のラベルを剥がす set は拒否。
 - **`check`** — index は 0 始まり。done にするのはトグルでなく冪等 set（`--off` で外す）。`--add` は verbatim に追加（反復可）、`--rm` は index の項目を削除、`--reword` はテキスト差し替え。mode フラグは排他、範囲外 index は exit 2。
@@ -457,7 +458,7 @@ git config core.hooksPath scripts/hooks   # hook を置いたあと
 ## 設計の不変条件
 
 - **id は凍結**。`t-k3m9p` 形式（prefix + ランダムな Crockford base32 サフィックス、`[ids].width` 文字）。共有カウンタを持たずローカル生成するので、並行 `furrow add` でも衝突しない。**再利用も再採番もしない**。旧来の連番 id（`t-0042`）も有効で共存。`bodies/<id>.md` のファイル名語幹と 1:1 に対応する。
-- **priority は疎な整数**（10 刻みが既定）。並べ替えは `reorder` で 1 フィールドを書き換えるだけ。手リナンバリングは消える。
+- **priority は疎な整数**（10 刻みが既定）。並べ替えは `reorder` で 1 フィールドを書き換えるだけ。手リナンバリングは消える。相対指定（`reorder <id> --before/--after <ref>`）は計算ごと furrow に任せられ、隙間が枯渇したときだけ同一 write 内でレーンを respace する（`--json` の `renumbered` が隣人の移動を報告）。
 - **status は `config.toml` のレーン**。Open→Done は値の変更（1 文字 diff）。
 - **`done` への移動は `closed` を打刻**。done から外へ移動すると `closed` をクリアする。icebox（温存）のような他の terminal レーンは `closed` を打刻しない（parked と closed は別物）。
 - **`next` の定義** = レーンが `[next].lanes`（既定 `ready` + `in-progress` — inbox/backlog などの intake レーンは対象外）にあり、かつ依存（`deps`）が全て done レーンにあるタスク。

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"strings"
 
@@ -113,22 +114,64 @@ func newNoteCmd() *cobra.Command {
 }
 
 func newReorderCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "reorder <id> <priority>",
-		Short: "Set a task's priority (sparse integer; lower = higher up)",
-		Args:  cobra.ExactArgs(2),
+	var before, after string
+	cmd := &cobra.Command{
+		Use:   "reorder <id> [<priority>]",
+		Short: "Set a task's priority — absolute, or relative with --before/--after",
+		Long: "Order a task within its lane. With an absolute <priority>, set the sparse\n" +
+			"integer directly (lower = higher up). With --before/--after <id>, compute it:\n" +
+			"the task is slotted immediately before/after that task in its lane (both must\n" +
+			"share a lane — relative order across lanes is meaningless). When the sparse\n" +
+			"gap next to the target is exhausted, the whole lane is respaced in the same\n" +
+			"single write (all-or-nothing); --json then adds a `renumbered` array with the\n" +
+			"neighbors' {id, from, to} moves, and a note names the count on stderr.",
+		Example: "  furrow reorder t-k3m9p 90\n" +
+			"  furrow reorder t-k3m9p --before t-x1y2z\n" +
+			"  furrow reorder t-k3m9p --after t-x1y2z",
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			prio, err := atoiArg("priority", args[1])
-			if err != nil {
-				return err
+			id := args[0]
+			ref, isBefore := before, true
+			if ref == "" {
+				ref, isBefore = after, false
 			}
-			return emitMutation(a, "reordered", args[0], func() (*core.Task, error) { return a.Reorder(args[0], prio) })
+			switch {
+			case len(args) == 2 && ref != "":
+				return core.Validationf(id, "give an absolute <priority> or --before/--after, not both")
+			case len(args) == 1 && ref == "":
+				return core.Validationf(id, "provide a <priority>, or --before/--after <id>")
+			case ref != "":
+				var changes []core.PriorityChange
+				return emitMutationWith(a, "reordered", id,
+					func() (*core.Task, error) {
+						t, ch, err := a.ReorderRelative(id, ref, isBefore)
+						changes = ch
+						return t, err
+					},
+					func(t *core.Task) map[string]any {
+						if len(changes) == 0 {
+							return nil
+						}
+						fmt.Fprintf(errOut, "note: gap exhausted — respaced %d other task(s) in lane %q\n", len(changes), t.Status)
+						return map[string]any{"renumbered": changes}
+					})
+			default:
+				prio, err := atoiArg("priority", args[1])
+				if err != nil {
+					return err
+				}
+				return emitMutation(a, "reordered", id, func() (*core.Task, error) { return a.Reorder(id, prio) })
+			}
 		},
 	}
+	cmd.Flags().StringVar(&before, "before", "", "place immediately before this task (same lane)")
+	cmd.Flags().StringVar(&after, "after", "", "place immediately after this task (same lane)")
+	cmd.MarkFlagsMutuallyExclusive("before", "after")
+	return cmd
 }
 
 // newEstimateCmd builds the shared `value`/`effort` setter: `furrow <name> <id>

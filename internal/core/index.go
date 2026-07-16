@@ -3,6 +3,8 @@ package core
 // Index operations. All pure: they mutate or query an in-memory *Index and never
 // touch the filesystem. The store loads/saves; these shape what is in memory.
 
+import "sort"
+
 // Find returns a pointer to the task with the given id and its slice position,
 // or (nil, -1). The pointer is into idx.Tasks, so mutating it mutates the index
 // (callers re-Save afterward).
@@ -51,6 +53,117 @@ func (idx *Index) NextPriority(lane string, base, step int) int {
 		return base
 	}
 	return max + step
+}
+
+// PriorityChange records one neighbor's priority move inside a respace plan —
+// the machine-readable receipt for "inserting here had to renumber the lane".
+type PriorityChange struct {
+	ID   string `json:"id"`
+	From int    `json:"from"`
+	To   int    `json:"to"`
+}
+
+// PlanRelativePriority computes the priority that places task id immediately
+// before (or after) task ref in ref's lane — the lane's display order is
+// (priority, then id), the same tie-break the marshaller sorts by. Both tasks
+// must exist and share a lane (relative position across lanes is meaningless);
+// planning against a ref in another lane is a validation error, and id == ref
+// is too.
+//
+// When an integer strictly between the two neighbors exists, the plan is just
+// that midpoint and no other task moves. When the gap is exhausted (adjacent or
+// duplicate priorities), the plan respaces the WHOLE lane — id slotted at its
+// requested position, every lane member renumbered to base, base+step, … — so
+// one respace restores the sparse spacing for every future insert. The returned
+// changes list the OTHER tasks' moves (id's own target is the first return);
+// the caller applies target + changes in one write, all-or-nothing, so the
+// renumber can never half-land.
+func (idx *Index) PlanRelativePriority(id, ref string, before bool, base, step int) (int, []PriorityChange, error) {
+	if id == ref {
+		return 0, nil, Validationf(id, "--before/--after must name a different task")
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return 0, nil, NotFound(id)
+	}
+	rt, ri := idx.Find(ref)
+	if ri < 0 {
+		return 0, nil, NotFound(ref)
+	}
+	if rt.Status != t.Status {
+		return 0, nil, Validationf(id, "relative target %s is in lane %q, not %s's lane %q — relative order only exists within one lane", ref, rt.Status, id, t.Status)
+	}
+
+	// The lane's current display order, with id itself excluded: it is being
+	// re-slotted, so its old position must not influence the neighbors.
+	type slot struct {
+		id  string
+		pri int
+	}
+	var lane []slot
+	for j := range idx.Tasks {
+		tt := &idx.Tasks[j]
+		if tt.Status == t.Status && tt.ID != id {
+			lane = append(lane, slot{tt.ID, tt.Priority})
+		}
+	}
+	sort.Slice(lane, func(a, b int) bool {
+		if lane[a].pri != lane[b].pri {
+			return lane[a].pri < lane[b].pri
+		}
+		return lane[a].id < lane[b].id
+	})
+	r := 0
+	for j := range lane {
+		if lane[j].id == ref {
+			r = j
+			break
+		}
+	}
+	ins := r // insertion index into lane
+	if !before {
+		ins = r + 1
+	}
+
+	// Cheap path: a free integer strictly between the two neighbors.
+	var lo, hi *int
+	if ins > 0 {
+		lo = &lane[ins-1].pri
+	}
+	if ins < len(lane) {
+		hi = &lane[ins].pri
+	}
+	switch {
+	case lo == nil: // ref is the lane's first task; hi != nil because ref exists
+		return *hi - step, nil, nil
+	case hi == nil: // ref is the lane's last task
+		return *lo + step, nil, nil
+	default:
+		if gap := *hi - *lo; gap >= 2 {
+			return *lo + gap/2, nil, nil
+		}
+	}
+
+	// Gap exhausted: respace the whole lane with id in its slot.
+	target := 0
+	var changes []PriorityChange
+	pri := base
+	for j := 0; j <= len(lane); j++ {
+		switch {
+		case j == ins:
+			target = pri
+		case j < ins:
+			if lane[j].pri != pri {
+				changes = append(changes, PriorityChange{ID: lane[j].id, From: lane[j].pri, To: pri})
+			}
+		default:
+			if lane[j-1].pri != pri {
+				changes = append(changes, PriorityChange{ID: lane[j-1].id, From: lane[j-1].pri, To: pri})
+			}
+		}
+		pri += step
+	}
+	return target, changes, nil
 }
 
 // Actionable reports whether a task is a candidate for `next`: it is not in a
