@@ -118,6 +118,39 @@ func TestSyncTwoClonesConverge(t *testing.T) {
 	}
 }
 
+// The committed flag survives the pull rewriting the sync commit: when the
+// remote is ahead, the pull --rebase picks our fresh auto-commit onto the
+// remote head — a NEW sha — and the report must still say committed=true (the
+// question it answers is "did this sync create a commit", not "is that exact
+// sha still HEAD"). Pinned because a field observation (t-08gb) blamed exactly
+// this path for a committed=false misreport.
+func TestSyncCommittedTrueWhenPullRewritesTheCommit(t *testing.T) {
+	_, cloneA, cloneB := setupClones(t)
+
+	// A pushes first, so B's sync will find the remote ahead of its base.
+	a := openBoard(t, cloneA)
+	if _, err := a.Add("from A", AddOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatalf("A sync: %v", err)
+	}
+
+	// B adds new shards, then syncs: auto-commit → pull rebases that commit
+	// onto A's head (rewriting its sha) → push.
+	b := openBoard(t, cloneB)
+	if _, err := b.Add("from B", AddOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := b.Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatalf("B sync: %v (progress %+v)", err, p)
+	}
+	if !p.Committed || !p.Pulled || !p.Pushed || p.Conflict {
+		t.Errorf("B progress = %+v; want committed+pulled+pushed even though the rebase rewrote the commit", p)
+	}
+}
+
 // The failure contract: both sides edit the SAME shard; the loser's sync hits a
 // rebase conflict, aborts automatically (no conflict markers on the board, the
 // local sync commit survives), and reports sync-conflict + the paths.
