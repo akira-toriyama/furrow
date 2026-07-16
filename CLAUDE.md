@@ -16,7 +16,7 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
+- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|boards|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
   `set <id>` combines lane/**priority**/value/effort/labels/**type** in one
   write (the triage shortcut for move+reorder+value+effort+label): `--priority`
   is absolute, `--before/--after <ref>` relative in the DESTINATION lane — a
@@ -196,7 +196,14 @@ the user-level config. When you work with any furrow store:
   `unreadable`) and `writable` — it is the last command that still works when
   board and binary disagree, so read it as a pre-flight instead of watching every
   task read fail with "task not found". `furrow lint` warns `schema-outdated`
-  (never errors) meanwhile.
+  (never errors) meanwhile. Its machine-wide sibling **`furrow boards [--json]`
+  lists every CONFIGURED `[[board]]` without resolving against cwd** — exit 0
+  (a listing, possibly empty) even where every other command exits 2 because no
+  board is in scope, each entry carrying the same vocabulary/schema keys as
+  `board` plus resolved `store`/`scopes`, the declared `repo`/`label`, and
+  `exists` — the diagnosis call for "this machine has no scopes configured" and
+  the bootstrap for a front-end running outside every scope (FURROW_BOARD, a
+  per-invocation override, is not listed).
 - **A shard key this binary does not know is PRESERVED, not dropped.** The gate
   above only fires when someone BUMPS the version; a field added without a bump
   would be silently destroyed by the next ordinary write (`encoding/json`'s

@@ -56,6 +56,77 @@ func newBoardCmd() *cobra.Command {
 	}
 }
 
+// newBoardsCmd lists every CONFIGURED board — the machine-wide view `board`
+// cannot give, because `board` answers for one cwd and exits 2 where no board
+// is in scope. `boards` never resolves against cwd at all, so it answers
+// everywhere; a GUI front-end running at cwd=/ reads it to locate the central
+// board instead of re-parsing furrow's config format itself.
+func newBoardsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "boards",
+		Short: "List the configured boards (user-level config), independent of cwd",
+		Long: "List every [[board]] in the user-level config\n" +
+			"(${XDG_CONFIG_HOME:-~/.config}/furrow/config.toml), in file order, WITHOUT\n" +
+			"resolving against cwd — this works (exit 0) exactly where other commands\n" +
+			"exit 2 because no board is in scope, so it is the diagnosis call for \"which\n" +
+			"boards does this machine know about?\" and the one-call bootstrap for a GUI\n" +
+			"front-end. The JSON is {config, boards: []}: `config` names the file read\n" +
+			"(whether or not it exists), and each entry carries the resolved store path\n" +
+			"and scopes, the DECLARED repo/label (\"auto\" cannot resolve without a\n" +
+			"checkout), an `exists` flag, and the same vocabulary + schema keys as\n" +
+			"`furrow board` (one parser reads both). A missing board keeps an EMPTY\n" +
+			"vocabulary — reported, never guessed. No config or no usable [[board]] is\n" +
+			"boards: [] with exit 0 — that emptiness is the finding. The FURROW_BOARD env\n" +
+			"override is a per-invocation redirect, not machine config, so it is not\n" +
+			"listed.",
+		Example: "  furrow boards           # human summary of every configured board\n" +
+			"  furrow boards --json    # {config, boards: [{store, scopes, repo, exists, lanes, writable, ...}]}\n" +
+			"  furrow boards --json | jq -r '.boards[].store'",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			list, warns, err := app.Boards()
+			if err != nil {
+				return err
+			}
+			for _, w := range warns {
+				fmt.Fprintf(errOut, "note: %s\n", w)
+			}
+			if jsonMode() {
+				emitObject(list)
+				return nil
+			}
+			printBoardsHuman(list)
+			return nil
+		},
+	}
+}
+
+// printBoardsHuman renders the configured-board listing: the config path, then
+// one small block per board (details live in --json).
+func printBoardsHuman(l *app.BoardsList) {
+	fmt.Fprintf(out, "config: %s\n", l.Config)
+	if len(l.Boards) == 0 {
+		fmt.Fprintln(out, "no boards configured — `furrow config init` writes the template")
+		return
+	}
+	for _, b := range l.Boards {
+		state := b.SchemaState
+		if !b.Exists {
+			state = "missing (not on disk)"
+		}
+		repo := b.Repo
+		if repo == "" {
+			repo = "(none)"
+		}
+		fmt.Fprintf(out, "\n%s\n", b.Store)
+		fmt.Fprintf(out, "  repo: %s  state: %s  writable: %t\n", repo, state, b.Writable)
+		if b.Label != "" {
+			fmt.Fprintf(out, "  add tag: %s\n", b.Label)
+		}
+		fmt.Fprintf(out, "  scopes: %s\n", strings.Join(b.Scopes, ", "))
+	}
+}
+
 // printBoardHuman renders the board snapshot as an aligned key/value block on
 // stdout (JSON/NDJSON are handled by the caller).
 func printBoardHuman(b app.BoardInfo) {
