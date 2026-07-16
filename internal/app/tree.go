@@ -149,17 +149,13 @@ func (a *App) Tree(o QueryOpts, rootID string, progressRecursive bool) ([]TreeNo
 // placed in this forest is never expanded twice, so a merged-in parent cycle
 // truncates instead of recursing forever.
 func (a *App) treeNode(idx *core.Index, t core.Task, children map[string][]core.Task, kids map[string][]*core.Task, doneIDs, seen map[string]bool, progressRecursive bool) TreeNode {
+	actionable, blockedBy, container := a.factsFor(idx, &t, doneIDs)
 	n := TreeNode{
 		Task:       t,
-		Actionable: a.actionable(idx, &t, doneIDs),
-		Container:  a.Cfg.IsContainerType(t.Type),
-		BlockedBy:  []string{},
+		Actionable: actionable,
+		Container:  container,
+		BlockedBy:  blockedBy,
 		Children:   []TreeNode{},
-	}
-	for _, d := range t.Deps {
-		if !doneIDs[d] {
-			n.BlockedBy = append(n.BlockedBy, d)
-		}
 	}
 	if seen[t.ID] {
 		return n // already drawn elsewhere: a cycle. Draw the node, stop the descent.
@@ -177,9 +173,47 @@ func (a *App) treeNode(idx *core.Index, t core.Task, children map[string][]core.
 	if n.Container {
 		done, total := rollupProgress(kids, t.ID, progressRecursive, a.Cfg.DoneLane)
 		n.Progress = &Progress{Done: done, Total: total}
-		n.Stuck = a.hasOpenDescendant(t.ID, kids, map[string]bool{}) && !a.hasActionableDescendant(t.ID, kids, idx, doneIDs, map[string]bool{})
+		n.Stuck = a.isStuck(idx, t.ID, kids, doneIDs)
 	}
 	return n
+}
+
+// factsFor computes the per-task facts that the flat `ls` and `ls --tree` both
+// surface, kept as ONE definition so the two views can never disagree about a
+// task's state:
+//
+//   - actionable: `furrow next`'s own predicate (App.actionable) — in a next lane,
+//     every dep done, not a container. The ★.
+//   - blockedBy: the deps that are NOT done — what is actually in the way (a done
+//     dep is history and is left out; always [] not nil).
+//   - container: whether the task is a box (an epic), which is never actionable.
+//
+// It is deliberately cheap (no subtree walk). The container-only "stuck" roll-up
+// needs the children map and is isStuck, computed separately by callers that have
+// it (treeNode in its container block, ListItems for a container row).
+func (a *App) factsFor(idx *core.Index, t *core.Task, doneIDs map[string]bool) (actionable bool, blockedBy []string, container bool) {
+	return a.actionable(idx, t, doneIDs), blockedDeps(t, doneIDs), a.Cfg.IsContainerType(t.Type)
+}
+
+// blockedDeps returns t's deps that are not yet done — the "what is in the way"
+// list, always non-nil ([] not nil) so a JSON view emits [] rather than null.
+func blockedDeps(t *core.Task, doneIDs map[string]bool) []string {
+	out := []string{}
+	for _, d := range t.Deps {
+		if !doneIDs[d] {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// isStuck reports a container's "stuck project" state (org-mode's): open
+// (non-terminal) work somewhere under id but NO actionable descendant anywhere in
+// its subtree. It ALWAYS walks the whole subtree (through sub-containers), reusing
+// revisit's descendant helpers so tree/revisit/ls never drift on what "stuck"
+// means. Callers gate it on the node being a container — a non-box is never stuck.
+func (a *App) isStuck(idx *core.Index, id string, kids map[string][]*core.Task, doneIDs map[string]bool) bool {
+	return a.hasOpenDescendant(id, kids, map[string]bool{}) && !a.hasActionableDescendant(id, kids, idx, doneIDs, map[string]bool{})
 }
 
 // rollupProgress tallies done/total over a container's REAL children (kids, the

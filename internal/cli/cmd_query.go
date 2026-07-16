@@ -12,19 +12,21 @@ import (
 
 func newLsCmd() *cobra.Command {
 	var (
-		status   []string
-		label    []string
-		repo     string
-		limit    int
-		drafts   bool
-		since    string
-		until    string
-		sortBy   string
-		reverse  bool
-		archived bool
-		tree     bool
-		typ      string
-		progRec  bool
+		status     []string
+		label      []string
+		repo       string
+		limit      int
+		drafts     bool
+		since      string
+		until      string
+		sortBy     string
+		reverse    bool
+		archived   bool
+		tree       bool
+		typ        string
+		progRec    bool
+		actionable bool
+		blocked    bool
 	)
 	cmd := &cobra.Command{
 		Use:     "ls [<id>]",
@@ -36,6 +38,13 @@ func newLsCmd() *cobra.Command {
 			"day). --sort reorders by updated|created|value|effort (newest/highest\n" +
 			"first; --reverse flips it, and an unset value/effort stays last either\n" +
 			"way); with --sort, -n takes the top N of the sorted set.\n\n" +
+			"Every row carries a one-character state glyph: ★ actionable (a next lane,\n" +
+			"every dep done — exactly what `furrow next` would hand you), ✓ done, ~ parked\n" +
+			"(a terminal lane that is not done), ▣ a container box, · open but not\n" +
+			"available. Filter on it with --actionable (only ★) or --blocked (only rows\n" +
+			"with an unsatisfied dependency); both AND with -s/-l/-r — e.g. `-s ready\n" +
+			"--blocked` is the ready rows that are actually stuck. --json/--ndjson add\n" +
+			"actionable, blocked_by, container, and stuck to each row.\n\n" +
 			"--tree draws the parent hierarchy instead of a flat table: one tree per\n" +
 			"top-level task, or the subtree under <id> when given. Every filter still\n" +
 			"applies, and the forest is built over what matched — a task whose parent was\n" +
@@ -56,6 +65,8 @@ func newLsCmd() *cobra.Command {
 			"  furrow ls --since 2026-07-08   # touched on/after a date\n" +
 			"  furrow ls --sort value -n5     # top 5 by value\n" +
 			"  furrow ls --drafts        # only repo-less draft tasks\n" +
+			"  furrow ls --actionable    # only ★ (what `furrow next` would hand you)\n" +
+			"  furrow ls -s ready --blocked   # ready rows that are actually stuck\n" +
 			"  furrow ls --tree          # the hierarchy, ★ = pick this up now\n" +
 			"  furrow ls --tree t-k3m9p  # just what leads to (and hangs under) that goal",
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -79,6 +90,7 @@ func newLsCmd() *cobra.Command {
 			o.Status, o.Limit, o.Drafts = joinOrFilter(status), limit, drafts
 			o.Sort, o.Reverse, o.Archived = sortBy, reverse, archived
 			o.Type = typ
+			o.Actionable, o.Blocked = actionable, blocked
 			if cmd.Flags().Changed("since") {
 				ts, err := parseDateBound(since, false)
 				if err != nil {
@@ -104,16 +116,16 @@ func newLsCmd() *cobra.Command {
 				}
 				return emitTree(a, nodes)
 			}
-			tasks, err := a.List(o)
+			items, err := a.ListItems(o)
 			if err != nil {
 				return err
 			}
-			if err := labelDidYouMean(cmd, a, o, len(tasks)); err != nil {
+			if err := labelDidYouMean(cmd, a, o, len(items)); err != nil {
 				return err
 			}
 			hintHiddenDrafts(o, a.List)
 			// An empty listing is a valid result (exit 0), not a miss.
-			return emitTasks(tasks)
+			return emitListItems(a, items)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
@@ -129,6 +141,11 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&tree, "tree", false, "draw the parent hierarchy (★ = actionable now); with an <id>, just that subtree")
 	cmd.Flags().StringVar(&typ, "type", "", "filter by work-item type (a value from [types].order, e.g. epic; unknown = exit 2 + candidates)")
 	cmd.Flags().BoolVar(&progRec, "progress-recursive", false, "with --tree, roll up container progress over the whole subtree (default: direct children only)")
+	cmd.Flags().BoolVar(&actionable, "actionable", false, "only tasks `furrow next` would hand you now (★: a next lane, every dep done); ANDs with -s/-l/-r")
+	cmd.Flags().BoolVar(&blocked, "blocked", false, "only tasks with an unsatisfied dependency (a non-empty blocked_by); ANDs with -s/-l/-r")
+	// A task cannot be both actionable (all deps done) and blocked (a dep undone),
+	// so combining them would always be empty — refuse it rather than mislead.
+	cmd.MarkFlagsMutuallyExclusive("actionable", "blocked")
 	return cmd
 }
 
@@ -279,6 +296,7 @@ func newNextCmd() *cobra.Command {
 		repo       string
 		limit      int
 		containers bool
+		lanes      []string
 	)
 	cmd := &cobra.Command{
 		Use:   "next",
@@ -290,10 +308,18 @@ func newNextCmd() *cobra.Command {
 			"by default; pass --containers to surface a ready one too. Use --repo to\n" +
 			"restrict to a repo (a unique short name works) and --label to AND a tag\n" +
 			"filter on top. An empty result is healthy (nothing to pick up right now)\n" +
-			"and exits 0 — the same contract as ls/revisit.",
+			"and exits 0 — the same contract as ls/revisit.\n\n" +
+			"--lanes <csv> overrides which lanes count as \"now\" for THIS call only,\n" +
+			"leaving [next].lanes in config untouched (non-destructive): `next --lanes\n" +
+			"backlog,ready` surfaces a no-dependency backlog task you could start now\n" +
+			"without first promoting it. The deps-done half is unchanged, so --lanes\n" +
+			"widens which lanes qualify, not what \"ready\" means; an unknown lane is exit\n" +
+			"2 with the configured lanes in candidates (like -s). --json's reason.in_next_lane\n" +
+			"names the lane each task matched, so a --lanes-included one is distinguishable.",
 		Example: "  furrow next               # what to pick up now\n" +
 			"  furrow next -n1 --json    # just the top task, with a reason\n" +
 			"  furrow next --containers  # include ready epics (boxes)\n" +
+			"  furrow next --lanes backlog,ready   # temporarily widen the lanes considered\n" +
 			"  furrow next -r furrow -l bug",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -307,6 +333,19 @@ func newNextCmd() *cobra.Command {
 			}
 			o.Limit = limit
 			o.IncludeContainers = containers
+			// --lanes is a one-shot override of [next].lanes: the same comma-OR /
+			// repeated union as -s (a StringArray split on ",", trimmed, empties
+			// dropped). Next validates the tokens against the configured lanes, so a
+			// typo is exit 2 + candidates (never a silent empty result).
+			if cmd.Flags().Changed("lanes") {
+				for _, v := range lanes {
+					for _, tok := range strings.Split(v, ",") {
+						if tok = strings.TrimSpace(tok); tok != "" {
+							o.Lanes = append(o.Lanes, tok)
+						}
+					}
+				}
+			}
 			tasks, err := a.Next(o)
 			if err != nil {
 				return err
@@ -324,6 +363,7 @@ func newNextCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; use -n1 for just the top)")
 	cmd.Flags().BoolVar(&containers, "containers", false, "also surface ready container types (epics), which next hides by default")
+	cmd.Flags().StringArrayVar(&lanes, "lanes", nil, "override [next].lanes for THIS call (OR; comma-separated or repeated; unknown lane = exit 2 + candidates); config untouched")
 	return cmd
 }
 
