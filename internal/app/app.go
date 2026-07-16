@@ -1086,6 +1086,64 @@ func (a *App) applyLane(t *core.Task, lane string) {
 // Done moves a task into the done lane (and stamps Closed via Move).
 func (a *App) Done(id string) (*core.Task, error) { return a.Move(id, a.Cfg.DoneLane) }
 
+// MoveMany sets the lane on several tasks in ONE index write, all-or-nothing:
+// every id is resolved before anything is touched, so a failed batch never
+// half-lands (a write must not partially succeed the way a batch READ may —
+// GetBatch's missing-is-data contract stops at mutations). An unknown lane is
+// the usual exit-2 candidates error; any missing ids fail the whole batch with
+// exit 1 and ALL of them in details.missing (the show batch shape, so agents
+// branch identically). Duplicates collapse to their first occurrence and
+// results come back in input order. The single Save is the point: a triage
+// sweep over five tasks is one write, not five.
+func (a *App) MoveMany(ids []string, lane string) ([]*core.Task, error) {
+	if !a.Cfg.IsLane(lane) {
+		return nil, a.unknownLaneErr("", lane)
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	order, missing := []string{}, []string{}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		if _, i := idx.Find(id); i < 0 {
+			missing = append(missing, id)
+			continue
+		}
+		order = append(order, id)
+	}
+	if len(missing) > 0 {
+		return nil, &core.Error{
+			Code:    core.CodeNotFound,
+			Msg:     fmt.Sprintf("%d of %d ids not found — nothing was moved", len(missing), len(order)+len(missing)),
+			Details: map[string]any{"missing": missing},
+		}
+	}
+	now := a.Clock.Now()
+	for _, id := range order {
+		t, _ := idx.Find(id)
+		a.applyLane(t, lane)
+		t.Updated = now
+	}
+	if err := a.Store.Save(idx); err != nil {
+		return nil, err
+	}
+	out := make([]*core.Task, 0, len(order))
+	for _, id := range order {
+		saved, _ := idx.Find(id)
+		out = append(out, saved)
+	}
+	return out, nil
+}
+
+// DoneMany moves several tasks into the done lane in one write (stamping
+// Closed on each via MoveMany's applyLane).
+func (a *App) DoneMany(ids []string) ([]*core.Task, error) { return a.MoveMany(ids, a.Cfg.DoneLane) }
+
 // Reorder sets a task's absolute priority.
 func (a *App) Reorder(id string, priority int) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) { t.Priority = priority })

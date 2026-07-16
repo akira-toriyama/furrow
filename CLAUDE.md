@@ -26,7 +26,12 @@ the user-level config. When you work with any furrow store:
   (add/remove several in one write), and `dep <id> --list` is the read-only
   reverse-deps view — both directions (`depends_on` / `blocks`) resolved to
   id+title+lane, one `--json` object — so "what waits on this?" is a command,
-  not a full-board dump; `archive <id>...` retires specific done
+  not a full-board dump; `done <id>...` / `move <id>... <lane>` accept several
+  ids in ONE all-or-nothing index write (the write-side twin of `show <id>...`:
+  a miss closes/moves NOTHING, exit 1 with every miss in `details.missing`;
+  `--json` keeps the classic envelope for one id and emits an array of
+  envelopes for ≥2, `--ndjson` one envelope per line at any arity);
+  `archive <id>...` retires specific done
   tasks by id (vs the age sweep). The READMEs' command table is **generated**
   from this very cobra tree (hidden `furrow commands`, spliced by
   `scripts/gen-command-table.sh`, drift-checked by check.sh/CI): to change a

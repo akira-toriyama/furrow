@@ -42,35 +42,99 @@ func emitMutationWith(a *app.App, verb, id string, mutate func() (*core.Task, er
 	return nil
 }
 
+// emitMutationMany is emitMutation for a multi-id batch: one {before,after,
+// changed} envelope per task, in the batch's (deduped) input order — --json an
+// array (a single id keeps the classic object via each command's len==1 path,
+// the show arity convention), --ndjson one envelope per line, human mode one
+// verb line per task. Befores come from one batch read; a miss there is
+// harmless because the mutate closure is the authority and fails the whole
+// batch before anything is printed.
+func emitMutationMany(a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error)) error {
+	befores := map[string]*core.Task{}
+	if jsonMode() {
+		if items, _, err := a.GetBatch(ids, false); err == nil {
+			for i := range items {
+				t := items[i].Task
+				befores[t.ID] = &t
+			}
+		}
+	}
+	after, err := mutate()
+	if err != nil {
+		return err
+	}
+	if jsonMode() {
+		envs := make([]any, 0, len(after))
+		for _, t := range after {
+			envs = append(envs, map[string]any{
+				"before":  befores[t.ID],
+				"after":   t,
+				"changed": changedFields(befores[t.ID], t),
+			})
+		}
+		if flagNDJSON {
+			for _, e := range envs {
+				printNDJSONValue(e)
+			}
+			return nil
+		}
+		printJSON(envs)
+		return nil
+	}
+	for _, t := range after {
+		fmt.Fprintf(out, "%s %s  %s\n", verb, t.ID, t.Title)
+	}
+	return nil
+}
+
 func newDoneCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "done <id>",
-		Short:   "Move a task into the done lane (stamps closed)",
-		Example: "  furrow done t-k3m9p",
-		Args:    cobra.ExactArgs(1),
+		Use:   "done <id>...",
+		Short: "Move tasks into the done lane (stamps closed)",
+		Long: "Close one or more tasks in a single index write, all-or-nothing: a batch\n" +
+			"with an unknown id closes NOTHING and exits 1 with every miss in\n" +
+			"details.missing (the show batch shape). With --json, one id keeps the\n" +
+			"classic {before,after,changed} object and ≥2 ids emit an array of them;\n" +
+			"--ndjson streams one envelope per line at any arity.",
+		Example: "  furrow done t-k3m9p\n" +
+			"  furrow done t-k3m9p t-x7q2 t-9d4n   # triage sweep, one write",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			return emitMutation(a, "done", args[0], func() (*core.Task, error) { return a.Done(args[0]) })
+			if len(args) == 1 {
+				return emitMutation(a, "done", args[0], func() (*core.Task, error) { return a.Done(args[0]) })
+			}
+			return emitMutationMany(a, "done", args, func() ([]*core.Task, error) { return a.DoneMany(args) })
 		},
 	}
 }
 
 func newMoveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "move <id> <lane>",
-		Short: "Move a task to a lane",
+		Use:   "move <id>... <lane>",
+		Short: "Move tasks to a lane",
+		Long: "Move one or more tasks to <lane> (the LAST argument) in a single index\n" +
+			"write, all-or-nothing: a batch with an unknown id moves NOTHING and exits 1\n" +
+			"with every miss in details.missing; an unknown lane is exit 2 with the\n" +
+			"configured lanes in candidates. With --json, one id keeps the classic\n" +
+			"{before,after,changed} object and ≥2 ids emit an array of them; --ndjson\n" +
+			"streams one envelope per line at any arity.",
 		Example: "  furrow move t-k3m9p in-progress\n" +
-			"  furrow move t-k3m9p done",
-		Args: cobra.ExactArgs(2),
+			"  furrow move t-k3m9p t-x7q2 backlog   # triage sweep, one write",
+		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			return emitMutation(a, "moved", args[0], func() (*core.Task, error) { return a.Move(args[0], args[1]) })
+			ids, lane := args[:len(args)-1], args[len(args)-1]
+			if len(ids) == 1 {
+				return emitMutation(a, "moved", ids[0], func() (*core.Task, error) { return a.Move(ids[0], lane) })
+			}
+			return emitMutationMany(a, "moved", ids, func() ([]*core.Task, error) { return a.MoveMany(ids, lane) })
 		},
 	}
 }

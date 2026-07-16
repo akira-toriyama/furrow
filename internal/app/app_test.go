@@ -1070,6 +1070,61 @@ func TestRelabelAddsRemovesIdempotently(t *testing.T) {
 	}
 }
 
+func TestMoveManyIsAllOrNothingInOneWrite(t *testing.T) {
+	a := newApp()
+	t1, _ := a.Add("one", AddOpts{})
+	t2, _ := a.Add("two", AddOpts{})
+	t3, _ := a.Add("three", AddOpts{})
+
+	// Happy path: results in input order, duplicates collapse to the first
+	// occurrence (the GetBatch convention).
+	got, err := a.MoveMany([]string{t1.ID, t2.ID, t1.ID}, "ready")
+	if err != nil {
+		t.Fatalf("MoveMany: %v", err)
+	}
+	if len(got) != 2 || got[0].ID != t1.ID || got[1].ID != t2.ID {
+		t.Fatalf("results = %+v; want [t1 t2] in input order, dup collapsed", got)
+	}
+	for _, tk := range got {
+		if tk.Status != "ready" {
+			t.Errorf("%s status = %q, want ready", tk.ID, tk.Status)
+		}
+	}
+
+	// DoneMany is MoveMany into the done lane: Closed stamps on every task.
+	done, err := a.DoneMany([]string{t2.ID, t3.ID})
+	if err != nil {
+		t.Fatalf("DoneMany: %v", err)
+	}
+	for _, tk := range done {
+		if tk.Status != "done" || tk.Closed == nil {
+			t.Errorf("%s = %q/closed %v; want done lane with Closed stamped", tk.ID, tk.Status, tk.Closed)
+		}
+	}
+
+	// A missing id fails the WHOLE batch: exit 1, details.missing carries every
+	// miss, and the found ids are untouched (all-or-nothing — a write must never
+	// half-land the way a batch read may partially succeed).
+	_, err = a.MoveMany([]string{t1.ID, "t-nope", "t-nada"}, "backlog")
+	if core.ExitCode(err) != int(core.CodeNotFound) {
+		t.Fatalf("miss should be NotFound, got %v", err)
+	}
+	fe := core.AsError(err)
+	miss, _ := fe.Details.(map[string]any)["missing"].([]string)
+	if strings.Join(miss, ",") != "t-nope,t-nada" {
+		t.Errorf("details.missing = %v, want both misses", fe.Details)
+	}
+	if cur, _, _ := a.Get(t1.ID); cur.Status != "ready" {
+		t.Errorf("t1 moved to %q despite the failed batch; all-or-nothing broken", cur.Status)
+	}
+
+	// An unknown lane is the usual exit-2 candidates error, nothing written.
+	_, err = a.MoveMany([]string{t1.ID}, "reddy")
+	if core.ExitCode(err) != int(core.CodeValidation) || len(core.AsError(err).Candidates) == 0 {
+		t.Errorf("unknown lane should be validation with candidates, got %v", err)
+	}
+}
+
 func TestRerefAddsRemovesIdempotentlyKeepingOrder(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("x", AddOpts{Refs: []string{"docs/a.md:10", "https://example.com/b"}})
