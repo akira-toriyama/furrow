@@ -118,6 +118,11 @@ func interruptedExitCode(fe *core.Error, caughtSig int64) core.Code {
 }
 
 func newRootCmd() *cobra.Command {
+	// Keep AddCommand's registration order (below) everywhere commands are
+	// listed — `furrow --help` and the generated README table both read it. It
+	// is the workflow order (init → add → read → triage → …), the one hand
+	// keeping it, not cobra's alphabetical resort.
+	cobra.EnableCommandSorting = false
 	root := &cobra.Command{
 		Use:   "furrow",
 		Short: "Repo-local plain-text task tracker (per-task JSON shards + markdown bodies)",
@@ -197,6 +202,7 @@ func newRootCmd() *cobra.Command {
 		newConfigCmd(),
 		newSchemaCmd(),
 		newVersionCmd(),
+		newCommandsCmd(),
 	)
 	return root
 }
