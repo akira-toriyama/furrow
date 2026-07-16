@@ -524,6 +524,34 @@ func newLabelCmd() *cobra.Command {
 	return cmd
 }
 
+func newRefCmd() *cobra.Command {
+	var add, rm []string
+	cmd := &cobra.Command{
+		Use:   "ref <id>",
+		Short: "Add and/or remove refs (file:line or URL) on a task",
+		Long: "Edit a task's refs after creation — the counterpart to `add --ref`. Add\n" +
+			"refs with --add and remove them with --rm (both repeatable and combinable\n" +
+			"in one call). Adding a ref already present, or removing one already absent,\n" +
+			"is a no-op. Refs keep the order you gave them (they are a sequence, not a\n" +
+			"sorted set like labels): --add appends at the end.",
+		Example: "  furrow ref t-k3m9p --add internal/cli/root.go:42\n" +
+			"  furrow ref t-k3m9p --add https://example.com/spec --rm docs/old.md:10",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			return emitMutation(a, "ref", args[0], func() (*core.Task, error) {
+				return a.Reref(args[0], add, rm)
+			})
+		},
+	}
+	cmd.Flags().StringSliceVar(&add, "add", nil, "ref to add (file:line or URL; repeatable)")
+	cmd.Flags().StringSliceVar(&rm, "rm", nil, "ref to remove (exact match; repeatable)")
+	return cmd
+}
+
 func newRetitleCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "retitle <id> <title...>",

@@ -16,7 +16,7 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|boards|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
+- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|boards|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
   `set <id>` combines lane/**priority**/value/effort/labels/**type** in one
   write (the triage shortcut for move+reorder+value+effort+label): `--priority`
   is absolute, `--before/--after <ref>` relative in the DESTINATION lane — a

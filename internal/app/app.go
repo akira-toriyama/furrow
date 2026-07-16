@@ -1367,6 +1367,29 @@ func (a *App) Relabel(id string, add, remove []string) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) { t.Labels = next })
 }
 
+// Reref adds and/or removes refs (file:line or URL pointers) on a task, the
+// after-the-fact edit for what `add --ref` sets at creation. Adding a ref
+// already present, and removing one already absent, are both no-ops
+// (idempotent) so re-runs don't churn the diff; a call with neither --add nor
+// --rm is a bad-usage error rather than a silent no-op. Unlike labels, refs
+// are a user-ordered SEQUENCE (the marshaller deliberately does not sort
+// them), so survivors keep their order and adds append at the end.
+func (a *App) Reref(id string, add, remove []string) (*core.Task, error) {
+	if len(add) == 0 && len(remove) == 0 {
+		return nil, core.Validationf(id, "provide at least one --add or --rm ref")
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	next := labelDelta(t.Refs, add, remove)
+	return a.mutate(id, func(t *core.Task) { t.Refs = next })
+}
+
 // labelDelta returns cur with every entry in remove dropped and every entry in
 // add unioned on (idempotent — an add already present, or a remove already
 // absent, is a no-op). Survivors keep their order, then the adds; the marshaller

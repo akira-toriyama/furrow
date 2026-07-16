@@ -193,6 +193,7 @@ func newRootCmd() *cobra.Command {
 		newParentCmd(),
 		newLabelCmd(),
 		newRepoCmd(),
+		newRefCmd(),
 		newReviewCmd(),
 		newApplyCmd(),
 		newSyncCmd(),
