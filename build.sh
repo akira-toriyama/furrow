@@ -1,6 +1,6 @@
 #!/bin/sh
 # build.sh — build furrow into bin/furrow with the version stamped from git.
-# Used by install.sh and the Homebrew formula's from-source fallback.
+# Used by install.sh.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"

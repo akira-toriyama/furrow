@@ -11,7 +11,7 @@ import (
 // json.Marshal on an Index anywhere else (scripts/check-marshal-singlepath.sh
 // enforces this in CI). It produces the in-memory aggregate's canonical form —
 // used by the determinism golden and for inspection — and is NOT a persistence
-// path: the store writes per-task shards via MarshalTask + a MetaPath file via
+// path: the store writes per-task shards via MarshalTask + meta.json via
 // MarshalMeta, so these bytes must never be written to .furrow/ (that would
 // resurrect the abolished, drift-prone index.json).
 //
