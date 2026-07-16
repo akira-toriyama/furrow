@@ -207,7 +207,7 @@ To keep this list honest about today's reality (not aspirations):
 
 ---
 
-*(reviewed 2026-07-02 — rationales for "No MCP server" and "No Claude Code
+*(reviewed 2026-07-16 — rationales for "No MCP server" and "No Claude Code
 plugin" rewritten for the repos pivot: the non-goals stand, but their old
 "local, single-repo / single-author" grounds became false once central boards
 went multi-repo and multi-machine.)* — When a non-goal changes, update this
