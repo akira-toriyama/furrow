@@ -238,8 +238,8 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `edit <id>` | Edit a task's markdown body in $EDITOR | — |
 | `note <id> <text>` | Append a paragraph to a task's body and advance its updated time | — |
 | `attach <id> <file>` | Attach a media file to a task (copies into bodies/assets/, links it from the body) | — |
-| `done <id>` | Move a task into the done lane (stamps closed) | — |
-| `move <id> <lane>` | Move a task to a lane | — |
+| `done <id>...` | Move tasks into the done lane (stamps closed) | — |
+| `move <id>... <lane>` | Move tasks to a lane | — |
 | `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before` |
 | `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | — |
 | `set <id>` | Apply several triage edits at once (lane, priority, value, effort, labels) | `--add-label`, `--after`, `--before`, `--clear-effort`, `--clear-value`, `--effort`, `-p/--priority`, `--rm-label`, `-s/--status`, `--type`, `--value` |
