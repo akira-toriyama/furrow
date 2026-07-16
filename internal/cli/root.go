@@ -135,7 +135,8 @@ func newRootCmd() *cobra.Command {
 			"separate front-end that speaks this CLI's JSON. Both you and Claude Code can\n" +
 			"edit the store cleanly.\n\n" +
 			"Exit codes: 0 ok (an empty query result is still 0) · 1 a specifically requested\n" +
-			"id was not found (e.g. show <id>) · 2 bad usage / validation (fix the args, do\n" +
+			"id was not found (e.g. show <id>) or `furrow doctor` found problems (id\n" +
+			"doctor-unhealthy) · 2 bad usage / validation (fix the args, do\n" +
 			"not retry) · 3+ internal / IO (130/143 when a SIGINT/SIGTERM interrupted the\n" +
 			"run — 128+signal by Unix convention). On a non-zero exit an\n" +
 			"{\"error\":{code,id,message[,details][,candidates]}} object is written to stderr;\n" +
@@ -178,6 +179,7 @@ func newRootCmd() *cobra.Command {
 		newStatsCmd(),
 		newBoardCmd(),
 		newBoardsCmd(),
+		newDoctorCmd(),
 		newEditCmd(),
 		newNoteCmd(),
 		newAttachCmd(),

@@ -287,3 +287,73 @@ func TestIsTransientRace(t *testing.T) {
 		})
 	}
 }
+
+// AheadBehind reads only local knowledge (no fetch), so the counts move when
+// commits land locally or a fetch updates the tracking ref — exactly what
+// `furrow doctor` reports.
+func TestAheadBehind(t *testing.T) {
+	git := gitOrSkip(t)
+	ctx := context.Background()
+
+	t.Run("no upstream is a state, not an error", func(t *testing.T) {
+		dir := initRepo(t, git)
+		r, err := Open(ctx, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ahead, behind, hasUpstream, err := r.AheadBehind(ctx)
+		if err != nil {
+			t.Fatalf("AheadBehind on an upstream-less repo must not error: %v", err)
+		}
+		if hasUpstream || ahead != 0 || behind != 0 {
+			t.Errorf("got ahead=%d behind=%d hasUpstream=%t, want 0/0/false", ahead, behind, hasUpstream)
+		}
+	})
+
+	t.Run("counts local commits as ahead and fetched ones as behind", func(t *testing.T) {
+		origin := t.TempDir()
+		runGitT(t, git, origin, "init", "-q", "--bare", "-b", "main")
+		seed := initRepo(t, git)
+		runGitT(t, git, seed, "remote", "add", "origin", origin)
+		runGitT(t, git, seed, "push", "-q", "-u", "origin", "main")
+
+		cloneDir := filepath.Join(t.TempDir(), "b")
+		runGitT(t, git, filepath.Dir(cloneDir), "clone", "-q", origin, cloneDir)
+		runGitT(t, git, cloneDir, "config", "user.name", "t")
+		runGitT(t, git, cloneDir, "config", "user.email", "t@e")
+
+		r, err := Open(ctx, cloneDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ahead, behind, hasUpstream, err := r.AheadBehind(ctx)
+		if err != nil || !hasUpstream || ahead != 0 || behind != 0 {
+			t.Fatalf("fresh clone: got ahead=%d behind=%d hasUpstream=%t err=%v, want 0/0/true/nil", ahead, behind, hasUpstream, err)
+		}
+
+		// A local commit -> ahead 1.
+		if err := os.WriteFile(filepath.Join(cloneDir, "b.txt"), []byte("b\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGitT(t, git, cloneDir, "add", "-A")
+		runGitT(t, git, cloneDir, "commit", "-q", "-m", "local")
+
+		// The remote moves too (seed pushes), and the clone FETCHES (no rebase) —
+		// so the tracking ref knows, the way a real stale board does.
+		if err := os.WriteFile(filepath.Join(seed, "a.txt"), []byte("a\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGitT(t, git, seed, "add", "-A")
+		runGitT(t, git, seed, "commit", "-q", "-m", "remote")
+		runGitT(t, git, seed, "push", "-q")
+		runGitT(t, git, cloneDir, "fetch", "-q")
+
+		ahead, behind, hasUpstream, err = r.AheadBehind(ctx)
+		if err != nil || !hasUpstream {
+			t.Fatalf("AheadBehind: hasUpstream=%t err=%v, want true/nil", hasUpstream, err)
+		}
+		if ahead != 1 || behind != 1 {
+			t.Errorf("got ahead=%d behind=%d, want 1/1", ahead, behind)
+		}
+	})
+}

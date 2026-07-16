@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -324,6 +325,47 @@ func (r *Repo) StashedPaths(ctx context.Context, commit string) []string {
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+// AheadBehind reports how the checked-out branch relates to its upstream
+// tracking ref — ahead = local commits not upstream, behind = upstream commits
+// not local — from LOCAL knowledge only: it never fetches (`furrow doctor` is
+// read-only and network-free), so the counts are as fresh as the last fetch.
+// hasUpstream is false (with zero counts and a nil error) when there is no
+// tracking ref to compare against — an un-tracked branch or a detached HEAD —
+// because a standalone board is a state to report, not a failure.
+func (r *Repo) AheadBehind(ctx context.Context) (ahead, behind int, hasUpstream bool, err error) {
+	// Left-right count over the symmetric difference: the left column is @{u}'s
+	// own commits (behind), the right is HEAD's (ahead).
+	out, stderr, err := runGit(ctx, r.git, r.top, "rev-list", "--left-right", "--count", "@{u}...HEAD")
+	if err != nil {
+		if isNoUpstream(stderr) {
+			return 0, 0, false, nil
+		}
+		return 0, 0, false, core.Internalf("doctor", "git rev-list @{u}...HEAD: %s", firstLine(stderr))
+	}
+	fields := strings.Fields(out)
+	if len(fields) != 2 {
+		return 0, 0, false, core.Internalf("doctor", "git rev-list --left-right --count: unexpected output %q", strings.TrimSpace(out))
+	}
+	if behind, err = strconv.Atoi(fields[0]); err == nil {
+		ahead, err = strconv.Atoi(fields[1])
+	}
+	if err != nil {
+		return 0, 0, false, core.Internalf("doctor", "git rev-list --left-right --count: unexpected output %q", strings.TrimSpace(out))
+	}
+	return ahead, behind, true, nil
+}
+
+// isNoUpstream classifies the rev-parse/rev-list stderr for "@{u} names
+// nothing here": an un-tracked branch ("no upstream configured", or "no
+// tracking information" from older gits) or a detached HEAD ("HEAD does not
+// point to a branch"). Any other failure is a real error.
+func isNoUpstream(stderr string) bool {
+	s := strings.ToLower(stderr)
+	return strings.Contains(s, "no upstream") ||
+		strings.Contains(s, "no tracking information") ||
+		strings.Contains(s, "does not point to a branch")
 }
 
 // AbortRebase restores the pre-rebase state (`git rebase --abort`). The local
