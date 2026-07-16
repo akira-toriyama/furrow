@@ -2,8 +2,14 @@
   # furrow — `nix run github:akira-toriyama/furrow` or `nix profile install`.
   #
   # vendorHash pins the vendored go modules; when go.mod/go.sum change, set it
-  # back to pkgs.lib.fakeHash, run `nix build`, and paste the hash nix prints
-  # ("got: sha256-...").
+  # back to pkgs.lib.fakeHash, run `nix build`, paste the hash nix prints
+  # ("got: sha256-..."), and refresh the stamp below to the new go.sum's sha256.
+  # The stamp is what lets CI catch a forgotten re-pin without running nix
+  # (scripts/check-version-lockstep.sh compares it against the real go.sum —
+  # #127 changed go.sum without re-pinning, and every nix build after it failed
+  # on a hash mismatch until the audit that added this guard noticed).
+  #
+  # go.sum sha256: 74d87f808d27b33c22ac1f0d15b5fc21e8105178e14d085d730662ec4cb32483
   description = "Clonable, git-native plain-text task tracker — an alternative to GitHub Projects/Issues (per-task JSON shards + markdown bodies)";
 
   inputs = {
