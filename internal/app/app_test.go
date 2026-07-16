@@ -1070,6 +1070,51 @@ func TestRelabelAddsRemovesIdempotently(t *testing.T) {
 	}
 }
 
+func TestRerefAddsRemovesIdempotentlyKeepingOrder(t *testing.T) {
+	a := newApp()
+	tk, _ := a.Add("x", AddOpts{Refs: []string{"docs/a.md:10", "https://example.com/b"}})
+
+	// Add one ref, remove another in a single call. Refs are a user-ordered
+	// SEQUENCE (the marshaller does not sort them, unlike labels): survivors
+	// keep their order and adds append at the end.
+	got, err := a.Reref(tk.ID, []string{"internal/cli/root.go:42"}, []string{"docs/a.md:10"})
+	if err != nil {
+		t.Fatalf("Reref: %v", err)
+	}
+	want := "https://example.com/b,internal/cli/root.go:42"
+	if join := strings.Join(got.Refs, ","); join != want {
+		t.Errorf("refs = %q, want %q", join, want)
+	}
+
+	// Adding an existing ref is a no-op (no duplicate, order unchanged).
+	got, err = a.Reref(tk.ID, []string{"https://example.com/b"}, nil)
+	if err != nil {
+		t.Fatalf("idempotent add: %v", err)
+	}
+	if join := strings.Join(got.Refs, ","); join != want {
+		t.Errorf("idempotent add changed refs: %q", join)
+	}
+
+	// Removing an absent ref is a no-op (not an error).
+	got, err = a.Reref(tk.ID, nil, []string{"nope.md:1"})
+	if err != nil {
+		t.Fatalf("removing an absent ref should be a no-op, got %v", err)
+	}
+	if join := strings.Join(got.Refs, ","); join != want {
+		t.Errorf("absent remove changed refs: %q", join)
+	}
+
+	// No flags at all is a bad-usage validation error (never a silent no-op).
+	if _, err := a.Reref(tk.ID, nil, nil); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("reref with no add/rm should be a validation error, got %v", err)
+	}
+
+	// Unknown id is NotFound.
+	if _, err := a.Reref("t-9999", []string{"x.md:1"}, nil); core.ExitCode(err) != int(core.CodeNotFound) {
+		t.Errorf("reref on unknown id should be NotFound, got %v", err)
+	}
+}
+
 func TestRelabelRespectsLabelsRequired(t *testing.T) {
 	cfg := config.Default()
 	cfg.LabelsRequired = true

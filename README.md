@@ -250,6 +250,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `parent <id> [<parent-id>]` | Set, clear (--rm), or list (--list) a task's parent | `--list`, `--rm` |
 | `label <id>` | Add and/or remove labels on a task | `--add`, `--remove` |
 | `repo <id>` | Attach and/or detach repos (owner/repo) on a task | `--add`, `--rm` |
+| `ref <id>` | Add and/or remove refs (file:line or URL) on a task | `--add`, `--rm` |
 | `review <repo\|id>` | Record a review: stamp a task's reviewed time, or a repo's last-reviewed clock | `--by` |
 | `apply --on <open\|merge> [--ref <src>] [--body-file <path>]` | Apply SetStatus-task directives parsed from PR/commit text | `--body-file`, `--on`, `--open-lane`, `--ref` |
 | `sync` | Commit the board, pull --rebase, push (thin git wrapper) | `--all-bodies`, `-b/--body`, `-m/--message` |
