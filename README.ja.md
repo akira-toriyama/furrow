@@ -160,7 +160,7 @@ furrow done t-0001
 | `move <id> <lane>` | Move a task to a lane | — |
 | `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before` |
 | `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | — |
-| `set <id>` | Apply several triage edits at once (lane, value, effort, labels) | `--add-label`, `--clear-effort`, `--clear-value`, `--effort`, `--rm-label`, `-s/--status`, `--type`, `--value` |
+| `set <id>` | Apply several triage edits at once (lane, priority, value, effort, labels) | `--add-label`, `--after`, `--before`, `--clear-effort`, `--clear-value`, `--effort`, `-p/--priority`, `--rm-label`, `-s/--status`, `--type`, `--value` |
 | `value <id> <1-5>` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear` |
 | `effort <id> <1-5>` | Set a task's effort estimate (coarse 1..5), or clear it with --clear | `--clear` |
 | `check <id> [item-index]` | Toggle, add, remove, or reword a checklist item | `--add`, `--off`, `--reword`, `--rm` |
@@ -198,7 +198,7 @@ furrow done t-0001
 - **`move`** — done レーンから出るとき `closed` をクリアする（`done` が打刻する）。
 - **`reorder`** — 絶対値指定は疎な整数をそのまま書く。`--before`/`--after <id>` は計算を furrow に任せ、同一レーンの相手のすぐ前/後ろへ差し込む（レーンを跨ぐ相対位置は無意味なので相手は同レーン必須——違えば exit 2）。相手の隣の隙間が枯渇していたら**同じ 1 write の中で**レーン全体を respace する（all-or-nothing）——`--json` は隣人たちの移動を `renumbered` 配列（`{id, from, to}`）で返し、stderr note が件数を知らせる。respace された隣人の `updated` は**意図的に進めない**（並びの帳簿づけは進捗ではない——staleness シグナルを守るため）。
 - **`value` / `effort`** — 範囲外は 1..5 に丸め、**さらに signal**——`--json` 封筒にフィールド名でネストした `clamped`（`clamped.value.{requested, stored}` / `clamped.effort.{…}`）＋stderr note＝明示引数を黙って丸めない。`add` 経由の clamp は stderr note のみ（`add --json` は作成タスクを出し、封筒は無い）。`--clear` で未設定に戻す。
-- **`set`** — routine triage（lane・value・effort・label・type）を **1 回の write** でまとめて適用。最低 1 変更が必要。未知レーン/型は exit 2＋`candidates`。`[labels].required` 下で最後のラベルを剥がす set は拒否。
+- **`set`** — routine triage（lane・priority・value・effort・label・type）を **1 回の write** でまとめて適用。`--priority` は位置を直接指定、`--before`/`--after <id>` は**移動先レーン**の相手に対する相対位置——`-s <lane> --before <id>` で列跨ぎ drop（lane＋位置）が 1 write になる。respace／`renumbered` の契約は `reorder` と同一で、位置系 3 フラグは排他。最低 1 変更が必要。未知レーン/型は exit 2＋`candidates`、移動先レーンに居ない相対相手も exit 2。`[labels].required` 下で最後のラベルを剥がす set は拒否。
 - **`check`** — index は 0 始まり。done にするのはトグルでなく冪等 set（`--off` で外す）。`--add` は verbatim に追加（反復可）、`--rm` は index の項目を削除、`--reword` はテキスト差し替え。mode フラグは排他、範囲外 index は exit 2。
 - **`dep`** — 可変長の追加/削除を all-or-nothing の 1 write で（不正 dep-id は部分適用せず abort）。循環防止・冪等。`--list` は mutate せず依存近傍を**両方向**——`depends_on` と `blocks`（これを終わらせたら何が解けるか）——を id+title+lane で読む。dangling dep は id だけに解決（lint が指摘）。
 - **`parent`** — 階層上の付け替え（`--rm` で top-level へ）。循環防止: 親は存在必須・自分自身は不可・ループを閉じる辺は exit 2。**done な親は許可**——終わった epic の下に取りこぼしを戻すのは正当な記録で、開いたままの子は `lint` の `parent-done`（warn）が知らせる。`--list` は両方向（`parent`＝top-level なら `null`・`children`＝無ければ `[]`）。

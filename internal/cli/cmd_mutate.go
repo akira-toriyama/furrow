@@ -152,13 +152,7 @@ func newReorderCmd() *cobra.Command {
 						changes = ch
 						return t, err
 					},
-					func(t *core.Task) map[string]any {
-						if len(changes) == 0 {
-							return nil
-						}
-						fmt.Fprintf(errOut, "note: gap exhausted — respaced %d other task(s) in lane %q\n", len(changes), t.Status)
-						return map[string]any{"renumbered": changes}
-					})
+					func(t *core.Task) map[string]any { return respaceExtra(changes, t.Status) })
 			default:
 				prio, err := atoiArg("priority", args[1])
 				if err != nil {
@@ -172,6 +166,18 @@ func newReorderCmd() *cobra.Command {
 	cmd.Flags().StringVar(&after, "after", "", "place immediately after this task (same lane)")
 	cmd.MarkFlagsMutuallyExclusive("before", "after")
 	return cmd
+}
+
+// respaceExtra reports a relative move's lane respace: a stderr note plus the
+// envelope's `renumbered` key. Nil when nothing else moved — the key must not
+// appear on a plain midpoint insert. Shared by reorder and set so the two
+// relative paths can never diverge on the report.
+func respaceExtra(changes []core.PriorityChange, lane string) map[string]any {
+	if len(changes) == 0 {
+		return nil
+	}
+	fmt.Fprintf(errOut, "note: gap exhausted — respaced %d other task(s) in lane %q\n", len(changes), lane)
+	return map[string]any{"renumbered": changes}
 }
 
 // newEstimateCmd builds the shared `value`/`effort` setter: `furrow <name> <id>
@@ -394,16 +400,25 @@ func newSetCmd() *cobra.Command {
 		addLabels   []string
 		rmLabels    []string
 		typ         string
+		priority    int
+		before      string
+		after       string
 	)
 	cmd := &cobra.Command{
 		Use:   "set <id>",
-		Short: "Apply several triage edits at once (lane, value, effort, labels)",
-		Long: "Combine the routine triage edits into a single write: move a lane (-s), set\n" +
-			"or clear the 1..5 value/effort estimates, and add/remove labels — instead of\n" +
-			"running move + value + effort + label as four commands. At least one change\n" +
-			"is required; an unknown lane is exit 2 with candidates (like move), and under\n" +
-			"[labels].required a set that would strip the last label is refused.",
+		Short: "Apply several triage edits at once (lane, priority, value, effort, labels)",
+		Long: "Combine the routine triage edits into a single write: move a lane (-s),\n" +
+			"position the task (--priority, or --before/--after a task in the destination\n" +
+			"lane — so a cross-lane drop is lane + position in ONE write), set or clear\n" +
+			"the 1..5 value/effort estimates, and add/remove labels — instead of running\n" +
+			"move + reorder + value + effort + label as separate commands. At least one\n" +
+			"change is required; an unknown lane is exit 2 with candidates (like move),\n" +
+			"a relative target outside the destination lane is exit 2, and under\n" +
+			"[labels].required a set that would strip the last label is refused. A\n" +
+			"relative placement that has to respace the lane does so in the same write\n" +
+			"and reports the neighbors in `renumbered`, exactly like reorder.",
 		Example: "  furrow set t-k3m9p -s ready --value 4 --effort 2 --add-label bug\n" +
+			"  furrow set t-k3m9p -s ready --before t-x1y2z\n" +
 			"  furrow set t-k3m9p --clear-value --rm-label wip",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -412,6 +427,8 @@ func newSetCmd() *cobra.Command {
 				return err
 			}
 			o := app.SetOpts{
+				Before:      before,
+				After:       after,
 				AddLabels:   addLabels,
 				RmLabels:    rmLabels,
 				ClearValue:  clearValue,
@@ -419,6 +436,10 @@ func newSetCmd() *cobra.Command {
 			}
 			if cmd.Flags().Changed("status") {
 				o.Status = &status
+			}
+			if cmd.Flags().Changed("priority") {
+				p := priority
+				o.Priority = &p
 			}
 			if cmd.Flags().Changed("value") {
 				v := value
@@ -431,9 +452,15 @@ func newSetCmd() *cobra.Command {
 			if cmd.Flags().Changed("type") {
 				o.Type = &typ
 			}
+			var renumbered []core.PriorityChange
 			return emitMutationWith(a, "set", args[0],
-				func() (*core.Task, error) { return a.Set(args[0], o) },
+				func() (*core.Task, error) {
+					t, ch, err := a.Set(args[0], o)
+					renumbered = ch
+					return t, err
+				},
 				func(after *core.Task) map[string]any {
+					extra := map[string]any{}
 					clamped := map[string]any{}
 					warnClamp("value", o.Value, after.Value)
 					warnClamp("effort", o.Effort, after.Effort)
@@ -443,15 +470,24 @@ func newSetCmd() *cobra.Command {
 					if e := clampEntry(o.Effort, after.Effort); e != nil {
 						clamped["effort"] = e
 					}
-					if len(clamped) == 0 {
+					if len(clamped) > 0 {
+						extra["clamped"] = clamped
+					}
+					for k, v := range respaceExtra(renumbered, after.Status) {
+						extra[k] = v
+					}
+					if len(extra) == 0 {
 						return nil
 					}
-					return map[string]any{"clamped": clamped}
+					return extra
 				})
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "move to this lane")
 	cmd.Flags().StringVar(&typ, "type", "", "set the work-item type (a value from [types].order, e.g. epic)")
+	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "set the sparse priority directly")
+	cmd.Flags().StringVar(&before, "before", "", "place immediately before this task (in the destination lane)")
+	cmd.Flags().StringVar(&after, "after", "", "place immediately after this task (in the destination lane)")
 	cmd.Flags().IntVar(&value, "value", 0, "set the 1..5 value estimate")
 	cmd.Flags().IntVar(&effort, "effort", 0, "set the 1..5 effort estimate")
 	cmd.Flags().BoolVar(&clearValue, "clear-value", false, "clear the value estimate")
@@ -460,6 +496,7 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&rmLabels, "rm-label", nil, "remove a label (repeatable)")
 	cmd.MarkFlagsMutuallyExclusive("value", "clear-value")
 	cmd.MarkFlagsMutuallyExclusive("effort", "clear-effort")
+	cmd.MarkFlagsMutuallyExclusive("priority", "before", "after")
 	return cmd
 }
 

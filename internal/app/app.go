@@ -1391,12 +1391,19 @@ func labelDelta(cur, add, remove []string) []string {
 	return next
 }
 
-// SetOpts is the combined-edit payload for Set — the routine triage quartet
-// (lane, value, effort, labels) in one write. A nil pointer / empty slice / false
-// flag means "leave that facet alone"; ClearValue/ClearEffort explicitly unset an
-// estimate (distinct from "leave alone"). Deps and repos keep their own commands.
+// SetOpts is the combined-edit payload for Set — the routine triage edits
+// (lane, priority, value, effort, labels, type) in one write. A nil pointer /
+// empty slice / false flag means "leave that facet alone"; ClearValue/
+// ClearEffort explicitly unset an estimate (distinct from "leave alone").
+// Priority sets the sparse integer directly; Before/After compute it relative
+// to a lane-mate in the DESTINATION lane (so a cross-column drop — lane plus
+// position — is one write: `-s <lane> --before <ref>`); the three are mutually
+// exclusive. Deps and repos keep their own commands.
 type SetOpts struct {
 	Status      *string  // move to this lane (validated like Move)
+	Priority    *int     // set the sparse priority directly
+	Before      string   // place immediately before this task (in the destination lane)
+	After       string   // place immediately after this task (in the destination lane)
 	Value       *int     // set the value estimate
 	ClearValue  bool     // unset the value estimate (wins over Value)
 	Effort      *int     // set the effort estimate
@@ -1409,45 +1416,93 @@ type SetOpts struct {
 // empty reports whether o requests no change at all — Set rejects that rather
 // than silently touching only the `updated` stamp.
 func (o SetOpts) empty() bool {
-	return o.Status == nil && o.Value == nil && !o.ClearValue &&
+	return o.Status == nil && o.Priority == nil && o.Before == "" && o.After == "" &&
+		o.Value == nil && !o.ClearValue &&
 		o.Effort == nil && !o.ClearEffort && len(o.AddLabels) == 0 && len(o.RmLabels) == 0 &&
 		o.Type == nil
 }
 
 // Set applies several triage edits to one task in a single load/save: move a
-// lane, set/clear value and effort, and add/remove labels — so `set` replaces
-// the move+value+effort+label four-command dance without four separate writes
-// (and four `updated` stamps). Everything is validated up front (unknown lane →
-// exit 2 with candidates like Move; a change that would strip the last label
-// under [labels].required → exit 2), then applied atomically. At least one
-// change is required.
-func (a *App) Set(id string, o SetOpts) (*core.Task, error) {
+// lane, position it (absolute priority, or relative to a lane-mate), set/clear
+// value and effort, and add/remove labels — so `set` replaces the
+// move+reorder+value+effort+label dance without that many separate writes (and
+// `updated` stamps). Everything is validated up front (unknown lane → exit 2
+// with candidates like Move; a change that would strip the last label under
+// [labels].required → exit 2; a relative target outside the destination lane →
+// exit 2), then applied atomically — a relative placement that has to respace
+// the lane lands in the SAME write, and the neighbors' moves are returned for
+// the CLI's `renumbered` report (their Updated deliberately does not advance).
+// At least one change is required.
+func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, error) {
 	if o.Status != nil && !a.Cfg.IsLane(*o.Status) {
-		return nil, a.unknownLaneErr(id, *o.Status)
+		return nil, nil, a.unknownLaneErr(id, *o.Status)
 	}
 	if o.Type != nil && !a.Cfg.IsType(*o.Type) {
-		return nil, a.unknownTypeErr(id, *o.Type)
+		return nil, nil, a.unknownTypeErr(id, *o.Type)
 	}
 	if o.empty() {
-		return nil, core.Validationf(id, "set needs at least one change (-s / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / --type)")
+		return nil, nil, core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / --type)")
+	}
+	relRef, relBefore := o.Before, true
+	if relRef == "" {
+		relRef, relBefore = o.After, false
+	}
+	if (o.Priority != nil && relRef != "") || (o.Before != "" && o.After != "") {
+		return nil, nil, core.Validationf(id, "--priority, --before, and --after are mutually exclusive")
 	}
 	idx, err := a.load()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, nil, core.NotFound(id)
+	}
+	// Pre-flight the relative placement against the DESTINATION lane before any
+	// mutation, so a bad target aborts with nothing half-applied (the plan
+	// itself re-checks after the lane move, when id and ref must already
+	// agree).
+	if relRef != "" {
+		if relRef == id {
+			return nil, nil, core.Validationf(id, "--before/--after must name a different task")
+		}
+		rt, ri := idx.Find(relRef)
+		if ri < 0 {
+			return nil, nil, core.NotFound(relRef)
+		}
+		dest := t.Status
+		if o.Status != nil {
+			dest = *o.Status
+		}
+		if rt.Status != dest {
+			return nil, nil, core.Validationf(id, "relative target %s is in lane %q, not the destination lane %q — relative order only exists within one lane", relRef, rt.Status, dest)
+		}
 	}
 	nextLabels := t.Labels
 	if len(o.AddLabels) > 0 || len(o.RmLabels) > 0 {
 		nextLabels = labelDelta(t.Labels, o.AddLabels, o.RmLabels)
 		if a.Cfg.LabelsRequired && len(nextLabels) == 0 {
-			return nil, core.Validationf(id, "a label is required ([labels].required); this set would remove the last one")
+			return nil, nil, core.Validationf(id, "a label is required ([labels].required); this set would remove the last one")
 		}
 	}
 	if o.Status != nil {
 		a.applyLane(t, *o.Status)
+	}
+	var renumbered []core.PriorityChange
+	switch {
+	case o.Priority != nil:
+		t.Priority = *o.Priority
+	case relRef != "":
+		target, changes, err := idx.PlanRelativePriority(id, relRef, relBefore, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
+		if err != nil {
+			return nil, nil, err
+		}
+		t.Priority = target
+		for _, c := range changes {
+			ct, _ := idx.Find(c.ID)
+			ct.Priority = c.To
+		}
+		renumbered = changes
 	}
 	switch {
 	case o.ClearValue:
@@ -1467,10 +1522,10 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, error) {
 	t.Labels = nextLabels
 	t.Updated = a.Clock.Now()
 	if err := a.Store.Save(idx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	saved, _ := idx.Find(id)
-	return saved, nil
+	return saved, renumbered, nil
 }
 
 // AddCheck appends a checklist item.
