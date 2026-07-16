@@ -177,6 +177,7 @@ func newRootCmd() *cobra.Command {
 		newSearchCmd(),
 		newStatsCmd(),
 		newBoardCmd(),
+		newBoardsCmd(),
 		newEditCmd(),
 		newNoteCmd(),
 		newAttachCmd(),

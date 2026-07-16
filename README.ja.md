@@ -153,6 +153,7 @@ furrow done t-0001
 | `search <term>` | Full-text search over task titles and bodies | `-l/--label`, `-n/--limit`, `-r/--repo`, `-s/--status` |
 | `stats` | Summarize the board: counts by lane, repo, and label | `-l/--label`, `-r/--repo`, `-s/--status` |
 | `board` | Print the active board: store path, scope, lane vocabulary, and schema state | — |
+| `boards` | List the configured boards (user-level config), independent of cwd | — |
 | `edit <id>` | Edit a task's markdown body in $EDITOR | — |
 | `note <id> <text>` | Append a paragraph to a task's body and advance its updated time | — |
 | `attach <id> <file>` | Attach a media file to a task (copies into bodies/assets/, links it from the body) | — |
@@ -193,6 +194,7 @@ furrow done t-0001
 - **`search`** — タイトルと markdown 本文を大文字小文字無視の部分一致で全文検索、正準順。複数語は 1 つのリテラル句。`ls` と同じ `-s/-l/-r/-n` スコープ。各ヒットは `matched_field`（`title`\|`body`）と文脈付きの 1 行 `snippet` を返し、タイトル一致なら本文は読まない。
 - **`stats`** — `total`・`drafts`・`by_lane`（設定レーン順の完全ヒストグラム、0 件レーンも含む）・`by_repo`・`by_label`（多い順）。`stats -r ''` は全ボード——`-l`/`-r` を推測する前に語彙を知る呼び出し。
 - **`board`** — introspection スナップショット: store パス・discovery `source`（`env`/`local`/`pointer`/`user-config`）・repo スコープ・レーン語彙・stale/archive の窓・スキーマ三つ組（`schema_version`・`binary_schema_version`・`schema_state`・`writable`）。**版の食い違いでも失敗せず報告する**——他のどのコマンドも開けないボードを診断できる唯一の pre-flight。
+- **`boards`** — `board` のマシン全体版: user-level config の全 `[[board]]` をファイル順に、**cwd 解決なしで**列挙する。他のコマンドが「board なし」で exit 2 になる場所でも exit 0（空でもリスト）で答えるので、scope 未設定マシンの診断であり、どの scope の外でも動く GUI front-end の bootstrap 呼び出しになる。JSON は `{config, boards: []}`——`config` は読んだファイル（不在でもパスを報告）、各 entry は解決済みの `store`/`scopes`・**宣言どおり**の `repo`/`label`（`"auto"` は checkout なしでは解決できない）・`exists`・`board` と同一の語彙/スキーマキー（struct 共有＝1 つのパーサで両ビューを読める。不在ボードの語彙は**空**——推測でなく報告）。`FURROW_BOARD`（呼び出し単位の override でありマシン設定ではない）は載せない。
 - **`edit`** — `bodies/<id>.md` をエディタで開く（非対話ならパスを出力）。経過の記録には `note` を推奨——ファイル直編集は `updated` を進めない。
 - **`note`** — テキストを body に新しい段落として追記し、**同時に** `updated` を進める（1 write）。body だけで reconcile 済みのタスクに `lint` の `reconcile-gap` が誤発火しない。`<text>` に `-` で stdin から読む（複数行用）。`--json` は封筒に加え `appended` を出す（メタの `changed` は body だけ動いたとき `[]`）。
 - **`move`** — done レーンから出るとき `closed` をクリアする（`done` が打刻する）。

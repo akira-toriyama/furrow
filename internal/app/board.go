@@ -8,29 +8,48 @@ import "github.com/akira-toriyama/furrow/internal/core"
 // lanes and the effective scope in one call, without provoking an error (the old
 // only-way-to-discover-lanes was to fail a `move` on purpose). Every field is a
 // copy or scalar, so a caller can never mutate the live config through it.
+//
+// The five scalars up front are the RESOLUTION — what this invocation's cwd
+// resolved to. The embedded BoardVocab and SchemaTriple are board-INTRINSIC and
+// shared with `furrow boards`' BoardEntry, so the two views agree on key names
+// structurally (the embed keeps the flat JSON shape byte-compatible with what
+// this command has always printed).
 type BoardInfo struct {
-	Store                string   `json:"store"`         // absolute .furrow path (where writes land)
-	Source               string   `json:"source"`        // env|local|pointer|user-config
-	ScopeRepo            string   `json:"scope_repo"`    // board-scope repo ("" = whole board)
-	AutoFilter           bool     `json:"auto_filter"`   // reads auto-filter by scope_repo (meaningful only when set)
-	DefaultLabel         string   `json:"default_label"` // literal add-time tag ("" = none)
-	Lanes                []string `json:"lanes"`         // the closed lane vocabulary, in order
-	NextLanes            []string `json:"next_lanes"`    // lanes `furrow next` considers
-	DefaultLane          string   `json:"default_lane"`  // lane `add` assigns
-	DoneLane             string   `json:"done_lane"`     // lane `done` moves into
-	Terminal             []string `json:"terminal"`      // lanes excluded from `next`, in lane order
-	Types                []string `json:"types"`         // the closed work-item type vocabulary, in order
-	DefaultType          string   `json:"default_type"`  // type an empty shard resolves to (never a container)
-	Containers           []string `json:"containers"`    // container types (skipped by `next`), in vocab order
-	StaleDays            int      `json:"stale_days"`    // revisit staleness window (0 disables)
+	Store        string `json:"store"`         // absolute .furrow path (where writes land)
+	Source       string `json:"source"`        // env|local|pointer|user-config
+	ScopeRepo    string `json:"scope_repo"`    // board-scope repo ("" = whole board)
+	AutoFilter   bool   `json:"auto_filter"`   // reads auto-filter by scope_repo (meaningful only when set)
+	DefaultLabel string `json:"default_label"` // literal add-time tag ("" = none)
+	BoardVocab
+	SchemaTriple
+}
+
+// BoardVocab is the board-intrinsic vocabulary — everything a front-end needs
+// to render a board that does NOT depend on where furrow was invoked. Embedded
+// by both introspection views (`board`'s BoardInfo, `boards`' BoardEntry) so
+// the key names are shared structurally and cannot drift.
+type BoardVocab struct {
+	Lanes                []string `json:"lanes"`        // the closed lane vocabulary, in order
+	NextLanes            []string `json:"next_lanes"`   // lanes `furrow next` considers
+	DefaultLane          string   `json:"default_lane"` // lane `add` assigns
+	DoneLane             string   `json:"done_lane"`    // lane `done` moves into
+	Terminal             []string `json:"terminal"`     // lanes excluded from `next`, in lane order
+	Types                []string `json:"types"`        // the closed work-item type vocabulary, in order
+	DefaultType          string   `json:"default_type"` // type an empty shard resolves to (never a container)
+	Containers           []string `json:"containers"`   // container types (skipped by `next`), in vocab order
+	StaleDays            int      `json:"stale_days"`   // revisit staleness window (0 disables)
 	ArchiveOlderThanDays int      `json:"archive_older_than_days"`
 	LabelsRequired       bool     `json:"labels_required"` // add/lint reject a label-less task
+}
 
-	// The schema triple: what the BOARD declares, what this BINARY writes, and
-	// whether the two agree (only then are writes allowed). This is the one place
-	// an agent can ask "can I write here, and if not, which side is stale?"
-	// WITHOUT provoking an error — `board` answers even on a board no other
-	// command can open, which is what makes it usable as a CI pre-flight.
+// SchemaTriple is the write-gate answer: what the BOARD declares, what this
+// BINARY writes, and whether the two agree (only then are writes allowed). This
+// is the one shape an agent reads to ask "can I write here, and if not, which
+// side is stale?" WITHOUT provoking an error — `board` answers even on a board
+// no other command can open, which is what makes it usable as a CI pre-flight.
+// Embedded by BoardInfo and BoardEntry for the same no-drift reason as
+// BoardVocab.
+type SchemaTriple struct {
 	SchemaVersion       int    `json:"schema_version"`        // the board's declared layout (0 = absent or unreadable)
 	BinarySchemaVersion int    `json:"binary_schema_version"` // the layout this furrow writes
 	SchemaState         string `json:"schema_state"`          // current|outdated|too-new|unreadable
@@ -54,6 +73,39 @@ const (
 // the board and the binary disagree, so it is what CI reads to diagnose the
 // mismatch instead of watching every task read fail with "task not found".
 func (a *App) Board() BoardInfo {
+	// The schema state of the WHOLE board — hot store and, when it exists, the
+	// sibling archive store, which carries its own meta.json and its own write
+	// gate. Folding them is schemaState's job (schema_state.go); doing it here
+	// would mean lint and upgrade each re-derive the rule and drift from it.
+	return BoardInfo{
+		Store:        a.Dir,
+		Source:       a.Source,
+		ScopeRepo:    a.DefaultRepo,
+		AutoFilter:   a.AutoFilter,
+		DefaultLabel: a.DefaultLabel,
+		BoardVocab:   a.boardVocab(),
+		SchemaTriple: schemaTriple(a.schemaState()),
+	}
+}
+
+// schemaTriple builds the shared introspection triple from schemaState's folded
+// answer. It is the one INTROSPECTION site that names the binary's layout
+// version (this file is on check-schema-write-guard.sh's allowlist), so
+// `boards` can report the triple without widening that guard's allowlist —
+// reporting the version is fine, stamping a board with it is the 2026-07-13
+// outage.
+func schemaTriple(ver int, state string, writable bool) SchemaTriple {
+	return SchemaTriple{
+		SchemaVersion:       ver,
+		BinarySchemaVersion: core.SchemaVersion,
+		SchemaState:         state,
+		Writable:            writable,
+	}
+}
+
+// boardVocab snapshots the resolved config's vocabulary. Every field is a copy,
+// so a caller can never mutate the live config through it.
+func (a *App) boardVocab() BoardVocab {
 	// Terminal lanes in canonical (lane-order) form, not the config membership
 	// map's random iteration order, so the output is deterministic.
 	terminal := []string{}
@@ -62,17 +114,7 @@ func (a *App) Board() BoardInfo {
 			terminal = append(terminal, l)
 		}
 	}
-	// The schema state of the WHOLE board — hot store and, when it exists, the
-	// sibling archive store, which carries its own meta.json and its own write
-	// gate. Folding them is schemaState's job (schema_state.go); doing it here
-	// would mean lint and upgrade each re-derive the rule and drift from it.
-	ver, state, writable := a.schemaState()
-	return BoardInfo{
-		Store:                a.Dir,
-		Source:               a.Source,
-		ScopeRepo:            a.DefaultRepo,
-		AutoFilter:           a.AutoFilter,
-		DefaultLabel:         a.DefaultLabel,
+	return BoardVocab{
 		Lanes:                append([]string(nil), a.Cfg.Lanes...),
 		NextLanes:            append([]string(nil), a.Cfg.NextLanes...),
 		DefaultLane:          a.Cfg.DefaultLane,
@@ -84,9 +126,5 @@ func (a *App) Board() BoardInfo {
 		StaleDays:            a.Cfg.RevisitStaleDays,
 		ArchiveOlderThanDays: a.Cfg.ArchiveOlderThanDays,
 		LabelsRequired:       a.Cfg.LabelsRequired,
-		SchemaVersion:        ver,
-		BinarySchemaVersion:  core.SchemaVersion,
-		SchemaState:          state,
-		Writable:             writable,
 	}
 }
