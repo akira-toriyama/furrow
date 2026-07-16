@@ -549,7 +549,7 @@ func TestSetCombinedEdit(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("triage me", AddOpts{Status: "inbox"})
 
-	got, err := a.Set(tk.ID, SetOpts{Status: strp("ready"), Value: intp(4), Effort: intp(2), AddLabels: []string{"bug"}})
+	got, _, err := a.Set(tk.ID, SetOpts{Status: strp("ready"), Value: intp(4), Effort: intp(2), AddLabels: []string{"bug"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,7 +557,7 @@ func TestSetCombinedEdit(t *testing.T) {
 		t.Fatalf("set should apply every edit at once: %+v", got)
 	}
 
-	got, err = a.Set(tk.ID, SetOpts{ClearValue: true, RmLabels: []string{"bug"}})
+	got, _, err = a.Set(tk.ID, SetOpts{ClearValue: true, RmLabels: []string{"bug"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,10 +565,10 @@ func TestSetCombinedEdit(t *testing.T) {
 		t.Errorf("set --clear-value/--rm-label should unset: %+v", got)
 	}
 
-	if _, err := a.Set(tk.ID, SetOpts{}); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, _, err := a.Set(tk.ID, SetOpts{}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("empty set should be a validation error, got %v", err)
 	}
-	if _, err := a.Set(tk.ID, SetOpts{Status: strp("ghost")}); !hasLaneCandidates(a, err) {
+	if _, _, err := a.Set(tk.ID, SetOpts{Status: strp("ghost")}); !hasLaneCandidates(a, err) {
 		t.Errorf("set to an unknown lane should carry lane candidates, got %v", err)
 	}
 }

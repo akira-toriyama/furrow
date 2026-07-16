@@ -17,8 +17,12 @@ the user-level config. When you work with any furrow store:
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
 - Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
-  `set <id>` combines lane/value/effort/labels/**type** in one write (the triage
-  shortcut for move+value+effort+label); `dep <id> <dep-id>...` is variadic
+  `set <id>` combines lane/**priority**/value/effort/labels/**type** in one
+  write (the triage shortcut for move+reorder+value+effort+label): `--priority`
+  is absolute, `--before/--after <ref>` relative in the DESTINATION lane — a
+  cross-column drop (`-s <lane> --before <ref>`) is lane + position in ONE
+  write, with the same respace/`renumbered` contract as reorder (the three
+  position flags are mutually exclusive); `dep <id> <dep-id>...` is variadic
   (add/remove several in one write), and `dep <id> --list` is the read-only
   reverse-deps view — both directions (`depends_on` / `blocks`) resolved to
   id+title+lane, one `--json` object — so "what waits on this?" is a command,
