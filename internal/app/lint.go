@@ -15,6 +15,11 @@ import (
 // filesystem-level index<->body 1:1 mapping (every task has a body file and
 // vice versa). Config clamp warnings are surfaced too, so `furrow lint` is the
 // one place that tells you everything that is off.
+//
+// The filesystem-side checks mirror how the core rules are already split — one
+// named sweep per file kind (lintRecordKeys, lintStoreShape, lintBodyContent,
+// lintConfigProblems below), stitched here in dependency order: the store shape
+// yields the live id set the body scan resolves links against.
 func (a *App) Lint() ([]core.Problem, error) {
 	idx, err := a.Store.Load()
 	if err != nil {
@@ -36,10 +41,8 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// so every task in it belongs to no tree and appears under nothing.
 	ps = append(ps, core.ParentCycleProblems(idx)...)
 
-	// Reconcile gaps (warn): a non-terminal task whose done dependency closed
-	// after the task was last touched. This is the structural backstop for
-	// reconcile-on-close — the always-on (hook/CI) twin of the `dep_done` revisit
-	// signal, so an epic whose slice shipped never silently keeps a stale body.
+	// One pass over the task shards: collect the done set and flag per-shard
+	// findings (unknown keys, done-unclosed) on the way.
 	doneIDs := map[string]bool{}
 	for _, t := range idx.Tasks {
 		if p, ok := unknownKeyProblem(t.ID, "task shard "+core.TaskPath(t.ID), t.ExtraKeys()); ok {
@@ -55,19 +58,71 @@ func (a *App) Lint() ([]core.Problem, error) {
 			}
 		}
 	}
+	// Reconcile gaps (warn): a non-terminal task whose done dependency closed
+	// after the task was last touched. This is the structural backstop for
+	// reconcile-on-close — the always-on (hook/CI) twin of the `dep_done` revisit
+	// signal, so an epic whose slice shipped never silently keeps a stale body.
 	ps = append(ps, core.StaleDepProblems(idx, a.Cfg.Terminal, doneIDs)...)
 	// The hierarchy twin of the reconcile gap: an open task still hanging under a
 	// DONE parent — an epic closed with work left under it. Nothing reported this
 	// before, and until `furrow parent` there was no way to fix it once you noticed.
 	ps = append(ps, core.ParentDoneProblems(idx, a.Cfg.Terminal, doneIDs)...)
 
-	// The same unknown-key sweep over the OTHER two machine-written file kinds.
-	// The passthrough parks unknown keys in repo review shards and meta.json too,
-	// and their published schemas had to flip to additionalProperties:true along
-	// with the task shard's — which removed the only thing that ever rejected a
-	// typo in them. Without these two loops, a fat-fingered key in a repo shard or
-	// in meta.json would be preserved forever and reported by NOTHING: a detection
-	// regression hiding inside a data-preservation fix.
+	rps, err := a.lintRecordKeys()
+	if err != nil {
+		return nil, err
+	}
+	ps = append(ps, rps...)
+
+	shapePs, hasTask, bodyIDs, err := a.lintStoreShape(idx)
+	if err != nil {
+		return nil, err
+	}
+	ps = append(ps, shapePs...)
+
+	bodyPs, err := a.lintBodyContent(hasTask, bodyIDs)
+	if err != nil {
+		return nil, err
+	}
+	ps = append(ps, bodyPs...)
+
+	ps = append(ps, a.lintConfigProblems(idx)...)
+
+	// A board still on an older layout than this binary is read-only (every write
+	// hits the store's gate). Warn, don't error: that state is the legitimate
+	// middle of a flag day, and erroring would red every repo's board-lint CI for
+	// the whole window. The write gate is already the hard stop — this is just the
+	// thing that makes the state visible before someone runs into it.
+	//
+	// schemaState covers BOTH stores (the archive carries its own meta.json), and
+	// it knows that an unstamped but EMPTY board is version 0 yet writable.
+	if bv, state, _ := a.schemaState(); state == SchemaOutdated {
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "schema-outdated", ID: "meta",
+			Msg: fmt.Sprintf("board is schema v%d; this furrow writes v%d — writes are refused until `furrow upgrade` runs (a flag day: bump every pinned caller FIRST)", bv, core.SchemaVersion)})
+	}
+
+	sort.SliceStable(ps, func(i, j int) bool {
+		if ps[i].Severity != ps[j].Severity {
+			return ps[i].Severity < ps[j].Severity
+		}
+		if ps[i].ID != ps[j].ID {
+			return ps[i].ID < ps[j].ID
+		}
+		return ps[i].Msg < ps[j].Msg
+	})
+	return ps, nil
+}
+
+// lintRecordKeys is the unknown-key sweep over the OTHER two machine-written
+// file kinds (the task shards are swept in Lint's task pass). The passthrough
+// parks unknown keys in repo review shards and meta.json too, and their
+// published schemas had to flip to additionalProperties:true along with the
+// task shard's — which removed the only thing that ever rejected a typo in
+// them. Without this sweep, a fat-fingered key in a repo shard or in meta.json
+// would be preserved forever and reported by NOTHING: a detection regression
+// hiding inside a data-preservation fix.
+func (a *App) lintRecordKeys() ([]core.Problem, error) {
+	var ps []core.Problem
 	repos, err := a.Store.ListRepos()
 	if err != nil {
 		return nil, err
@@ -84,18 +139,24 @@ func (a *App) Lint() ([]core.Problem, error) {
 	if p, ok := unknownKeyProblem("meta", "meta.json", meta.ExtraKeys()); ok {
 		ps = append(ps, p)
 	}
+	return ps, nil
+}
 
-	// tasks/ <-> bodies/ 1:1 + shard filename/id integrity — all by directory
-	// enumeration. Sharding makes a duplicate filename impossible; a duplicate id
-	// can only appear as two shards carrying the same id field, which the fold
-	// (Load) surfaces to core.Validate above as a "duplicate id".
+// lintStoreShape checks tasks/ <-> bodies/ 1:1 + shard filename/id integrity —
+// all by directory enumeration. Sharding makes a duplicate filename impossible;
+// a duplicate id can only appear as two shards carrying the same id field,
+// which the fold (Load) surfaces to core.Validate as a "duplicate id". It
+// returns the live-task id set and the body id list so the body-content scan
+// reuses them instead of re-listing.
+func (a *App) lintStoreShape(idx *core.Index) ([]core.Problem, map[string]bool, []string, error) {
+	var ps []core.Problem
 	taskFileIDs, err := a.Store.ListTaskIDs()
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	bodyIDs, err := a.Store.ListBodyIDs()
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	hasBody := map[string]bool{}
 	for _, id := range bodyIDs {
@@ -128,7 +189,16 @@ func (a *App) Lint() ([]core.Problem, error) {
 			ps = append(ps, core.Problem{Severity: core.SevError, Code: "shard-misnamed", ID: id, Msg: fmt.Sprintf("task shard %s's filename does not match the id it carries", core.TaskPath(id))})
 		}
 	}
+	return ps, hasTask, bodyIDs, nil
+}
 
+// lintBodyContent scans every body ONCE for all three content findings —
+// conflict markers, dangling [[id]] links, and asset references — then settles
+// the asset ledger (orphan / oversized). Keep it one pass: the [[id]] link
+// check and the asset-ref check deliberately share the same body read, and the
+// "referenced" set the pass accumulates is what the orphan check consumes.
+func (a *App) lintBodyContent(hasTask map[string]bool, bodyIDs []string) ([]core.Problem, error) {
+	var ps []core.Problem
 	// Dangling [[t-x]] links (warn): a body's [[id]] reference to an id that
 	// exists in neither the hot store nor the archive is a typo or a since-deleted
 	// task. It breaks nothing (hence warn), but backlinks (`show --backlinks`) and
@@ -213,7 +283,14 @@ func (a *App) Lint() ([]core.Problem, error) {
 			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "oversized-asset", ID: owner, Msg: fmt.Sprintf("asset %s is %s, over the %s warning threshold — Git-LFS-track it or shrink it", core.AssetPath(as.Name), humanBytes(as.Size), humanBytes(core.DefaultAssetWarnBytes))})
 		}
 	}
+	return ps, nil
+}
 
+// lintConfigProblems collects the config-driven findings: the archive-backlog
+// nudge, the required-label rule, and every clamp warning (board config,
+// [lint].ignore_codes typos, user-level config).
+func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
+	var ps []core.Problem
 	// archive-backlog nudge ([lint].archive_done, off by default): warn when the
 	// pile of archivable done tasks (closed before the archive cutoff) reaches the
 	// threshold — a prompt to run `furrow archive` so the hot board stays legible.
@@ -257,30 +334,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 	for _, w := range GlobalConfigWarnings() {
 		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "global-config", Msg: w})
 	}
-
-	// A board still on an older layout than this binary is read-only (every write
-	// hits the store's gate). Warn, don't error: that state is the legitimate
-	// middle of a flag day, and erroring would red every repo's board-lint CI for
-	// the whole window. The write gate is already the hard stop — this is just the
-	// thing that makes the state visible before someone runs into it.
-	//
-	// schemaState covers BOTH stores (the archive carries its own meta.json), and
-	// it knows that an unstamped but EMPTY board is version 0 yet writable.
-	if bv, state, _ := a.schemaState(); state == SchemaOutdated {
-		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "schema-outdated", ID: "meta",
-			Msg: fmt.Sprintf("board is schema v%d; this furrow writes v%d — writes are refused until `furrow upgrade` runs (a flag day: bump every pinned caller FIRST)", bv, core.SchemaVersion)})
-	}
-
-	sort.SliceStable(ps, func(i, j int) bool {
-		if ps[i].Severity != ps[j].Severity {
-			return ps[i].Severity < ps[j].Severity
-		}
-		if ps[i].ID != ps[j].ID {
-			return ps[i].ID < ps[j].ID
-		}
-		return ps[i].Msg < ps[j].Msg
-	})
-	return ps, nil
+	return ps
 }
 
 // archivedIDs returns the ids in the sibling archive store (.furrow/archive/),
