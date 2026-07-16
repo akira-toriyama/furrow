@@ -1091,6 +1091,36 @@ func (a *App) Reorder(id string, priority int) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) { t.Priority = priority })
 }
 
+// ReorderRelative places id immediately before (or after) ref in ref's lane,
+// without the caller computing a priority. Both tasks must share a lane. When
+// the sparse gap next to ref is exhausted, the whole lane is respaced in the
+// SAME write (plan first, then apply, single Save — all-or-nothing like the dep
+// commands), and the neighbors' moves are returned so the CLI can report them.
+// Only id's Updated advances: a respace is positional bookkeeping on the
+// neighbors, not progress, so it must not disturb staleness signals.
+func (a *App) ReorderRelative(id, ref string, before bool) (*core.Task, []core.PriorityChange, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, nil, err
+	}
+	target, changes, err := idx.PlanRelativePriority(id, ref, before, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
+	if err != nil {
+		return nil, nil, err
+	}
+	t, _ := idx.Find(id)
+	t.Priority = target
+	t.Updated = a.Clock.Now()
+	for _, c := range changes {
+		ct, _ := idx.Find(c.ID)
+		ct.Priority = c.To
+	}
+	if err := a.Store.Save(idx); err != nil {
+		return nil, nil, err
+	}
+	saved, _ := idx.Find(id)
+	return saved, changes, nil
+}
+
 // SetValue records a task's value estimate, or clears it when v is nil (back to
 // "unset", so triage stays frictionless). An out-of-range score is clamped into
 // 1..5 on write by the marshaller. The pointer is copied so a later clamp can't

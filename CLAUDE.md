@@ -110,7 +110,9 @@ the user-level config. When you work with any furrow store:
   and is signaled — via `value`/`effort`/`set`, a `clamped` envelope key nested
   by field (`clamped.value.{requested, stored}` / `clamped.effort.{…}`) plus a
   stderr note; via `add`, the stderr note only (its `--json` prints the created
-  task, no envelope) — so an explicit arg is never silently rounded.
+  task, no envelope) — so an explicit arg is never silently rounded. A relative
+  `reorder --before/--after` that had to respace its lane adds a `renumbered`
+  array (`[{id, from, to}]`) beside the envelope.
   `add --stdin` bulk-creates one task per stdin line;
   `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) and
   `revisit --json` a `revisit` array (`no_repo`, `value_unset`, `effort_unset`,
@@ -406,7 +408,13 @@ generated locally with no shared counter, so concurrent `furrow add`
 from separate worktrees/PRs won't collide (the app retries on the rare in-store
 clash; `furrow lint` flags any duplicate as a backstop). Legacy numeric ids
 (`t-0042`) stay valid and coexist. Reorder by editing the sparse integer
-`priority` (10-step) — one field, not a renumber.
+`priority` (10-step) — one field, not a renumber. `reorder <id>
+--before/--after <ref>` computes that field for you (same lane only — a
+cross-lane ref is exit 2); only when the sparse gap is exhausted does it
+respace the whole lane, atomically in the same single write, reporting the
+neighbors' moves in the `--json` envelope's `renumbered` array (`[{id, from,
+to}]`) — the neighbors' `updated` deliberately does NOT advance (a respace is
+positional bookkeeping, not progress, so staleness signals stay honest).
 
 ### Configuration
 `.furrow/config.toml` is **read-only from the app** and **clamp-don't-reject**:
