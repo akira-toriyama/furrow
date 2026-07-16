@@ -31,7 +31,7 @@ cat >&2 <<EOF
         ^^^^^^^^^^^ :code: text form required (emoji glyph rejected)
 
   type: $types
-  scope: core|store|config|cli|tui|index|body|migrate|packaging|ci|docs
+  scope: core|store|config|cli|app|index|body|migrate|nix|release|ci|docs
   e.g.: :sparkles: feat(core): add deterministic index marshaller
         :bug: fix(store): atomic-rename the index, never partial-write
         :boom: feat(cli)!: rename --status to --lane

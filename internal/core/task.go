@@ -61,7 +61,7 @@ type Index struct {
 // Meta is .furrow/meta.json: the one board-wide schema version, deliberately
 // held in its own file so a version bump touches a single file and no task shard
 // ever carries a schema_version field that separate operators would rewrite at
-// once (turning it into a git-conflict point). MetaPath names it.
+// once (turning it into a git-conflict point). It lives at meta.json.
 type Meta struct {
 	SchemaVersion int `json:"schema_version"`
 
@@ -228,11 +228,6 @@ func BodyPath(id string) string { return "bodies/" + id + ".md" }
 // id is exactly {tasks/<id>.json, bodies/<id>.md} and never a slice of a shared
 // file. Callers must not hand-assemble this path.
 func TaskPath(id string) string { return "tasks/" + id + ".json" }
-
-// MetaPath returns the relative path of the board-wide meta file. It holds only
-// the schema version (see Meta); keeping it out of every shard is what stops a
-// version field from becoming a merge point. Callers must not hand-assemble it.
-func MetaPath() string { return "meta.json" }
 
 // EstimateMin and EstimateMax bound the coarse value/effort scale. Inputs
 // outside the range are clamped to it (see Canonicalize).
