@@ -110,7 +110,7 @@ and `furrow migrate` (importing a legacy `Task.md`). `[ui].theme` in
 
 ---
 
-References (reviewed 2026-07-02): [`internal/core/task.go`](../internal/core/task.go),
+References (reviewed 2026-07-16): [`internal/core/task.go`](../internal/core/task.go),
 [`internal/core/marshal.go`](../internal/core/marshal.go),
 [`internal/config/defaults.go`](../internal/config/defaults.go),
 [`internal/app/app.go`](../internal/app/app.go). See also
