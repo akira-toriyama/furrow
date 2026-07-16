@@ -799,7 +799,20 @@ type QueryOpts struct {
 	// otherwise ready (in a next lane, deps done) is surfaced too (the Jira-style
 	// "show me the boxes" escape hatch). Only `next` reads it; List/Tree ignore it.
 	IncludeContainers bool
-	Limit             int
+	// Actionable / Blocked are the `ls` derived-state filters, orthogonal to (and
+	// ANDing with) the lane/label/repo scope. Actionable keeps only tasks `furrow
+	// next` would hand you (a next lane, every dep done, not a container); Blocked
+	// keeps only tasks with an unsatisfied dep (a non-empty blocked_by). They are
+	// disjoint by construction, so the CLI marks them mutually exclusive. List
+	// (hence Tree) honours them; Next/Revisit ignore them.
+	Actionable bool
+	Blocked    bool
+	// Lanes is a one-shot override of the configured [next].lanes for `furrow next`
+	// (the --lanes flag): when non-empty, next tests lane membership against THESE
+	// lanes instead of the config's, leaving config untouched (non-destructive).
+	// nil/empty = use the configured next-lanes. Only Next reads it.
+	Lanes []string
+	Limit int
 }
 
 // match reports whether t passes the query's filters (Limit excluded — that is
@@ -856,25 +869,46 @@ func (o QueryOpts) matchRevisit(t *core.Task) bool {
 // sorted set), so it collects all matches first; without a sort the result is
 // identical to the old canonical-order-first-N.
 func (a *App) List(o QueryOpts) ([]core.Task, error) {
+	tasks, _, err := a.listMatched(o)
+	return tasks, err
+}
+
+// listMatched is List's engine, returning the matched+sorted+limited tasks AND
+// the loaded index — so ListItems can enrich the exact same result set without a
+// second load. The --actionable/--blocked derived-state filters apply here, BEFORE
+// the limit, so `-n` caps the filtered set (not the pre-filter one); computing
+// doneIDs is skipped unless one of those filters is set.
+func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 	if err := a.validateLaneFilter(o.Status); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := validateSortField(o.Sort); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := a.validateTypeFilter(o.Type); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	idx, err := a.listIndex(o)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	var doneIDs map[string]bool
+	if o.Actionable || o.Blocked {
+		doneIDs = a.doneSet(idx)
 	}
 	var out []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if o.match(t) && a.matchType(o, t) {
-			out = append(out, *t)
+		if !o.match(t) || !a.matchType(o, t) {
+			continue
 		}
+		if o.Actionable && !a.actionable(idx, t, doneIDs) {
+			continue
+		}
+		if o.Blocked && len(blockedDeps(t, doneIDs)) == 0 {
+			continue
+		}
+		out = append(out, *t)
 	}
 	if o.Sort != "" {
 		core.SortTasks(out, o.Sort, o.Reverse)
@@ -882,7 +916,58 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 	if o.Limit > 0 && len(out) > o.Limit {
 		out = out[:o.Limit]
 	}
-	return out, nil
+	return out, idx, nil
+}
+
+// ListItem is a task plus the derived facts `ls` exposes on every row — the same
+// two the tree carries (actionable, blocked_by) plus the container roll-up (stuck),
+// so the flat list answers "what can I pick up / what's in the way" without a
+// separate `--tree`. Container rides along because the glyph distinguishes a box.
+type ListItem struct {
+	Task       core.Task
+	Actionable bool
+	BlockedBy  []string
+	Container  bool
+	Stuck      bool
+}
+
+// ListItems is List enriched with per-row derived facts (actionable / blocked_by /
+// container / stuck), for the flat `ls` human table (the glyph) and its --json.
+// It reuses listMatched's single load, and computes each fact through the SAME
+// helpers the tree uses (factsFor / isStuck), so flat and tree never disagree.
+func (a *App) ListItems(o QueryOpts) ([]ListItem, error) {
+	tasks, idx, err := a.listMatched(o)
+	if err != nil {
+		return nil, err
+	}
+	doneIDs := a.doneSet(idx)
+	var kids map[string][]*core.Task // built lazily: only a container needs it
+	items := make([]ListItem, 0, len(tasks))
+	for i := range tasks {
+		t := &tasks[i]
+		actionable, blockedBy, container := a.factsFor(idx, t, doneIDs)
+		stuck := false
+		if container {
+			if kids == nil {
+				kids = childrenMap(idx)
+			}
+			stuck = a.isStuck(idx, t.ID, kids, doneIDs)
+		}
+		items = append(items, ListItem{Task: *t, Actionable: actionable, BlockedBy: blockedBy, Container: container, Stuck: stuck})
+	}
+	return items, nil
+}
+
+// doneSet returns the ids in the done lane — the shared input to every readiness
+// predicate (actionable, blocked_by, stuck).
+func (a *App) doneSet(idx *core.Index) map[string]bool {
+	done := make(map[string]bool)
+	for i := range idx.Tasks {
+		if idx.Tasks[i].Status == a.Cfg.DoneLane {
+			done[idx.Tasks[i].ID] = true
+		}
+	}
+	return done
 }
 
 // validateTypeFilter rejects an unknown --type filter with the configured types
@@ -926,11 +1011,25 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	doneIDs := map[string]bool{}
-	for _, t := range idx.Tasks {
-		if t.Status == a.Cfg.DoneLane {
-			doneIDs[t.ID] = true
+	doneIDs := a.doneSet(idx)
+	// inNextLane is normally the configured [next].lanes membership; --lanes
+	// (o.Lanes) overrides it for this call ONLY — a non-destructive, in-memory
+	// swap that never rewrites config. The deps-done half of the predicate
+	// (idx.Actionable) is unchanged and shared, so `--lanes` widens WHICH lanes
+	// count as "now", not what "ready" means.
+	inNextLane := a.Cfg.IsNextLane
+	if len(o.Lanes) > 0 {
+		// A --lanes token is an explicit CLI arg, so an unknown one fails fast with
+		// the configured lanes in candidates (symmetric with `ls -s`) rather than
+		// silently matching nothing.
+		override := make(map[string]bool, len(o.Lanes))
+		for _, l := range o.Lanes {
+			if !a.Cfg.IsLane(l) {
+				return nil, a.unknownLaneErr("", l)
+			}
+			override[l] = true
 		}
+		inNextLane = func(lane string) bool { return override[lane] }
 	}
 	var out []core.Task
 	for i := range idx.Tasks {
@@ -938,13 +1037,13 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 		if !o.match(t) {
 			continue
 		}
-		// The same predicate `ls --tree` stars a node with (see App.actionable):
-		// one definition of "you could pick this up now", or the two views would
-		// eventually disagree about it. --containers relaxes to the type-blind
-		// workable test so a ready epic is surfaced when explicitly asked for.
-		ready := a.actionable(idx, t, doneIDs)
-		if o.IncludeContainers {
-			ready = a.workable(idx, t, doneIDs)
+		// "Ready" = in a next lane AND every dep done. The container is excluded
+		// unless --containers is set (a box is not work) — the same rule
+		// App.actionable/workable encode, expressed here against the (possibly
+		// overridden) lane set so `ls --tree`'s ★ and a plain `next` still agree.
+		ready := inNextLane(t.Status) && idx.Actionable(t, a.Cfg.Terminal, doneIDs)
+		if ready && !o.IncludeContainers {
+			ready = !a.Cfg.IsContainerType(t.Type)
 		}
 		if ready {
 			out = append(out, *t)

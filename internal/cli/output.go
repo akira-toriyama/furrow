@@ -133,9 +133,12 @@ func emitTasks(tasks []core.Task) error {
 	return nil
 }
 
-// actionReason explains, for an agent, WHY a task is in `next`: the next-lane it
-// sits in, and the dependencies it satisfied (all already done — that is what
-// made it actionable). deps_satisfied is [] when the task had no dependencies.
+// actionReason explains, for an agent, WHY a task is in `next`: the lane it sits
+// in (whichever lane qualified it — a configured next-lane, or one included by a
+// one-shot `--lanes` override, so a backlog task surfaced by `next --lanes
+// backlog` is distinguishable from a ready one), and the dependencies it satisfied
+// (all already done — that is what made it actionable). deps_satisfied is [] when
+// the task had no dependencies.
 type actionReason struct {
 	InNextLane    string   `json:"in_next_lane"`
 	DepsSatisfied []string `json:"deps_satisfied"`
@@ -366,20 +369,115 @@ func printTreeNode(a *app.App, n app.TreeNode, depth int) {
 	}
 }
 
-// treeGlyph classifies a node against the BOARD's lane vocabulary (which lane is
-// done, which are terminal — both configurable), never a hardcoded lane name.
+// treeGlyph classifies a tree node; stateGlyph is the shared classifier so the
+// flat `ls` and the tree draw the same one-character state.
 func treeGlyph(a *app.App, n app.TreeNode) string {
+	return stateGlyph(a, n.Actionable, n.Task.Status, n.Container)
+}
+
+// stateGlyph is the one-character state summary shared by `ls` (flat) and `ls
+// --tree`, classified against the BOARD's lane vocabulary (which lane is done,
+// which are terminal — both configurable), never a hardcoded lane name:
+//
+//	★  actionable — in a next lane, every dep done; `furrow next` would hand you this
+//	✓  done
+//	~  parked in a terminal lane that is not done (icebox, waiting)
+//	▣  a container box (never actionable): its progress/stuck roll-up is the signal
+//	·  open, but not available: blocked by a dep, or not in a next lane
+func stateGlyph(a *app.App, actionable bool, status string, container bool) string {
 	switch {
-	case n.Actionable:
+	case actionable:
 		return "★"
-	case n.Task.Status == a.Cfg.DoneLane:
+	case status == a.Cfg.DoneLane:
 		return "✓"
-	case a.Cfg.IsTerminal(n.Task.Status):
+	case a.Cfg.IsTerminal(status):
 		return "~"
-	case n.Container:
-		return "▣" // a box (a container is never actionable): its progress is the signal
+	case container:
+		return "▣"
 	default:
 		return "·"
+	}
+}
+
+// listItemView is one row of `ls`'s --json: the whole task (embedded, so it stays
+// a superset of the bare-task shape older readers expect) plus the DERIVED facts
+// the flat list now exposes — actionable (★), blocked_by (what's in the way),
+// container (a box), and stuck (a box with open work but nothing actionable under
+// it). Same discipline as treeView: core.Task is EMBEDDED, so it must never grow a
+// MarshalJSON or these sibling fields would silently vanish.
+type listItemView struct {
+	core.Task
+	Actionable bool     `json:"actionable"`
+	BlockedBy  []string `json:"blocked_by"`
+	Container  bool     `json:"container"`
+	Stuck      bool     `json:"stuck"`
+}
+
+func toListItemView(it app.ListItem) listItemView {
+	return listItemView{
+		Task:       it.Task,
+		Actionable: it.Actionable,
+		BlockedBy:  it.BlockedBy,
+		Container:  it.Container,
+		Stuck:      it.Stuck,
+	}
+}
+
+// emitListItems renders the flat `ls`: --json an array (empty -> [], never null),
+// --ndjson one row per line, human an aligned table with a leading state glyph.
+// An empty listing is a healthy result (exit 0), never a miss.
+func emitListItems(a *app.App, items []app.ListItem) error {
+	switch {
+	case flagNDJSON:
+		for _, it := range items {
+			printNDJSONValue(toListItemView(it))
+		}
+	case flagJSON:
+		views := make([]listItemView, 0, len(items))
+		for _, it := range items {
+			views = append(views, toListItemView(it))
+		}
+		printJSON(views)
+	default:
+		printListItemTable(a, items)
+	}
+	return nil
+}
+
+// printListItemTable is printTaskTable plus a leading one-character state column
+// (the same glyph the tree uses) — so the everyday `ls` shows, at a glance, which
+// rows `furrow next` would hand you (★) and which are merely open (·). A ~ stuck
+// tag rides after a container box that has open work but nothing actionable under
+// it (the one flat-list place that signal can appear). Plain, greppable output.
+func printListItemTable(a *app.App, items []app.ListItem) {
+	if len(items) == 0 {
+		fmt.Fprintln(out, "(no tasks)")
+		return
+	}
+	wID, wStatus := len("ID"), len("STATUS")
+	for _, it := range items {
+		if len(it.Task.ID) > wID {
+			wID = len(it.Task.ID)
+		}
+		if len(it.Task.Status) > wStatus {
+			wStatus = len(it.Task.Status)
+		}
+	}
+	fmt.Fprintf(out, "%s  %-*s  %-*s  %5s  %s\n", " ", wID, "ID", wStatus, "STATUS", "PRIO", "TITLE")
+	for _, it := range items {
+		t := it.Task
+		title := t.Title
+		if len(t.Labels) > 0 {
+			title += "  [" + strings.Join(t.Labels, ",") + "]"
+		}
+		if len(t.Repos) > 0 {
+			title += "  (" + strings.Join(t.Repos, ",") + ")"
+		}
+		if it.Stuck {
+			title += "  ⚠ stuck"
+		}
+		g := stateGlyph(a, it.Actionable, t.Status, it.Container)
+		fmt.Fprintf(out, "%s  %-*s  %-*s  %5d  %s\n", g, wID, t.ID, wStatus, t.Status, t.Priority, title)
 	}
 }
 
