@@ -110,11 +110,14 @@ For "every 4 hours" use `StartInterval` (seconds) instead of
 launchd also fires a missed job **once** on wake if the machine was asleep at the
 scheduled time — which is exactly what you want for a housekeeping task.
 
-## Future: a review reminder
+## Recipe 4 — a weekly review reminder
 
-Once `furrow review` lands (the GTD weekly-review verb, tracked in the board) the
-same launchd pattern schedules a weekly review nudge. Until then, Recipe 2's
-`next` digest is the closest standing signal.
+`furrow review <repo>` (the GTD weekly-review verb) is built: it records a
+per-repo review clock, and `furrow sync` / `furrow revisit` surface the repos
+whose clock has lapsed (`unreviewed`). The same launchd pattern as Recipe 2 —
+a weekly `StartCalendarInterval` — schedules the nudge; point the script at
+`furrow revisit --json` and post the digest, then `furrow review <repo>` after
+the review to reset the clock.
 
 ## Not this
 

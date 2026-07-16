@@ -16,7 +16,7 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|review|sync|apply|archive|upgrade|lint|config|init`.
+- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
   `set <id>` combines lane/value/effort/labels/**type** in one write (the triage
   shortcut for move+value+effort+label); `dep <id> <dep-id>...` is variadic
   (add/remove several in one write), and `dep <id> --list` is the read-only
@@ -99,11 +99,13 @@ the user-level config. When you work with any furrow store:
   `parent-done`, `orphan-asset`,
   `conflict-marker`, `unknown-shard-key`, …) — branch on it, not the message, since the `id` field
   is contextual (a task id, an asset name, an `owner/repo`, `meta`, or `config`).
-  Mutations (`done|move|set|reorder|value|effort|check|dep|parent|label|repo`) with
-  `--json` emit
-  `{before, after, changed}`; an out-of-range `value`/`effort` (also via `set`/
-  `add`) clamps to 1..5 and is signaled — a `clamped {requested, stored}` key in
-  the envelope plus a stderr note, so an explicit arg is never silently rounded.
+  Mutations (`done|move|note|set|reorder|retitle|value|effort|check|dep|parent|label|repo`)
+  with `--json` emit
+  `{before, after, changed}`; an out-of-range `value`/`effort` clamps to 1..5
+  and is signaled — via `value`/`effort`/`set`, a `clamped` envelope key nested
+  by field (`clamped.value.{requested, stored}` / `clamped.effort.{…}`) plus a
+  stderr note; via `add`, the stderr note only (its `--json` prints the created
+  task, no envelope) — so an explicit arg is never silently rounded.
   `add --stdin` bulk-creates one task per stdin line;
   `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) and
   `revisit --json` a `revisit` array (`no_repo`, `value_unset`, `effort_unset`,
@@ -333,7 +335,7 @@ park every **top-level** key the binary does not know in an **unexported** `extr
 field, and the matching `Marshal*` re-emit them, **sorted, after the known keys**.
 The gate (below) stops a *bumped* layout from being misread; the passthrough stops
 an *unbumped* one from being destroyed — because a field added without a bump
-leaves `meta.json` still saying v4, so no gate fires anywhere and an old binary's
+leaves `meta.json` still saying v5, so no gate fires anywhere and an old binary's
 lenient unmarshal drops the key and writes the loss back on the next ordinary
 write. Two rules make it safe, and both are load-bearing:
 
