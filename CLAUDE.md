@@ -23,7 +23,12 @@ the user-level config. When you work with any furrow store:
   reverse-deps view — both directions (`depends_on` / `blocks`) resolved to
   id+title+lane, one `--json` object — so "what waits on this?" is a command,
   not a full-board dump; `archive <id>...` retires specific done
-  tasks by id (vs the age sweep).
+  tasks by id (vs the age sweep). The READMEs' command table is **generated**
+  from this very cobra tree (hidden `furrow commands`, spliced by
+  `scripts/gen-command-table.sh`, drift-checked by check.sh/CI): to change a
+  command's one-liner or flags, edit `Short`/flag definitions in
+  `internal/cli`, rerun the script, and commit both — never hand-edit between
+  the READMEs' `commands:begin/end` markers.
 - **`ls --tree [<id>]` draws the parent hierarchy** — one tree per top-level task,
   or just the subtree under `<id>`. It answers "what leads to this goal?", which was
   otherwise a full-board dump and a script. Every filter still applies, and the
