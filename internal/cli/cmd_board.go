@@ -46,14 +46,11 @@ func newBoardCmd() *cobra.Command {
 				return err
 			}
 			info := a.Board()
-			switch {
-			case flagNDJSON:
-				printNDJSONValue(info)
-			case flagJSON:
-				printJSON(info)
-			default:
-				printBoardHuman(info)
+			if jsonMode() {
+				emitObject(info)
+				return nil
 			}
+			printBoardHuman(info)
 			return nil
 		},
 	}
