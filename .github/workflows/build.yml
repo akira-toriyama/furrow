@@ -36,6 +36,10 @@ jobs:
       GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Guards/build/smoke only, never pushes — drop the persisted checkout
+          # token (zizmor artipacked). t-yaxa
+          persist-credentials: false
 
       # fast-fail guards before the toolchain: the index must be single-path, and
       # no ordinary write may stamp a board with the binary's schema version
@@ -127,11 +131,17 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0 # GoReleaser derives the snapshot version from git history
+          # Snapshot build only, never pushes — drop the persisted checkout
+          # token (zizmor artipacked). t-yaxa
+          persist-credentials: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: 'stable'
-          cache: true
+          # Mirror release.yml (cache: false there — zizmor cache-poisoning):
+          # this job exists to exercise the REAL release pipeline, so its
+          # toolchain setup must not drift from it. t-yaxa
+          cache: false
 
       # Same pin as release.yml — syft is not preinstalled, and without it the
       # `sboms:` pipe (the thing that broke v0.8.0) would not run at all here.

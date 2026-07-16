@@ -117,6 +117,11 @@ jobs:
           token: ${{ secrets.PROJECTS_WRITE_PAT }}
           path: tracker
           fetch-depth: 0
+          # INTENTIONALLY persisted: the board write-back below pushes to the
+          # tracker with this PAT (`git push origin HEAD:main`). checkout v7
+          # stores the credential outside the workdir and this job uploads no
+          # artifacts. t-yaxa
+          persist-credentials: true
 
       - name: Install furrow (pinned release binary, checksum + provenance verified)
         if: steps.gate.outputs.proceed == 'true'
@@ -279,7 +284,11 @@ jobs:
 
       - name: Fail the job if any directive was invalid
         if: steps.gate.outputs.proceed == 'true' && steps.apply.outputs.code != '0'
+        env:
+          # Env, not inline `${{ }}` in the script (zizmor template-injection):
+          # the value is our own step output, but the pattern stays banned. t-yaxa
+          CODE: ${{ steps.apply.outputs.code }}
         run: |
-          echo "furrow apply reported invalid directive(s) (exit ${{ steps.apply.outputs.code }})."
+          echo "furrow apply reported invalid directive(s) (exit ${CODE})."
           echo "This job is intentionally NON-blocking — keep it out of required checks."
           exit 1
