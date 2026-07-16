@@ -74,7 +74,7 @@ scheduler — see [scheduling.md](scheduling.md) for launchd recipes.
 
 The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
 (structured metadata, machine-written) + `.furrow/meta.json`
-(`{"schema_version": 4}`, the board-wide layout version) +
+(`{"schema_version": 5}`, the board-wide layout version) +
 `.furrow/bodies/<id>.md` (long-form prose, hand/agent
 editable) + `.furrow/bodies/assets/` (media copied in by `furrow attach` as
 collision-free `<id>-<name>` files, referenced from the body by a relative
@@ -179,15 +179,16 @@ To keep this list honest about today's reality (not aspirations):
 
 - **Built and real today** (`internal/cli`): `init`, `add`, `ls` (alias
   `list`), `show`, `next`, `revisit`, `search`, `stats`, `board`, `edit`,
-  `attach`, `done`, `move`, `set`, `reorder`,
-  `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `review`,
-  `apply`, `sync`,
+  `note`, `attach`, `done`, `move`, `set`, `reorder`,
+  `retitle`, `value`, `effort`, `check`, `dep`, `parent`, `label`, `repo`,
+  `review`, `apply`, `sync`,
   `migrate`, `archive`, `upgrade`, `lint`, `config init|path`, `schema`, `version`.
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
   `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, and `--drafts`.
   Destructive ops are guarded: `archive` and `upgrade` preview unless `--yes`.
   Exit-code
-  contract: `0` ok / `1` not-found|empty / `2` bad-usage|validation / `3+`
+  contract: `0` ok (an empty query result included) / `1` a specifically
+  requested id not found / `2` bad-usage|validation / `3+`
   internal|IO, with `{"error":{"code","id","message"}}` to stderr
   (`internal/core/errors.go`), plus optional `candidates` / `details` fields
   when there is something machine-actionable to say. `furrow migrate`

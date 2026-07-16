@@ -157,7 +157,7 @@ furrow done t-0001
 | `move <id> <lane>` | 任意のレーンへ移動 |
 | `reorder <id> <priority>` | priority（疎な整数）を設定 |
 | `retitle <id> <title...>` | タイトルを変更。シャードの title **と** body 先頭の `# ` 見出しを両方更新して食い違わせない（末尾の引数は空白で連結するのでクォート不要） |
-| `value <id> <1-5>` | 粗い value（重要度）見積もりを設定。範囲外は 1..5 に丸め、**さらに signal**（`--json` の mutation 封筒に `clamped {requested, stored}` キー＋stderr note＝明示引数を黙って丸めない）。`--clear` で未設定に戻す |
+| `value <id> <1-5>` | 粗い value（重要度）見積もりを設定。範囲外は 1..5 に丸め、**さらに signal**（`--json` の mutation 封筒にフィールド名でネストした `clamped` キー＝`clamped.value.{requested, stored}`＋stderr note＝明示引数を黙って丸めない）。`--clear` で未設定に戻す |
 | `effort <id> <1-5>` | 粗い effort（手間）見積もりを設定。`value` 同様 1..5 に丸め＋`clamped` signal。`--clear` で未設定に戻す |
 | `set <id>` | routine triage（lane・value・effort・label・type）を **1 回の write** でまとめて適用（`move`+`value`+`effort`+`label` を 1 つに）。最低 1 変更が必要。未知レーン/型は `move` 同様 exit 2＋`candidates`。`[labels].required` 下で最後のラベルを剥がす set は拒否 |
 | `check <id> [index]` | チェックリストを編集: 0 始まり index の項目を done にする（トグルでなく冪等 set。`--off` で外す）・`--add` で追加（反復可・verbatim）・`--rm` で index の項目を削除・`--reword <text>` で index の項目テキストを差し替え。mode フラグは排他、範囲外 index は exit 2 |
@@ -173,7 +173,7 @@ furrow done t-0001
 | `lint` | shard↔body の整合・レーン・依存・config を検査（依存の循環（`dep-cycle`）と**階層の循環**（`parent-cycle`）はどちらも error＝循環した階層は root を持たず、その中の全タスクがどの木にも属さなくなる。done な親の下に開いたままの子が残っていれば `parent-done`（warn）＝epic が仕事を残して閉じた状態（親を付け替えるか、親を開き直す）。closed 無しの done レーンタスクも error＝`furrow done` で backfill、body に残った git の conflict marker は `conflict-marker`＝**error**（半分マージされた body は「進捗の正本」が半分欠けた状態。`furrow sync` は commit を拒否するので、これは既にボードに載ってしまった分の検出器。``` フェンス内の marker は「解説」なので対象外）、存在しない id への `[[id]]` リンクは warn＝archive 済み id は dangling 扱いしない。done な依存が最終更新後に閉じた open タスク＝reconcile gap も warn。アセット衛生＝参照先が存在しない body の asset 参照・どの body からも参照されない orphan asset・5 MiB 以上の oversized asset はいずれも warn（生 blob は commit 後に消せないので着地前に検出。Git LFS 追跡か縮小を促す）。バイナリより古いレイアウトのボードは `schema-outdated` を warn（error にしない＝read-only なボードは flag day の正当な途中経過で、全 repo の CI を赤くする話ではない）。furrow が知らないキーを持つファイルは `unknown-shard-key` を warn（機械が書く 3 種すべて＝task shard・`repos/` review shard・`meta.json` を検査。[保持](#未知のキーは捨てずに保持する)はされるが**無視**されており、スキーマ側が未知キーを許すようになった今これが唯一の検出器＝furrow を更新するか、手編集のタイポを直すか）。書きかけのユーザー設定の clamp 警告も含む。`[lint].archive_done` 設定時は、archive 可能な done がその件数に達すると `archive-backlog` nudge も出す。各 finding は安定した kebab-case の `code`（`dangling-link`・`dep-cycle`・`orphan-asset`・`archive-backlog`・`schema-outdated`・`unknown-shard-key` …）を持ち、`--json`/`--ndjson` の triage は message 文でなく code で分岐できる＝`id` は文脈依存（task id・asset 名・`owner/repo`・`meta`・`config`）。出力は `--code`（許可リスト）/ `--exclude-code`（除外リスト＝`--code` に勝つ）/ `--severity error\|warn`（厳密一致）で絞れる —— 未知の `--code`/`--exclude-code` トークンは exit 2＋`candidates`（レーン同様の閉じた語彙）、一方 config の `[lint].ignore_codes` は毎回のコードを抑制し、未知エントリは *warn* するだけ（clamp-don't-reject）。**フィルタが exit code を決める**: 絞り落とした problem は lint が見つけなかったのと同じ扱いになるので、最後の error を除外／ignore すれば exit 0（狙い＝`reconcile-gap` のような恒久的に死んだ検査を黙らせて CI を赤くしなくする）、`--severity warn` は常に exit 0（error があってもフィルタで隠れる）） |
 | `config init` | ユーザー設定 `~/.config/furrow/config.toml`（中央ボード雛形）を書き出す。ボード内で実行すると最寄りの `.furrow` から path/scopes を文脈導出、離れていればコメント付き placeholder。既存ファイルは上書きしない（`--path`・`--scope`（複数可）） |
 | `config path` | 解決されるユーザー設定パスを表示。書きかけ設定の clamp 警告は stderr へ（stdout は path のみ） |
-| `schema [task\|meta]` | JSON Schema を出力（引数なし or `task` = シャード（`tasks/<id>.json`）のスキーマ・`meta` = `meta.json` のスキーマ） |
+| `schema [task\|meta\|repo]` | JSON Schema を出力（引数なし or `task` = シャード（`tasks/<id>.json`）のスキーマ・`meta` = `meta.json` のスキーマ・`repo` = `repos/` review シャードのスキーマ） |
 | `version` | furrow のバージョンを出力（stamp 済みならビルド commit/date も）。root の `--version` フラグでも同じ行を出力。`--json` は `{version, commit, date, modified}` を出力（スクリプト／エージェント向け） |
 | `migrate <file>` | 既存の `Task.md` などを取り込む（dry-run 既定／`--write` で作成・未対応の見出しや `[[wikilink]]` は破棄せず報告） |
 
@@ -487,7 +487,7 @@ git config core.hooksPath scripts/hooks   # hook を置いたあと
 pin した CI を含む）。furrow は他 repo の pin を見られないので、**順序は人間が守る**:
 
 ```sh
-furrow board                # schema:   v3 (board) / v4 (binary) — READ-ONLY: run `furrow upgrade`
+furrow board                # schema:   v4 (board) / v5 (binary) — READ-ONLY: run `furrow upgrade`
 # 1. 新レイアウトを載せた furrow を release する
 # 2. 全 caller の sync-task-status.yml@vX.Y.Z pin（と workflow の furrow-version 既定値）をそれへ上げる
 furrow upgrade              # 3. まず preview（どのストアが・何 shard 変わるか）
@@ -512,7 +512,7 @@ fleet の pin 済み release が一斉にボードを失った（v0.6.1 は全 i
 ### 未知のキーは捨てずに保持する
 
 上のゲートが火を吹くのは、誰かが版を**上げたとき**だけである。将来の furrow がフィールドを足して版を
-**上げなかったら**——「追加なだけだから安全」に見えるから——`meta.json` は v4 のままで、どのゲートも
+**上げなかったら**——「追加なだけだから安全」に見えるから——`meta.json` は v5 のままで、どのゲートも
 鳴らない。そして古いバイナリは shard を読み、知らないキーを落とし（`encoding/json` の寛容な unmarshal
 がそうする）、次の save でその欠損を書き戻す。**通常の write 1 回、フィールド 1 個の消滅、エラーなし。**
 

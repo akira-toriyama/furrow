@@ -224,7 +224,7 @@ so an old binary hands a future field back exactly as it found it.
 
 Why it exists: the version gate below only fires when someone **bumps**
 `core.SchemaVersion`. If a future furrow adds a shard field and does not bump —
-because the change looks "additive" — `meta.json` still says v4, no gate fires
+because the change looks "additive" — `meta.json` still says v5, no gate fires
 anywhere, and an older binary reads the shard, drops the key it doesn't know
 (`encoding/json`'s lenient unmarshal), and writes the loss back on the next save.
 **One ordinary write, one destroyed field, no error.** The 2026-07-13 outage was
@@ -273,12 +273,12 @@ eaten `meta.json`'s forward-compatible keys.
 
 The honest limits, none of them papered over:
 
-1. **Not retroactive.** Every furrow released so far (≤ `v0.9.0`) still destroys
-   unknown keys on write. A shared board is safe only once **every** writer has
-   passthrough — including every repo's pinned `sync-task-status.yml@vX.Y.Z` CI
-   caller. The hole closes on the day the last pin is bumped past this release, not
-   the day the code merges. Until then, keep bumping `SchemaVersion` on every field
-   addition.
+1. **Not retroactive.** Every furrow release up to `v0.9.0` destroys unknown
+   keys on write (passthrough ships in `v0.10.0`). A shared board is safe only
+   once **every** writer has passthrough — including every repo's pinned
+   `sync-task-status.yml@vX.Y.Z` CI caller. The hole closes on the day the last
+   pin is bumped past `v0.9.0`, not the day the code merges. Until then, keep
+   bumping `SchemaVersion` on every field addition.
 2. **Top-level only.** A key inside a known nested object (`checklist[].note`) is
    still dropped — which is why the JSON Schemas flip the three top-level objects
    to `"additionalProperties": true` while `$defs.checklistItem` stays `false`: the
@@ -304,10 +304,14 @@ The honest limits, none of them papered over:
    one-line-move diff on alternating writes — churn, not loss — and the convention
    that avoids it is: **new shard fields go at the END of the struct.**
 
-`core.SchemaVersion` deliberately **stays 4**. The layout is unchanged and a
-no-extras shard is byte-identical to the previous release's output; bumping would
-take every board read-only and brick every pinned CI caller in order to advertise a
-feature to exactly the binaries that do not have it.
+The passthrough itself shipped **without** a bump — `core.SchemaVersion` stayed
+4 in that release. The layout was unchanged and a no-extras shard byte-identical
+to the previous release's output; bumping would have taken every board read-only
+and bricked every pinned CI caller in order to advertise a feature to exactly
+the binaries that do not have it. The bump to **5** came separately, with the
+first-class `type` field (`v0.10.0`) — a field `next`'s container skip and `ls
+--type` actually read, i.e. exactly the class the golden test below says must
+bump.
 
 ### How the invariant is guarded
 
@@ -471,7 +475,7 @@ stable kebab-case `schema_state` (`current` | `outdated` | `too-new` |
 version **ungated** (`Store.BoardVersion`) and **reports** a mismatch instead of
 raising it. That is load-bearing, not a nicety: `board` is the last command that
 still works when board and binary disagree, which is what makes it usable as the
-CI pre-flight and the human's first diagnosis (`schema:   v4 (board) / v4
+CI pre-flight and the human's first diagnosis (`schema:   v5 (board) / v5
 (binary) — writable`). `furrow lint` complements it with a `schema-outdated`
 **warning** (`SevWarn`, id `meta`) — warn, not error, because a read-only board
 is the legitimate middle of a flag day and must not red every repo's CI.
@@ -497,7 +501,7 @@ A `.furrow/` store directory contains:
     t-k3m9p-shot.png     written ONLY via Store.SaveAsset (atomic, collision-free
                          basename); linked from the body by `furrow attach`; scanned
                          by `furrow lint` (dangling / orphan / oversized warnings)
-  meta.json            board-wide layout version {"schema_version": 4} — MarshalMeta,
+  meta.json            board-wide layout version {"schema_version": 5} — MarshalMeta,
                          stamped only on a fresh store (`init`) or by `furrow upgrade`;
                          an ordinary Save READS it (the write gate) and leaves it alone
   repos/               one review shard per repo (repos/<owner>__<repo>.json) — MarshalRepo
@@ -648,10 +652,10 @@ A few app-level rules worth stating, all verified against the code:
 Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
 except where noted:
 
-`init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `board`, `edit`, `note`, `attach`,
-`done`, `move`, `set`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`, `label`, `repo`, `apply`,
-`sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`), `schema`, `version`,
-`migrate`.
+`init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `search`, `stats`, `board`, `edit`,
+`note`, `attach`, `done`, `move`, `set`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`,
+`parent`, `label`, `repo`, `review`, `apply`, `sync`, `archive`, `upgrade`, `lint`,
+`config` (`init`/`path`), `schema`, `version`, `migrate`.
 
 - **`set`** applies the routine triage quartet — lane, value, effort, labels — in
   one write (the combined-edit funnel `App.Set`), so triage isn't move+value+
@@ -1025,10 +1029,10 @@ This document covers the *built* architecture. Several things are deliberately
 | `internal/schema` + `docs/schema/furrow.task.v2.json` / `furrow.meta.v2.json` | **Built** |
 | Golden round-trip + schema drift tests + `TestShardFieldsGolden` (the shard's frozen on-disk shape) + `TestFrozenBoardRoundTripsByteIdentical` (a committed board's bytes) | **Built** |
 | `scripts/check-marshal-singlepath.sh` (encoders **and** decoders), `scripts/check-schema-write-guard.sh` | **Built** |
-| Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0`–`v0.9.0` published (task-status Action bundled since `v0.5.0`) |
+| Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0`–`v0.10.0` published (task-status Action bundled since `v0.5.0`) |
 | nix flake | **Built** — real pinned `vendorHash` + committed `flake.lock` (since `v0.4.0`) |
 | Read-only web / React viewer | **Future, low priority** |
 
 ---
 
-*(reviewed 2026-07-02)*
+*(reviewed 2026-07-16)*
