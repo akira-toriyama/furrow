@@ -30,7 +30,7 @@
           pname = "furrow";
           inherit version;
           src = ./.;
-          vendorHash = "sha256-E3G7TfEfsgaBWSA+iSN0loxmB3weB5zTjuy6QUKtTu4=";
+          vendorHash = "sha256-CUr9ZHEGmRc8Esl5RWZ/oHeHIlwdfSgUrWpdjv+HDHo=";
           ldflags = [
             "-s" "-w"
             "-X github.com/akira-toriyama/furrow/internal/version.Version=${version}"
