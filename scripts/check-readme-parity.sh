@@ -84,3 +84,30 @@ if [ -n "$prose" ]; then
 fi
 
 echo "ok — README board layout matches core.SchemaVersion ($code), literal and prose"
+
+# The docs/ tier writes the same literal (glossary's meta definition, non-goals'
+# storage model, architecture's store diagram) but had no guard — which is
+# exactly where the v5 bump rotted: the parity-guarded READMEs moved and the
+# unguarded docs/ tier kept saying 4. So: EVERY {"schema_version": N} occurrence
+# in every doc must equal the const. A historic version belongs in prose ("the
+# 2026-07-13 outage migrated 3 → 4"), never in the JSON-literal form. Unlike the
+# README check above, a doc with zero occurrences is fine — reorganizing the
+# docs is legitimate; contradicting the code is not.
+bad=""
+for f in README.md README.ja.md docs/*.md; do
+  for v in $(sed -n 's/.*"schema_version"[: ]*\([0-9][0-9]*\).*/\1/p' "$f" | sort -u); do
+    if [ "$v" != "$code" ]; then
+      bad="$bad
+  $f: {\"schema_version\": $v}"
+    fi
+  done
+done
+if [ -n "$bad" ]; then
+  echo "✖ a doc writes a {\"schema_version\": N} literal other than core.SchemaVersion ($code):$bad" >&2
+  echo >&2
+  echo "Update the doc with the bump (or reword a historic mention as prose —" >&2
+  echo "\"v4\" — instead of the JSON literal, which always means the CURRENT layout)." >&2
+  exit 1
+fi
+
+echo "ok — docs/ tier schema_version literals match core.SchemaVersion ($code)"

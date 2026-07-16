@@ -528,14 +528,19 @@ back into place — see the marshaller-path section.
 - `go build ./...` and `go test ./...` must pass before finishing a turn.
 - Keep [README.md](README.md) / [README.ja.md](README.ja.md) carrying the same
   FACTS, not the same STRUCTURE, on any user-visible change (bilingual is the
-  house style; JA is intentionally a superset). Two shared load-bearing facts
-  stay in lockstep, and
+  house style; JA is intentionally a superset) — **and sweep the docs/ tier
+  (architecture/glossary/non-goals/scheduling) in the same change**: drift pools
+  exactly where no guard looks, and the v5 bump proved it (the parity-guarded
+  READMEs moved; docs/ kept describing a v4 world until an audit caught it).
+  Load-bearing shared facts stay in lockstep, and
   [`scripts/check-readme-parity.sh`](scripts/check-readme-parity.sh) enforces
-  both by pure text extraction: the `sync-task-status.yml@vX.Y.Z` workflow-pin
+  them by pure text extraction: the `sync-task-status.yml@vX.Y.Z` workflow-pin
   tag must be **identical in the two READMEs** (a reader copies it verbatim), and
-  the `{"schema_version": N}` literal in each must equal `const SchemaVersion` in
+  every `{"schema_version": N}` literal — in the READMEs (required) **and any
+  docs/*.md that writes one** — must equal `const SchemaVersion` in
   `internal/core/task.go` (the claim used to be made and NOT checked — which is
-  exactly how both READMEs came to say "board layout v3" against a v4 board).
+  exactly how both READMEs came to say "board layout v3" against a v4 board; a
+  historic version is prose, "v4", never the JSON-literal form).
 - **Don't push without explicit OK.** 1 item = 1 PR (squash); update docs
   in the same PR.
 

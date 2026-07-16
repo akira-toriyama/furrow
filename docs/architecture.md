@@ -1015,24 +1015,6 @@ This document covers the *built* architecture. Several things are deliberately
   would simply read the `tasks/*.json` shards, which is exactly why clean JSON
   shards matter.
 
-### Built vs. planned — honest status
-
-| Area | Status |
-|---|---|
-| `internal/core` (structs incl. `repos`, `Marshal`, ports, validate, index ops, the two-sided version gate: `CheckSchemaVersion` + `CheckWritable`, the unknown-key passthrough) | **Built** |
-| `internal/config` (TOML load, clamp; user-level `[[board]]` with `repo = "auto"`) | **Built** |
-| `internal/store/fsstore`, `internal/store/memstore` | **Built** |
-| `internal/app` (mutation funnel, board discovery + repo derivation, archive, upgrade, lint) | **Built** |
-| `internal/gitrepo` (git subprocess adapter behind `furrow sync`) | **Built** |
-| `internal/cli` (cobra: all commands above, including `repo`, `sync`, `apply`, `migrate`) — the only in-repo presentation layer | **Built** |
-| Interactive TUI/GUI | **Out of repo** — a separate front-end (ridge / loom) over the CLI/JSON contract; furrow itself is CLI-only |
-| `internal/schema` + `docs/schema/furrow.task.v2.json` / `furrow.meta.v2.json` | **Built** |
-| Golden round-trip + schema drift tests + `TestShardFieldsGolden` (the shard's frozen on-disk shape) + `TestFrozenBoardRoundTripsByteIdentical` (a committed board's bytes) | **Built** |
-| `scripts/check-marshal-singlepath.sh` (encoders **and** decoders), `scripts/check-schema-write-guard.sh` | **Built** |
-| Packaging (GoReleaser → Homebrew tap) | **Released** — `v0.1.0`–`v0.10.0` published (task-status Action bundled since `v0.5.0`) |
-| nix flake | **Built** — real pinned `vendorHash` + committed `flake.lock` (since `v0.4.0`) |
-| Read-only web / React viewer | **Future, low priority** |
-
 ---
 
 *(reviewed 2026-07-16)*
