@@ -16,7 +16,14 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
+- Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
+  **`furrow brief [--json]` is the session-start read**: the sync → `next -r` →
+  `show <id>` ritual in ONE process — the top `-n` (default 3) actionable tasks
+  WITH `body_text`, `next_total` (the uncapped count — a cap never hides the
+  queue), `blocked` (next-lane tasks with an unsatisfied dep + `blocked_by`,
+  the in-flight work plain `next` hides), the `revisit` summary (sync's shape),
+  and the `drafts` count. Read-only, never touches git — orient a shared board
+  with `furrow sync && furrow brief`.
   `set <id>` combines lane/**priority**/value/effort/labels/**type** in one
   write (the triage shortcut for move+reorder+value+effort+label): `--priority`
   is absolute, `--before/--after <ref>` relative in the DESTINATION lane — a
