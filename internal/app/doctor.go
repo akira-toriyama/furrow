@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -250,6 +251,7 @@ func doctorGitProblems(ctx context.Context, db *DoctorBoard) []core.Problem {
 		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "board-mid-operation", ID: db.Store,
 			Msg: fmt.Sprintf("the board's repo has a %s in progress — finish or abort it (`furrow sync` refuses to start on top of one)", op)})
 	}
+	ps = append(ps, unionAttrProblems(db.Store)...)
 	ahead, behind, hasUpstream, err := repo.AheadBehind(ctx)
 	switch {
 	case err != nil:
@@ -269,6 +271,32 @@ func doctorGitProblems(ctx context.Context, db *DoctorBoard) []core.Problem {
 		}
 	}
 	return ps
+}
+
+// unionAttrProblems warns when a GIT-BACKED board lacks the union merge rule
+// for bodies (a board initialized before the scaffold existed): without it,
+// two EOF-adjacent body appends — the task-status marker × a local note, the
+// commonest write collision on a shared board — textually conflict on every
+// pull --rebase, and sync hands a human a conflict that has no meaning. Only
+// the hot bodies/ rule is checked (the archive line matters less: archived
+// bodies stop being appended to); a standalone board never reaches this (the
+// caller returns before it for a non-repo).
+func unionAttrProblems(store string) []core.Problem {
+	// #nosec G304 -- store is the operator's own [[board]] path from the
+	// user-level config; doctor reads the board's .gitattributes there.
+	if b, err := os.ReadFile(filepath.Join(store, ".gitattributes")); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "#") {
+				continue
+			}
+			if strings.HasPrefix(line, "bodies/*.md") && strings.Contains(line, "merge=union") {
+				return nil
+			}
+		}
+	}
+	return []core.Problem{{Severity: core.SevWarn, Code: "no-body-union-merge", ID: store,
+		Msg: "the board lacks `bodies/*.md merge=union` in .furrow/.gitattributes — concurrent body appends (a task-status marker × a local note) will conflict on every sync; add the line and commit it (`furrow init` scaffolds it on new boards)"}}
 }
 
 // scanShadows reports where discovery would NOT reach this board from inside

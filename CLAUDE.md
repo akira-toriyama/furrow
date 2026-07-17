@@ -183,6 +183,12 @@ the user-level config. When you work with any furrow store:
   by a pre-flight — id **`sync-unmerged`** (exit 2), naming the paths AND the stash
   still holding the other half — instead of relaying git's opaque `notes.md:
   unmerged (…)`. The
+  Bodies themselves no longer conflict on concurrent APPENDS: `furrow init`
+  scaffolds `.furrow/.gitattributes` with `bodies/*.md merge=union`, so the
+  task-status marker × local note race folds both paragraphs instead of
+  aborting the sync (a pre-scaffold board adds that line by hand — `furrow
+  doctor` warns `no-body-union-merge` until it does; shards stay real
+  conflicts, union on JSON would corrupt them). The
   wreckage such a failed re-apply leaves in the file — conflict markers — is refused
   at the door: a body carrying `<<<<<<<`/`=======`/`>>>>>>>` is **never**
   auto-committed (id **`body-conflict-marker`**, exit 2, `details.bodies`
