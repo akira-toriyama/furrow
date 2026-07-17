@@ -297,6 +297,54 @@ func TestCLIArchiveRepoScope(t *testing.T) {
 	}
 }
 
+// TestCLIArchiveSweepNamesItsScope pins the sweep's report on the fact that
+// decides its blast radius. Every read in a cwd is silently scoped to the board
+// repo, so an operator reads a whole session's worth of one repo's tasks and then
+// types the obvious housekeeping command — but the sweep is board-wide, and the
+// line it printed named no scope at all. Only the NARROW variant said "in
+// owner/a", which made the 3x-wider one read as the neutral default. The report
+// must name the scope in both directions, and it reuses the vocabulary `board`
+// already prints for the same fact ("whole board") rather than inventing a
+// second word for it.
+func TestCLIArchiveSweepNamesItsScope(t *testing.T) {
+	dir := t.TempDir()
+	ia, err := app.Init(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	idx, _ := ia.Store.Load()
+	idx.Add(core.Task{ID: "t-aaa1", Title: "a done", Status: "done", Priority: 100,
+		Created: old, Updated: old, Closed: &old, Repos: []string{"owner/a"}, Body: core.BodyPath("t-aaa1")})
+	idx.Add(core.Task{ID: "t-bbb1", Title: "b done", Status: "done", Priority: 110,
+		Created: old, Updated: old, Closed: &old, Repos: []string{"owner/b"}, Body: core.BodyPath("t-bbb1")})
+	if err := ia.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(app.EnvDir, filepath.Join(dir, app.DirName))
+
+	// The wide sweep — no -r — must say so on the same line as the count.
+	out, code := run(t, "archive")
+	if code != 0 {
+		t.Fatalf("archive exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "whole board") {
+		t.Errorf("an unscoped sweep must name its scope on the report line, got:\n%s", out)
+	}
+
+	// The narrow sweep keeps naming the repo it is limited to.
+	out, code = run(t, "archive", "-r", "owner/a")
+	if code != 0 {
+		t.Fatalf("archive -r exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "in owner/a") {
+		t.Errorf("a scoped sweep must name its repo, got:\n%s", out)
+	}
+	if strings.Contains(out, "whole board") {
+		t.Errorf("a scoped sweep must NOT claim the whole board, got:\n%s", out)
+	}
+}
+
 // TestCLIListMultiValueOR pins the -s/-l comma = OR plumbing end-to-end through
 // the real cobra flags. The OR semantics rely on the comma reaching the app layer
 // intact: both -s and -l are StringArrayVar (which, unlike StringSliceVar, does

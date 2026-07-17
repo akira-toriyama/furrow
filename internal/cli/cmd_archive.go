@@ -102,7 +102,11 @@ func emitArchive(moved []core.Task, dry, byID bool, days int, repos []string) {
 	if byID {
 		fmt.Fprintf(out, "%s %d task(s) by id\n", verb, len(moved))
 	} else {
-		scope := ""
+		// Name the scope in BOTH directions. The sweep ignores the board scope every
+		// read honors, so the wide variant is the one an operator least expects —
+		// saying nothing made it read as the neutral default while it was the 3x
+		// blast radius. "whole board" is the word `board` already prints for "".
+		scope := " across the whole board"
 		if len(repos) > 0 {
 			scope = " in " + strings.Join(repos, ", ")
 		}
