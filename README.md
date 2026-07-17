@@ -513,11 +513,23 @@ non-interactive command — a thin git wrapper, not a sync daemon or server
 3. `git push` (one pull→push retry on non-fast-forward)
 
 Per-task shards make true conflicts rare — two machines *adding* tasks touch
-disjoint files; only both sides editing the *same* task conflicts. When that
-happens sync **aborts the rebase automatically** (the board is never left with
-conflict markers; your local sync commit survives) and exits 3 with an error
-envelope carrying `"id": "sync-conflict"` and `"details": {"paths": [...]}` so
-an agent knows exactly which shards to reconcile. The progress object
+disjoint files; only both sides editing the *same* task conflicts. **Bodies go
+one step further: they never conflict on concurrent appends.** `furrow init`
+scaffolds `.furrow/.gitattributes` with `bodies/*.md merge=union` (and the
+`archive/bodies/` twin), so the commonest collision on a shared board — the
+task-status bot appending a marker line while a session appends a note to the
+same body — folds both paragraphs together instead of stopping the sync
+(git's built-in union driver, honored by `pull --rebase`; an e2e test pins
+it). A body is append-mostly prose with no meaningful textual conflict; a
+*shard* conflict stays a real conflict — union on JSON would corrupt it, and
+two writers disagreeing about one task is a disagreement a human should see.
+A board initialized before the scaffold existed just adds that line and
+commits it — `furrow doctor` warns (`no-body-union-merge`) until it does.
+When a real conflict happens sync **aborts the rebase automatically** (the
+board is never left with conflict markers; your local sync commit survives)
+and exits 3 with an error envelope carrying `"id": "sync-conflict"` and
+`"details": {"paths": [...]}` so an agent knows exactly which shards to
+reconcile. The progress object
 `{committed, pulled, pushed, conflict, committed_bodies, pending_bodies,
 pending_stash}` is printed to stdout on success and failure alike (the lists are
 omitted when empty).

@@ -375,8 +375,17 @@ default_repo = "me/chord"       # 任意: 1 owner/repo にスコープ（"auto" 
    `fatal: Cannot rebase onto multiple branches` を起こせない
 3. `git push`（non-fast-forward なら pull→push を 1 回リトライ）
 
-shard 化により本当の conflict は稀（別マシンの add 同士は別ファイル）。**同じ** task を
-両側で編集したときだけ conflict し、その場合 sync は **rebase を自動 abort** する
+shard 化により本当の conflict は稀（別マシンの add 同士は別ファイル）。**body はさらに
+一歩先へ: 並行 append では conflict しない。** `furrow init` が
+`.furrow/.gitattributes` に `bodies/*.md merge=union`（と `archive/bodies/` の双子行）を
+scaffold するので、共有ボードで最頻の衝突——task-status bot のマーカー行 append × 同じ
+body へのローカル note append——は sync を止めず両方の段落に畳まれる（git 組み込みの
+union driver。`pull --rebase` でも効くことを e2e テストが担保）。body は append 中心の
+散文で、意味のある textual conflict は存在しない。一方 **shard の conflict は本物のまま**
+——JSON への union は壊すだけだし、1 つの task について 2 writer が食い違うのは人間が
+見るべき不一致。scaffold 以前に init したボードはその 1 行を足して commit すればよい
+（それまで `furrow doctor` が `no-body-union-merge` で警告する）。本当の conflict では
+sync は **rebase を自動 abort** する
 （board に conflict marker を残さない・ローカルの sync commit は残る）。exit 3 の error
 封筒に `"id": "sync-conflict"` と `"details": {"paths": [...]}` が入るので、agent は
 どの shard を手で直せばよいか機械的に分かる。進捗オブジェクト

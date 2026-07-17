@@ -415,9 +415,24 @@ func canonicalPath(p string) string {
 	return p
 }
 
+// GitAttributesTemplate is the .furrow/.gitattributes furrow init scaffolds.
+// Bodies are append-mostly prose: the task-status bot appends marker lines
+// while a session appends notes, and two EOF-adjacent appends conflict on
+// every pull --rebase (t-44h4). git's built-in union merge driver keeps both
+// sides instead — a body never has a meaningful textual conflict to hand a
+// human. Shards stay OUT: union on JSON would corrupt it, and the shard
+// conflict IS meaningful (two writers disagreeing about one task).
+const GitAttributesTemplate = `# machine-written by furrow init — see 'multi-machine sync' in the README.
+# Bodies are append-mostly prose; let git fold concurrent appends together
+# (the task-status marker × local note race) instead of conflicting.
+bodies/*.md merge=union
+archive/bodies/*.md merge=union
+`
+
 // Init creates a fresh .furrow at dir/.furrow (config.toml template + an empty
-// tasks/ shard dir + meta.json + bodies/). It is an error if one already
-// exists. The tasks/ dir and meta.json are provisioned by the first Store.Save.
+// tasks/ shard dir + meta.json + bodies/ + the union-merge .gitattributes). It
+// is an error if one already exists. The tasks/ dir and meta.json are
+// provisioned by the first Store.Save.
 func Init(dir string) (*App, error) {
 	fdir := filepath.Join(dir, DirName)
 	if fi, err := os.Stat(fdir); err == nil && fi.IsDir() {
@@ -428,6 +443,9 @@ func Init(dir string) (*App, error) {
 	}
 	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(config.Template), 0o644); err != nil {
 		return nil, core.Internalf("", "write config.toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fdir, ".gitattributes"), []byte(GitAttributesTemplate), 0o644); err != nil {
+		return nil, core.Internalf("", "write .gitattributes: %v", err)
 	}
 	a, err := openAt(fdir)
 	if err != nil {
