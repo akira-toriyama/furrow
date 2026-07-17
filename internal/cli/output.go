@@ -985,3 +985,91 @@ func atoiArg(name, s string) (int, error) {
 	}
 	return n, nil
 }
+
+// briefView is the JSON shape for `furrow brief` — the one-shot session-orient
+// read. Each section keeps the shape of the command it summarizes: next
+// entries are show's taskView (task + body_text), blocked entries carry ls's
+// blocked_by, revisit is sync's RevisitSummary. next_total is the uncapped
+// actionable count, so a -n cap never silently hides the queue size.
+type briefView struct {
+	Repo      string             `json:"repo"`
+	Next      []taskView         `json:"next"`
+	NextTotal int                `json:"next_total"`
+	Blocked   []briefBlockedView `json:"blocked"`
+	Revisit   app.RevisitSummary `json:"revisit"`
+	Drafts    int                `json:"drafts"`
+}
+
+// briefBlockedView is a brief blocked entry: the task plus what is in the way.
+// core.Task is embedded — the usual warning applies (it must never grow a
+// MarshalJSON, or blocked_by would silently vanish).
+type briefBlockedView struct {
+	core.Task
+	BlockedBy []string `json:"blocked_by"`
+}
+
+// printBrief renders the session-orient read: JSON/NDJSON as one object (the
+// single-object command convention), human mode as a compact dashboard WITHOUT
+// bodies (prose is --json's payload for agents; a human runs `show`).
+func printBrief(b *app.BriefData, scope string) {
+	if jsonMode() {
+		v := briefView{
+			Repo:      scope,
+			Next:      make([]taskView, 0, len(b.Next)),
+			NextTotal: b.NextTotal,
+			Blocked:   make([]briefBlockedView, 0, len(b.Blocked)),
+			Revisit:   b.Revisit,
+			Drafts:    b.Drafts,
+		}
+		// sync hides an empty summary behind omitempty; brief always shows it,
+		// so the two non-omitempty id arrays must come out [] never null (an
+		// agent indexes them unconditionally — the house nil-slice rule).
+		if v.Revisit.DepDone == nil {
+			v.Revisit.DepDone = []string{}
+		}
+		if v.Revisit.Stale == nil {
+			v.Revisit.Stale = []string{}
+		}
+		for _, it := range b.Next {
+			v.Next = append(v.Next, taskView{Task: it.Task, BodyText: it.Body})
+		}
+		for _, it := range b.Blocked {
+			blockedBy := it.BlockedBy
+			if blockedBy == nil {
+				blockedBy = []string{}
+			}
+			v.Blocked = append(v.Blocked, briefBlockedView{Task: it.Task, BlockedBy: blockedBy})
+		}
+		emitObject(v)
+		return
+	}
+	if scope != "" {
+		fmt.Fprintf(out, "repo: %s\n", scope)
+	}
+	fmt.Fprintf(out, "next (%d/%d):\n", len(b.Next), b.NextTotal)
+	if len(b.Next) == 0 {
+		fmt.Fprintln(out, "  (none)")
+	}
+	for _, it := range b.Next {
+		fmt.Fprintf(out, "  ★ %s  %-12s %s\n", it.Task.ID, it.Task.Status, it.Task.Title)
+	}
+	fmt.Fprintf(out, "blocked (%d):\n", len(b.Blocked))
+	if len(b.Blocked) == 0 {
+		fmt.Fprintln(out, "  (none)")
+	}
+	for _, it := range b.Blocked {
+		fmt.Fprintf(out, "  · %s  %-12s %s  ← %s\n", it.Task.ID, it.Task.Status, it.Task.Title, strings.Join(it.BlockedBy, ", "))
+	}
+	fmt.Fprintf(out, "revisit: %d dep_done, %d stale", len(b.Revisit.DepDone), len(b.Revisit.Stale))
+	if n := len(b.Revisit.ChildrenDone); n > 0 {
+		fmt.Fprintf(out, ", %d children_done", n)
+	}
+	if n := len(b.Revisit.StuckContainer); n > 0 {
+		fmt.Fprintf(out, ", %d stuck_container", n)
+	}
+	if n := len(b.Revisit.Unreviewed); n > 0 {
+		fmt.Fprintf(out, ", %d unreviewed", n)
+	}
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "drafts: %d\n", b.Drafts)
+}

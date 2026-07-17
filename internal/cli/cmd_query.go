@@ -367,6 +367,65 @@ func newNextCmd() *cobra.Command {
 	return cmd
 }
 
+func newBriefCmd() *cobra.Command {
+	var (
+		label     []string
+		repo      string
+		limit     int
+		staleDays int
+	)
+	cmd := &cobra.Command{
+		Use:   "brief",
+		Short: "One-shot session-orient read: next picks with bodies, blocked, revisit, drafts",
+		Long: "Answer \"where am I?\" in ONE process at session start — the sync → next →\n" +
+			"show ritual folded into a single read. Four sections, each keeping the\n" +
+			"contract of the command it summarizes: `next` = the top -n actionable tasks\n" +
+			"(next's predicate) WITH their bodies (show's body_text — the follow-up read\n" +
+			"folded in), plus next_total, the uncapped count, so the cap never hides the\n" +
+			"queue size; `blocked` = next-lane tasks with an unsatisfied dep and their\n" +
+			"blocked_by (started or queued work that plain `next` deliberately hides);\n" +
+			"`revisit` = the summary sync reports ({dep_done, stale, …} id arrays);\n" +
+			"`drafts` = the repo-less count, board-wide by definition (a draft has no\n" +
+			"repo, so no scope can own it). Scope with -r/-l like every read; human mode\n" +
+			"is a compact dashboard without bodies (prose is --json's payload). Read-only:\n" +
+			"it never touches git — run `furrow sync && furrow brief` to orient on a\n" +
+			"shared board.",
+		Example: "  furrow sync && furrow brief   # session start, one orientation read\n" +
+			"  furrow brief --json -n1       # just the top pick, with its body\n" +
+			"  furrow brief -r furrow",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo)
+			if err != nil {
+				return err
+			}
+			days := a.Cfg.RevisitStaleDays
+			if cmd.Flags().Changed("stale-days") {
+				days = staleDays
+			}
+			b, err := a.Brief(o, limit, days)
+			if err != nil {
+				return err
+			}
+			scope := o.Repo
+			if scope == "" {
+				scope = o.ScopeRepo
+			}
+			printBrief(b, scope)
+			return nil
+		},
+	}
+	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
+	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
+	cmd.Flags().IntVarP(&limit, "limit", "n", 3, "how many next picks to include, bodies attached (0 = all; next_total is never capped)")
+	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
+	return cmd
+}
+
 func newRevisitCmd() *cobra.Command {
 	var (
 		label     []string
