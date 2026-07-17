@@ -244,3 +244,60 @@ func TestLs_ScopeHidesDraftsHint(t *testing.T) {
 		t.Errorf("--drafts must not re-hint, stderr:\n%s", se)
 	}
 }
+
+// sweepCmd builds a throwaway command carrying archive's repeatable --repo and
+// hands back the slice cobra parses into, so a test drives the real flag
+// plumbing (the sweep's -r is a StringSlice, not the reads' single string) and
+// can toggle whether it was "Changed".
+func sweepCmd() (*cobra.Command, *[]string) {
+	cmd := &cobra.Command{Use: "x", RunE: func(*cobra.Command, []string) error { return nil }}
+	var repos []string
+	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "")
+	return cmd, &repos
+}
+
+// The age sweep inherits the board scope, exactly as every read does. Before
+// this, archive was the one command that ignored it: a whole session of
+// ls/next/search silently scoped to the board repo, then `archive --yes` folded
+// other repos' aged done — 373 tasks where the reads had been showing 113. -r
+// stays one word with one meaning: "narrow from the board scope".
+func TestSweepRepos_InheritsBoardScope(t *testing.T) {
+	cmd, args := sweepCmd() // --repo not changed
+	repos, err := sweepRepos(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: true, Dir: "/b/.furrow"}, *args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 || repos[0] != "me/chord" {
+		t.Errorf("sweep repos = %v, want [me/chord] (the board scope every read honors)", repos)
+	}
+}
+
+// auto_filter = false means the operator asked for the whole board on reads, so
+// the sweep must not invent a scope either — the two must not disagree.
+func TestSweepRepos_AutoFilterFalseSweepsWholeBoard(t *testing.T) {
+	cmd, args := sweepCmd()
+	repos, err := sweepRepos(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: false, Dir: "/b/.furrow"}, *args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 0 {
+		t.Errorf("sweep repos = %v, want none (auto_filter=false reads the whole board)", repos)
+	}
+}
+
+// An explicit -r ” is how a read asks for the whole board; the sweep keeps that
+// meaning, so folding every repo's aged done stays possible — but it must now be
+// TYPED. The widest blast radius costs the most keystrokes, not the fewest.
+func TestSweepRepos_ExplicitEmptyRepoSweepsWholeBoard(t *testing.T) {
+	cmd, args := sweepCmd()
+	if err := cmd.Flags().Set("repo", ""); err != nil {
+		t.Fatal(err)
+	}
+	repos, err := sweepRepos(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: true, Dir: "/b/.furrow"}, *args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 0 {
+		t.Errorf("sweep repos = %v, want none (-r '' = the whole board, explicitly asked for)", repos)
+	}
+}
