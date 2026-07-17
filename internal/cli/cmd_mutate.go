@@ -50,6 +50,13 @@ func emitMutationWith(a *app.App, verb, id string, mutate func() (*core.Task, er
 // harmless because the mutate closure is the authority and fails the whole
 // batch before anything is printed.
 func emitMutationMany(a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error)) error {
+	return emitMutationManyWith(a, verb, ids, mutate, nil)
+}
+
+// emitMutationManyWith is emitMutationMany plus optional extra top-level
+// fields merged into EVERY task's envelope — the batch twin of
+// emitMutationWith's annotate (done --note surfaces `appended` on each).
+func emitMutationManyWith(a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error), extra map[string]any) error {
 	befores := map[string]*core.Task{}
 	if jsonMode() {
 		if items, _, err := a.GetBatch(ids, false); err == nil {
@@ -66,11 +73,15 @@ func emitMutationMany(a *app.App, verb string, ids []string, mutate func() ([]*c
 	if jsonMode() {
 		envs := make([]any, 0, len(after))
 		for _, t := range after {
-			envs = append(envs, map[string]any{
+			env := map[string]any{
 				"before":  befores[t.ID],
 				"after":   t,
 				"changed": changedFields(befores[t.ID], t),
-			})
+			}
+			for k, v := range extra {
+				env[k] = v
+			}
+			envs = append(envs, env)
 		}
 		if flagNDJSON {
 			for _, e := range envs {
@@ -88,15 +99,22 @@ func emitMutationMany(a *app.App, verb string, ids []string, mutate func() ([]*c
 }
 
 func newDoneCmd() *cobra.Command {
-	return &cobra.Command{
+	var note string
+	cmd := &cobra.Command{
 		Use:   "done <id>...",
 		Short: "Move tasks into the done lane (stamps closed)",
 		Long: "Close one or more tasks in a single index write, all-or-nothing: a batch\n" +
 			"with an unknown id closes NOTHING and exits 1 with every miss in\n" +
 			"details.missing (the show batch shape). With --json, one id keeps the\n" +
 			"classic {before,after,changed} object and ≥2 ids emit an array of them;\n" +
-			"--ndjson streams one envelope per line at any arity.",
+			"--ndjson streams one envelope per line at any arity.\n\n" +
+			"--note \"<text>\" records the closing word in the same command: the text is\n" +
+			"appended to EVERY closed task's body as a new paragraph (the note command's\n" +
+			"contract — updated advances, nothing is deduped) and the envelope gains the\n" +
+			"same `appended` key. Pass `-` to read the note from stdin; an empty note is\n" +
+			"exit 2, never a silent plain close.",
 		Example: "  furrow done t-k3m9p\n" +
+			"  furrow done t-k3m9p --note \"→ continued in t-x7q2\"\n" +
 			"  furrow done t-k3m9p t-x7q2 t-9d4n   # triage sweep, one write",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -104,12 +122,34 @@ func newDoneCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if len(args) == 1 {
-				return emitMutation(a, "done", args[0], func() (*core.Task, error) { return a.Done(args[0]) })
+			if !cmd.Flags().Changed("note") {
+				if len(args) == 1 {
+					return emitMutation(a, "done", args[0], func() (*core.Task, error) { return a.Done(args[0]) })
+				}
+				return emitMutationMany(a, "done", args, func() ([]*core.Task, error) { return a.DoneMany(args) })
 			}
-			return emitMutationMany(a, "done", args, func() ([]*core.Task, error) { return a.DoneMany(args) })
+			text := note
+			if text == "-" {
+				data, rerr := io.ReadAll(cmd.InOrStdin())
+				if rerr != nil {
+					return core.Internalf(args[0], "read stdin: %v", rerr)
+				}
+				text = string(data)
+			}
+			// `changed` tracks metadata only, so surface the note's effect the
+			// way the note command does.
+			appended := map[string]any{"appended": strings.TrimRight(text, "\n")}
+			if len(args) == 1 {
+				return emitMutationWith(a, "done", args[0],
+					func() (*core.Task, error) { return a.DoneNote(args[0], text) },
+					func(after *core.Task) map[string]any { return appended })
+			}
+			return emitMutationManyWith(a, "done", args,
+				func() ([]*core.Task, error) { return a.DoneManyNote(args, text) }, appended)
 		},
 	}
+	cmd.Flags().StringVar(&note, "note", "", "append this closing note to each task's body (`-` reads stdin)")
+	return cmd
 }
 
 func newMoveCmd() *cobra.Command {

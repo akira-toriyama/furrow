@@ -1096,6 +1096,13 @@ func (a *App) Done(id string) (*core.Task, error) { return a.Move(id, a.Cfg.Done
 // results come back in input order. The single Save is the point: a triage
 // sweep over five tasks is one write, not five.
 func (a *App) MoveMany(ids []string, lane string) ([]*core.Task, error) {
+	return a.moveMany(ids, lane, "")
+}
+
+// moveMany is MoveMany plus an optional note appended to every moved task's
+// body (skipped when empty). Bodies are written only after every id has
+// resolved, so a failed batch touches neither lanes nor prose.
+func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, error) {
 	if !a.Cfg.IsLane(lane) {
 		return nil, a.unknownLaneErr("", lane)
 	}
@@ -1125,6 +1132,11 @@ func (a *App) MoveMany(ids []string, lane string) ([]*core.Task, error) {
 	}
 	now := a.Clock.Now()
 	for _, id := range order {
+		if note != "" {
+			if err := a.appendBody(id, note); err != nil {
+				return nil, err
+			}
+		}
 		t, _ := idx.Find(id)
 		a.applyLane(t, lane)
 		t.Updated = now
@@ -1141,8 +1153,51 @@ func (a *App) MoveMany(ids []string, lane string) ([]*core.Task, error) {
 }
 
 // DoneMany moves several tasks into the done lane in one write (stamping
-// Closed on each via MoveMany's applyLane).
-func (a *App) DoneMany(ids []string) ([]*core.Task, error) { return a.MoveMany(ids, a.Cfg.DoneLane) }
+// Closed on each via moveMany's applyLane).
+func (a *App) DoneMany(ids []string) ([]*core.Task, error) {
+	return a.moveMany(ids, a.Cfg.DoneLane, "")
+}
+
+// DoneNote closes a task AND appends a closing note to its body — the
+// done+note ritual ("→ continued in t-xxx", the close-time one-liner) as a
+// single command with one Updated stamp. The note follows AddNote's contract
+// (a new paragraph, never deduped); an empty note is bad usage, never a
+// silent plain close.
+func (a *App) DoneNote(id, note string) (*core.Task, error) {
+	note, err := normalizeNote(id, note)
+	if err != nil {
+		return nil, err
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	if err := a.appendBody(id, note); err != nil {
+		return nil, err
+	}
+	a.applyLane(t, a.Cfg.DoneLane)
+	t.Updated = a.Clock.Now()
+	if err := a.Store.Save(idx); err != nil {
+		return nil, err
+	}
+	saved, _ := idx.Find(id)
+	return saved, nil
+}
+
+// DoneManyNote is DoneNote over a batch: the SAME note lands on every task's
+// body ("superseded by t-yyy", "shipped in repo#42") and the whole close is
+// one all-or-nothing index write, MoveMany's contract.
+func (a *App) DoneManyNote(ids []string, note string) ([]*core.Task, error) {
+	note, err := normalizeNote("", note)
+	if err != nil {
+		return nil, err
+	}
+	return a.moveMany(ids, a.Cfg.DoneLane, note)
+}
 
 // Reorder sets a task's absolute priority.
 func (a *App) Reorder(id string, priority int) (*core.Task, error) {
@@ -1688,9 +1743,9 @@ func (a *App) EditPath(id string) (string, error) {
 // NotFound (exit 1) when id names no task; an empty/whitespace-only note is a
 // validation error (exit 2).
 func (a *App) AddNote(id, text string) (*core.Task, error) {
-	text = strings.TrimRight(text, "\n")
-	if strings.TrimSpace(text) == "" {
-		return nil, core.Validationf(id, "note text is empty")
+	text, err := normalizeNote(id, text)
+	if err != nil {
+		return nil, err
 	}
 	idx, err := a.load()
 	if err != nil {
@@ -1700,14 +1755,39 @@ func (a *App) AddNote(id, text string) (*core.Task, error) {
 	if i < 0 {
 		return nil, core.NotFound(id)
 	}
+	if err := a.appendBody(id, text); err != nil {
+		return nil, err
+	}
+	t.Updated = a.Clock.Now()
+	if err := a.Store.Save(idx); err != nil {
+		return nil, err
+	}
+	saved, _ := idx.Find(id)
+	return saved, nil
+}
+
+// normalizeNote trims a note's trailing newlines and rejects an
+// empty/whitespace note as bad usage (never a silent no-op append). Shared by
+// AddNote and the done --note paths so the two can never diverge on what
+// counts as a note.
+func normalizeNote(id, text string) (string, error) {
+	text = strings.TrimRight(text, "\n")
+	if strings.TrimSpace(text) == "" {
+		return "", core.Validationf(id, "note text is empty")
+	}
+	return text, nil
+}
+
+// appendBody appends text to a task's body as a new paragraph, separated from
+// existing content by exactly one blank line, whatever the body's current
+// trailing whitespace.
+func (a *App) appendBody(id, text string) error {
 	body, err := a.Store.LoadBody(id)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var b strings.Builder
 	b.WriteString(body)
-	// Separate the new paragraph from existing content with exactly one blank
-	// line, whatever the body's current trailing whitespace.
 	if body != "" {
 		if !strings.HasSuffix(body, "\n") {
 			b.WriteString("\n")
@@ -1718,15 +1798,7 @@ func (a *App) AddNote(id, text string) (*core.Task, error) {
 	}
 	b.WriteString(text)
 	b.WriteString("\n")
-	if err := a.Store.SaveBody(id, b.String()); err != nil {
-		return nil, err
-	}
-	t.Updated = a.Clock.Now()
-	if err := a.Store.Save(idx); err != nil {
-		return nil, err
-	}
-	saved, _ := idx.Find(id)
-	return saved, nil
+	return a.Store.SaveBody(id, b.String())
 }
 
 // cloneIntp returns a copy of an optional int so callers and the store never

@@ -158,7 +158,7 @@ furrow done t-0001
 | `edit <id>` | Edit a task's markdown body in $EDITOR | — |
 | `note <id> <text>` | Append a paragraph to a task's body and advance its updated time | — |
 | `attach <id> <file>` | Attach a media file to a task (copies into bodies/assets/, links it from the body) | — |
-| `done <id>...` | Move tasks into the done lane (stamps closed) | — |
+| `done <id>...` | Move tasks into the done lane (stamps closed) | `--note` |
 | `move <id>... <lane>` | Move tasks to a lane | — |
 | `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before` |
 | `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | — |
@@ -200,6 +200,7 @@ furrow done t-0001
 - **`doctor`** — `boards` の「意見を言う」版: マシン単位のボード設定**健診**。読み取り専用・ネットワークなし（fetch しない）。検査項目: user config がパースでき usable な `[[board]]` が 1 つ以上あるか（`no-boards` — furrow もボードも入っているのに scope 未設定で、使う瞬間に何も名指さない exit 2 だけが返る「半セットアップ」マシンの本体）／各ボードがディスク上に存在し・読めて・このバイナリの schema か／各 scope ディレクトリの実在／git 併設ボードの upstream との鮮度（**最後の fetch 時点**の知識で `board-behind` → 読む前に sync・`board-ahead` → 未 push の書き込み・rebase/merge 進行中も warn）／scope 内で discovery がこのボードを**選ばない**場所（より近い `.furrow`/pointer が勝つ — severity `info`＝知るべき事実であって不健全ではない）。discovery のシミュレーションは cwd（情報表示）と引数の各 dir（**アサーション**: 解決しなければ `dir-unresolved` エラー＋修正提案）で行う。全 finding は安定した kebab-case `code` を持ち、exit は `0`＝健全（info は含んでよい）／`1`＝問題あり（`doctor-unhealthy`）——shell init や CI に置ける: `furrow doctor --json | jq -e '.healthy'`。
 - **`edit`** — `bodies/<id>.md` をエディタで開く（非対話ならパスを出力）。経過の記録には `note` を推奨——ファイル直編集は `updated` を進めない。
 - **`note`** — テキストを body に新しい段落として追記し、**同時に** `updated` を進める（1 write）。body だけで reconcile 済みのタスクに `lint` の `reconcile-gap` が誤発火しない。`<text>` に `-` で stdin から読む（複数行用）。`--json` は封筒に加え `appended` を出す（メタの `changed` は body だけ動いたとき `[]`）。
+- **`done`** — `--note "<text>"` で閉じ言葉（「→ continued in t-xxx」）を close 自体に畳み込む: テキストは close した**全**タスクの body へ `note` コマンドと同じ契約で載る（新しい段落・`updated` 前進・`--json` 封筒ごとに `appended`・`-` で stdin から読む）。空 note は exit 2——黙って素の close に落ちない。
 - **`move`** — done レーンから出るとき `closed` をクリアする（`done` が打刻する）。
 - **`reorder`** — 絶対値指定は疎な整数をそのまま書く。`--before`/`--after <id>` は計算を furrow に任せ、同一レーンの相手のすぐ前/後ろへ差し込む（レーンを跨ぐ相対位置は無意味なので相手は同レーン必須——違えば exit 2）。相手の隣の隙間が枯渇していたら**同じ 1 write の中で**レーン全体を respace する（all-or-nothing）——`--json` は隣人たちの移動を `renumbered` 配列（`{id, from, to}`）で返し、stderr note が件数を知らせる。respace された隣人の `updated` は**意図的に進めない**（並びの帳簿づけは進捗ではない——staleness シグナルを守るため）。
 - **`value` / `effort`** — 範囲外は 1..5 に丸め、**さらに signal**——`--json` 封筒にフィールド名でネストした `clamped`（`clamped.value.{requested, stored}` / `clamped.effort.{…}`）＋stderr note＝明示引数を黙って丸めない。`add` 経由の clamp は stderr note のみ（`add --json` は作成タスクを出し、封筒は無い）。`--clear` で未設定に戻す。
