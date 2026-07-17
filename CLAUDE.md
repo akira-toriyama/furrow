@@ -256,6 +256,11 @@ the user-level config. When you work with any furrow store:
   `apply` annotation path it never dedupes and always advances `updated`, so the
   time-based lint stays honest. `--json` emits the `{before,after,changed}`
   envelope plus `appended` (the text), since `changed` tracks metadata only.
+  Closing with a word — the reslice's "→ continued in t-xxx", the one-liner at
+  close time — is that contract folded into the close: **`furrow done <id>...
+  --note "<text>"`** appends the note to every closed task's body in the same
+  single all-or-nothing write (an empty note is exit 2, never a silent plain
+  close).
 - Exit codes: `0` ok — **including an empty query result** (`ls`/`next`/`revisit`
   matching nothing still succeeded, so `set -e` never trips on "no work") / `1` a
   **specifically requested id** was not found (e.g. `show <id>`), never an empty
