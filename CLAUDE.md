@@ -580,7 +580,9 @@ back into place — see the marshaller-path section.
 
 ## Conventions
 
-- Commits: gitmoji + Conventional — `<:gitmoji:> <type>(<scope>)<!>: <subject>`.
+- Commits: gitmoji-driven — `<:gitmoji:>[(<scope>)][!] <subject>` (the leading
+  `:code:` is the type and drives release semver; legacy `<type>(scope):` tokens
+  are accepted and ignored).
   Enable the hook once: `git config core.hooksPath scripts/hooks`. Spec:
   [CONTRIBUTING.md](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md).
 - `go build ./...` and `go test ./...` must pass before finishing a turn.
@@ -606,8 +608,8 @@ back into place — see the marshaller-path section.
 
 <!-- broad → narrow; tag each (reviewed YYYY-MM-DD); re-check on a 6-month gap. -->
 - clig.dev — CLI design guidelines (reviewed 2026-06-25)
-- Conventional Commits 1.0.0; gitmoji.dev (reviewed 2026-06-25)
-- GoReleaser brews/nix; git-cliff (reviewed 2026-06-25)
+- gitmoji.dev; glyph (gitmoji-driven lint/semver/notes) (reviewed 2026-07-20)
+- GoReleaser brews/nix (reviewed 2026-06-25)
 
 ## Multi-session work policy
 

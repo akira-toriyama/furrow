@@ -786,10 +786,11 @@ go run ./cmd/furrow --help
 
 ### コミット規約
 
-gitmoji + Conventional Commits。形式は次のとおり（gitmoji は `:code:` のテキスト形式で書く）。
+gitmoji 駆動。形式は次のとおり（gitmoji は `:code:` のテキスト形式で書く。先頭の `:code:` が
+type＝release の semver を駆動する。旧 `<type>(scope):` token は lint が accept-and-ignore）。
 
 ```
-<:gitmoji:> <type>(<scope>)<!>: <subject>
+<:gitmoji:>[(<scope>)][!] <subject>
 ```
 
 `scripts/hooks/commit-msg`（`git config core.hooksPath scripts/hooks` で有効化）と CI が検証する。
