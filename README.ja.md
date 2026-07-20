@@ -748,13 +748,13 @@ furrow release tag に pin** する:
 name: task-status
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, closed]
+    types: [opened, edited, reopened, ready_for_review, closed]
 permissions:
   contents: read
   pull-requests: write
 jobs:
   sync:
-    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.12.0
+    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.13.0
     secrets:
       PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
 ```
