@@ -79,7 +79,7 @@ on:
           kept in LOCKSTEP with this file's own release tag (bumped right
           before tagging), so a caller pinned to @vX.Y.Z runs binary vX.Y.Z.
         type: string
-        default: v0.12.0
+        default: v0.13.0
     secrets:
       PROJECTS_WRITE_PAT:
         required: false

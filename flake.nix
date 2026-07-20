@@ -25,7 +25,7 @@
         # this is bumped in release-prep alongside sync-task-status.yml's
         # furrow-version default (scripts/check-version-lockstep.sh enforces the
         # match), so `nix run/install` never reports a stale version (audit F9).
-        version = "0.12.0";
+        version = "0.13.0";
         # The nix store src has no .git, so version.Resolve's VCS-stamp fallback
         # finds nothing; stamp Commit explicitly from the flake's own revision
         # (dirtyRev when the tree is uncommitted) so `furrow version` isn't blank.
