@@ -9,7 +9,7 @@
   # #127 changed go.sum without re-pinning, and every nix build after it failed
   # on a hash mismatch until the audit that added this guard noticed).
   #
-  # go.sum sha256: 74d87f808d27b33c22ac1f0d15b5fc21e8105178e14d085d730662ec4cb32483
+  # go.sum sha256: 51b893a9b0e84ed18a868a86c0aa86dab468fc236ceb73866d73905269c5fae0
   description = "Clonable, git-native plain-text task tracker — an alternative to GitHub Projects/Issues (per-task JSON shards + markdown bodies)";
 
   inputs = {
@@ -36,7 +36,7 @@
           pname = "furrow";
           inherit version;
           src = ./.;
-          vendorHash = "sha256-CUr9ZHEGmRc8Esl5RWZ/oHeHIlwdfSgUrWpdjv+HDHo=";
+          vendorHash = "sha256-vHs6t/HZ5EaaG9YAzKFmxbaQOraXPgYHBhZUWIMNi8I=";
           ldflags = [
             "-s" "-w"
             "-X github.com/akira-toriyama/furrow/internal/version.Version=${version}"
