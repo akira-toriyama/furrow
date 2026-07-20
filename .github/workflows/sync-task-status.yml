@@ -12,7 +12,11 @@ name: sync-task-status
 #   name: task-status
 #   on:
 #     pull_request:
-#       types: [opened, reopened, ready_for_review, closed]
+#       # `edited` re-runs the sync when the PR BODY changes, so fixing a bad
+#       # SetStatus footer re-evaluates naturally. Without it the only recovery
+#       # was close→reopen: `gh run rerun` replays the ORIGINAL event payload,
+#       # i.e. the old body (t-rb4c).
+#       types: [opened, edited, reopened, ready_for_review, closed]
 #   permissions:
 #     contents: read
 #     pull-requests: write
@@ -47,10 +51,12 @@ name: sync-task-status
 #                        Contents: Read & write ONLY, auto-expiring.
 # Until the PAT exists the workflow is DORMANT: it skips cleanly (green).
 #
-# A PR open (incl. draft) nudges the task to in-progress; a merge applies the
-# directive's lane. Validation is NON-blocking: an invalid directive comments on
-# the PR and fails THIS job, but never blocks the merge — keep it out of the
-# repo's required checks.
+# A PR open (incl. draft) or body edit nudges the task to in-progress; a merge
+# applies the directive's lane. Validation is NON-blocking all the way: an
+# invalid directive comments on the PR and annotates the run with a warning,
+# but the job stays GREEN — a red job read as "CI failure" contradicted the
+# non-blocking contract (t-rb4c). Valid directives are always applied; fixing
+# the footer in the PR body re-triggers the sync via `edited`.
 
 on:
   workflow_call:
@@ -91,11 +97,16 @@ jobs:
         env:
           ACTION: ${{ github.event.action }}
           MERGED: ${{ github.event.pull_request.merged }}
+          STATE: ${{ github.event.pull_request.state }}
           WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
         run: |
           set -euo pipefail
           case "$ACTION" in
             opened|reopened|ready_for_review) mode=open ;;
+            # A body edit re-evaluates the footer (idempotent open-nudge) — but
+            # only while the PR is open: editing a closed PR's body must not
+            # drag its task back to in-progress.
+            edited) if [ "$STATE" = "open" ]; then mode=open; else mode=skip; fi ;;
             closed) if [ "$MERGED" = "true" ]; then mode=merge; else mode=skip; fi ;;
             *) mode=skip ;;
           esac
@@ -273,7 +284,7 @@ jobs:
               report,
               '```',
               '',
-              'Fix the directive (task id / lane) or update the task manually with `furrow move`.',
+              'Fix the footer in the PR body — the edit re-triggers this sync — or update the task manually with `furrow move`.',
             ].join('\n');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -282,13 +293,15 @@ jobs:
               body,
             });
 
-      - name: Fail the job if any directive was invalid
+      # NON-blocking by design (t-rb4c): a red job here read as "CI failure" even
+      # though the merge was never blocked and valid directives were applied. An
+      # invalid directive now surfaces as a run annotation + the PR comment above,
+      # and the job stays green.
+      - name: Surface invalid directives as a warning (job stays green)
         if: steps.gate.outputs.proceed == 'true' && steps.apply.outputs.code != '0'
         env:
           # Env, not inline `${{ }}` in the script (zizmor template-injection):
           # the value is our own step output, but the pattern stays banned. t-yaxa
           CODE: ${{ steps.apply.outputs.code }}
         run: |
-          echo "furrow apply reported invalid directive(s) (exit ${CODE})."
-          echo "This job is intentionally NON-blocking — keep it out of required checks."
-          exit 1
+          echo "::warning title=furrow SetStatus-task::furrow apply reported invalid directive(s) (exit ${CODE}). Valid directives were applied; invalid ones left their task unchanged — see the PR comment. Fixing the PR body re-triggers this sync."
