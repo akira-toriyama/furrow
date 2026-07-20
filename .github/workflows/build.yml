@@ -20,7 +20,7 @@ jobs:
   # is floor-only, so go-version: stable builds on the current release and
   # gotoolchain: local pins it (furrow's deliberate toolchain strategy).
   ci:
-    uses: akira-toriyama/.github/.github/workflows/go-ci.yml@v1
+    uses: akira-toriyama/.github/.github/workflows/go-ci.yml@v2
     with:
       runners: '["ubuntu-latest", "macos-latest"]'
       go-version: stable
