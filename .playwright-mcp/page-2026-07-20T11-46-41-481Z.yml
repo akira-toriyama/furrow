@@ -1,0 +1,482 @@
+- generic [ref=f1e2]:
+  - generic:
+    - link "Skip to content" [ref=f1e3] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=f1e5]:
+      - heading "Navigation Menu" [level=2] [ref=f1e6]
+      - generic [ref=f1e7]:
+        - link "Homepage" [ref=f1e9] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f1e12]:
+          - navigation "Global" [ref=f1e15]:
+            - list [ref=f1e16]:
+              - listitem [ref=f1e17]:
+                - button "プラットフォーム" [ref=f1e19] [cursor=pointer]
+              - listitem [ref=f1e22]:
+                - button "ソリューション" [ref=f1e24] [cursor=pointer]
+              - listitem [ref=f1e27]:
+                - button "リソース" [ref=f1e29] [cursor=pointer]
+              - listitem [ref=f1e32]:
+                - button "オープン ソース" [ref=f1e34] [cursor=pointer]
+              - listitem [ref=f1e37]:
+                - button "Enterprise" [ref=f1e39] [cursor=pointer]
+              - listitem [ref=f1e42]:
+                - link "料金" [ref=f1e43] [cursor=pointer]:
+                  - /url: https://github.com/pricing
+          - generic [ref=f1e45]:
+            - button "Search or jump to…" [ref=f1e48] [cursor=pointer]
+            - link "サインイン" [ref=f1e53] [cursor=pointer]:
+              - /url: /login
+            - link "サインアップ" [ref=f1e54] [cursor=pointer]:
+              - /url: /signup?ref_cta=Sign+up&ref_loc=header+logged+out&ref_page=%2F&source=header-home
+  - main [ref=f1e57]:
+    - generic [ref=f1e61]:
+      - generic [ref=f1e62]:
+        - generic [ref=f1e63]:
+          - generic [ref=f1e67]:
+            - region [ref=f1e68]:
+              - generic [ref=f1e71]:
+                - heading "開発の未来は、チームとともに築く" [level=1] [ref=f1e72]
+                - paragraph [ref=f1e73]: ツールは進化しても、チームでのやり取りはそのままに。GitHub なら、開発者、エージェント、コードのすべてが 1 つのプラットフォームに集約されます。
+            - generic [ref=f1e74]:
+              - form "GitHub に登録" [ref=f1e75]:
+                - generic [ref=f1e77]:
+                  - generic [ref=f1e78]:
+                    - generic [ref=f1e79]: メールアドレスを入力
+                    - textbox "メールアドレスを入力" [ref=f1e81]:
+                      - /placeholder: you@domain.com
+                  - button "GitHub に登録" [ref=f1e82] [cursor=pointer]
+              - link "GitHub Copilot を試す" [ref=f1e84] [cursor=pointer]:
+                - /url: /github-copilot/pro
+          - generic [ref=f1e87]:
+            - heading "GitHub features" [level=2] [ref=f1e88]
+            - button "Pause" [ref=f1e89] [cursor=pointer]
+            - generic [ref=f1e91]: A demonstration animation of a code editor using GitHub Copilot Chat, where the user requests GitHub Copilot to refactor duplicated logic and extract it into a reusable function for a given code snippet.
+        - generic [ref=f1e96]:
+          - tablist [ref=f1e98]:
+            - generic [ref=f1e99]:
+              - tab "コーディング" [ref=f1e101] [cursor=pointer]
+              - tab "計画" [ref=f1e102] [cursor=pointer]
+              - tab "コラボレーション" [ref=f1e103] [cursor=pointer]
+              - tab "自動化" [ref=f1e104] [cursor=pointer]
+              - tab "セキュリティ" [ref=f1e105] [cursor=pointer]
+          - region [ref=f1e106]: GitHub Copilotが、コーディング、テスト、コード修正を高速化。単純なボイラープレートから複雑な機能実装まで、あらゆる開発シーンを加速させます。
+        - generic [ref=f1e108]:
+          - heading "GitHub のお客様" [level=2] [ref=f1e109]
+          - generic [ref=f1e110]:
+            - generic [ref=f1e112]:
+              - img "American Airlines" [ref=f1e113]
+              - img "Duolingo" [ref=f1e116]
+              - img "Ernst and Young" [ref=f1e118]
+              - img "Ford" [ref=f1e122]
+              - img "InfoSys" [ref=f1e125]
+              - img "Mercado Libre" [ref=f1e128]
+              - img "Mercedes-Benz" [ref=f1e144]
+              - img "Shopify" [ref=f1e147]
+              - img "Philips" [ref=f1e159]
+              - img "Société Générale" [ref=f1e162]
+              - img "Spotify" [ref=f1e180]
+              - img "Vodafone" [ref=f1e183]
+            - button "Pause animation" [ref=f1e276] [cursor=pointer]
+      - generic [ref=f1e280]:
+        - generic [ref=f1e282]:
+          - generic [ref=f1e286]:
+            - heading "開発ワークフローを加速" [level=2] [ref=f1e287]
+            - paragraph [ref=f1e289]: 最初のコードからデプロイまで、GitHub の AI と自動化ツールが、高品質なソフトウェア開発を高速化します。
+          - generic [ref=f1e291]:
+            - button "動画を一時停止する" [ref=f1e297] [cursor=pointer]
+            - generic [ref=f1e299]: GitHub Copilot Chatのウィンドウに [Ask] モードが組み込まれました。ユーザーはドロップダウン メニューで [Ask] モードから エージェントモードに切り替え、「Update the website to allow searching for running races by name (Webサイトを更新して名前別にレース実施を検索できるようにする)」というプロンプトを送信します。GitHub Copilotはコード ベースを分析し、3つのファイルに要求される編集内容について説明してからファイルを生成します。その後、GitHub Copilotは完了を確認し、ユーザーがレースを名前で検索して改ページに対応したフィルター済みの結果を表示できる新たな機能の実現に向けて行われた変更についてまとめます。
+        - generic [ref=f1e307]:
+          - generic [ref=f1e309]:
+            - heading "あらゆる場所でAIパートナーになります。GitHub Copilotはソフトウェア開発ライフサイクルの各ステップですぐに連携できます。" [level=3] [ref=f1e310]
+            - link "GitHub Copilotの詳細を見る" [ref=f1e313] [cursor=pointer]:
+              - /url: /features/copilot
+          - generic [ref=f1e317]:
+            - generic [ref=f1e319]:
+              - generic:
+                - img "Duolingo"
+              - paragraph [ref=f1e320]: GitHub Copilot で開発者のスピードを 25% を向上させる Duolingo
+              - link "お客様事例を読む" [ref=f1e321] [cursor=pointer]:
+                - /url: /customer-stories/duolingo
+            - generic [ref=f1e326]:
+              - generic:
+                - img "Gartner"
+              - paragraph [ref=f1e327]: 2025 Gartner® Magic Quadrant™ for AI Code Assistants
+              - link "ガートナーのレポートを読む" [ref=f1e328] [cursor=pointer]:
+                - /url: https://www.gartner.com/reprints/?id=1-2LVTG7RP&ct=250915&st=sb
+        - generic [ref=f1e337]:
+          - generic [ref=f1e338]:
+            - term [ref=f1e339]:
+              - button [expanded] [ref=f1e340]:
+                - heading "本番に向けた経路を自動化する" [level=3] [ref=f1e342]
+            - definition [ref=f1e345]:
+              - generic [ref=f1e347]:
+                - paragraph [ref=f1e348]: セキュアで信頼できるCI/CDで迅速にリリースしましょう。
+                - link "GitHub Actions について知る" [ref=f1e350] [cursor=pointer]:
+                  - /url: /features/actions
+          - generic [ref=f1e354]:
+            - term [ref=f1e355]:
+              - button [ref=f1e356] [cursor=pointer]:
+                - heading "どこからでもすぐにコーディング" [level=3] [ref=f1e358]
+            - paragraph [ref=f1e361]: 完全なクラウドベースの開発環境を数秒でローンチできます。
+            - link [ref=f1e363] [cursor=pointer]:
+              - /url: /features/codespaces
+              - generic [ref=f1e364]: GitHub Codespaceについて知る
+          - generic [ref=f1e367]:
+            - term [ref=f1e368]:
+              - button [ref=f1e369] [cursor=pointer]:
+                - heading "出先でも調子よく" [level=3] [ref=f1e371]
+            - paragraph [ref=f1e374]: プロジェクト管理やGitHub Copilotへのタスク割り当てをモバイル機器からすべて行えます。
+            - link [ref=f1e376] [cursor=pointer]:
+              - /url: /mobile
+              - generic [ref=f1e377]: GitHub Mobileについて知る
+          - generic [ref=f1e380]:
+            - term [ref=f1e381]:
+              - button [ref=f1e382] [cursor=pointer]:
+                - heading "ツールチェインを構築する" [level=3] [ref=f1e384]
+            - paragraph [ref=f1e387]: アプリケーション、アクション、AI モデルを使用してスタックを拡張しましょう。
+            - link [ref=f1e389] [cursor=pointer]:
+              - /url: /marketplace
+              - generic [ref=f1e390]: GitHub Marketplace を見る
+      - generic [ref=f1e393]:
+        - generic [ref=f1e395]:
+          - generic [ref=f1e399]:
+            - heading "アプリケーション セキュリティで、検出された脆弱性はすぐに修正" [level=2] [ref=f1e400]
+            - paragraph [ref=f1e402]: 脆弱性の検出と修正にAIを使用、チームはよりセキュアなソフトウェアをより早くリリースできます。
+          - generic [ref=f1e409]:
+            - generic [ref=f1e410]:
+              - heading "修正は、瞬時に適用。GitHub Copilot Autofixでデバッグの時間を減らし、本来注力すべき機能開発の時間を増やましょう。" [level=3] [ref=f1e411]
+              - link "GitHub Advanced Securityについて知る" [ref=f1e413] [cursor=pointer]:
+                - /url: /security/advanced-security
+            - img "GitHub Copilot Autofixは脆弱性を含むコードを特定し、説明を提供するとともに、脆弱性を修復するためのセキュアなコードも提案します。" [ref=f1e420]
+        - generic [ref=f1e422]:
+          - generic [ref=f1e423]:
+            - generic [ref=f1e425]:
+              - generic [ref=f1e426]:
+                - paragraph [ref=f1e427]:
+                  - generic [ref=f1e428]: セキュリティ負債を解決。セキュリティ キャンペーンと GitHub Copilot Autofix を活用してアプリケーションの脆弱性を減らしましょう。
+                - link "GitHub Code Security の詳細はこちら" [ref=f1e429] [cursor=pointer]:
+                  - /url: /security/advanced-security/code-security
+              - generic [ref=f1e433]:
+                - img "701 個のアラートのうち 97% が完了したことを示すキャンペーンの進捗状況バーが表示されたセキュリティ キャンペーン画面。合計で 23 個のアラートが残っており、13 個が進行中です。キャンペーンが開始されたのは 20 日前です。その下にあるステータスには、キャンペーンの残り日数が 7 日で、期限日が 2024 年 11 月 15 日であることが表示されています。"
+            - generic [ref=f1e435]:
+              - generic [ref=f1e436]:
+                - paragraph [ref=f1e437]:
+                  - generic [ref=f1e438]: 頼りにできる依存関係。互換性のない変更に対するサポートされた修正で、脆弱な依存関係を更新します。
+                - link "Dependabot の詳細はこちら" [ref=f1e439] [cursor=pointer]:
+                  - /url: /security/advanced-security/software-supply-chain
+              - generic [ref=f1e443]:
+                - img "requirements.txt ファイルで定義された依存関係のリスト。"
+            - generic [ref=f1e445]:
+              - generic [ref=f1e446]:
+                - paragraph [ref=f1e447]:
+                  - generic [ref=f1e448]: シークレット保護のためにできること。漏洩したシークレットの検知、阻止、修復を組織全体で行います。
+                - link "GitHub Secret Protection の詳細はこちら" [ref=f1e449] [cursor=pointer]:
+                  - /url: /security/advanced-security/secret-protection
+              - generic [ref=f1e453]:
+                - img "GitHub のプッシュ保護は、アクティブなシークレットを確認して表示し、プッシュをブロックします。"
+          - generic [ref=f1e454]:
+            - paragraph [ref=f1e458]:
+              - text: 平均修復時間が70%短縮
+              - generic [ref=f1e460]:
+                - text: GitHub Copilot Autofix
+                - superscript [ref=f1e461]:
+                  - link "Footnote 1" [ref=f1e462] [cursor=pointer]:
+                    - /url: "#footnote-1"
+                    - text: "1"
+                - text: を使用
+            - paragraph [ref=f1e466]:
+              - text: 830万件のシークレット漏洩を阻止
+              - generic [ref=f1e468]:
+                - text: プッシュ保護
+                - superscript [ref=f1e469]:
+                  - link "Footnote 1" [ref=f1e470] [cursor=pointer]:
+                    - /url: "#footnote-1"
+                    - text: "1"
+                - text: を使用した過去12か月間の阻止件数
+      - generic [ref=f1e472]:
+        - generic [ref=f1e474]:
+          - generic [ref=f1e478]:
+            - heading "コラボレーションで、コードは進化する" [level=2] [ref=f1e479]
+            - paragraph [ref=f1e481]: 計画、議論、コード レビュー。GitHub なら開発チームのコンテキストは、常にコードのそばに。
+          - img "「OctoArcade Invaders」プロジェクトのタスクが表示されたプロジェクト管理ダッシュボード。タスクは、表形式のレイアウトで「プロトタイプ」、「ベータ」、「ローンチ」といったプロジェクト フェーズ カテゴリーに分類されています。列の 1 つにはサブ問題の進捗状況バーがあり、各問題の進捗率が表示されています。" [ref=f1e493]
+        - generic [ref=f1e496]:
+          - generic [ref=f1e498]:
+            - heading "明確なプランニング。高度なロードマップから通常業務に至るまで、すべてを体系化します。" [level=3] [ref=f1e499]
+            - link "GitHub Projects の詳細はこちら" [ref=f1e502] [cursor=pointer]:
+              - /url: /features/issues
+          - figure [ref=f1e508]:
+            - generic [ref=f1e509]:
+              - generic [ref=f1e510]: “
+              - blockquote [ref=f1e512]:
+                - generic [ref=f1e513]: 新しいソフトウェアエンジニアのオンボードでは、すぐさま生産性を発揮できるようにしてくれます。ソースコード、Issue、プルリクエストのすべてが一か所にまとめられています… GitHubは、単調なタスクから私たちを解放し、仕事で最高の成果を挙げることを可能にする完全なプラットフォームです。
+            - generic [ref=f1e515]:
+              - generic [ref=f1e516]: Fabian Faulhaber
+              - generic [ref=f1e517]: Mercedes-Benz社 アプリケーションマネージャー
+        - generic [ref=f1e523]:
+          - generic [ref=f1e524]:
+            - term [ref=f1e525]:
+              - button [expanded] [ref=f1e526]:
+                - heading "タスクを追跡" [level=3] [ref=f1e528]
+            - definition [ref=f1e531]:
+              - generic [ref=f1e533]:
+                - paragraph [ref=f1e534]: コードに適応するツールを使用してIssueを作成し、プロジェクトを管理しましょう。
+                - link "GitHub Issuesの詳細はこちら" [ref=f1e536] [cursor=pointer]:
+                  - /url: /features/issues
+          - generic [ref=f1e540]:
+            - term [ref=f1e541]:
+              - button [ref=f1e542] [cursor=pointer]:
+                - heading "アイデアを共有したり質問したりする" [level=3] [ref=f1e544]
+            - paragraph [ref=f1e547]: プロジェクトと並行して自由な会話ができるスペースを創りましょう。
+            - link [ref=f1e549] [cursor=pointer]:
+              - /url: /features/discussions
+              - generic [ref=f1e550]: GitHub Discussionsについて知る
+          - generic [ref=f1e553]:
+            - term [ref=f1e554]:
+              - button [ref=f1e555] [cursor=pointer]:
+                - heading "コード変更を共同でレビューする" [level=3] [ref=f1e557]
+            - paragraph [ref=f1e560]: 初期レビューをGitHub Copilotに割り当てることでスピードアップと品質強化を実現できます。
+            - link [ref=f1e562] [cursor=pointer]:
+              - /url: /features/code-review
+              - generic [ref=f1e563]: コード レビューについて知る
+          - generic [ref=f1e566]:
+            - term [ref=f1e567]:
+              - button [ref=f1e568] [cursor=pointer]:
+                - heading "オープンソースプロジェクトに資金を提供" [level=3] [ref=f1e570]
+            - paragraph [ref=f1e573]: オープンソースのパートナーになって、業界を支えるツールやライブラリをサポートしましょう。
+            - link [ref=f1e575] [cursor=pointer]:
+              - /url: /sponsors
+              - generic [ref=f1e576]: GitHub Sponsorsについて知る
+      - generic [ref=f1e579]:
+        - generic [ref=f1e580]:
+          - heading "スタートアップ企業からエンタープライズ企業まで、 GitHubはあらゆる業界のあらゆる規模のチームに合わせてスケールします。" [level=2] [ref=f1e587]
+          - tablist [ref=f1e592]:
+            - generic [ref=f1e593]:
+              - tab "業種別" [ref=f1e595] [cursor=pointer]
+              - tab "規模別" [ref=f1e596] [cursor=pointer]
+              - tab "ユースケース別" [ref=f1e597] [cursor=pointer]
+          - separator [ref=f1e599]
+          - generic [ref=f1e602]:
+            - link "テクノロジー Figmaは開発を合理化してセキュリティを強化 お客様事例を読む" [ref=f1e604] [cursor=pointer]:
+              - /url: /customer-stories/figma
+              - generic [ref=f1e609]:
+                - generic [ref=f1e610]: テクノロジー
+                - paragraph [ref=f1e611]: Figmaは開発を合理化してセキュリティを強化
+                - generic [ref=f1e612]: お客様事例を読む
+            - link "自動車 Mercedes-Benzはソースコードを標準化し、オンボーディングを自動化 お客様事例を読む" [ref=f1e617] [cursor=pointer]:
+              - /url: /customer-stories/mercedes-benz
+              - generic [ref=f1e622]:
+                - generic [ref=f1e623]: 自動車
+                - paragraph [ref=f1e624]: Mercedes-Benzはソースコードを標準化し、オンボーディングを自動化
+                - generic [ref=f1e625]: お客様事例を読む
+            - link "金融サービス Mercado Libreはコーディング時間を50%短縮 お客様事例を読む" [ref=f1e630] [cursor=pointer]:
+              - /url: /customer-stories/mercado-libre
+              - generic [ref=f1e635]:
+                - generic [ref=f1e636]: 金融サービス
+                - paragraph [ref=f1e637]: Mercado Libreはコーディング時間を50%短縮
+                - generic [ref=f1e638]: お客様事例を読む
+        - generic [ref=f1e645]:
+          - link "お客様事例をもっと見る" [ref=f1e647] [cursor=pointer]:
+            - /url: /customer-stories
+          - separator [ref=f1e651]
+          - link "全てのソリューションを見る" [ref=f1e653] [cursor=pointer]:
+            - /url: /solutions
+      - generic [ref=f1e664]:
+        - heading "何百万もの開発者と企業がGitHubをホームと呼ぶ" [level=2] [ref=f1e665]
+        - paragraph [ref=f1e666]: 開発プロセスを拡大していても、単にコーディングを学んでいても、誰にとっても居場所となるのがGitHubです。世界で最も広く採用されている開発者プラットフォームで、あらゆる可能性を形作るテクノロジーを構築しましょう。
+        - generic [ref=f1e667]:
+          - form "GitHub に登録" [ref=f1e668]:
+            - generic [ref=f1e670]:
+              - generic [ref=f1e671]:
+                - generic [ref=f1e672]: メールアドレスを入力
+                - textbox "メールアドレスを入力" [ref=f1e674]:
+                  - /placeholder: you@domain.com
+              - button "GitHub に登録" [ref=f1e675] [cursor=pointer]
+          - link "GitHub Copilot を試す" [ref=f1e677] [cursor=pointer]:
+            - /url: /github-copilot/pro
+      - generic [ref=f1e680]:
+        - heading "Footnotes" [level=2] [ref=f1e681]
+        - list [ref=f1e682]:
+          - listitem [ref=f1e683]:
+            - paragraph [ref=f1e684]:
+              - text: 2025年GitHub社内顧客データ。
+              - link "Back to content 2025年GitHub社内顧客データ。" [ref=f1e685] [cursor=pointer]:
+                - /url: "#footnote-1-ref-0"
+      - generic:
+        - link "Back to top":
+          - /url: "#hero"
+  - contentinfo [ref=f1e691]:
+    - heading "サイト全体のリンク" [level=2] [ref=f1e692]
+    - generic [ref=f1e694]:
+      - region [ref=f1e695]:
+        - link "GitHub のホームページに移動" [ref=f1e696] [cursor=pointer]:
+          - /url: /
+        - heading "開発者ニュースレターをサブスクライブする" [level=3] [ref=f1e699]
+        - paragraph [ref=f1e701]: ヒント、テクニカルガイド、ベストプラクティスを受け取りましょう。毎月 2 回。
+        - link "サブスクライブ" [ref=f1e702] [cursor=pointer]:
+          - /url: /newsletter
+      - generic [ref=f1e705]:
+        - navigation [ref=f1e706]:
+          - heading "プラットフォーム" [level=3] [ref=f1e707]
+          - list [ref=f1e708]:
+            - listitem [ref=f1e709]:
+              - link "機能" [ref=f1e710] [cursor=pointer]:
+                - /url: /features
+            - listitem [ref=f1e712]:
+              - link "Enterprise" [ref=f1e713] [cursor=pointer]:
+                - /url: /enterprise
+            - listitem [ref=f1e715]:
+              - link "Copilot" [ref=f1e716] [cursor=pointer]:
+                - /url: /features/copilot
+            - listitem [ref=f1e718]:
+              - link "AI" [ref=f1e719] [cursor=pointer]:
+                - /url: /features/ai
+            - listitem [ref=f1e721]:
+              - link "セキュリティ" [ref=f1e722] [cursor=pointer]:
+                - /url: /security
+            - listitem [ref=f1e724]:
+              - link "料金" [ref=f1e725] [cursor=pointer]:
+                - /url: /pricing
+            - listitem [ref=f1e727]:
+              - link "Team" [ref=f1e728] [cursor=pointer]:
+                - /url: /team
+            - listitem [ref=f1e730]:
+              - link "リソース" [ref=f1e731] [cursor=pointer]:
+                - /url: https://resources.github.com
+            - listitem [ref=f1e733]:
+              - link "ロードマップ" [ref=f1e734] [cursor=pointer]:
+                - /url: /github/roadmap
+            - listitem [ref=f1e736]:
+              - link "GitHub を比較する" [ref=f1e737] [cursor=pointer]:
+                - /url: /resources/articles/devops-tools-comparison
+        - navigation [ref=f1e739]:
+          - heading "エコシステム" [level=3] [ref=f1e740]
+          - list [ref=f1e741]:
+            - listitem [ref=f1e742]:
+              - link "開発者 API" [ref=f1e743] [cursor=pointer]:
+                - /url: https://docs.github.com/get-started/exploring-integrations/about-building-integrations
+            - listitem [ref=f1e745]:
+              - link "パートナー" [ref=f1e746] [cursor=pointer]:
+                - /url: https://partner.github.com
+            - listitem [ref=f1e748]:
+              - link "教育" [ref=f1e749] [cursor=pointer]:
+                - /url: /edu
+            - listitem [ref=f1e751]:
+              - link "GitHub CLI" [ref=f1e752] [cursor=pointer]:
+                - /url: https://cli.github.com
+            - listitem [ref=f1e754]:
+              - link "GitHub Desktop" [ref=f1e755] [cursor=pointer]:
+                - /url: https://desktop.github.com
+            - listitem [ref=f1e757]:
+              - link "GitHub Mobile" [ref=f1e758] [cursor=pointer]:
+                - /url: /mobile
+            - listitem [ref=f1e760]:
+              - link "GitHub Marketplace" [ref=f1e761] [cursor=pointer]:
+                - /url: /marketplace
+            - listitem [ref=f1e763]:
+              - link "MCP Registry" [ref=f1e764] [cursor=pointer]:
+                - /url: /mcp
+        - navigation [ref=f1e766]:
+          - heading "サポート" [level=3] [ref=f1e767]
+          - list [ref=f1e768]:
+            - listitem [ref=f1e769]:
+              - link "ドキュメント" [ref=f1e770] [cursor=pointer]:
+                - /url: https://docs.github.com
+            - listitem [ref=f1e772]:
+              - link "コミュニティフォーラム" [ref=f1e773] [cursor=pointer]:
+                - /url: https://github.community
+            - listitem [ref=f1e775]:
+              - link "プロフェッショナルサービス" [ref=f1e776] [cursor=pointer]:
+                - /url: https://services.github.com
+            - listitem [ref=f1e778]:
+              - link "プレミアム サポート" [ref=f1e779] [cursor=pointer]:
+                - /url: /enterprise/premium-support
+            - listitem [ref=f1e781]:
+              - link "スキル" [ref=f1e782] [cursor=pointer]:
+                - /url: https://skills.github.com
+            - listitem [ref=f1e784]:
+              - link "状況" [ref=f1e785] [cursor=pointer]:
+                - /url: https://www.githubstatus.com
+            - listitem [ref=f1e787]:
+              - link "GitHub へのお問い合わせ" [ref=f1e788] [cursor=pointer]:
+                - /url: https://support.github.com?tags=dotcom-footer
+            - listitem [ref=f1e790]:
+              - link "Gitとは何ですか?" [ref=f1e791] [cursor=pointer]:
+                - /url: /git-guides
+            - listitem [ref=f1e793]:
+              - link "サイトマップ" [ref=f1e794] [cursor=pointer]:
+                - /url: /sitemap
+        - navigation [ref=f1e796]:
+          - heading "会社" [level=3] [ref=f1e797]
+          - list [ref=f1e798]:
+            - listitem [ref=f1e799]:
+              - link "GitHubについて" [ref=f1e800] [cursor=pointer]:
+                - /url: /about
+            - listitem [ref=f1e802]:
+              - link "GitHub を使用する理由" [ref=f1e803] [cursor=pointer]:
+                - /url: /why-github
+            - listitem [ref=f1e805]:
+              - link "お客様の事例" [ref=f1e806] [cursor=pointer]:
+                - /url: /customer-stories?type=enterprise
+            - listitem [ref=f1e808]:
+              - link "ブログ" [ref=f1e809] [cursor=pointer]:
+                - /url: https://github.blog
+            - listitem [ref=f1e811]:
+              - link "ReadME プロジェクト" [ref=f1e812] [cursor=pointer]:
+                - /url: /readme
+            - listitem [ref=f1e814]:
+              - link "キャリア" [ref=f1e815] [cursor=pointer]:
+                - /url: https://github.careers
+            - listitem [ref=f1e817]:
+              - link "ニュースルーム" [ref=f1e818] [cursor=pointer]:
+                - /url: /newsroom
+            - listitem [ref=f1e820]:
+              - link "インクルージョン" [ref=f1e821] [cursor=pointer]:
+                - /url: /about/diversity
+            - listitem [ref=f1e823]:
+              - link "社会的インパクト" [ref=f1e824] [cursor=pointer]:
+                - /url: https://socialimpact.github.com
+            - listitem [ref=f1e826]:
+              - link "ショップ" [ref=f1e827] [cursor=pointer]:
+                - /url: https://shop.github.com
+    - generic [ref=f1e830]:
+      - navigation "法的情報とリソースのリンク" [ref=f1e831]:
+        - list [ref=f1e832]:
+          - listitem [ref=f1e833]:
+            - time [ref=f1e834]: © 2026 GitHub, Inc.
+          - listitem [ref=f1e835]:
+            - link "規約" [ref=f1e836] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+          - listitem [ref=f1e837]:
+            - link "プライバシー" [ref=f1e838] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+          - listitem [ref=f1e839]:
+            - button "Cookies を管理する" [ref=f1e841] [cursor=pointer]
+          - listitem [ref=f1e842]:
+            - button "個人情報の共有を禁止する" [ref=f1e844] [cursor=pointer]
+      - generic [ref=f1e845]:
+        - navigation "GitHub のソーシャルメディアのリンク" [ref=f1e846]:
+          - list [ref=f1e847]:
+            - listitem [ref=f1e848]:
+              - link "LinkedIn の GitHub" [ref=f1e849] [cursor=pointer]:
+                - /url: https://www.linkedin.com/company/github
+            - listitem [ref=f1e853]:
+              - link "Instagram の GitHub" [ref=f1e854] [cursor=pointer]:
+                - /url: https://www.instagram.com/github
+            - listitem [ref=f1e858]:
+              - link "YouTube の GitHub" [ref=f1e859] [cursor=pointer]:
+                - /url: https://www.youtube.com/github
+            - listitem [ref=f1e863]:
+              - link "X の GitHub" [ref=f1e864] [cursor=pointer]:
+                - /url: https://x.com/github
+            - listitem [ref=f1e868]:
+              - link "TikTok の GitHub" [ref=f1e869] [cursor=pointer]:
+                - /url: https://www.tiktok.com/@github
+            - listitem [ref=f1e873]:
+              - link "Twitch の GitHub" [ref=f1e874] [cursor=pointer]:
+                - /url: https://www.twitch.tv/github
+            - listitem [ref=f1e878]:
+              - link "GitHub 上の GitHub 組織" [ref=f1e879] [cursor=pointer]:
+                - /url: https://github.com/github
+        - button "日本語 - 言語を選択" [ref=f1e884] [cursor=pointer]:
+          - generic [ref=f1e885]: 日本語
