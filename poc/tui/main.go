@@ -91,8 +91,20 @@ func (m *Model) demoState(kind string) error {
 		m.Update(tea.MouseClickMsg{X: grab.X + 3, Y: grab.Y + 1, Button: tea.MouseLeft})
 		m.Update(tea.MouseMotionMsg{X: dst.X + 8, Y: dst.Top + 4, Button: tea.MouseLeft})
 
+	case "graph":
+		// Root the graph on a task that actually HAS both directions, so the
+		// frame proves the layout rather than a degenerate single node.
+		m.curLane = m.b.LaneIndex("backlog")
+		for i, t := range m.cols["backlog"] {
+			if len(t.Deps) > 0 && len(m.g.Blocks(t.ID)) > 0 {
+				m.setPos(i)
+				break
+			}
+		}
+		m.openGraph()
+
 	default:
-		return fmt.Errorf("unknown -demo %q (want move|drag|help)", kind)
+		return fmt.Errorf("unknown -demo %q (want move|drag|graph|help)", kind)
 	}
 	m.relayout()
 	return nil

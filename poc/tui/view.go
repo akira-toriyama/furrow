@@ -46,6 +46,17 @@ func (m *Model) View() tea.View {
 		// far better tmux/mosh support.
 		v.MouseMode = tea.MouseModeCellMotion
 	}
+	// Ask for the Kitty keyboard protocol. Without it a terminal CANNOT ENCODE A
+	// MODIFIED SPACE at all: shift+space arrives as a bare space, so the graph
+	// binding is simply unreachable and the peek opens instead. That is not a
+	// theory — it is what the first person to run this POC hit. Ghostty, kitty,
+	// WezTerm and recent iTerm2 honour this; everywhere else the "S" alias is the
+	// way in, which is why every gesture here keeps a plain-key twin.
+	// ReportAllKeysAsEscapeCodes is the one that matters: a plain space is sent
+	// as TEXT, and text carries no modifier, so shift+space is indistinguishable
+	// from space until every key comes back as an escape code. Basic
+	// disambiguation (flag 1, always on) is not enough for this gesture.
+	v.KeyboardEnhancements = tea.KeyboardEnhancements{ReportAllKeysAsEscapeCodes: true}
 	v.WindowTitle = "furrow board (POC)"
 	return v
 }

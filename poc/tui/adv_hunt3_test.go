@@ -241,7 +241,7 @@ func TestKeyBindingsMatchTheirRealKeyStrings(t *testing.T) {
 		name string
 	}{
 		{tea.KeyPressMsg{Code: tea.KeySpace}, k.Peek, "space"},
-		{tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModShift}, k.Move, "shift+space"},
+		{tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModShift}, k.Graph, "shift+space"},
 		{tea.KeyPressMsg{Code: tea.KeyEnter}, k.Move, "enter"},
 		{tea.KeyPressMsg{Code: tea.KeyEscape}, k.Cancel, "esc"},
 		{tea.KeyPressMsg{Code: tea.KeyTab}, k.NextCol, "tab"},
@@ -260,13 +260,24 @@ func TestKeyBindingsMatchTheirRealKeyStrings(t *testing.T) {
 		}
 	}
 
-	// shift+space lifts a card; plain space opens the peek. If the two ever
-	// collapsed to the same string, one gesture would shadow the other.
+	// shift+space opens the dep graph; plain space opens the peek. If the two
+	// ever collapsed to the same string, one gesture would shadow the other.
+	//
+	// And they DO collapse on a terminal that does not speak the Kitty keyboard
+	// protocol: a legacy terminal cannot encode a modified space at all, so
+	// shift+space arrives as a bare space and the graph is unreachable. That is
+	// not hypothetical — it is what the first person to try this POC hit. The
+	// binding therefore carries "S" as the portable alias, and View() asks for
+	// keyboard enhancements so the pretty gesture works where it can.
 	shifted := tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModShift}
 	if key.Matches(shifted, k.Peek) {
 		t.Error("shift+space also matches the peek binding; the two gestures collide")
 	}
-	if key.Matches(tea.KeyPressMsg{Code: tea.KeySpace}, k.Move) {
-		t.Error("plain space matches the move binding; the two gestures collide")
+	if key.Matches(tea.KeyPressMsg{Code: tea.KeySpace}, k.Graph) {
+		t.Error("plain space matches the graph binding; the two gestures collide")
+	}
+	if !key.Matches(tea.KeyPressMsg{Code: 'S', Text: "S"}, k.Graph) {
+		t.Error("S must open the graph too: it is the only way in on a terminal " +
+			"that cannot encode shift+space")
 	}
 }

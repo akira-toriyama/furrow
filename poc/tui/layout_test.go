@@ -179,12 +179,23 @@ func TestIdxAtYIsMidpointBased(t *testing.T) {
 }
 
 func TestHorizontalLaneScrolling(t *testing.T) {
-	m := boardModel(t, 140, 40)
+	// 140 used to be the width that could not fit six lanes. It fits them now:
+	// the wide-first pass lowered colMinW so a 3840-point ultrawide stops
+	// wasting two thirds of the screen, and six lanes across 140 is the
+	// side-effect. Pick a width narrow enough that panning is still REAL, and
+	// derive it rather than hard-coding a second number that can rot the same
+	// way.
+	w := colMinW*(len(boardLanes)-1) + colGap*(len(boardLanes)-2)
+	m := boardModel(t, w, 40)
 	if m.lay.Visible >= len(m.b.Lanes()) {
-		t.Fatalf("140 columns should not fit all %d lanes", len(m.b.Lanes()))
+		t.Fatalf("%d columns should not fit all %d lanes (visible=%d)",
+			w, len(m.b.Lanes()), m.lay.Visible)
 	}
-	if m.lay.Col("done") != nil {
-		t.Error("the done lane should be off-screen at the left-most offset")
+	// The LAST lane is the one off-screen at offset 0 — naming a specific lane
+	// here is what rotted this test once already.
+	last := boardLanes[len(boardLanes)-1].Name
+	if m.lay.Col(last) != nil {
+		t.Errorf("the %s lane should be off-screen at the left-most offset", last)
 	}
 
 	// Walking the cursor right must pan the strip until the far lane is visible.
