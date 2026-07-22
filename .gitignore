@@ -25,3 +25,8 @@ go.work.sum
 # Local scratch (reference clones live OUTSIDE this repo)
 /.reference/
 /tmp/
+
+# No local board in this code repo — its tasks live on the central board
+# (akira-toriyama/projects), per CLAUDE.md. Gitignored so a stray `furrow init`
+# run from the repo root can never be committed into the code repo again.
+/.furrow/
