@@ -71,6 +71,12 @@ jobs:
       - name: nix flake lockstep guard (version pin + vendorHash freshness)
         run: sh scripts/check-version-lockstep.sh
 
+      # Release config/behavior invariants a plain grep of the configs can't make
+      # (ldflags -X path resolves to the real version package, draft:false, the
+      # soft exit-1 fold). Pure text; complements the artifact-shape dry-run.
+      - name: release-config invariants guard
+        run: sh scripts/check-release-invariants.sh
+
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: 'stable'
