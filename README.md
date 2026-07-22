@@ -90,6 +90,25 @@ furrow done t-0001
 
 `add` defaults the lane to `lanes.default` (`inbox`) and appends within the lane using the sparse priority step. Pass `--status/-s`, `--priority/-p`, `--label/-l`, `--parent`, `--dep`, `--ref`, or `--body` to set fields up front.
 
+### Typed query — `ls -q`
+
+`ls -q "<query>"` filters with a GitHub-Projects-style query folded into one string. It is a **flat AND-list**: whitespace between terms is AND, a comma inside one value is OR, a leading `-` is NOT, and it ANDs with the other filters (`-s/-l/-r`, `--sort`, …) so a query never widens a scoped board. No cross-field OR, no grouping, no in-query sort — GitHub's own ceiling; `--json | jq` owns the long tail.
+
+```sh
+furrow ls -q 'is:actionable label:cli,dx -status:icebox'   # workable now, (cli OR dx), not iced
+furrow ls -q 'value:>=4 is:blocked'                         # high-value but stuck
+furrow ls -q 'no:effort is:open'                            # open, effort not yet estimated
+furrow ls -q 'roi:>2 "typed query"'                         # ROI>2 with a title phrase
+```
+
+- **qualifiers** (`field:value`, comma = OR, repeat = AND): `status`/`lane`, `type`, `label`, `repo`, `id` (prefix), `parent`, `title` (substring). Unknown `status`/`type` values, an unknown qualifier, or an operator on a non-ordinal field are **exit 2** with a stable error `id` and did-you-mean `candidates` (never a silent empty result).
+- **ordinal** (`value`, `effort`, `priority`, `roi`): comparison `>`, `>=`, `<`, `<=` and range `2..4` / `*..3` / `3..*`. An unset estimate (and an undefined `roi`) never satisfies a comparison.
+- **presence**: `has:FIELD` / `no:FIELD` over `label`, `repo` (`no:repo` = a draft), `parent`, `value`, `effort`, `deps`, `refs`, `checklist`, `closed`, `reviewed`.
+- **computed flags** (furrow's own, no GitHub equivalent): `is:actionable` (exactly what `furrow next` hands you), `is:blocked`, `is:stuck` (a container with open work but nothing actionable), `is:open`/`is:closed`/`is:draft`/`is:container`.
+- **free text**: a bare word or `"quoted phrase"` is a case-insensitive substring match over the title.
+
+Today `-q` is wired on `ls`; extending it to `next`/`revisit` and adding date qualifiers (`updated:>=-2w`) and dependency-graph qualifiers (`child-of:`, `depends-on:`) is the tracked next step.
+
 ---
 
 ## The store
@@ -227,7 +246,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 |---|---|---|
 | `init` | Create a .furrow store in the current directory | — |
 | `add <title>...` | Add a task (or many with --stdin) | `--body`, `--check`, `--dep`, `--draft`, `--effort`, `-l/--label`, `--parent`, `-p/--priority`, `--ref`, `-r/--repo`, `-s/--status`, `--stdin`, `--type`, `--value` |
-| `ls [<id>]` (alias `list`) | List tasks (canonical lane->priority->id order), or draw the hierarchy with --tree | `--actionable`, `--archived`, `--blocked`, `--drafts`, `-l/--label`, `-n/--limit`, `--progress-recursive`, `-r/--repo`, `--reverse`, `--since`, `--sort`, `-s/--status`, `--tree`, `--type`, `--until` |
+| `ls [<id>]` (alias `list`) | List tasks (canonical lane->priority->id order), or draw the hierarchy with --tree | `--actionable`, `--archived`, `--blocked`, `--drafts`, `-l/--label`, `-n/--limit`, `--progress-recursive`, `-q/--query`, `-r/--repo`, `--reverse`, `--since`, `--sort`, `-s/--status`, `--tree`, `--type`, `--until` |
 | `show <id>...` | Show tasks with metadata and markdown body (batch-friendly) | `--archived`, `--backlinks`, `--no-body` |
 | `next` | Show actionable tasks (in the next-lanes, all deps done) | `--containers`, `-l/--label`, `--lanes`, `-n/--limit`, `-r/--repo` |
 | `brief` | One-shot session-orient read: next picks with bodies, blocked, revisit, drafts | `-l/--label`, `-n/--limit`, `-r/--repo`, `--stale-days` |

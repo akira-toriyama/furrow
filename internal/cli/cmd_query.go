@@ -27,6 +27,7 @@ func newLsCmd() *cobra.Command {
 		progRec    bool
 		actionable bool
 		blocked    bool
+		queryStr   string
 	)
 	cmd := &cobra.Command{
 		Use:     "ls [<id>]",
@@ -91,6 +92,7 @@ func newLsCmd() *cobra.Command {
 			o.Sort, o.Reverse, o.Archived = sortBy, reverse, archived
 			o.Type = typ
 			o.Actionable, o.Blocked = actionable, blocked
+			o.Query = queryStr
 			if cmd.Flags().Changed("since") {
 				ts, err := parseDateBound(since, false)
 				if err != nil {
@@ -143,6 +145,7 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&progRec, "progress-recursive", false, "with --tree, roll up container progress over the whole subtree (default: direct children only)")
 	cmd.Flags().BoolVar(&actionable, "actionable", false, "only tasks `furrow next` would hand you now (★: a next lane, every dep done); ANDs with -s/-l/-r")
 	cmd.Flags().BoolVar(&blocked, "blocked", false, "only tasks with an unsatisfied dependency (a non-empty blocked_by); ANDs with -s/-l/-r")
+	cmd.Flags().StringVarP(&queryStr, "query", "q", "", "typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, is:actionable|blocked|stuck|open|closed|draft|container, value/effort/roi with >=,<,.. ; ANDs with the other filters")
 	// A task cannot be both actionable (all deps done) and blocked (a dep undone),
 	// so combining them would always be empty — refuse it rather than mislead.
 	cmd.MarkFlagsMutuallyExclusive("actionable", "blocked")

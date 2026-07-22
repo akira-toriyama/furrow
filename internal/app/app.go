@@ -830,6 +830,11 @@ type QueryOpts struct {
 	// lanes instead of the config's, leaving config untouched (non-destructive).
 	// nil/empty = use the configured next-lanes. Only Next reads it.
 	Lanes []string
+	// Query is the raw `-q` typed-query string (empty = no query filter). It is
+	// parsed (internal/query) and compiled against the loaded index into a per-task
+	// predicate that ANDs with every other filter here, so a query never widens a
+	// scoped board. Reads that funnel through listMatched honor it.
+	Query string
 	Limit int
 }
 
@@ -914,6 +919,16 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 	if o.Actionable || o.Blocked {
 		doneIDs = a.doneSet(idx)
 	}
+	// Compile -q once (against the loaded index) into a per-task predicate; a
+	// parse/validation fault fails the whole read with exit 2 before any output.
+	var qpred func(*core.Task) bool
+	if o.Query != "" {
+		p, err := a.compileQuery(o.Query, idx)
+		if err != nil {
+			return nil, nil, err
+		}
+		qpred = p
+	}
 	var out []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
@@ -924,6 +939,9 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 			continue
 		}
 		if o.Blocked && len(blockedDeps(t, doneIDs)) == 0 {
+			continue
+		}
+		if qpred != nil && !qpred(t) {
 			continue
 		}
 		out = append(out, *t)
