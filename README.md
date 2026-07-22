@@ -19,8 +19,6 @@ Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.25+). No database
 > front-end that drives furrow through its CLI/JSON contract, not a part of
 > this binary. Releases are published — see the [Releases page](https://github.com/akira-toriyama/furrow/releases) and [Status](#status).
 
-[日本語版 README →](README.ja.md)
-
 ---
 
 ## Install

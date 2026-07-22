@@ -591,21 +591,24 @@ back into place — see the marshaller-path section.
   Enable the hook once: `git config core.hooksPath scripts/hooks`. Spec:
   [CONTRIBUTING.md](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md).
 - `go build ./...` and `go test ./...` must pass before finishing a turn.
-- Keep [README.md](README.md) / [README.ja.md](README.ja.md) carrying the same
-  FACTS, not the same STRUCTURE, on any user-visible change (bilingual is the
-  house style; JA is intentionally a superset) — **and sweep the docs/ tier
-  (architecture/glossary/non-goals/scheduling) in the same change**: drift pools
-  exactly where no guard looks, and the v5 bump proved it (the parity-guarded
-  READMEs moved; docs/ kept describing a v4 world until an audit caught it).
-  Load-bearing shared facts stay in lockstep, and
+- English is the only committed language — **there is no `README.ja.md`;
+  translations are not stored** (a JA reader translates the EN docs on demand).
+  Keep [README.md](README.md) and the docs/ tier
+  (architecture/glossary/non-goals/scheduling) carrying the same FACTS on any
+  user-visible change, and **sweep the docs/ tier in the same change**: drift
+  pools exactly where no guard looks, and the v5 bump proved it (the guarded
+  README moved; docs/ kept describing a v4 world until an audit caught it).
+  Load-bearing facts stay in lockstep with the code/CI that own them, and
   [`scripts/check-readme-parity.sh`](scripts/check-readme-parity.sh) enforces
-  them by pure text extraction: the `sync-task-status.yml@vX.Y.Z` workflow-pin
-  tag must be **identical in the two READMEs** (a reader copies it verbatim), and
-  every `{"schema_version": N}` literal — in the READMEs (required) **and any
-  docs/*.md that writes one** — must equal `const SchemaVersion` in
-  `internal/core/task.go` (the claim used to be made and NOT checked — which is
-  exactly how both READMEs came to say "board layout v3" against a v4 board; a
-  historic version is prose, "v4", never the JSON-literal form).
+  it by pure text extraction: the `sync-task-status.yml@vX.Y.Z` pin in README's
+  `uses:` example must match the canonical caller
+  [`.github/workflows/task-status.yml`](.github/workflows/task-status.yml) (so a
+  reader never copies a stale pin), and every `{"schema_version": N}` literal —
+  in README.md (required) **and any docs/*.md that writes one** — must equal
+  `const SchemaVersion` in `internal/core/task.go` (the claim used to be made
+  and NOT checked — which is exactly how the README came to say "board layout
+  v3" against a v4 board; a historic version is prose, "v4", never the
+  JSON-literal form).
 - **Don't push without explicit OK.** 1 item = 1 PR (squash); update docs
   in the same PR.
 
