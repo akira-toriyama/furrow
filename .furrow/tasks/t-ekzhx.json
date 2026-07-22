@@ -1,0 +1,21 @@
+{
+  "id": "t-ekzhx",
+  "title": "furrow: リリース出荷不変条件を assertion で pin（ldflags シンボルパス / draft:false / soft exit 1）",
+  "status": "backlog",
+  "priority": 100,
+  "value": 3,
+  "effort": 2,
+  "labels": [
+    "ci",
+    "quality"
+  ],
+  "repos": [],
+  "deps": [],
+  "refs": [],
+  "checklist": [],
+  "created": "2026-07-22T11:07:01Z",
+  "updated": "2026-07-22T11:07:01Z",
+  "closed": null,
+  "reviewed": null,
+  "body": "bodies/t-ekzhx.md"
+}

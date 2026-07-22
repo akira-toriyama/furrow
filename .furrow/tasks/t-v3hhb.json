@@ -1,0 +1,16 @@
+{
+  "id": "t-v3hhb",
+  "title": "task x",
+  "status": "inbox",
+  "priority": 140,
+  "labels": [],
+  "repos": [],
+  "deps": [],
+  "refs": [],
+  "checklist": [],
+  "created": "2026-07-22T07:46:38Z",
+  "updated": "2026-07-22T07:46:38Z",
+  "closed": null,
+  "reviewed": null,
+  "body": "bodies/t-v3hhb.md"
+}

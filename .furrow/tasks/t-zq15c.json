@@ -1,0 +1,21 @@
+{
+  "id": "t-zq15c",
+  "title": "furrow: docs/ tier の drift を機械で捕まえる — architecture.md の command list が brief/boards/doctor/ref を落としている",
+  "status": "backlog",
+  "priority": 120,
+  "value": 3,
+  "effort": 2,
+  "labels": [
+    "ci",
+    "docs"
+  ],
+  "repos": [],
+  "deps": [],
+  "refs": [],
+  "checklist": [],
+  "created": "2026-07-22T11:07:01Z",
+  "updated": "2026-07-22T11:07:01Z",
+  "closed": null,
+  "reviewed": null,
+  "body": "bodies/t-zq15c.md"
+}

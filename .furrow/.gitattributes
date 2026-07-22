@@ -1,0 +1,5 @@
+# machine-written by furrow init — see 'multi-machine sync' in the README.
+# Bodies are append-mostly prose; let git fold concurrent appends together
+# (the task-status marker × local note race) instead of conflicting.
+bodies/*.md merge=union
+archive/bodies/*.md merge=union
