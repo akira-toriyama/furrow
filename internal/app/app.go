@@ -524,7 +524,7 @@ type AddOpts struct {
 // Add creates a task, writes its body file, and saves the index. Returns the
 // created task.
 func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
-	title = strings.TrimSpace(title)
+	title = core.NormalizeTitle(title)
 	if title == "" {
 		return nil, core.Validationf("", "title must not be empty")
 	}
@@ -1303,7 +1303,7 @@ func (a *App) SetEffort(id string, v *int) (*core.Task, error) {
 // SetTitle renames a task's one-line summary. It touches only the shard; use
 // Retitle from the CLI so the body's heading is kept in step.
 func (a *App) SetTitle(id, title string) (*core.Task, error) {
-	title = strings.TrimSpace(title)
+	title = core.NormalizeTitle(title)
 	if title == "" {
 		return nil, core.Validationf(id, "title must not be empty")
 	}

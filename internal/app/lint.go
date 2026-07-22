@@ -48,6 +48,13 @@ func (a *App) Lint() ([]core.Problem, error) {
 		if p, ok := unknownKeyProblem(t.ID, "task shard "+core.TaskPath(t.ID), t.ExtraKeys()); ok {
 			ps = append(ps, p)
 		}
+		// A title with an interior control character (newline/tab/…) injects
+		// structure into the body's "# " heading and splits table rows. Add and
+		// retitle now normalize it, but a bulk import or a hand-edited shard can
+		// still slip one in — flag it (a `furrow retitle` normalizes it away).
+		if core.TitleHasControl(t.Title) {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "control-char", ID: t.ID, Msg: "title contains a control character (newline/tab/etc.); `furrow retitle` will normalize it"})
+		}
 		if t.Status == a.Cfg.DoneLane {
 			doneIDs[t.ID] = true
 			// A done task with no closed timestamp is a zombie: `archive` skips it
