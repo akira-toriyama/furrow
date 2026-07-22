@@ -357,3 +357,32 @@ func TestAheadBehind(t *testing.T) {
 		}
 	})
 }
+
+// TestRunGitForcesCLocale pins that furrow's git subprocesses run under LC_ALL=C
+// regardless of the caller's locale. furrow classifies transient sync races by
+// matching English git stderr substrings (isTransientRace); a localized git
+// (e.g. LANG=ja_JP) would defeat that and misread a retryable race as a
+// permanent failure. A fake "git" reports the locale vars it actually receives.
+func TestRunGitForcesCLocale(t *testing.T) {
+	// a non-C locale in the environment must NOT reach git
+	t.Setenv("LC_ALL", "ja_JP.UTF-8")
+	t.Setenv("LANG", "ja_JP.UTF-8")
+	t.Setenv("LANGUAGE", "ja")
+
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "git")
+	script := "#!/bin/sh\necho \"LC_ALL=[$LC_ALL]\"\necho \"LANGUAGE=[$LANGUAGE]\"\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runGit(context.Background(), fake, dir, "status")
+	if err != nil {
+		t.Fatalf("runGit(fake git): %v", err)
+	}
+	if !strings.Contains(out, "LC_ALL=[C]") {
+		t.Errorf("git must run under LC_ALL=C, got: %q", strings.TrimSpace(out))
+	}
+	if !strings.Contains(out, "LANGUAGE=[]") {
+		t.Errorf("LANGUAGE must be cleared (it overrides LC_ALL for gettext), got: %q", strings.TrimSpace(out))
+	}
+}

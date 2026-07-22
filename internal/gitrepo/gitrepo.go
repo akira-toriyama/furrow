@@ -430,11 +430,37 @@ func runGit(ctx context.Context, git, dir string, args ...string) (stdout, stder
 	// subcommands and refs/paths, never an unescaped user shell string.
 	cmd := exec.CommandContext(ctx, git, args...)
 	cmd.Dir = dir
+	cmd.Env = gitEnv()
 	var so, se strings.Builder
 	cmd.Stdout = &so
 	cmd.Stderr = &se
 	err = cmd.Run()
 	return so.String(), se.String(), err
+}
+
+// gitEnv is the environment for a git subprocess with the locale forced to C.
+// furrow classifies transient sync races by matching English substrings of
+// git's stderr (see isTransientRace), so git must NOT emit localized messages
+// under a non-English LANG/LC_ALL/LANGUAGE — otherwise a retryable race is
+// misread as a permanent failure. Existing locale vars are STRIPPED rather than
+// only appended-over, because getenv resolves a duplicate key to the first
+// occurrence on some platforms, so a trailing "LC_ALL=C" would not reliably win.
+// The git porcelain furrow parses (e.g. `diff --diff-filter=U`) is not
+// localized, so forcing C is safe.
+func gitEnv() []string {
+	base := os.Environ()
+	out := make([]string, 0, len(base)+1)
+	for _, kv := range base {
+		switch {
+		case strings.HasPrefix(kv, "LC_ALL="),
+			strings.HasPrefix(kv, "LANG="),
+			strings.HasPrefix(kv, "LANGUAGE="),
+			strings.HasPrefix(kv, "LC_MESSAGES="):
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, "LC_ALL=C")
 }
 
 // firstLine trims a git stderr blob to its first non-empty line — enough for
