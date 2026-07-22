@@ -95,22 +95,19 @@ gtmp="$(mktemp -d)"
 diff -u config.global.toml "$gtmp/xdg/furrow/config.toml"
 echo "  config.global.toml matches config-init placeholder template"
 
-echo "→ README EN/JA pin-parity guard"
+echo "→ README pin + schema-version guard"
 sh scripts/check-readme-parity.sh
 
-# The command table between the READMEs' commands:begin/end markers is
+# The command table between the README's commands:begin/end markers is
 # GENERATED from the cobra tree (`furrow commands`, spliced by
 # scripts/gen-command-table.sh). Hand-kept lists kept losing commands (the
-# audit found four missing), so the block must equal a fresh run byte-for-byte
-# — in BOTH files, since the block is deliberately identical EN/JA.
+# audit found four missing), so the block must equal a fresh run byte-for-byte.
 echo "→ README command-table drift guard"
 ctmp="$(mktemp -d)"
 "$BIN" commands > "$ctmp/want.md"
-for f in README.md README.ja.md; do
-  awk '/<!-- commands:begin/{f=1;next} /<!-- commands:end/{f=0} f' "$f" > "$ctmp/got.md"
-  diff -u "$ctmp/want.md" "$ctmp/got.md"
-done
-echo "  command table matches the binary (README.md + README.ja.md; regen: scripts/gen-command-table.sh)"
+awk '/<!-- commands:begin/{f=1;next} /<!-- commands:end/{f=0} f' README.md > "$ctmp/got.md"
+diff -u "$ctmp/want.md" "$ctmp/got.md"
+echo "  command table matches the binary (README.md; regen: scripts/gen-command-table.sh)"
 
 # docs/architecture.md keeps its OWN hand-written command list (not the generated
 # table), which had no guard and silently lost commands. Assert it names every

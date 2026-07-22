@@ -103,20 +103,17 @@ jobs:
           ( cd "$gtmp" && XDG_CONFIG_HOME="$gtmp/xdg" /tmp/furrow config init >/dev/null )
           diff -u config.global.toml "$gtmp/xdg/furrow/config.toml"
 
-      - name: README EN/JA pin-parity guard
+      - name: README pin + schema-version guard
         run: sh scripts/check-readme-parity.sh
 
-      # The READMEs' command table is generated from the cobra tree; a fresh
-      # `furrow commands` must equal the spliced block byte-for-byte in BOTH
-      # files (the block is deliberately identical EN/JA). Regen:
+      # The README's command table is generated from the cobra tree; a fresh
+      # `furrow commands` must equal the spliced block byte-for-byte. Regen:
       # scripts/gen-command-table.sh.
       - name: README command-table drift guard
         run: |
           /tmp/furrow commands > /tmp/commands.want.md
-          for f in README.md README.ja.md; do
-            awk '/<!-- commands:begin/{f=1;next} /<!-- commands:end/{f=0} f' "$f" > /tmp/commands.got.md
-            diff -u /tmp/commands.want.md /tmp/commands.got.md
-          done
+          awk '/<!-- commands:begin/{f=1;next} /<!-- commands:end/{f=0} f' README.md > /tmp/commands.got.md
+          diff -u /tmp/commands.want.md /tmp/commands.got.md
 
       # docs/architecture.md keeps its own hand-written command list (not the
       # generated table); this guards it against silently losing commands.
