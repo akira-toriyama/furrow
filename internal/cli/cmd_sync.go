@@ -130,9 +130,11 @@ func newSyncCmd() *cobra.Command {
 			"as git's opaque \"<path>: unmerged\". Relatedly, a body still carrying conflict\n" +
 			"markers is never auto-committed (id \"body-conflict-marker\", exit 2): a commit\n" +
 			"cannot be un-published, and `furrow lint` flags any that got in already.\n\n" +
-			"The progress object {committed, pulled, pushed, conflict, committed_bodies,\n" +
-			"pending_bodies, pending_stash}\n" +
-			"goes to stdout even on failure. After a successful sync it also reports a\n" +
+			"The progress object {committed, pulled, pushed, conflict, complete,\n" +
+			"committed_bodies, pending_bodies, pending_stash} goes to stdout even on\n" +
+			"failure; `complete` is false whenever a body or stash is left pending (and\n" +
+			"the stdout summary line names that count), so a pushed-but-incomplete sync\n" +
+			"never reads as fully published. After a successful sync it also reports a\n" +
 			"revisit summary (repo-scoped counts of tasks with a done dependency or gone\n" +
 			"stale, plus any repos whose human review is older than [review].stale_after_days\n" +
 			"— run furrow review <repo>) so freshly-pulled staleness surfaces in the loop;\n" +

@@ -374,6 +374,15 @@ func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
 	if slices.Contains(p.CommittedBodies, t1.ID) {
 		t.Errorf("t1's foreign edit must not be committed: %v", p.CommittedBodies)
 	}
+	// t-5f43: the sync pushed but is NOT complete (a body is pending). The SAME
+	// stdout summary that claims the push must name that, and --json exposes it as
+	// complete=false — the incompleteness can't hide on a separate stream.
+	if p.Complete {
+		t.Errorf("Complete must be false while a body is pending: %+v", p)
+	}
+	if !strings.Contains(p.SyncSummary(), "pending_bodies=1") {
+		t.Errorf("SyncSummary must name the pending count on the success line, got %q", p.SyncSummary())
+	}
 
 	// Explicit opt-in (-b) commits the named body and clears the pending nudge.
 	p2, err := a.Sync(context.Background(), SyncOpts{Bodies: []string{t1.ID}})
@@ -385,6 +394,13 @@ func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
 	}
 	if got := strings.TrimSpace(runGitT(t, git, cloneA, "status", "--porcelain", "--", bodySpec)); got != "" {
 		t.Errorf("t1 body must be clean after the opt-in sync, status: %q", got)
+	}
+	// Nothing pending now → complete, and the summary drops the pending clause.
+	if !p2.Complete {
+		t.Errorf("Complete must be true once nothing is pending: %+v", p2)
+	}
+	if strings.Contains(p2.SyncSummary(), "pending_bodies") {
+		t.Errorf("a complete sync's summary must not mention pending_bodies, got %q", p2.SyncSummary())
 	}
 }
 

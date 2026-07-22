@@ -530,9 +530,12 @@ board is never left with conflict markers; your local sync commit survives)
 and exits 3 with an error envelope carrying `"id": "sync-conflict"` and
 `"details": {"paths": [...]}` so an agent knows exactly which shards to
 reconcile. The progress object
-`{committed, pulled, pushed, conflict, committed_bodies, pending_bodies,
-pending_stash}` is printed to stdout on success and failure alike (the lists are
-omitted when empty).
+`{committed, pulled, pushed, conflict, complete, committed_bodies,
+pending_bodies, pending_stash}` is printed to stdout on success and failure
+alike (the lists are omitted when empty). `complete` is `false` whenever a body
+or stash is left pending, and the human summary line names that count — so a
+sync that pushed but deliberately left a modified body uncommitted never reads
+as fully published (`pushed: true` alone is not "the board is published").
 
 ### The autostash git can't give back
 

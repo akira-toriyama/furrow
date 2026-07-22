@@ -389,8 +389,11 @@ sync は **rebase を自動 abort** する
 （board に conflict marker を残さない・ローカルの sync commit は残る）。exit 3 の error
 封筒に `"id": "sync-conflict"` と `"details": {"paths": [...]}` が入るので、agent は
 どの shard を手で直せばよいか機械的に分かる。進捗オブジェクト
-`{committed, pulled, pushed, conflict, committed_bodies, pending_bodies, pending_stash}` は
-成功・失敗を問わず stdout に出る（各リストは空なら省略）。
+`{committed, pulled, pushed, conflict, complete, committed_bodies, pending_bodies, pending_stash}` は
+成功・失敗を問わず stdout に出る（各リストは空なら省略）。`complete` は body か stash が
+1つでも pending なら `false` になり、人間向け要約行にもその件数が出る —— push したが
+変更済み body を意図的に未 commit のまま残した sync が「完全に公開済み」とは読めない
+（`pushed: true` 単独では「公開済み」を意味しない）。
 
 ##### git が返してくれない autostash
 
