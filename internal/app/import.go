@@ -53,6 +53,13 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		if s.Draft && len(s.Repos) > 0 {
 			return nil, core.Validationf("", "spec %d (%q): --draft cannot be combined with an explicit repo (-r)", i, s.Title)
 		}
+		// Mirror single Add's type gate (app.go): a bulk spec's type must be in the
+		// [types].order vocabulary, else the whole batch fails before anything is
+		// written. Same precedence as Add (after the draft check, before repo
+		// resolution). Without this, `add --stdin --type bogus` was silently created.
+		if !a.Cfg.IsType(s.Type) {
+			return nil, core.Validationf("", "spec %d (%q): unknown type %q (see [types].order)", i, s.Title, s.Type)
+		}
 		repos, err := resolveRepoArgs(s.Repos, "", universe)
 		if err != nil {
 			return nil, err
@@ -94,6 +101,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 			Value: cloneIntp(s.Value), Effort: cloneIntp(s.Effort),
 			Labels: s.Labels, Repos: s.Repos, Parent: s.Parent, Deps: s.Deps, Refs: s.Refs,
 			Created: now, Updated: now, Body: core.BodyPath(id),
+			Type: s.Type,
 		}
 		// Mirror Add: a task born in the done lane is closed at birth, so bulk
 		// `add --stdin -s done` doesn't leak the same closed:null zombie. A
