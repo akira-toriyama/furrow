@@ -193,6 +193,37 @@ func TestAddRejectsUnknownLaneAndEmptyTitle(t *testing.T) {
 	}
 }
 
+// TestAddAndRetitleFlattenTitle pins that a title's interior newline/control
+// characters are flattened before they reach the body's "# " heading —
+// otherwise a title like "Fix bug\n## Injected" fabricates a second heading in
+// the body markdown. Regression for the title-injection audit (glyph #61
+// Flatten class).
+func TestAddAndRetitleFlattenTitle(t *testing.T) {
+	a := newApp()
+	tk, err := a.Add("Fix bug\n## Injected", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.Title != "Fix bug ## Injected" {
+		t.Errorf("Add must flatten the title to one line, got %q", tk.Title)
+	}
+	if body, _ := a.Store.LoadBody(tk.ID); body != "# Fix bug ## Injected\n" {
+		t.Errorf("the body heading must not gain a fabricated line, got %q", body)
+	}
+
+	// retitle re-splices the title into the H1 heading, so it must flatten too.
+	rt, err := a.Retitle(tk.ID, "New\ntitle")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Title != "New title" {
+		t.Errorf("Retitle must flatten the title, got %q", rt.Title)
+	}
+	if body, _ := a.Store.LoadBody(tk.ID); body != "# New title\n" {
+		t.Errorf("retitle must keep a single H1 heading, got %q", body)
+	}
+}
+
 // --- t-hgxw: write-path silent divergences ---
 
 // (a) A task born directly in the done lane must stamp Closed, so it isn't a

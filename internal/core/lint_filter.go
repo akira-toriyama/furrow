@@ -25,6 +25,7 @@ var lintCodes = map[string]bool{
 	"body-path":            true,
 	"config-clamp":         true,
 	"conflict-marker":      true,
+	"control-char":         true,
 	"dangling-link":        true,
 	"dep-cycle":            true,
 	"dep-missing":          true,
