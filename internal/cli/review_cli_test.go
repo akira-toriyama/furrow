@@ -24,6 +24,29 @@ func TestUnreviewedLine(t *testing.T) {
 	if strings.Contains(many, "o/d") {
 		t.Errorf("4th repo should not be named (cap is 3): %q", many)
 	}
+	// t-nk62: the nudge must name the agent path (`--by agent`) so an agent does
+	// not blindly run the bare `furrow review <repo>`, which records a HUMAN review
+	// and silences the nudge without one happening.
+	if !strings.Contains(one, "--by agent") {
+		t.Errorf("unreviewed nudge must steer an agent to --by agent (bare review = human): %q", one)
+	}
+}
+
+// TestPendingBodiesNote (t-nk62): the sync body nudge leads with the safe
+// `-b <id>` and gates --all-bodies behind its yours-alone precondition, rather
+// than offering --all-bodies as an equal one-word shortcut.
+func TestPendingBodiesNote(t *testing.T) {
+	note := pendingBodiesNote([]string{"t-a", "t-b"})
+	if !strings.Contains(note, "sync -b <id>") {
+		t.Errorf("nudge must lead with the safe -b <id> option: %q", note)
+	}
+	if !strings.Contains(note, "yours alone") {
+		t.Errorf("nudge must carry --all-bodies' yours-alone precondition inline: %q", note)
+	}
+	// The safe option must come BEFORE --all-bodies in the text.
+	if bi, ai := strings.Index(note, "-b <id>"), strings.Index(note, "--all-bodies"); bi < 0 || ai < 0 || bi > ai {
+		t.Errorf("`-b <id>` must precede `--all-bodies`: %q", note)
+	}
 }
 
 // review dispatches by argument shape: an id-shaped token stamps a task's

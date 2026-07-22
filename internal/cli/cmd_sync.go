@@ -80,8 +80,22 @@ func unreviewedLine(repos []app.UnreviewedRepo) string {
 	if len(repos) > len(named) {
 		suffix = fmt.Sprintf(", +%d more", len(repos)-len(named))
 	}
-	return fmt.Sprintf("⚠ %d repo(s) unreviewed: %s%s — furrow review <repo>",
+	// Name the precondition inline: a bare `furrow review <repo>` records a HUMAN
+	// review (advancing this very clock), so an agent that blindly runs it fakes a
+	// human review and silences the nudge without one happening. Tell the agent to
+	// use --by agent (logs a sweep, leaves the human clock alone) instead.
+	return fmt.Sprintf("⚠ %d repo(s) unreviewed: %s%s — human review: `furrow review <repo>`; an agent sweep must use `furrow review <repo> --by agent` (a bare review counts as a HUMAN review)",
 		len(repos), strings.Join(parts, ", "), suffix)
+}
+
+// pendingBodiesNote is the stderr nudge when a sync deliberately left modified
+// bodies uncommitted. It leads with the SAFE option (-b <id>, commits only what
+// you name) and attaches --all-bodies' "yours-alone" precondition inline (t-nk62)
+// — furrow must not offer --all-bodies as an equal one-word shortcut an agent
+// reaches for on a shared checkout, sweeping a co-operator's WIP under it.
+func pendingBodiesNote(ids []string) string {
+	return fmt.Sprintf("note: %d body edit(s) left uncommitted — commit yours with `furrow sync -b <id>` (%s); --all-bodies commits ALL dirty bodies and is safe only on a checkout that is yours alone",
+		len(ids), strings.Join(ids, ", "))
 }
 
 // syncScope builds the strict repo scope for the post-sync summary: the board's
@@ -137,7 +151,8 @@ func newSyncCmd() *cobra.Command {
 			"never reads as fully published. After a successful sync it also reports a\n" +
 			"revisit summary (repo-scoped counts of tasks with a done dependency or gone\n" +
 			"stale, plus any repos whose human review is older than [review].stale_after_days\n" +
-			"— run furrow review <repo>) so freshly-pulled staleness surfaces in the loop;\n" +
+			"— a human runs `furrow review <repo>`, an agent sweep uses --by agent) so\n" +
+			"freshly-pulled staleness surfaces in the loop;\n" +
 			"the JSON gains a \"revisit\" key when non-empty. It is a thin git wrapper — not a\n" +
 			"daemon or a sync server (see docs/non-goals.md).",
 		Example: "  furrow sync                   # commit shards + new bodies, pull --rebase, push\n" +
@@ -171,8 +186,7 @@ func newSyncCmd() *cobra.Command {
 					fmt.Fprintln(out, line)
 				}
 				if len(prog.PendingBodies) > 0 {
-					fmt.Fprintf(errOut, "note: %d body edit(s) left uncommitted (rerun with -b <id> or --all-bodies): %s\n",
-						len(prog.PendingBodies), strings.Join(prog.PendingBodies, ", "))
+					fmt.Fprintln(errOut, pendingBodiesNote(prog.PendingBodies))
 				}
 				// A stranded autostash is reported on EVERY sync, not just the one that
 				// stranded it: the entry sits there silently until someone pops it, and
