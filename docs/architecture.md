@@ -698,8 +698,11 @@ except where noted:
   autostash `rebase @{u}` (onto the tracking ref, not `FETCH_HEAD`, so a
   co-writer's fetch can't race it), `push` (one retry on non-fast-forward), via
   the `internal/gitrepo` adapter. The progress object — stdout on success AND
-  failure — carries `{committed, pulled, pushed, conflict, committed_bodies,
-  pending_bodies, pending_stash}` (the lists omitted when empty). Failure modes, branch
+  failure — carries `{committed, pulled, pushed, conflict, complete,
+  committed_bodies, pending_bodies, pending_stash}` (the lists omitted when
+  empty). `complete` is `false` whenever a body or stash is left pending (the
+  stdout summary line names that count too), so a pushed-but-incomplete sync is
+  never mistaken for a fully-published one. Failure modes, branch
   on the error `id`: `sync-conflict` (exit 3, definitive — the rebase is
   aborted automatically, conflicted paths in `details`), `sync-busy` (exit 3,
   retryable — a foreign in-progress rebase outlived the bounded backoff),

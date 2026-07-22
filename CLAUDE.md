@@ -153,7 +153,12 @@ the user-level config. When you work with any furrow store:
   `pending_bodies` field (its twin `committed_bodies` lists what was committed)
   and in a stderr note, while sync still exits 0 and pushes everything else —
   so after hand-editing a body, run `furrow sync -b <id>` (or check
-  `pending_bodies`); a plain `furrow sync` would leave that edit local. It
+  `pending_bodies`); a plain `furrow sync` would leave that edit local. Because
+  `pushed: true` at exit 0 can still hide such a leftover, the progress object
+  also carries **`complete`** (false whenever `pending_bodies` **or**
+  `pending_stash` is non-empty) and the stdout summary line names the count —
+  branch on `.complete` for "the board is fully published", never on `pushed`
+  alone. It
   rebases onto the tracking ref, not `FETCH_HEAD`, so a co-writer's concurrent
   fetch can't race it into `Cannot rebase onto multiple branches`. On a true
   conflict it aborts the rebase itself and exits 3 with id `sync-conflict` + the

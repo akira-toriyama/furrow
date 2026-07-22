@@ -130,6 +130,12 @@ type SyncProgress struct {
 	Pulled    bool `json:"pulled"`    // pull --rebase completed
 	Pushed    bool `json:"pushed"`    // push completed
 	Conflict  bool `json:"conflict"`  // pull hit conflicts (rebase was aborted)
+	// Complete is true when the sync left NOTHING behind: no PendingBodies and no
+	// PendingStash. A sync can report pushed=true at exit 0 and still be
+	// incomplete (a modified body deliberately not committed), so `pushed` alone
+	// is not "the board is fully published" — `complete` is the single key an
+	// agent branches on. Computed from the final pending state (see Sync's defer).
+	Complete bool `json:"complete"`
 	// CommittedBodies lists task ids whose bodies/<id>.md this sync committed
 	// (new/seeded bodies, or ones named via -b/--all-bodies). PendingBodies lists
 	// modified bodies deliberately LEFT uncommitted on a shared board — rerun with
@@ -355,6 +361,10 @@ func interruptError(err error, ctxErr error) error {
 // the stash nor the fix.
 func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err error) {
 	p = &SyncProgress{}
+	// `complete` is derived from the FINAL pending state on every return path
+	// (success and error), so the "fully published?" bit can never drift from the
+	// lists it summarizes. p is a named return initialized above, so this is safe.
+	defer func() { p.Complete = len(p.PendingBodies) == 0 && len(p.PendingStash) == 0 }()
 	// Collapse a cancellation artifact into one honest "sync-interrupted" (see
 	// interruptError). The progress object is left intact, so it still reports how
 	// far the sync got before the interrupt.
@@ -565,6 +575,16 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 // SyncSummary renders the progress as one terse human line (stdout, non-JSON
 // mode); the JSON object is the agent-facing form.
 func (p *SyncProgress) SyncSummary() string {
-	return fmt.Sprintf("sync: committed=%v pulled=%v pushed=%v conflict=%v",
+	s := fmt.Sprintf("sync: committed=%v pulled=%v pushed=%v conflict=%v",
 		p.Committed, p.Pulled, p.Pushed, p.Conflict)
+	// Name incompleteness on the SAME stream/line that claims success: a sync
+	// that pushed but deliberately left a modified body uncommitted is not done,
+	// and that fact must not live only in a stderr nag (t-5f43).
+	if n := len(p.PendingBodies); n > 0 {
+		s += fmt.Sprintf(" pending_bodies=%d", n)
+	}
+	if n := len(p.PendingStash); n > 0 {
+		s += fmt.Sprintf(" pending_stash=%d", n)
+	}
+	return s
 }
