@@ -90,10 +90,12 @@ func emitRepoReview(rec *core.RepoRecord, byAgent bool) {
 	fmt.Fprintf(out, "reviewed %s (human review: %s)\n", rec.Repo, fmtReviewTime(rec.LastReviewed))
 }
 
-// fmtReviewTime renders a nullable review timestamp for the human line.
+// fmtReviewTime renders a nullable review timestamp for the human line, in the
+// viewer's local TZ + offset to match `show` (humanTime); the --json review
+// view stays UTC RFC3339.
 func fmtReviewTime(t *time.Time) string {
 	if t == nil {
 		return "never"
 	}
-	return t.Format(time.RFC3339)
+	return humanTime(*t)
 }

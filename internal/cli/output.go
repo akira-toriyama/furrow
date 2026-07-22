@@ -729,6 +729,15 @@ func emitShow(items []app.ShowItem, mentions [][]core.Task, single, noBody, back
 // printTaskDetail renders a single task's human detail block for `show`. JSON
 // and NDJSON are handled one layer up in emitShow/showView (which is where the
 // --no-body / --backlinks shape lives), so this is the human path only.
+// humanTime renders a timestamp for HUMAN output in the viewer's local time
+// zone with an explicit offset (e.g. "2026-07-17 12:22 +09:00"), so `show`
+// lines up with `git log` instead of reading as a phantom UTC midnight. Storage
+// and the --json/--ndjson views stay UTC RFC3339 (mustJSON) — this is
+// presentation only, applied inline so the caller's *core.Task is never mutated.
+func humanTime(t time.Time) string {
+	return t.Local().Format("2006-01-02 15:04 -07:00")
+}
+
 func printTaskDetail(t *core.Task, body string) {
 	fmt.Fprintf(out, "%s  %s\n", t.ID, t.Title)
 	fmt.Fprintf(out, "status:   %s\n", t.Status)
@@ -767,10 +776,10 @@ func printTaskDetail(t *core.Task, body string) {
 		}
 		fmt.Fprintf(out, "  %s %s\n", box, c.Text)
 	}
-	fmt.Fprintf(out, "created:  %s\n", t.Created.Format("2006-01-02 15:04"))
-	fmt.Fprintf(out, "updated:  %s\n", t.Updated.Format("2006-01-02 15:04"))
+	fmt.Fprintf(out, "created:  %s\n", humanTime(t.Created))
+	fmt.Fprintf(out, "updated:  %s\n", humanTime(t.Updated))
 	if t.Closed != nil {
-		fmt.Fprintf(out, "closed:   %s\n", t.Closed.Format("2006-01-02 15:04"))
+		fmt.Fprintf(out, "closed:   %s\n", humanTime(*t.Closed))
 	}
 	if strings.TrimSpace(body) != "" {
 		fmt.Fprintf(out, "\n%s\n", strings.TrimRight(body, "\n"))
