@@ -147,6 +147,42 @@ func TestAddManyMatchesSingleAdd(t *testing.T) {
 	}
 }
 
+// TestAddManyCarriesAndValidatesType guards the v5 `type` field across the same
+// bulk-vs-single parity: `add --stdin --type epic` must PERSIST the type (it was
+// silently dropped to a plain task), and `--type bogus` must fail up front (it was
+// silently created). Regression for the AddMany/Add divergence (glyph-import audit).
+func TestAddManyCarriesAndValidatesType(t *testing.T) {
+	a := newApp()
+	created, err := a.AddMany([]AddSpec{
+		{Title: "an epic", AddOpts: AddOpts{Type: "epic"}},
+		{Title: "a plain task", AddOpts: AddOpts{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// (1) the declared type is persisted, exactly as single Add does.
+	if created[0].Type != "epic" {
+		t.Errorf("AddMany dropped --type: got %q, want %q", created[0].Type, "epic")
+	}
+	// a type-less spec stays type-less (resolves to the default), matching single Add.
+	if created[1].Type != "" {
+		t.Errorf("type-less spec should stay type-less, got %q", created[1].Type)
+	}
+	// (2) the persisted type survives a fresh read (bulk output == a later ls).
+	got, _, err := a.Get(created[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Type != "epic" {
+		t.Errorf("persisted type diverges from a read: got %q, want %q", got.Type, "epic")
+	}
+	// (3) an unknown type fails the whole batch up front (exit 2), like single Add,
+	// instead of being silently created.
+	if _, err := a.AddMany([]AddSpec{{Title: "bad", AddOpts: AddOpts{Type: "bogus"}}}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("AddMany with an unknown type should be a validation error, got %v", err)
+	}
+}
+
 func TestAddRejectsUnknownLaneAndEmptyTitle(t *testing.T) {
 	a := newApp()
 	if _, err := a.Add("x", AddOpts{Status: "ghost"}); core.ExitCode(err) != int(core.CodeValidation) {
