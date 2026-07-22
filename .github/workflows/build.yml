@@ -112,6 +112,11 @@ jobs:
             diff -u /tmp/commands.want.md /tmp/commands.got.md
           done
 
+      # docs/architecture.md keeps its own hand-written command list (not the
+      # generated table); this guards it against silently losing commands.
+      - name: docs command-list drift guard
+        run: FURROW_BIN=/tmp/furrow sh scripts/check-docs-commands.sh
+
       - name: smoke test
         run: |
           /tmp/furrow version

@@ -112,6 +112,12 @@ for f in README.md README.ja.md; do
 done
 echo "  command table matches the binary (README.md + README.ja.md; regen: scripts/gen-command-table.sh)"
 
+# docs/architecture.md keeps its OWN hand-written command list (not the generated
+# table), which had no guard and silently lost commands. Assert it names every
+# top-level command the binary registers.
+echo "→ docs command-list drift guard"
+FURROW_BIN="$BIN" sh scripts/check-docs-commands.sh
+
 echo "→ nix flake version ⇄ release-pin lockstep guard"
 sh scripts/check-version-lockstep.sh
 

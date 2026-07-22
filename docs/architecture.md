@@ -655,10 +655,11 @@ A few app-level rules worth stating, all verified against the code:
 Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
 except where noted:
 
-`init`, `add`, `ls` (alias `list`), `show`, `next`, `revisit`, `search`, `stats`, `board`, `edit`,
-`note`, `attach`, `done`, `move`, `set`, `reorder`, `retitle`, `value`, `effort`, `check`, `dep`,
-`parent`, `label`, `repo`, `review`, `apply`, `sync`, `archive`, `upgrade`, `lint`,
-`config` (`init`/`path`), `schema`, `version`, `migrate`.
+`init`, `add`, `ls` (alias `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`,
+`board`, `boards`, `doctor`, `edit`, `note`, `attach`, `done`, `move`, `set`, `reorder`,
+`retitle`, `value`, `effort`, `check`, `dep`, `parent`, `label`, `repo`, `ref`, `review`,
+`apply`, `sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`), `schema`, `version`,
+`migrate`.
 
 - **`set`** applies the routine triage quartet — lane, value, effort, labels — in
   one write (the combined-edit funnel `App.Set`), so triage isn't move+value+
