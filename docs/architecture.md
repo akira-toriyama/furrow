@@ -60,6 +60,8 @@ library.
      internal/schema   JSON Schema source ( `furrow schema [task|meta|repo]` )
      internal/version  build version string (ldflags-injected)
      internal/migrate  pure Task.md parser behind `furrow migrate`
+     internal/query    pure `-q` typed-query parser (lexer+parser -> AST);
+                       app.compileQuery binds the AST to a task predicate
 ```
 
 A dependency arrow means "imports". Note what is **absent**: `internal/core`
@@ -86,6 +88,7 @@ contract an agent does.
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough), the in-memory `Marshal`, the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard, `meta.json`, and a repo review shard as Go constants; emitted by `furrow schema [task|meta|repo]`. |
 | `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |
+| `internal/query` | Pure parser (stdlib only) for the `-q` typed-query DSL: a flat AND-list of `field:value` terms (comma=OR, `-`=NOT, `has:`/`no:`, `is:`) → an AST. It knows the GRAMMAR, not furrow's fields; `internal/app`'s `compileQuery` binds each term to a task predicate (validating fields/lanes, exit 2 + candidates on a miss). |
 | `internal/gittest` | Test-only helper: `Isolate()` neutralizes global/system git config at the process-env level (called from `TestMain`) so real-git tests — especially `App.Sync`'s subprocess — don't flake on a developer's `commit.gpgsign`/`core.hooksPath`. Imported only by `_test.go` files. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |
 
