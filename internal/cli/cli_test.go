@@ -871,10 +871,48 @@ func TestCLICheckAddRepeatable(t *testing.T) {
 	if !strings.Contains(out, "buy milk, eggs") || !strings.Contains(out, "second") {
 		t.Errorf("both --add items should be appended verbatim (comma not split):\n%s", out)
 	}
-	// An empty --add keeps its prior "flag unset" meaning (falls through to the
-	// toggle path, which needs an index) rather than appending a blank bullet.
+	// An empty --add is a validation error (exit 2), never a silent mode switch —
+	// see TestCLICheckAddEmptyIsExit2NotToggle for the with-index regression.
 	if _, code := run(t, "check", id, "--add", ""); code != int(core.CodeValidation) {
-		t.Errorf(`check --add "" with no index should require an index (exit 2), got %d`, code)
+		t.Errorf(`check --add "" should exit 2, got %d`, code)
+	}
+}
+
+// TestCLICheckAddEmptyIsExit2NotToggle is the t-fr3e regression: `check <id>
+// <idx> --add ""` used to DROP the blank add, fall through to the toggle path,
+// and mark item <idx> DONE at exit 0 — an empty value silently switching the
+// command's mode. It must exit 2 and leave the item untouched.
+func TestCLICheckAddEmptyIsExit2NotToggle(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "task")
+	if _, code := run(t, "check", id, "--add", "step one"); code != 0 {
+		t.Fatalf("seed --add exit = %d", code)
+	}
+	if _, code := run(t, "check", id, "0", "--add", ""); code != int(core.CodeValidation) {
+		t.Fatalf(`check <id> 0 --add "" must exit 2, got %d`, code)
+	}
+	out, code := run(t, "--json", "show", id)
+	if code != 0 {
+		t.Fatalf("show exit = %d:\n%s", code, out)
+	}
+	var task struct {
+		Checklist []struct {
+			Text string `json:"text"`
+			Done bool   `json:"done"`
+		} `json:"checklist"`
+	}
+	if err := json.Unmarshal([]byte(out), &task); err != nil {
+		t.Fatalf("parse show: %v\n%s", err, out)
+	}
+	if len(task.Checklist) != 1 {
+		t.Fatalf("want 1 checklist item, got %d:\n%s", len(task.Checklist), out)
+	}
+	if task.Checklist[0].Done {
+		t.Error(`item 0 was toggled done by an empty --add "" (t-fr3e mode-switch regression)`)
+	}
+	// --reword "" is the same class: an explicit empty value is exit 2.
+	if _, code := run(t, "check", id, "0", "--reword", ""); code != int(core.CodeValidation) {
+		t.Errorf(`check <id> 0 --reword "" should exit 2, got %d`, code)
 	}
 }
 
