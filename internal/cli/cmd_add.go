@@ -46,6 +46,12 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// `--body -` reads the initial body from stdin (the shared `-`=stdin
+			// convention; `note`/`done --note` honor it too). `--stdin` (one title
+			// per line) also consumes stdin, so the two cannot both read it.
+			if body == "-" && stdin {
+				return core.Validationf("", "cannot combine --stdin with --body - (stdin has a single stream)")
+			}
 			opts := app.AddOpts{
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
 				Parent: parent, Deps: deps, Refs: refs, Body: body, Checklist: checks,
@@ -73,6 +79,11 @@ func newAddCmd() *cobra.Command {
 			if len(args) == 0 {
 				return core.Validationf("", "provide a title, or --stdin to read titles from stdin")
 			}
+			// Resolve `--body -` (read stdin) for the single-task path; the --stdin
+			// path was excluded above, so body is otherwise a literal here.
+			if opts.Body, err = readTextArg(cmd, body); err != nil {
+				return err
+			}
 			t, err := a.Add(strings.Join(args, " "), opts)
 			if err != nil {
 				return err
@@ -98,7 +109,7 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&parent, "parent", "", "parent task id")
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
 	cmd.Flags().StringSliceVar(&refs, "ref", nil, "reference (file:line or URL, repeatable)")
-	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (default: a heading from the title)")
+	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (`-` reads stdin; default: a heading from the title)")
 	cmd.Flags().StringArrayVar(&checks, "check", nil, "seed an unchecked checklist item (repeatable; text verbatim)")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "read one task title per line from stdin; create all in one write")
 	// A title that begins with '-' (e.g. `add --ndjson-ish title`) is parsed as a
