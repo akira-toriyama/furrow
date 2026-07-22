@@ -27,6 +27,29 @@ var (
 	flagNDJSON bool
 )
 
+// autoCommitApp carries the *app.App a mutating command opened (via openApp) to
+// the root PersistentPostRunE, which runs the post-mutation autocommit. furrow
+// runs one command per process, so a package var is enough (and matches this
+// file's flagJSON/errOut style); the hook consumes it (sets nil) so a later
+// non-store command never sees a stale App.
+var autoCommitApp *app.App
+
+// mutatingCommands names the subcommands that write to the store — the set the
+// autocommit post-run hook fires for. Reads (ls/show/next/brief/revisit/search/
+// stats), diagnostics (board/boards/doctor/lint/config/schema/version), `edit`
+// (whose real change happens out-of-process in $EDITOR), `migrate` (a rare,
+// possibly cross-board rewrite to commit deliberately), and `sync` itself (its
+// own git ritual) are deliberately absent. A command missing here simply does
+// not autocommit its own change — it rides in on the next mutating command's
+// commit — a graceful degradation, never data loss.
+var mutatingCommands = map[string]bool{
+	"init": true, "add": true, "note": true, "attach": true, "done": true,
+	"move": true, "reorder": true, "retitle": true, "set": true, "value": true,
+	"effort": true, "check": true, "dep": true, "parent": true, "label": true,
+	"repo": true, "ref": true, "review": true, "apply": true, "archive": true,
+	"upgrade": true,
+}
+
 // Execute builds the root command, runs it, and maps the result to furrow's
 // exit-code contract:
 //
@@ -156,6 +179,24 @@ func newRootCmd() *cobra.Command {
 			"than provoking an error; `furrow lint` warns schema-outdated.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// After a SUCCESSFUL mutating command, autocommit the board when it opted
+		// in (user-config [[board]] autocommit=true). cobra runs only the nearest
+		// PersistentPostRunE up the tree and ONLY on RunE success; no subcommand
+		// defines one, so this covers them all, and a failed mutation is never
+		// committed. It is best-effort by design (AutoCommitFlush never errors —
+		// it returns warnings), so a commit hiccup can't turn a successful mutation
+		// into a non-zero exit and make an agent retry.
+		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
+			a := autoCommitApp
+			autoCommitApp = nil // consume: the next command re-populates via openApp
+			if a == nil || !a.AutoCommit || !mutatingCommands[cmd.Name()] {
+				return nil
+			}
+			for _, w := range a.AutoCommitFlush(cmd.Context(), cmd.Name(), args).Warnings {
+				fmt.Fprintln(errOut, w)
+			}
+			return nil
+		},
 		// Version holds the full human line (e.g. "furrow v1.2.3 (abc1234, ...)")
 		// so `furrow --version` and the `version` subcommand render identically;
 		// the template below prints it verbatim instead of cobra's default
@@ -309,6 +350,7 @@ func openApp() (*app.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	autoCommitApp = a // hand the resolved App to the root PersistentPostRunE autocommit hook
 	for _, w := range a.ScopeWarnings {
 		fmt.Fprintln(errOut, w)
 	}

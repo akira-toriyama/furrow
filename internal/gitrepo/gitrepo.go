@@ -1,8 +1,9 @@
-// Package gitrepo is the git subprocess adapter behind `furrow sync`: command
-// assembly and error classification for the handful of git operations the sync
-// flow needs, and nothing else. It is deliberately a THIN wrapper — no daemon,
-// no state, no porcelain parsing beyond what the failure contract requires
-// (see docs/non-goals.md).
+// Package gitrepo is the git subprocess adapter behind furrow's git-touching
+// flows — `furrow sync`, `furrow doctor`'s freshness probe, and post-mutation
+// autocommit (see internal/app/autocommit.go): command assembly and error
+// classification for the handful of git operations they need, and nothing else.
+// It is deliberately a THIN wrapper — no daemon, no state, no porcelain parsing
+// beyond what the failure contract requires (see docs/non-goals.md).
 //
 // Layering: this package shells out to git (its own kind of side effect), so it
 // lives beside the store adapters and is driven only through internal/app —

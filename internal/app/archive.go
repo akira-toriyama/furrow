@@ -169,7 +169,7 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 		return nil, err
 	}
 	for _, t := range moved { // both indexes are durable now — safe to delete the source
-		if err := a.Store.DeleteBody(t.ID); err != nil {
+		if err := a.deleteBody(t.ID); err != nil {
 			return nil, err
 		}
 		for _, name := range assetsByID[t.ID] {

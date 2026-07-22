@@ -246,3 +246,27 @@ func TestLoadGlobalBoards_AutoFilterExplicitTrue(t *testing.T) {
 		t.Errorf("boards = %+v, want one with AutoFilter true", boards)
 	}
 }
+
+// autocommit is a per-machine opt-in (default false). Unlike auto_filter it is a
+// plain bool: an omitted key is simply false, no *bool omitted-vs-explicit dance.
+func TestLoadGlobalBoards_AutoCommitDefaultsFalse(t *testing.T) {
+	boards, _, err := LoadGlobalBoards(writeGlobal(t,
+		"[[board]]\npath = \"/a/.furrow\"\nscopes = [\"/a\"]\n")) // no autocommit key
+	if err != nil {
+		t.Fatalf("LoadGlobalBoards: %v", err)
+	}
+	if len(boards) != 1 || boards[0].AutoCommit {
+		t.Errorf("boards = %+v, want one with AutoCommit false when the key is omitted", boards)
+	}
+}
+
+func TestLoadGlobalBoards_AutoCommitExplicitTrue(t *testing.T) {
+	boards, _, err := LoadGlobalBoards(writeGlobal(t,
+		"[[board]]\npath = \"/a/.furrow\"\nscopes = [\"/a\"]\nautocommit = true\n"))
+	if err != nil {
+		t.Fatalf("LoadGlobalBoards: %v", err)
+	}
+	if len(boards) != 1 || !boards[0].AutoCommit {
+		t.Errorf("boards = %+v, want one with AutoCommit true", boards)
+	}
+}

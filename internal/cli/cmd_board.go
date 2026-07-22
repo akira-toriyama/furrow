@@ -140,6 +140,9 @@ func printBoardHuman(b app.BoardInfo) {
 	if b.DefaultLabel != "" {
 		fmt.Fprintf(out, "add tag:  %s\n", b.DefaultLabel)
 	}
+	if b.AutoCommit {
+		fmt.Fprintf(out, "autocommit: on (commits .furrow/ after each mutating command)\n")
+	}
 	fmt.Fprintf(out, "lanes:    %s\n", strings.Join(b.Lanes, ", "))
 	fmt.Fprintf(out, "next:     %s\n", strings.Join(b.NextLanes, ", "))
 	fmt.Fprintf(out, "default:  %s\n", b.DefaultLane)

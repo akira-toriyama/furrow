@@ -106,7 +106,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		if body == "" {
 			body = "# " + t.Title + "\n"
 		}
-		if err := a.Store.SaveBody(id, body); err != nil {
+		if err := a.saveBody(id, body); err != nil {
 			return nil, err
 		}
 		idx.Add(t)

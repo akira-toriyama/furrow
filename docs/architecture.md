@@ -43,7 +43,7 @@ library.
               v                  v                  v                      v
      internal/config   internal/store/fsstore  internal/store/memstore  internal/gitrepo
      read config.toml  the ONLY FS package      in-memory fake           git subprocess
-     (clamp, no write) (atomic write,           (tests, dry-runs)        adapter (sync;
+     (clamp, no write) (atomic write,           (tests, dry-runs)        adapter (git ops;
                          lazy body load,                                 implements no
                          random ids)                                     core port)
               |                  |                  |
@@ -84,7 +84,7 @@ contract an agent does.
 | `internal/config` | Loads `.furrow/config.toml` (read-only, clamp-don't-reject). Produces an effective `Config`. |
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
 | `internal/store/memstore` | In-memory `core.Store` for tests and `migrate --dry-run`. A normal non-test package. |
-| `internal/gitrepo` | git subprocess adapter behind `furrow sync` and `furrow doctor`'s freshness probe (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
+| `internal/gitrepo` | git subprocess adapter behind `furrow sync`, `furrow doctor`'s freshness probe, and post-mutation autocommit (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough), the in-memory `Marshal`, the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard, `meta.json`, and a repo review shard as Go constants; emitted by `furrow schema [task|meta|repo]`. |
 | `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |
@@ -910,6 +910,7 @@ scopes      = ["~/src/github.com/me"]   # at least one; cwd must be under one to
 repo        = "auto"                    # "auto" | "" | a literal "owner/repo"
 label       = ""                        # optional literal tag `add` applies (never filters reads)
 auto_filter = true                      # scope reads by the board repo (default true; false = whole board)
+autocommit  = false                     # commit .furrow/ after each mutating command (default false)
 ```
 
 Resolution is split across two layers, honouring the purity rule:
@@ -944,6 +945,37 @@ explicit knob: a board's per-entry **`auto_filter`** (default true) threads onto
 regardless, so `auto_filter = false` means "attach writes, show the whole
 board". Because the switch is declared in config, the old scope banner is
 gone — filtering is silent (stdout stays pure data).
+
+**`autocommit` (per-board, per-machine).** A board's per-entry `autocommit`
+(default false) makes furrow git-commit the board's `.furrow/` after every
+*mutating* command — the standalone-board convention "touch furrow → always
+commit" turned into a tool guarantee, so the backup/undo record no longer depends
+on remembering to run `furrow sync`. It lives in the **user** config, not the
+board's committed `config.toml`, on purpose: the board config is machine-written
+and `furrow sync` pushes it, so a board-config switch would propagate one
+operator's choice to every clone and to CI (silently breaking the status-sync
+workflow); autocommit is a property of *this machine*, so it belongs here. The
+implementation ([`internal/app/autocommit.go`](../internal/app/autocommit.go),
+driven from a root `PersistentPostRunE` in `internal/cli`) is deliberately thin
+and safe:
+
+- It **reuses `partitionSync`** — the exact rule `furrow sync` commits by — so
+  machine-written shards always commit while a co-located operator's untouched
+  tracked-dirty body is never swept in. The one addition is that the ids **this
+  command wrote** (tracked via `App.bodiesTouched`) are passed as
+  `SyncOpts.Bodies`, so a `furrow note`'s own prose is committed even though the
+  file is already tracked — while everyone else's WIP stays put.
+- It is **best-effort**: the mutation already hit disk, so a commit failure never
+  turns a successful command into a non-zero exit (which would make an agent retry
+  and double-apply). A non-git board, a clean tree, a rebase in progress, an
+  `index.lock` race, a `commit.gpgsign` prompt, or a conflict-marker body each
+  becomes a one-line stderr warning while the command still exits 0.
+- It **never fetches or pushes** — multi-machine convergence stays `furrow sync`'s
+  job; autocommit is a purely local backup.
+- An **ownership guard** refuses to commit when the board's enclosing git repo
+  isn't the board's own (the board resolves below the git top level) — the
+  standalone recipe's classic slip is forgetting `git init` in the board's
+  directory, which would otherwise drop board commits into an enclosing code repo.
 
 **Repo derivation (`repo = "auto"`).** The derivation lives in
 [`internal/app/gitorigin.go`](../internal/app/gitorigin.go) (the app layer is

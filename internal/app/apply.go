@@ -267,7 +267,7 @@ func (a *App) AppendBody(id, line string) (bool, error) {
 	}
 	b.WriteString(line)
 	b.WriteString("\n")
-	if err := a.Store.SaveBody(id, b.String()); err != nil {
+	if err := a.saveBody(id, b.String()); err != nil {
 		return false, err
 	}
 	return true, nil

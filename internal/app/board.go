@@ -19,6 +19,7 @@ type BoardInfo struct {
 	Source       string `json:"source"`        // env|local|pointer|user-config
 	ScopeRepo    string `json:"scope_repo"`    // board-scope repo ("" = whole board)
 	AutoFilter   bool   `json:"auto_filter"`   // reads auto-filter by scope_repo (meaningful only when set)
+	AutoCommit   bool   `json:"autocommit"`    // git-commit .furrow/ after each mutating command (user-config [[board]] opt-in)
 	DefaultLabel string `json:"default_label"` // literal add-time tag ("" = none)
 	BoardVocab
 	SchemaTriple
@@ -82,6 +83,7 @@ func (a *App) Board() BoardInfo {
 		Source:       a.Source,
 		ScopeRepo:    a.DefaultRepo,
 		AutoFilter:   a.AutoFilter,
+		AutoCommit:   a.AutoCommit,
 		DefaultLabel: a.DefaultLabel,
 		BoardVocab:   a.boardVocab(),
 		SchemaTriple: schemaTriple(a.schemaState()),

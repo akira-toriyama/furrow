@@ -65,6 +65,12 @@ type App struct {
 	// per-board auto_filter (default true). Meaningless when DefaultRepo is "".
 	AutoFilter bool
 
+	// AutoCommit reports whether this board opted into post-mutation git commits
+	// (the user-config [[board]] `autocommit` key; default false). When on, the
+	// CLI runs AutoCommitFlush after a successful mutating command. See
+	// autocommit.go.
+	AutoCommit bool
+
 	// ScopeWarnings are discovery-time notes bound for stderr (e.g. the global
 	// default board activated but found no enclosing git repo to derive an
 	// auto repo from).
@@ -87,6 +93,14 @@ type App struct {
 	// means the real cancellable timer (see ctxSleep); tests set a no-op to run
 	// the retry budget instantly.
 	sleep func(time.Duration)
+
+	// bodiesTouched is the set of task ids whose bodies/<id>.md THIS process
+	// created, modified, or deleted (see saveBody/deleteBody). AutoCommitFlush
+	// passes it as SyncOpts.Bodies so autocommit commits the command's OWN body
+	// edits (e.g. `furrow note`'s prose) even when the file is already tracked,
+	// while partitionSync still leaves a co-located operator's untouched
+	// tracked-dirty body alone. nil until the first body write.
+	bodiesTouched map[string]bool
 }
 
 // ctxSleep waits d during Sync's transient-retry backoff, returning early with
@@ -128,6 +142,7 @@ func Open(startDir string) (*App, error) {
 	a.DefaultLabel = res.DefaultLabel
 	a.DefaultRepo = res.DefaultRepo
 	a.AutoFilter = res.AutoFilter
+	a.AutoCommit = res.AutoCommit
 	a.ScopeWarnings = res.ScopeWarn
 	a.Source = res.Source
 	if res.DefaultRepo != "" {
@@ -174,6 +189,7 @@ type resolution struct {
 	DefaultLabel string // literal board tag (add-time union; never read-filters)
 	DefaultRepo  string // board-scope repo ("" = none)
 	AutoFilter   bool   // scope reads by DefaultRepo (pointer: always; board: its auto_filter)
+	AutoCommit   bool   // git-commit .furrow/ after each mutating command (user-config [[board]] opt-in)
 	ScopeWarn    []string
 	Source       string // discovery mechanism: env|local|pointer|user-config
 }
@@ -332,7 +348,7 @@ func resolveGlobalBoard(startDir string) (resolution, bool, error) {
 	if os.Getenv(EnvBoard) != "" {
 		source = "env"
 	}
-	return resolution{Dir: winBoard, DefaultLabel: winner.Label, DefaultRepo: repo, AutoFilter: winner.AutoFilter, ScopeWarn: append(warn, rwarn...), Source: source}, true, nil
+	return resolution{Dir: winBoard, DefaultLabel: winner.Label, DefaultRepo: repo, AutoFilter: winner.AutoFilter, AutoCommit: winner.AutoCommit, ScopeWarn: append(warn, rwarn...), Source: source}, true, nil
 }
 
 // boardScopes returns the scopes to match a board against. A board loaded from
@@ -594,7 +610,7 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	if body == "" {
 		body = "# " + title + "\n"
 	}
-	if err := a.Store.SaveBody(id, body); err != nil {
+	if err := a.saveBody(id, body); err != nil {
 		return nil, err
 	}
 	if err := a.Store.Save(idx); err != nil {
@@ -1312,7 +1328,7 @@ func (a *App) Retitle(id, title string) (*core.Task, error) {
 		return nil, err
 	}
 	if next, changed := retitleHeading(body, t.Title); changed {
-		if err := a.Store.SaveBody(id, next); err != nil {
+		if err := a.saveBody(id, next); err != nil {
 			return nil, err
 		}
 	}
@@ -1747,7 +1763,7 @@ func (a *App) EditPath(id string) (string, error) {
 		return "", core.NotFound(id)
 	}
 	if !a.Store.BodyExists(id) {
-		if err := a.Store.SaveBody(id, ""); err != nil {
+		if err := a.saveBody(id, ""); err != nil {
 			return "", err
 		}
 	}
@@ -1834,7 +1850,43 @@ func (a *App) appendBody(id, text string) error {
 	}
 	b.WriteString(text)
 	b.WriteString("\n")
-	return a.Store.SaveBody(id, b.String())
+	return a.saveBody(id, b.String())
+}
+
+// markBodyTouched records that this process created, modified, or deleted the
+// body of task id — the set AutoCommitFlush passes as SyncOpts.Bodies so
+// autocommit commits the command's OWN body edits even when the file is already
+// tracked (see App.bodiesTouched and autocommit.go). Cheap by design so every
+// body write can call it unconditionally, whether or not autocommit is on.
+func (a *App) markBodyTouched(id string) {
+	if a.bodiesTouched == nil {
+		a.bodiesTouched = map[string]bool{}
+	}
+	a.bodiesTouched[id] = true
+}
+
+// saveBody persists a task's body through the store AND records the id as
+// touched. It is the app-layer funnel for every HOT-store body write; the
+// archive substore's bodies land as machine-written archive/ paths (outside
+// bodies/) and so need no tracking.
+func (a *App) saveBody(id, body string) error {
+	if err := a.Store.SaveBody(id, body); err != nil {
+		return err
+	}
+	a.markBodyTouched(id)
+	return nil
+}
+
+// deleteBody removes a task's body through the store AND records the id as
+// touched, so an archive's hot-side body deletion rides in the SAME autocommit
+// as the archive/ copy it was moved to — rather than being classified as a
+// tracked-dirty pending body and left out of the commit.
+func (a *App) deleteBody(id string) error {
+	if err := a.Store.DeleteBody(id); err != nil {
+		return err
+	}
+	a.markBodyTouched(id)
+	return nil
 }
 
 // cloneIntp returns a copy of an optional int so callers and the store never
