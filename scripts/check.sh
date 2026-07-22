@@ -121,6 +121,13 @@ FURROW_BIN="$BIN" sh scripts/check-docs-commands.sh
 echo "→ nix flake version ⇄ release-pin lockstep guard"
 sh scripts/check-version-lockstep.sh
 
+# Release CONFIG/behavior invariants (ldflags -X path resolves to the real
+# version package; GoReleaser publishes non-draft; release.yml keeps the soft
+# exit-1 fold). Pure text — no goreleaser needed, so unlike the artifact dry-run
+# it always runs.
+echo "→ release-config invariants guard"
+sh scripts/check-release-invariants.sh
+
 echo "→ smoke: init / add / ls --json / next / done / lint / board / upgrade / config init|path"
 sb="$(mktemp -d)"
 ( cd "$sb"
