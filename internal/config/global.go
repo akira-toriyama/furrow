@@ -27,6 +27,12 @@ type GlobalBoard struct {
 	// label="auto" mode), warned about and ignored below.
 	Label      string
 	AutoFilter bool // auto-filter reads (ls/next/revisit) by the board repo; defaults to true when omitted
+	// AutoCommit, when true, makes every mutating furrow command git-commit the
+	// board's .furrow/ afterwards (best-effort, no push) — the standalone-board
+	// backup guarantee turned into a tool behavior. It lives here (per-machine
+	// user config), NOT in the board's committed config.toml, so one operator's
+	// choice never propagates to every clone or to CI. Default false.
+	AutoCommit bool
 }
 
 type rawGlobal struct {
@@ -41,6 +47,10 @@ type rawBoard struct {
 	// AutoFilter is a pointer so an omitted key is distinguishable from an
 	// explicit false: nil clamps to the true default, set honors the value.
 	AutoFilter *bool `toml:"auto_filter"`
+	// AutoCommit defaults FALSE, so a plain bool suffices (the zero value is the
+	// default) — unlike AutoFilter, no omitted-vs-explicit-false distinction is
+	// needed.
+	AutoCommit bool `toml:"autocommit"`
 }
 
 // LoadGlobalBoards parses the user-level furrow config at path and returns its
@@ -100,7 +110,7 @@ func LoadGlobalBoards(path string) ([]GlobalBoard, []string, error) {
 			label = ""
 		}
 		autoFilter := b.AutoFilter == nil || *b.AutoFilter // omitted -> true
-		boards = append(boards, GlobalBoard{Path: b.Path, Scopes: scopes, Repo: b.Repo, Label: label, AutoFilter: autoFilter})
+		boards = append(boards, GlobalBoard{Path: b.Path, Scopes: scopes, Repo: b.Repo, Label: label, AutoFilter: autoFilter, AutoCommit: b.AutoCommit})
 	}
 	if len(boards) == 0 {
 		return nil, warn, nil

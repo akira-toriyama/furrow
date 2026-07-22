@@ -54,6 +54,13 @@ label = ""
 # Auto-filter reads (ls/next/revisit) by the board repo; false shows the whole
 # board while ` + "`add`" + ` still attaches the repo.
 auto_filter = true
+# Commit the board's .furrow/ after every mutating command (best-effort, no
+# push) — the "touch furrow, always commit" backup guarantee turned into a tool
+# behavior, for a standalone single-machine board. PER-MACHINE by design (that
+# is why it lives in THIS file, not the board's shared config.toml): one
+# operator's choice never propagates to other clones or CI. The board must be
+# its own git repo (` + "`git init`" + ` in the board's directory). Default false.
+autocommit = false
 
 # Repeat [[board]] to declare more central boards; the innermost scope wins.
 `

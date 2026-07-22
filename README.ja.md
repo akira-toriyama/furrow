@@ -307,6 +307,7 @@ scopes      = ["~/src/github.com/me"]                 # ここ配下でだけ有
 repo        = "auto"                                  # "auto" = checkout から owner/repo を導出 / "" = 無 / リテラル "owner/repo"
 label       = ""                                      # 任意: `add` が付ける純リテラルタグ（読み取りは絞らない）
 auto_filter = true                                    # ls/next/revisit をボード repo で絞る（既定 true / false = ボード全部）
+autocommit  = false                                   # mutate 系コマンドのたびに .furrow/ を commit（既定 false・best-effort・push しない）
 ```
 
 **cwd が `scopes` のいずれか配下のときだけ**有効で、それ以外では furrow は無設定時と完全に
@@ -328,6 +329,22 @@ user-level の config ファイルの `[[board]]` 群を単発・テスト用の
 board の repo 親）。ただし**より近いストアは上書きしない**——`FURROW_DIR`・ローカル `.furrow`・
 `.furrow-pointer.toml` はいずれも `FURROW_BOARD` に勝つ（発見の優先順位を参照）。廃止された
 `label = "auto"` は警告付きで無視され、`repo = "auto"` へ誘導される。
+
+`autocommit = true` は **mutate 系コマンドのたびにボードの `.furrow/` を git commit する** ——
+standalone ボードの「furrow を触ったら必ず commit」という習慣を、ツール内の保証にする（`furrow
+sync` を思い出さなくても undo/バックアップ点が残る）。これは board の共有 `config.toml` ではなく
+**マシン単位**の user config に置く：board config のスイッチは `furrow sync` で全 clone と CI に
+伝播し（status-sync workflow を静かに壊す）、autocommit は*このマシン*の性質だから。commit 範囲は
+`sync` と同じルール（machine-written な shard は常に・**併走する別セッションの未編集の modified
+body は決して**）に、*このコマンドが書いた* body を加える（`furrow note` の散文が残るように）。
+**best-effort で mutate を止めない**：git 配下でない・変更なし・rebase 中・`index.lock` 競合・
+`commit.gpgsign` プロンプト・conflict marker 入り body、いずれも stderr に 1 行 warn を出しつつ
+コマンドは exit 0（書き込みは済んでいる——非ゼロ終了は二重適用の retry を招くだけ）。**fetch も
+push もしない**——それは `furrow sync` の仕事で、autocommit は純粋にローカルのバックアップ。
+そして **enclosing の git repo がボード自身のものでなければ skip する**（standalone 手順の定番の
+つまずき：ボード dir での `git init` 忘れ——放置すればコードリポにボードの commit を落とす）。
+board config の [`standalone`](#standalone-リモート無しのローカルボード) フラグ（`furrow upgrade`
+の文面だけを変え挙動は変えない）とは別物。
 
 #### per-repo pointer
 
@@ -624,7 +641,7 @@ cmd/furrow/main.go                 = os.Exit(cli.Execute()) のみ
               ├─ internal/config        (config.toml ロード・clamp-don't-reject)
               ├─ internal/store/fsstore (FS に触る唯一の package)
               ├─ internal/store/memstore (in-memory fake)
-              └─ internal/gitrepo       (`furrow sync` 用の git subprocess アダプタ)
+              └─ internal/gitrepo       (git subprocess アダプタ: sync / doctor / autocommit)
                     └─ internal/core  (純ドメイン・stdlib のみ)
 ```
 
@@ -632,7 +649,7 @@ cmd/furrow/main.go                 = os.Exit(cli.Execute()) のみ
 - **`internal/config`** — `config.toml` を読むだけ。clamp-don't-reject。
 - **`internal/store/fsstore`** — **FS に触る唯一の package**。atomic write（同一ディレクトリの tmp + rename）、本文の lazy load、ランダム id 生成（`NextID`、共有カウンタなし）。
 - **`internal/store/memstore`** — in-memory の fake（テスト・dry-run 用）。
-- **`internal/gitrepo`** — `furrow sync` の背後にある git subprocess アダプタ（コマンド組み立て＋エラー分類だけの薄い wrapper）。`internal/app` からのみ駆動され、ストアのファイルには触れない（FS は fsstore の専権のまま）。
+- **`internal/gitrepo`** — furrow の git 操作（`furrow sync`・`furrow doctor` の鮮度確認・mutate 後の autocommit）の背後にある git subprocess アダプタ（コマンド組み立て＋エラー分類だけの薄い wrapper）。`internal/app` からのみ駆動され、ストアのファイルには触れない（FS は fsstore の専権のまま）。
 - **`internal/app`** — **唯一の mutation funnel**。CLI は必ずここを経由する。frozen id・正準順・closed 打刻・body↔shard の対応をここで一括管理する。
 - **`internal/cli`** — cobra アダプタ。furrow の唯一の presentation 層。TUI/GUI は CLI/JSON 契約経由で駆動する別立てのフロントエンド（このリポには含まれない）。
 - **`internal/schema`** — JSON Schema のソース。`internal/version` — ビルドバージョン（リンカ注入。from-source は `dev`）。
@@ -659,12 +676,15 @@ cmd/furrow/main.go                 = os.Exit(cli.Execute()) のみ
    ```toml
    # ~/.config/furrow/config.toml
    [[board]]
-   path   = "/abs/path/to/<code-repo>/claude_workspace/.furrow"
-   scopes = ["/abs/path/to/<code-repo>"]   # この下で `furrow` を叩くと必ずこのボードに解決
-   repo   = "auto"                          # 新規タスクを checkout の owner/repo で自動タグ
+   path       = "/abs/path/to/<code-repo>/claude_workspace/.furrow"
+   scopes     = ["/abs/path/to/<code-repo>"]   # この下で `furrow` を叩くと必ずこのボードに解決
+   repo       = "auto"                          # 新規タスクを checkout の owner/repo で自動タグ
+   autocommit = true                            # 変更のたびにボードを commit —— バックアップ習慣の自動化
    ```
 
 そのうえでボードの `config.toml` に **`standalone = true`** を置く（[設定](#設定furrowconfigtoml)参照）。これは**文面だけを変え、挙動は一切変えない**: `furrow upgrade` が共有ボード前提の flag-day チェックリストと「`furrow sync` して publish」案内を落とす —— 単一マシンのボードには調整すべき pinned CI も publish 先の remote も無いから。書き込みゲート・スキーマ・on-disk フォーマットは共有ボードとバイト単位で同一。
+
+remote の無い standalone ボードでは、commit *だけ*が undo/バックアップの手段。上の `[[board]]` に **`autocommit = true`**（マシン単位の user-config キー・[詳細](#user-level-configper-repo-ファイル不要)）を置けば、あなたやエージェントが思い出さなくても furrow が mutate 系コマンドのたびにボードを commit する —— best-effort（git が commit できなければ warn して続行）・push は決してしない・併走セッションの書きかけ body も巻き込まない。
 
 コードリポの外の完全に別ディレクトリ（例: `~/furrow-boards/app/.furrow`）でも同じ 2 段 config で動く（`path`/`scopes` を変えるだけ）。
 

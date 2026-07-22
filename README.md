@@ -447,6 +447,7 @@ scopes      = ["~/src/github.com/me"]                 # activate only under thes
 repo        = "auto"                                  # "auto" = derive owner/repo from the checkout | "" = none | a literal "owner/repo"
 label       = ""                                      # optional literal tag `add` applies (never filters reads)
 auto_filter = true                                    # scope ls/next/revisit to the board repo (default true; false = whole board)
+autocommit  = false                                   # commit .furrow/ after each mutating command (default false; best-effort, no push)
 ```
 
 A board activates **only when the current directory is under one of its
@@ -474,6 +475,28 @@ parent). It does **not** override a nearer store — `FURROW_DIR`, a local
 `.furrow`, and a `.furrow-pointer.toml` all still win over it (see Discovery
 precedence). The retired `label = "auto"` mode is ignored with a warning pointing
 at `repo = "auto"`.
+
+`autocommit = true` makes furrow **git-commit the board's `.furrow/` after every
+mutating command** — the standalone-board habit "touch furrow → always commit"
+turned into a tool guarantee, so an undo/backup point exists without remembering
+`furrow sync`. It lives here, in the **per-machine** user config, not the board's
+committed `config.toml`: a board-config switch would ride `furrow sync` to every
+clone and to CI (silently breaking the status-sync workflow), whereas autocommit
+is a property of *this* machine. It reuses `sync`'s commit rule (machine-written
+shards always; a **co-located operator's untouched, modified body never** —
+another session's in-progress prose is left alone), and additionally commits the
+body *this* command wrote, so a `furrow note`'s own prose lands. It is
+**best-effort and never blocks the mutation**: a board outside git, a clean tree,
+a rebase in progress, an `index.lock` race, a `commit.gpgsign` prompt, or a
+conflict-marker body each becomes a one-line stderr warning while the command
+still exits 0 (the write already happened — a non-zero exit would only invite a
+double-applying retry). It **never fetches or pushes** — that stays `furrow
+sync`'s job; autocommit is a purely local backup. And it **skips a board whose
+enclosing git repo isn't its own** (the standalone recipe's classic slip:
+forgetting `git init` in the board's directory, which would otherwise drop board
+commits into a code repo). Distinct from the board-config
+[`standalone`](#standalone-a-local-board-with-no-remote) flag, which changes only
+`furrow upgrade`'s wording, never behavior.
 
 ### Per-repo pointer
 
@@ -665,12 +688,15 @@ The common setup on a work machine, where you can't create a shared tracker repo
    ```toml
    # ~/.config/furrow/config.toml
    [[board]]
-   path   = "/abs/path/to/<code-repo>/claude_workspace/.furrow"
-   scopes = ["/abs/path/to/<code-repo>"]   # `furrow` run anywhere under here uses this board
-   repo   = "auto"                          # auto-tag new tasks with the checkout's owner/repo
+   path       = "/abs/path/to/<code-repo>/claude_workspace/.furrow"
+   scopes     = ["/abs/path/to/<code-repo>"]   # `furrow` run anywhere under here uses this board
+   repo       = "auto"                          # auto-tag new tasks with the checkout's owner/repo
+   autocommit = true                            # commit the board after each change — the backup habit, automated
    ```
 
 Then set **`standalone = true`** in the board's `config.toml` (see [Configuration](#configuration)). It changes **only wording, never behavior**: `furrow upgrade` drops the shared-board flag-day checklist and the "run `furrow sync` to publish" line — a single-machine board has no pinned CI to coordinate and no remote to publish to. The write gate, schema, and on-disk format are byte-for-byte identical to a shared board.
+
+On a standalone board with no remote, commits *are* your only undo/backup. Set **`autocommit = true`** in the `[[board]]` entry above (a per-machine user-config key, [detailed here](#user-level-config-no-per-repo-file)) so furrow commits the board after every mutating command instead of relying on you or an agent to remember — best-effort (it warns and carries on if git can't commit), never pushes, and never sweeps a co-located session's in-progress body.
 
 A fully separate directory (e.g. `~/furrow-boards/app/.furrow`, outside the code repo) works too — same two-config setup, just a different `path`/`scopes`.
 
