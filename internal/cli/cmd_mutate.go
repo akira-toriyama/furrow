@@ -98,6 +98,22 @@ func emitMutationManyWith(a *app.App, verb string, ids []string, mutate func() (
 	return nil
 }
 
+// readTextArg resolves a free-text argument that may be "-" — the shared
+// `-`=stdin convention across `add --body`, `note <text>`, and `done --note`,
+// so `-` never means one thing in one command and a literal dash in another.
+// A value other than "-" is returned verbatim (including ""); "-" reads ALL of
+// stdin and returns it unmodified (callers trim for display as needed).
+func readTextArg(cmd *cobra.Command, s string) (string, error) {
+	if s != "-" {
+		return s, nil
+	}
+	data, err := io.ReadAll(cmd.InOrStdin())
+	if err != nil {
+		return "", core.Internalf("", "read stdin: %v", err)
+	}
+	return string(data), nil
+}
+
 func newDoneCmd() *cobra.Command {
 	var note string
 	cmd := &cobra.Command{
@@ -128,13 +144,9 @@ func newDoneCmd() *cobra.Command {
 				}
 				return emitMutationMany(a, "done", args, func() ([]*core.Task, error) { return a.DoneMany(args) })
 			}
-			text := note
-			if text == "-" {
-				data, rerr := io.ReadAll(cmd.InOrStdin())
-				if rerr != nil {
-					return core.Internalf(args[0], "read stdin: %v", rerr)
-				}
-				text = string(data)
+			text, terr := readTextArg(cmd, note)
+			if terr != nil {
+				return terr
 			}
 			// `changed` tracks metadata only, so surface the note's effect the
 			// way the note command does.
@@ -198,13 +210,9 @@ func newNoteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			text := args[1]
-			if text == "-" {
-				data, rerr := io.ReadAll(cmd.InOrStdin())
-				if rerr != nil {
-					return core.Internalf(args[0], "read stdin: %v", rerr)
-				}
-				text = string(data)
+			text, terr := readTextArg(cmd, args[1])
+			if terr != nil {
+				return terr
 			}
 			return emitMutationWith(a, "noted", args[0],
 				func() (*core.Task, error) { return a.AddNote(args[0], text) },
