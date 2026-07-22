@@ -384,16 +384,21 @@ func newCheckCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Drop empty/whitespace-only --add values so `--add ""` keeps its prior
-			// meaning (flag effectively unset → fall through to the toggle path)
-			// rather than appending a blank checklist item. Real items stay verbatim.
-			kept := adds[:0]
-			for _, s := range adds {
-				if strings.TrimSpace(s) != "" {
-					kept = append(kept, s)
+			// An explicitly-passed empty value is a validation error, NEVER a silent
+			// mode switch: dropping a blank --add (the old behavior) let
+			// `check <id> <idx> --add ""` fall through to the toggle path and mark
+			// item <idx> done at exit 0 — a value silently switching the command's
+			// mode. Same rule as `done --note ""` (exit 2, never a silent plain close).
+			if cmd.Flags().Changed("add") {
+				for _, s := range adds {
+					if strings.TrimSpace(s) == "" {
+						return core.Validationf(args[0], "--add needs non-empty text (an empty value is exit 2, never a mode switch)")
+					}
 				}
 			}
-			adds = kept
+			if cmd.Flags().Changed("reword") && strings.TrimSpace(reword) == "" {
+				return core.Validationf(args[0], "--reword needs non-empty text")
+			}
 
 			// index parses the required zero-based item index for the modes that
 			// target an existing item (toggle / --off / --rm / --reword).
