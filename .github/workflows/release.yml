@@ -32,7 +32,7 @@ jobs:
       # go-version: 'stable' + a floor-only go.mod — see build.yml. Ships
       # release binaries built on the current, patched Go without pinning a
       # toolchain that non-CI builds (nix, source installs) may not have.
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: 'stable'
           # Release binaries must not be built from a shared, poisonable module
@@ -144,22 +144,22 @@ jobs:
       # stay concrete. That is v0.8.0's first CRITICAL; the `rel` step above now
       # asserts every one of them resolves, on this run and on every PR.
       - name: Attest SBOM (linux amd64)
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_amd64.tar.gz
           sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_amd64.tar.gz.spdx.sbom.json
       - name: Attest SBOM (linux arm64)
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_arm64.tar.gz
           sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_linux_arm64.tar.gz.spdx.sbom.json
       - name: Attest SBOM (darwin amd64)
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_amd64.tar.gz
           sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_amd64.tar.gz.spdx.sbom.json
       - name: Attest SBOM (darwin arm64)
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_arm64.tar.gz
           sbom-path: dist/furrow_${{ steps.rel.outputs.version }}_darwin_arm64.tar.gz.spdx.sbom.json
