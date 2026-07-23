@@ -902,17 +902,11 @@ There is a **second**, machine-specific config — the user-level
 **central boards**: a single `.furrow` that backs many repos *without* a per-repo
 `.furrow-pointer.toml`. It is to the board-local `config.toml` what `~/.gitconfig`
 is to a repo's `.git/config`: ambient and personal, never committed. Each board
-is a `[[board]]` table (an array, so several can coexist):
-
-```toml
-[[board]]
-path        = "~/src/github.com/me/projects/.furrow"
-scopes      = ["~/src/github.com/me"]   # at least one; cwd must be under one to activate
-repo        = "auto"                    # "auto" | "" | a literal "owner/repo"
-label       = ""                        # optional literal tag `add` applies (never filters reads)
-auto_filter = true                      # scope reads by the board repo (default true; false = whole board)
-autocommit  = false                     # commit .furrow/ after each mutating command (default false)
-```
+is a `[[board]]` table (an array, so several can coexist) carrying `path`,
+`scopes`, `repo`, `label`, `auto_filter`, and `autocommit`. The annotated
+example and the setup walkthrough are the README's job — see [Central
+board](../README.md#user-level-config-no-per-repo-file), the user-facing home
+for the file's shape; what follows here is the *resolution mechanism* behind it.
 
 Resolution is split across two layers, honouring the purity rule:
 
@@ -1029,30 +1023,16 @@ spamming every command's stderr.
 
 ## What's NOT in scope
 
-This document covers the *built* architecture. Several things are deliberately
-**out of scope** for furrow's design; the full rationale lives in
-[`non-goals.md`](non-goals.md). The headline non-goals:
-
-- **No MCP server, no Claude Code plugin.** The plain CLI (with
-  `--json`/`--ndjson` and machine-actionable error envelopes) plus a clonable
-  plain-text store is already the agent interface; a daemon or a second
-  protocol would add nothing but operational surface. The integration layer is
-  a short `CLAUDE.md` block plus `--json` on read
-  commands. The rules that block belongs to: never hand-edit `tasks/<id>.json`
-  (the single marshaller owns them; manual edits churn git), `bodies/*.md` *are*
-  editable, and mutate only through commands.
-- **No binary storage** (no SQLite) and **no YAML.** JSON for the machine-written
-  shards, TOML for human config, Markdown for prose.
-- **No GitHub Issues coupling.** furrow is an *alternative* to Issues, not a
-  client: a clonable plain-text store. "GitHub friendly" means "diffs cleanly",
-  not "syncs to Issues" (see docs/non-goals.md for the boundary with the
-  task-status Action).
-- **No interactive prompting from the CLI, and no in-repo UI.** furrow is
-  CLI-only; an interactive TUI/GUI is an out-of-repo front-end (ridge / loom)
-  that drives the CLI/JSON contract rather than importing furrow's packages.
-- **Web / React UI is out of scope for now** (parked): a future read-only viewer
-  would simply read the `tasks/*.json` shards, which is exactly why clean JSON
-  shards matter.
+This document covers the *built* architecture. What furrow deliberately does
+**not** do — no MCP server or Claude Code plugin, no GitHub Issues coupling, no
+binary store (SQLite) or YAML, no sync daemon or hosted/cloud backend, and no
+in-repo UI (any interactive TUI/GUI is an out-of-repo front-end — ridge / loom —
+over the CLI/JSON contract, never an import of furrow's packages) — is
+catalogued **with the full rationale for each** in
+[`non-goals.md`](non-goals.md), the canonical decision-record. Two design facts
+those choices rest on live above, not there: the CLI *is* the agent interface
+(§ *The coordinator and the CLI contract*), and furrow is non-interactive by
+default (§ *Output, errors, and exit codes*).
 
 ---
 
