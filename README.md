@@ -12,12 +12,10 @@
 
 Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.25+). No database, no daemon, no cloud.
 
-> **Status:** furrow is **CLI-only** — core (first-class `repos`, schema v2 +
-> the two-sided version gate), CLI (incl.
-> `repo`, drafts, `-r` scoping, `sync`, `apply`), and `migrate` all work
-> (`go test ./...` + golangci green). A TUI/GUI is a separate, planned
-> front-end that drives furrow through its CLI/JSON contract, not a part of
-> this binary. Releases are published — see the [Releases page](https://github.com/akira-toriyama/furrow/releases) and [Status](#status).
+> **Status:** furrow is **CLI-only** and shipping — the core domain, the full
+> CLI, and `migrate` all work. A TUI/GUI is a separate, planned front-end over
+> the CLI/JSON contract, not part of this binary. Feature and release detail in
+> [Status](#status); downloads on the [Releases page](https://github.com/akira-toriyama/furrow/releases).
 
 ---
 
@@ -166,12 +164,12 @@ The board-wide layout version lives on its own in `meta.json` (never inside a sh
 
 ### The layout version gates writes (and only `furrow upgrade` raises it)
 
-That number is the **board's** — not the binary's — and it is an **input** to every write, never an output. The gate has two sides:
+That number is the **board's** — not the binary's — and it is an **input** to every write, never an output. The gate has two sides, and the exit code alone says which to fix:
 
-- **The board is newer than your furrow** → every read and write is refused: `schema-too-new`, exit 3. Update the binary (in CI: bump the `sync-task-status.yml@vX.Y.Z` pin). A lenient parse would **misread** such a board — silently behaving as if the fields it doesn't know were not there (sorting, filtering and closing tasks on a partial picture). It would no longer *destroy* them (see [unknown-key passthrough](#a-key-furrow-doesnt-know-is-preserved-not-dropped) below), but preserving is not understanding, which is exactly why this gate stays.
-- **The board is older than your furrow** → it stays fully **readable**, but it is **read-only**: a write fails with `schema-upgrade-required`, exit 2. The board is the stale side, and an explicit command fixes it. Both errors carry `"details": {"board_schema": N, "binary_schema": M}`, and the exit code alone says which side to fix.
+- **The board is newer than your furrow** → refused: `schema-too-new`, exit 3. Update the binary (in CI: bump the `sync-task-status.yml@vX.Y.Z` pin).
+- **The board is older than your furrow** → fully **readable** but **read-only**: a write fails with `schema-upgrade-required`, exit 2. The board is the stale side, and an explicit command fixes it.
 
-So an ordinary command **never** migrates a board as a side effect — `meta.json` is stamped only when a genuinely empty store is created (`furrow init`). `furrow upgrade` is the one deliberate raiser, and it is a **flag day**: once it lands, no older furrow can write that board — including any CI pinned to an older release. furrow cannot see those pins, so you keep the order:
+Both carry `"details": {"board_schema": N, "binary_schema": M}`. An ordinary command **never** migrates a board as a side effect — `meta.json` is stamped only when a genuinely empty store is created (`furrow init`). `furrow upgrade` is the one deliberate raiser, and it is a **flag day**: once it lands, no older furrow can write that board — including any CI pinned to an older release. furrow cannot see those pins, so you keep the order:
 
 ```sh
 furrow board                # schema:   v4 (board) / v5 (binary) — READ-ONLY: run `furrow upgrade`
@@ -181,24 +179,15 @@ furrow upgrade              # 3. preview: which stores change, and how many shar
 furrow upgrade --yes && furrow sync
 ```
 
-On a **standalone board** (`standalone = true`, see [Standalone](#standalone-a-local-board-with-no-remote)) there is no fleet to coordinate, so `furrow upgrade` skips the flag-day checklist and the `furrow sync` step — a single-machine board has no pinned CI and no remote. The gate itself is unchanged; only the guidance differs.
+On a **standalone board** (`standalone = true`, see [Standalone](#standalone-a-local-board-with-no-remote)) there is no fleet to coordinate, so `furrow upgrade` skips the flag-day checklist and the `furrow sync` step. The gate itself is unchanged; only the guidance differs.
 
-`furrow board` reports the whole triple (`schema_version`, `binary_schema_version`, `schema_state` = `current`/`outdated`/`too-new`/`unreadable`, `writable`) and — by design — **never fails on a mismatch**: it is the one command that still answers when board and binary disagree, which is why the bundled task-status workflow pre-flights it and fails with one legible error instead of N mysterious "task not found"s. `furrow lint` warns (`schema-outdated`) while a board waits to be upgraded; it does not error, because a read-only board is the legitimate middle of a flag day.
-
-This is a scar: before the gate, `Save` stamped `meta.json` with the *binary's* version on every write, so a single routine `furrow sync` from an unreleased source build migrated a shared central board and every pinned release in the fleet lost it at once.
+`furrow board` reports the whole triple (`schema_version`, `binary_schema_version`, `schema_state`, `writable`) and — by design — **never fails on a mismatch**: it is the one command that still answers when board and binary disagree, which is why the bundled task-status workflow pre-flights it instead of emitting N mysterious "task not found"s. `furrow lint` warns (`schema-outdated`) without erroring, because a read-only board is the legitimate middle of a flag day. Why the gate exists — and the 2026-07-13 outage a side-effecting `Save` once caused — is in [docs/architecture.md](docs/architecture.md) and [docs/non-goals.md](docs/non-goals.md).
 
 ### A key furrow doesn't know is preserved, not dropped
 
-The gate above only fires when someone **bumps** the version. If a future furrow adds a field and *doesn't* bump — because the change looks "additive" — `meta.json` still says v5, no gate fires anywhere, and an older binary would read the shard, drop the key it doesn't know (that is just what `encoding/json` does), and write the loss back on its next save. **One ordinary write, one destroyed field, no error.**
+The gate above only fires when someone **bumps** the version. A field added *without* a bump would leave `meta.json` still saying v5, so no gate fires and an older binary's lenient parse would drop the unknown key and write the loss back — one ordinary write, one destroyed field, no error. So furrow **parks every top-level key it does not recognise and re-emits it** (sorted, after the known ones) in all three machine-written files. Stated as a pair: *the gate stops a bumped layout from being misread; the passthrough stops an unbumped one from being destroyed.*
 
-So it doesn't. furrow **parks every top-level key it does not recognise and re-emits it** (sorted, after the known ones) in all three machine-written files — a task shard, a `repos/` review shard, and `meta.json`. An old binary hands a future field back exactly as it found it. Stated as a pair: *the gate stops a bumped layout from being misread; the passthrough stops an unbumped one from being destroyed.*
-
-Four limits, none of them papered over:
-
-- **Not retroactive.** Every release up to and including `v0.9.0` still destroys unknown keys on write. A shared board is safe only once **every** writer has this — including each repo's pinned `sync-task-status.yml@vX.Y.Z` CI. Until the last pin is bumped past this release, keep bumping the layout version on every field addition.
-- **Top-level only.** A key inside a known nested object (a `checklist` item) is still dropped. The published JSON Schemas say so: the three top-level objects declare `"additionalProperties": true` (furrow legitimately writes keys it doesn't know, and a schema that called its own output invalid would be a lie), while `$defs/checklistItem` stays `false`.
-- **Preserved is not honoured.** An old binary carries a future `"blocked": true` faithfully — and still hands you that task in `furrow next`, and still lets you close it. Passthrough downgrades silent *data loss* to silent *semantic misbehavior*: a real improvement (loss is unrecoverable; misbehavior is fixed by updating the binary), but only the layout version can say "refuse to operate". `furrow lint` warns **`unknown-shard-key`** so the carried-but-ignored case is visible.
-- **A hand-edit typo is now permanent.** Misspell a key (`"lables"`) and furrow will preserve it forever — auto-deleting a key it doesn't understand *is* the bug being fixed, so nothing will ever clean it up. `furrow lint` flags it; removing it is a hand-edit of your own. One more reason the shards are furrow's to write, not yours.
+Four limits keep it honest: it is **not retroactive** (releases ≤ `v0.9.0` still destroy unknown keys — so keep bumping the layout on every field addition until every pinned CI caller is past them); **top-level only** (a key inside a `checklist` item is still dropped, which is why the schemas flip the three top-level objects to `"additionalProperties": true` but keep `$defs/checklistItem` `false`); and **preserved is not honoured** (an old binary carries a future `"blocked": true` faithfully and still hands you that task in `furrow next` — `furrow lint` warns **`unknown-shard-key`** so the carried-but-ignored case is visible). A corollary: a hand-edit typo (`"lables"`) is now **permanent**, because auto-deleting a key furrow doesn't understand *is* the bug being fixed — one more reason the shards are furrow's to write, not yours. The full mechanism (why "known?" is decided with `strings.EqualFold`, not `strings.ToLower`) is in [docs/architecture.md](docs/architecture.md).
 
 Notes on the fields: `id` is frozen and is the stem of both the shard file (`tasks/t-0001.json`) and the body file (`bodies/t-0001.md`); `priority` is a sparse 10-step integer so an ordinary reorder edits one field instead of renumbering (`reorder --before/--after <id>` computes it relative to a lane-mate; only an exhausted gap respaces the lane, atomically in the same write); `status` is a lane defined in `config.toml`; `repos` is the first-class set of repositories the task relates to (`owner/repo` identifiers, 0..N — an empty set means a **draft**, the GitHub-Issues-draft analogue; labels are pure tags, a repo is *not* a label); `closed` is `null` while open and stamped when a task enters the done lane; empty collections serialize as `[]`, never `null`. `value` and `effort` are an optional coarse 1..5 estimate (importance and cost) — both omitted while unset, so dropping an idea into the inbox stays friction-free — and out-of-range scores clamp to 1..5. The JSON Schema for a shard lives at [`docs/schema/furrow.task.v2.json`](docs/schema/furrow.task.v2.json) and for `meta.json` at [`docs/schema/furrow.meta.v2.json`](docs/schema/furrow.meta.v2.json); both are emitted by `furrow schema` (`task` by default, `meta` for the board version).
 
@@ -343,16 +332,7 @@ furrow is **non-interactive by default** — it never prompts. Destructive opera
 | `3+` | internal / I/O error |
 | `130` / `143` | a `SIGINT` / `SIGTERM` interrupted the run (128+signal by Unix convention) — e.g. Ctrl-C during `furrow sync`, which returns `sync-interrupted` (retryable). A deliberate `sync-conflict` is not a cancellation and keeps its exit `3`. |
 
-The **schema gate** is the one place where the exit code, not the id, is what tells you which side is stale — so it is worth stating explicitly:
-
-| id | Code | Which side is stale | What to do |
-|---|---|---|---|
-| `schema-upgrade-required` | `2` | the **board** — it is behind this binary. Fully readable, but **read-only** | `furrow upgrade` (a flag day: bump every pinned caller **first**) |
-| `schema-too-new` | `3` | the **binary** — the board declares a layout it does not know | update furrow; in CI, bump the `sync-task-status.yml@vX.Y.Z` pin |
-
-Both carry `details {board_schema, binary_schema}`. Note `schema-too-new` is a *deliberate* refusal that still exits `3`: the fix is the binary, not the input. To ask "can I write here?" **without provoking an error**, read `furrow board --json`'s `writable` / `schema_state` (it never fails on a mismatch — see [The layout version gates writes](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)); `furrow lint` warns `schema-outdated`.
-
-The same contract is printed by `furrow --help` (and each affected command's help), so it is discoverable from the binary, not just here.
+The **schema gate** is the one place where the exit code, not the id, says which side is stale: `schema-upgrade-required` (exit 2) = the board is behind, run `furrow upgrade`; `schema-too-new` (exit 3) = the binary is behind, update furrow (in CI, bump the `sync-task-status.yml@vX.Y.Z` pin). Both carry `details {board_schema, binary_schema}`; to ask "can I write here?" **without provoking an error**, read `furrow board --json`'s `writable`/`schema_state` (see [the layout gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)). The same contract is printed by `furrow --help` (and each affected command's help), so it is discoverable from the binary, not just here.
 
 On a non-zero exit, furrow prints a structured error object to stderr:
 
@@ -360,16 +340,13 @@ On a non-zero exit, furrow prints a structured error object to stderr:
 {"error":{"code":2,"id":"t-0001","message":"unknown lane \"backlogg\""}}
 ```
 
-When an input almost resolved — an ambiguous repo short name, an unknown lane, a
-parent command's unknown subcommand (`config show`), or a label that uniquely
-names a repo (the did-you-mean guard) — the envelope also carries
-`"candidates": [ … ]`, so a script picks an alternative from the array instead
-of parsing the message prose. Likewise a partial `show` batch
-(some ids unknown) still prints the found tasks and exits 1 with
-`"details": {"missing": ["t-…", …]}` — branch on the array, never the message.
-The version gate uses the same shape: `schema-upgrade-required` (exit 2) and
-`schema-too-new` (exit 3) both carry
-`"details": {"board_schema": N, "binary_schema": M}`.
+When an input *almost* resolved, the envelope adds a `"candidates": [ … ]` array
+so a script picks an alternative instead of parsing prose — an ambiguous repo
+short name, an unknown lane, a parent command's unknown subcommand (`config
+show`), or a label that uniquely names a repo (the did-you-mean guard). A partial
+`show` batch adds `"details": {"missing": ["t-…", …]}` and exits 1; the version
+gate adds `"details": {"board_schema": N, "binary_schema": M}`. Branch on the
+array, never the message.
 
 ### CI: auto-update a tracker from PRs
 
@@ -475,24 +452,21 @@ precedence). The retired `label = "auto"` mode is ignored with a warning pointin
 at `repo = "auto"`.
 
 `autocommit = true` makes furrow **git-commit the board's `.furrow/` after every
-mutating command** — the standalone-board habit "touch furrow → always commit"
-turned into a tool guarantee, so an undo/backup point exists without remembering
-`furrow sync`. It lives here, in the **per-machine** user config, not the board's
-committed `config.toml`: a board-config switch would ride `furrow sync` to every
-clone and to CI (silently breaking the status-sync workflow), whereas autocommit
-is a property of *this* machine. It reuses `sync`'s commit rule (machine-written
-shards always; a **co-located operator's untouched, modified body never** —
-another session's in-progress prose is left alone), and additionally commits the
-body *this* command wrote, so a `furrow note`'s own prose lands. It is
-**best-effort and never blocks the mutation**: a board outside git, a clean tree,
-a rebase in progress, an `index.lock` race, a `commit.gpgsign` prompt, or a
-conflict-marker body each becomes a one-line stderr warning while the command
-still exits 0 (the write already happened — a non-zero exit would only invite a
-double-applying retry). It **never fetches or pushes** — that stays `furrow
-sync`'s job; autocommit is a purely local backup. And it **skips a board whose
-enclosing git repo isn't its own** (the standalone recipe's classic slip:
-forgetting `git init` in the board's directory, which would otherwise drop board
-commits into a code repo). Distinct from the board-config
+mutating command** — the standalone habit "touch furrow → always commit" as a
+tool guarantee, so an undo/backup point exists without remembering `furrow sync`.
+It lives here, in the **per-machine** user config, not the board's committed
+`config.toml`: a board-config switch would ride `furrow sync` to every clone and
+to CI (silently breaking the status-sync workflow), whereas autocommit is a
+property of *this* machine. It reuses `sync`'s commit rule (machine-written shards
+always; a co-located operator's untouched, modified body never) plus the body
+*this* command wrote, so a `furrow note`'s own prose lands. It is **best-effort
+and never blocks the mutation** (any commit failure — a board outside git, a clean
+tree, a `commit.gpgsign` prompt, a conflict-marker body — is a one-line stderr
+warning while the command still exits 0), it **never fetches or pushes** (that
+stays `furrow sync`'s job — autocommit is a purely local backup), and it **skips a
+board whose enclosing git repo isn't its own** (the classic slip of forgetting
+`git init` in the board's directory, which would drop board commits into a code
+repo). Distinct from the board-config
 [`standalone`](#standalone-a-local-board-with-no-remote) flag, which changes only
 `furrow upgrade`'s wording, never behavior.
 
@@ -554,81 +528,51 @@ non-interactive command — a thin git wrapper, not a sync daemon or server
 
 Per-task shards make true conflicts rare — two machines *adding* tasks touch
 disjoint files; only both sides editing the *same* task conflicts. **Bodies go
-one step further: they never conflict on concurrent appends.** `furrow init`
-scaffolds `.furrow/.gitattributes` with `bodies/*.md merge=union` (and the
-`archive/bodies/` twin), so the commonest collision on a shared board — the
-task-status bot appending a marker line while a session appends a note to the
-same body — folds both paragraphs together instead of stopping the sync
-(git's built-in union driver, honored by `pull --rebase`; an e2e test pins
-it). A body is append-mostly prose with no meaningful textual conflict; a
-*shard* conflict stays a real conflict — union on JSON would corrupt it, and
-two writers disagreeing about one task is a disagreement a human should see.
-A board initialized before the scaffold existed just adds that line and
-commits it — `furrow doctor` warns (`no-body-union-merge`) until it does.
-When a real conflict happens sync **aborts the rebase automatically** (the
-board is never left with conflict markers; your local sync commit survives)
-and exits 3 with an error envelope carrying `"id": "sync-conflict"` and
-`"details": {"paths": [...]}` so an agent knows exactly which shards to
-reconcile. The progress object
+one step further:** `furrow init` scaffolds `.furrow/.gitattributes` with
+`bodies/*.md merge=union` (and the `archive/bodies/` twin), so the commonest
+collision — a bot appending a status marker while a session appends a note to the
+same body — folds both paragraphs instead of stopping the sync (a *shard*
+conflict stays real — union on JSON would corrupt it). A board initialized before
+the scaffold just adds that line; `furrow doctor` warns `no-body-union-merge`
+until it does. On a real conflict sync **aborts the rebase automatically** (the
+board is never left with markers; your local sync commit survives) and exits 3
+with `"id": "sync-conflict"` + `"details": {"paths": [...]}`. The progress object
 `{committed, pulled, pushed, conflict, complete, committed_bodies,
-pending_bodies, pending_stash}` is printed to stdout on success and failure
-alike (the lists are omitted when empty). `complete` is `false` whenever a body
-or stash is left pending, and the human summary line names that count — so a
-sync that pushed but deliberately left a modified body uncommitted never reads
-as fully published (`pushed: true` alone is not "the board is published").
+pending_bodies, pending_stash}` prints to stdout on success and failure alike
+(empty lists omitted); **`complete`** — not `pushed` — is the "fully published"
+flag, `false` whenever a body or stash is left pending.
 
-### The autostash git can't give back
+### Sync failure modes
 
-Step 2 stashes your *other* dirty files (anything outside the sync commit) so the
-rebase can run, and re-applies them afterwards. When that re-apply conflicts with
-what was just pulled, git does something quiet: it keeps your changes **in the
-stash**, prints a warning to stderr, and **exits 0**. The rebase "succeeded"; your
-edits are simply no longer in the working tree. Nothing in an exit code can see it
-— and if the file was a half-written `bodies/<id>.md`, that is furrow's progress
-record hanging in mid-air.
+Two failures are worth knowing; both are branch-on-the-`id`, and the full
+taxonomy (with the git-level reasons) is in
+[docs/architecture.md](docs/architecture.md):
 
-So sync inspects the stash itself, and reports what it finds:
+- **A stranded autostash.** Step 2 stashes your *other* dirty files for the
+  rebase; if git's re-apply conflicts it keeps them **in the stash**, warns on
+  stderr, and **exits 0** — the edits silently leave your working tree (and if
+  one was a half-written body, that is a progress record left in mid-air). So
+  sync probes the stash: the run that strands one fails (`sync-stash-stranded`,
+  exit 3, nothing pushed — recover with `git stash pop`, then re-run), any
+  leftover is re-reported in `pending_stash` every sync until popped (your own
+  `git stash` entries are never touched), and the unmerged index it leaves is
+  explained by a pre-flight (`sync-unmerged`, exit 2) instead of git's opaque
+  error. A body carrying conflict markers is refused before commit
+  (`body-conflict-marker`, exit 2); `furrow lint`'s `conflict-marker` rule covers
+  any that got in.
+- **A concurrent writer.** A shared checkout races: a foreign rebase caught
+  mid-flight is waited out with a bounded backoff and, if still going, exits 3
+  with the **retryable** `sync-busy` (re-run — not the `exit 2` "fix the args"
+  class — usually the other writer has finished by then; a rebase genuinely stuck
+  *here* is cleared with a manual `git rebase --abort`); a fetch/lock race is
+  retried, and a lock still blocking past the budget (a likely-stale
+  `.git/*.lock`) fails **terminally** naming the lock, rather than looping an
+  agent on a `sync-busy` that will never clear.
 
-- The sync that strands one **fails** — `"id": "sync-stash-stranded"` (exit 3),
-  `"details": {"pending_stash": [{"ref", "commit", "paths"}]}`, and nothing is
-  pushed. Recover with `git stash pop`, then re-run.
-- Any autostash entry still sitting there is reported by **every** sync (in
-  `pending_stash`, plus a stderr warning) until it is popped or dropped — a
-  leftover nobody is told about is exactly the failure being fixed. Your own
-  `git stash` entries are yours, and are never touched or reported.
-- The index such a failure leaves behind (unmerged paths, no operation in
-  progress) is explained rather than relayed: a pre-flight fails with
-  `"id": "sync-unmerged"` (exit 2), naming both the unmerged paths and the stash
-  still holding the other half — instead of git's opaque `notes.md: unmerged (…)`.
-
-And the wreckage such a failed re-apply leaves behind — conflict markers written
-into the working-tree file — is refused at the door: a body carrying
-`<<<<<<<` / `=======` / `>>>>>>>` is **never auto-committed** (`"id":
-"body-conflict-marker"`, exit 2, nothing committed). A commit cannot be
-un-published, and `furrow lint`'s `conflict-marker` rule (error) covers any that
-got in before.
-
-On a **successful** sync it also prints a repo-scoped `revisit` summary: open
-tasks with a done dependency (`dep_done`) or gone stale (`stale`) — a nudge to
-run `furrow revisit` for detail. Human output adds one line,
-`revisit: <n> dep_done, <n> stale (<scope>) — furrow revisit` (`<scope>` is
-the current repo's short name, or `board` when there is no auto repo);
-`--json`/`--ndjson` gain a `revisit` key (`{dep_done:[ids], stale:[ids]}`)
-with the id lists. Both are omitted entirely when the board is clean.
-
-Because a bot or a second operator can be pushing at any moment, a shared
-checkout races two ways, and sync handles each by its likely cause. (1) The
-pre-flight can catch *their* rebase mid-flight — sync **waits it out** with a
-bounded backoff (~5s); if it is still going it exits 3 with `"id": "sync-busy"`,
-a **retryable** class (not the `exit 2` "fix the args" class) signalling that
-re-running usually clears it (they will have finished, or a rebase here is
-genuinely stuck and needs a manual `git rebase --abort`). (2) *Their* `git fetch`
-can briefly contend a ref/index lock while ours runs — sync retries the pull
-through the same backoff. A live race clears in well under a second, so if a lock
-still blocks after the budget it is almost certainly a **stale** lock (a crashed
-git left a `.git/*.lock`); sync then fails **terminally** telling you which lock
-to remove, rather than looping an agent forever on a `sync-busy` that will never
-clear.
+On a **successful** sync furrow also prints a repo-scoped `revisit` summary —
+open tasks with a done dependency (`dep_done`) or gone stale (`stale`), a nudge to
+run `furrow revisit`; `--json` gains a `revisit` key with the id lists, omitted
+when the board is clean.
 
 ### Board git hooks (optional)
 
@@ -753,9 +697,7 @@ A board `[alias]` names a frequent command string; `furrow <name> <extra args>` 
 
 ## Determinism
 
-furrow's write path is byte-stable on purpose. Every shard write goes through one marshaller (`core.MarshalTask`) with a fixed contract: struct-field key order, 2-space indent, `SetEscapeHTML(false)` (so CJK and `< > &` survive verbatim), empty collections as `[]` not `null`, sorted-and-deduped label/dep sets, whole-second UTC RFC3339 timestamps, and a trailing newline. The result is that the bytes furrow writes are identical to what a human or an agent would hand-edit, and a `Save` rewrites only the shards whose bytes actually changed — so re-saving an untouched store produces **zero git churn** — diffs show only the field you actually changed.
-
-`meta.json` goes further: a `Save` does not rewrite it *at all* (the board's declared version is what the write is checked against — see [the layout version gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)), so the only commits that ever touch it come from `furrow init` and `furrow upgrade`.
+furrow's write path is byte-stable on purpose: every shard goes through one marshaller (`core.MarshalTask`) with a fixed byte recipe, so the bytes furrow writes equal what a human or an agent would hand-edit, a `Save` rewrites only the shards whose bytes actually changed (an untouched store is **zero git churn**), and `git diff` shows only the field you changed. `meta.json` is not rewritten by an ordinary `Save` at all — only `furrow init` and `furrow upgrade` ever touch it (the board's declared version is the write's *input* — see [the layout version gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)). The full recipe and the guards that freeze it are in [docs/architecture.md](docs/architecture.md).
 
 ---
 
