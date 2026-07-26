@@ -154,8 +154,48 @@ func printBoardHuman(b app.BoardInfo) {
 	}
 	fmt.Fprintf(out, "types:    %s (default: %s, containers: %s)\n", strings.Join(b.Types, ", "), b.DefaultType, containers)
 	fmt.Fprintf(out, "schema:   %s\n", schemaLine(b))
+	if line := boardGitLine(b.Git); line != "" {
+		fmt.Fprintf(out, "git:      %s\n", line)
+	}
 	fmt.Fprintf(out, "stale_days: %d, archive_older_than_days: %d, labels_required: %t\n",
 		b.StaleDays, b.ArchiveOlderThanDays, b.LabelsRequired)
+}
+
+// boardGitLine renders the board's git state for humans (doctor's gitLine is the
+// column form of a different struct), or "" for a board that is
+// not in git at all (a standalone board: there is nothing to say, and a line
+// saying so would be noise on every invocation). The machine view always
+// carries the state, so only the human line is conditional.
+func boardGitLine(g app.BoardGit) string {
+	if g.State == app.GitNotARepo {
+		return ""
+	}
+	if g.State == app.GitUnavailable {
+		return "unavailable (git could not be probed)"
+	}
+	var b strings.Builder
+	if g.CommitTime != nil {
+		fmt.Fprintf(&b, "last commit %s", humanTime(*g.CommitTime))
+		if g.Subject != "" {
+			fmt.Fprintf(&b, " — %s", g.Subject)
+		}
+	} else {
+		b.WriteString("no commits yet")
+	}
+	if g.Dirty {
+		b.WriteString("; .furrow dirty")
+	}
+	switch {
+	case g.State == app.GitNoUpstream:
+		b.WriteString("; no upstream")
+	case g.Ahead > 0 && g.Behind > 0:
+		fmt.Fprintf(&b, "; %d ahead, %d behind (furrow sync)", g.Ahead, g.Behind)
+	case g.Ahead > 0:
+		fmt.Fprintf(&b, "; %d ahead (furrow sync)", g.Ahead)
+	case g.Behind > 0:
+		fmt.Fprintf(&b, "; %d behind as of the last fetch (furrow sync)", g.Behind)
+	}
+	return b.String()
 }
 
 // schemaLine says which side is stale and what to do about it. `board` is the

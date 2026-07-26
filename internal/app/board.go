@@ -1,6 +1,12 @@
 package app
 
-import "github.com/akira-toriyama/furrow/internal/core"
+import (
+	"context"
+	"time"
+
+	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/gitrepo"
+)
 
 // BoardInfo is the machine-readable snapshot `furrow board` prints: where writes
 // land (Store), how the board was discovered (Source), what scope filters reads
@@ -23,6 +29,36 @@ type BoardInfo struct {
 	DefaultLabel string `json:"default_label"` // literal add-time tag ("" = none)
 	BoardVocab
 	SchemaTriple
+	Git BoardGit `json:"git"` // the board repo's local git state (never an error — see BoardGit)
+}
+
+// BoardGit is "when did this board last change, and is anything uncommitted" —
+// the safe-to-write check before a spot edit on a board several sessions share.
+// It answers from LOCAL knowledge only (no fetch), like doctor's probe.
+//
+// State is the SAME closed vocabulary doctor uses (ok / not-a-repo /
+// no-upstream / unavailable), and that is load-bearing rather than tidy:
+// `furrow board` is contractually the command that NEVER fails — the last one
+// that still answers when board and binary disagree, which is what makes it a
+// CI pre-flight. Adding a git call could have broken that, so every way the
+// probe can go wrong folds into a state instead:
+//
+//	ok            HEAD read (and compared to an upstream when there is one)
+//	not-a-repo    the board is not in git at all — a standalone board, legitimate
+//	no-upstream   a repo with no tracking ref: LastCommit still fills in
+//	unavailable   the probe itself failed (no git binary, or git errored)
+//
+// LastCommit is what a standalone board actually needs: with no upstream there
+// is nothing for ahead/behind to compare against, so the commit TIME is the only
+// signal that another session has written since you read.
+type BoardGit struct {
+	State      string     `json:"state"`                 // ok|not-a-repo|no-upstream|unavailable
+	Commit     string     `json:"commit,omitempty"`      // HEAD's full sha ("" when there are no commits yet)
+	CommitTime *time.Time `json:"commit_time,omitempty"` // HEAD's committer time, UTC
+	Subject    string     `json:"subject,omitempty"`     // HEAD's message subject
+	Dirty      bool       `json:"dirty"`                 // .furrow/ has uncommitted changes
+	Ahead      int        `json:"ahead"`                 // commits not pushed (0 unless state == ok)
+	Behind     int        `json:"behind"`                // commits not pulled, as of the last fetch
 }
 
 // BoardVocab is the board-intrinsic vocabulary — everything a front-end needs
@@ -87,7 +123,60 @@ func (a *App) Board() BoardInfo {
 		DefaultLabel: a.DefaultLabel,
 		BoardVocab:   a.boardVocab(),
 		SchemaTriple: schemaTriple(a.schemaState()),
+		Git:          a.boardGit(),
 	}
+}
+
+// boardGit probes the board's enclosing repo. It returns a state for EVERY
+// outcome and no error — see BoardGit for why that is a contract, not a style
+// choice. Each probe is independent, so a failure in one (say the dirty check)
+// cannot erase what another already established.
+func (a *App) boardGit() BoardGit {
+	ctx := context.Background()
+	repo, err := gitrepo.Open(ctx, a.Dir)
+	if err != nil {
+		if fe := core.AsError(err); fe != nil && fe.Code == core.CodeValidation {
+			return BoardGit{State: GitNotARepo} // not in git — a standalone board
+		}
+		return BoardGit{State: GitUnavailable} // no git binary: the probe failed, not the board
+	}
+	g := BoardGit{State: GitOK}
+	// hasHEAD gates the upstream comparison below: on a repo with no commits
+	// there is no HEAD to compare, and git's complaint about that is NOT the
+	// "no upstream configured" wording AheadBehind classifies — it would surface
+	// as `unavailable`, i.e. "the probe broke", for a board that is merely new.
+	hasHEAD := false
+	if c, ok, cerr := repo.LastCommit(ctx); cerr != nil {
+		g.State = GitUnavailable
+	} else if ok {
+		when := c.When.UTC()
+		g.Commit, g.CommitTime, g.Subject = c.SHA, &when, c.Subject
+		hasHEAD = true
+	}
+	// Scoped to .furrow/ deliberately: a co-located operator's dirty code file
+	// is not the board's business, and on a repo-local board it would report
+	// dirty for every ordinary edit.
+	if changes, derr := repo.DirtyChanges(ctx, DirName); derr != nil {
+		g.State = GitUnavailable
+	} else {
+		g.Dirty = len(changes) > 0
+	}
+	if g.State != GitOK {
+		return g
+	}
+	if !hasHEAD {
+		return BoardGit{State: GitNoUpstream, Dirty: g.Dirty} // a fresh board: nothing to compare yet
+	}
+	ahead, behind, hasUpstream, aerr := repo.AheadBehind(ctx)
+	switch {
+	case aerr != nil:
+		g.State = GitUnavailable
+	case !hasUpstream:
+		g.State = GitNoUpstream // keep Commit/Dirty: they are exactly what a standalone board has
+	default:
+		g.Ahead, g.Behind = ahead, behind
+	}
+	return g
 }
 
 // schemaTriple builds the shared introspection triple from schemaState's folded

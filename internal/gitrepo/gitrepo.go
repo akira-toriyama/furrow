@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
@@ -326,6 +327,54 @@ func (r *Repo) StashedPaths(ctx context.Context, commit string) []string {
 // hasUpstream is false (with zero counts and a nil error) when there is no
 // tracking ref to compare against — an un-tracked branch or a detached HEAD —
 // because a standalone board is a state to report, not a failure.
+// Commit describes HEAD: its short sha, its committer time, and its subject
+// (the first line of the message). It answers "when did this board last change,
+// and to what?" — on a board with no upstream, which is every standalone one,
+// that is the ONLY collision signal there is, since ahead/behind has nothing to
+// compare against.
+type Commit struct {
+	SHA     string
+	When    time.Time
+	Subject string
+}
+
+// LastCommit reads HEAD. hasCommit is false (with a nil error) on a repo with
+// no commits yet — a freshly `git init`ed board is a state to report, not a
+// failure, exactly as AheadBehind treats a missing upstream.
+func (r *Repo) LastCommit(ctx context.Context) (c Commit, hasCommit bool, err error) {
+	// %H %cI %s — full sha, committer date in strict ISO 8601, subject. Split on
+	// the first two spaces so a subject containing spaces survives intact.
+	out, stderr, err := runGit(ctx, r.git, r.top, "log", "-1", "--format=%H %cI %s")
+	if err != nil {
+		if isNoCommits(stderr) {
+			return Commit{}, false, nil
+		}
+		return Commit{}, false, core.Internalf("board", "git log -1: %s", firstLine(stderr))
+	}
+	parts := strings.SplitN(strings.TrimRight(out, "\n"), " ", 3)
+	if len(parts) < 2 {
+		return Commit{}, false, core.Internalf("board", "git log -1: unexpected output %q", strings.TrimSpace(out))
+	}
+	when, terr := time.Parse(time.RFC3339, parts[1])
+	if terr != nil {
+		return Commit{}, false, core.Internalf("board", "git log -1: unparsable date %q", parts[1])
+	}
+	c = Commit{SHA: parts[0], When: when}
+	if len(parts) == 3 {
+		c.Subject = parts[2]
+	}
+	return c, true, nil
+}
+
+// isNoCommits recognizes git's "this repo has no commits yet" complaint, which
+// several git versions word differently.
+func isNoCommits(stderr string) bool {
+	l := strings.ToLower(stderr)
+	return strings.Contains(l, "does not have any commits yet") ||
+		strings.Contains(l, "bad default revision") ||
+		strings.Contains(l, "unknown revision")
+}
+
 func (r *Repo) AheadBehind(ctx context.Context) (ahead, behind int, hasUpstream bool, err error) {
 	// Left-right count over the symmetric difference: the left column is @{u}'s
 	// own commits (behind), the right is HEAD's (ahead).

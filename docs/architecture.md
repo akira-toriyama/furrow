@@ -483,6 +483,18 @@ CI pre-flight and the human's first diagnosis (`schema:   v5 (board) / v5
 **warning** (`SevWarn`, id `meta`) — warn, not error, because a read-only board
 is the legitimate middle of a flag day and must not red every repo's CI.
 
+The same contract is why the `git` key added beside it is a **state, never an
+error**. `App.boardGit` probes the enclosing repo — HEAD's sha/time/subject,
+whether `.furrow/` is dirty, and ahead/behind from local knowledge only — and
+folds every way that can go wrong into `doctor`'s existing closed vocabulary
+(`ok` / `not-a-repo` / `no-upstream` / `unavailable`). Each probe is independent,
+so a failure in one cannot erase what another established; a repo with no commits
+reports `no-upstream` rather than `unavailable`, because "this board is new" is a
+state and "the probe broke" is not. Dirty is scoped to `.furrow/` so a
+co-located operator's source edit never reads as a dirty BOARD. On a standalone
+board — no upstream, so nothing for ahead/behind to compare — the commit time is
+the only signal that another session has written since you read.
+
 ---
 
 ## The store
