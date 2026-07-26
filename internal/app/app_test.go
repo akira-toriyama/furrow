@@ -760,11 +760,20 @@ func titlesOf(ts []core.Task) []string {
 
 // TestChecklistEditSurface pins t-abj3 (c-extra): add --check seeds items, and
 // RewordCheck/RemoveCheck edit them (out-of-range / empty are validation errors).
+// The blank `--check` value it originally pinned as "silently dropped" is now
+// exit 2 (t-3gy1): that drop existed only to mirror `check --add`, which t-fr3e
+// turned into exit 2, so the drop had outlived its own rationale.
 func TestChecklistEditSurface(t *testing.T) {
 	a := newApp()
-	tk, _ := a.Add("has steps", AddOpts{Checklist: []string{"one", "", "two", "three"}})
+	if _, err := a.Add("blank step", AddOpts{Checklist: []string{"one", "", "two"}}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("a blank --check must be exit 2, like check --add, got %v", err)
+	}
+	tk, err := a.Add("has steps", AddOpts{Checklist: []string{"one", "two", "three"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(tk.Checklist) != 3 {
-		t.Fatalf("add --check should seed 3 items (blank dropped): %+v", tk.Checklist)
+		t.Fatalf("add --check should seed 3 items: %+v", tk.Checklist)
 	}
 
 	got, err := a.RewordCheck(tk.ID, 1, "TWO")

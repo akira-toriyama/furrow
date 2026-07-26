@@ -55,6 +55,20 @@ func (a *App) Lint() ([]core.Problem, error) {
 		if core.TitleHasControl(t.Title) {
 			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "control-char", ID: t.ID, Msg: "title contains a control character (newline/tab/etc.); `furrow retitle` will normalize it"})
 		}
+		// A blank entry in a set-valued field. Every mutating flag now refuses one
+		// (requireNonBlank), so a new one cannot be created — but an older binary
+		// wrote them freely (`set --add-label ""`, and any CSV trailing comma), and
+		// a blank sorts FIRST, so it leads every rendered label list. This is the
+		// backstop for what is already on disk; `furrow label <id> --remove ""`
+		// cannot clear it (that is now exit 2), so the message names the fix.
+		for _, f := range []struct {
+			field string
+			vals  []string
+		}{{"labels", t.Labels}, {"refs", t.Refs}, {"repos", t.Repos}, {"deps", t.Deps}} {
+			if hasBlank(f.vals) {
+				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "blank-entry", ID: t.ID, Msg: "an empty string in " + f.field + " (written before blanks were refused); remove it from the shard by hand"})
+			}
+		}
 		if t.Status == a.Cfg.DoneLane {
 			doneIDs[t.ID] = true
 			// A done task with no closed timestamp is a zombie: `archive` skips it
@@ -421,4 +435,15 @@ func humanBytes(n int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
+// hasBlank reports whether any entry is empty or whitespace-only — the shape
+// requireNonBlank refuses at write time and lint flags after the fact.
+func hasBlank(vals []string) bool {
+	for _, v := range vals {
+		if strings.TrimSpace(v) == "" {
+			return true
+		}
+	}
+	return false
 }

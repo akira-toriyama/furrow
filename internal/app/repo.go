@@ -111,6 +111,12 @@ func (a *App) Rerepo(id string, add, remove []string) (*core.Task, error) {
 	if len(add) == 0 && len(remove) == 0 {
 		return nil, core.Validationf(id, "provide at least one --add or --rm repo")
 	}
+	if err := requireNonBlank(id, "--add", add); err != nil {
+		return nil, err
+	}
+	if err := requireNonBlank(id, "--rm", remove); err != nil {
+		return nil, err
+	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
