@@ -335,9 +335,9 @@ go test ./...                           # all packages
 
 ```sh
 sh scripts/check.sh   # the one command: marshaller + schema-write guards +
-                      # build/vet/test + golangci + schema/config drift + a CLI
-                      # smoke + (if goreleaser & syft are installed) a release
-                      # dry-run. Green here == green build/govulncheck CI; the
+                      # build/vet/test + golangci + schema/config/docs drift + a
+                      # CLI smoke + (if goreleaser & syft are installed) a
+                      # release dry-run. Green == green build/govulncheck CI; the
                       # only CI-side extras are the TOML/workflow/commit-message
                       # lints (taplo, zizmor, glyph). Run it before finishing.
 ```
@@ -628,6 +628,18 @@ back into place — see the marshaller-path section.
   and NOT checked — which is exactly how the README came to say "board layout
   v3" against a v4 board; a historic version is prose, "v4", never the
   JSON-literal form).
+  Its generalization is
+  [`scripts/check-docs-vocab.sh`](scripts/check-docs-vocab.sh): **whenever you
+  add a member to a closed vocabulary — a command, a `[section]`, a revisit
+  signal, a `-q` qualifier — the doc regions that enumerate it must name it, or
+  CI fails.** The vocabularies come from the registries that own them via the
+  hidden `furrow vocab` (never a second hand-kept list), and a **claims** table
+  maps each to the prose regions that promise to be complete; adding a claim is
+  one line there. It checks for MISSING members only — a region legitimately
+  mentions other things, and a guard that cries wolf gets deleted. This is the
+  answer to the largest cluster the 2026-07 audit found: five closed vocabularies
+  copied into prose and then left behind, every one of them in a file no guard
+  was reading.
 - **Don't push without explicit OK.** 1 item = 1 PR (squash); update docs
   in the same PR.
 

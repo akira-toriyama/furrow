@@ -897,6 +897,14 @@ Sections and their defaults:
 | `[alias]` | `<name> = "<command string>"` | none (a `name -> command` map) |
 | (top-level) | `standalone` | `false` (a local single-machine board: no remote / `furrow sync` / CI) |
 
+That table, README's annotated example, and CLAUDE.md's section list all
+enumerate one closed vocabulary — `config.TopLevelKeys()`, reflection over the
+decode struct — and all three had silently lost sections before anything checked
+them. `scripts/check-docs-vocab.sh` (in `check.sh` and CI) now requires each to
+name every key, so a new `[section]` cannot reach only the parser. It anchors on
+the `Sections and their defaults:` line above; restructure the region and it
+names the claim to update.
+
 `status` is just a lane from `[lanes].order`; that list is simultaneously the
 status enum and the top-to-bottom sort rank.
 

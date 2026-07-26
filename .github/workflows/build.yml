@@ -120,6 +120,13 @@ jobs:
       - name: docs command-list drift guard
         run: FURROW_BIN=/tmp/furrow sh scripts/check-docs-commands.sh
 
+      # The generalization of the step above: every prose region that enumerates
+      # a closed vocabulary (commands, config sections, revisit signals, -q
+      # qualifiers) must name every member the registry owns. The 2026-07 audit
+      # found five such lists rotted, all in files no guard was reading.
+      - name: docs vocabulary drift guard
+        run: FURROW_BIN=/tmp/furrow sh scripts/check-docs-vocab.sh
+
       - name: smoke test
         run: |
           /tmp/furrow version
