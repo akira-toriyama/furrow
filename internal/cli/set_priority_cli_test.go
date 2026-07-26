@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -106,5 +107,37 @@ func TestSetPriorityCLIValidation(t *testing.T) {
 	}
 	if env.After.Priority != 7 {
 		t.Errorf("priority = %d, want 7", env.After.Priority)
+	}
+}
+
+// `set --add-label` and `label --add` edit the SAME field, so they must split a
+// value the same way. As a StringArray flag, `set --add-label "a,b"` stored the
+// single label "a,b" — which no read filter can ever match, since `-l "a,b"`
+// means "a OR b". The write produced data unreachable by the tool that wrote it.
+func TestSetLabelFlagsSplitOnCommaLikeLabelAdd(t *testing.T) {
+	initStore(t)
+	viaSet := addTask(t, "via set")
+	viaLabel := addTask(t, "via label")
+
+	if _, code := run(t, "set", viaSet, "--add-label", "a,b"); code != 0 {
+		t.Fatalf("set --add-label exit = %d", code)
+	}
+	if _, code := run(t, "label", viaLabel, "--add", "a,b"); code != 0 {
+		t.Fatalf("label --add exit = %d", code)
+	}
+
+	// Both tasks must now carry the same two labels, and -l must find both.
+	out, code := run(t, "--json", "ls", "-l", "a")
+	if code != 0 {
+		t.Fatalf("ls -l a exit = %d:\n%s", code, out)
+	}
+	for _, id := range []string{viaSet, viaLabel} {
+		if !strings.Contains(out, id) {
+			t.Errorf("-l a must find %s — a comma value must become two labels:\n%s", id, out)
+		}
+	}
+	// And the unsplit form must not exist as a label at all.
+	if out, _ := run(t, "--json", "ls", "-l", "a,b"); strings.Count(out, `"id"`) != 2 {
+		t.Errorf("-l a,b (OR) should match both tasks, got:\n%s", out)
 	}
 }
