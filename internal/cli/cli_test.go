@@ -1274,3 +1274,61 @@ func TestCLIShowDisplaysEstimate(t *testing.T) {
 		}
 	}
 }
+
+// `furrow edit <id>` with no TTY prints the body file path instead of launching
+// $EDITOR — the contract CLAUDE.md hands agents ("read/edit that file
+// directly"). It had no test at any layer, so nothing caught a regression in
+// the one shape a non-interactive caller sees.
+//
+// bite-exempt: characterization. This pins shipped, documented behaviour that
+// nothing tested; there is no accompanying production change to fail without.
+func TestCLIEditNoTTYPrintsBodyPath(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "editable")
+
+	out, code := run(t, "edit", id)
+	if code != int(core.CodeOK) {
+		t.Fatalf("edit should exit 0 with no TTY, got %d:\n%s", code, out)
+	}
+	path := strings.TrimSpace(out)
+	want := filepath.Join(os.Getenv(app.EnvDir), "bodies", id+".md")
+	if path != want {
+		t.Errorf("edit printed %q, want the body file %q", path, want)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("the printed path must exist: %v", err)
+	}
+
+	// --json emits the same path as an object, since --json is honored wherever
+	// furrow emits JSON — not just on the read commands.
+	out, code = run(t, "--json", "edit", id)
+	if code != int(core.CodeOK) {
+		t.Fatalf("edit --json exit = %d:\n%s", code, out)
+	}
+	var got struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("edit --json should be an object: %v\n%s", err, out)
+	}
+	if got.Path != want {
+		t.Errorf("edit --json path = %q, want %q", got.Path, want)
+	}
+
+	// A body deleted by hand is recreated rather than handing back a path to
+	// nothing — an editor opening a missing file is how an edit lands nowhere.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := run(t, "edit", id); code != int(core.CodeOK) {
+		t.Fatalf("edit should recreate a missing body, exit = %d", code)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("edit must recreate the missing body: %v", err)
+	}
+
+	// An unknown id is exit 1 (a specifically requested id), never a path.
+	if out, code := run(t, "edit", "t-nope1"); code != int(core.CodeNotFound) {
+		t.Errorf("edit on an unknown id should exit 1, got %d:\n%s", code, out)
+	}
+}
