@@ -1,6 +1,7 @@
 package app
 
 import (
+	"math"
 	"strconv"
 	"time"
 
@@ -75,6 +76,13 @@ func parseRelativeOffset(s string) (time.Duration, bool) {
 	}
 	n, err := strconv.Atoi(s[1 : len(s)-1])
 	if err != nil || n < 0 {
+		return 0, false
+	}
+	// A Duration is int64 nanoseconds, so ~292 years' worth of any unit overflows
+	// and wraps NEGATIVE — which the sign flip below then turns into +292 years,
+	// inverting the comparison at exit 0. Refuse instead; the value falls through
+	// to the absolute parsers and surfaces as the ordinary query-type exit 2.
+	if int64(n) > int64(math.MaxInt64)/int64(unit) {
 		return 0, false
 	}
 	d := time.Duration(n) * unit

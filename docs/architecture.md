@@ -782,7 +782,10 @@ except where noted:
   2-space (indented) encoding as the shards.
 - Read filters: `--status`/`-s`, `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`,
   `--drafts` on `ls`; `-l`/`-r`/`-n` on `next` and `revisit` (plus
-  `--stale-days` on `revisit`). `-r` is the scope control (an
+  `--stale-days` on `revisit`). The typed query `--query`/`-q` is on every
+  filtering read — `ls`, `next`, `revisit`, `stats`, `search` — and ANDs with
+  all of the above (it can only narrow, never widen a scoped board);
+  `brief` is deliberately excluded, being a fixed session-orient read. `-r` is the scope control (an
   explicit `-r` overrides the board scope; `-r ''` shows the whole board);
   `-l` is a pure tag filter that ANDs with the scope. Within a single `-s` or
   `-l`, a comma is OR (`-s inbox,backlog`, `-l bug,urgent`; tokens are trimmed,

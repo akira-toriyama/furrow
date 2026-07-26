@@ -68,6 +68,8 @@ func newLsCmd() *cobra.Command {
 			"  furrow ls --drafts        # only repo-less draft tasks\n" +
 			"  furrow ls --actionable    # only ★ (what `furrow next` would hand you)\n" +
 			"  furrow ls -s ready --blocked   # ready rows that are actually stuck\n" +
+			"  furrow ls -q 'is:actionable value:>=4'   # typed query (see -q below)\n" +
+			"  furrow ls -q 'label:cli,dx -status:done updated:>=-2w'\n" +
 			"  furrow ls --tree          # the hierarchy, ★ = pick this up now\n" +
 			"  furrow ls --tree t-k3m9p  # just what leads to (and hangs under) that goal",
 		Args: func(cmd *cobra.Command, args []string) error {

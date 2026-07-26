@@ -186,7 +186,7 @@ To keep this list honest about today's reality (not aspirations):
   `migrate`, `archive`, `upgrade`, `lint`, `config init|path`, `schema`, `version`.
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
   `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, `--drafts`, and the typed
-  query `-q`.
+  query `-q` (which `next`, `revisit`, `stats` and `search` take too).
   Destructive ops are guarded: `archive` and `upgrade` preview unless `--yes`.
   Exit-code
   contract: `0` ok (an empty query result included) / `1` a specifically

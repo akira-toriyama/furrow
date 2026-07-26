@@ -190,7 +190,11 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 			case "blocked":
 				return len(blockedDeps(t, c.doneIDs)) > 0
 			case "stuck":
-				return a.isStuck(c.idx, t.ID, c.kids, c.doneIDs)
+				// Gated on the task being a box, like every other isStuck caller
+				// (ListItems, tree, revisit) and like isStuck's own doc requires.
+				// Ungated, `is:stuck` selected plain tasks whose own row in the
+				// SAME --json payload reported "container": false, "stuck": false.
+				return a.Cfg.IsContainerType(t.Type) && a.isStuck(c.idx, t.ID, c.kids, c.doneIDs)
 			case "stale":
 				return core.IsStale(*t, c.now, c.staleDays)
 			case "open":
@@ -251,6 +255,14 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Task) bool) func(*core.Task) bool) (func(*core.Task) bool, error) {
 	a := c.app
 	f := term.Field
+	// Validate the FIELD before the operator. Reversed, a misspelling that
+	// happened to carry an operator (`updatd:>=-2w` — and the date syntax is
+	// documented only with >= and .. idioms, so that is the likeliest typo)
+	// fell into the ordered-field gate and was answered with `query-type` and
+	// NO candidates, in a message asserting the field exists.
+	if !contains(qualifierVocab, f) {
+		return nil, unknownQueryErr("query-unknown-field", "unknown qualifier "+strconv.Quote(f), qualifierVocab)
+	}
 	// Ordered fields — the ordinals and the date timestamps — take
 	// comparisons/ranges; everything else is equality only.
 	ordinal := f == "value" || f == "effort" || f == "priority" || f == "roi"
@@ -282,8 +294,23 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 		return neg(func(t *core.Task) bool { return anyContains(t.Labels, vals) }), nil
 
 	case "repo":
-		vals := valTexts(term.Values)
-		return neg(func(t *core.Task) bool { return anyRepoMatch(t.Repos, vals) }), nil
+		// Resolve through the SAME strict path -r uses (resolveRepoIn over the
+		// board's repo universe), so `-q repo:` cannot disagree with `-r`: an
+		// ambiguous short name is exit 2 with candidates and casing folds. The
+		// hand-rolled suffix match this replaces was case-SENSITIVE and had no
+		// uniqueness check, so `-q repo:Furrow` answered [] where `-r Furrow`
+		// resolved, and on a two-owner board a short name silently unioned across
+		// both — a scoped read quietly crossing a repo boundary.
+		universe := repoUniverse(c.idx, a.BoardRepos)
+		resolved := make([]string, 0, len(term.Values))
+		for _, v := range term.Values {
+			r, err := resolveRepoIn(v.Text, "", universe)
+			if err != nil {
+				return nil, err
+			}
+			resolved = append(resolved, r)
+		}
+		return neg(func(t *core.Task) bool { return anyRepoMatch(t.Repos, resolved) }), nil
 
 	case "id":
 		vals := valTexts(term.Values)
@@ -327,13 +354,17 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 
 	case "title":
 		vals := term.Values
-		return neg(func(t *core.Task) bool { return anyTextMatch(t.Title, vals) }), nil
+		return neg(func(t *core.Task) bool { return anyTextMatch(t.Title, vals, true) }), nil
 
 	case "body":
 		// The explicit opt-in to body text — loads bodies on demand (O(board)
-		// reads at worst), like furrow search.
+		// reads at worst), like furrow search. Quoting does NOT flip this to
+		// whole-field equality the way it does on title:: the "field" here is the
+		// entire markdown document, so exact-match has no use, while quoting IS
+		// how you include a space — `body:'zebra paragraph'` must stay a phrase
+		// search or it has no spelling at all.
 		vals := term.Values
-		return neg(func(t *core.Task) bool { return anyTextMatch(c.body(t), vals) }), nil
+		return neg(func(t *core.Task) bool { return anyTextMatch(c.body(t), vals, false) }), nil
 
 	case "created", "updated", "closed", "reviewed":
 		return c.compileDate(term, neg)
@@ -341,6 +372,8 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	case "value", "effort", "priority", "roi":
 		return compileNumeric(term, neg)
 	}
+	// Unreachable: the vocabulary gate above already rejected an unknown field.
+	// Kept as a compile-time-exhaustive backstop in case the two lists drift.
 	return nil, unknownQueryErr("query-unknown-field", "unknown qualifier "+strconv.Quote(f), qualifierVocab)
 }
 
@@ -407,13 +440,30 @@ func compileNumeric(term query.Term, neg func(func(*core.Task) bool) func(*core.
 			return (!haveLo || v >= lo) && (!haveHi || v <= hi)
 		}), nil
 	case query.Eq:
-		n, err := parse(term.Values[0].Text)
-		if err != nil {
-			return nil, err
+		// Comma is OR on EVERY qualifier — the rule README and the glossary state
+		// unconditionally. Parsing only Values[0] made `value:2,4` silently answer
+		// with the value-2 tasks alone at exit 0, which is the one failure shape
+		// this repo's read contract exists to prevent. compileDate does the same
+		// loop; labels, ids and lanes always did.
+		ns := make([]float64, 0, len(term.Values))
+		for _, v := range term.Values {
+			n, err := parse(v.Text)
+			if err != nil {
+				return nil, err
+			}
+			ns = append(ns, n)
 		}
 		return neg(func(t *core.Task) bool {
 			v, ok := getVal(t)
-			return ok && v == n
+			if !ok {
+				return false
+			}
+			for _, n := range ns {
+				if v == n {
+					return true
+				}
+			}
+			return false
 		}), nil
 	default: // Gt/Ge/Lt/Le
 		n, err := parse(term.Values[0].Text)
@@ -461,14 +511,16 @@ func valTexts(vals []query.Value) []string {
 	return out
 }
 
-// anyTextMatch matches a text field (title, body) against an OR-set: a bare
-// value is a case-insensitive substring (core.ContainsFold — search's matcher),
-// a quoted one ('Bug fix') whole-field equality, still case-folded — quoting
-// flips substring→exact without introducing the language's only case-sensitive
-// corner.
-func anyTextMatch(field string, vals []query.Value) bool {
+// anyTextMatch matches a text field against an OR-set: a bare value is a
+// case-insensitive substring (core.ContainsFold — search's matcher). With
+// exactOnQuote, a quoted value ('Bug fix') means whole-field equality, still
+// case-folded — quoting flips substring→exact without introducing the
+// language's only case-sensitive corner. body: passes false: its "field" is a
+// whole markdown document, so equality is useless there while quoting is still
+// the only way to write a phrase.
+func anyTextMatch(field string, vals []query.Value, exactOnQuote bool) bool {
 	for _, v := range vals {
-		if v.Quoted {
+		if v.Quoted && exactOnQuote {
 			if strings.EqualFold(field, v.Text) {
 				return true
 			}
@@ -491,20 +543,19 @@ func anyContains(set, vals []string) bool {
 
 // anyRepoMatch matches a repo value against a task's repos by full owner/repo or
 // by short name (the segment after the last '/').
+// anyRepoMatch reports whether the task carries any of the ALREADY-RESOLVED
+// repos. Resolution (short name -> unique owner/repo, case folding, the
+// ambiguity error) happens once at compile time through resolveRepoIn, so this
+// is a plain membership test and cannot drift from what -r accepts. EqualFold,
+// not ==, because a hand-edited shard may carry a casing the universe entry
+// does not — the same leniency resolveRepoIn applies on the way in.
 func anyRepoMatch(repos, vals []string) bool {
 	for _, v := range vals {
 		for _, r := range repos {
-			if r == v || shortRepo(r) == v {
+			if strings.EqualFold(v, r) {
 				return true
 			}
 		}
 	}
 	return false
-}
-
-func shortRepo(r string) string {
-	if i := strings.LastIndex(r, "/"); i >= 0 && i+1 < len(r) {
-		return r[i+1:]
-	}
-	return r
 }

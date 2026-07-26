@@ -2,10 +2,14 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
@@ -147,10 +151,15 @@ func TestQueryOnEveryFilteringRead(t *testing.T) {
 		t.Errorf("stats -q label:cli total = %d, want 1", st.Total)
 	}
 
-	// search <term> -q ANDs the query onto the text hits.
-	out, code = run(t, "--json", "search", "fix", "-q", "label:chore")
-	if code != 0 || strings.Contains(out, hot) {
-		t.Errorf("search fix -q label:chore must drop the cli task: code=%d\n%s", code, out)
+	// search <term> -q ANDs the query onto the text hits — asserted BOTH ways.
+	// The negative alone was vacuous: the fixture's only chore task does not
+	// match "fix" either, so [] was already the right answer with the predicate
+	// ignored entirely (forcing it to `return false` left the suite green).
+	if got := searchIDs(t, "fix", "label:cli"); !slices.Equal(got, []string{hot}) {
+		t.Errorf("search fix -q label:cli = %v, want exactly [%s]", got, hot)
+	}
+	if got := searchIDs(t, "fix", "label:chore"); len(got) != 0 {
+		t.Errorf("search fix -q label:chore must drop the cli task, got %v", got)
 	}
 
 	// The exit-2 error contract propagates through every newly-wired command.
@@ -237,5 +246,85 @@ func TestQueryDatesCLI(t *testing.T) {
 	fe, _ := runErr(t, "ls", "-q", "created:sometime")
 	if fe == nil || fe.ID != "query-type" {
 		t.Errorf("created:sometime should be query-type, got %+v", fe)
+	}
+}
+
+// searchIDs runs `search <term> -q <query> --json` and returns the hit ids.
+func searchIDs(t *testing.T, term, q string) []string {
+	t.Helper()
+	out, code := run(t, "--json", "search", term, "-q", q)
+	if code != 0 {
+		t.Fatalf("search %q -q %q exit = %d:\n%s", term, q, code, out)
+	}
+	var hits []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(out), &hits); err != nil {
+		t.Fatalf("parse search --json: %v\n%s", err, out)
+	}
+	ids := make([]string, len(hits))
+	for i := range hits {
+		ids[i] = hits[i].ID
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// `is:stale` must use the CALL's staleness window on every command that takes
+// -q, which is what cmd_query.go's help promises ("the flag and the query cannot
+// disagree"). Only the ls path was pinned: swapping revisit's staleDays for the
+// config default left the whole suite green.
+func TestCLIQueryIsStaleUsesTheCallsWindow(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "aging", "-s", "ready")
+
+	// Age the task by rewriting its shard's updated stamp — the store is the
+	// only clock a fresh process reads.
+	ageTaskDays(t, id, 10)
+
+	for _, c := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"revisit window catches it", []string{"revisit", "--stale-days", "1", "-q", "is:stale"}, true},
+		{"revisit window excludes it", []string{"revisit", "--stale-days", "30", "-q", "is:stale"}, false},
+		{"stale disabled", []string{"revisit", "--stale-days", "0", "-q", "is:stale"}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			out, code := run(t, append([]string{"--json"}, c.args...)...)
+			if code != 0 {
+				t.Fatalf("exit = %d:\n%s", code, out)
+			}
+			if got := strings.Contains(out, id); got != c.want {
+				t.Errorf("contains(%s) = %t, want %t:\n%s", id, got, c.want, out)
+			}
+		})
+	}
+}
+
+// ageTaskDays rewrites a task shard's `updated` stamp n days into the past.
+func ageTaskDays(t *testing.T, id string, days int) {
+	t.Helper()
+	p := filepath.Join(os.Getenv(app.EnvDir), "tasks", id+".json")
+	b, err := os.ReadFile(p) // #nosec G304 -- a path this test just created
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shard map[string]any
+	if err := json.Unmarshal(b, &shard); err != nil {
+		t.Fatal(err)
+	}
+	when, err := time.Parse(time.RFC3339, shard["updated"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shard["updated"] = when.AddDate(0, 0, -days).UTC().Format(time.RFC3339)
+	out, err := json.MarshalIndent(shard, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, append(out, '\n'), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

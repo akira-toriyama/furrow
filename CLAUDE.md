@@ -118,7 +118,12 @@ the user-level config. When you work with any furrow store:
   `attach`, `init`, `version`, the `apply` report) prints one compact line, and
   `lint` streams one problem per line — so a line-oriented reader never gets a
   silent human-prose degrade. Filter reads with `--status/-s`, `--label/-l`,
-  `--repo/-r`, `--limit/-n` — so you rarely need jq. Each `lint` problem carries
+  `--repo/-r`, `--limit/-n`, and the typed query `--query/-q` on every
+  filtering read (`ls`, `next`, `revisit`, `stats`, `search`; `brief` is
+  excluded) — a flat AND-list of `field:value` terms where a comma is OR, a
+  leading `-` is NOT, plus `has:`/`no:` presence, `is:` computed flags,
+  ordinal and date comparisons/ranges, and direct graph edges. It ANDs with
+  the other filters and never widens a scoped board. So you rarely need jq. Each `lint` problem carries
   a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `parent-cycle`,
   `parent-done`, `orphan-asset`,
   `conflict-marker`, `unknown-shard-key`, …) — branch on it, not the message, since the `id` field
