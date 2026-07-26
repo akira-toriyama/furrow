@@ -73,15 +73,7 @@ func emitMutationManyWith(a *app.App, verb string, ids []string, mutate func() (
 	if jsonMode() {
 		envs := make([]any, 0, len(after))
 		for _, t := range after {
-			env := map[string]any{
-				"before":  befores[t.ID],
-				"after":   t,
-				"changed": changedFields(befores[t.ID], t),
-			}
-			for k, v := range extra {
-				env[k] = v
-			}
-			envs = append(envs, env)
+			envs = append(envs, mutationEnvelope(befores[t.ID], t, extra))
 		}
 		if flagNDJSON {
 			for _, e := range envs {
