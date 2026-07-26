@@ -505,9 +505,9 @@ func newDepCmd() *cobra.Command {
 	return cmd
 }
 
-// newSetCmd combines the routine triage edits (lane, value, effort, labels) into
-// one write, so triaging a task no longer means running move + value + effort +
-// label as four separate commands.
+// newSetCmd combines the routine triage edits (lane, position, value, effort,
+// labels, type) into one write, so triaging a task no longer means running move
+// + reorder + value + effort + label + set --type as separate commands.
 func newSetCmd() *cobra.Command {
 	var (
 		status      string
@@ -524,19 +524,21 @@ func newSetCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "set <id>",
-		Short: "Apply several triage edits at once (lane, priority, value, effort, labels)",
+		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, type)",
 		Long: "Combine the routine triage edits into a single write: move a lane (-s),\n" +
 			"position the task (--priority, or --before/--after a task in the destination\n" +
 			"lane — so a cross-lane drop is lane + position in ONE write), set or clear\n" +
-			"the 1..5 value/effort estimates, and add/remove labels — instead of running\n" +
-			"move + reorder + value + effort + label as separate commands. At least one\n" +
-			"change is required; an unknown lane is exit 2 with candidates (like move),\n" +
+			"the 1..5 value/effort estimates, add/remove labels, and set the work-item\n" +
+			"type (--type) — instead of running move + reorder + value + effort + label\n" +
+			"as separate commands. At least one change is required; an unknown lane OR\n" +
+			"type is exit 2 with the configured vocabulary in candidates (like move/add),\n" +
 			"a relative target outside the destination lane is exit 2, and under\n" +
 			"[labels].required a set that would strip the last label is refused. A\n" +
 			"relative placement that has to respace the lane does so in the same write\n" +
 			"and reports the neighbors in `renumbered`, exactly like reorder.",
 		Example: "  furrow set t-k3m9p -s ready --value 4 --effort 2 --add-label bug\n" +
 			"  furrow set t-k3m9p -s ready --before t-x1y2z\n" +
+			"  furrow set t-k3m9p --type epic\n" +
 			"  furrow set t-k3m9p --clear-value --rm-label wip",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
