@@ -593,6 +593,10 @@ back into place — see the marshaller-path section.
 - `go build ./...` and `go test ./...` must pass before finishing a turn.
 - English is the only committed language — **there is no `README.ja.md`;
   translations are not stored** (a JA reader translates the EN docs on demand).
+  That is the fleet
+  [doc-consistency policy](https://github.com/akira-toriyama/.github/blob/main/docs/doc-consistency-policy.md)
+  (English-only, code-first, reduction-first — truth lives in the code/CLI and
+  docs point at it), for which this repo is the reference implementation.
   Keep [README.md](README.md) and the docs/ tier
   (architecture/glossary/non-goals/scheduling) carrying the same FACTS on any
   user-visible change, and **sweep the docs/ tier in the same change**: drift
@@ -622,9 +626,8 @@ back into place — see the marshaller-path section.
 ## Multi-session work policy
 
 `docs/plans/` holds one file per in-flight task (delete on merge). **Never leave
-unfinished work implicit** (未達成を暗黙にしない) — every in-flight task is a plan
-file, a tracked issue, or an explicit note; nothing important lives only in a
-chat transcript.
+unfinished work implicit** — every in-flight task is a plan file, a tracked
+issue, or an explicit note; nothing important lives only in a chat transcript.
 
 **Multi-operator (shared checkout).** This repo is sometimes worked on by several
 people/agents at once. A checkout has one shared HEAD/index/working tree, so two
