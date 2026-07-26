@@ -2012,7 +2012,8 @@ func contains(ss []string, s string) bool {
 // matchAnyLane reports whether lane satisfies the -s filter. A comma splits the
 // filter into an OR-set: an empty filter (or one that trims to no tokens) is no
 // constraint; otherwise lane must equal one of the trimmed, non-empty tokens.
-// Unknown tokens are rejected upstream (validateLaneFilter, called by List), so
+// Unknown tokens are rejected upstream (validateLaneFilter, called by
+// List/Stats/Search), so
 // this membership pass never has to distinguish "unknown" from "no match".
 // Re-splitting per task is negligible at furrow's board scale.
 func matchAnyLane(filter, lane string) bool {
@@ -2060,7 +2061,8 @@ func (a *App) unknownTypeErr(id, typ string) *core.Error {
 
 // validateLaneFilter checks each comma token of a -s filter against the
 // configured lanes, returning unknownLaneErr on the first unknown token.
-// Empty/whitespace tokens are dropped (no constraint). Only `ls` exposes -s, so
+// Empty/whitespace tokens are dropped (no constraint). Every read that exposes
+// -s (ls, stats, search) calls this first, so
 // this is its fail-fast guard: a lane is a closed vocabulary, so a typo'd -s
 // must not silently return [] (clamp-don't-reject is a config-file policy, not
 // for an explicit CLI argument — that is symmetric with move/add). Labels stay

@@ -33,4 +33,23 @@ if [ -n "$hits" ]; then
   echo "If this is a non-store view, render it in internal/cli/output.go." >&2
   exit 1
 fi
+# The two encoders must not silently swap roles. encodeCanonical serves exactly
+# one caller (Marshal, the in-memory *Index form); every PERSISTED value goes
+# through encodeCanonicalWithExtras, which re-applies the recipe around the
+# extras splice. Comments in marshal.go used to name encodeCanonical as the
+# shard path, which had quietly become false — so pin the arity here instead of
+# trusting prose: a second caller means either a persistence path regressed onto
+# the extras-blind encoder (silent data loss), or the split was deliberately
+# reworked and these comments plus this guard must be updated together.
+callers="$(grep -cE '[^a-zA-Z]encodeCanonical\(' internal/core/marshal.go internal/core/passthrough.go \
+  | awk -F: '{n += $2} END {print n+0}')"
+if [ "$callers" -gt 2 ]; then
+  echo "✖ encodeCanonical has more than its one caller (definition + Marshal):" >&2
+  grep -nE '[^a-zA-Z]encodeCanonical\(' internal/core/marshal.go internal/core/passthrough.go >&2
+  echo >&2
+  echo "Persisted values must use encodeCanonicalWithExtras, or the shard's" >&2
+  echo "unknown keys are dropped on write (core/passthrough.go)." >&2
+  exit 1
+fi
+
 echo "ok — store serialization AND parsing are single-path"

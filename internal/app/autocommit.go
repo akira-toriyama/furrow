@@ -34,8 +34,11 @@ type AutoCommitResult struct {
 // failure must NEVER turn a successful command into a non-zero exit — that would
 // make an agent retry and double-apply. Every failure mode becomes a one-line
 // warning bound for stderr while the command still exits 0: a board outside git,
-// an ownership-guard skip, a clean tree, a rebase/merge in progress, an
-// index.lock race, a `commit.gpgsign` prompt, a conflict-marker body.
+// an ownership-guard skip, a rebase/merge in progress, an index.lock race, a
+// `commit.gpgsign` prompt, a conflict-marker body. A CLEAN tree is not in that
+// list — it is a silent no-op, because "nothing to commit" is the normal result
+// of a command that changed nothing, not a degraded outcome worth a warning
+// (TestAutoCommitCleanTreeSilent pins the silence).
 //
 // Scope reuses partitionSync — the EXACT rule `furrow sync` uses — so
 // machine-written shards always commit and a co-located operator's untouched
