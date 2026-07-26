@@ -158,25 +158,17 @@ func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string) []core.P
 
 	cfgDir := filepath.Dir(cfgPath)
 	for _, b := range entries {
-		store, rerr := resolvePathRelTo(cfgDir, b.Path)
-		if rerr != nil {
-			// Already surfaced by LoadGlobalBoards' clamp warnings via discovery;
-			// name it here too so the finding is self-contained.
-			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "global-config-clamp", ID: "config",
-				Msg: fmt.Sprintf("ignoring central board %q: %v", b.Path, rerr)})
+		// Same resolution and the same wording `furrow boards` uses (one helper),
+		// rendered into doctor's sink. These are already surfaced by
+		// LoadGlobalBoards' clamp warnings via discovery; naming them here too
+		// keeps each finding self-contained.
+		entry, w, ok := resolveBoardEntry(cfgDir, b)
+		for _, msg := range w {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "global-config-clamp", ID: "config", Msg: msg})
+		}
+		if !ok {
 			continue
 		}
-		scopes := []string{}
-		for _, s := range b.Scopes {
-			sp, serr := resolvePathRelTo(cfgDir, s)
-			if serr != nil {
-				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "global-config-clamp", ID: "config",
-					Msg: fmt.Sprintf("board %q: ignoring scope %q: %v", b.Path, s, serr)})
-				continue
-			}
-			scopes = append(scopes, sp)
-		}
-		entry := probeBoardEntry(store, scopes, b)
 		db := DoctorBoard{BoardEntry: entry, Git: DoctorGit{State: GitUnprobed}}
 		ps = append(ps, doctorBoardProblems(ctx, &db, cfgPath)...)
 		r.Boards = append(r.Boards, db)

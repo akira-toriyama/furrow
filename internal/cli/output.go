@@ -847,18 +847,28 @@ func printOK(verb string, t *core.Task) {
 // envelope. In human mode it prints the short verb line.
 func printMutation(verb string, before, after *core.Task, extra map[string]any) {
 	if jsonMode() {
-		m := map[string]any{
-			"before":  before,
-			"after":   after,
-			"changed": changedFields(before, after),
-		}
-		for k, v := range extra {
-			m[k] = v
-		}
-		emitObject(m)
+		emitObject(mutationEnvelope(before, after, extra))
 		return
 	}
 	fmt.Fprintf(out, "%s %s  %s\n", verb, after.ID, after.Title)
+}
+
+// mutationEnvelope builds the documented {before, after, changed} object, with
+// any extra keys (a `clamped` signal, a `renumbered` array) merged in. The
+// single-id and batch paths BOTH go through it: the shape is a published
+// contract, and it was previously assembled in two places, so a new key had to
+// be added twice or the batch path would quietly emit a different envelope from
+// the single one.
+func mutationEnvelope(before, after *core.Task, extra map[string]any) map[string]any {
+	m := map[string]any{
+		"before":  before,
+		"after":   after,
+		"changed": changedFields(before, after),
+	}
+	for k, v := range extra {
+		m[k] = v
+	}
+	return m
 }
 
 // warnClamp writes a stderr note when an explicit 1..5 estimate was silently

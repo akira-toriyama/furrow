@@ -104,12 +104,7 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	doneIDs := map[string]bool{}
-	for _, t := range idx.Tasks {
-		if t.Status == a.Cfg.DoneLane {
-			doneIDs[t.ID] = true
-		}
-	}
+	doneIDs := a.doneSet(idx)
 	now := a.Clock.Now()
 	kids := childrenMap(idx)
 	var out []RevisitItem
@@ -175,12 +170,7 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 	if err != nil {
 		return RevisitSummary{}, err
 	}
-	doneIDs := map[string]bool{}
-	for _, t := range idx.Tasks {
-		if t.Status == a.Cfg.DoneLane {
-			doneIDs[t.ID] = true
-		}
-	}
+	doneIDs := a.doneSet(idx)
 	now := a.Clock.Now()
 	kids := childrenMap(idx)
 	sum := RevisitSummary{}

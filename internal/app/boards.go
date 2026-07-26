@@ -61,23 +61,41 @@ func Boards() (*BoardsList, []string, error) {
 	cfgDir := filepath.Dir(path)
 	list := &BoardsList{Config: path, Boards: []BoardEntry{}}
 	for _, b := range entries {
-		store, rerr := resolvePathRelTo(cfgDir, b.Path)
-		if rerr != nil {
-			warn = append(warn, fmt.Sprintf("ignoring central board %q: %v", b.Path, rerr))
+		entry, w, ok := resolveBoardEntry(cfgDir, b)
+		warn = append(warn, w...)
+		if !ok {
 			continue
 		}
-		scopes := []string{}
-		for _, s := range b.Scopes {
-			sp, serr := resolvePathRelTo(cfgDir, s)
-			if serr != nil {
-				warn = append(warn, fmt.Sprintf("board %q: ignoring scope %q: %v", b.Path, s, serr))
-				continue
-			}
-			scopes = append(scopes, sp)
-		}
-		list.Boards = append(list.Boards, probeBoardEntry(store, scopes, b))
+		list.Boards = append(list.Boards, entry)
 	}
 	return list, warn, nil
+}
+
+// resolveBoardEntry resolves one [[board]]'s store and scope paths against the
+// config file's directory and probes it. A store path that will not resolve
+// drops the board (ok=false); a scope that will not resolve drops just that
+// scope — clamp-don't-reject either way, never fatal.
+//
+// It exists because `furrow boards` and `furrow doctor` are two views of the
+// SAME config and each had its own copy of this loop with byte-identical warning
+// text. One rule and one wording, rendered into two sinks: boards returns plain
+// strings, doctor wraps them as global-config-clamp problems.
+func resolveBoardEntry(cfgDir string, b config.GlobalBoard) (BoardEntry, []string, bool) {
+	store, err := resolvePathRelTo(cfgDir, b.Path)
+	if err != nil {
+		return BoardEntry{}, []string{fmt.Sprintf("ignoring central board %q: %v", b.Path, err)}, false
+	}
+	var warn []string
+	scopes := []string{}
+	for _, s := range b.Scopes {
+		sp, serr := resolvePathRelTo(cfgDir, s)
+		if serr != nil {
+			warn = append(warn, fmt.Sprintf("board %q: ignoring scope %q: %v", b.Path, s, serr))
+			continue
+		}
+		scopes = append(scopes, sp)
+	}
+	return probeBoardEntry(store, scopes, b), warn, true
 }
 
 // probeBoardEntry probes one configured board. A missing directory (or one whose
