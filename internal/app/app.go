@@ -1695,61 +1695,144 @@ func (o SetOpts) empty() bool {
 // the CLI's `renumbered` report (their Updated deliberately does not advance).
 // At least one change is required.
 func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, error) {
-	if o.Status != nil && !a.Cfg.IsLane(*o.Status) {
-		return nil, nil, a.unknownLaneErr(id, *o.Status)
-	}
-	if o.Type != nil && !a.Cfg.IsType(*o.Type) {
-		return nil, nil, a.unknownTypeErr(id, *o.Type)
-	}
-	if o.empty() {
-		return nil, nil, core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / --type)")
-	}
-	if err := requireNonBlank(id, "--add-label", o.AddLabels); err != nil {
+	if err := a.validateSetOpts(id, o); err != nil {
 		return nil, nil, err
-	}
-	if err := requireNonBlank(id, "--rm-label", o.RmLabels); err != nil {
-		return nil, nil, err
-	}
-	relRef, relBefore := o.Before, true
-	if relRef == "" {
-		relRef, relBefore = o.After, false
-	}
-	if (o.Priority != nil && relRef != "") || (o.Before != "" && o.After != "") {
-		return nil, nil, core.Validationf(id, "--priority, --before, and --after are mutually exclusive")
 	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, nil, err
 	}
-	t, i := idx.Find(id)
-	if i < 0 {
+	if _, i := idx.Find(id); i < 0 {
 		return nil, nil, core.NotFound(id)
 	}
+	renumbered, err := a.applySet(idx, id, o)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := a.Store.Save(idx); err != nil {
+		return nil, nil, err
+	}
+	saved, _ := idx.Find(id)
+	return saved, renumbered, nil
+}
+
+// validateSetOpts checks everything about the OPTIONS that does not need the
+// index — so Set and SetMany reject a bad request identically, before either
+// touches the store.
+func (a *App) validateSetOpts(id string, o SetOpts) error {
+	if o.Status != nil && !a.Cfg.IsLane(*o.Status) {
+		return a.unknownLaneErr(id, *o.Status)
+	}
+	if o.Type != nil && !a.Cfg.IsType(*o.Type) {
+		return a.unknownTypeErr(id, *o.Type)
+	}
+	if o.empty() {
+		return core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / --type)")
+	}
+	if err := requireNonBlank(id, "--add-label", o.AddLabels); err != nil {
+		return err
+	}
+	if err := requireNonBlank(id, "--rm-label", o.RmLabels); err != nil {
+		return err
+	}
+	if (o.Priority != nil && (o.Before != "" || o.After != "")) || (o.Before != "" && o.After != "") {
+		return core.Validationf(id, "--priority, --before, and --after are mutually exclusive")
+	}
+	return nil
+}
+
+// SetMany applies the SAME SetOpts to several tasks in ONE index write,
+// all-or-nothing — the bulk-triage twin of MoveMany, and the write-side answer
+// to a GUI's multi-select. Every id is resolved before anything is touched, so a
+// batch with a miss changes NOTHING and exits 1 with every miss in
+// details.missing (MoveMany's contract, which is show's contract).
+//
+// The three POSITION flags are refused for two or more ids (exit 2): a position
+// is inherently about one task — `--before/--after` names a single neighbour,
+// and an absolute `--priority` applied to N tasks would deliberately tie them,
+// which the sparse-priority model treats as unordered. Refusing is reversible;
+// inventing an order would not be.
+func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
+	if err := a.validateSetOpts("", o); err != nil {
+		return nil, err
+	}
+	if len(ids) > 1 && (o.Priority != nil || o.Before != "" || o.After != "") {
+		return nil, core.Validationf("", "--priority/--before/--after position ONE task; set them in a separate single-id call")
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	order, missing := []string{}, []string{}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		if _, i := idx.Find(id); i < 0 {
+			missing = append(missing, id)
+			continue
+		}
+		order = append(order, id)
+	}
+	if len(missing) > 0 {
+		return nil, &core.Error{
+			Code:    core.CodeNotFound,
+			Msg:     fmt.Sprintf("%d of %d ids not found — nothing was set", len(missing), len(order)+len(missing)),
+			Details: map[string]any{"missing": missing},
+		}
+	}
+	for _, id := range order {
+		if _, err := a.applySet(idx, id, o); err != nil {
+			return nil, err
+		}
+	}
+	if err := a.Store.Save(idx); err != nil {
+		return nil, err
+	}
+	out := make([]*core.Task, 0, len(order))
+	for _, id := range order {
+		saved, _ := idx.Find(id)
+		out = append(out, saved)
+	}
+	return out, nil
+}
+
+// applySet mutates one task in an ALREADY-LOADED index and returns any respace
+// the relative placement caused. It saves nothing: the caller owns the write, so
+// a batch is one Save. id must already resolve.
+func (a *App) applySet(idx *core.Index, id string, o SetOpts) ([]core.PriorityChange, error) {
+	relRef, relBefore := o.Before, true
+	if relRef == "" {
+		relRef, relBefore = o.After, false
+	}
+	t, _ := idx.Find(id)
 	// Pre-flight the relative placement against the DESTINATION lane before any
 	// mutation, so a bad target aborts with nothing half-applied (the plan
 	// itself re-checks after the lane move, when id and ref must already
 	// agree).
 	if relRef != "" {
 		if relRef == id {
-			return nil, nil, core.Validationf(id, "--before/--after must name a different task")
+			return nil, core.Validationf(id, "--before/--after must name a different task")
 		}
 		rt, ri := idx.Find(relRef)
 		if ri < 0 {
-			return nil, nil, core.NotFound(relRef)
+			return nil, core.NotFound(relRef)
 		}
 		dest := t.Status
 		if o.Status != nil {
 			dest = *o.Status
 		}
 		if rt.Status != dest {
-			return nil, nil, core.Validationf(id, "relative target %s is in lane %q, not the destination lane %q — relative order only exists within one lane", relRef, rt.Status, dest)
+			return nil, core.Validationf(id, "relative target %s is in lane %q, not the destination lane %q — relative order only exists within one lane", relRef, rt.Status, dest)
 		}
 	}
 	nextLabels := t.Labels
 	if len(o.AddLabels) > 0 || len(o.RmLabels) > 0 {
 		nextLabels = labelDelta(t.Labels, o.AddLabels, o.RmLabels)
 		if a.Cfg.LabelsRequired && len(nextLabels) == 0 {
-			return nil, nil, core.Validationf(id, "a label is required ([labels].required); this set would remove the last one")
+			return nil, core.Validationf(id, "a label is required ([labels].required); this set would remove the last one")
 		}
 	}
 	if o.Status != nil {
@@ -1762,7 +1845,7 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, erro
 	case relRef != "":
 		target, changes, err := idx.PlanRelativePriority(id, relRef, relBefore, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		t.Priority = target
 		for _, c := range changes {
@@ -1788,11 +1871,7 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, erro
 	}
 	t.Labels = nextLabels
 	t.Updated = a.Clock.Now()
-	if err := a.Store.Save(idx); err != nil {
-		return nil, nil, err
-	}
-	saved, _ := idx.Find(id)
-	return saved, renumbered, nil
+	return renumbered, nil
 }
 
 // AddCheck appends a checklist item.

@@ -665,7 +665,10 @@ except where noted:
   `--before`/`--after` a task in the DESTINATION lane, so a cross-lane drop is
   lane + position in one write), value, effort, labels, and `--type` — in one
   write (the combined-edit funnel `App.Set`), so triage isn't move+reorder+value+
-  effort+label+type as separate commands. It reuses `applyLane`/`labelDelta` and
+  effort+label+type as separate commands, over ONE id or several (`set <id>...`
+  is the bulk-triage twin of `MoveMany`: resolve every id, then one Save; the
+  position flags place a single task and are refused for a batch). It reuses
+  `applyLane`/`labelDelta` and
   the relative-priority planner, the helpers shared with `Move`/`Relabel`/
   `Reorder`, so the invariants can't diverge.
 - **`dep`** adds or removes dependency edges on an existing task (`--rm`); it is
