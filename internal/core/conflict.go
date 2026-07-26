@@ -44,9 +44,6 @@ func ConflictMarkerLines(text string) []int {
 	return lines
 }
 
-// HasConflictMarkers reports whether text carries any git conflict marker.
-func HasConflictMarkers(text string) bool { return len(ConflictMarkerLines(text)) > 0 }
-
 // isConflictMarker matches one marker line: a run of EXACTLY 7 marker characters
 // at column 0, followed by a space (the ours/base/theirs label) or end-of-line
 // (the bare "======="). Both halves of that rule earn their keep — column 0 keeps

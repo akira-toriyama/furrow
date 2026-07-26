@@ -115,16 +115,6 @@ func (r *Repo) RebaseInProgress(ctx context.Context) bool {
 	return false
 }
 
-// HasChanges reports whether the pathspec has anything to commit (working tree
-// or index) — the guard that keeps a no-op sync from creating empty commits.
-func (r *Repo) HasChanges(ctx context.Context, pathspec string) (bool, error) {
-	out, stderr, err := runGit(ctx, r.git, r.top, "status", "--porcelain", "--", pathspec)
-	if err != nil {
-		return false, core.Internalf("sync", "git status: %s", firstLine(stderr))
-	}
-	return strings.TrimSpace(out) != "", nil
-}
-
 // Change is one dirty path under a pathspec (from git status --porcelain): its
 // slash-form path relative to the work-tree toplevel, and whether git sees it as
 // untracked (a brand-new file, "??"). It is what lets app.Sync tell a
@@ -134,8 +124,9 @@ type Change struct {
 	Untracked bool
 }
 
-// DirtyChanges enumerates the working-tree changes under pathspec — the listing
-// twin of HasChanges. Each entry is tagged untracked-or-not and the slice is
+// DirtyChanges enumerates the working-tree changes under pathspec — the guard
+// that keeps a no-op sync from creating an empty commit, and the listing that
+// tells app WHAT changed. Each entry is tagged untracked-or-not and the slice is
 // sorted by path for deterministic output. Porcelain parsing stays here, in the
 // adapter, so app never sees git's wire format (layer rule).
 func (r *Repo) DirtyChanges(ctx context.Context, pathspec string) ([]Change, error) {

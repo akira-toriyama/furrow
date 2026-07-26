@@ -21,9 +21,6 @@ func TestConflictMarkerLinesFindsEveryMarker(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("ConflictMarkerLines = %v, want %v (1-based, as an editor counts)", got, want)
 	}
-	if !HasConflictMarkers(body) {
-		t.Error("HasConflictMarkers must agree with ConflictMarkerLines")
-	}
 }
 
 // The false positives an error-severity rule must not have. A body that DOCUMENTS
@@ -58,7 +55,7 @@ func TestConflictMarkerLinesHandlesCRLF(t *testing.T) {
 // label, and a half-resolved body can be left with only that line. The setext case
 // above is what keeps this from over-matching — the run must be exactly 7.
 func TestConflictMarkerLinesBareSeparator(t *testing.T) {
-	if !HasConflictMarkers("prose\n=======\nmore\n") {
+	if len(ConflictMarkerLines("prose\n=======\nmore\n")) == 0 {
 		t.Error("a bare 7-char ======= separator is git's, and must be flagged")
 	}
 }
