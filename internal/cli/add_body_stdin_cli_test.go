@@ -62,6 +62,35 @@ func TestAddBodyDashRejectsStdinFlag(t *testing.T) {
 	}
 }
 
+// TestAddStdinErrorsKeepCandidates: a bulk add's closed-vocabulary failure must
+// reach the caller in the SAME shape as the single-item one — exit 2 WITH the
+// vocabulary in `candidates` — plus the spec context saying which line failed.
+// It used to rebuild the message by hand, so `add --stdin -s ghots` gave an
+// agent a bare sentence to regex while `add -s ghots` handed it the array.
+func TestAddStdinErrorsKeepCandidates(t *testing.T) {
+	initStore(t)
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"unknown lane", []string{"add", "--stdin", "-s", "ghots"}},
+		{"unknown type", []string{"add", "--stdin", "--type", "epci"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fe, out := runErrIn(t, "bulk title\n", tc.args...)
+			if fe == nil || fe.Code != core.CodeValidation {
+				t.Fatalf("%v should exit 2, got %+v:\n%s", tc.args, fe, out)
+			}
+			if len(fe.Candidates) == 0 {
+				t.Errorf("%v must carry the vocabulary in candidates, got %+v", tc.args, fe)
+			}
+			if !strings.Contains(fe.Msg, `spec 0 ("bulk title")`) {
+				t.Errorf("%v must name the failing spec, got %q", tc.args, fe.Msg)
+			}
+		})
+	}
+}
+
 // TestAddBodyLiteralUnchanged: a non-dash --body value is stored verbatim.
 func TestAddBodyLiteralUnchanged(t *testing.T) {
 	initStore(t)

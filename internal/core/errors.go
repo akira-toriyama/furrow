@@ -46,6 +46,18 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Msg }
 
+// WithPrefixf returns a COPY of e whose message is prefixed with the formatted
+// context, keeping the code, id, details, and — the point of it — Candidates.
+// A bulk path (AddMany) must say WHICH input failed without degrading the error
+// shape the single-item path returns: rebuilding the message with Validationf
+// silently drops the did-you-mean vocabulary an agent branches on. e is not
+// mutated, so a shared error value stays safe to prefix per item.
+func (e *Error) WithPrefixf(format string, a ...any) *Error {
+	c := *e
+	c.Msg = fmt.Sprintf(format, a...) + e.Msg
+	return &c
+}
+
 // NotFound builds a CodeNotFound error for a missing task id.
 func NotFound(id string) *Error {
 	return &Error{Code: CodeNotFound, ID: id, Msg: fmt.Sprintf("task not found: %s", id)}

@@ -11,28 +11,6 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// runErr executes furrow in-process and returns the structured error (nil on
-// success) plus stdout — for tests that assert on Candidates and friends.
-func runErr(t *testing.T, args ...string) (*core.Error, string) {
-	t.Helper()
-	var buf bytes.Buffer
-	out = &buf
-	defer func() { out = nil }()
-	root := newRootCmd()
-	root.SetArgs(args)
-	root.SetOut(&buf)
-	root.SetErr(&buf)
-	err := root.Execute()
-	if err == nil {
-		return nil, buf.String()
-	}
-	fe := core.AsError(err)
-	if fe == nil {
-		fe = &core.Error{Code: core.CodeValidation, Msg: err.Error()}
-	}
-	return fe, buf.String()
-}
-
 func TestCLIAddAndFilterByRepo(t *testing.T) {
 	initStore(t)
 	fid := addTask(t, "furrow work", "-s", "ready", "-r", "akira-toriyama/furrow")
