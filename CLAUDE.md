@@ -634,9 +634,16 @@ back into place — see the marshaller-path section.
   signal, a `-q` qualifier — the doc regions that enumerate it must name it, or
   CI fails.** The vocabularies come from the registries that own them via the
   hidden `furrow vocab` (never a second hand-kept list), and a **claims** table
-  maps each to the prose regions that promise to be complete; adding a claim is
-  one line there. It checks for MISSING members only — a region legitimately
-  mentions other things, and a guard that cries wolf gets deleted. This is the
+  maps each to the prose regions that enumerate it — adding a claim is one line
+  there. Each claim declares a **direction**: `complete` (the region lists the
+  whole vocabulary, so every member must appear), `subset` (the region lists
+  EXAMPLES, so completeness is NOT required, but every member it names must still
+  EXIST — the rename/delete rot a completeness check structurally cannot see), or
+  `both`. **Neither direction ever flags an unknown token**: a region legitimately
+  mentions other things, and a guard that cries wolf gets deleted. `subset` needs
+  a member **shape** and so is only available to shape-distinctive vocabularies —
+  measured, `commands` yields `list` as a false candidate (an English word; the
+  command is `ls`), so plain-word vocabularies are `complete`-only. This is the
   answer to the largest cluster the 2026-07 audit found: five closed vocabularies
   copied into prose and then left behind, every one of them in a file no guard
   was reading.

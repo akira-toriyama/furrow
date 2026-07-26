@@ -117,9 +117,11 @@ FURROW_BIN="$BIN" sh scripts/check-docs-commands.sh
 
 # The generalization of the guard above, over every closed vocabulary rather than
 # just the commands: each claimed prose region must name every member the owning
-# registry has. It self-tests first — the first version of it printed a real
-# failure and then exited 0, so it now plants drift in a fixture and requires
-# itself to catch that before believing a green run on the real docs.
+# registry has (`complete`), or — for a region that lists examples only — must
+# name none that has ceased to exist (`subset`). It self-tests first: the first
+# version printed a real failure and then exited 0, so it now plants drift in a
+# fixture, in both directions, and requires itself to catch that before believing
+# a green run on the real docs.
 echo "→ docs vocabulary drift guard"
 FURROW_BIN="$BIN" sh scripts/check-docs-vocab.sh
 
