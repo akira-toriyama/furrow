@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -312,6 +313,117 @@ func TestInterruptError(t *testing.T) {
 				fe := core.AsError(got)
 				if fe == nil || fe.ID != tc.wantID {
 					t.Fatalf("got %v, want *core.Error id %q", got, tc.wantID)
+				}
+			}
+		})
+	}
+}
+
+// pushWithRetry: the co-writer push race. Losing it is RETRYABLE and must say so
+// with its own id — folded into the generic "sync" id (as it was), a caller could
+// only tell "run me again" from "stop and fix me" by matching the message, which
+// furrow's error contract forbids. sync-task-status.yml's publish retry branches
+// on exactly this id.
+func TestPushWithRetryClassifiesTheExhaustedRace(t *testing.T) {
+	nfe := fmt.Errorf("rejected: %w", gitrepo.ErrNonFastForward)
+	other := errors.New("disk on fire")
+
+	tests := []struct {
+		name       string
+		pushErrs   []error // one per push attempt, nil = success
+		pullErr    error
+		wantErrID  string // "" = no *core.Error expected
+		wantErr    error  // non-nil: must be returned unchanged (errors.Is)
+		wantPushes int
+		wantPulls  int
+	}{
+		{
+			name:       "a clean push does not pull at all",
+			pushErrs:   []error{nil},
+			wantPushes: 1,
+		},
+		{
+			name:       "the race self-resolves: pull once, push again, succeed",
+			pushErrs:   []error{nfe, nil},
+			wantPushes: 2,
+			wantPulls:  1,
+		},
+		{
+			name:       "still rejected after the retry is the retryable id",
+			pushErrs:   []error{nfe, nfe},
+			wantErrID:  "sync-push-rejected",
+			wantPushes: 2,
+			wantPulls:  1,
+		},
+		{
+			name:       "a non-race push failure is returned unchanged and never retried",
+			pushErrs:   []error{other},
+			wantErr:    other,
+			wantPushes: 1,
+		},
+		{
+			name:       "a second-push failure that is NOT a race stays unchanged",
+			pushErrs:   []error{nfe, other},
+			wantErr:    other,
+			wantPushes: 2,
+			wantPulls:  1,
+		},
+		{
+			name:       "a pull failure during the race wins (it is the real problem)",
+			pushErrs:   []error{nfe},
+			pullErr:    other,
+			wantErr:    other,
+			wantPushes: 1,
+			wantPulls:  1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pushes, pulls := 0, 0
+			push := func() error {
+				pushes++
+				if pushes <= len(tc.pushErrs) {
+					return tc.pushErrs[pushes-1]
+				}
+				t.Fatalf("push called %d times, more than the %d planned", pushes, len(tc.pushErrs))
+				return nil
+			}
+			pull := func() error { pulls++; return tc.pullErr }
+
+			err := pushWithRetry(push, pull)
+
+			if pushes != tc.wantPushes {
+				t.Errorf("pushes = %d, want %d", pushes, tc.wantPushes)
+			}
+			if pulls != tc.wantPulls {
+				t.Errorf("pulls = %d, want %d", pulls, tc.wantPulls)
+			}
+			switch {
+			case tc.wantErr != nil:
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("err = %v, want it to wrap %v", err, tc.wantErr)
+				}
+				if fe := core.AsError(err); fe != nil {
+					t.Errorf("a pass-through error must not be reclassified, got id %q", fe.ID)
+				}
+			case tc.wantErrID != "":
+				fe := core.AsError(err)
+				if fe == nil {
+					t.Fatalf("err = %v, want a *core.Error with id %q", err, tc.wantErrID)
+				}
+				if fe.ID != tc.wantErrID {
+					t.Errorf("id = %q, want %q", fe.ID, tc.wantErrID)
+				}
+				if fe.Code != core.CodeInternal {
+					t.Errorf("code = %d, want %d (retryable exit 3, not the do-not-retry exit 2)", fe.Code, core.CodeInternal)
+				}
+				if !strings.Contains(fe.Msg, "re-run") {
+					t.Errorf("a retryable error must name the recovery, got: %s", fe.Msg)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("err = %v, want nil", err)
 				}
 			}
 		})

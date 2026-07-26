@@ -240,6 +240,7 @@ jobs:
           exit 0
 
       - name: Commit and push status changes
+        id: publish
         if: steps.gate.outputs.proceed == 'true'
         working-directory: tracker
         env:
@@ -255,18 +256,125 @@ jobs:
           fi
           git add -A
           git commit -q -m ":robot: chore(status): ${REF} ${MODE}"
-          # Cross-repo pushes can race (GH concurrency groups are per-repo and
-          # cannot serialize them), so rebase-retry like a human operator would.
+
+          # Publish with `furrow sync`, not a hand-rolled push loop.
+          #
+          # Cross-repo pushes race (GH concurrency groups are per-repo and cannot
+          # serialize them), so this used to be `git push || git pull --rebase`,
+          # three times. That loop handled the race it was written for and dropped
+          # the one failure that actually loses data: `git pull --rebase` was a bare
+          # command under `set -e`, so a CONFLICT killed the step during attempt 1
+          # — attempts 2 and 3 never ran, the runner was left mid-rebase, and the
+          # already-applied lane change went nowhere. Measured on a two-clone
+          # repro: `git pull --rebase` exits 1 leaving `UU .furrow/tasks/<id>.json`,
+          # and the step dies right there.
+          #
+          # `furrow sync` is furrow's own implementation of this exact operation and
+          # is strictly better at it: it retries pull→push on a non-fast-forward
+          # (the race this loop existed for), and on a real conflict it ABORTS the
+          # rebase, restores the board, keeps the local commit, and exits 3 with the
+          # stable id `sync-conflict` plus `details.paths`. The race stays handled
+          # and the conflict becomes a typed, reportable outcome instead of raw git
+          # text in a dead step. (That contract is pinned by
+          # internal/app/sync_test.go's TestSyncConflictAbortsAndReportsPaths.)
+          #
+          # The commit above is made BEFORE sync on purpose, so the tracker keeps
+          # this workflow's own message; sync then sees a clean tree
+          # (`committed:false`) and only fetch/rebase/pushes.
+          #
+          # Branch on the error ID, never the exit code or the message — furrow's
+          # own contract — and retry ONLY the ids furrow calls retryable:
+          #
+          #   sync-push-rejected  a co-writer kept winning the push race. The board
+          #                       is untouched and the local commit intact, so this
+          #                       is the cross-repo race this step exists for.
+          #   sync-busy           a concurrent writer's rebase is still in flight.
+          #
+          # Everything else is terminal by furrow's classification — sync-conflict,
+          # sync-stash-stranded, sync-unmerged, a stale ref lock, a schema
+          # mismatch — and retrying it only burns minutes to fail identically.
+          sync_id=unknown
           for i in 1 2 3; do
-            if git push origin HEAD:main; then
-              echo "pushed"
-              exit 0
-            fi
-            echo "push rejected (race); rebasing (attempt $i)"
-            git pull --rebase origin main
+            furrow sync --json >/tmp/sync.json 2>/tmp/sync.err &&
+              { echo "pushed"; cat /tmp/sync.json; exit 0; }
+            sync_id="$(jq -r '.error.id // "unknown"' /tmp/sync.err 2>/dev/null || echo unknown)"
+            echo "furrow sync failed (attempt $i, id=${sync_id})" >&2
+            cat /tmp/sync.err >&2
+            case "$sync_id" in
+              sync-push-rejected | sync-busy) ;;
+              *) break ;;
+            esac
+            [ "$i" -ge 3 ] || sleep $((i * 5))
           done
-          echo "push failed after retries"
+
+          # The lane was computed and applied correctly and then could not be
+          # published: this write is LOST, not wrong. Hand the next step enough to
+          # say so out loud — until now the only trace was a red job with no
+          # annotation, no comment and no summary, which is exactly how a lost
+          # write came to be described as "silently dropped".
+          {
+            echo "outcome=lost"
+            echo "error_id=${sync_id}"
+            echo "paths=$(jq -r '(.error.details.paths // []) | join(" ")' /tmp/sync.err 2>/dev/null || true)"
+          } >> "$GITHUB_OUTPUT"
           exit 1
+
+      # A LOST write was the QUIETEST failure here and is the most serious one.
+      #
+      # An invalid directive (t-rb4c) keeps the job green and gets both a run
+      # annotation and a PR comment — correctly, since nothing was lost and the
+      # author can fix it. A failed publish got neither, because both of those
+      # steps are gated on `apply.outputs.code != 0` and a lost write has
+      # `code == 0`: apply SUCCEEDED, the push did not. So the worse failure had
+      # the weaker signal, and on a merged PR its only trace was a red
+      # non-required check that t-rb4c had already trained everyone to read as
+      # noise.
+      #
+      # The job stays red here (unlike the invalid-directive path) because the
+      # board really is wrong and a human has to act; red does not block anything,
+      # the PR is already merged in the mode that matters.
+      #
+      # RECOVERY IS A RE-RUN, and that is measured, not hoped: re-running replays
+      # the same closed+merged payload, the gate reads nothing but that payload, so
+      # it re-resolves mode=merge — and `furrow apply` is idempotent, so the lane
+      # is simply re-applied. (t-q27d's body records this working in the field.)
+      - name: Report a lost tracker write on the PR
+        if: failure() && steps.publish.outputs.outcome == 'lost'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ERROR_ID: ${{ steps.publish.outputs.error_id }}
+          PATHS: ${{ steps.publish.outputs.paths }}
+          MODE: ${{ steps.gate.outputs.mode }}
+        with:
+          script: |
+            const id = process.env.ERROR_ID || 'unknown';
+            const paths = (process.env.PATHS || '').trim();
+            const mode = process.env.MODE || '?';
+            const body = [
+              '❌ **furrow: this PR\'s task status was applied but could not be published.**',
+              '',
+              `The \`${mode}\` lane change was computed and written to the tracker checkout, then the`,
+              `push failed (\`${id}\`) — so **the board still shows the old lane**. Nothing about this`,
+              'PR is blocked; the tracker is simply behind.',
+              paths ? `\nConflicted path(s): \`${paths}\`` : '',
+              '',
+              '**Re-run this job to fix it** — `furrow apply` is idempotent, so a re-run re-applies',
+              'the same lane cleanly. Or set it by hand: `furrow move <id> <lane>` then `furrow sync`.',
+            ].filter(Boolean).join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
+
+      - name: Surface a lost tracker write as an error annotation
+        if: failure() && steps.publish.outputs.outcome == 'lost'
+        env:
+          ERROR_ID: ${{ steps.publish.outputs.error_id }}
+          PATHS: ${{ steps.publish.outputs.paths }}
+        run: |
+          echo "::error title=furrow tracker write lost::the lane was applied but not published (${ERROR_ID}); the board is behind. Paths: ${PATHS:-none}. Re-run this job — furrow apply is idempotent."
 
       - name: Comment validation failures on the PR
         if: steps.gate.outputs.proceed == 'true' && steps.apply.outputs.code != '0'

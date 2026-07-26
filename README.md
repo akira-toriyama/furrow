@@ -572,7 +572,12 @@ taxonomy (with the git-level reasons) is in
   *here* is cleared with a manual `git rebase --abort`); a fetch/lock race is
   retried, and a lock still blocking past the budget (a likely-stale
   `.git/*.lock`) fails **terminally** naming the lock, rather than looping an
-  agent on a `sync-busy` that will never clear.
+  agent on a `sync-busy` that will never clear. A co-writer that keeps winning
+  the **push** race is its own **retryable** id, `sync-push-rejected` — the board
+  is untouched and your local sync commit intact, so re-running is the whole fix.
+  It is separate from `sync` precisely so a caller can retry it without matching
+  error text: furrow's own `sync-task-status.yml` retries `sync-push-rejected` and
+  `sync-busy`, and treats every other id as terminal.
 
 On a **successful** sync furrow also prints a repo-scoped `revisit` summary —
 open tasks with a done dependency (`dep_done`) or gone stale (`stale`), containers

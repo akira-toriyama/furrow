@@ -177,7 +177,14 @@ the user-level config. When you work with any furrow store:
   — a **retryable** condition (re-run), NOT the do-not-retry `exit 2`; a
   fetch/ref-lock race during the pull is retried and, if a lock still blocks
   past the budget (a likely-stale `.git/*.lock`), fails terminally (id `sync`)
-  naming the lock to remove, NOT `sync-busy`. A SIGINT/SIGTERM cancels the
+  naming the lock to remove, NOT `sync-busy`. A co-writer that keeps winning the
+  **push** race is the third retryable id, `sync-push-rejected` (exit 3): the
+  board is untouched and the local sync commit intact, so re-running is the whole
+  fix. It is deliberately NOT folded into `sync` — a caller that must retry a race
+  but stop on a conflict could otherwise only tell them apart by matching the
+  message, which this file tells you never to do. `sync-task-status.yml` retries
+  exactly `sync-push-rejected` and `sync-busy`; every other id is terminal there.
+  A SIGINT/SIGTERM cancels the
   in-flight git and exits **128+signal (130 for SIGINT, 143 for SIGTERM)** with id
   `sync-interrupted` — retryable, just re-run (a genuine conflict is never masked
   by the signal: it still surfaces as `sync-conflict` with its `details.paths`,
