@@ -100,3 +100,73 @@ func TestCLIDoneAndMoveAcceptMultipleIds(t *testing.T) {
 		t.Errorf("unknown lane should exit 2, got %d", code)
 	}
 }
+
+// `set <id>...` is the bulk-triage arity: --json emits an ARRAY of envelopes for
+// two or more ids and keeps the classic object for one (the show arity
+// convention), --ndjson is one envelope per line at any arity, and the position
+// flags are refused for a batch.
+func TestCLISetManyArityAndPositionGuard(t *testing.T) {
+	initStore(t)
+	a := addTask(t, "a")
+	b := addTask(t, "b")
+
+	out, code := run(t, "--json", "set", a, b, "-s", "ready", "--add-label", "triaged")
+	if code != 0 {
+		t.Fatalf("bulk set exit = %d:\n%s", code, out)
+	}
+	var envs []struct {
+		After struct {
+			ID     string   `json:"id"`
+			Status string   `json:"status"`
+			Labels []string `json:"labels"`
+		} `json:"after"`
+	}
+	if err := json.Unmarshal([]byte(out), &envs); err != nil {
+		t.Fatalf("two ids must emit an ARRAY of envelopes: %v\n%s", err, out)
+	}
+	if len(envs) != 2 {
+		t.Fatalf("want 2 envelopes, got %d:\n%s", len(envs), out)
+	}
+	for i, e := range envs {
+		if e.After.Status != "ready" || len(e.After.Labels) != 1 || e.After.Labels[0] != "triaged" {
+			t.Errorf("envelope %d not fully set: %+v", i, e.After)
+		}
+	}
+
+	// One id keeps the classic object.
+	out, code = run(t, "--json", "set", a, "--effort", "2")
+	if code != 0 {
+		t.Fatalf("single set exit = %d:\n%s", code, out)
+	}
+	var single map[string]any
+	if err := json.Unmarshal([]byte(out), &single); err != nil {
+		t.Fatalf("one id must keep the classic object: %v\n%s", err, out)
+	}
+	if _, ok := single["changed"]; !ok {
+		t.Errorf("single-id set should emit {before,after,changed}, got %v", single)
+	}
+
+	// --ndjson is one envelope per line at any arity.
+	out, code = run(t, "--ndjson", "set", a, b, "--value", "3")
+	if code != 0 {
+		t.Fatalf("ndjson set exit = %d:\n%s", code, out)
+	}
+	if n := len(strings.Split(strings.TrimSpace(out), "\n")); n != 2 {
+		t.Errorf("--ndjson should print one line per task, got %d:\n%s", n, out)
+	}
+
+	// A position flag over a batch is exit 2.
+	if _, code := run(t, "set", a, b, "--priority", "50"); code != int(core.CodeValidation) {
+		t.Errorf("--priority over 2 ids should exit 2, got %d", code)
+	}
+
+	// A miss sets nothing and names every miss.
+	fe, _ := runErr(t, "--json", "set", a, "t-zzzz1", "-s", "backlog")
+	if fe == nil || fe.Code != core.CodeNotFound {
+		t.Fatalf("a batch with a miss should exit 1, got %+v", fe)
+	}
+	out, _ = run(t, "--json", "show", a, "--no-body")
+	if !strings.Contains(out, `"status": "ready"`) {
+		t.Errorf("a failed batch must change nothing; %s moved:\n%s", a, out)
+	}
+}

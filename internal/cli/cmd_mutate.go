@@ -515,7 +515,7 @@ func newSetCmd() *cobra.Command {
 		after       string
 	)
 	cmd := &cobra.Command{
-		Use:   "set <id>",
+		Use:   "set <id>...",
 		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, type)",
 		Long: "Combine the routine triage edits into a single write: move a lane (-s),\n" +
 			"position the task (--priority, or --before/--after a task in the destination\n" +
@@ -527,12 +527,19 @@ func newSetCmd() *cobra.Command {
 			"a relative target outside the destination lane is exit 2, and under\n" +
 			"[labels].required a set that would strip the last label is refused. A\n" +
 			"relative placement that has to respace the lane does so in the same write\n" +
-			"and reports the neighbors in `renumbered`, exactly like reorder.",
+			"and reports the neighbors in `renumbered`, exactly like reorder.\n\n" +
+			"Several ids apply the SAME edits to all of them in ONE all-or-nothing\n" +
+			"write (bulk triage): a miss sets NOTHING and exits 1 with every miss in\n" +
+			"details.missing, and --json emits an array of envelopes for two or more\n" +
+			"ids (the classic object for one). The position flags\n" +
+			"(--priority/--before/--after) apply to ONE task and are exit 2 for two or\n" +
+			"more ids.",
 		Example: "  furrow set t-k3m9p -s ready --value 4 --effort 2 --add-label bug\n" +
 			"  furrow set t-k3m9p -s ready --before t-x1y2z\n" +
 			"  furrow set t-k3m9p --type epic\n" +
+			"  furrow set t-k3m9p t-x1y2z t-9f2qr -s backlog --add-label triaged\n" +
 			"  furrow set t-k3m9p --clear-value --rm-label wip",
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -563,6 +570,9 @@ func newSetCmd() *cobra.Command {
 			}
 			if cmd.Flags().Changed("type") {
 				o.Type = &typ
+			}
+			if len(args) > 1 {
+				return emitMutationMany(a, "set", args, func() ([]*core.Task, error) { return a.SetMany(args, o) })
 			}
 			var renumbered []core.PriorityChange
 			return emitMutationWith(a, "set", args[0],

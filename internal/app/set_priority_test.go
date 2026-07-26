@@ -112,3 +112,107 @@ func TestSetRelativeValidation(t *testing.T) {
 		t.Errorf("missing target: err = %v, want not-found", err)
 	}
 }
+
+// SetMany is the bulk-triage twin of MoveMany: the same edits over several
+// tasks in ONE all-or-nothing write, which is what a GUI multi-select needs
+// instead of N calls.
+func TestSetManyAppliesToAllInOneWrite(t *testing.T) {
+	a := newApp()
+	var ids []string
+	for _, title := range []string{"a", "b", "c"} {
+		task, err := a.Add(title, AddOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, task.ID)
+	}
+
+	got, err := a.SetMany(ids, SetOpts{Status: strp("ready"), Value: intp(4), AddLabels: []string{"triaged"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("SetMany returned %d tasks, want 3", len(got))
+	}
+	for i, task := range got {
+		if task.ID != ids[i] {
+			t.Errorf("result %d = %s, want input order %s", i, task.ID, ids[i])
+		}
+		if task.Status != "ready" || task.Value == nil || *task.Value != 4 || !equalStrings(task.Labels, []string{"triaged"}) {
+			t.Errorf("%s not fully set: %+v", task.ID, task)
+		}
+	}
+	// The edits survive a fresh read (they were saved, not just returned).
+	fresh, _, err := a.Get(ids[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.Status != "ready" {
+		t.Errorf("persisted status = %q, want ready", fresh.Status)
+	}
+}
+
+// A miss sets NOTHING and reports every miss — MoveMany's contract, which is
+// show's contract, so an agent branches on details.missing identically.
+func TestSetManyMissChangesNothing(t *testing.T) {
+	a := newApp()
+	keep, err := a.Add("keep", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = a.SetMany([]string{keep.ID, "t-zzzz1", "t-zzzz2"}, SetOpts{Status: strp("ready")})
+	if core.ExitCode(err) != int(core.CodeNotFound) {
+		t.Fatalf("a batch with misses should exit 1, got %v", err)
+	}
+	fe := core.AsError(err)
+	det, _ := fe.Details.(map[string]any)
+	missing, _ := det["missing"].([]string)
+	if !equalStrings(missing, []string{"t-zzzz1", "t-zzzz2"}) {
+		t.Errorf("details.missing = %v, want both misses", det["missing"])
+	}
+	after, _, err := a.Get(keep.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Status == "ready" {
+		t.Error("a failed batch must change NOTHING, but the resolvable task moved")
+	}
+}
+
+// A position applies to one task: --before/--after names a single neighbour and
+// an absolute --priority over N tasks would deliberately tie them, which the
+// sparse-priority model treats as unordered. Refusing is reversible.
+func TestSetManyRefusesPositionFlags(t *testing.T) {
+	a := newApp()
+	one, _ := a.Add("one", AddOpts{})
+	two, _ := a.Add("two", AddOpts{})
+	ids := []string{one.ID, two.ID}
+
+	for name, o := range map[string]SetOpts{
+		"--priority": {Priority: intp(50)},
+		"--before":   {Before: one.ID},
+		"--after":    {After: one.ID},
+	} {
+		if _, err := a.SetMany(ids, o); core.ExitCode(err) != int(core.CodeValidation) {
+			t.Errorf("%s over 2 ids should be exit 2, got %v", name, err)
+		}
+	}
+	// One id still positions normally.
+	if _, err := a.SetMany([]string{two.ID}, SetOpts{Priority: intp(50)}); err != nil {
+		t.Errorf("a single id must still accept a position: %v", err)
+	}
+}
+
+// Duplicates collapse to their first occurrence, like MoveMany.
+func TestSetManyDedupesIDs(t *testing.T) {
+	a := newApp()
+	task, _ := a.Add("dup", AddOpts{})
+	got, err := a.SetMany([]string{task.ID, task.ID}, SetOpts{Status: strp("ready")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Errorf("duplicate ids should collapse, got %d results", len(got))
+	}
+}

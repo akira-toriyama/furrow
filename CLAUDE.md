@@ -29,7 +29,10 @@ the user-level config. When you work with any furrow store:
   is absolute, `--before/--after <ref>` relative in the DESTINATION lane — a
   cross-column drop (`-s <lane> --before <ref>`) is lane + position in ONE
   write, with the same respace/`renumbered` contract as reorder (the three
-  position flags are mutually exclusive); `dep <id> <dep-id>...` is variadic
+  position flags are mutually exclusive), and it takes SEVERAL ids — `set <id>...`
+  applies the same edits to all of them in one all-or-nothing write (bulk
+  triage), refusing the three position flags for ≥2 ids since a position places
+  one task; `dep <id> <dep-id>...` is variadic
   (add/remove several in one write), and `dep <id> --list` is the read-only
   reverse-deps view — both directions (`depends_on` / `blocks`) resolved to
   id+title+lane, one `--json` object — so "what waits on this?" is a command,
