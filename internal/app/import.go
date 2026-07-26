@@ -37,6 +37,19 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 	// anything, so a bad spec fails before the first body hits disk.
 	universe := repoUniverse(idx, a.BoardRepos)
 	for i, s := range specs {
+		// specf prefixes an error with WHICH spec failed. A closed-vocabulary gate
+		// must reuse the SAME constructor single Add uses (unknownLaneErr /
+		// unknownTypeErr / resolveRepoArgs) and only prefix its message: rebuilding
+		// it with Validationf would drop Candidates, so `add --stdin -s ghots` used
+		// to exit 2 with no did-you-mean list while `add -s ghots` had one — the
+		// bulk-vs-single divergence class of t-adx9/t-ek9y, in the error shape
+		// instead of the write.
+		specf := func(err error) error {
+			if fe := core.AsError(err); fe != nil {
+				return fe.WithPrefixf("spec %d (%q): ", i, s.Title)
+			}
+			return err
+		}
 		if strings.TrimSpace(s.Title) == "" {
 			return nil, core.Validationf("", "spec %d has an empty title", i)
 		}
@@ -45,7 +58,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 			lane = a.Cfg.DefaultLane
 		}
 		if !a.Cfg.IsLane(lane) {
-			return nil, core.Validationf("", "spec %d (%q): unknown lane %q", i, s.Title, lane)
+			return nil, specf(a.unknownLaneErr("", lane))
 		}
 		if a.Cfg.LabelsRequired && len(s.Labels) == 0 {
 			return nil, core.Validationf("", "spec %d (%q): a label is required ([labels].required)", i, s.Title)
@@ -58,11 +71,11 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		// written. Same precedence as Add (after the draft check, before repo
 		// resolution). Without this, `add --stdin --type bogus` was silently created.
 		if !a.Cfg.IsType(s.Type) {
-			return nil, core.Validationf("", "spec %d (%q): unknown type %q (see [types].order)", i, s.Title, s.Type)
+			return nil, specf(a.unknownTypeErr("", s.Type))
 		}
 		repos, err := resolveRepoArgs(s.Repos, "", universe)
 		if err != nil {
-			return nil, err
+			return nil, specf(err)
 		}
 		specs[i].Repos = a.withBoardRepo(repos, s.Draft)
 		// A dep/parent must pre-exist (validated against the pre-batch index):

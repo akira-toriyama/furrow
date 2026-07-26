@@ -13,10 +13,11 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// run executes furrow in-process against args, returning stdout and the
-// exit code Execute would have produced. It points the store at FURROW_DIR so
-// no chdir is needed.
-func run(t *testing.T, args ...string) (string, int) {
+// runCLI is the one in-process furrow runner every test harness below is built
+// on: it wires stdin/stdout, runs the real root command, and classifies the
+// error exactly as Execute() does (a bare cobra error is a usage problem =
+// validation). Tests point the store at FURROW_DIR, so no chdir is needed.
+func runCLI(t *testing.T, stdin string, args ...string) (*core.Error, string) {
 	t.Helper()
 	var buf bytes.Buffer
 	out = &buf
@@ -26,40 +27,51 @@ func run(t *testing.T, args ...string) (string, int) {
 	root.SetArgs(args)
 	root.SetOut(&buf)
 	root.SetErr(&buf)
+	root.SetIn(strings.NewReader(stdin))
 	err := root.Execute()
-	code := int(core.CodeOK)
-	if err != nil {
-		fe := core.AsError(err)
-		if fe == nil {
-			fe = &core.Error{Code: core.CodeValidation, Msg: err.Error()}
-		}
-		code = int(fe.Code)
+	if err == nil {
+		return nil, buf.String()
 	}
-	return buf.String(), code
+	fe := core.AsError(err)
+	if fe == nil {
+		fe = &core.Error{Code: core.CodeValidation, Msg: err.Error()}
+	}
+	return fe, buf.String()
+}
+
+// run executes furrow against args, returning stdout and the exit code
+// Execute would have produced.
+func run(t *testing.T, args ...string) (string, int) {
+	t.Helper()
+	fe, out := runCLI(t, "", args...)
+	return out, exitOf(fe)
 }
 
 // runIn is run() with stdin wired from s (for commands that read stdin).
 func runIn(t *testing.T, s string, args ...string) (string, int) {
 	t.Helper()
-	var buf bytes.Buffer
-	out = &buf
-	defer func() { out = nil }()
+	fe, out := runCLI(t, s, args...)
+	return out, exitOf(fe)
+}
 
-	root := newRootCmd()
-	root.SetArgs(args)
-	root.SetOut(&buf)
-	root.SetErr(&buf)
-	root.SetIn(strings.NewReader(s))
-	err := root.Execute()
-	code := int(core.CodeOK)
-	if err != nil {
-		fe := core.AsError(err)
-		if fe == nil {
-			fe = &core.Error{Code: core.CodeValidation, Msg: err.Error()}
-		}
-		code = int(fe.Code)
+// runErr returns the structured error (nil on success) plus stdout — for tests
+// that assert on Candidates, Details, and friends rather than the exit code.
+func runErr(t *testing.T, args ...string) (*core.Error, string) {
+	t.Helper()
+	return runCLI(t, "", args...)
+}
+
+// runErrIn is runErr() with stdin wired from s.
+func runErrIn(t *testing.T, s string, args ...string) (*core.Error, string) {
+	t.Helper()
+	return runCLI(t, s, args...)
+}
+
+func exitOf(fe *core.Error) int {
+	if fe == nil {
+		return int(core.CodeOK)
 	}
-	return buf.String(), code
+	return int(fe.Code)
 }
 
 // initStore creates a fresh store and points FURROW_DIR at it.
