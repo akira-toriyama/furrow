@@ -122,8 +122,9 @@ jobs:
 
       # The generalization of the step above: every prose region that enumerates
       # a closed vocabulary (commands, config sections, revisit signals, -q
-      # qualifiers) must name every member the registry owns. The 2026-07 audit
-      # found five such lists rotted, all in files no guard was reading.
+      # qualifiers, lint codes) must name every member the registry owns — or,
+      # where it lists examples only, must name none that no longer exists. The
+      # 2026-07 audit found five such lists rotted, all in files no guard read.
       - name: docs vocabulary drift guard
         run: FURROW_BIN=/tmp/furrow sh scripts/check-docs-vocab.sh
 
