@@ -488,6 +488,23 @@ func (a *App) load() (*core.Index, error) {
 	return idx, nil
 }
 
+// seedChecklist turns repeatable --check values into shard checklist items,
+// dropping blank entries like `check --add` does. Add and AddMany BOTH call it:
+// the bulk path used to omit Checklist from its task literal entirely, so
+// `add --stdin --check x` silently created an empty checklist while the
+// identical single add stored the item — the same silent-drop divergence as
+// t-ek9y (--type) and t-adx9 (--value/--effort). One function, one behavior.
+func seedChecklist(texts []string) []core.ChecklistItem {
+	var out []core.ChecklistItem
+	for _, text := range texts {
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		out = append(out, core.ChecklistItem{Text: text})
+	}
+	return out
+}
+
 // AddOpts are the optional fields for Add. A nil Priority means "auto" (append
 // after the lane's last task using the sparse step).
 type AddOpts struct {
@@ -589,18 +606,11 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	if status == a.Cfg.DoneLane {
 		closed = &now
 	}
-	var checklist []core.ChecklistItem
-	for _, text := range o.Checklist {
-		if strings.TrimSpace(text) == "" {
-			continue // drop blank --check values, like check --add
-		}
-		checklist = append(checklist, core.ChecklistItem{Text: text})
-	}
 	t := core.Task{
 		ID: id, Title: title, Status: status, Priority: prio,
 		Value: cloneIntp(o.Value), Effort: cloneIntp(o.Effort),
 		Labels: o.Labels, Repos: repos, Parent: o.Parent, Deps: o.Deps, Refs: o.Refs,
-		Checklist: checklist,
+		Checklist: seedChecklist(o.Checklist),
 		Created:   now, Updated: now, Closed: closed, Body: core.BodyPath(id),
 		Type: o.Type,
 	}

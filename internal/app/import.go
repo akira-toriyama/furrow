@@ -1,8 +1,6 @@
 package app
 
 import (
-	"strings"
-
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
@@ -37,6 +35,15 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 	// anything, so a bad spec fails before the first body hits disk.
 	universe := repoUniverse(idx, a.BoardRepos)
 	for i, s := range specs {
+		// Fold the title exactly as single Add does. A bulk title is ordinary user
+		// input (`furrow add --stdin`, a migrate import), not a hand-edited shard,
+		// so it must not be the one door that lets a control character through: the
+		// title is spliced into the body's "# " heading and printed by ls, which is
+		// the body-injection/escape-sequence vector NormalizeTitle closes. Written
+		// back into specs[i] so the construction loop below stores the folded form
+		// and every error message below quotes it.
+		s.Title = core.NormalizeTitle(s.Title)
+		specs[i].Title = s.Title
 		// specf prefixes an error with WHICH spec failed. A closed-vocabulary gate
 		// must reuse the SAME constructor single Add uses (unknownLaneErr /
 		// unknownTypeErr / resolveRepoArgs) and only prefix its message: rebuilding
@@ -50,7 +57,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 			}
 			return err
 		}
-		if strings.TrimSpace(s.Title) == "" {
+		if s.Title == "" {
 			return nil, core.Validationf("", "spec %d has an empty title", i)
 		}
 		lane := s.Status
@@ -110,10 +117,11 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 			prio = idx.NextPriority(lane, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
 		}
 		t := core.Task{
-			ID: id, Title: strings.TrimSpace(s.Title), Status: lane, Priority: prio,
+			ID: id, Title: s.Title, Status: lane, Priority: prio,
 			Value: cloneIntp(s.Value), Effort: cloneIntp(s.Effort),
 			Labels: s.Labels, Repos: s.Repos, Parent: s.Parent, Deps: s.Deps, Refs: s.Refs,
-			Created: now, Updated: now, Body: core.BodyPath(id),
+			Checklist: seedChecklist(s.Checklist),
+			Created:   now, Updated: now, Body: core.BodyPath(id),
 			Type: s.Type,
 		}
 		// Mirror Add: a task born in the done lane is closed at birth, so bulk
