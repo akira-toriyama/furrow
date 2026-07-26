@@ -107,6 +107,13 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 	doneIDs := a.doneSet(idx)
 	now := a.Clock.Now()
 	kids := childrenMap(idx)
+	// Compile -q once. It receives THIS call's staleDays (which --stale-days
+	// may have overridden), so `revisit -q is:stale` and revisit's own stale
+	// signal use one threshold within one call.
+	qpred, err := a.queryPred(o.Query, idx, staleDays, nil)
+	if err != nil {
+		return nil, err
+	}
 	var out []RevisitItem
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
@@ -120,6 +127,15 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 		reasons = append(reasons, a.containerReasons(t, kids, idx, doneIDs)...)
 		if len(reasons) == 0 {
 			continue
+		}
+		if qpred != nil {
+			ok, err := qpred(t)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
 		}
 		out = append(out, RevisitItem{Task: *t, Reasons: reasons})
 		if o.Limit > 0 && len(out) >= o.Limit {

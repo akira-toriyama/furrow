@@ -36,6 +36,12 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 	if err != nil {
 		return Stats{}, err
 	}
+	// Compile -q once; the distributions then describe the QUERIED slice, the
+	// same AND semantics as List (`stats -q is:stale` = the stale board's shape).
+	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, nil)
+	if err != nil {
+		return Stats{}, err
+	}
 	laneCounts := map[string]int{}
 	repoCounts := map[string]int{}
 	labelCounts := map[string]int{}
@@ -44,6 +50,15 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 		t := &idx.Tasks[i]
 		if !o.match(t) {
 			continue
+		}
+		if qpred != nil {
+			ok, err := qpred(t)
+			if err != nil {
+				return Stats{}, err
+			}
+			if !ok {
+				continue
+			}
 		}
 		total++
 		if len(t.Repos) == 0 {

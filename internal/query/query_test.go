@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+// vals builds a bare (unquoted) Value list — the common case in the table.
+func vals(texts ...string) []Value {
+	out := make([]Value, len(texts))
+	for i, s := range texts {
+		out[i] = Value{Text: s}
+	}
+	return out
+}
+
 func TestParseTable(t *testing.T) {
 	tests := []struct {
 		name string
@@ -16,55 +25,75 @@ func TestParseTable(t *testing.T) {
 		{
 			"simple qualifier",
 			"status:ready",
-			Query{{Kind: Qualifier, Field: "status", Op: Eq, Values: []string{"ready"}}},
+			Query{{Kind: Qualifier, Field: "status", Op: Eq, Values: vals("ready")}},
 		},
 		{
 			"lane alias keeps field verbatim",
 			"lane:done",
-			Query{{Kind: Qualifier, Field: "lane", Op: Eq, Values: []string{"done"}}},
+			Query{{Kind: Qualifier, Field: "lane", Op: Eq, Values: vals("done")}},
 		},
 		{
 			"comma OR set",
 			"label:ui,dx",
-			Query{{Kind: Qualifier, Field: "label", Op: Eq, Values: []string{"ui", "dx"}}},
+			Query{{Kind: Qualifier, Field: "label", Op: Eq, Values: vals("ui", "dx")}},
 		},
 		{
 			"two terms AND",
 			"status:ready label:cli",
 			Query{
-				{Kind: Qualifier, Field: "status", Op: Eq, Values: []string{"ready"}},
-				{Kind: Qualifier, Field: "label", Op: Eq, Values: []string{"cli"}},
+				{Kind: Qualifier, Field: "status", Op: Eq, Values: vals("ready")},
+				{Kind: Qualifier, Field: "label", Op: Eq, Values: vals("cli")},
 			},
 		},
 		{
 			"negation",
 			"-status:done,icebox",
-			Query{{Kind: Qualifier, Not: true, Field: "status", Op: Eq, Values: []string{"done", "icebox"}}},
+			Query{{Kind: Qualifier, Not: true, Field: "status", Op: Eq, Values: vals("done", "icebox")}},
 		},
 		{
 			"comparison ge",
 			"value:>=4",
-			Query{{Kind: Qualifier, Field: "value", Op: Ge, Values: []string{"4"}}},
+			Query{{Kind: Qualifier, Field: "value", Op: Ge, Values: vals("4")}},
 		},
 		{
 			"comparison lt",
 			"effort:<2",
-			Query{{Kind: Qualifier, Field: "effort", Op: Lt, Values: []string{"2"}}},
+			Query{{Kind: Qualifier, Field: "effort", Op: Lt, Values: vals("2")}},
 		},
 		{
 			"closed range",
 			"value:2..4",
-			Query{{Kind: Qualifier, Field: "value", Op: Between, Values: []string{"2", "4"}}},
+			Query{{Kind: Qualifier, Field: "value", Op: Between, Values: vals("2", "4")}},
 		},
 		{
 			"open range low",
 			"effort:*..3",
-			Query{{Kind: Qualifier, Field: "effort", Op: Between, Values: []string{"*", "3"}}},
+			Query{{Kind: Qualifier, Field: "effort", Op: Between, Values: vals("*", "3")}},
 		},
 		{
 			"open range high",
 			"value:3..*",
-			Query{{Kind: Qualifier, Field: "value", Op: Between, Values: []string{"3", "*"}}},
+			Query{{Kind: Qualifier, Field: "value", Op: Between, Values: vals("3", "*")}},
+		},
+		{
+			"relative date comparison",
+			"updated:>=-2w",
+			Query{{Kind: Qualifier, Field: "updated", Op: Ge, Values: vals("-2w")}},
+		},
+		{
+			"relative date range",
+			"updated:-4w..-2w",
+			Query{{Kind: Qualifier, Field: "updated", Op: Between, Values: vals("-4w", "-2w")}},
+		},
+		{
+			"date range",
+			"created:2026-07-01..2026-07-15",
+			Query{{Kind: Qualifier, Field: "created", Op: Between, Values: vals("2026-07-01", "2026-07-15")}},
+		},
+		{
+			"RFC3339 value keeps its colons",
+			"created:>=2026-07-01T09:00:00Z",
+			Query{{Kind: Qualifier, Field: "created", Op: Ge, Values: vals("2026-07-01T09:00:00Z")}},
 		},
 		{
 			"presence has",
@@ -102,24 +131,39 @@ func TestParseTable(t *testing.T) {
 			Query{{Kind: FreeText, Text: "typed query"}},
 		},
 		{
-			"quoted value keeps spaces",
+			"quoted value keeps spaces and is marked quoted",
 			`title:'Bug fix'`,
-			Query{{Kind: Qualifier, Field: "title", Op: Eq, Values: []string{"Bug fix"}}},
+			Query{{Kind: Qualifier, Field: "title", Op: Eq, Values: []Value{{Text: "Bug fix", Quoted: true}}}},
 		},
 		{
 			"colon inside quoted value is not a separator",
 			`title:'a:b'`,
-			Query{{Kind: Qualifier, Field: "title", Op: Eq, Values: []string{"a:b"}}},
+			Query{{Kind: Qualifier, Field: "title", Op: Eq, Values: []Value{{Text: "a:b", Quoted: true}}}},
+		},
+		{
+			"range separator inside quotes is content",
+			`title:'a..b'`,
+			Query{{Kind: Qualifier, Field: "title", Op: Eq, Values: []Value{{Text: "a..b", Quoted: true}}}},
+		},
+		{
+			"comma inside quotes is content",
+			`title:'a,b'`,
+			Query{{Kind: Qualifier, Field: "title", Op: Eq, Values: []Value{{Text: "a,b", Quoted: true}}}},
+		},
+		{
+			"graph qualifier with hyphenated field",
+			"depends-on:t-k3m9p",
+			Query{{Kind: Qualifier, Field: "depends-on", Op: Eq, Values: vals("t-k3m9p")}},
 		},
 		{
 			"id prefix",
 			"id:t-k3",
-			Query{{Kind: Qualifier, Field: "id", Op: Eq, Values: []string{"t-k3"}}},
+			Query{{Kind: Qualifier, Field: "id", Op: Eq, Values: vals("t-k3")}},
 		},
 		{
 			"case-insensitive field, verbatim value",
 			"STATUS:Ready",
-			Query{{Kind: Qualifier, Field: "status", Op: Eq, Values: []string{"Ready"}}},
+			Query{{Kind: Qualifier, Field: "status", Op: Eq, Values: vals("Ready")}},
 		},
 	}
 	for _, tc := range tests {
@@ -161,6 +205,10 @@ func FuzzParse(f *testing.F) {
 		"", "status:ready", "-label:a,b", "value:>=4", "x:1..2", `title:'a b'`,
 		"is:actionable has:parent -no:repo", `"phrase"`, "::::", "a:b:c", "--", "-",
 		",", "value:*..*", `'`, `"`, "\t\n", "label:,,,",
+		"updated:>=-2w", "created:2026-07-01..2026-07-15", "closed:<-30d",
+		"created:>=2026-07-01T09:00:00Z", "reviewed:*..-1d", "is:stale",
+		"depends-on:t-1,t-2", "blocks:t-x", "child-of:t-y", `title:'a..b'`,
+		"updated:..", "updated:-", "updated:-2x", "created:'..'",
 	} {
 		f.Add(s)
 	}

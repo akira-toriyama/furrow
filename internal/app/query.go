@@ -4,36 +4,108 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/query"
 )
 
-// qualifierVocab is the set of field qualifiers `-q` understands in v1 (the
-// candidates offered on an unknown field). Date qualifiers (created/updated/…),
-// body:, and the transitive graph qualifiers (child-of/depends-on/…) are the
+// qualifierVocab is the set of field qualifiers `-q` understands (the
+// candidates offered on an unknown field): the enum/text fields, the ordinals,
+// the four system timestamps, and the direct-edge graph qualifiers. The
+// transitive graph qualifiers (descendant-of/ancestor-of) and wildcards are the
 // tracked v2 remainder and are NOT listed, so writing one yields a clear
 // unknown-field error rather than a silent no-match.
 var qualifierVocab = []string{
-	"status", "lane", "type", "label", "repo", "id", "parent", "title",
+	"status", "lane", "type", "label", "repo", "id", "parent", "title", "body",
 	"value", "effort", "priority", "roi",
+	"created", "updated", "closed", "reviewed",
+	"child-of", "depends-on", "blocks",
 }
 
-// presenceVocab is the field set has:/no: accept in v1.
+// presenceVocab is the field set has:/no: accept.
 var presenceVocab = []string{
-	"label", "repo", "parent", "value", "effort", "deps", "refs", "checklist", "closed", "reviewed",
+	"label", "repo", "parent", "value", "effort", "deps", "refs", "checklist", "closed", "reviewed", "body",
 }
 
-// stateVocab is the is: flag set in v1.
-var stateVocab = []string{"actionable", "blocked", "stuck", "open", "closed", "draft", "container"}
+// stateVocab is the is: flag set.
+var stateVocab = []string{"actionable", "blocked", "stuck", "stale", "open", "closed", "draft", "container"}
+
+// isDateField reports whether f is one of the four system timestamps the date
+// qualifiers read.
+func isDateField(f string) bool {
+	return f == "created" || f == "updated" || f == "closed" || f == "reviewed"
+}
+
+// taskPred is a compiled `-q` predicate over one task. Evaluation may load a
+// body on demand (free text, body:, has:body), so it can fail with a store
+// error — callers abort the whole read on a non-nil error rather than treating
+// an unreadable body as a non-match.
+type taskPred func(*core.Task) (bool, error)
+
+// queryPred compiles a raw `-q` string against the loaded index, or returns
+// (nil, nil) when there is no query — the one entry point every filtering read
+// (ls/next/revisit/stats/search) funnels through, so `-q` means the same thing
+// everywhere. staleDays feeds `is:stale`: normally the config's
+// [revisit].stale_days; Revisit passes its effective (possibly --stale-days
+// overridden) window so `revisit -q is:stale` and revisit's own stale signal
+// can never disagree within one call. loadBody resolves a task's body for the
+// body-matching terms — nil means the hot store's; a read filtering a DIFFERENT
+// index (ls --archived) must pass that store's loader, or `body:` terms would
+// silently search the wrong bodies.
+func (a *App) queryPred(raw string, idx *core.Index, staleDays int, loadBody func(string) (string, error)) (taskPred, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	return a.compileQuery(raw, idx, staleDays, loadBody)
+}
+
+// queryCompiler carries the state a query's terms bind against: the loaded
+// index, the compile-time instant (ONE Clock read per query, so every relative
+// date and staleness test in a pass agrees), the stale threshold, and
+// lazily-built derived state — the done set, the children map, and the body
+// cache. Bodies are loaded on demand and only by terms that read them, so a
+// query with no text-over-body term never pays for a single body read.
+type queryCompiler struct {
+	app       *App
+	idx       *core.Index
+	now       time.Time
+	staleDays int
+	loadBody  func(string) (string, error)
+	doneIDs   map[string]bool
+	kids      map[string][]*core.Task
+	bodies    map[string]string
+	bodyErr   error
+}
+
+// body returns t's body, loading it once per id. A store failure is parked in
+// bodyErr — a per-term predicate cannot return an error — and surfaced by the
+// compiled taskPred right after the failing term evaluates, failing the read.
+func (c *queryCompiler) body(t *core.Task) string {
+	if b, ok := c.bodies[t.ID]; ok {
+		return b
+	}
+	b, err := c.loadBody(t.ID)
+	if err != nil {
+		if c.bodyErr == nil {
+			c.bodyErr = err
+		}
+		return ""
+	}
+	if c.bodies == nil {
+		c.bodies = map[string]string{}
+	}
+	c.bodies[t.ID] = b
+	return b
+}
 
 // compileQuery parses raw -q text and binds it to a predicate over the loaded
 // index. Validation faults (bad grammar, unknown field/flag, an operator on a
-// non-ordinal field, an unknown lane/type value) are exit-2 errors carrying a
-// stable kebab id and, where the input almost resolved, candidates. A nil
-// predicate is returned only with a non-nil error; an empty query compiles to a
-// match-everything predicate.
-func (a *App) compileQuery(raw string, idx *core.Index) (func(*core.Task) bool, error) {
+// non-ordered field, an unknown lane/type value, a malformed date) are exit-2
+// errors carrying a stable kebab id and, where the input almost resolved,
+// candidates. A nil predicate is returned only with a non-nil error; an empty
+// query compiles to a match-everything predicate.
+func (a *App) compileQuery(raw string, idx *core.Index, staleDays int, loadBody func(string) (string, error)) (taskPred, error) {
 	q, err := query.Parse(raw)
 	if err != nil {
 		var pe *query.ParseError
@@ -44,43 +116,50 @@ func (a *App) compileQuery(raw string, idx *core.Index) (func(*core.Task) bool, 
 		return nil, core.Validationf("query-parse", "invalid query: %v", err)
 	}
 
-	// Precompute shared state only when a term needs it.
-	var doneIDs map[string]bool
-	var kids map[string][]*core.Task
+	if loadBody == nil {
+		loadBody = a.Store.LoadBody
+	}
+	c := &queryCompiler{app: a, idx: idx, now: a.Clock.Now(), staleDays: staleDays, loadBody: loadBody}
+	// Precompute shared derived state only when a term needs it.
 	for _, t := range q {
 		if t.Kind == query.State {
 			switch t.Field {
 			case "actionable", "blocked", "stuck":
-				if doneIDs == nil {
-					doneIDs = a.doneSet(idx)
+				if c.doneIDs == nil {
+					c.doneIDs = a.doneSet(idx)
 				}
 			}
-			if t.Field == "stuck" && kids == nil {
-				kids = childrenMap(idx)
+			if t.Field == "stuck" && c.kids == nil {
+				c.kids = childrenMap(idx)
 			}
 		}
 	}
 
 	preds := make([]func(*core.Task) bool, 0, len(q))
 	for _, term := range q {
-		p, err := a.compileTerm(term, idx, doneIDs, kids)
+		p, err := c.compileTerm(term)
 		if err != nil {
 			return nil, err
 		}
 		preds = append(preds, p)
 	}
-	return func(t *core.Task) bool {
+	return func(t *core.Task) (bool, error) {
 		for _, p := range preds {
-			if !p(t) {
-				return false
+			ok := p(t)
+			if c.bodyErr != nil {
+				return false, c.bodyErr
+			}
+			if !ok {
+				return false, nil
 			}
 		}
-		return true
+		return true, nil
 	}, nil
 }
 
 // compileTerm builds one term's matcher, with Not already folded in.
-func (a *App) compileTerm(term query.Term, idx *core.Index, doneIDs map[string]bool, kids map[string][]*core.Task) (func(*core.Task) bool, error) {
+func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, error) {
+	a := c.app
 	neg := func(base func(*core.Task) bool) func(*core.Task) bool {
 		if !term.Not {
 			return base
@@ -90,8 +169,14 @@ func (a *App) compileTerm(term query.Term, idx *core.Index, doneIDs map[string]b
 
 	switch term.Kind {
 	case query.FreeText:
+		// Free text = furrow search's matcher over title + body (case-insensitive
+		// substring, core.ContainsFold), so `-q foo` finds what `furrow search
+		// foo` finds. The body is consulted only when the title misses, so a
+		// title hit never pays for a body read.
 		needle := term.Text
-		return neg(func(t *core.Task) bool { return containsFold(t.Title, needle) }), nil
+		return neg(func(t *core.Task) bool {
+			return core.ContainsFold(t.Title, needle) || core.ContainsFold(c.body(t), needle)
+		}), nil
 
 	case query.State:
 		if !contains(stateVocab, term.Field) {
@@ -101,11 +186,13 @@ func (a *App) compileTerm(term query.Term, idx *core.Index, doneIDs map[string]b
 		return neg(func(t *core.Task) bool {
 			switch f {
 			case "actionable":
-				return a.actionable(idx, t, doneIDs)
+				return a.actionable(c.idx, t, c.doneIDs)
 			case "blocked":
-				return len(blockedDeps(t, doneIDs)) > 0
+				return len(blockedDeps(t, c.doneIDs)) > 0
 			case "stuck":
-				return a.isStuck(idx, t.ID, kids, doneIDs)
+				return a.isStuck(c.idx, t.ID, c.kids, c.doneIDs)
+			case "stale":
+				return core.IsStale(*t, c.now, c.staleDays)
 			case "open":
 				return t.Closed == nil
 			case "closed":
@@ -145,51 +232,63 @@ func (a *App) compileTerm(term query.Term, idx *core.Index, doneIDs map[string]b
 				return t.Closed != nil
 			case "reviewed":
 				return t.Reviewed != nil
+			case "body":
+				// Non-whitespace body content. Note `add` seeds every body with
+				// a heading, so no:body means a body someone deliberately
+				// emptied, not "never written to".
+				return strings.TrimSpace(c.body(t)) != ""
 			}
 			return false
 		}), nil
 
 	case query.Qualifier:
-		return a.compileQualifier(term, neg)
+		return c.compileQualifier(term, neg)
 	}
 	return nil, core.Validationf("query-parse", "unhandled query term")
 }
 
 // compileQualifier binds a field:value qualifier.
-func (a *App) compileQualifier(term query.Term, neg func(func(*core.Task) bool) func(*core.Task) bool) (func(*core.Task) bool, error) {
+func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Task) bool) func(*core.Task) bool) (func(*core.Task) bool, error) {
+	a := c.app
 	f := term.Field
-	// Ordinal fields take comparisons/ranges; everything else is equality only.
+	// Ordered fields — the ordinals and the date timestamps — take
+	// comparisons/ranges; everything else is equality only.
 	ordinal := f == "value" || f == "effort" || f == "priority" || f == "roi"
-	if term.Op != query.Eq && !ordinal {
-		return nil, unknownQueryErr("query-type", "field "+strconv.Quote(f)+" takes an equality value, not a comparison/range (only value/effort/priority/roi are ordinal)", nil)
+	if term.Op != query.Eq && !ordinal && !isDateField(f) {
+		return nil, unknownQueryErr("query-type", "field "+strconv.Quote(f)+" takes an equality value, not a comparison/range (only value/effort/priority/roi and created/updated/closed/reviewed are ordered)", nil)
 	}
 
 	switch f {
 	case "status", "lane":
 		for _, v := range term.Values {
-			if !a.Cfg.IsLane(v) {
-				return nil, a.unknownLaneErr("", v)
+			if !a.Cfg.IsLane(v.Text) {
+				return nil, a.unknownLaneErr("", v.Text)
 			}
 		}
-		return neg(func(t *core.Task) bool { return contains(term.Values, t.Status) }), nil
+		vals := valTexts(term.Values)
+		return neg(func(t *core.Task) bool { return contains(vals, t.Status) }), nil
 
 	case "type":
 		for _, v := range term.Values {
-			if !a.Cfg.IsType(v) {
-				return nil, a.unknownTypeErr("", v)
+			if !a.Cfg.IsType(v.Text) {
+				return nil, a.unknownTypeErr("", v.Text)
 			}
 		}
-		return neg(func(t *core.Task) bool { return contains(term.Values, a.Cfg.EffectiveType(t.Type)) }), nil
+		vals := valTexts(term.Values)
+		return neg(func(t *core.Task) bool { return contains(vals, a.Cfg.EffectiveType(t.Type)) }), nil
 
 	case "label":
-		return neg(func(t *core.Task) bool { return anyContains(t.Labels, term.Values) }), nil
+		vals := valTexts(term.Values)
+		return neg(func(t *core.Task) bool { return anyContains(t.Labels, vals) }), nil
 
 	case "repo":
-		return neg(func(t *core.Task) bool { return anyRepoMatch(t.Repos, term.Values) }), nil
+		vals := valTexts(term.Values)
+		return neg(func(t *core.Task) bool { return anyRepoMatch(t.Repos, vals) }), nil
 
 	case "id":
+		vals := valTexts(term.Values)
 		return neg(func(t *core.Task) bool {
-			for _, v := range term.Values {
+			for _, v := range vals {
 				if t.ID == v || strings.HasPrefix(t.ID, v) {
 					return true
 				}
@@ -197,14 +296,50 @@ func (a *App) compileQualifier(term query.Term, neg func(func(*core.Task) bool) 
 			return false
 		}), nil
 
-	case "parent":
-		return neg(func(t *core.Task) bool { return contains(term.Values, t.Parent) }), nil
+	case "parent", "child-of":
+		// Two spellings of the same direct edge: parent: is the field qualifier
+		// (GH's parent-issue), child-of: the graph spelling symmetric with the
+		// dep pair below (and with v2's transitive descendant-of:). Both select
+		// the direct children of the named task(s) — exact ids, and an unknown
+		// id simply has no children (lenient like id:).
+		vals := valTexts(term.Values)
+		return neg(func(t *core.Task) bool { return contains(vals, t.Parent) }), nil
+
+	case "depends-on":
+		// t waits on any named id (the named task blocks t) — the Deps edge
+		// read from the dependent's side, Index.Dependents' membership test.
+		vals := valTexts(term.Values)
+		return neg(func(t *core.Task) bool { return anyContains(t.Deps, vals) }), nil
+
+	case "blocks":
+		// t blocks any named id — the same edge read from the other side:
+		// t ∈ X.Deps. Each named X is resolved once at compile; an unknown id
+		// blocks nothing (lenient, exit 0).
+		blocked := map[string]bool{}
+		for _, v := range term.Values {
+			if x, _ := c.idx.Find(v.Text); x != nil {
+				for _, d := range x.Deps {
+					blocked[d] = true
+				}
+			}
+		}
+		return neg(func(t *core.Task) bool { return blocked[t.ID] }), nil
 
 	case "title":
-		return neg(func(t *core.Task) bool { return anyContainsFold(t.Title, term.Values) }), nil
+		vals := term.Values
+		return neg(func(t *core.Task) bool { return anyTextMatch(t.Title, vals) }), nil
+
+	case "body":
+		// The explicit opt-in to body text — loads bodies on demand (O(board)
+		// reads at worst), like furrow search.
+		vals := term.Values
+		return neg(func(t *core.Task) bool { return anyTextMatch(c.body(t), vals) }), nil
+
+	case "created", "updated", "closed", "reviewed":
+		return c.compileDate(term, neg)
 
 	case "value", "effort", "priority", "roi":
-		return a.compileNumeric(term, neg)
+		return compileNumeric(term, neg)
 	}
 	return nil, unknownQueryErr("query-unknown-field", "unknown qualifier "+strconv.Quote(f), qualifierVocab)
 }
@@ -212,7 +347,7 @@ func (a *App) compileQualifier(term query.Term, neg func(func(*core.Task) bool) 
 // compileNumeric binds an ordinal field (value/effort/priority/roi) with an
 // equality, comparison, or range. An unset value/effort (and an undefined roi)
 // never satisfies a comparison or range, mirroring how they sort last.
-func (a *App) compileNumeric(term query.Term, neg func(func(*core.Task) bool) func(*core.Task) bool) (func(*core.Task) bool, error) {
+func compileNumeric(term query.Term, neg func(func(*core.Task) bool) func(*core.Task) bool) (func(*core.Task) bool, error) {
 	f := term.Field
 	// getVal returns the task's numeric value and whether it is defined.
 	getVal := func(t *core.Task) (float64, bool) {
@@ -249,16 +384,16 @@ func (a *App) compileNumeric(term query.Term, neg func(func(*core.Task) bool) fu
 	switch term.Op {
 	case query.Between:
 		var lo, hi float64
-		haveLo, haveHi := term.Values[0] != "*", term.Values[1] != "*"
+		haveLo, haveHi := term.Values[0].Text != "*", term.Values[1].Text != "*"
 		if haveLo {
-			n, err := parse(term.Values[0])
+			n, err := parse(term.Values[0].Text)
 			if err != nil {
 				return nil, err
 			}
 			lo = n
 		}
 		if haveHi {
-			n, err := parse(term.Values[1])
+			n, err := parse(term.Values[1].Text)
 			if err != nil {
 				return nil, err
 			}
@@ -272,7 +407,7 @@ func (a *App) compileNumeric(term query.Term, neg func(func(*core.Task) bool) fu
 			return (!haveLo || v >= lo) && (!haveHi || v <= hi)
 		}), nil
 	case query.Eq:
-		n, err := parse(term.Values[0])
+		n, err := parse(term.Values[0].Text)
 		if err != nil {
 			return nil, err
 		}
@@ -281,7 +416,7 @@ func (a *App) compileNumeric(term query.Term, neg func(func(*core.Task) bool) fu
 			return ok && v == n
 		}), nil
 	default: // Gt/Ge/Lt/Le
-		n, err := parse(term.Values[0])
+		n, err := parse(term.Values[0].Text)
 		if err != nil {
 			return nil, err
 		}
@@ -316,14 +451,28 @@ func unknownQueryErr(id, msg string, candidates []string) *core.Error {
 	return e
 }
 
-// containsFold reports a case-insensitive substring match.
-func containsFold(hay, needle string) bool {
-	return strings.Contains(strings.ToLower(hay), strings.ToLower(needle))
+// valTexts projects an OR-set's texts (for the equality fields, where
+// quoted-ness carries no extra meaning — quotes only protected separators).
+func valTexts(vals []query.Value) []string {
+	out := make([]string, len(vals))
+	for i, v := range vals {
+		out[i] = v.Text
+	}
+	return out
 }
 
-func anyContainsFold(hay string, needles []string) bool {
-	for _, n := range needles {
-		if containsFold(hay, n) {
+// anyTextMatch matches a text field (title, body) against an OR-set: a bare
+// value is a case-insensitive substring (core.ContainsFold — search's matcher),
+// a quoted one ('Bug fix') whole-field equality, still case-folded — quoting
+// flips substring→exact without introducing the language's only case-sensitive
+// corner.
+func anyTextMatch(field string, vals []query.Value) bool {
+	for _, v := range vals {
+		if v.Quoted {
+			if strings.EqualFold(field, v.Text) {
+				return true
+			}
+		} else if core.ContainsFold(field, v.Text) {
 			return true
 		}
 	}

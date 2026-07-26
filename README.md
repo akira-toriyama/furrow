@@ -86,24 +86,29 @@ furrow done t-0001
 
 `add` defaults the lane to `lanes.default` (`inbox`) and appends within the lane using the sparse priority step. Pass `--status/-s`, `--priority/-p`, `--label/-l`, `--parent`, `--dep`, `--ref`, or `--body` to set fields up front.
 
-### Typed query — `ls -q`
+### Typed query — `-q`
 
-`ls -q "<query>"` filters with a GitHub-Projects-style query folded into one string. It is a **flat AND-list**: whitespace between terms is AND, a comma inside one value is OR, a leading `-` is NOT, and it ANDs with the other filters (`-s/-l/-r`, `--sort`, …) so a query never widens a scoped board. No cross-field OR, no grouping, no in-query sort — GitHub's own ceiling; `--json | jq` owns the long tail.
+Every filtering read — `ls`, `next`, `revisit`, `stats`, `search` — takes `-q "<query>"`, a GitHub-Projects-style query folded into one string and compiled by ONE shared evaluator, so it means the same thing everywhere (`brief` is deliberately excluded — a fixed session-orient read). It is a **flat AND-list**: whitespace between terms is AND, a comma inside one value is OR, a leading `-` is NOT, and it ANDs with the other filters (`-s/-l/-r`, `--sort`, …) so a query never widens a scoped board. No cross-field OR, no grouping, no in-query sort — GitHub's own ceiling; `--json | jq` owns the long tail.
 
 ```sh
 furrow ls -q 'is:actionable label:cli,dx -status:icebox'   # workable now, (cli OR dx), not iced
-furrow ls -q 'value:>=4 is:blocked'                         # high-value but stuck
-furrow ls -q 'no:effort is:open'                            # open, effort not yet estimated
-furrow ls -q 'roi:>2 "typed query"'                         # ROI>2 with a title phrase
+furrow next -q 'value:>=4 -label:chore'                     # ready AND worth it
+furrow ls -q 'is:open updated:<-30d'                        # open but untouched for a month
+furrow ls -q 'closed:2026-07-01..2026-07-15'                # closed inside a window
+furrow ls -q 'depends-on:t-k3m9p is:blocked'                # what waits on t-k3m9p, still stuck
+furrow stats -q is:stale                                    # the stale board's shape
+furrow ls -q 'roi:>2 "typed query"'                         # ROI>2 with a text phrase
 ```
 
-- **qualifiers** (`field:value`, comma = OR, repeat = AND): `status`/`lane`, `type`, `label`, `repo`, `id` (prefix), `parent`, `title` (substring). Unknown `status`/`type` values, an unknown qualifier, or an operator on a non-ordinal field are **exit 2** with a stable error `id` and did-you-mean `candidates` (never a silent empty result).
+- **qualifiers** (`field:value`, comma = OR, repeat = AND): `status`/`lane`, `type`, `label`, `repo`, `id` (prefix), `parent`, `title`, `body`. Unknown `status`/`type` values, an unknown qualifier, or an operator on a non-ordered field are **exit 2** with a stable error `id` and did-you-mean `candidates` (never a silent empty result).
 - **ordinal** (`value`, `effort`, `priority`, `roi`): comparison `>`, `>=`, `<`, `<=` and range `2..4` / `*..3` / `3..*`. An unset estimate (and an undefined `roi`) never satisfies a comparison.
-- **presence**: `has:FIELD` / `no:FIELD` over `label`, `repo` (`no:repo` = a draft), `parent`, `value`, `effort`, `deps`, `refs`, `checklist`, `closed`, `reviewed`.
-- **computed flags** (furrow's own, no GitHub equivalent): `is:actionable` (exactly what `furrow next` hands you), `is:blocked`, `is:stuck` (a container with open work but nothing actionable), `is:open`/`is:closed`/`is:draft`/`is:container`.
-- **free text**: a bare word or `"quoted phrase"` is a case-insensitive substring match over the title.
+- **dates** (`created`, `updated`, `closed`, `reviewed` — the `-q` generalization of `--since/--until`): absolute `YYYY-MM-DD` (the whole UTC day, so `created:>2026-07-01` means *after* that day) or RFC3339, plus signed **relative offsets** from now, `updated:>=-2w` (JQL's units `m/h/d/w` — `m` is minutes, not months; an offset needs a comparison or range, never a bare equality). Ranges are inclusive with `*` open ends. A `null` `closed`/`reviewed` satisfies **no** comparison (existence is `has:`/`no:`'s job) — so negation *includes* the unset, like the estimates.
+- **graph** (direct edges, both directions, exact ids; an unknown id just matches nothing): `parent:X` / `child-of:X` (two spellings of the same edge — the direct children of X), `depends-on:X` (the tasks waiting on X), `blocks:X` (the tasks X waits on). Transitive walks (`descendant-of:` …) are deliberately v2.
+- **presence**: `has:FIELD` / `no:FIELD` over `label`, `repo` (`no:repo` = a draft), `parent`, `value`, `effort`, `deps`, `refs`, `checklist`, `closed`, `reviewed`, `body` (non-whitespace content — note `add` seeds every body with a heading).
+- **computed flags** (furrow's own, no GitHub equivalent): `is:actionable` (exactly what `furrow next` hands you), `is:blocked`, `is:stuck` (a container with open work but nothing actionable), `is:stale` (no update within `[revisit].stale_days` — revisit's own definition, a pure age test that does not imply open), `is:open`/`is:closed`/`is:draft`/`is:container`.
+- **free text**: a bare word or `"quoted phrase"` is a case-insensitive substring over **title + body** — exactly `furrow search`'s matcher, so `ls -q foo` finds what `search foo` finds. Bodies are loaded only when a term actually reads them (free text, `body:`, `has:body`), and only for tasks whose title missed. On `title:`/`body:` a **quoted** value flips substring to whole-field equality (`title:'Bug fix'`), still case-insensitive.
 
-Today `-q` is wired on `ls`; extending it to `next`/`revisit` and adding date qualifiers (`updated:>=-2w`) and dependency-graph qualifiers (`child-of:`, `depends-on:`) is the tracked next step.
+Deliberately not in v1 (tracked): wildcards (`label:*ui*`), transitive graph qualifiers, cross-field OR.
 
 ---
 
@@ -235,11 +240,11 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `add <title>...` | Add a task (or many with --stdin) | `--body`, `--check`, `--dep`, `--draft`, `--effort`, `-l/--label`, `--parent`, `-p/--priority`, `--ref`, `-r/--repo`, `-s/--status`, `--stdin`, `--type`, `--value` |
 | `ls [<id>]` (alias `list`) | List tasks (canonical lane->priority->id order), or draw the hierarchy with --tree | `--actionable`, `--archived`, `--blocked`, `--drafts`, `-l/--label`, `-n/--limit`, `--progress-recursive`, `-q/--query`, `-r/--repo`, `--reverse`, `--since`, `--sort`, `-s/--status`, `--tree`, `--type`, `--until` |
 | `show <id>...` | Show tasks with metadata and markdown body (batch-friendly) | `--archived`, `--backlinks`, `--no-body` |
-| `next` | Show actionable tasks (in the next-lanes, all deps done) | `--containers`, `-l/--label`, `--lanes`, `-n/--limit`, `-r/--repo` |
+| `next` | Show actionable tasks (in the next-lanes, all deps done) | `--containers`, `-l/--label`, `--lanes`, `-n/--limit`, `-q/--query`, `-r/--repo` |
 | `brief` | One-shot session-orient read: next picks with bodies, blocked, revisit, drafts | `-l/--label`, `-n/--limit`, `-r/--repo`, `--stale-days` |
-| `revisit` | List open tasks needing re-evaluation (agent re-weighing signal) | `-l/--label`, `-n/--limit`, `-r/--repo`, `--stale-days` |
-| `search <term>` | Full-text search over task titles and bodies | `-l/--label`, `-n/--limit`, `-r/--repo`, `-s/--status` |
-| `stats` | Summarize the board: counts by lane, repo, and label | `-l/--label`, `-r/--repo`, `-s/--status` |
+| `revisit` | List open tasks needing re-evaluation (agent re-weighing signal) | `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `--stale-days` |
+| `search <term>` | Full-text search over task titles and bodies | `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `-s/--status` |
+| `stats` | Summarize the board: counts by lane, repo, and label | `-l/--label`, `-q/--query`, `-r/--repo`, `-s/--status` |
 | `board` | Print the active board: store path, scope, lane vocabulary, and schema state | — |
 | `boards` | List the configured boards (user-level config), independent of cwd | — |
 | `doctor [dir...]` | Diagnose this machine's board setup: config, boards, scopes, git freshness | — |

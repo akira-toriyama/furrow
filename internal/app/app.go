@@ -902,9 +902,11 @@ type QueryOpts struct {
 	// nil/empty = use the configured next-lanes. Only Next reads it.
 	Lanes []string
 	// Query is the raw `-q` typed-query string (empty = no query filter). It is
-	// parsed (internal/query) and compiled against the loaded index into a per-task
-	// predicate that ANDs with every other filter here, so a query never widens a
-	// scoped board. Reads that funnel through listMatched honor it.
+	// parsed (internal/query) and compiled ONCE against the loaded index
+	// (queryPred, the shared match layer) into a per-task predicate that ANDs
+	// with every other filter here, so a query never widens a scoped board.
+	// Every filtering read honors it — List (hence Tree), Next, Revisit, Stats,
+	// Search; Brief deliberately does not (a fixed session-orient read).
 	Query string
 	Limit int
 }
@@ -992,13 +994,19 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 	}
 	// Compile -q once (against the loaded index) into a per-task predicate; a
 	// parse/validation fault fails the whole read with exit 2 before any output.
-	var qpred func(*core.Task) bool
-	if o.Query != "" {
-		p, err := a.compileQuery(o.Query, idx)
+	// An archived read filters the archive index, so body-matching terms must
+	// resolve bodies in the archive store too — the loader rides along.
+	var loadBody func(string) (string, error)
+	if o.Archived && o.Query != "" {
+		arc, err := a.archiveStore()
 		if err != nil {
 			return nil, nil, err
 		}
-		qpred = p
+		loadBody = arc.LoadBody
+	}
+	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, loadBody)
+	if err != nil {
+		return nil, nil, err
 	}
 	var out []core.Task
 	for i := range idx.Tasks {
@@ -1012,8 +1020,14 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 		if o.Blocked && len(blockedDeps(t, doneIDs)) == 0 {
 			continue
 		}
-		if qpred != nil && !qpred(t) {
-			continue
+		if qpred != nil {
+			ok, err := qpred(t)
+			if err != nil {
+				return nil, nil, err
+			}
+			if !ok {
+				continue
+			}
 		}
 		out = append(out, *t)
 	}
@@ -1138,6 +1152,13 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 		}
 		inNextLane = func(lane string) bool { return override[lane] }
 	}
+	// Compile -q once; it ANDs with readiness like every other filter. It is
+	// evaluated LAST (after the cheap ready test) so a body-reading query never
+	// loads a body for a task that was not ready anyway.
+	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, nil)
+	if err != nil {
+		return nil, err
+	}
 	var out []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
@@ -1152,11 +1173,21 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 		if ready && !o.IncludeContainers {
 			ready = !a.Cfg.IsContainerType(t.Type)
 		}
-		if ready {
-			out = append(out, *t)
-			if o.Limit > 0 && len(out) >= o.Limit {
-				break
+		if !ready {
+			continue
+		}
+		if qpred != nil {
+			ok, err := qpred(t)
+			if err != nil {
+				return nil, err
 			}
+			if !ok {
+				continue
+			}
+		}
+		out = append(out, *t)
+		if o.Limit > 0 && len(out) >= o.Limit {
+			break
 		}
 	}
 	return out, nil

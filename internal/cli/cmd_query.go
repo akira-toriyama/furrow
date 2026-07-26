@@ -145,11 +145,24 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&progRec, "progress-recursive", false, "with --tree, roll up container progress over the whole subtree (default: direct children only)")
 	cmd.Flags().BoolVar(&actionable, "actionable", false, "only tasks `furrow next` would hand you now (★: a next lane, every dep done); ANDs with -s/-l/-r")
 	cmd.Flags().BoolVar(&blocked, "blocked", false, "only tasks with an unsatisfied dependency (a non-empty blocked_by); ANDs with -s/-l/-r")
-	cmd.Flags().StringVarP(&queryStr, "query", "q", "", "typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, is:actionable|blocked|stuck|open|closed|draft|container, value/effort/roi with >=,<,.. ; ANDs with the other filters")
+	addQueryFlag(cmd, &queryStr)
 	// A task cannot be both actionable (all deps done) and blocked (a dep undone),
 	// so combining them would always be empty — refuse it rather than mislead.
 	cmd.MarkFlagsMutuallyExclusive("actionable", "blocked")
 	return cmd
+}
+
+// addQueryFlag registers the -q/--query typed-query flag — ONE registrar shared
+// by every filtering read (ls/next/revisit/stats/search), so the five commands
+// can never drift on what the query language is. The evaluator is equally
+// shared (app.queryPred), so wiring a new command is exactly this call plus
+// setting QueryOpts.Query.
+func addQueryFlag(cmd *cobra.Command, p *string) {
+	cmd.Flags().StringVarP(p, "query", "q", "",
+		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
+			"is:actionable|blocked|stuck|stale|open|closed|draft|container, "+
+			"ordinals+dates with >=,<,.. (updated:>=-2w), graph child-of:/depends-on:/blocks:, "+
+			"free text over title+body; ANDs with the other filters")
 }
 
 // parseDateBound parses a --since/--until value: a bare YYYY-MM-DD (interpreted
@@ -300,6 +313,7 @@ func newNextCmd() *cobra.Command {
 		limit      int
 		containers bool
 		lanes      []string
+		queryStr   string
 	)
 	cmd := &cobra.Command{
 		Use:   "next",
@@ -318,11 +332,15 @@ func newNextCmd() *cobra.Command {
 			"without first promoting it. The deps-done half is unchanged, so --lanes\n" +
 			"widens which lanes qualify, not what \"ready\" means; an unknown lane is exit\n" +
 			"2 with the configured lanes in candidates (like -s). --json's reason.in_next_lane\n" +
-			"names the lane each task matched, so a --lanes-included one is distinguishable.",
+			"names the lane each task matched, so a --lanes-included one is distinguishable.\n\n" +
+			"-q ANDs a typed query onto the actionable set — the same language as `ls -q`\n" +
+			"(qualifiers, dates, has:/no:, is:, graph edges, free text over title+body) —\n" +
+			"so `next -q 'value:>=4'` is \"what can I pick up now that is worth a lot\".",
 		Example: "  furrow next               # what to pick up now\n" +
 			"  furrow next -n1 --json    # just the top task, with a reason\n" +
 			"  furrow next --containers  # include ready epics (boxes)\n" +
 			"  furrow next --lanes backlog,ready   # temporarily widen the lanes considered\n" +
+			"  furrow next -q 'value:>=4 -label:chore'   # ready AND worth it\n" +
 			"  furrow next -r furrow -l bug",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -336,6 +354,7 @@ func newNextCmd() *cobra.Command {
 			}
 			o.Limit = limit
 			o.IncludeContainers = containers
+			o.Query = queryStr
 			// --lanes is a one-shot override of [next].lanes: the same comma-OR /
 			// repeated union as -s (a StringArray split on ",", trimmed, empties
 			// dropped). Next validates the tokens against the configured lanes, so a
@@ -367,6 +386,7 @@ func newNextCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; use -n1 for just the top)")
 	cmd.Flags().BoolVar(&containers, "containers", false, "also surface ready container types (epics), which next hides by default")
 	cmd.Flags().StringArrayVar(&lanes, "lanes", nil, "override [next].lanes for THIS call (OR; comma-separated or repeated; unknown lane = exit 2 + candidates); config untouched")
+	addQueryFlag(cmd, &queryStr)
 	return cmd
 }
 
@@ -435,6 +455,7 @@ func newRevisitCmd() *cobra.Command {
 		repo      string
 		limit     int
 		staleDays int
+		queryStr  string
 	)
 	cmd := &cobra.Command{
 		Use:   "revisit",
@@ -446,7 +467,16 @@ func newRevisitCmd() *cobra.Command {
 			"so an agent can fix them with the setters (repo/value/effort/dep); this\n" +
 			"command never mutates. Drafts surface regardless of the board scope. An\n" +
 			"empty result is healthy and exits 0. Use --repo to restrict to a repo and\n" +
-			"--stale-days to override the staleness window (0 disables it).",
+			"--stale-days to override the staleness window (0 disables it).\n\n" +
+			"-q ANDs a typed query onto the surfaced set — the same language as `ls -q`\n" +
+			"— narrowing WHICH flagged tasks come back (`revisit -q 'label:cli'`); a\n" +
+			"task still needs at least one revisit signal to appear. Within -q,\n" +
+			"is:stale uses this call's staleness window (--stale-days included), so the\n" +
+			"flag and the query cannot disagree.",
+		Example: "  furrow revisit                 # everything worth a fresh look\n" +
+			"  furrow revisit --json -n5\n" +
+			"  furrow revisit -q 'label:cli'  # only the flagged tasks tagged cli\n" +
+			"  furrow revisit --stale-days 7  # tighter staleness window",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -462,6 +492,7 @@ func newRevisitCmd() *cobra.Command {
 				return err
 			}
 			o.Limit = limit
+			o.Query = queryStr
 			items, err := a.Revisit(o, days)
 			if err != nil {
 				return err
@@ -477,14 +508,16 @@ func newRevisitCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
 	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
+	addQueryFlag(cmd, &queryStr)
 	return cmd
 }
 
 func newStatsCmd() *cobra.Command {
 	var (
-		status []string
-		label  []string
-		repo   string
+		status   []string
+		label    []string
+		repo     string
+		queryStr string
 	)
 	cmd := &cobra.Command{
 		Use:   "stats",
@@ -495,9 +528,14 @@ func newStatsCmd() *cobra.Command {
 			"scope as `ls`, so a bare `stats` describes THIS repo's slice; `stats -r ''`\n" +
 			"describes the whole board — the call that learns the label/repo vocabulary\n" +
 			"before guessing a -l/-r value. --json/--ndjson emit one object; an all-zero\n" +
-			"board is a clean result (exit 0).",
+			"board is a clean result (exit 0).\n\n" +
+			"-q ANDs a typed query onto the scope — the same language as `ls -q` — so\n" +
+			"the distributions describe the QUERIED slice: `stats -q is:stale` is the\n" +
+			"shape of the stale board, `stats -q 'no:effort'` where the unestimated\n" +
+			"work sits.",
 		Example: "  furrow stats               # this repo's board at a glance\n" +
 			"  furrow stats -r '' --json  # whole-board counts + full label/repo vocab\n" +
+			"  furrow stats -q is:stale   # where the stale work sits\n" +
 			"  furrow stats -s inbox,backlog",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -510,6 +548,7 @@ func newStatsCmd() *cobra.Command {
 				return err
 			}
 			o.Status = joinOrFilter(status)
+			o.Query = queryStr
 			s, err := a.Stats(o)
 			if err != nil {
 				return err
@@ -520,15 +559,17 @@ func newStatsCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "scope to a repo (owner/repo or a unique short name; '' = whole board)")
+	addQueryFlag(cmd, &queryStr)
 	return cmd
 }
 
 func newSearchCmd() *cobra.Command {
 	var (
-		status []string
-		label  []string
-		repo   string
-		limit  int
+		status   []string
+		label    []string
+		repo     string
+		limit    int
+		queryStr string
 	)
 	cmd := &cobra.Command{
 		Use:   "search <term>",
@@ -541,10 +582,16 @@ func newSearchCmd() *cobra.Command {
 			"emit the full task plus matched_field and snippet, so an agent skips the\n" +
 			"`grep .furrow/bodies` dance. A title match never pays to read the body.\n" +
 			"Several words are one literal phrase. An empty result is healthy (exit 0),\n" +
-			"not a miss — the same contract as ls/next/revisit.",
+			"not a miss — the same contract as ls/next/revisit.\n\n" +
+			"-q ANDs a typed query onto the hits — the same language as `ls -q` — so\n" +
+			"`search sync -q 'is:open label:cli'` greps only the open cli-tagged tasks.\n" +
+			"(A bare `-q` free-text term IS this search: `ls -q foo` finds what `furrow\n" +
+			"search foo` finds. `search` remains the command that reports match field +\n" +
+			"snippet; the term argument stays required.)",
 		Example: "  furrow search teatest\n" +
 			"  furrow search \"single marshaller\" --json\n" +
 			"  furrow search sync -s backlog -n5\n" +
+			"  furrow search sync -q 'is:open label:cli'   # only open cli-tagged hits\n" +
 			"  furrow search attach -r ''        # whole board, not just this repo",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -557,6 +604,7 @@ func newSearchCmd() *cobra.Command {
 				return err
 			}
 			o.Status, o.Limit = joinOrFilter(status), limit
+			o.Query = queryStr
 			hits, err := a.Search(o, strings.Join(args, " "))
 			if err != nil {
 				return err
@@ -569,5 +617,6 @@ func newSearchCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
+	addQueryFlag(cmd, &queryStr)
 	return cmd
 }

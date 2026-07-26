@@ -39,11 +39,27 @@ func (a *App) Search(o QueryOpts, term string) ([]SearchHit, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Compile -q once; it ANDs with the term like every other filter, and is
+	// evaluated before the term so a query-excluded task never pays for a body
+	// read the text match would otherwise do.
+	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, nil)
+	if err != nil {
+		return nil, err
+	}
 	var out []SearchHit
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
 		if !o.match(t) {
 			continue
+		}
+		if qpred != nil {
+			ok, err := qpred(t)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
 		}
 		switch {
 		case core.ContainsFold(t.Title, term):
