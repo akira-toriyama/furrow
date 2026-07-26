@@ -571,6 +571,9 @@ func newSetCmd() *cobra.Command {
 			if cmd.Flags().Changed("type") {
 				o.Type = &typ
 			}
+			if err := emptyFlagErr(cmd, args[0], "before", "after", "add-label", "rm-label", "status", "type"); err != nil {
+				return err
+			}
 			if len(args) > 1 {
 				return emitMutationMany(a, "set", args, func() ([]*core.Task, error) { return a.SetMany(args, o) })
 			}
@@ -627,6 +630,33 @@ func newSetCmd() *cobra.Command {
 	return cmd
 }
 
+// emptyFlagErr names a flag that WAS passed but carried nothing pflag kept — a
+// bare `--add ""` on a StringSlice, or `--before ""`. Without it the command
+// falls through to its "provide at least one …" guard and tells the caller to
+// pass a flag they just passed, which reads as a bug in furrow rather than in
+// the invocation. The exit code was already 2; this only stops the message
+// from being wrong. (A NON-empty blank like `--add " "` is caught deeper, in
+// the app's requireNonBlank, which is where the whole rule lives.)
+func emptyFlagErr(cmd *cobra.Command, id string, names ...string) error {
+	for _, name := range names {
+		f := cmd.Flags().Lookup(name)
+		if f == nil || !f.Changed {
+			continue
+		}
+		switch v := f.Value.(type) {
+		case interface{ GetSlice() []string }:
+			if len(v.GetSlice()) == 0 {
+				return core.Validationf(id, "--%s was given an empty value; pass a real one or drop the flag", name)
+			}
+		default:
+			if strings.TrimSpace(f.Value.String()) == "" {
+				return core.Validationf(id, "--%s was given an empty value; pass a real one or drop the flag", name)
+			}
+		}
+	}
+	return nil
+}
+
 func newLabelCmd() *cobra.Command {
 	var add, remove []string
 	cmd := &cobra.Command{
@@ -639,6 +669,9 @@ func newLabelCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
+				return err
+			}
+			if err := emptyFlagErr(cmd, args[0], "add", "remove"); err != nil {
 				return err
 			}
 			return emitMutation(a, "labeled", args[0], func() (*core.Task, error) {
@@ -667,6 +700,9 @@ func newRefCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
+				return err
+			}
+			if err := emptyFlagErr(cmd, args[0], "add", "rm"); err != nil {
 				return err
 			}
 			return emitMutation(a, "ref", args[0], func() (*core.Task, error) {
@@ -719,6 +755,9 @@ func newRepoCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
+				return err
+			}
+			if err := emptyFlagErr(cmd, args[0], "add", "rm"); err != nil {
 				return err
 			}
 			return emitMutation(a, "repo", args[0], func() (*core.Task, error) {
