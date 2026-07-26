@@ -106,18 +106,29 @@ func TestListUnknownSortFailsFast(t *testing.T) {
 	}
 }
 
+// bite-exempt: characterization. The assertion is new (the old body checked only
+// the LENGTH), but the ORDER it now pins has always been List's behaviour.
 func TestListNoSortKeepsCanonicalOrder(t *testing.T) {
 	a := newApp()
-	a.Add("first", AddOpts{})
-	a.Add("second", AddOpts{})
-	// Without a sort the order is unchanged (canonical); just assert it still works
-	// and honors limit as before.
-	got, err := a.List(QueryOpts{Limit: 1})
+	first, _ := a.Add("first", AddOpts{})
+	second, _ := a.Add("second", AddOpts{})
+	// Without --sort the order is the canonical lane->priority->id one, so `first`
+	// (added first, hence the lower sparse priority) leads and a --limit cut takes
+	// it. The test used to assert only the LENGTH, which the canonical order could
+	// have been inverted without failing — the one thing its name promises.
+	got, err := a.List(QueryOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("limit 1 should return 1 task, got %d", len(got))
+	if len(got) != 2 || got[0].ID != first.ID || got[1].ID != second.ID {
+		t.Fatalf("canonical order should be [%s %s], got %v", first.ID, second.ID, idsOf(got))
+	}
+	got, err = a.List(QueryOpts{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != first.ID {
+		t.Fatalf("limit 1 should return the canonical first task %s, got %v", first.ID, idsOf(got))
 	}
 }
 
@@ -133,4 +144,12 @@ func equalStrs(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func idsOf(ts []core.Task) []string {
+	out := make([]string, 0, len(ts))
+	for _, t := range ts {
+		out = append(out, t.ID)
+	}
+	return out
 }
