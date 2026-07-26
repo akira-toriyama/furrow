@@ -37,9 +37,6 @@ func New(root string, laneOrder []string, idPrefix string, idLen int) *Store {
 	return &Store{root: root, laneOrder: laneOrder, idPrefix: idPrefix, idLen: idLen}
 }
 
-// Root returns the .furrow directory path (handy for the CLI to print paths).
-func (s *Store) Root() string { return s.root }
-
 func (s *Store) tasksDir() string          { return filepath.Join(s.root, "tasks") }
 func (s *Store) taskPath(id string) string { return filepath.Join(s.tasksDir(), id+".json") }
 func (s *Store) metaPath() string          { return filepath.Join(s.root, "meta.json") }

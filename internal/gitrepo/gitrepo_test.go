@@ -108,9 +108,9 @@ func TestCommitIsPathspecLimited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed, err := r.HasChanges(context.Background(), ".furrow")
-	if err != nil || !changed {
-		t.Fatalf("HasChanges = %v, %v; want true, nil", changed, err)
+	changed, err := r.DirtyChanges(context.Background(), ".furrow")
+	if err != nil || len(changed) == 0 {
+		t.Fatalf("DirtyChanges = %v, %v; want a non-empty list, nil", changed, err)
 	}
 	if err := r.Commit(context.Background(), "test: sync", ".furrow"); err != nil {
 		t.Fatal(err)
@@ -123,8 +123,8 @@ func TestCommitIsPathspecLimited(t *testing.T) {
 	if strings.Contains(status, ".furrow") {
 		t.Errorf(".furrow must be committed, status:\n%s", status)
 	}
-	if changed, _ := r.HasChanges(context.Background(), ".furrow"); changed {
-		t.Error("HasChanges must be false after the commit")
+	if changed, _ := r.DirtyChanges(context.Background(), ".furrow"); len(changed) != 0 {
+		t.Errorf("DirtyChanges must be empty after the commit, got %v", changed)
 	}
 }
 
