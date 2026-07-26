@@ -20,7 +20,7 @@ func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 		{
 			name:  "checklist seeds",
 			title: "with checks",
-			opts:  AddOpts{Checklist: []string{"step one", "  ", "step two"}},
+			opts:  AddOpts{Checklist: []string{"step one", "step two"}},
 		},
 		{
 			name:  "estimates and type",

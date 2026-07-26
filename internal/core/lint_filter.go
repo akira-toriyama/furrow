@@ -22,6 +22,7 @@ var lintCodes = map[string]bool{
 	"alias-shadow":         true,
 	"archive-backlog":      true,
 	"asset-missing":        true,
+	"blank-entry":          true,
 	"body-path":            true,
 	"config-clamp":         true,
 	"conflict-marker":      true,

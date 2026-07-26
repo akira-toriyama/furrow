@@ -73,6 +73,9 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		if s.Draft && len(s.Repos) > 0 {
 			return nil, core.Validationf("", "spec %d (%q): --draft cannot be combined with an explicit repo (-r)", i, s.Title)
 		}
+		if err := s.requireNonBlankValues(""); err != nil {
+			return nil, specf(err)
+		}
 		// Mirror single Add's type gate (app.go): a bulk spec's type must be in the
 		// [types].order vocabulary, else the whole batch fails before anything is
 		// written. Same precedence as Add (after the draft check, before repo

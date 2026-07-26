@@ -488,19 +488,38 @@ func (a *App) load() (*core.Index, error) {
 	return idx, nil
 }
 
-// seedChecklist turns repeatable --check values into shard checklist items,
-// dropping blank entries like `check --add` does. Add and AddMany BOTH call it:
-// the bulk path used to omit Checklist from its task literal entirely, so
-// `add --stdin --check x` silently created an empty checklist while the
-// identical single add stored the item — the same silent-drop divergence as
-// t-ek9y (--type) and t-adx9 (--value/--effort). One function, one behavior.
-func seedChecklist(texts []string) []core.ChecklistItem {
-	var out []core.ChecklistItem
-	for _, text := range texts {
-		if strings.TrimSpace(text) == "" {
-			continue
+// requireNonBlank rejects a blank entry in a value list taken by a mutating
+// flag. It is ONE rule for every such flag, enforced in the mutation funnel
+// rather than per-command, because the per-command version is what drifted:
+// `check --add ""` was already exit 2 (t-fr3e) while `set --add-label ""` wrote
+// `"labels": [""]` into the shard at exit 0, and a CSV empty field
+// (`label --add "bug,"`, `add -l "a,"`) put a blank entry in EVERY list flag
+// that splits on commas. A blank sorts first, so it also led every rendered
+// label list. Nothing dropped a value silently and nothing caught it later —
+// which is why this refuses at the door instead of filtering.
+func requireNonBlank(id, flag string, vals []string) error {
+	for _, v := range vals {
+		if strings.TrimSpace(v) == "" {
+			return core.Validationf(id, "%s: a blank value is not allowed (it would be stored as an empty entry); drop the flag or pass a real value", flag)
 		}
+	}
+	return nil
+}
+
+// seedChecklist turns repeatable --check values into shard checklist items.
+// Add and AddMany BOTH call it: the bulk path used to omit Checklist from its
+// task literal entirely, so `add --stdin --check x` silently created an empty
+// checklist while the identical single add stored the item — the same
+// silent-drop divergence as t-ek9y (--type) and t-adx9 (--value/--effort).
+// One function, one behavior. Blanks never reach here: requireNonBlank rejects
+// them up front, the same way `check --add ""` is exit 2.
+func seedChecklist(texts []string) []core.ChecklistItem {
+	out := make([]core.ChecklistItem, 0, len(texts))
+	for _, text := range texts {
 		out = append(out, core.ChecklistItem{Text: text})
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -538,6 +557,29 @@ type AddOpts struct {
 	Type string
 }
 
+// requireNonBlankValues applies the blank rule to every list-valued creation
+// flag, so `add -l "a,"` cannot be the door a blank label comes in through
+// after `label --add` closed it. Deps and Repos are covered too: both are
+// resolved against existing ids/repos, and a blank there produced a confusing
+// "does not exist" instead of naming the real fault.
+func (o AddOpts) requireNonBlankValues(id string) error {
+	for _, f := range []struct {
+		flag string
+		vals []string
+	}{
+		{"-l/--label", o.Labels},
+		{"-r/--repo", o.Repos},
+		{"--ref", o.Refs},
+		{"--dep", o.Deps},
+		{"--check", o.Checklist},
+	} {
+		if err := requireNonBlank(id, f.flag, f.vals); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Add creates a task, writes its body file, and saves the index. Returns the
 // created task.
 func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
@@ -558,6 +600,9 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	}
 	if o.Draft && len(o.Repos) > 0 {
 		return nil, core.Validationf("", "--draft cannot be combined with an explicit repo (-r): a draft is attached to no repo")
+	}
+	if err := o.requireNonBlankValues(""); err != nil {
+		return nil, err
 	}
 	if !a.Cfg.IsType(o.Type) {
 		return nil, a.unknownTypeErr("", o.Type)
@@ -1448,6 +1493,9 @@ func (a *App) AddDep(id, dep string) (*core.Task, error) { return a.AddDeps(id, 
 // Validation is all-or-nothing: the first bad dep returns before any save, so a
 // partial batch never lands. The marshaller keeps the dep list sorted+deduped.
 func (a *App) AddDeps(id string, deps []string) (*core.Task, error) {
+	if err := requireNonBlank(id, "dep", deps); err != nil {
+		return nil, err
+	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -1487,6 +1535,9 @@ func (a *App) RemoveDep(id, dep string) (*core.Task, error) { return a.RemoveDep
 // and the whole batch is validated before any change, so a bad id aborts without
 // a partial removal.
 func (a *App) RemoveDeps(id string, deps []string) (*core.Task, error) {
+	if err := requireNonBlank(id, "dep", deps); err != nil {
+		return nil, err
+	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -1527,6 +1578,12 @@ func (a *App) Relabel(id string, add, remove []string) (*core.Task, error) {
 	if len(add) == 0 && len(remove) == 0 {
 		return nil, core.Validationf(id, "provide at least one --add or --remove label")
 	}
+	if err := requireNonBlank(id, "--add", add); err != nil {
+		return nil, err
+	}
+	if err := requireNonBlank(id, "--remove", remove); err != nil {
+		return nil, err
+	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -1552,6 +1609,12 @@ func (a *App) Relabel(id string, add, remove []string) (*core.Task, error) {
 func (a *App) Reref(id string, add, remove []string) (*core.Task, error) {
 	if len(add) == 0 && len(remove) == 0 {
 		return nil, core.Validationf(id, "provide at least one --add or --rm ref")
+	}
+	if err := requireNonBlank(id, "--add", add); err != nil {
+		return nil, err
+	}
+	if err := requireNonBlank(id, "--rm", remove); err != nil {
+		return nil, err
 	}
 	idx, err := a.load()
 	if err != nil {
@@ -1640,6 +1703,12 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, erro
 	}
 	if o.empty() {
 		return nil, nil, core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / --type)")
+	}
+	if err := requireNonBlank(id, "--add-label", o.AddLabels); err != nil {
+		return nil, nil, err
+	}
+	if err := requireNonBlank(id, "--rm-label", o.RmLabels); err != nil {
+		return nil, nil, err
 	}
 	relRef, relBefore := o.Before, true
 	if relRef == "" {
