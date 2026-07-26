@@ -612,8 +612,13 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().IntVar(&effort, "effort", 0, "set the 1..5 effort estimate")
 	cmd.Flags().BoolVar(&clearValue, "clear-value", false, "clear the value estimate")
 	cmd.Flags().BoolVar(&clearEffort, "clear-effort", false, "clear the effort estimate")
-	cmd.Flags().StringArrayVar(&addLabels, "add-label", nil, "add a label (repeatable)")
-	cmd.Flags().StringArrayVar(&rmLabels, "rm-label", nil, "remove a label (repeatable)")
+	// StringSlice, not StringArray: these edit the SAME field `label --add` does
+	// (cmd_mutate.go's newLabelCmd), and comma is how every label surface splits —
+	// `-l a,b` is OR on reads. As StringArray, `set --add-label "a,b"` stored the
+	// single label "a,b", which NO read filter can match (`-l "a,b"` means a OR b),
+	// so the write produced data unreachable by the tool that wrote it.
+	cmd.Flags().StringSliceVar(&addLabels, "add-label", nil, "add a label (repeatable; comma-separated)")
+	cmd.Flags().StringSliceVar(&rmLabels, "rm-label", nil, "remove a label (repeatable; comma-separated)")
 	cmd.MarkFlagsMutuallyExclusive("value", "clear-value")
 	cmd.MarkFlagsMutuallyExclusive("effort", "clear-effort")
 	cmd.MarkFlagsMutuallyExclusive("priority", "before", "after")
