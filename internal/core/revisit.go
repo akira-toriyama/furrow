@@ -22,6 +22,26 @@ const (
 	RevisitStuckContainer = "stuck_container" // an open container with open work under it but no actionable descendant
 )
 
+// RevisitCodeList returns every revisit signal code — the complete `furrow
+// revisit --json` reason vocabulary, in the canonical per-task order (the
+// container signals last, since RevisitReasons cannot emit them). Like
+// LintCodeList it is the single machine-readable registry the docs are checked
+// against (`furrow vocab revisit-codes` → scripts/check-docs-vocab.sh): the
+// 2026-07 audit found the prose copies of this list missing the two container
+// signals in three places. TestRevisitCodeListMatchesConstants pins this list
+// to the const block above, so a new constant cannot be forgotten here.
+func RevisitCodeList() []string {
+	return []string{
+		RevisitNoRepo,
+		RevisitValueUnset,
+		RevisitEffortUnset,
+		RevisitStale,
+		RevisitDepDone,
+		RevisitChildrenDone,
+		RevisitStuckContainer,
+	}
+}
+
 // RevisitReason is one signal that a task's metadata may need a fresh judgment.
 // Code is the stable machine key; Detail is human/agent-readable context. Detail
 // is deliberately factual and never names a CLI verb — keeping core decoupled

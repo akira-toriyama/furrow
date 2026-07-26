@@ -115,6 +115,14 @@ echo "  command table matches the binary (README.md; regen: scripts/gen-command-
 echo "→ docs command-list drift guard"
 FURROW_BIN="$BIN" sh scripts/check-docs-commands.sh
 
+# The generalization of the guard above, over every closed vocabulary rather than
+# just the commands: each claimed prose region must name every member the owning
+# registry has. It self-tests first — the first version of it printed a real
+# failure and then exited 0, so it now plants drift in a fixture and requires
+# itself to catch that before believing a green run on the real docs.
+echo "→ docs vocabulary drift guard"
+FURROW_BIN="$BIN" sh scripts/check-docs-vocab.sh
+
 echo "→ nix flake version ⇄ release-pin lockstep guard"
 sh scripts/check-version-lockstep.sh
 

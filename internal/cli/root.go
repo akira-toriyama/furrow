@@ -254,6 +254,7 @@ func newRootCmd() *cobra.Command {
 		newSchemaCmd(),
 		newVersionCmd(),
 		newCommandsCmd(),
+		newVocabCmd(),
 	)
 	return root
 }
