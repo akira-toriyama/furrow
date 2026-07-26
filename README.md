@@ -285,7 +285,7 @@ The generated table is the machine-guaranteed surface; these are the behavior co
 - **`show`** — any number of ids in one read, in input order: several ids emit a `--json` array or `---`-separated text (one id keeps the classic single-object shape; `--ndjson` is one task per line at any arity). `--no-body` omits `body_text` — the lean metadata-only batch read. A partial miss still prints the found tasks and exits 1 with `details.missing`; if a missing id is **archived**, the error also carries `details.archived` and the message says to retry with `--archived`. `--backlinks` adds the tasks whose body mentions each one via `[[id]]` (a `mentioned_by` array under `--json`; can't combine with `--archived`).
 - **`next`** — "actionable" means: lane is in `[next].lanes` (default `ready` + `in-progress`, so intake stays out) **and** every dep is done. A **container** (an epic) is a box, not work, so it is skipped — `--containers` surfaces a ready one too. `--lanes <csv>` overrides which lanes count as "now" for this call only (config untouched): `next --lanes backlog,ready` surfaces a no-dependency backlog task without first promoting it; an unknown lane is exit 2 with `candidates`. `--json` attaches a `reason` per task (`in_next_lane` — the lane it matched — and `deps_satisfied`).
 - **`brief`** — the one-shot session-orient read: `next`'s top `-n` picks (default 3) **with their bodies** (`body_text` — the `show` follow-up folded in) plus `next_total`, the uncapped actionable count (a cap never hides the queue size); `blocked`, the next-lane tasks with an unsatisfied dep and their `blocked_by` (started or queued work that plain `next` deliberately hides); the `revisit` summary in `sync`'s shape; and the `drafts` count (board-wide by definition — a draft has no repo, so no scope can own it). Scope with `-r`/`-l` like every read. Human mode is a compact dashboard **without** bodies (prose is `--json`'s payload for agents). Read-only and git-free: orient on a shared board with `furrow sync && furrow brief`.
-- **`revisit`** — read-only; `--json` attaches a `revisit` array of `{code, detail}` (`no_repo`, `value_unset`, `effort_unset`, `stale`, `dep_done`) so an agent knows what to fix. Drafts surface regardless of scope. `--stale-days 0` disables the stale signal.
+- **`revisit`** — read-only; `--json` attaches a `revisit` array of `{code, detail}` (`no_repo`, `value_unset`, `effort_unset`, `stale`, `dep_done`, and for a container `children_done` / `stuck_container`) so an agent knows what to fix. Drafts surface regardless of scope. `--stale-days 0` disables the stale signal.
 - **`search`** — case-insensitive substring over every title **and** Markdown body, in canonical order; several words are one literal phrase. Honors the same `-s/-l/-r/-n` scope as `ls`. Each hit reports `matched_field` (`title`|`body`) and a one-line `snippet`; a title match never reads the body.
 - **`stats`** — `total`, `drafts`, and counts `by_lane` (a complete histogram in configured lane order, 0-count lanes included), `by_repo`, and `by_label` (most-used first). `stats -r ''` describes the whole board — the call that learns the label/repo vocabulary before guessing a `-l`/`-r`.
 - **`board`** — the introspection snapshot: store path, discovery `source` (`env`/`local`/`pointer`/`user-config`), repo scope, lane vocabulary, stale/archive windows, and the schema triple (`schema_version`, `binary_schema_version`, `schema_state`, `writable`). It **never fails on a version mismatch — it reports one**, so it is the pre-flight that diagnoses a board no other command can open.
@@ -570,9 +570,12 @@ taxonomy (with the git-level reasons) is in
   agent on a `sync-busy` that will never clear.
 
 On a **successful** sync furrow also prints a repo-scoped `revisit` summary —
-open tasks with a done dependency (`dep_done`) or gone stale (`stale`), a nudge to
-run `furrow revisit`; `--json` gains a `revisit` key with the id lists, omitted
-when the board is clean.
+open tasks with a done dependency (`dep_done`) or gone stale (`stale`), containers
+whose children are all done (`children_done`) or that hold open work with nothing
+actionable under it (`stuck_container`), and repos whose review clock has lapsed
+(`unreviewed`) — a nudge to run `furrow revisit`; `--json` gains a `revisit` key
+with the id lists, each omitted when empty and the whole key omitted when the
+board is clean.
 
 ### Board git hooks (optional)
 

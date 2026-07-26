@@ -91,8 +91,9 @@ type RevisitItem struct {
 }
 
 // Revisit lists open tasks that may need a fresh judgment, in canonical order.
-// It is purely read-only. A task surfaces when it has at least one signal (no
-// repo, unset value/effort, stale, or a done dependency). Terminal-lane tasks
+// It is purely read-only. A task surfaces when it has at least one signal —
+// no_repo, value_unset, effort_unset, stale, dep_done, or (for a container)
+// children_done / stuck_container. Terminal-lane tasks
 // (done/icebox/waiting) are skipped — there is nothing to re-evaluate about
 // parked or finished work. The query's filters restrict the result like
 // List/Next, with one carve-out: a draft (repos == []) bypasses the board
@@ -161,8 +162,10 @@ func (s RevisitSummary) Empty() bool {
 		len(s.ChildrenDone) == 0 && len(s.StuckContainer) == 0
 }
 
-// RevisitSummary tallies the dep_done and stale signals over the open
-// (non-terminal) tasks passing o.match. With a scope set (ScopeRepo/Repo),
+// RevisitSummary tallies the loop-visible signals over the open (non-terminal)
+// tasks passing o.match — dep_done, stale, children_done and stuck_container —
+// plus the repo-level unreviewed clock (unreviewedRepos, which is not a task
+// signal at all). With a scope set (ScopeRepo/Repo),
 // repo-less drafts are excluded — the difference from Revisit, which always
 // surfaces drafts as no_repo; a board-wide o (no scope) counts them.
 // staleDays <= 0 disables the stale half (matching core.RevisitReasons).
@@ -222,9 +225,16 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 // than [review].stale_after_days (0 disables → nil). A repo never human-reviewed
 // (LastReviewed nil, e.g. only agent-swept) does NOT nudge: the staleness clock
 // starts at the first human review, so the nudge stays quiet until you opt a
-// repo into a review cadence. Scoped like the rest of the summary — a set
-// ScopeRepo limits it to that repo; a board-wide sync considers every repo. The
-// input records are already sorted by Repo, so the output is canonical.
+// repo into a review cadence.
+//
+// Scoped like the rest of the summary, and it must apply BOTH repo filters the
+// way QueryOpts.match does: the board scope (ScopeRepo) AND an explicit -r
+// (Repo). Testing only ScopeRepo made `furrow brief -r X` scope its task
+// signals to X while reporting the stale clock of every repo on the board —
+// cli/scope.go clears ScopeRepo and sets Repo for an explicit -r, so the one
+// filter this checked was always empty in exactly that case. A board-wide sync
+// sets neither and considers every repo. The input records are already sorted
+// by Repo, so the output is canonical.
 func (a *App) unreviewedRepos(o QueryOpts, now time.Time) ([]UnreviewedRepo, error) {
 	days := a.Cfg.ReviewStaleAfterDays
 	if days <= 0 {
@@ -238,6 +248,9 @@ func (a *App) unreviewedRepos(o QueryOpts, now time.Time) ([]UnreviewedRepo, err
 	var out []UnreviewedRepo
 	for _, rec := range recs {
 		if o.ScopeRepo != "" && rec.Repo != o.ScopeRepo {
+			continue
+		}
+		if o.Repo != "" && rec.Repo != o.Repo {
 			continue
 		}
 		if rec.LastReviewed == nil {
