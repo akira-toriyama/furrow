@@ -661,10 +661,13 @@ except where noted:
 `apply`, `sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`), `schema`, `version`,
 `migrate`.
 
-- **`set`** applies the routine triage quartet — lane, value, effort, labels — in
-  one write (the combined-edit funnel `App.Set`), so triage isn't move+value+
-  effort+label as four commands. It reuses `applyLane`/`labelDelta`, the helpers
-  shared with `Move`/`Relabel`, so the invariants can't diverge.
+- **`set`** applies the routine triage edits — lane, POSITION (`--priority`, or
+  `--before`/`--after` a task in the DESTINATION lane, so a cross-lane drop is
+  lane + position in one write), value, effort, labels, and `--type` — in one
+  write (the combined-edit funnel `App.Set`), so triage isn't move+reorder+value+
+  effort+label+type as separate commands. It reuses `applyLane`/`labelDelta` and
+  the relative-priority planner, the helpers shared with `Move`/`Relabel`/
+  `Reorder`, so the invariants can't diverge.
 - **`dep`** adds or removes dependency edges on an existing task (`--rm`); it is
   variadic (`dep a b c`), applying/removing several in one all-or-nothing write.
   Adding is acyclic (rejects self- and cycle-creating edges) and idempotent.
@@ -864,11 +867,14 @@ Sections and their defaults:
 |---|---|---|
 | `[lanes]` | `order`, `default`, `done`, `terminal` | `inbox, backlog, ready, in-progress, waiting, done, icebox`; default `inbox`; done `done`; terminal `done, icebox, waiting` |
 | `[next]` | `lanes` | `ready, in-progress` (falls back to all non-terminal lanes when neither exists) |
+| `[types]` | `order`, `default`, `containers` | `task, epic`; default `task`; containers `epic`. The default MUST NOT be a container — a container default is clamped back, else every type-less shard would vanish from `next` |
 | `[priority]` | `step`, `default` | `10`, `100` |
 | `[ids]` | `prefix`, `width` | `t-`, `5` |
 | `[labels]` | `required` | `false` |
 | `[archive]` | `older_than_days` | `30` |
+| `[lint]` | `archive_done`, `ignore_codes` | `0` (the archive-backlog nudge is off), `[]` (an entry naming no real code only warns) |
 | `[revisit]` | `stale_days` | `30` (`0` disables the stale signal) |
+| `[review]` | `stale_after_days` | `14` (`0` disables the unreviewed-repo nudge) |
 | `[ui]` | `theme` | `auto` (one of `auto`/`dark`/`light`) — a front-end display preference (the CLI itself does not render a themed UI; an out-of-repo TUI/GUI reads it) |
 | `[alias]` | `<name> = "<command string>"` | none (a `name -> command` map) |
 | (top-level) | `standalone` | `false` (a local single-machine board: no remote / `furrow sync` / CI) |

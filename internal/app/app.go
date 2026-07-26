@@ -1685,9 +1685,9 @@ func (o SetOpts) empty() bool {
 
 // Set applies several triage edits to one task in a single load/save: move a
 // lane, position it (absolute priority, or relative to a lane-mate), set/clear
-// value and effort, and add/remove labels — so `set` replaces the
-// move+reorder+value+effort+label dance without that many separate writes (and
-// `updated` stamps). Everything is validated up front (unknown lane → exit 2
+// value and effort, add/remove labels, and set the work-item type — so `set`
+// replaces the move+reorder+value+effort+label+type dance without that many
+// separate writes (and `updated` stamps). Everything is validated up front (unknown lane → exit 2
 // with candidates like Move; a change that would strip the last label under
 // [labels].required → exit 2; a relative target outside the destination lane →
 // exit 2), then applied atomically — a relative placement that has to respace

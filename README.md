@@ -250,7 +250,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `move <id>... <lane>` | Move tasks to a lane | — |
 | `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before` |
 | `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | — |
-| `set <id>` | Apply several triage edits at once (lane, priority, value, effort, labels) | `--add-label`, `--after`, `--before`, `--clear-effort`, `--clear-value`, `--effort`, `-p/--priority`, `--rm-label`, `-s/--status`, `--type`, `--value` |
+| `set <id>` | Apply several triage edits at once (lane, priority, value, effort, labels, type) | `--add-label`, `--after`, `--before`, `--clear-effort`, `--clear-value`, `--effort`, `-p/--priority`, `--rm-label`, `-s/--status`, `--type`, `--value` |
 | `value <id> <1-5>` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear` |
 | `effort <id> <1-5>` | Set a task's effort estimate (coarse 1..5), or clear it with --clear | `--clear` |
 | `check <id> [item-index]` | Toggle, add, remove, or reword a checklist item | `--add`, `--off`, `--reword`, `--rm` |
@@ -665,6 +665,12 @@ terminal = ["done", "icebox", "waiting"]  # lanes never actionable (done/parked)
 lanes = ["ready", "in-progress"]  # lanes `furrow next` considers "ready to work" (besides the deps-done check);
                                   # intake/planning lanes are excluded — set to all non-terminal lanes to show everything actionable
 
+[types]
+# The work-item type vocabulary — a closed set, like [lanes].order.
+order      = ["task", "epic"]     # an unknown --type is exit 2 with these as candidates
+default    = "task"               # type a task gets when --type is omitted; MUST NOT be a container
+containers = ["epic"]             # boxes: skipped by `furrow next`, shown with rolled-up child progress in `ls --tree`
+
 [priority]
 step    = 10                      # sparse step so reordering edits one field
 default = 100
@@ -673,14 +679,21 @@ default = 100
 prefix = "t-"                     # frozen id: prefix + random base32 suffix (collision-free)
 width  = 5                        # number of random suffix chars, e.g. t-k3m9p
 
+[labels]
+# required = false                # when true, a label-less task is exit 2 on `add` and an error in `lint`
+
 [archive]
 older_than_days = 30              # default window for `furrow archive --older-than`
 
 [lint]
 # archive_done = 0                # `furrow lint` warns once this many done tasks are old enough to archive (0 = off)
+# ignore_codes = ["reconcile-gap"] # codes to suppress everywhere lint runs (an unknown code only warns)
 
 [revisit]
 stale_days = 30                   # `furrow revisit` flags a task with no update in this many days (0 disables)
+
+[review]
+stale_after_days = 14             # days before `furrow sync`/`brief` nudge a repo as unreviewed (0 disables)
 
 [ui]
 theme = "auto"                    # front-end display preference: auto | dark | light (NO_COLOR is always respected)

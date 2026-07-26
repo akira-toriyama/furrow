@@ -178,13 +178,15 @@ keeping them as plain JSON. Every such front-end consumes furrow's `--json` /
 To keep this list honest about today's reality (not aspirations):
 
 - **Built and real today** (`internal/cli`): `init`, `add`, `ls` (alias
-  `list`), `show`, `next`, `revisit`, `search`, `stats`, `board`, `edit`,
+  `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`, `board`,
+  `boards`, `doctor`, `edit`,
   `note`, `attach`, `done`, `move`, `set`, `reorder`,
-  `retitle`, `value`, `effort`, `check`, `dep`, `parent`, `label`, `repo`,
+  `retitle`, `value`, `effort`, `check`, `dep`, `parent`, `label`, `repo`, `ref`,
   `review`, `apply`, `sync`,
   `migrate`, `archive`, `upgrade`, `lint`, `config init|path`, `schema`, `version`.
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
-  `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, and `--drafts`.
+  `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, `--drafts`, and the typed
+  query `-q`.
   Destructive ops are guarded: `archive` and `upgrade` preview unless `--yes`.
   Exit-code
   contract: `0` ok (an empty query result included) / `1` a specifically
