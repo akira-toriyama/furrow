@@ -728,6 +728,8 @@ except where noted:
   on the error `id`: `sync-conflict` (exit 3, definitive — the rebase is
   aborted automatically, conflicted paths in `details`), `sync-busy` (exit 3,
   retryable — a foreign in-progress rebase outlived the bounded backoff),
+  `sync-push-rejected` (exit 3, retryable — a co-writer kept winning the push
+  race, so the board is untouched and the local sync commit intact; re-run),
   `sync` (terminal — a likely-stale `.git/*.lock`, named in the message),
   `sync-interrupted` (exit 130/143 = 128+signal, retryable — SIGINT/SIGTERM
   cancelled the in-flight git; a genuine conflict is never masked by the signal,

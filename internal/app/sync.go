@@ -553,23 +553,51 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 		return p, err
 	}
 
-	if err := r.Push(ctx); err != nil {
-		if !errors.Is(err, gitrepo.ErrNonFastForward) {
-			return p, err
-		}
-		// The remote moved between our pull and push: pull once more and retry.
-		if err := pull(); err != nil {
-			return p, err
-		}
-		if err := r.Push(ctx); err != nil {
-			if errors.Is(err, gitrepo.ErrNonFastForward) {
-				return p, core.Internalf("sync", "push kept being rejected after a retry: %v", err)
-			}
-			return p, err
-		}
+	if err := pushWithRetry(func() error { return r.Push(ctx) }, pull); err != nil {
+		return p, err
 	}
 	p.Pushed = true
 	return p, nil
+}
+
+// pushWithRetry pushes and, if the remote moved between our pull and our push
+// (gitrepo.ErrNonFastForward), pulls once more and pushes again — the co-writer
+// race, which self-resolves. A push still rejected after that retry is reported
+// as the RETRYABLE id "sync-push-rejected".
+//
+// That id exists because the distinction is not decorative. Losing this race
+// leaves the board untouched and the local sync commit intact, so the fix is to
+// run again — exactly like sync-busy, and unlike every other exit-3 outcome of a
+// sync (sync-conflict, sync-stash-stranded, a stale ref lock), all of which are
+// terminal and want a human. Folded into the generic "sync" id, as it was, a
+// caller could only tell "run me again" from "stop and fix me" by matching this
+// message — the one thing furrow's error contract tells callers never to do. So
+// sync-task-status.yml's publish step had no honest retry policy available: it
+// could retry terminal failures, or abandon a race it should ride out.
+//
+// A helper with injected push/pull (like pullWithRetry above) so the exhausted
+// case is reachable in a test — as real git it needs the remote to move between
+// two specific instants.
+func pushWithRetry(push, pull func() error) error {
+	err := push()
+	if err == nil || !errors.Is(err, gitrepo.ErrNonFastForward) {
+		return err
+	}
+	if err := pull(); err != nil {
+		return err
+	}
+	if err := push(); err != nil {
+		if !errors.Is(err, gitrepo.ErrNonFastForward) {
+			return err
+		}
+		return &core.Error{
+			Code: core.CodeInternal,
+			ID:   "sync-push-rejected",
+			Msg: fmt.Sprintf("a co-writer kept winning the push race, so the board is unchanged and "+
+				"your local sync commit is intact — re-run 'furrow sync' (last error: %v)", err),
+		}
+	}
+	return nil
 }
 
 // SyncSummary renders the progress as one terse human line (stdout, non-JSON
