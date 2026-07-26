@@ -35,14 +35,18 @@ func (a *App) Search(o QueryOpts, term string) ([]SearchHit, error) {
 	if err := a.validateLaneFilter(o.Status); err != nil {
 		return nil, err
 	}
-	idx, err := a.load()
+	// The index AND the body loader must come from the same store. Searching
+	// the archive index with the hot store's LoadBody would match on title and
+	// then silently miss (or error on) every body hit — the failure would look
+	// green in any test that only searches titles.
+	idx, loadBody, err := a.searchSource(o)
 	if err != nil {
 		return nil, err
 	}
 	// Compile -q once; it ANDs with the term like every other filter, and is
 	// evaluated before the term so a query-excluded task never pays for a body
 	// read the text match would otherwise do.
-	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, nil)
+	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, loadBody)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +69,7 @@ func (a *App) Search(o QueryOpts, term string) ([]SearchHit, error) {
 		case core.ContainsFold(t.Title, term):
 			out = append(out, SearchHit{Task: *t, MatchedField: "title", Snippet: t.Title})
 		default:
-			body, err := a.Store.LoadBody(t.ID)
+			body, err := loadBody(t.ID)
 			if err != nil {
 				return nil, err
 			}
@@ -79,4 +83,25 @@ func (a *App) Search(o QueryOpts, term string) ([]SearchHit, error) {
 		}
 	}
 	return out, nil
+}
+
+// searchSource returns the index to scan and the body loader that goes with it.
+// They are returned together on purpose: `--archived` has to switch BOTH, and
+// switching only the index is the bug this signature makes impossible — a title
+// hit would still look right while every body hit read the wrong store.
+func (a *App) searchSource(o QueryOpts) (*core.Index, func(string) (string, error), error) {
+	if !o.Archived {
+		idx, err := a.load()
+		return idx, a.Store.LoadBody, err
+	}
+	arc, err := a.archiveStore()
+	if err != nil {
+		return nil, nil, err
+	}
+	idx, err := arc.Load()
+	if err != nil {
+		return nil, nil, err
+	}
+	core.Canonicalize(idx, a.Cfg.Lanes)
+	return idx, arc.LoadBody, nil
 }

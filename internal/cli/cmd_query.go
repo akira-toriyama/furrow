@@ -572,6 +572,7 @@ func newSearchCmd() *cobra.Command {
 		repo     string
 		limit    int
 		queryStr string
+		archived bool
 	)
 	cmd := &cobra.Command{
 		Use:   "search <term>",
@@ -589,12 +590,16 @@ func newSearchCmd() *cobra.Command {
 			"`search sync -q 'is:open label:cli'` greps only the open cli-tagged tasks.\n" +
 			"(A bare `-q` free-text term IS this search: `ls -q foo` finds what `furrow\n" +
 			"search foo` finds. `search` remains the command that reports match field +\n" +
-			"snippet; the term argument stays required.)",
+			"snippet; the term argument stays required.)\n\n" +
+			"--archived searches the sibling archive store INSTEAD of the hot board —\n" +
+			"the same meaning it has on ls/show, so digging up why something was done\n" +
+			"stops falling back to grepping .furrow/archive/bodies by hand.",
 		Example: "  furrow search teatest\n" +
 			"  furrow search \"single marshaller\" --json\n" +
 			"  furrow search sync -s backlog -n5\n" +
 			"  furrow search sync -q 'is:open label:cli'   # only open cli-tagged hits\n" +
-			"  furrow search attach -r ''        # whole board, not just this repo",
+			"  furrow search attach -r ''        # whole board, not just this repo\n" +
+			"  furrow search reslice --archived  # the retired tasks, not the hot board",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -607,6 +612,7 @@ func newSearchCmd() *cobra.Command {
 			}
 			o.Status, o.Limit = joinOrFilter(status), limit
 			o.Query = queryStr
+			o.Archived = archived
 			hits, err := a.Search(o, strings.Join(args, " "))
 			if err != nil {
 				return err
@@ -619,6 +625,7 @@ func newSearchCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
+	cmd.Flags().BoolVar(&archived, "archived", false, "search the archive store instead of the hot board (same meaning as on ls/show)")
 	addQueryFlag(cmd, &queryStr)
 	return cmd
 }

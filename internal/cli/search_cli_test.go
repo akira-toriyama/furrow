@@ -128,3 +128,40 @@ func TestSearchHumanTableShowsSnippet(t *testing.T) {
 		t.Errorf("a body hit's human row should still name the task title:\n%s", out)
 	}
 }
+
+// `search --archived` reads the archive store instead of the hot board — the
+// same meaning --archived has on ls/show, so digging up why something was done
+// stops falling back to grepping .furrow/archive/bodies by hand.
+func TestCLISearchArchived(t *testing.T) {
+	initStore(t)
+	hot := addTask(t, "stays hot with zulu in the title")
+	old := addTask(t, "will be archived")
+	if _, code := run(t, "note", old, "the zulu paragraph lives only in the body"); code != 0 {
+		t.Fatalf("note exit = %d", code)
+	}
+	if _, code := run(t, "done", old); code != 0 {
+		t.Fatalf("done exit = %d", code)
+	}
+	// By id, so the test does not depend on an age window.
+	if out, code := run(t, "archive", old, "--yes"); code != 0 {
+		t.Fatalf("archive exit = %d:\n%s", code, out)
+	}
+
+	out, code := run(t, "--json", "search", "zulu")
+	if code != 0 || !strings.Contains(out, hot) || strings.Contains(out, old) {
+		t.Errorf("the hot search must see only the hot task (code %d):\n%s", code, out)
+	}
+
+	out, code = run(t, "--json", "search", "zulu", "--archived")
+	if code != 0 {
+		t.Fatalf("search --archived exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, old) || strings.Contains(out, hot) {
+		t.Errorf("--archived must search the archive INSTEAD of the hot board:\n%s", out)
+	}
+	// The load-bearing half: the hit is in the BODY, which only the archive's
+	// own loader can read.
+	if !strings.Contains(out, `"matched_field": "body"`) {
+		t.Errorf("an archived body hit must report matched_field=body:\n%s", out)
+	}
+}

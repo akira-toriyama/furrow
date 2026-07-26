@@ -120,3 +120,85 @@ func TestSearchZeroMatchIsCleanEmpty(t *testing.T) {
 		t.Fatalf("want 0 hits, got %d", len(hits))
 	}
 }
+
+// `search --archived` reads the archive store INSTEAD of the hot board, the
+// same meaning --archived has on ls/show. The load-bearing case is a BODY-only
+// hit: switching the index alone (and leaving the hot store's LoadBody) would
+// match archived titles and silently miss — or error on — every body match, and
+// a title-only test would look green through the whole bug.
+func TestSearchArchivedReadsTheArchiveBodies(t *testing.T) {
+	a := newFSApp(t)
+
+	hot, err := a.Add("stays hot with zulu in the title", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := a.Add("will be archived", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.AddNote(old.ID, "the zulu paragraph lives only in the body"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Done(old.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Sixty days later, sweep everything closed more than thirty days ago.
+	a.Clock = &fixedClock{t: a.Clock.Now().AddDate(0, 0, 60)}
+	moved, err := a.Archive(30, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(moved) != 1 {
+		t.Fatalf("precondition: one task should have been archived, got %d", len(moved))
+	}
+
+	hits, err := a.Search(QueryOpts{}, "zulu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].Task.ID != hot.ID {
+		t.Fatalf("the hot search must see only the hot task, got %+v", hits)
+	}
+
+	hits, err = a.Search(QueryOpts{Archived: true}, "zulu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].Task.ID != old.ID {
+		t.Fatalf("--archived must search the archive INSTEAD of the hot board, got %+v", hits)
+	}
+	if hits[0].MatchedField != "body" {
+		t.Errorf("matched_field = %q, want body — the archive's own body must be read", hits[0].MatchedField)
+	}
+	if hits[0].Snippet == "" {
+		t.Error("a body hit must carry a snippet cut from the ARCHIVED body")
+	}
+}
+
+// A board that never archived anything reads as a clean empty result, not an
+// error — the same contract `ls --archived` has.
+func TestSearchArchivedEmptyStoreIsHealthy(t *testing.T) {
+	a := newFSApp(t)
+	if _, err := a.Add("hot only", AddOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := a.Search(QueryOpts{Archived: true}, "hot")
+	if err != nil {
+		t.Fatalf("searching an empty archive must be healthy, got %v", err)
+	}
+	if len(hits) != 0 {
+		t.Errorf("want no hits, got %+v", hits)
+	}
+}
+
+// newFSApp opens a real file-backed board in a temp dir — the archive store is
+// a sibling DIRECTORY, so memstore cannot exercise these paths.
+func newFSApp(t *testing.T) *App {
+	t.Helper()
+	dir := t.TempDir()
+	if _, err := Init(dir); err != nil {
+		t.Fatal(err)
+	}
+	return openBoard(t, dir)
+}
