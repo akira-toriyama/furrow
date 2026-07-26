@@ -640,8 +640,7 @@ back into place — see the marshaller-path section.
   answer to the largest cluster the 2026-07 audit found: five closed vocabularies
   copied into prose and then left behind, every one of them in a file no guard
   was reading.
-- **Don't push without explicit OK.** 1 item = 1 PR (squash); update docs
-  in the same PR.
+- **1 item = 1 PR** (squash); update docs in the same PR.
 
 ## References
 
