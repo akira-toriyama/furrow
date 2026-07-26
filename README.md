@@ -86,24 +86,29 @@ furrow done t-0001
 
 `add` defaults the lane to `lanes.default` (`inbox`) and appends within the lane using the sparse priority step. Pass `--status/-s`, `--priority/-p`, `--label/-l`, `--parent`, `--dep`, `--ref`, or `--body` to set fields up front.
 
-### Typed query — `ls -q`
+### Typed query — `-q`
 
-`ls -q "<query>"` filters with a GitHub-Projects-style query folded into one string. It is a **flat AND-list**: whitespace between terms is AND, a comma inside one value is OR, a leading `-` is NOT, and it ANDs with the other filters (`-s/-l/-r`, `--sort`, …) so a query never widens a scoped board. No cross-field OR, no grouping, no in-query sort — GitHub's own ceiling; `--json | jq` owns the long tail.
+Every filtering read — `ls`, `next`, `revisit`, `stats`, `search` — takes `-q "<query>"`, a GitHub-Projects-style query folded into one string and compiled by ONE shared evaluator, so it means the same thing everywhere (`brief` is deliberately excluded — a fixed session-orient read). It is a **flat AND-list**: whitespace between terms is AND, a comma inside one value is OR, a leading `-` is NOT, and it ANDs with the other filters (`-s/-l/-r`, `--sort`, …) so a query never widens a scoped board. No cross-field OR, no grouping, no in-query sort — GitHub's own ceiling; `--json | jq` owns the long tail.
 
 ```sh
 furrow ls -q 'is:actionable label:cli,dx -status:icebox'   # workable now, (cli OR dx), not iced
-furrow ls -q 'value:>=4 is:blocked'                         # high-value but stuck
-furrow ls -q 'no:effort is:open'                            # open, effort not yet estimated
-furrow ls -q 'roi:>2 "typed query"'                         # ROI>2 with a title phrase
+furrow next -q 'value:>=4 -label:chore'                     # ready AND worth it
+furrow ls -q 'is:open updated:<-30d'                        # open but untouched for a month
+furrow ls -q 'closed:2026-07-01..2026-07-15'                # closed inside a window
+furrow ls -q 'depends-on:t-k3m9p is:blocked'                # what waits on t-k3m9p, still stuck
+furrow stats -q is:stale                                    # the stale board's shape
+furrow ls -q 'roi:>2 "typed query"'                         # ROI>2 with a text phrase
 ```
 
-- **qualifiers** (`field:value`, comma = OR, repeat = AND): `status`/`lane`, `type`, `label`, `repo`, `id` (prefix), `parent`, `title` (substring). Unknown `status`/`type` values, an unknown qualifier, or an operator on a non-ordinal field are **exit 2** with a stable error `id` and did-you-mean `candidates` (never a silent empty result).
+- **qualifiers** (`field:value`, comma = OR, repeat = AND): `status`/`lane`, `type`, `label`, `repo` (resolved exactly as `-r` does: a full `owner/repo` or a short name naming exactly one — ambiguous is exit 2 with candidates), `id` (prefix), `parent`, `title`, `body`. A bad query is **exit 2**, never a silent empty result — but the keys differ by fault: an unknown *qualifier* or `is:` flag carries both a stable error `id` and did-you-mean `candidates`; an unknown `status`/`type` value or an ambiguous `repo:` routes through furrow's existing lane/type/repo errors, which carry `candidates` (and no `id`, as elsewhere in furrow); an operator on a non-ordered field is `id: query-type` with no candidates.
 - **ordinal** (`value`, `effort`, `priority`, `roi`): comparison `>`, `>=`, `<`, `<=` and range `2..4` / `*..3` / `3..*`. An unset estimate (and an undefined `roi`) never satisfies a comparison.
-- **presence**: `has:FIELD` / `no:FIELD` over `label`, `repo` (`no:repo` = a draft), `parent`, `value`, `effort`, `deps`, `refs`, `checklist`, `closed`, `reviewed`.
-- **computed flags** (furrow's own, no GitHub equivalent): `is:actionable` (exactly what `furrow next` hands you), `is:blocked`, `is:stuck` (a container with open work but nothing actionable), `is:open`/`is:closed`/`is:draft`/`is:container`.
-- **free text**: a bare word or `"quoted phrase"` is a case-insensitive substring match over the title.
+- **dates** (`created`, `updated`, `closed`, `reviewed` — the `-q` generalization of `--since/--until`): absolute `YYYY-MM-DD` (the whole UTC day, so `created:>2026-07-01` means *after* that day) or RFC3339, plus signed **relative offsets** from now, `updated:>=-2w` (JQL's units `m/h/d/w` — `m` is minutes, not months; an offset needs a comparison or range, never a bare equality). Ranges are inclusive with `*` open ends. A `null` `closed`/`reviewed` satisfies **no** comparison (existence is `has:`/`no:`'s job) — so negation *includes* the unset, like the estimates.
+- **graph** (direct edges, exact ids; an unknown id just matches nothing): `parent:X` / `child-of:X` are two spellings of one predicate — *the direct children of X*; `depends-on:X` and `blocks:X` are the two directions of the dep edge (the tasks waiting on X, and the tasks X waits on). There is no up-direction hierarchy spelling in v1 — `parent <id> --list` answers "who is X's parent?", which is a lookup, not a filter. Transitive walks (`descendant-of:` …) and `parent-of:` are deliberately v2.
+- **presence**: `has:FIELD` / `no:FIELD` over `label`, `repo` (`no:repo` = a draft), `parent`, `value`, `effort`, `deps`, `refs`, `checklist`, `closed`, `reviewed`, `body` (non-whitespace content — note `add` seeds every body with a heading).
+- **computed flags** (furrow's own, no GitHub equivalent): `is:actionable` (exactly what `furrow next` hands you), `is:blocked`, `is:stuck` (a container with open work but nothing actionable), `is:stale` (no update within `[revisit].stale_days` — revisit's own definition, a pure age test that does not imply open), `is:open`/`is:closed`/`is:draft`/`is:container`.
+- **free text**: a bare word or `"quoted phrase"` is a case-insensitive substring over **title + body** — exactly `furrow search`'s matcher, so `ls -q foo` finds what `search foo` finds. Bodies are loaded only when a term actually reads them (free text, `body:`, `has:body`), once per task; free text additionally skips the load when the title already matched. On `title:` a **quoted** value flips substring to whole-field equality (`title:'Bug fix'`), still case-insensitive. `body:` stays a substring match even when quoted — quoting is also the way to include a space, and whole-*document* equality would make a quoted `body:` unusable rather than exact.
 
-Today `-q` is wired on `ls`; extending it to `next`/`revisit` and adding date qualifiers (`updated:>=-2w`) and dependency-graph qualifiers (`child-of:`, `depends-on:`) is the tracked next step.
+Deliberately not in v1 (tracked): wildcards (`label:*ui*`), transitive graph qualifiers, cross-field OR.
 
 ---
 
@@ -235,11 +240,11 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `add <title>...` | Add a task (or many with --stdin) | `--body`, `--check`, `--dep`, `--draft`, `--effort`, `-l/--label`, `--parent`, `-p/--priority`, `--ref`, `-r/--repo`, `-s/--status`, `--stdin`, `--type`, `--value` |
 | `ls [<id>]` (alias `list`) | List tasks (canonical lane->priority->id order), or draw the hierarchy with --tree | `--actionable`, `--archived`, `--blocked`, `--drafts`, `-l/--label`, `-n/--limit`, `--progress-recursive`, `-q/--query`, `-r/--repo`, `--reverse`, `--since`, `--sort`, `-s/--status`, `--tree`, `--type`, `--until` |
 | `show <id>...` | Show tasks with metadata and markdown body (batch-friendly) | `--archived`, `--backlinks`, `--no-body` |
-| `next` | Show actionable tasks (in the next-lanes, all deps done) | `--containers`, `-l/--label`, `--lanes`, `-n/--limit`, `-r/--repo` |
+| `next` | Show actionable tasks (in the next-lanes, all deps done) | `--containers`, `-l/--label`, `--lanes`, `-n/--limit`, `-q/--query`, `-r/--repo` |
 | `brief` | One-shot session-orient read: next picks with bodies, blocked, revisit, drafts | `-l/--label`, `-n/--limit`, `-r/--repo`, `--stale-days` |
-| `revisit` | List open tasks needing re-evaluation (agent re-weighing signal) | `-l/--label`, `-n/--limit`, `-r/--repo`, `--stale-days` |
-| `search <term>` | Full-text search over task titles and bodies | `-l/--label`, `-n/--limit`, `-r/--repo`, `-s/--status` |
-| `stats` | Summarize the board: counts by lane, repo, and label | `-l/--label`, `-r/--repo`, `-s/--status` |
+| `revisit` | List open tasks needing re-evaluation (agent re-weighing signal) | `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `--stale-days` |
+| `search <term>` | Full-text search over task titles and bodies | `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `-s/--status` |
+| `stats` | Summarize the board: counts by lane, repo, and label | `-l/--label`, `-q/--query`, `-r/--repo`, `-s/--status` |
 | `board` | Print the active board: store path, scope, lane vocabulary, and schema state | — |
 | `boards` | List the configured boards (user-level config), independent of cwd | — |
 | `doctor [dir...]` | Diagnose this machine's board setup: config, boards, scopes, git freshness | — |
@@ -286,7 +291,7 @@ The generated table is the machine-guaranteed surface; these are the behavior co
 - **`next`** — "actionable" means: lane is in `[next].lanes` (default `ready` + `in-progress`, so intake stays out) **and** every dep is done. A **container** (an epic) is a box, not work, so it is skipped — `--containers` surfaces a ready one too. `--lanes <csv>` overrides which lanes count as "now" for this call only (config untouched): `next --lanes backlog,ready` surfaces a no-dependency backlog task without first promoting it; an unknown lane is exit 2 with `candidates`. `--json` attaches a `reason` per task (`in_next_lane` — the lane it matched — and `deps_satisfied`).
 - **`brief`** — the one-shot session-orient read: `next`'s top `-n` picks (default 3) **with their bodies** (`body_text` — the `show` follow-up folded in) plus `next_total`, the uncapped actionable count (a cap never hides the queue size); `blocked`, the next-lane tasks with an unsatisfied dep and their `blocked_by` (started or queued work that plain `next` deliberately hides); the `revisit` summary in `sync`'s shape; and the `drafts` count (board-wide by definition — a draft has no repo, so no scope can own it). Scope with `-r`/`-l` like every read. Human mode is a compact dashboard **without** bodies (prose is `--json`'s payload for agents). Read-only and git-free: orient on a shared board with `furrow sync && furrow brief`.
 - **`revisit`** — read-only; `--json` attaches a `revisit` array of `{code, detail}` (`no_repo`, `value_unset`, `effort_unset`, `stale`, `dep_done`, and for a container `children_done` / `stuck_container`) so an agent knows what to fix. Drafts surface regardless of scope. `--stale-days 0` disables the stale signal.
-- **`search`** — case-insensitive substring over every title **and** Markdown body, in canonical order; several words are one literal phrase. Honors the same `-s/-l/-r/-n` scope as `ls`. Each hit reports `matched_field` (`title`|`body`) and a one-line `snippet`; a title match never reads the body.
+- **`search`** — case-insensitive substring over every title **and** Markdown body, in canonical order; several words are one literal phrase. Honors the same `-s/-l/-r/-n` scope as `ls`, and the same `-q` typed query. Each hit reports `matched_field` (`title`|`body`) and a one-line `snippet`; a title match never reads the body.
 - **`stats`** — `total`, `drafts`, and counts `by_lane` (a complete histogram in configured lane order, 0-count lanes included), `by_repo`, and `by_label` (most-used first). `stats -r ''` describes the whole board — the call that learns the label/repo vocabulary before guessing a `-l`/`-r`.
 - **`board`** — the introspection snapshot: store path, discovery `source` (`env`/`local`/`pointer`/`user-config`), repo scope, lane vocabulary, stale/archive windows, and the schema triple (`schema_version`, `binary_schema_version`, `schema_state`, `writable`). It **never fails on a version mismatch — it reports one**, so it is the pre-flight that diagnoses a board no other command can open.
 - **`boards`** — the machine-wide sibling of `board`: every `[[board]]` in the user-level config, in file order, **without resolving against cwd** — it exits 0 (a listing, possibly empty) exactly where other commands exit 2 with "no board", so it is the diagnosis for a machine whose scopes were never configured and the bootstrap call for a GUI front-end running outside every scope. The JSON is `{config, boards: []}`: `config` names the file read (the path is reported even when the file is absent); each entry carries the resolved `store`/`scopes`, the **declared** `repo`/`label` (`"auto"` cannot resolve without a checkout), an `exists` flag, and the same vocabulary/schema keys as `board` (shared structs — one parser reads both views; a missing board keeps an *empty* vocabulary, reported never guessed). `FURROW_BOARD` — a per-invocation override, not machine config — is deliberately not listed.

@@ -48,11 +48,9 @@ func RevisitReasons(t Task, now time.Time, staleDays int, doneIDs map[string]boo
 	if t.Effort == nil {
 		rs = append(rs, RevisitReason{Code: RevisitEffortUnset, Detail: "effort estimate missing"})
 	}
-	if staleDays > 0 {
-		if age := now.Sub(t.Updated); age >= time.Duration(staleDays)*24*time.Hour {
-			days := int(age.Hours() / 24)
-			rs = append(rs, RevisitReason{Code: RevisitStale, Detail: fmt.Sprintf("no update in %dd (threshold %dd)", days, staleDays)})
-		}
+	if IsStale(t, now, staleDays) {
+		days := int(now.Sub(t.Updated).Hours() / 24)
+		rs = append(rs, RevisitReason{Code: RevisitStale, Detail: fmt.Sprintf("no update in %dd (threshold %dd)", days, staleDays)})
 	}
 	for _, dep := range t.Deps {
 		if doneIDs[dep] {
@@ -60,4 +58,14 @@ func RevisitReasons(t Task, now time.Time, staleDays int, doneIDs map[string]boo
 		}
 	}
 	return rs
+}
+
+// IsStale reports whether t has gone without an update for at least staleDays
+// (staleDays <= 0 disables staleness — nothing is ever stale). THE one
+// definition of "stale": revisit's stale signal and the query's `is:stale` both
+// call it, so the two can never drift. It is a pure age test — it says nothing
+// about the task being open; callers wanting revisit's view compose it with
+// their own lane eligibility (e.g. `-q 'is:open is:stale'`).
+func IsStale(t Task, now time.Time, staleDays int) bool {
+	return staleDays > 0 && now.Sub(t.Updated) >= time.Duration(staleDays)*24*time.Hour
 }

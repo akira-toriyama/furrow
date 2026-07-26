@@ -88,7 +88,7 @@ contract an agent does.
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough), the in-memory `Marshal`, the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard, `meta.json`, and a repo review shard as Go constants; emitted by `furrow schema [task|meta|repo]`. |
 | `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |
-| `internal/query` | Pure parser (stdlib only) for the `-q` typed-query DSL: a flat AND-list of `field:value` terms (comma=OR, `-`=NOT, `has:`/`no:`, `is:`) → an AST. It knows the GRAMMAR, not furrow's fields; `internal/app`'s `compileQuery` binds each term to a task predicate (validating fields/lanes, exit 2 + candidates on a miss). |
+| `internal/query` | Pure parser (stdlib only) for the `-q` typed-query DSL: a flat AND-list of `field:value` terms (comma=OR, `-`=NOT, `has:`/`no:`, `is:`) → an AST. It knows the GRAMMAR, not furrow's fields; `internal/app`'s `compileQuery` binds each term to a task predicate (validating fields/lanes, exit 2 + candidates on a miss) against the index, the `Clock` (relative dates, `is:stale`), and the store's bodies (loaded on demand, only by terms that read them). One compiled predicate serves every filtering read — `ls`/`next`/`revisit`/`stats`/`search`. |
 | `internal/gittest` | Test-only helper: `Isolate()` neutralizes global/system git config at the process-env level (called from `TestMain`) so real-git tests — especially `App.Sync`'s subprocess — don't flake on a developer's `commit.gpgsign`/`core.hooksPath`. Imported only by `_test.go` files. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |
 
@@ -782,7 +782,10 @@ except where noted:
   2-space (indented) encoding as the shards.
 - Read filters: `--status`/`-s`, `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`,
   `--drafts` on `ls`; `-l`/`-r`/`-n` on `next` and `revisit` (plus
-  `--stale-days` on `revisit`). `-r` is the scope control (an
+  `--stale-days` on `revisit`). The typed query `--query`/`-q` is on every
+  filtering read — `ls`, `next`, `revisit`, `stats`, `search` — and ANDs with
+  all of the above (it can only narrow, never widen a scoped board);
+  `brief` is deliberately excluded, being a fixed session-orient read. `-r` is the scope control (an
   explicit `-r` overrides the board scope; `-r ''` shows the whole board);
   `-l` is a pure tag filter that ANDs with the scope. Within a single `-s` or
   `-l`, a comma is OR (`-s inbox,backlog`, `-l bug,urgent`; tokens are trimmed,

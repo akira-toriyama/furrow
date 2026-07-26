@@ -12,6 +12,12 @@
 //	                            (>=4), a range (2..4, *..3, 3..*), or a
 //	                            comma-OR set; a bare word (no colon) is free text.
 //
+// Quotes ('…' or "…") protect whitespace, commas, colons, and the range
+// separator inside a value, and each scalar REMEMBERS whether it was quoted
+// (Value.Quoted): the app gives a quoted value on a text qualifier exact-match
+// semantics (title:'Bug fix') where a bare one is a substring. The parser only
+// records the fact — what it means is the binder's business.
+//
 // There is deliberately NO cross-field OR, no grouping/parentheses, and no
 // in-query sort — GitHub's own ceiling, and the long tail is jq's job. So a v1
 // query is a flat term list: a whitespace tokenizer plus a per-term classifier,
@@ -45,14 +51,24 @@ const (
 	Between           // A..B inclusive; Values = {lo, hi}; "*" = open end
 )
 
+// Value is one scalar in a qualifier's value position. Quoted records whether
+// it was quoted in the source: on a text qualifier the app reads a quoted
+// scalar as whole-field equality (title:'Bug fix') and a bare one as a
+// substring; everywhere else quotes only protect separator characters and
+// change nothing.
+type Value struct {
+	Text   string
+	Quoted bool
+}
+
 // Term is one AND-ed clause of a query.
 type Term struct {
 	Kind   Kind
-	Not    bool     // a leading '-' (for Presence, folds has/no: see parseTerm)
-	Field  string   // qualifier / presence field, or is-flag name (lower-cased)
-	Op     Op       // Qualifier only
-	Values []string // Qualifier: the OR-set, comparison scalar, or {lo,hi} range
-	Text   string   // FreeText only (unquoted)
+	Not    bool    // a leading '-' (for Presence, folds has/no: see parseTerm)
+	Field  string  // qualifier / presence field, or is-flag name (lower-cased)
+	Op     Op      // Qualifier only
+	Values []Value // Qualifier: the OR-set, comparison scalar, or {lo,hi} range
+	Text   string  // FreeText only (unquoted)
 }
 
 // Query is a flat list of terms, all AND-ed together.
@@ -144,15 +160,17 @@ func parseTerm(raw string) (Term, error) {
 
 	field, rest, hasColon := splitQualifier(raw)
 	if !hasColon {
-		// Free text: a bare word or a quoted phrase. Unquote for matching.
-		text, err := unquote(raw)
+		// Free text: a bare word or a quoted phrase. Unquote for matching —
+		// quoted-ness carries no extra meaning here (a phrase is a substring
+		// match either way; the quotes only admit whitespace).
+		v, err := scalar(raw)
 		if err != nil {
 			return Term{}, err
 		}
-		if text == "" {
+		if v.Text == "" {
 			return Term{}, &ParseError{Msg: "empty term", Term: raw}
 		}
-		return Term{Kind: FreeText, Not: not, Text: text}, nil
+		return Term{Kind: FreeText, Not: not, Text: v.Text}, nil
 	}
 
 	lf := strings.ToLower(field)
@@ -210,31 +228,32 @@ func parseQualifier(field, rest string, not bool, raw string) (Term, error) {
 			if v == "" {
 				return Term{}, &ParseError{Msg: "comparison " + c.pre + " needs a value", Term: raw, Field: field}
 			}
-			uv, err := unquote(v)
+			uv, err := scalar(v)
 			if err != nil {
 				return Term{}, err
 			}
 			t.Op = c.op
-			t.Values = []string{uv}
+			t.Values = []Value{uv}
 			return t, nil
 		}
 	}
 
-	// Range A..B (either end may be "*" for open).
-	if lo, hi, ok := strings.Cut(rest, ".."); ok {
+	// Range A..B (either end may be "*" for open). Only a top-level ".." is a
+	// separator — one inside quotes (title:'a..b') is value content.
+	if lo, hi, ok := cutRange(rest); ok {
 		if lo == "" || hi == "" {
 			return Term{}, &ParseError{Msg: "range needs both bounds (lo..hi; use * for an open end)", Term: raw, Field: field}
 		}
-		ulo, err := unquote(lo)
+		ulo, err := scalar(lo)
 		if err != nil {
 			return Term{}, err
 		}
-		uhi, err := unquote(hi)
+		uhi, err := scalar(hi)
 		if err != nil {
 			return Term{}, err
 		}
 		t.Op = Between
-		t.Values = []string{ulo, uhi}
+		t.Values = []Value{ulo, uhi}
 		return t, nil
 	}
 
@@ -250,17 +269,39 @@ func parseQualifier(field, rest string, not bool, raw string) (Term, error) {
 	return t, nil
 }
 
+// cutRange splits s on its first top-level (unquoted) ".." into the two range
+// bounds. A ".." inside quotes is content, not syntax, so a quoted value may
+// legitimately contain one. The scan is byte-wise: every character that matters
+// (quote, dot) is ASCII, so multi-byte runes can never false-match.
+func cutRange(s string) (lo, hi string, ok bool) {
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '.' && i+1 < len(s) && s[i+1] == '.':
+			return s[:i], s[i+2:], true
+		}
+	}
+	return s, "", false
+}
+
 // splitOrList splits a value on top-level (unquoted) commas, unquoting each part.
-func splitOrList(s string) ([]string, error) {
-	var out []string
+func splitOrList(s string) ([]Value, error) {
+	var out []Value
 	var b strings.Builder
 	var quote rune
 	push := func() error {
-		v, err := unquote(b.String())
+		v, err := scalar(b.String())
 		if err != nil {
 			return err
 		}
-		if v != "" {
+		if v.Text != "" {
 			out = append(out, v)
 		}
 		b.Reset()
@@ -290,19 +331,20 @@ func splitOrList(s string) ([]string, error) {
 	return out, nil
 }
 
-// unquote strips a single wrapping pair of matching quotes, if present, leaving
-// inner content verbatim. A bare (unquoted) value is returned trimmed of spaces.
-// A stray opening quote with no close is a parse error.
-func unquote(s string) (string, error) {
+// scalar strips a single wrapping pair of matching quotes, if present, leaving
+// inner content verbatim and recording the quoting in Value.Quoted. A bare
+// (unquoted) value is returned trimmed of spaces. A stray opening quote with no
+// close is a parse error.
+func scalar(s string) (Value, error) {
 	if len(s) >= 2 {
 		if (s[0] == '\'' || s[0] == '"') && s[len(s)-1] == s[0] {
-			return s[1 : len(s)-1], nil
+			return Value{Text: s[1 : len(s)-1], Quoted: true}, nil
 		}
 	}
 	if strings.ContainsAny(s, "'\"") {
 		// A quote char that is not a clean wrapping pair — reject rather than
 		// silently mangle (e.g. `title:'unterminated`).
-		return "", &ParseError{Msg: "mismatched quotes", Term: s}
+		return Value{}, &ParseError{Msg: "mismatched quotes", Term: s}
 	}
-	return strings.TrimSpace(s), nil
+	return Value{Text: strings.TrimSpace(s)}, nil
 }
