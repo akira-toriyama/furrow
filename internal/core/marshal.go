@@ -15,8 +15,10 @@ import (
 // MarshalMeta, so these bytes must never be written to .furrow/ (that would
 // resurrect the abolished, drift-prone index.json).
 //
-// DO NOT regress the determinism contract (shared with MarshalTask via
-// encodeCanonical + canonicalizeTask):
+// DO NOT regress the determinism contract. MarshalTask shares the
+// normalization (canonicalizeTask) but NOT the encoder — see encodeCanonical
+// below for which function each path really runs — so the recipe itself must be
+// kept identical on both sides:
 //   - key order        = struct field order (encoding/json guarantees this)
 //   - indent           = 2 spaces
 //   - SetEscapeHTML(false) so CJK and < > & survive verbatim
@@ -38,7 +40,7 @@ func Marshal(idx *Index, laneOrder []string) ([]byte, error) {
 
 // MarshalTask is the per-task twin of Marshal: the ONE path that serializes a
 // single task to its shard bytes (tasks/<id>.json). It shares Marshal's byte
-// recipe (encodeCanonical) and per-task normalization (canonicalizeTask) so a
+// recipe (encodeCanonicalWithExtras) and per-task normalization (canonicalizeTask) so a
 // shard written by furrow equals a hand-edit byte-for-byte, exactly as the index
 // does. Unlike the index, a shard carries NO schema_version — the store's
 // meta.json owns the one board-wide version, keeping every shard free of a field
@@ -59,9 +61,16 @@ func MarshalTask(t *Task) ([]byte, error) {
 
 // encodeCanonical applies the determinism byte-recipe to any value: no HTML
 // escaping (CJK and < > & survive verbatim), 2-space indent, and a trailing
-// newline (Encode appends it). Marshal (*Index) and MarshalTask (*Task) both go
-// through it so the recipe lives in exactly one place; regressing it here would
-// silently reintroduce git churn for both.
+// newline (Encode appends it).
+//
+// It serves EXACTLY ONE caller — Marshal (*Index), the in-memory canonical form
+// used by tests and inspection. Nothing persisted goes through it: since the
+// unknown-key passthrough landed, all three on-disk marshallers (MarshalTask,
+// MarshalRepo, MarshalMeta) run encodeCanonicalWithExtras (passthrough.go),
+// which re-applies the same recipe around the extras splice. So a regression
+// HERE does not reach a shard — and one THERE does. The two must stay
+// byte-compatible; TestFrozenBoardRoundTripsByteIdentical is what notices if
+// they drift apart.
 func encodeCanonical(v any) ([]byte, error) {
 	var b bytes.Buffer
 	e := json.NewEncoder(&b)
@@ -103,7 +112,7 @@ func UnmarshalTask(data []byte) (*Task, error) {
 
 // MarshalRepo is the per-repo twin of MarshalTask: the ONE path that serializes
 // a RepoRecord to its shard bytes (repos/<owner>__<repo>.json). It shares the
-// byte recipe (encodeCanonical) and normalizes its timestamps (canonicalizeRepo)
+// byte recipe (encodeCanonicalWithExtras) and normalizes its timestamps (canonicalizeRepo)
 // so a repo shard written by furrow equals a hand-edit byte-for-byte, exactly as
 // task shards do, and — like them — carries no schema_version. r must be
 // non-nil.
@@ -146,7 +155,7 @@ func UnmarshalRepo(data []byte) (*RepoRecord, error) {
 }
 
 // MarshalMeta serializes the board-wide Meta (schema version) to its meta.json
-// bytes. It shares encodeCanonical so meta.json obeys the same byte recipe as
+// bytes. It shares encodeCanonicalWithExtras so meta.json obeys the same byte recipe as
 // the shards (2-space indent, no HTML escaping, trailing newline) — a hand-edit
 // equals a furrow write. This is the ONE path that serializes Meta.
 func MarshalMeta(m *Meta) ([]byte, error) {

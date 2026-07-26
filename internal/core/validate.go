@@ -7,19 +7,20 @@ import (
 	"strings"
 )
 
-// Problem is one lint finding. Severity is "error" (breaks an invariant) or
-// "warn" (suspicious but tolerated). The CLI exits non-zero only on errors.
+// Problem is one lint finding, shared by `furrow lint` and `furrow doctor`.
+// For LINT, Severity is "error" (breaks an invariant) or "warn" (suspicious but
+// tolerated) and the CLI exits non-zero only on errors; doctor reuses this
+// struct with a third severity ("info") and exits non-zero on error OR warn, so
+// neither the vocabulary nor the exit rule is universal to the type.
 //
 // Code is a stable kebab-case classifier for machine triage — the id field is
-// contextual (a task id, an asset name, or a literal like "config"/"global-config"),
-// so an agent branches on Code, never regexes the message prose. The closed
-// vocabulary: empty-id, id-pattern, duplicate-id, unknown-lane, unknown-type,
-// dep-mirrors-children, body-path,
-// parent-missing, dep-missing, repo-shape, value-range, effort-range, dep-cycle,
-// parent-cycle, parent-done, reconcile-gap, done-unclosed, missing-body,
-// orphan-body, shard-misnamed, conflict-marker, dangling-link, asset-missing,
-// orphan-asset, oversized-asset, label-required, config-clamp, alias-shadow,
-// archive-backlog.
+// contextual (a task id, an asset name, an owner/repo, or a literal like
+// "config"/"global-config"/"alias"/"archive"/"meta"), so an agent branches on
+// Code, never regexes the message prose. The closed vocabulary is lintCodes in
+// lint_filter.go — read it with LintCodeList(). It is deliberately NOT
+// re-listed here: the copy that used to live in this comment had drifted three
+// codes behind the registry, which is the exact failure this Code field exists
+// to prevent.
 type Problem struct {
 	Severity string `json:"severity"`
 	Code     string `json:"code"`
@@ -145,7 +146,8 @@ func Validate(idx *Index, laneOrder, types []string, idPattern *regexp.Regexp) [
 
 // EstimateProblems warns about any value/effort outside the 1..5 scale. It is a
 // backstop for hand-edits: the marshaller clamps on every write (Canonicalize),
-// so an out-of-range estimate can only reach disk by editing index.json by hand
+// so an out-of-range estimate can only reach disk by hand-editing a task shard
+// (tasks/<id>.json — there is no index.json)
 // — and would be silently rounded on the next write. Run this on the RAW index
 // (before Canonicalize) so the stray is still visible. Findings are warnings,
 // not errors: the data still loads and the clamp keeps it sane.

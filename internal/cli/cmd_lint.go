@@ -32,8 +32,8 @@ func newLintCmd() *cobra.Command {
 			"config clamp warnings.\n" +
 			"Exits 2 if any errors are found; warnings alone exit 0.\n\n" +
 			"Every problem carries a stable kebab-case `code` — branch on that, never on the\n" +
-			"message (the `id` field is contextual: a task id, an asset name, `meta`, or\n" +
-			"`config`).\n\n" +
+			"message (the `id` field is contextual: a task id, an asset name, an\n" +
+			"`owner/repo`, `meta`, `alias`, `archive`, `config`, or `global-config`).\n\n" +
 			"Narrow the output with --code (allow-list), --exclude-code (deny-list; wins\n" +
 			"over --code), and --severity error|warn (exact level). An unknown --code /\n" +
 			"--exclude-code token is exit 2 with the known codes as candidates (a closed\n" +

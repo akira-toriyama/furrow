@@ -38,12 +38,14 @@ var autoCommitApp *app.App
 // autocommit post-run hook fires for. Reads (ls/show/next/brief/revisit/search/
 // stats), diagnostics (board/boards/doctor/lint/config/schema/version), `edit`
 // (whose real change happens out-of-process in $EDITOR), `migrate` (a rare,
-// possibly cross-board rewrite to commit deliberately), and `sync` itself (its
-// own git ritual) are deliberately absent. A command missing here simply does
+// possibly cross-board rewrite to commit deliberately), `init` (it creates the
+// store this hook would commit INTO, and never opens an App, so an entry for it
+// could not fire), and `sync` itself (its own git ritual) are deliberately
+// absent. A command missing here simply does
 // not autocommit its own change — it rides in on the next mutating command's
 // commit — a graceful degradation, never data loss.
 var mutatingCommands = map[string]bool{
-	"init": true, "add": true, "note": true, "attach": true, "done": true,
+	"add": true, "note": true, "attach": true, "done": true,
 	"move": true, "reorder": true, "retitle": true, "set": true, "value": true,
 	"effort": true, "check": true, "dep": true, "parent": true, "label": true,
 	"repo": true, "ref": true, "review": true, "apply": true, "archive": true,
@@ -202,7 +204,10 @@ func newRootCmd() *cobra.Command {
 		// the template below prints it verbatim instead of cobra's default
 		// "furrow version <x>" form.
 		Version: version.Resolve().String(),
-		// non-interactive by default: never prompt (furrow is CLI-only).
+		// Keep cobra's generated `completion` subcommand (false = do NOT disable
+		// it): shell completion is the one interactive affordance furrow ships,
+		// and it is generated, not prompted. Stated explicitly because the field's
+		// zero value is the same, so a reader cannot tell an intent from a default.
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: false},
 	}
 	root.SetVersionTemplate("{{.Version}}\n")

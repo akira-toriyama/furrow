@@ -303,7 +303,8 @@ func newEstimateCmd(name string, set func(*app.App, string, *int) (*core.Task, e
 		Long: "Record a coarse 1..5 " + name + " estimate on a task; out-of-range scores are\n" +
 			"clamped into 1..5. With --clear, remove the estimate (back to unset, so intake\n" +
 			"stays frictionless). value and effort together derive ROI = value/effort, the\n" +
-			"signal for picking the next task — sort with: furrow ls --json | jq 'sort_by(.value/.effort)'.",
+			"signal for picking the next task — order by it with `furrow ls --sort value`\n" +
+			"(unset estimates stay last) or select on it with `furrow ls -q 'roi:>=2'`.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()

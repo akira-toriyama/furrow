@@ -166,10 +166,15 @@ func (idx *Index) PlanRelativePriority(id, ref string, before bool, base, step i
 	return target, changes, nil
 }
 
-// Actionable reports whether a task is a candidate for `next`: it is not in a
-// terminal/parked lane and every dependency it names is itself done. doneLanes
-// and the set of done ids are supplied by the caller (lane semantics live in
-// config, not core).
+// Actionable reports the DEPENDENCY half of readiness: the task is not in a
+// terminal/parked lane and every dependency it names is itself done. The
+// terminal lane set and the set of done ids are supplied by the caller (lane
+// semantics live in config, not core).
+//
+// It is NOT the full `furrow next` test. next-eligibility also requires a NEXT
+// lane and a non-container type, both of which live in app (workable /
+// actionable in internal/app) because both are config vocabulary. A task can be
+// Actionable here and still, correctly, never appear in `next`.
 func (idx *Index) Actionable(t *Task, terminal map[string]bool, doneIDs map[string]bool) bool {
 	if terminal[t.Status] {
 		return false

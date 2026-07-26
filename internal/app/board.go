@@ -9,7 +9,7 @@ import "github.com/akira-toriyama/furrow/internal/core"
 // only-way-to-discover-lanes was to fail a `move` on purpose). Every field is a
 // copy or scalar, so a caller can never mutate the live config through it.
 //
-// The five scalars up front are the RESOLUTION — what this invocation's cwd
+// The scalars up front are the RESOLUTION — what this invocation's cwd
 // resolved to. The embedded BoardVocab and SchemaTriple are board-INTRINSIC and
 // shared with `furrow boards`' BoardEntry, so the two views agree on key names
 // structurally (the embed keeps the flat JSON shape byte-compatible with what

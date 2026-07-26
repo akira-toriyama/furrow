@@ -2,7 +2,8 @@
 // store. It is read-only from furrow's side (the app never writes it) and
 // follows a clamp-don't-reject policy: unknown keys are ignored and
 // out-of-range values fall back to a safe default with a warning, so a typo can
-// never break the tool. `furrow lint`/`validate` surfaces the warnings.
+// never break the tool. `furrow lint` surfaces the warnings (there is no
+// `furrow validate` command — the name this comment used to claim).
 package config
 
 import "regexp"

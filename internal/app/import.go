@@ -5,8 +5,9 @@ import (
 )
 
 // AddSpec is one task to bulk-create via AddMany (e.g. from migrate). Like Add,
-// a nil Priority means "append in lane"; unlike Add, Body is taken verbatim
-// (migrate supplies the full markdown body).
+// a nil Priority means "append in lane". Body follows Add's policy exactly —
+// taken verbatim when set, a "# <title>" heading seeded when empty — which is
+// what lets migrate supply a full markdown body.
 type AddSpec struct {
 	Title string
 	AddOpts
