@@ -382,7 +382,7 @@ permissions:
   pull-requests: write
 jobs:
   sync:
-    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.13.0
+    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v0.14.0
     secrets:
       PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
 ```
