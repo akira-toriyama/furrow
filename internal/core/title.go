@@ -10,7 +10,8 @@ import (
 // whitespace runs are collapsed and the ends trimmed. A title is spliced into
 // the body's "# " heading and printed in `ls`/`ls --tree`, so an interior
 // newline would fabricate a heading/section in the body markdown and split a
-// table row. Folding (rather than rejecting) keeps bulk/stdin input forgiving;
+// table row, and an escape sequence would reach the reader's terminal.
+// Folding (rather than rejecting) keeps bulk/stdin input forgiving;
 // a stray control character that reaches the store some other way is caught by
 // lint's control-char check (TitleHasControl).
 func NormalizeTitle(s string) string {
@@ -31,8 +32,10 @@ func NormalizeTitle(s string) string {
 
 // TitleHasControl reports whether s contains a character NormalizeTitle would
 // strip — an interior control character. lint uses it as the backstop for a
-// title that reached the store WITHOUT going through NormalizeTitle: a bulk
-// import (AddMany/migrate) or a hand-edited shard.
+// title that reached the store WITHOUT going through NormalizeTitle. Every
+// app write path folds now (Add, AddMany/migrate and retitle alike), so what
+// is left for the backstop is a HAND-EDITED shard — and any future writer that
+// forgets to fold.
 func TitleHasControl(s string) bool {
 	return strings.ContainsFunc(s, unicode.IsControl)
 }

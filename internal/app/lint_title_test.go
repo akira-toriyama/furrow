@@ -7,9 +7,10 @@ import (
 )
 
 // TestLintFlagsControlCharTitle: a title that reached the store with an interior
-// control character (a bulk import or a hand-edited shard, bypassing
+// control character (a hand-edited shard, or any writer that bypassed
 // NormalizeTitle) is flagged `control-char` (warn) so it is visible and fixable
-// with `furrow retitle`.
+// with `furrow retitle`. Every app write path folds, so this test writes the
+// shard directly — the only way such a title can still appear.
 func TestLintFlagsControlCharTitle(t *testing.T) {
 	a := newApp()
 	idx, _ := a.Store.Load()
