@@ -284,3 +284,43 @@ func eq(a, b []string) bool {
 	}
 	return true
 }
+
+// The unreviewed repo clock must obey an EXPLICIT -r, not just the board scope.
+// cli/scope.go clears ScopeRepo and sets Repo for an explicit -r, so a summary
+// that only tested ScopeRepo reported every repo on the board while scoping its
+// task signals — `furrow brief -r X` told you repo Y was overdue for review.
+func TestRevisitSummaryUnreviewedHonorsExplicitRepo(t *testing.T) {
+	a, clk := revisitApp()
+	if a.Cfg.ReviewStaleAfterDays <= 0 {
+		t.Skip("review staleness disabled in defaults")
+	}
+	for _, repo := range []string{"o/r", "x/y"} {
+		if _, err := a.ReviewRepo(repo, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clk.t = clk.t.AddDate(0, 0, a.Cfg.ReviewStaleAfterDays+1)
+
+	repos := func(o QueryOpts) []string {
+		t.Helper()
+		sum, err := a.RevisitSummary(o, a.Cfg.RevisitStaleDays)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, u := range sum.Unreviewed {
+			out = append(out, u.Repo)
+		}
+		return out
+	}
+
+	if got := repos(QueryOpts{}); len(got) != 2 {
+		t.Errorf("a board-wide summary must report every stale repo, got %v", got)
+	}
+	if got := repos(QueryOpts{ScopeRepo: "o/r"}); !equalStrings(got, []string{"o/r"}) {
+		t.Errorf("board scope: got %v, want [o/r]", got)
+	}
+	if got := repos(QueryOpts{Repo: "o/r"}); !equalStrings(got, []string{"o/r"}) {
+		t.Errorf("explicit -r: got %v, want [o/r] — an explicit -r must scope the repo clock too", got)
+	}
+}

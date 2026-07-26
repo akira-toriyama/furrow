@@ -132,7 +132,8 @@ the user-level config. When you work with any furrow store:
   `add --stdin` bulk-creates one task per stdin line;
   `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) and
   `revisit --json` a `revisit` array (`no_repo`, `value_unset`, `effort_unset`,
-  `stale`, `dep_done`) per task.
+  `stale`, `dep_done`, and for a container `children_done` / `stuck_container`)
+  per task.
 - **Batch reads by id: `show <id>... --no-body`** — any id set in one process,
   metadata only (no `body_text`), input order. `--json` = array for ≥2 ids (a
   single id keeps the classic object), `--ndjson` = one line per task at any
@@ -202,9 +203,11 @@ the user-level config. When you work with any furrow store:
   **error**). A marker inside a fenced code block is documentation, not corruption,
   and is not flagged.
   A successful sync also gains a `revisit` key
-  (`{dep_done:[ids], stale:[ids], unreviewed:[{repo,days}]}`, repo-scoped,
-  omitted when empty) — the loop-visible staleness nudge; run `furrow revisit`
-  for task detail, `furrow review <repo>` to reset a repo's `unreviewed` clock.
+  (`{dep_done:[ids], stale:[ids], children_done:[ids], stuck_container:[ids],
+  unreviewed:[{repo,days}]}` — each sub-key omitted when empty, repo-scoped, the
+  whole key omitted when the board is clean) — the loop-visible staleness nudge;
+  run `furrow revisit` for task detail, `furrow review <repo>` to reset a repo's
+  `unreviewed` clock.
 - **The board's layout version gates writes, and it is an INPUT — never an
   output.** A binary writes only a board whose `meta.json` already declares
   exactly its own `schema_version`; an ordinary write NEVER raises it (that is

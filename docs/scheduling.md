@@ -113,11 +113,16 @@ scheduled time — which is exactly what you want for a housekeeping task.
 ## Recipe 4 — a weekly review reminder
 
 `furrow review <repo>` (the GTD weekly-review verb) is built: it records a
-per-repo review clock, and `furrow sync` / `furrow revisit` surface the repos
+per-repo review clock, and `furrow sync` / `furrow brief` surface the repos
 whose clock has lapsed (`unreviewed`). The same launchd pattern as Recipe 2 —
 a weekly `StartCalendarInterval` — schedules the nudge; point the script at
-`furrow revisit --json` and post the digest, then `furrow review <repo>` after
-the review to reset the clock.
+`furrow brief --json | jq '.revisit.unreviewed'` and post the digest, then
+`furrow review <repo>` after the review to reset the clock.
+
+`furrow revisit` is the per-TASK view (`no_repo`, `value_unset`, `effort_unset`,
+`stale`, `dep_done`, and a container's `children_done` / `stuck_container`); the
+repo clock is a board-level tally, so it rides on the summary that `sync` and
+`brief` return, not on `revisit`.
 
 ## Not this
 
