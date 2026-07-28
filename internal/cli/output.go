@@ -522,17 +522,6 @@ type depListView struct {
 	Blocks    []taskRefView `json:"blocks"`
 }
 
-// parentListView is `parent --list`'s JSON object: the subject task plus both
-// directions of the hierarchy edge. `parent` is null for a top-level task (0-or-1,
-// so a null says "no parent" unambiguously); `children` is 0..N and is always an
-// array, empty -> [] never null.
-type parentListView struct {
-	ID       string        `json:"id"`
-	Title    string        `json:"title"`
-	Parent   *taskRefView  `json:"parent"`
-	Children []taskRefView `json:"children"`
-}
-
 func toTaskRefViews(refs []app.TaskRef) []taskRefView {
 	out := make([]taskRefView, 0, len(refs))
 	for _, r := range refs {

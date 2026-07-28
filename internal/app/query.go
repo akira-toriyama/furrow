@@ -73,7 +73,6 @@ type queryCompiler struct {
 	staleDays int
 	loadBody  func(string) (string, error)
 	doneIDs   map[string]bool
-	kids      map[string][]*core.Task
 	bodies    map[string]string
 	bodyErr   error
 }

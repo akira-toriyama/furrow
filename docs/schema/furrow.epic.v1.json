@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.epic.v1.json",
+  "title": "furrow epic shard v1",
+  "description": "Schema for one .furrow/epics/<id>.json shard (a single epic: a box of work with member tasks). The board-wide schema_version lives in .furrow/meta.json, never in a shard. Pin to a tagged URL or vendor this file.",
+  "type": "object",
+  "additionalProperties": true,
+  "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a shard furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (naming the epic) — nothing else can, since nothing ever deletes an extra.",
+  "required": ["id", "title", "goal", "active", "labels", "repos", "meta", "created", "updated", "closed", "body"],
+  "properties": {
+    "id": { "type": "string", "description": "frozen id, e- prefixed; == the shard filename stem and bodies/<id>.md stem" },
+    "title": { "type": "string" },
+    "goal": { "type": "string", "description": "the closing condition in one line. OPTIONAL in practice (\"\" is valid and never linted): a box whose title already says it gains nothing from restating it. Its value is that epic ls can show it." },
+    "active": { "type": "boolean", "description": "this is the box currently being worked. At most one active epic per repo, and an epic naming several repos consumes a slot in each. furrow next scopes to it." },
+    "labels": { "type": "array", "items": { "type": "string" }, "description": "free-form tags, same semantics as a task's" },
+    "repos": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+$" }, "description": "repositories this box spans, owner/repo form, sorted+deduped. A repo-less epic cannot be activated (it would bypass the one-active-per-repo rule)." },
+    "meta": { "type": "object", "additionalProperties": { "type": "string" }, "description": "free-form key/value furrow stores, round-trips and NEVER interprets. Flat (string values only) so the deterministic byte recipe holds: encoding/json sorts a map's keys, and a string cannot reintroduce float-precision churn. Not queryable by design — read it with jq." },
+    "created": { "type": "string", "format": "date-time" },
+    "updated": { "type": "string", "format": "date-time" },
+    "closed": { "type": ["string", "null"], "format": "date-time", "description": "null while open; an epic has no lane — open/closed is its whole state model" },
+    "body": { "type": "string", "description": "relative path, e.g. bodies/e-k3m9.md — the SAME directory task bodies live in (ids are prefix-disjoint)" }
+  }
+}

@@ -119,7 +119,7 @@ furrow uses a **hybrid** layout: one machine-written JSON shard per task for str
 ```text
 .furrow/
 ├── config.toml          # human config (furrow only READS this; never rewrites it)
-├── meta.json            # board-wide layout version {"schema_version": 5} — written ONLY by furrow, raised ONLY by `furrow upgrade`
+├── meta.json            # board-wide layout version {"schema_version": 6} — written ONLY by furrow, raised ONLY by `furrow upgrade`
 ├── tasks/
 │   ├── t-0001.json      # one metadata shard per task — written ONLY by the single core.MarshalTask path
 │   └── t-0002.json
@@ -163,7 +163,7 @@ The board-wide layout version lives on its own in `meta.json` (never inside a sh
 
 ```json
 {
-  "schema_version": 5
+  "schema_version": 6
 }
 ```
 
@@ -237,10 +237,10 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | Command | What it does | Flags |
 |---|---|---|
 | `init` | Create a .furrow store in the current directory | — |
-| `add <title>...` | Add a task (or many with --stdin) | `--body`, `--check`, `--dep`, `--draft`, `--effort`, `-l/--label`, `--parent`, `-p/--priority`, `--ref`, `-r/--repo`, `-s/--status`, `--stdin`, `--type`, `--value` |
+| `add <title>...` | Add a task (or many with --stdin) | `--body`, `--check`, `--dep`, `--draft`, `--effort`, `-e/--epic`, `-l/--label`, `-p/--priority`, `--ref`, `-r/--repo`, `-s/--status`, `--stdin`, `--value` |
 | `ls [<id>]` (alias `list`) | List tasks (canonical lane->priority->id order), or draw the hierarchy with --tree | `--actionable`, `--archived`, `--blocked`, `--drafts`, `-l/--label`, `-n/--limit`, `--progress-recursive`, `-q/--query`, `-r/--repo`, `--reverse`, `--since`, `--sort`, `-s/--status`, `--tree`, `--type`, `--until` |
 | `show <id>...` | Show tasks with metadata and markdown body (batch-friendly) | `--archived`, `--backlinks`, `--no-body` |
-| `next` | Show actionable tasks (in the next-lanes, all deps done) | `--containers`, `-l/--label`, `--lanes`, `-n/--limit`, `-q/--query`, `-r/--repo` |
+| `next` | Show actionable tasks (in the next-lanes, all deps done) | `--all-epics`, `-l/--label`, `--lanes`, `-n/--limit`, `-q/--query`, `-r/--repo` |
 | `brief` | One-shot session-orient read: next picks with bodies, blocked, revisit, drafts | `-l/--label`, `-n/--limit`, `-r/--repo`, `--stale-days` |
 | `revisit` | List open tasks needing re-evaluation (agent re-weighing signal) | `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `--stale-days` |
 | `search <term>` | Full-text search over task titles and bodies | `--archived`, `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `-s/--status` |
@@ -255,12 +255,18 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `move <id>... <lane>` | Move tasks to a lane | — |
 | `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before` |
 | `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | — |
-| `set <id>...` | Apply several triage edits at once (lane, priority, value, effort, labels, type) | `--add-label`, `--after`, `--before`, `--clear-effort`, `--clear-value`, `--effort`, `-p/--priority`, `--rm-label`, `-s/--status`, `--type`, `--value` |
+| `set <id>...` | Apply several triage edits at once (lane, priority, value, effort, labels, type) | `--add-label`, `--after`, `--before`, `--clear-effort`, `--clear-value`, `--effort`, `-e/--epic`, `-p/--priority`, `--rm-label`, `-s/--status`, `--value` |
 | `value <id> <1-5>` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear` |
 | `effort <id> <1-5>` | Set a task's effort estimate (coarse 1..5), or clear it with --clear | `--clear` |
 | `check <id> [item-index]` | Toggle, add, remove, or reword a checklist item | `--add`, `--off`, `--reword`, `--rm` |
 | `dep <id> [<dep-id>...]` | Add/remove a task's dependencies, or list them both ways with --list | `--list`, `--rm` |
-| `parent <id> [<parent-id>]` | Set, clear (--rm), or list (--list) a task's parent | `--list`, `--rm` |
+| `epic add <title>` | Create an epic (never active — open it with `epic activate`) | `--body`, `--goal`, `-l/--label`, `--meta`, `-r/--repo` |
+| `epic ls` | List epics (open only by default), active first | `--all`, `-l/--label`, `-n/--limit`, `-r/--repo` |
+| `epic show <epic>` | Show one epic: goal, meta, progress, and its member tasks | — |
+| `epic set <epic>` | Edit an epic's title, goal, meta, labels or repos | `--add-label`, `--add-repo`, `--goal`, `--meta`, `--rm-label`, `--rm-meta`, `--rm-repo`, `--title` |
+| `epic activate <epic>` | Make this the active epic for its repos (at most one each) | `--reason` |
+| `epic deactivate <epic>` | Clear the active flag without closing the epic | — |
+| `epic done <epic>` | Close an epic (clears active; never picks the next one) | — |
 | `label <id>` | Add and/or remove labels on a task | `--add`, `--remove` |
 | `repo <id>` | Attach and/or detach repos (owner/repo) on a task | `--add`, `--rm` |
 | `ref <id>` | Add and/or remove refs (file:line or URL) on a task | `--add`, `--rm` |
@@ -731,7 +737,7 @@ furrow's write path is byte-stable on purpose: every shard goes through one mars
 
 - **Working:** furrow is **CLI-only** — the core domain (`internal/core`) with
   the first-class `repos`
-  field (board layout v5 + the two-sided version gate: read-refuse a newer board,
+  field and first-class **epics** (board layout v6 + the two-sided version gate: read-refuse a newer board,
   write-refuse an older one, and `furrow upgrade` as the only raiser), config
   loader, filesystem store, app
   coordinator, the full CLI (incl. `repo`, drafts, `-r` scoping, `apply`, and
@@ -741,7 +747,7 @@ furrow's write path is byte-stable on purpose: every shard goes through one mars
 - **Released:** tags are cut with GoReleaser → the Homebrew tap (see the
   [Releases page](https://github.com/akira-toriyama/furrow/releases); the
   bundled task-status Action ships since `v0.5.0`, the first-class `repos` field
-  since `v0.6.0`, board layout v4 since `v0.8.0`, board layout v5 since `v0.10.0`). The nix `flake.nix` carries a
+  since `v0.6.0`, layout v4 since `v0.8.0`, layout v5 since `v0.10.0`, layout v6 — the epic pivot — since `v1.0.0`). The nix `flake.nix` carries a
   real, pinned `vendorHash` with a
   committed `flake.lock` (since `v0.4.0`).
 - **Future (low priority):** an interactive TUI/GUI as a **separate front-end**

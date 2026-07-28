@@ -516,7 +516,7 @@ A `.furrow/` store directory contains:
     t-k3m9p-shot.png     written ONLY via Store.SaveAsset (atomic, collision-free
                          basename); linked from the body by `furrow attach`; scanned
                          by `furrow lint` (dangling / orphan / oversized warnings)
-  meta.json            board-wide layout version {"schema_version": 5} — MarshalMeta,
+  meta.json            board-wide layout version {"schema_version": 6} — MarshalMeta,
                          stamped only on a fresh store (`init`) or by `furrow upgrade`;
                          an ordinary Save READS it (the write gate) and leaves it alone
   repos/               one review shard per repo (repos/<owner>__<repo>.json) — MarshalRepo
