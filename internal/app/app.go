@@ -1683,9 +1683,11 @@ type SetOpts struct {
 	ClearEffort bool     // unset the effort estimate (wins over Effort)
 	AddLabels   []string // labels to union on
 	RmLabels    []string // labels to drop
-	// Epic re-files the task into a box, ALREADY resolved to an epic id by the
-	// caller. A non-nil pointer to "" unfiles it (the deliberate escape, still a
-	// lint error while the task is open); nil leaves membership untouched.
+	// Epic re-files the task into a box: an epic REFERENCE, resolved by Set
+	// through ResolveEpic exactly as Add resolves its own — storing a raw ref
+	// would file the task under a box that does not exist. A non-nil pointer to ""
+	// unfiles it (the deliberate escape, still a lint error while the task is
+	// open); nil leaves membership untouched.
 	Epic *string
 }
 
@@ -1737,6 +1739,11 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, erro
 func (a *App) validateSetOpts(id string, o SetOpts) error {
 	if o.Status != nil && !a.Cfg.IsLane(*o.Status) {
 		return a.unknownLaneErr(id, *o.Status)
+	}
+	if o.Epic != nil && *o.Epic != "" {
+		if _, err := a.ResolveEpic(*o.Epic); err != nil {
+			return err
+		}
 	}
 	if o.empty() {
 		return core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / -e)")
@@ -1879,7 +1886,17 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts) ([]core.PriorityCh
 		t.Effort = cloneIntp(o.Effort)
 	}
 	if o.Epic != nil {
-		t.Epic = *o.Epic
+		// Already validated in validateSetOpts; resolve again to store the ID, not
+		// whatever spelling the caller used.
+		if *o.Epic == "" {
+			t.Epic = ""
+		} else {
+			id, err := a.ResolveEpic(*o.Epic)
+			if err != nil {
+				return renumbered, err
+			}
+			t.Epic = id
+		}
 	}
 	t.Labels = nextLabels
 	t.Updated = a.Clock.Now()

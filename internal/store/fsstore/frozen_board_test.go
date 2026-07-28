@@ -75,6 +75,18 @@ func TestFrozenBoardRoundTripsByteIdentical(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The fourth machine-written kind. Without this pass an epic shard's bytes
+	// would be frozen only by the golden the code under test wrote itself, which is
+	// exactly the coverage this fixture exists to NOT rely on.
+	epics, err := s.LoadEpics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range epics {
+		if err := s.SaveEpic(&epics[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// The idempotent raise: a board already at this layout must come out unchanged,
 	// extras and all (this is the path `furrow upgrade` runs).
 	if err := s.SetBoardVersion(core.SchemaVersion); err != nil {
@@ -163,6 +175,18 @@ func TestFrozenBoardParksUnknownKeys(t *testing.T) {
 	}
 	if plain, j := idx.Find("t-frzn2"); j < 0 || len(plain.ExtraKeys()) != 0 {
 		t.Errorf("t-frzn2 has no unknown keys and must park none: got %v", plain.ExtraKeys())
+	}
+	// The epic shard parks its unknown key too — the newest persisted kind is the
+	// easiest one to forget to wire into the passthrough.
+	epics, err := s.LoadEpics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(epics) != 1 {
+		t.Fatalf("the frozen board must carry one epic, got %d", len(epics))
+	}
+	if got := epics[0].ExtraKeys(); !equalStrings(got, []string{"budget"}) {
+		t.Errorf("e-frzn1's unknown key must be parked: got %v", got)
 	}
 	meta, err := s.LoadMeta()
 	if err != nil {

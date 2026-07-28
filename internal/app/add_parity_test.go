@@ -25,7 +25,7 @@ func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 		{
 			name:  "estimates and type",
 			title: "estimated epic",
-			opts:  AddOpts{Value: intp(4), Effort: intp(2), Type: "epic"},
+			opts:  AddOpts{Value: intp(4), Effort: intp(2)},
 		},
 		{
 			name:  "labels, refs, lane",
@@ -69,8 +69,8 @@ func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 					t.Errorf("checklist[%d]: bulk %+v != single %+v", i, b.Checklist[i], single.Checklist[i])
 				}
 			}
-			if b.Type != single.Type {
-				t.Errorf("type: bulk %q != single %q", b.Type, single.Type)
+			if b.Epic != single.Epic {
+				t.Errorf("epic: bulk %q != single %q", b.Epic, single.Epic)
 			}
 			if !samePtr(b.Value, single.Value) {
 				t.Errorf("value: bulk %v != single %v", b.Value, single.Value)

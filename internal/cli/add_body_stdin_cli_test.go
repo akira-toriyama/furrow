@@ -69,12 +69,18 @@ func TestAddBodyDashRejectsStdinFlag(t *testing.T) {
 // agent a bare sentence to regex while `add -s ghots` handed it the array.
 func TestAddStdinErrorsKeepCandidates(t *testing.T) {
 	initStore(t)
+	// A box has to exist for an unknown -e to have anything to SUGGEST: epic
+	// candidates are the board's ids, not a compiled-in vocabulary, so on an empty
+	// board an honest answer is an empty list.
+	if _, code := run(t, "epic", "add", "seed box"); code != 0 {
+		t.Fatalf("seed epic: exit %d", code)
+	}
 	for _, tc := range []struct {
 		name string
 		args []string
 	}{
 		{"unknown lane", []string{"add", "--stdin", "-s", "ghots"}},
-		{"unknown type", []string{"add", "--stdin", "--type", "epci"}},
+		{"unknown epic", []string{"add", "--stdin", "-e", "no-such-box"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fe, out := runErrIn(t, "bulk title\n", tc.args...)

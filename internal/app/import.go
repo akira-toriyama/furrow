@@ -91,6 +91,18 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 				return nil, core.Validationf("", "spec %d (%q): dependency %q does not exist", i, s.Title, dep)
 			}
 		}
+		// Mirror single Add's epic resolution. Without this the bulk path would
+		// store the raw REFERENCE (a title substring, an id prefix) as if it were an
+		// epic id — a task filed under a box that does not exist, reported only by
+		// lint. This is the exact bulk-vs-single divergence add_parity_test.go
+		// exists to catch, and --type had it before this field did.
+		if s.Epic != "" {
+			resolved, err := a.ResolveEpic(s.Epic)
+			if err != nil {
+				return nil, specf(err)
+			}
+			specs[i].Epic = resolved
+		}
 	}
 
 	now := a.Clock.Now()

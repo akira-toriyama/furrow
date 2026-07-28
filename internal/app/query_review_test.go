@@ -37,31 +37,53 @@ func TestQueryOrdinalCommaIsOR(t *testing.T) {
 	}
 }
 
-// `is:stuck` means "a CONTAINER with open work but nothing actionable under it"
-// — README and the spec both say so. Ungated, it also selected plain tasks,
-// whose own row in the SAME --json payload reported container:false, stuck:false:
-// one command, one payload, two contradictory answers.
-func TestQueryIsStuckOnlyMatchesContainers(t *testing.T) {
+// `is:unfiled` selects the tasks with no epic — the epic-required lint state,
+// made queryable so a backfill sweep is one read rather than diffing two lists.
+// It replaces v5's is:stuck/is:container, which described a box; a box is no
+// longer a task, so a TASK-level flag about it cannot exist.
+func TestQueryIsUnfiled(t *testing.T) {
 	a := newApp()
-	epic, err := a.Add("an epic", AddOpts{Type: "epic"})
-	if err != nil {
+	box := mustEpic(t, a, "a box", EpicAddOpts{})
+	if _, err := a.Add("filed", AddOpts{Epic: box}); err != nil {
 		t.Fatal(err)
 	}
-	plain, err := a.Add("plain parent", AddOpts{})
-	if err != nil {
+	if _, err := a.Add("unfiled", AddOpts{}); err != nil {
 		t.Fatal(err)
-	}
-	// Each parent gets an open child that is NOT actionable (inbox is not a next
-	// lane), which is exactly the "stuck" shape.
-	for _, parent := range []string{epic.ID, plain.ID} {
-		if _, err := a.Add("child of "+parent, AddOpts{Parent: parent, Status: "inbox"}); err != nil {
-			t.Fatal(err)
-		}
 	}
 
-	got := qTitles(t, a, "is:stuck")
-	if !slices.Equal(got, []string{"an epic"}) {
-		t.Errorf("is:stuck = %v, want only the container [an epic]", got)
+	if got := qTitles(t, a, "is:unfiled"); !slices.Equal(got, []string{"unfiled"}) {
+		t.Errorf("is:unfiled = %v, want [unfiled]", got)
+	}
+	if got := qTitles(t, a, "-is:unfiled"); !slices.Equal(got, []string{"filed"}) {
+		t.Errorf("-is:unfiled = %v, want [filed]", got)
+	}
+	// has:epic / no:epic are the presence spelling of the same fact; they must
+	// agree with is:unfiled or a reader gets two answers to one question.
+	if got := qTitles(t, a, "no:epic"); !slices.Equal(got, []string{"unfiled"}) {
+		t.Errorf("no:epic = %v, want [unfiled]", got)
+	}
+	if got := qTitles(t, a, "has:epic"); !slices.Equal(got, []string{"filed"}) {
+		t.Errorf("has:epic = %v, want [filed]", got)
+	}
+}
+
+// epic:<id> selects a box's members, and is lenient on an unknown id (like id:):
+// a box that does not exist simply has no members, and `furrow lint` owns
+// reporting the dangling reference. The STRICT path is the -e flag.
+func TestQueryEpicQualifier(t *testing.T) {
+	a := newApp()
+	box := mustEpic(t, a, "a box", EpicAddOpts{})
+	if _, err := a.Add("filed", AddOpts{Epic: box}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Add("elsewhere", AddOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := qTitles(t, a, "epic:"+box); !slices.Equal(got, []string{"filed"}) {
+		t.Errorf("epic:%s = %v, want [filed]", box, got)
+	}
+	if got := qTitles(t, a, "epic:e-ghost"); len(got) != 0 {
+		t.Errorf("epic:e-ghost = %v, want no matches (lenient, not an error)", got)
 	}
 }
 

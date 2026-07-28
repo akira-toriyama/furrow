@@ -30,7 +30,7 @@ func TestVocabulariesAllNonEmpty(t *testing.T) {
 // field fails here first, with the docs follow-through named, instead of
 // surfacing as a confusing check-docs-vocab.sh failure about prose.
 func TestRevisitSummaryKeysFrozen(t *testing.T) {
-	want := []string{"dep_done", "stale", "unreviewed", "children_done", "stuck_container"}
+	want := []string{"dep_done", "stale", "unreviewed", "epic_all_done", "epic_stuck", "epic_stale"}
 	got := revisitSummaryKeys()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("RevisitSummary's json key vocabulary changed:\n  got:  %v\n  want: %v\nIf deliberate: update this list AND the documented summary shapes (README's\nsync section, CLAUDE.md's sync note, the glossary's sync row) — then run\nscripts/check-docs-vocab.sh, which fails until every claim names the new key.",

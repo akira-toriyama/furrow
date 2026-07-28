@@ -66,7 +66,7 @@ func TestBoardsCLIListsAndSharesBoardKeys(t *testing.T) {
 	}
 	// The vocabulary and schema keys are `board --json`'s own — flat, same
 	// names — so one parser reads both views.
-	for _, k := range []string{"lanes", "next_lanes", "default_lane", "done_lane", "terminal", "types", "schema_version", "binary_schema_version", "schema_state", "writable"} {
+	for _, k := range []string{"lanes", "next_lanes", "default_lane", "done_lane", "terminal", "epic_id_prefix", "schema_version", "binary_schema_version", "schema_state", "writable"} {
 		if _, ok := live[k]; !ok {
 			t.Errorf("boards entry missing shared board key %q", k)
 		}

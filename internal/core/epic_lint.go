@@ -14,7 +14,7 @@ import (
 // Validate load epics whether or not it cared.
 //
 // Rules:
-//   - epic-required   (error) an OPEN task with no epic — membership is mandatory
+//   - epic-required   (error) an OPEN task with no epic, once the board has any
 //   - epic-missing    (error) a task pointing at an epic that does not exist
 //   - epic-closed     (warn)  an open task under a closed epic
 //   - epic-multi-active (error) two active epics naming the same repo
@@ -42,7 +42,12 @@ func EpicProblems(idx *Index, epics []Epic, terminal map[string]bool, epicIDPatt
 		}
 	}
 
-	out = append(out, epicMembershipProblems(idx, byID, terminal)...)
+	// epic-required fires only once the board HAS a box. A board that never
+	// declared one has not adopted the feature, and erroring on every task there
+	// would be noise the reader learns to ignore — the failure mode a lint code
+	// cannot recover from. Declaring the first epic is what turns membership into
+	// a requirement.
+	out = append(out, epicMembershipProblems(idx, byID, terminal, len(epics) > 0)...)
 	out = append(out, activeEpicProblems(idx, epics, terminal)...)
 
 	sortProblems(out)
@@ -51,7 +56,7 @@ func EpicProblems(idx *Index, epics []Epic, terminal map[string]bool, epicIDPatt
 
 // epicMembershipProblems covers the task->epic edge: unfiled, dangling, and
 // filed-under-a-closed-box.
-func epicMembershipProblems(idx *Index, byID map[string]*Epic, terminal map[string]bool) []Problem {
+func epicMembershipProblems(idx *Index, byID map[string]*Epic, terminal map[string]bool, requireMembership bool) []Problem {
 	var out []Problem
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
@@ -62,8 +67,10 @@ func epicMembershipProblems(idx *Index, byID map[string]*Epic, terminal map[stri
 			// An ERROR, not a warn, and deliberately not enforced at `add`: capture
 			// stays frictionless, but an unfiled task is invisible to `next`'s epic
 			// scoping, so nothing but lint would ever mention it again.
-			out = append(out, Problem{SevError, "epic-required", t.ID,
-				"open task has no epic — file it with `furrow set " + t.ID + " -e <epic>`"})
+			if requireMembership {
+				out = append(out, Problem{SevError, "epic-required", t.ID,
+					"open task has no epic — file it with `furrow set " + t.ID + " -e <epic>`"})
+			}
 			continue
 		}
 		e, ok := byID[t.Epic]
@@ -119,6 +126,13 @@ func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Pr
 	// The other direction: a repo carrying open work with no box open. furrow
 	// deliberately does not pick the next epic when one is closed — choosing is the
 	// judgement call — so this warning is what does the nagging until a human does.
+	//
+	// Like epic-required it stays quiet on a board that has declared no epics at
+	// all: nagging a board to activate one of the zero boxes it has is noise, and a
+	// warning that fires on every clean board is one the reader stops reading.
+	if len(epics) == 0 {
+		return out
+	}
 	openRepos := map[string]bool{}
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
