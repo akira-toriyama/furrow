@@ -121,8 +121,9 @@ type RevisitItem struct {
 
 // Revisit lists open tasks that may need a fresh judgment, in canonical order.
 // It is purely read-only. A task surfaces when it has at least one signal —
-// no_repo, value_unset, effort_unset, stale, dep_done, or (for a container)
-// children_done / stuck_container. Terminal-lane tasks
+// no_repo, value_unset, effort_unset, stale, or dep_done. The three EPIC signals
+// (epic_all_done, epic_stuck, epic_stale) are about a box rather than a task and
+// are reported separately by RevisitEpics. Terminal-lane tasks
 // (done/icebox/waiting) are skipped — there is nothing to re-evaluate about
 // parked or finished work. The query's filters restrict the result like
 // List/Next, with one carve-out: a draft (repos == []) bypasses the board
@@ -203,7 +204,8 @@ func (s RevisitSummary) Empty() bool {
 }
 
 // RevisitSummary tallies the loop-visible signals over the open (non-terminal)
-// tasks passing o.match — dep_done and stale — plus the three epic signals,
+// tasks passing o.match — dep_done and stale — plus the three epic signals
+// (epic_all_done, epic_stuck, epic_stale),
 // plus the repo-level unreviewed clock (unreviewedRepos, which is not a task
 // signal at all). With a scope set (ScopeRepo/Repo),
 // repo-less drafts are excluded — the difference from Revisit, which always

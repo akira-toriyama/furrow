@@ -181,7 +181,7 @@ To keep this list honest about today's reality (not aspirations):
   `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`, `board`,
   `boards`, `doctor`, `edit`,
   `note`, `attach`, `done`, `move`, `set`, `reorder`,
-  `retitle`, `value`, `effort`, `check`, `dep`, `parent`, `label`, `repo`, `ref`,
+  `retitle`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`,
   `review`, `apply`, `sync`,
   `migrate`, `archive`, `upgrade`, `lint`, `config init|path`, `schema`, `version`.
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,

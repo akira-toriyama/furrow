@@ -669,7 +669,7 @@ except where noted:
 
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`,
 `board`, `boards`, `doctor`, `edit`, `note`, `attach`, `done`, `move`, `set`, `reorder`,
-`retitle`, `value`, `effort`, `check`, `dep`, `parent`, `label`, `repo`, `ref`, `review`,
+`retitle`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`, `review`,
 `apply`, `sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`), `schema`, `version`,
 `migrate`.
 

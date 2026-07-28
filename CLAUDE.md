@@ -16,7 +16,7 @@ the user-level config. When you work with any furrow store:
   write and churn git. Mutate tasks via commands, not the files.
 - `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
   of the hybrid store. One body file per task id, 1:1 with its shard.
-- Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|parent|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
+- Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
   **`furrow brief [--json]` is the session-start read**: the sync → `next -r` →
   `show <id>` ritual in ONE process — the top `-n` (default 3) actionable tasks
   WITH `body_text`, `next_total` (the uncapped count — a cap never hides the
@@ -124,11 +124,11 @@ the user-level config. When you work with any furrow store:
   leading `-` is NOT, plus `has:`/`no:` presence, `is:` computed flags,
   ordinal and date comparisons/ranges, and direct graph edges. It ANDs with
   the other filters and never widens a scoped board. So you rarely need jq. Each `lint` problem carries
-  a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `parent-cycle`,
-  `parent-done`, `orphan-asset`,
+  a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `epic-required`,
+  `epic-no-active`, `orphan-asset`,
   `conflict-marker`, `unknown-shard-key`, …) — branch on it, not the message, since the `id` field
   is contextual (a task id, an asset name, an `owner/repo`, `meta`, or `config`).
-  Mutations (`done|move|note|set|reorder|retitle|value|effort|check|dep|parent|label|repo`)
+  Mutations (`done|move|note|set|reorder|retitle|value|effort|check|dep|epic|label|repo`)
   with `--json` emit
   `{before, after, changed}`; an out-of-range `value`/`effort` clamps to 1..5
   and is signaled — via `value`/`effort`/`set`, a `clamped` envelope key nested
@@ -140,8 +140,8 @@ the user-level config. When you work with any furrow store:
   `add --stdin` bulk-creates one task per stdin line;
   `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) and
   `revisit --json` a `revisit` array (`no_repo`, `value_unset`, `effort_unset`,
-  `stale`, `dep_done`, and for a container `children_done` / `stuck_container`)
-  per task.
+  `stale`, `dep_done`) per task, and the three box-level ones
+  (`epic_all_done` / `epic_stuck` / `epic_stale`) alongside.
 - **Batch reads by id: `show <id>... --no-body`** — any id set in one process,
   metadata only (no `body_text`), input order. `--json` = array for ≥2 ids (a
   single id keeps the classic object), `--ndjson` = one line per task at any
@@ -218,8 +218,8 @@ the user-level config. When you work with any furrow store:
   **error**). A marker inside a fenced code block is documentation, not corruption,
   and is not flagged.
   A successful sync also gains a `revisit` key
-  (`{dep_done:[ids], stale:[ids], children_done:[ids], stuck_container:[ids],
-  unreviewed:[{repo,days}]}` — each sub-key omitted when empty, repo-scoped, the
+  (`{dep_done:[ids], stale:[ids], epic_all_done:[ids], epic_stuck:[ids],
+  epic_stale:[ids], unreviewed:[{repo,days}]}` — each sub-key omitted when empty, repo-scoped, the
   whole key omitted when the board is clean) — the loop-visible staleness nudge;
   run `furrow revisit` for task detail, `furrow review <repo>` to reset a repo's
   `unreviewed` clock.
