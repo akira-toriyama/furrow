@@ -69,7 +69,27 @@ func printUpgradeHuman(rep *app.UpgradeReport, standalone bool) {
 			from = "unstamped"
 		}
 		fmt.Fprintf(out, "%s\n  schema: %s -> v%d (%d shard(s) re-serialized)\n", s.Path, from, s.To, s.Tasks)
+		for _, c := range s.Epics {
+			state := "open"
+			if c.Closed {
+				state = "closed"
+			}
+			fmt.Fprintf(out, "  epic: %s %q -> %s (%s)\n", c.TaskID, c.Title, c.EpicID, state)
+		}
+		if s.Rehomed > 0 {
+			fmt.Fprintf(out, "  membership: %d task(s) re-homed from the retired parent field\n", s.Rehomed)
+		}
+		if s.BodiesRenamed > 0 || s.LinksRewritten > 0 {
+			fmt.Fprintf(out, "  bodies: %d renamed, %d [[link]](s) rewritten\n", s.BodiesRenamed, s.LinksRewritten)
+		}
+		for _, d := range s.DroppedDeps {
+			fmt.Fprintf(out, "  dep: %s's dep on %s dropped (it became epic %s) — noted in its body\n", d.TaskID, d.DepID, d.EpicID)
+		}
+		for _, k := range s.Kept {
+			fmt.Fprintf(out, "  kept for a human: %s %s=%q (%s)\n", k.TaskID, k.Key, k.Value, k.Reason)
+		}
 	}
+	printV6BackfillNote(rep)
 	if !rep.Applied {
 		if standalone {
 			fmt.Fprint(out, "\nstandalone board — no CI or other machines depend on it, so there is no\n")
@@ -91,4 +111,23 @@ func printUpgradeHuman(rep *app.UpgradeReport, standalone bool) {
 		return
 	}
 	fmt.Fprint(out, "\nupgraded — run `furrow sync` to publish it\n")
+}
+
+// printV6BackfillNote states the one consequence of the v5->v6 hop that is not
+// visible in the store lines: epic membership is REQUIRED for open tasks, so
+// the moment this upgrade lands, `furrow lint` errors epic-required on every
+// open task without one. Saying it here — in both the preview and the applied
+// run — is what turns a wall of surprise lint errors into a planned backfill.
+// The escape hatch is the EXISTING [lint].ignore_codes, deliberately not a new
+// config key. The v6 literal is fine: this note is ABOUT that one hop, and a
+// board already past it never prints it.
+func printV6BackfillNote(rep *app.UpgradeReport) {
+	if rep.From >= 6 {
+		return
+	}
+	fmt.Fprint(out, "\nschema v6 makes epic membership required: after this upgrade, `furrow lint`\n")
+	fmt.Fprint(out, "errors epic-required on every open task without an epic. Backfill with\n")
+	fmt.Fprint(out, "`furrow set <id>... -e <epic>`; while triaging, you can silence it via\n")
+	fmt.Fprint(out, "  [lint]\n  ignore_codes = [\"epic-required\"]\n")
+	fmt.Fprint(out, "in .furrow/config.toml (and delete it when the backfill is done).\n")
 }

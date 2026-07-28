@@ -216,6 +216,29 @@ func encodeCanonicalWithExtras(v any, extras Extras) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// extrasStringValue decodes the extras value under EXACTLY this key as a JSON
+// string. ok is false when the key is absent; isString is false when it is
+// present but not a JSON string — the caller then leaves it alone, because a
+// value we cannot read is a value we must not consume. It lives here (not in
+// migrate_v6.go) because decoding a shard's bytes is this file's monopoly:
+// check-marshal-singlepath.sh guards every other file against encoding/json.
+//
+// The lookup is deliberately exact, not EqualFold: v5's own marshaller wrote
+// the retired keys canonically ("type", "parent"), so a case-variant can only
+// come from a hand edit — and those stay parked, where lint's
+// unknown-shard-key makes them a human's decision instead of a guess.
+func extrasStringValue(e Extras, key string) (val string, ok, isString bool) {
+	raw, present := e[key]
+	if !present {
+		return "", false, false
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", true, false
+	}
+	return s, true, true
+}
+
 // extraKeys names the unknown keys a record arrived with, sorted; nil when there
 // are none. It is the ONLY way out of an extras map, and there is deliberately no
 // way IN other than unmarshalling a shard: furrow must never be able to invent an
