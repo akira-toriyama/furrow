@@ -12,7 +12,7 @@ import (
 // revisitApp builds an app with a mutable clock so tests can age tasks.
 func revisitApp() (*App, *fixedClock) {
 	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	clk := &fixedClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	return NewWithStore(st, cfg, clk), clk
 }

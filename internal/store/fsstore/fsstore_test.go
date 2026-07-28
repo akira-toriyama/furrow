@@ -15,7 +15,7 @@ var lanes = []string{"inbox", "backlog", "ready", "in-progress", "done", "icebox
 
 func newStore(t *testing.T) *Store {
 	t.Helper()
-	return New(filepath.Join(t.TempDir(), ".furrow"), lanes, "t-", 5)
+	return New(filepath.Join(t.TempDir(), ".furrow"), lanes, "t-", "e-", 5)
 }
 
 // mkTask builds a minimal well-formed task at a fixed time.
@@ -295,7 +295,7 @@ func TestNextIDRandom(t *testing.T) {
 	// astronomically improbable (32^24 ≈ 1.3e36, so 1000 draws collide with
 	// p ≈ 4e-31), so a duplicate at this width means NextID is genuinely broken
 	// (constant/low-entropy), not unlucky.
-	wide := New(filepath.Join(t.TempDir(), ".furrow"), lanes, "t-", 24)
+	wide := New(filepath.Join(t.TempDir(), ".furrow"), lanes, "t-", "e-", 24)
 	wideRe := regexp.MustCompile(`^t-[0-9a-z]{24}$`)
 	seen := map[string]bool{}
 	for i := 0; i < 1000; i++ {

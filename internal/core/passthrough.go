@@ -182,6 +182,7 @@ func spliceExtras(obj []byte, extras Extras) ([]byte, error) {
 var (
 	taskKnownKeys = knownNames(Task{})
 	repoKnownKeys = knownNames(RepoRecord{})
+	epicKnownKeys = knownNames(Epic{})
 	metaKnownKeys = knownNames(Meta{})
 )
 
@@ -233,13 +234,13 @@ func extraKeys(e Extras) []string {
 
 // ExtraKeys reports the keys this record carried that furrow does not know.
 //
-// All THREE persisted types expose it, and that is not symmetry for its own sake:
-// all three are machine-written, and all three now declare additionalProperties:
-// true in their published schema — so `furrow lint` (internal/app.Lint) is the
-// only thing left that can say "this key is preserved, but IGNORED". A type that
-// parked unknown keys without an accessor would hide a typo in meta.json or a repo
-// review shard from every tool furrow has, forever, because nothing ever deletes
-// an extra.
+// All FOUR persisted types expose it, and that is not symmetry for its own sake:
+// all four are machine-written, and all four declare additionalProperties: true
+// in their published schema — so `furrow lint` (internal/app.Lint) is the only
+// thing left that can say "this key is preserved, but IGNORED". A type that
+// parked unknown keys without an accessor would hide a typo in meta.json, a repo
+// review shard, or an epic from every tool furrow has, forever, because nothing
+// ever deletes an extra.
 func (t *Task) ExtraKeys() []string { return extraKeys(t.extras) }
 
 // ExtraKeys reports the keys meta.json carried that furrow does not know.
@@ -247,3 +248,6 @@ func (m *Meta) ExtraKeys() []string { return extraKeys(m.extras) }
 
 // ExtraKeys reports the keys this repo review shard carried that furrow does not know.
 func (r *RepoRecord) ExtraKeys() []string { return extraKeys(r.extras) }
+
+// ExtraKeys reports the keys this epic shard carried that furrow does not know.
+func (e *Epic) ExtraKeys() []string { return extraKeys(e.extras) }

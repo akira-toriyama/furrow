@@ -109,6 +109,28 @@ type Store interface {
 	// has never recorded a review yields nil, not an error (the repos/ dir may
 	// not exist), so the staleness nudge works on a board that never reviewed.
 	ListRepos() ([]RepoRecord, error)
+
+	// LoadEpic returns one epic by id, or ok=false when no shard exists. The
+	// per-epic twin of loading a task shard.
+	LoadEpic(id string) (e *Epic, ok bool, err error)
+	// LoadEpics returns every epic, sorted by ID. A board with no epics/ dir
+	// yields nil, not an error — a board that has never declared a box is a
+	// legitimate state, not a broken one.
+	LoadEpics() ([]Epic, error)
+	// SaveEpic writes one epic shard (via core.MarshalEpic), atomically and only
+	// when its bytes changed — the epics/ twin of SaveRepo, and like it, gated on
+	// the board's layout version: read-only has to mean read-only for every shard
+	// kind, or a stale board could still be mutated through its newest entity.
+	SaveEpic(e *Epic) error
+	// ListEpicIDs returns the ids of all epic shards (epics/<id>.json), for the
+	// shard-filename/id integrity lint — the epics/ twin of ListTaskIDs.
+	ListEpicIDs() ([]string, error)
+	// NextEpicID returns a fresh, random, collision-resistant epic id (e.g.
+	// "e-k3m9"): the epic prefix plus the same random Crockford-base32 suffix
+	// NextID uses. Separate from NextID because the PREFIX is what tells an id's
+	// entity kind apart on sight, and a shared generator would have to be told
+	// which kind it was making anyway.
+	NextEpicID() (string, error)
 }
 
 // Clock supplies the current time. Injected so tests get deterministic

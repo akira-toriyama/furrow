@@ -1,0 +1,21 @@
+{
+  "id": "e-k3m9",
+  "title": "旅行の準備",
+  "goal": "旅行前の準備をして <b>パンフレット</b> を作る",
+  "active": true,
+  "labels": [
+    "aug",
+    "travel"
+  ],
+  "repos": [
+    "akira-toriyama/furrow"
+  ],
+  "meta": {
+    "場所": "北海道",
+    "期間": "2026/08/10 ~ 2026/08/15"
+  },
+  "created": "2026-07-28T01:02:03Z",
+  "updated": "2026-07-28T01:02:03Z",
+  "closed": null,
+  "body": "bodies/e-k3m9.md"
+}

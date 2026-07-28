@@ -19,7 +19,7 @@ var gateLanes = []string{"inbox", "ready", "done"}
 // the binary doesn't know, and a Save would write that loss back to disk.
 func TestVersionGateRefusesNewerBoard(t *testing.T) {
 	root := t.TempDir()
-	s := New(root, gateLanes, "t-", 5)
+	s := New(root, gateLanes, "t-", "e-", 5)
 
 	// A normal Save stamps the current version — loads fine.
 	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{
@@ -64,7 +64,7 @@ func TestVersionGateRefusesNewerBoard(t *testing.T) {
 // store's normal lenient read; only the future direction is fatal.
 func TestVersionGateAllowsOlderMeta(t *testing.T) {
 	root := t.TempDir()
-	s := New(root, gateLanes, "t-", 5)
+	s := New(root, gateLanes, "t-", "e-", 5)
 	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion}); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestVersionGateAllowsOlderMeta(t *testing.T) {
 // and `furrow upgrade` is the only thing that may raise it. Do not delete this.
 func TestSaveNeverRaisesBoardVersion(t *testing.T) {
 	root := t.TempDir()
-	s := New(root, gateLanes, "t-", 5)
+	s := New(root, gateLanes, "t-", "e-", 5)
 	if err := s.Save(&core.Index{Tasks: []core.Task{
 		{ID: "t-0001", Title: "x", Status: "ready", Priority: 100, Body: core.BodyPath("t-0001")},
 	}}); err != nil {
@@ -136,7 +136,7 @@ func TestSaveNeverRaisesBoardVersion(t *testing.T) {
 // written in. Reads still degrade leniently; writes refuse.
 func TestSaveRefusesShardsWithoutMeta(t *testing.T) {
 	root := t.TempDir()
-	s := New(root, gateLanes, "t-", 5)
+	s := New(root, gateLanes, "t-", "e-", 5)
 	if err := s.Save(&core.Index{Tasks: []core.Task{
 		{ID: "t-0001", Title: "x", Status: "ready", Priority: 100, Body: core.BodyPath("t-0001")},
 	}}); err != nil {
@@ -169,7 +169,7 @@ func TestSaveRefusesShardsWithoutMeta(t *testing.T) {
 // its body on disk (an orphan the next lint flags), so the refusal isn't total.
 func TestOutdatedBoardIsReadOnlyForEveryWrite(t *testing.T) {
 	root := t.TempDir()
-	s := New(root, gateLanes, "t-", 5)
+	s := New(root, gateLanes, "t-", "e-", 5)
 	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestOutdatedBoardIsReadOnlyForEveryWrite(t *testing.T) {
 // is no prior layout to lie about. This is what keeps `furrow init` working.
 func TestSaveStampsAFreshStore(t *testing.T) {
 	root := t.TempDir()
-	s := New(root, gateLanes, "t-", 5)
+	s := New(root, gateLanes, "t-", "e-", 5)
 	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestSaveStampsAFreshStore(t *testing.T) {
 // layout is either readable or the operator restores it.
 func TestMetaGarbledIsAnError(t *testing.T) {
 	root := t.TempDir()
-	s := New(root, gateLanes, "t-", 5)
+	s := New(root, gateLanes, "t-", "e-", 5)
 	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestMetaGarbledIsAnError(t *testing.T) {
 // unblocks writing, and it routes through the single marshaller path.
 func TestSetBoardVersionUnblocksWrites(t *testing.T) {
 	root := t.TempDir()
-	s := New(root, gateLanes, "t-", 5)
+	s := New(root, gateLanes, "t-", "e-", 5)
 	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestSetBoardVersionUnblocksWrites(t *testing.T) {
 // path is the thing that strips.
 func TestSetBoardVersionPreservesUnknownMetaKeys(t *testing.T) {
 	root := t.TempDir()
-	s := New(root, gateLanes, "t-", 5)
+	s := New(root, gateLanes, "t-", "e-", 5)
 	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}

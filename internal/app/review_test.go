@@ -77,7 +77,7 @@ func TestReviewRepoTwoClocks(t *testing.T) {
 func TestRevisitSummaryUnreviewedNudge(t *testing.T) {
 	cfg := config.Default()
 	cfg.ReviewStaleAfterDays = 14
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	clk := &fixedClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	a := NewWithStore(st, cfg, clk)
 
@@ -118,7 +118,7 @@ func TestRevisitSummaryUnreviewedNudge(t *testing.T) {
 func TestRevisitSummaryUnreviewedScoped(t *testing.T) {
 	cfg := config.Default()
 	cfg.ReviewStaleAfterDays = 14
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	clk := &fixedClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	a := NewWithStore(st, cfg, clk)
 

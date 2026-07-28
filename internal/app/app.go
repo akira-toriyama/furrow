@@ -173,7 +173,7 @@ func openAt(dir string) (*App, error) {
 	if err != nil {
 		return nil, core.Validationf("config", "%v", err)
 	}
-	st := fsstore.New(dir, cfg.Lanes, cfg.IDPrefix, cfg.IDWidth)
+	st := fsstore.New(dir, cfg.Lanes, cfg.IDPrefix, cfg.EpicIDPrefix, cfg.IDWidth)
 	return &App{Store: st, Cfg: cfg, Clock: core.SystemClock(), Dir: dir, Warnings: warn}, nil
 }
 

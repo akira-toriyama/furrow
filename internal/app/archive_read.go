@@ -16,7 +16,7 @@ func (a *App) archiveStore() (*fsstore.Store, error) {
 	if a.Dir == "" {
 		return nil, core.Validationf("", "no archive: this store is not file-backed")
 	}
-	return fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.IDWidth), nil
+	return fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.EpicIDPrefix, a.Cfg.IDWidth), nil
 }
 
 // listIndex picks List's source index: the archive store when o.Archived, else

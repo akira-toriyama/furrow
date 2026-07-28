@@ -135,7 +135,7 @@ func TestCLIRevisitConfigStaleDaysDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := fsstore.New(fdir, cfg.Lanes, cfg.IDPrefix, cfg.IDWidth)
+	st := fsstore.New(fdir, cfg.Lanes, cfg.IDPrefix, cfg.EpicIDPrefix, cfg.IDWidth)
 	aged := app.NewWithStore(st, cfg, pastClock{t: time.Now().AddDate(0, 0, -30)})
 	v, e := 3, 2
 	old, err := aged.Add("aged task", app.AddOpts{Status: "ready", Value: &v, Effort: &e, Repos: []string{"o/r"}})

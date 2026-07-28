@@ -24,8 +24,9 @@ type raw struct {
 		Default *int `toml:"default"`
 	} `toml:"priority"`
 	IDs struct {
-		Prefix string `toml:"prefix"`
-		Width  *int   `toml:"width"`
+		Prefix     string `toml:"prefix"`
+		EpicPrefix string `toml:"epic_prefix"`
+		Width      *int   `toml:"width"`
 	} `toml:"ids"`
 	Archive struct {
 		OlderThanDays *int `toml:"older_than_days"`
@@ -202,6 +203,17 @@ func fromRaw(r raw) (*Config, []string, error) {
 
 	if r.IDs.Prefix != "" {
 		c.IDPrefix = r.IDs.Prefix
+	}
+	if r.IDs.EpicPrefix != "" {
+		c.EpicIDPrefix = r.IDs.EpicPrefix
+	}
+	// The two prefixes must differ, or ids stop naming their entity kind: epics
+	// share the task bodies/ directory, so a collision would make bodies/<id>.md
+	// ambiguous and the orphan-body lint unable to say which store owns a file.
+	// Clamp rather than reject, like every other config value.
+	if c.EpicIDPrefix == c.IDPrefix {
+		warn = append(warn, fmt.Sprintf("ids.epic_prefix %q equals ids.prefix; using %q", c.EpicIDPrefix, DefaultEpicIDPrefix))
+		c.EpicIDPrefix = DefaultEpicIDPrefix
 	}
 	c.IDWidth = clampPositive(r.IDs.Width, DefaultIDWidth, "ids.width", &warn)
 

@@ -24,7 +24,7 @@ func (c *fixedClock) Now() time.Time { return c.t.UTC().Truncate(time.Second) }
 
 func newApp() *App {
 	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	clk := &fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)}
 	return NewWithStore(st, cfg, clk)
 }
@@ -280,7 +280,7 @@ func TestDoneBackfillsClosedOnZombie(t *testing.T) {
 // re-close must not refresh the date even as the clock advances.
 func TestDonePreservesOriginalClosed(t *testing.T) {
 	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	clk := &fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)}
 	a := NewWithStore(st, cfg, clk)
 
@@ -814,7 +814,7 @@ func TestCheckTogglesChecklist(t *testing.T) {
 func TestLabelsRequiredEnforced(t *testing.T) {
 	cfg := config.Default()
 	cfg.LabelsRequired = true
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	a := NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
 
 	// add without a label -> validation error.
@@ -845,7 +845,7 @@ func TestLabelsRequiredEnforced(t *testing.T) {
 
 	// default config (not required) accepts a label-less add.
 	cfg2 := config.Default()
-	a2 := NewWithStore(memstore.New(cfg2.IDPrefix, cfg2.IDWidth), cfg2, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
+	a2 := NewWithStore(memstore.New(cfg2.IDPrefix, "e-", cfg2.IDWidth), cfg2, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
 	if _, err := a2.Add("fine", AddOpts{Status: "ready"}); err != nil {
 		t.Errorf("label-less add should succeed when not required, got %v", err)
 	}
@@ -1249,7 +1249,7 @@ func TestRerefAddsRemovesIdempotentlyKeepingOrder(t *testing.T) {
 func TestRelabelRespectsLabelsRequired(t *testing.T) {
 	cfg := config.Default()
 	cfg.LabelsRequired = true
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	a := NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
 	tk, err := a.Add("x", AddOpts{Labels: []string{"only"}})
 	if err != nil {

@@ -367,7 +367,7 @@ func (a *App) archivedIDs() ([]string, error) {
 	if a.Dir == "" {
 		return nil, nil
 	}
-	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.IDWidth)
+	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.EpicIDPrefix, a.Cfg.IDWidth)
 	return arc.ListTaskIDs()
 }
 

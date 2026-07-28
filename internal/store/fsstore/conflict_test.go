@@ -38,7 +38,7 @@ func TestTwoOperatorsAddNoGitConflict(t *testing.T) {
 	run("init", "-q", "-b", "base")
 
 	fdir := filepath.Join(repo, ".furrow")
-	store := New(fdir, lanes, "t-", 5)
+	store := New(fdir, lanes, "t-", "e-", 5)
 
 	// Base commit: a store with one shared task.
 	if err := store.Save(&core.Index{Tasks: []core.Task{mkTask("t-base0", "shared", "ready", 100)}}); err != nil {

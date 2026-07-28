@@ -11,7 +11,7 @@ import (
 // memstore mirrors fsstore's version gate so app/cli tests can exercise both
 // refusal directions without a disk.
 func TestVersionGate(t *testing.T) {
-	s := New("t-", 5)
+	s := New("t-", "e-", 5)
 
 	if _, err := s.Load(); err != nil {
 		t.Fatalf("default store must load: %v", err)
@@ -45,7 +45,7 @@ func TestVersionGate(t *testing.T) {
 // The twin of fsstore's TestSaveNeverRaisesBoardVersion: an OLDER board reads
 // fine but refuses writes, and Save leaves its version exactly where it was.
 func TestSaveNeverRaisesBoardVersion(t *testing.T) {
-	s := New("t-", 5)
+	s := New("t-", "e-", 5)
 	old := core.SchemaVersion - 1
 	if err := s.SetBoardVersion(old); err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestSaveNeverRaisesBoardVersion(t *testing.T) {
 }
 
 func TestSaveAssetDedup(t *testing.T) {
-	s := New("t-", 5)
+	s := New("t-", "e-", 5)
 
 	name, err := s.SaveAsset("t-0001", "shot.png", []byte("one"))
 	if err != nil {
@@ -88,7 +88,7 @@ func TestSaveAssetDedup(t *testing.T) {
 }
 
 func TestListAssets(t *testing.T) {
-	s := New("t-", 5)
+	s := New("t-", "e-", 5)
 
 	if got, err := s.ListAssets(); err != nil || got != nil {
 		t.Fatalf("empty store: got %+v err %v, want nil,nil", got, err)

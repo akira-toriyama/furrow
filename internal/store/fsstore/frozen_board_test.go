@@ -55,7 +55,7 @@ func TestFrozenBoardRoundTripsByteIdentical(t *testing.T) {
 	copyTree(t, frozenBoardDir, root)
 	before := snapshotTree(t, root)
 
-	s := New(root, lanes, "t-", 5)
+	s := New(root, lanes, "t-", "e-", 5)
 
 	// The three machine-written file kinds, each through its own writer — a Save
 	// alone would only ever rewrite tasks/.
@@ -148,7 +148,7 @@ func lineAt(lines []string, i int) string {
 func TestFrozenBoardParksUnknownKeys(t *testing.T) {
 	root := filepath.Join(t.TempDir(), ".furrow")
 	copyTree(t, frozenBoardDir, root)
-	s := New(root, lanes, "t-", 5)
+	s := New(root, lanes, "t-", "e-", 5)
 
 	idx, err := s.Load()
 	if err != nil {

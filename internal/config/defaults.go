@@ -31,6 +31,12 @@ var (
 
 	DefaultIDPrefix = "t-"
 	DefaultIDWidth  = 5 // number of random suffix chars in a new id (e.g. t-k3m9p)
+	// DefaultEpicIDPrefix is the [ids].epic_prefix: epics get their OWN prefix so
+	// an id names its entity kind on sight (e-k3m9 is a box, t-k3m9p is work).
+	// That is what lets epics share the task bodies/ directory — and therefore
+	// `furrow edit`, `furrow sync -b`, the bodies/*.md union-merge rule, and the
+	// orphan-body lint — instead of duplicating all four for a second dir.
+	DefaultEpicIDPrefix = "e-"
 
 	DefaultArchiveOlderThanDays = 30
 	DefaultUITheme              = "auto"
@@ -84,8 +90,9 @@ type Config struct {
 	PriorityStep    int
 	PriorityDefault int
 
-	IDPrefix string
-	IDWidth  int
+	IDPrefix     string
+	EpicIDPrefix string
+	IDWidth      int
 
 	ArchiveOlderThanDays int
 	UITheme              string
@@ -140,6 +147,7 @@ func Default() *Config {
 		PriorityStep:         DefaultPriorityStep,
 		PriorityDefault:      DefaultPriorityDefault,
 		IDPrefix:             DefaultIDPrefix,
+		EpicIDPrefix:         DefaultEpicIDPrefix,
 		IDWidth:              DefaultIDWidth,
 		ArchiveOlderThanDays: DefaultArchiveOlderThanDays,
 		UITheme:              DefaultUITheme,

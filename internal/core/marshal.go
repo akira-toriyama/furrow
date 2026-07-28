@@ -154,6 +154,66 @@ func UnmarshalRepo(data []byte) (*RepoRecord, error) {
 	return &r, nil
 }
 
+// MarshalEpic is the per-epic twin of MarshalTask: the ONE path that serializes
+// an Epic to its shard bytes (epics/<id>.json). It shares the byte recipe
+// (encodeCanonicalWithExtras) and per-epic normalization (canonicalizeEpic) so an
+// epic shard written by furrow equals a hand-edit byte-for-byte, exactly as task
+// and repo shards do, and — like them — carries no schema_version. e must be
+// non-nil.
+func MarshalEpic(e *Epic) ([]byte, error) {
+	canonicalizeEpic(e)
+	data, err := encodeCanonicalWithExtras(e, e.extras)
+	if err != nil {
+		return nil, Internalf(e.ID, "marshal epic: %v", err)
+	}
+	return data, nil
+}
+
+// canonicalizeEpic enforces the per-epic determinism invariants in place:
+// non-nil collections, sorted+deduped sets, whole-second UTC timestamps.
+//
+// Meta is emptied to {} rather than left nil for the same reason Labels becomes
+// []: the on-disk shape must not flip between null and an empty container
+// depending on how the value reached the marshaller. Its KEYS need no sorting —
+// encoding/json already emits a map's keys in sorted order, which is precisely
+// why Meta is a flat map[string]string and not an arbitrary nested value.
+func canonicalizeEpic(e *Epic) {
+	if e.Labels == nil {
+		e.Labels = []string{}
+	}
+	if e.Repos == nil {
+		e.Repos = []string{}
+	}
+	if e.Meta == nil {
+		e.Meta = map[string]string{}
+	}
+	e.Labels = sortDedup(e.Labels)
+	e.Repos = sortDedup(e.Repos)
+
+	e.Created = normTime(e.Created)
+	e.Updated = normTime(e.Updated)
+	if e.Closed != nil {
+		c := normTime(*e.Closed)
+		e.Closed = &c
+	}
+}
+
+// UnmarshalEpic parses one epic shard's bytes into an Epic, the per-epic twin of
+// UnmarshalTask. A parse failure is a validation error (malformed input), not an
+// internal fault.
+func UnmarshalEpic(data []byte) (*Epic, error) {
+	var e Epic
+	if err := json.Unmarshal(data, &e); err != nil {
+		return nil, Validationf("epic", "epic shard is not valid JSON: %v", err)
+	}
+	extra, err := splitExtras(data, epicKnownKeys)
+	if err != nil {
+		return nil, Validationf("epic", "epic shard is not valid JSON: %v", err)
+	}
+	e.extras = extra
+	return &e, nil
+}
+
 // MarshalMeta serializes the board-wide Meta (schema version) to its meta.json
 // bytes. It shares encodeCanonicalWithExtras so meta.json obeys the same byte recipe as
 // the shards (2-space indent, no HTML escaping, trailing newline) — a hand-edit
