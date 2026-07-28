@@ -17,19 +17,19 @@ import (
 // tracked v2 remainder and are NOT listed, so writing one yields a clear
 // unknown-field error rather than a silent no-match.
 var qualifierVocab = []string{
-	"status", "lane", "type", "label", "repo", "id", "parent", "title", "body",
+	"status", "lane", "epic", "label", "repo", "id", "title", "body",
 	"value", "effort", "priority", "roi",
 	"created", "updated", "closed", "reviewed",
-	"child-of", "depends-on", "blocks",
+	"depends-on", "blocks",
 }
 
 // presenceVocab is the field set has:/no: accept.
 var presenceVocab = []string{
-	"label", "repo", "parent", "value", "effort", "deps", "refs", "checklist", "closed", "reviewed", "body",
+	"label", "repo", "epic", "value", "effort", "deps", "refs", "checklist", "closed", "reviewed", "body",
 }
 
 // stateVocab is the is: flag set.
-var stateVocab = []string{"actionable", "blocked", "stuck", "stale", "open", "closed", "draft", "container"}
+var stateVocab = []string{"actionable", "blocked", "stale", "open", "closed", "draft", "unfiled"}
 
 // isDateField reports whether f is one of the four system timestamps the date
 // qualifiers read.
@@ -124,13 +124,10 @@ func (a *App) compileQuery(raw string, idx *core.Index, staleDays int, loadBody 
 	for _, t := range q {
 		if t.Kind == query.State {
 			switch t.Field {
-			case "actionable", "blocked", "stuck":
+			case "actionable", "blocked":
 				if c.doneIDs == nil {
 					c.doneIDs = a.doneSet(idx)
 				}
-			}
-			if t.Field == "stuck" && c.kids == nil {
-				c.kids = childrenMap(idx)
 			}
 		}
 	}
@@ -189,12 +186,6 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 				return a.actionable(c.idx, t, c.doneIDs)
 			case "blocked":
 				return len(blockedDeps(t, c.doneIDs)) > 0
-			case "stuck":
-				// Gated on the task being a box, like every other isStuck caller
-				// (ListItems, tree, revisit) and like isStuck's own doc requires.
-				// Ungated, `is:stuck` selected plain tasks whose own row in the
-				// SAME --json payload reported "container": false, "stuck": false.
-				return a.Cfg.IsContainerType(t.Type) && a.isStuck(c.idx, t.ID, c.kids, c.doneIDs)
 			case "stale":
 				return core.IsStale(*t, c.now, c.staleDays)
 			case "open":
@@ -203,8 +194,10 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 				return t.Closed != nil
 			case "draft":
 				return len(t.Repos) == 0
-			case "container":
-				return a.Cfg.IsContainerType(t.Type)
+			case "unfiled":
+				// No box. The lint-error state, queryable so a backfill sweep is one
+				// read rather than a diff of two lists.
+				return t.Epic == ""
 			}
 			return false
 		}), nil
@@ -220,8 +213,8 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 				return len(t.Labels) > 0
 			case "repo":
 				return len(t.Repos) > 0
-			case "parent":
-				return t.Parent != ""
+			case "epic":
+				return t.Epic != ""
 			case "value":
 				return t.Value != nil
 			case "effort":
@@ -280,14 +273,13 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 		vals := valTexts(term.Values)
 		return neg(func(t *core.Task) bool { return contains(vals, t.Status) }), nil
 
-	case "type":
-		for _, v := range term.Values {
-			if !a.Cfg.IsType(v.Text) {
-				return nil, a.unknownTypeErr("", v.Text)
-			}
-		}
+	case "epic":
+		// Exact epic ids. Lenient on an unknown id (like id:): an epic that does
+		// not exist simply has no members, and `furrow lint` owns reporting the
+		// dangling reference. The CLI's -e flag is the strict path (ResolveEpic
+		// gives candidates on a typo).
 		vals := valTexts(term.Values)
-		return neg(func(t *core.Task) bool { return contains(vals, a.Cfg.EffectiveType(t.Type)) }), nil
+		return neg(func(t *core.Task) bool { return contains(vals, t.Epic) }), nil
 
 	case "label":
 		vals := valTexts(term.Values)
@@ -322,15 +314,6 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 			}
 			return false
 		}), nil
-
-	case "parent", "child-of":
-		// Two spellings of the same direct edge: parent: is the field qualifier
-		// (GH's parent-issue), child-of: the graph spelling symmetric with the
-		// dep pair below (and with v2's transitive descendant-of:). Both select
-		// the direct children of the named task(s) — exact ids, and an unknown
-		// id simply has no children (lenient like id:).
-		vals := valTexts(term.Values)
-		return neg(func(t *core.Task) bool { return contains(vals, t.Parent) }), nil
 
 	case "depends-on":
 		// t waits on any named id (the named task blocks t) — the Deps edge

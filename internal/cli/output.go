@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -290,36 +291,50 @@ func printSearchTable(hits []app.SearchHit) {
 // children) would silently vanish. See the note on core.Task.
 type treeView struct {
 	core.Task
-	Actionable bool          `json:"actionable"`
-	BlockedBy  []string      `json:"blocked_by"`
-	Container  bool          `json:"container"`
-	Progress   *app.Progress `json:"progress,omitempty"`
-	Stuck      bool          `json:"stuck"`
-	Children   []treeView    `json:"children"`
+	Actionable bool     `json:"actionable"`
+	BlockedBy  []string `json:"blocked_by"`
+}
+
+// groupView is one epic's group in `ls --tree --json`. Epic is a pointer so the
+// trailing unfiled group serializes as `"epic": null` rather than a fabricated
+// empty box — a reader must be able to tell "no epic" from "an epic with blank
+// fields".
+type groupView struct {
+	Epic     *core.Epic    `json:"epic"`
+	Active   bool          `json:"active"`
+	Progress *app.Progress `json:"progress,omitempty"`
+	Stuck    bool          `json:"stuck"`
+	Tasks    []treeView    `json:"tasks"`
 }
 
 func toTreeViews(nodes []app.TreeNode) []treeView {
 	out := make([]treeView, 0, len(nodes))
 	for _, n := range nodes {
-		out = append(out, treeView{
-			Task:       n.Task,
-			Actionable: n.Actionable,
-			BlockedBy:  n.BlockedBy,
-			Container:  n.Container,
-			Progress:   n.Progress,
-			Stuck:      n.Stuck,
-			Children:   toTreeViews(n.Children),
+		out = append(out, treeView{Task: n.Task, Actionable: n.Actionable, BlockedBy: n.BlockedBy})
+	}
+	return out
+}
+
+func toGroupViews(groups []app.TreeGroup) []groupView {
+	out := make([]groupView, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, groupView{
+			Epic:     g.Epic,
+			Active:   g.Active,
+			Progress: g.Progress,
+			Stuck:    g.Stuck,
+			Tasks:    toTreeViews(g.Tasks),
 		})
 	}
 	return out
 }
 
-// emitTree renders the hierarchy. --json nests (children inside children);
-// --ndjson streams one ROOT per line (a tree is a value, and the line-oriented
-// contract is one value per line — flattening it would destroy the very structure
-// that was asked for).
-func emitTree(a *app.App, nodes []app.TreeNode) error {
-	views := toTreeViews(nodes)
+// emitTree renders the board grouped by epic. --json nests tasks inside their
+// group; --ndjson streams one GROUP per line (a group is the value here, and the
+// line-oriented contract is one value per line — flattening it would destroy the
+// grouping that was asked for).
+func emitTree(a *app.App, groups []app.TreeGroup) error {
+	views := toGroupViews(groups)
 	switch {
 	case flagNDJSON:
 		for _, v := range views {
@@ -332,59 +347,78 @@ func emitTree(a *app.App, nodes []app.TreeNode) error {
 			fmt.Fprintln(out, "(no tasks)")
 			return nil
 		}
-		for _, n := range nodes {
-			printTreeNode(a, n, 0)
+		for i, g := range groups {
+			if i > 0 {
+				fmt.Fprintln(out)
+			}
+			printTreeGroup(a, g)
 		}
 	}
 	return nil
 }
 
-// printTreeNode draws one node and its subtree. Indentation carries the structure
-// (no box-drawing: the output stays greppable and copy-pastable, like every other
-// human view here), and one glyph per node carries the state at a glance:
+// printTreeGroup draws one epic header and its member tasks.
+func printTreeGroup(a *app.App, g app.TreeGroup) {
+	if g.Epic == nil {
+		fmt.Fprintln(out, "(no epic)")
+	} else {
+		head := g.Epic.ID + "  " + g.Epic.Title
+		if g.Active {
+			head = "▶ " + head
+		} else {
+			head = "  " + head
+		}
+		if g.Progress != nil {
+			head += fmt.Sprintf("  (%d/%d)", g.Progress.Done, g.Progress.Total)
+		}
+		if !g.Epic.IsOpen() {
+			head += "  [closed]"
+		}
+		if g.Stuck {
+			head += "  ⚠ stuck"
+		}
+		fmt.Fprintln(out, head)
+		if g.Epic.Goal != "" {
+			fmt.Fprintln(out, "    goal: "+g.Epic.Goal)
+		}
+	}
+	for _, n := range g.Tasks {
+		printTreeNode(a, n)
+	}
+}
+
+// printTreeNode draws one member task. One glyph carries the state at a glance:
 //
-//	★  actionable — in a next lane with every dep done; `furrow next` would hand
-//	   you this one. Seeing WHERE in the shape of the work you can pick it up is
-//	   the reason to draw the tree at all.
+//	★  actionable — in a next lane with every dep done
 //	✓  done
 //	~  parked in a terminal lane that is not done (icebox, waiting)
 //	·  open, but not available: blocked by a dep, or not in a next lane
 //
 // The lane is printed too: a glyph is a summary, not a substitute, and `[ready]`
 // is what greps.
-func printTreeNode(a *app.App, n app.TreeNode, depth int) {
-	line := strings.Repeat("   ", depth) + treeGlyph(a, n) + " " + n.Task.ID + "  [" + n.Task.Status + "]  " + n.Task.Title
-	if n.Container && n.Progress != nil {
-		line += fmt.Sprintf("  (%d/%d)", n.Progress.Done, n.Progress.Total)
-	}
-	if n.Stuck {
-		line += "  ⚠ stuck"
-	}
+func printTreeNode(a *app.App, n app.TreeNode) {
+	line := "    " + stateGlyph(a, n.Actionable, n.Task.Status) + " " + n.Task.ID + "  [" + n.Task.Status + "]  " + n.Task.Title
 	if len(n.BlockedBy) > 0 {
 		line += "  ← blocked by: " + strings.Join(n.BlockedBy, ", ")
 	}
 	fmt.Fprintln(out, line)
-	for _, c := range n.Children {
-		printTreeNode(a, c, depth+1)
-	}
-}
-
-// treeGlyph classifies a tree node; stateGlyph is the shared classifier so the
-// flat `ls` and the tree draw the same one-character state.
-func treeGlyph(a *app.App, n app.TreeNode) string {
-	return stateGlyph(a, n.Actionable, n.Task.Status, n.Container)
 }
 
 // stateGlyph is the one-character state summary shared by `ls` (flat) and `ls
 // --tree`, classified against the BOARD's lane vocabulary (which lane is done,
 // which are terminal — both configurable), never a hardcoded lane name:
 //
-//	★  actionable — in a next lane, every dep done; `furrow next` would hand you this
+//	★  ready to pick up — in a next lane, every dep done
 //	✓  done
 //	~  parked in a terminal lane that is not done (icebox, waiting)
-//	▣  a container box (never actionable): its progress/stuck roll-up is the signal
 //	·  open, but not available: blocked by a dep, or not in a next lane
-func stateGlyph(a *app.App, actionable bool, status string, container bool) string {
+//
+// NOTE the ★ no longer means "exactly what `furrow next` would hand you": next
+// ALSO scopes to the active epic, so ★ is a strict superset. Making the glyph
+// epic-aware was the alternative and it is worse — a mark whose meaning shifts
+// with whichever box happens to be open cannot be read at a glance, and `ls` is
+// the board-wide view by design.
+func stateGlyph(a *app.App, actionable bool, status string) string {
 	switch {
 	case actionable:
 		return "★"
@@ -392,8 +426,6 @@ func stateGlyph(a *app.App, actionable bool, status string, container bool) stri
 		return "✓"
 	case a.Cfg.IsTerminal(status):
 		return "~"
-	case container:
-		return "▣"
 	default:
 		return "·"
 	}
@@ -409,18 +441,10 @@ type listItemView struct {
 	core.Task
 	Actionable bool     `json:"actionable"`
 	BlockedBy  []string `json:"blocked_by"`
-	Container  bool     `json:"container"`
-	Stuck      bool     `json:"stuck"`
 }
 
 func toListItemView(it app.ListItem) listItemView {
-	return listItemView{
-		Task:       it.Task,
-		Actionable: it.Actionable,
-		BlockedBy:  it.BlockedBy,
-		Container:  it.Container,
-		Stuck:      it.Stuck,
-	}
+	return listItemView{Task: it.Task, Actionable: it.Actionable, BlockedBy: it.BlockedBy}
 }
 
 // emitListItems renders the flat `ls`: --json an array (empty -> [], never null),
@@ -473,10 +497,7 @@ func printListItemTable(a *app.App, items []app.ListItem) {
 		if len(t.Repos) > 0 {
 			title += "  (" + strings.Join(t.Repos, ",") + ")"
 		}
-		if it.Stuck {
-			title += "  ⚠ stuck"
-		}
-		g := stateGlyph(a, it.Actionable, t.Status, it.Container)
+		g := stateGlyph(a, it.Actionable, t.Status)
 		fmt.Fprintf(out, "%s  %-*s  %-*s  %5d  %s\n", g, wID, t.ID, wStatus, t.Status, t.Priority, title)
 	}
 }
@@ -542,32 +563,6 @@ func emitDepList(r app.DepListResult) error {
 	return nil
 }
 
-// emitParentList renders `parent --list` — the hierarchy twin of emitDepList, in
-// the same two-labelled-sections shape so the two reads look alike.
-func emitParentList(r app.ParentListResult) error {
-	if jsonMode() {
-		v := parentListView{ID: r.ID, Title: r.Title, Children: toTaskRefViews(r.Children)}
-		if r.Parent != nil {
-			p := taskRefView{ID: r.Parent.ID, Title: r.Parent.Title, Status: r.Parent.Status}
-			v.Parent = &p
-		}
-		emitObject(v)
-		return nil
-	}
-	fmt.Fprintf(out, "%s  %s\n", r.ID, r.Title)
-	fmt.Fprintln(out, "parent:")
-	if r.Parent == nil {
-		fmt.Fprintln(out, "  (none — top-level)")
-	} else {
-		printTaskRefs([]app.TaskRef{*r.Parent})
-	}
-	fmt.Fprintf(out, "children (%d):\n", len(r.Children))
-	printTaskRefs(r.Children)
-	return nil
-}
-
-// printTaskRefs prints one edge per line as `id  [lane]  title`; a dangling ref
-// (empty status) shows `[?]`. Plain so it greps and copies cleanly.
 func printTaskRefs(refs []app.TaskRef) {
 	if len(refs) == 0 {
 		fmt.Fprintln(out, "  (none)")
@@ -741,8 +736,8 @@ func humanTime(t time.Time) string {
 func printTaskDetail(t *core.Task, body string) {
 	fmt.Fprintf(out, "%s  %s\n", t.ID, t.Title)
 	fmt.Fprintf(out, "status:   %s\n", t.Status)
-	if t.Type != "" {
-		fmt.Fprintf(out, "type:     %s\n", t.Type)
+	if t.Epic != "" {
+		fmt.Fprintf(out, "epic:     %s\n", t.Epic)
 	}
 	fmt.Fprintf(out, "priority: %d\n", t.Priority)
 	if t.Value != nil {
@@ -759,9 +754,6 @@ func printTaskDetail(t *core.Task, body string) {
 	}
 	if len(t.Repos) > 0 {
 		fmt.Fprintf(out, "repos:    %s\n", strings.Join(t.Repos, ", "))
-	}
-	if t.Parent != "" {
-		fmt.Fprintf(out, "parent:   %s\n", t.Parent)
 	}
 	if len(t.Deps) > 0 {
 		fmt.Fprintf(out, "deps:     %s\n", strings.Join(t.Deps, ", "))
@@ -924,11 +916,8 @@ func changedFields(before, after *core.Task) []string {
 	if before.Title != after.Title {
 		ch = append(ch, "title")
 	}
-	if before.Parent != after.Parent {
-		ch = append(ch, "parent")
-	}
-	if before.Type != after.Type {
-		ch = append(ch, "type")
+	if before.Epic != after.Epic {
+		ch = append(ch, "epic")
 	}
 	if !strsEq(before.Labels, after.Labels) {
 		ch = append(ch, "labels")
@@ -1080,15 +1069,193 @@ func printBrief(b *app.BriefData, scope string) {
 		fmt.Fprintf(out, "  · %s  %-12s %s  ← %s\n", it.Task.ID, it.Task.Status, it.Task.Title, strings.Join(it.BlockedBy, ", "))
 	}
 	fmt.Fprintf(out, "revisit: %d dep_done, %d stale", len(b.Revisit.DepDone), len(b.Revisit.Stale))
-	if n := len(b.Revisit.ChildrenDone); n > 0 {
-		fmt.Fprintf(out, ", %d children_done", n)
-	}
-	if n := len(b.Revisit.StuckContainer); n > 0 {
-		fmt.Fprintf(out, ", %d stuck_container", n)
+	for _, c := range []struct {
+		label string
+		ids   []string
+	}{{"epic_all_done", b.Revisit.EpicAllDone}, {"epic_stuck", b.Revisit.EpicStuck}, {"epic_stale", b.Revisit.EpicStale}} {
+		if n := len(c.ids); n > 0 {
+			fmt.Fprintf(out, ", %d %s", n, c.label)
+		}
 	}
 	if n := len(b.Revisit.Unreviewed); n > 0 {
 		fmt.Fprintf(out, ", %d unreviewed", n)
 	}
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "drafts: %d\n", b.Drafts)
+}
+
+// epicView is one epic row/record in --json. core.Epic is embedded for the same
+// reason core.Task is elsewhere: the derived facts sit BESIDE the stored ones, so
+// a reader gets the shard's keys unchanged plus progress/stuck.
+type epicView struct {
+	core.Epic
+	Progress app.Progress `json:"progress"`
+	Stuck    bool         `json:"stuck"`
+}
+
+func toEpicView(it app.EpicItem) epicView {
+	return epicView{Epic: it.Epic, Progress: it.Progress, Stuck: it.Stuck}
+}
+
+// emitEpicList renders `furrow epic ls`.
+func emitEpicList(items []app.EpicItem) error {
+	views := make([]epicView, 0, len(items))
+	for _, it := range items {
+		views = append(views, toEpicView(it))
+	}
+	switch {
+	case flagNDJSON:
+		for _, v := range views {
+			printNDJSONValue(v)
+		}
+	case flagJSON:
+		printJSON(views)
+	default:
+		if len(views) == 0 {
+			fmt.Fprintln(out, "(no epics)")
+			return nil
+		}
+		for _, v := range views {
+			mark := " "
+			if v.Active {
+				mark = "▶"
+			}
+			line := fmt.Sprintf("%s %s  %d/%d  %s", mark, v.ID, v.Progress.Done, v.Progress.Total, v.Title)
+			if !v.IsOpen() {
+				line += "  [closed]"
+			}
+			if v.Stuck {
+				line += "  ⚠ stuck"
+			}
+			if v.Goal != "" {
+				line += "\n    goal: " + v.Goal
+			}
+			fmt.Fprintln(out, line)
+		}
+	}
+	return nil
+}
+
+// epicDetailView is `epic show --json`: the box plus its members, in the same
+// row shape `ls --json` uses so a consumer parses one task type, not two.
+type epicDetailView struct {
+	core.Epic
+	Progress app.Progress   `json:"progress"`
+	Stuck    bool           `json:"stuck"`
+	Tasks    []listItemView `json:"tasks"`
+}
+
+// emitEpicDetail renders `furrow epic show`.
+func emitEpicDetail(a *app.App, d *app.EpicDetail) error {
+	if jsonMode() {
+		v := epicDetailView{Epic: d.Epic, Progress: d.Progress, Stuck: d.Stuck}
+		v.Tasks = make([]listItemView, 0, len(d.Tasks))
+		for _, it := range d.Tasks {
+			v.Tasks = append(v.Tasks, toListItemView(it))
+		}
+		emitObject(v)
+		return nil
+	}
+	fmt.Fprintf(out, "%s  %s\n", d.Epic.ID, d.Epic.Title)
+	if d.Epic.Goal != "" {
+		fmt.Fprintf(out, "goal:     %s\n", d.Epic.Goal)
+	}
+	state := "open"
+	if !d.Epic.IsOpen() {
+		state = "closed"
+	}
+	if d.Epic.Active {
+		state += ", active"
+	}
+	fmt.Fprintf(out, "state:    %s\n", state)
+	fmt.Fprintf(out, "progress: %d/%d\n", d.Progress.Done, d.Progress.Total)
+	if d.Stuck {
+		fmt.Fprintln(out, "          ⚠ stuck — open members but none actionable")
+	}
+	if len(d.Epic.Labels) > 0 {
+		fmt.Fprintf(out, "labels:   %s\n", strings.Join(d.Epic.Labels, ", "))
+	}
+	if len(d.Epic.Repos) > 0 {
+		fmt.Fprintf(out, "repos:    %s\n", strings.Join(d.Epic.Repos, ", "))
+	}
+	for _, k := range sortedKeys(d.Epic.Meta) {
+		fmt.Fprintf(out, "meta:     %s = %s\n", k, d.Epic.Meta[k])
+	}
+	fmt.Fprintf(out, "tasks (%d):\n", len(d.Tasks))
+	for _, it := range d.Tasks {
+		fmt.Fprintf(out, "  %s %s  [%s]  %s\n", stateGlyph(a, it.Actionable, it.Task.Status), it.Task.ID, it.Task.Status, it.Task.Title)
+	}
+	return nil
+}
+
+// emitEpicMutation is emitMutation's epic twin: the same {before,after,changed}
+// envelope, so a front-end reads one shape whichever entity it edited.
+func emitEpicMutation(mutate func() (*core.Epic, *core.Epic, error)) error {
+	before, after, err := mutate()
+	if err != nil {
+		return err
+	}
+	if jsonMode() {
+		emitObject(map[string]any{
+			"before":  before,
+			"after":   after,
+			"changed": changedEpicFields(before, after),
+		})
+		return nil
+	}
+	fmt.Fprintf(out, "%s  %s\n", after.ID, after.Title)
+	return nil
+}
+
+// changedEpicFields names the epic fields a mutation actually altered — the
+// `changed` array of the envelope, so a caller can tell a real edit from a no-op
+// without diffing two objects.
+func changedEpicFields(before, after *core.Epic) []string {
+	ch := []string{}
+	if before == nil || after == nil {
+		return ch
+	}
+	if before.Title != after.Title {
+		ch = append(ch, "title")
+	}
+	if before.Goal != after.Goal {
+		ch = append(ch, "goal")
+	}
+	if before.Active != after.Active {
+		ch = append(ch, "active")
+	}
+	if !strsEq(before.Labels, after.Labels) {
+		ch = append(ch, "labels")
+	}
+	if !strsEq(before.Repos, after.Repos) {
+		ch = append(ch, "repos")
+	}
+	if !metaEq(before.Meta, after.Meta) {
+		ch = append(ch, "meta")
+	}
+	if (before.Closed == nil) != (after.Closed == nil) {
+		ch = append(ch, "closed")
+	}
+	return ch
+}
+
+func metaEq(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

@@ -30,30 +30,11 @@ func CycleProblems(idx *Index) []Problem {
 		func(t *Task) []string { return t.Deps })
 }
 
-// ParentCycleProblems is the same rule over the OTHER edge furrow stores: the
-// `parent` hierarchy. Reparent refuses an edge that would close a loop, so — as
-// with deps — the only way one appears is two operators committing the two
-// half-edges on separate shards that git merges silently. It is an error for a
-// sharper reason than deps: a hierarchy cycle has no root, so a task in it belongs
-// to no tree and appears under nothing, and every walker (`parent --list`, a tree
-// view) has to defend itself against a hang instead of trusting the data.
-//
-// `parent` is single-valued, so a node has at most one out-edge and any SCC of
-// size >= 2 is exactly one loop — the same SCC machinery, no special-casing.
-func ParentCycleProblems(idx *Index) []Problem {
-	return cycleProblems(idx, "parent-cycle", "parent cycle", "entangled",
-		func(t *Task) []string {
-			if t.Parent == "" {
-				return nil
-			}
-			return []string{t.Parent}
-		})
-}
-
 // cycleProblems is the shared engine: build the adjacency from `edges`, decompose
-// into SCCs, and report each cyclic region once. Sharing it is what keeps the two
-// rules from drifting — the graph is the same shape, only the edge and the words
-// differ.
+// into SCCs, and report each cyclic region once. It is parameterized rather than
+// inlined into its one caller because the shape has already had two users (deps
+// and, until v6, the `parent` hierarchy) and epics are deliberately non-nesting,
+// so the next graph furrow stores can reuse it instead of growing a second walk.
 func cycleProblems(idx *Index, code, label, knot string, edges func(*Task) []string) []Problem {
 	ids := make(map[string]bool, len(idx.Tasks))
 	for i := range idx.Tasks {

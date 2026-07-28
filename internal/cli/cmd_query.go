@@ -92,7 +92,6 @@ func newLsCmd() *cobra.Command {
 			}
 			o.Status, o.Limit, o.Drafts = joinOrFilter(status), limit, drafts
 			o.Sort, o.Reverse, o.Archived = sortBy, reverse, archived
-			o.Type = typ
 			o.Actionable, o.Blocked = actionable, blocked
 			o.Query = queryStr
 			if cmd.Flags().Changed("since") {
@@ -114,11 +113,11 @@ func newLsCmd() *cobra.Command {
 				if len(args) == 1 {
 					root = args[0]
 				}
-				nodes, err := a.Tree(o, root, progRec)
+				groups, err := a.Tree(o, root)
 				if err != nil {
 					return err
 				}
-				return emitTree(a, nodes)
+				return emitTree(a, groups)
 			}
 			items, err := a.ListItems(o)
 			if err != nil {
@@ -310,12 +309,12 @@ func archivedSuffix(inArchive []string) string {
 
 func newNextCmd() *cobra.Command {
 	var (
-		label      []string
-		repo       string
-		limit      int
-		containers bool
-		lanes      []string
-		queryStr   string
+		label    []string
+		repo     string
+		limit    int
+		allEpics bool
+		lanes    []string
+		queryStr string
 	)
 	cmd := &cobra.Command{
 		Use:   "next",
@@ -323,8 +322,8 @@ func newNextCmd() *cobra.Command {
 		Long: "List the tasks ready to pick up: status in the configured next-lanes\n" +
 			"([next].lanes in config.toml, default ready + in-progress) and with every\n" +
 			"dependency already in the done lane, in canonical order. Container types\n" +
-			"(epics — see [types].containers) are boxes, not work, so they are excluded\n" +
-			"by default; pass --containers to surface a ready one too. Use --repo to\n" +
+			"Results are scoped to the ACTIVE epic for the repo (plus tasks filed under\n" +
+			"no epic); --all-epics ignores that scope. Use --repo to\n" +
 			"restrict to a repo (a unique short name works) and --label to AND a tag\n" +
 			"filter on top. An empty result is healthy (nothing to pick up right now)\n" +
 			"and exits 0 — the same contract as ls/revisit.\n\n" +
@@ -340,7 +339,7 @@ func newNextCmd() *cobra.Command {
 			"so `next -q 'value:>=4'` is \"what can I pick up now that is worth a lot\".",
 		Example: "  furrow next               # what to pick up now\n" +
 			"  furrow next -n1 --json    # just the top task, with a reason\n" +
-			"  furrow next --containers  # include ready epics (boxes)\n" +
+			"  furrow next --all-epics   # ignore the active-epic scope\n" +
 			"  furrow next --lanes backlog,ready   # temporarily widen the lanes considered\n" +
 			"  furrow next -q 'value:>=4 -label:chore'   # ready AND worth it\n" +
 			"  furrow next -r furrow -l bug",
@@ -355,7 +354,7 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 			o.Limit = limit
-			o.IncludeContainers = containers
+			o.AllEpics = allEpics
 			o.Query = queryStr
 			// --lanes is a one-shot override of [next].lanes: the same comma-OR /
 			// repeated union as -s (a StringArray split on ",", trimmed, empties
@@ -386,7 +385,7 @@ func newNextCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; use -n1 for just the top)")
-	cmd.Flags().BoolVar(&containers, "containers", false, "also surface ready container types (epics), which next hides by default")
+	cmd.Flags().BoolVar(&allEpics, "all-epics", false, "ignore the active-epic scope and consider the whole board")
 	cmd.Flags().StringArrayVar(&lanes, "lanes", nil, "override [next].lanes for THIS call (OR; comma-separated or repeated; unknown lane = exit 2 + candidates); config untouched")
 	addQueryFlag(cmd, &queryStr)
 	return cmd

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
-	"strings"
 )
 
 // Problem is one lint finding, shared by `furrow lint` and `furrow doctor`.
@@ -48,29 +47,19 @@ var repoShapeRe = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/
 //   - id must be non-empty and match idPattern (frozen-id shape)
 //   - ids must be unique
 //   - status must be a known lane (else warn — the task still works, sorts last)
-//   - type must be a known type (else warn — same closed-vocab discipline as lanes)
-//   - a task's deps must not mirror its own children (warn — the workaround a
-//     first-class container type replaces)
 //   - body path must equal the canonical bodies/<id>.md
-//   - every dep / parent must reference an existing id
+//   - every dep must reference an existing id
 //
-// types is the configured [types].order vocabulary; an empty type is always valid
-// (it reads as the default), so only a non-empty unknown type warns.
-func Validate(idx *Index, laneOrder, types []string, idPattern *regexp.Regexp) []Problem {
+// The epic-membership rules are NOT here: they need the epic set, which is a
+// second store read, so they live in EpicProblems (epic_lint.go) beside the rest
+// of the box vocabulary rather than being smuggled in through another parameter.
+func Validate(idx *Index, laneOrder []string, idPattern *regexp.Regexp) []Problem {
 	var out []Problem
 	known := laneRank(laneOrder)
-	knownType := map[string]bool{}
-	for _, ty := range types {
-		knownType[ty] = true
-	}
 	seen := map[string]int{}
 	ids := map[string]bool{}
-	parentOf := map[string]string{}
 	for _, t := range idx.Tasks {
 		ids[t.ID] = true
-		if t.Parent != "" {
-			parentOf[t.ID] = t.Parent
-		}
 	}
 
 	for _, t := range idx.Tasks {
@@ -90,30 +79,10 @@ func Validate(idx *Index, laneOrder, types []string, idPattern *regexp.Regexp) [
 			out = append(out, Problem{SevWarn, "unknown-lane", t.ID, fmt.Sprintf("status %q is not a configured lane", t.Status)})
 		}
 
-		if t.Type != "" && !knownType[t.Type] {
-			out = append(out, Problem{SevWarn, "unknown-type", t.ID, fmt.Sprintf("type %q is not a configured type ([types].order)", t.Type)})
-		}
-
-		// dep-mirrors-children: a task whose deps point at its own children is the
-		// hand-rolled "epic waits on its slices" workaround that a first-class
-		// container type replaces. Warn so it can be unwound (`furrow dep <id> --rm`).
-		var mirrored []string
-		for _, dep := range t.Deps {
-			if parentOf[dep] == t.ID {
-				mirrored = append(mirrored, dep)
-			}
-		}
-		if len(mirrored) > 0 {
-			out = append(out, Problem{SevWarn, "dep-mirrors-children", t.ID, fmt.Sprintf("deps mirror own children (%s); a container groups children via parent, not a dep edge — `furrow dep %s --rm %s`", strings.Join(mirrored, ", "), t.ID, strings.Join(mirrored, " "))})
-		}
-
 		if want := BodyPath(t.ID); t.Body != want {
 			out = append(out, Problem{SevError, "body-path", t.ID, fmt.Sprintf("body path %q should be %q", t.Body, want)})
 		}
 
-		if t.Parent != "" && !ids[t.Parent] {
-			out = append(out, Problem{SevError, "parent-missing", t.ID, fmt.Sprintf("parent %q does not exist", t.Parent)})
-		}
 		for _, dep := range t.Deps {
 			if !ids[dep] {
 				out = append(out, Problem{SevError, "dep-missing", t.ID, fmt.Sprintf("dep %q does not exist", dep)})

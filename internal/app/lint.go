@@ -31,15 +31,24 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// canonicalize after and validate as before.
 	ps := core.EstimateProblems(idx)
 	core.Canonicalize(idx, a.Cfg.Lanes)
-	ps = append(ps, core.Validate(idx, a.Cfg.Lanes, a.Cfg.Types, a.Cfg.IDPattern())...)
+	ps = append(ps, core.Validate(idx, a.Cfg.Lanes, a.Cfg.IDPattern())...)
 	// Dependency cycles: prevented at mutation time, but a concurrent merge of
 	// two half-edges on separate shards can slip one in silently (the tasks then
 	// wait on each other forever and never surface in `next`). lint is the backstop.
 	ps = append(ps, core.CycleProblems(idx)...)
-	// The same backstop on the hierarchy edge. Reparent refuses a loop, but a git
-	// merge of two half-edges can still close one — and a parent cycle has no root,
-	// so every task in it belongs to no tree and appears under nothing.
-	ps = append(ps, core.ParentCycleProblems(idx)...)
+	// The epic rules need a SECOND store read (the boxes), which is why they are
+	// their own entry point rather than another Validate parameter — Validate's
+	// contract is "everything derivable from the Index alone".
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return nil, err
+	}
+	ps = append(ps, core.EpicProblems(idx, epics, a.Cfg.Terminal, a.Cfg.EpicIDPattern())...)
+	for _, e := range epics {
+		if p, ok := unknownKeyProblem(e.ID, "epic shard "+core.EpicPath(e.ID), e.ExtraKeys()); ok {
+			ps = append(ps, p)
+		}
+	}
 
 	// One pass over the task shards: collect the done set and flag per-shard
 	// findings (unknown keys, done-unclosed) on the way.
@@ -84,10 +93,6 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// reconcile-on-close — the always-on (hook/CI) twin of the `dep_done` revisit
 	// signal, so an epic whose slice shipped never silently keeps a stale body.
 	ps = append(ps, core.StaleDepProblems(idx, a.Cfg.Terminal, doneIDs)...)
-	// The hierarchy twin of the reconcile gap: an open task still hanging under a
-	// DONE parent — an epic closed with work left under it. Nothing reported this
-	// before, and until `furrow parent` there was no way to fix it once you noticed.
-	ps = append(ps, core.ParentDoneProblems(idx, a.Cfg.Terminal, doneIDs)...)
 
 	rps, err := a.lintRecordKeys()
 	if err != nil {

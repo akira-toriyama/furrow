@@ -14,21 +14,26 @@ const (
 	RevisitStale       = "stale"        // not updated within the stale threshold
 	RevisitDepDone     = "dep_done"     // a dependency is already in the done lane
 	RevisitNoRepo      = "no_repo"      // repos is empty — the task is a draft awaiting a repo
-	// RevisitChildrenDone and RevisitStuckContainer are CONTAINER signals: they
-	// need the parent→children graph, so RevisitReasons (pure, per-task) does not
-	// compute them — the app layer does, where the index lives. They exist here so
-	// the `furrow revisit --json` reason vocabulary has one home.
-	RevisitChildrenDone   = "children_done"   // an open container whose children are ALL done — consider closing it
-	RevisitStuckContainer = "stuck_container" // an open container with open work under it but no actionable descendant
+	// The three EPIC signals are about a box, not a task: they need the member
+	// index, so RevisitReasons (pure, per-task) does not compute them — the app
+	// layer does. They live here so the `furrow revisit --json` reason vocabulary
+	// has one home.
+	RevisitEpicAllDone = "epic_all_done" // an open epic whose members are ALL done — consider closing it
+	RevisitEpicStuck   = "epic_stuck"    // an open epic with open members but not one actionable
+	// RevisitEpicStale is the ACTIVE-epic-untouched signal. It is measured in DAYS
+	// (the [revisit].stale_days clock every other signal uses), not in sessions:
+	// furrow has no notion of a session, and inventing a second clock so that one
+	// signal could use it would put two thresholds on the same board.
+	RevisitEpicStale = "epic_stale"
 )
 
 // RevisitCodeList returns every revisit signal code — the complete `furrow
 // revisit --json` reason vocabulary, in the canonical per-task order (the
-// container signals last, since RevisitReasons cannot emit them). Like
+// epic signals last, since RevisitReasons cannot emit them). Like
 // LintCodeList it is the single machine-readable registry the docs are checked
 // against (`furrow vocab revisit-codes` → scripts/check-docs-vocab.sh): the
-// 2026-07 audit found the prose copies of this list missing the two container
-// signals in three places. TestRevisitCodeListMatchesConstants pins this list
+// 2026-07 audit found the prose copies of this list missing the container
+// signals (v5's, now the epic ones) in three places. TestRevisitCodeListMatchesConstants pins this list
 // to the const block above, so a new constant cannot be forgotten here.
 func RevisitCodeList() []string {
 	return []string{
@@ -37,8 +42,9 @@ func RevisitCodeList() []string {
 		RevisitEffortUnset,
 		RevisitStale,
 		RevisitDepDone,
-		RevisitChildrenDone,
-		RevisitStuckContainer,
+		RevisitEpicAllDone,
+		RevisitEpicStuck,
+		RevisitEpicStale,
 	}
 }
 

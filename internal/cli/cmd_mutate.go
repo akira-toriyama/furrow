@@ -509,7 +509,7 @@ func newSetCmd() *cobra.Command {
 		clearEffort bool
 		addLabels   []string
 		rmLabels    []string
-		typ         string
+		epicRef     string
 		priority    int
 		before      string
 		after       string
@@ -568,10 +568,10 @@ func newSetCmd() *cobra.Command {
 				e := effort
 				o.Effort = &e
 			}
-			if cmd.Flags().Changed("type") {
-				o.Type = &typ
+			if cmd.Flags().Changed("epic") {
+				o.Epic = &epicRef
 			}
-			if err := emptyFlagErr(cmd, args[0], "before", "after", "add-label", "rm-label", "status", "type"); err != nil {
+			if err := emptyFlagErr(cmd, args[0], "before", "after", "add-label", "rm-label", "status"); err != nil {
 				return err
 			}
 			if len(args) > 1 {
@@ -609,7 +609,7 @@ func newSetCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "move to this lane")
-	cmd.Flags().StringVar(&typ, "type", "", "set the work-item type (a value from [types].order, e.g. epic)")
+	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "re-file under this epic (id, unique id prefix, or unique title substring; \"\" unfiles)")
 	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "set the sparse priority directly")
 	cmd.Flags().StringVar(&before, "before", "", "place immediately before this task (in the destination lane)")
 	cmd.Flags().StringVar(&after, "after", "", "place immediately after this task (in the destination lane)")
