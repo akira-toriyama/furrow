@@ -8,15 +8,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// scopedQuery resolves the board scope and the repo filter for a read command
-// (ls/next/revisit). The board scope (a pointer's or central board's
-// DefaultRepo, honored when AutoFilter is on) lands in ScopeRepo; the explicit
-// -l value is a pure tag filter (Label) that ANDs with the scope and never
-// clears it. Scope control is -r only: an explicit -r X replaces the board
-// scope with a repo filter (X resolved strictly — a full owner/repo, or a
-// short name matching exactly one repo known to the board), and -r "" means
-// the whole board. The filtering stays silent (stderr quiet, stdout pure data).
-func scopedQuery(cmd *cobra.Command, a *app.App, flagLabel, flagRepo string) (app.QueryOpts, error) {
+// scopedQuery resolves the board scope and the repo/epic filters for a read
+// command (ls/next/revisit/stats/search). The board scope (a pointer's or
+// central board's DefaultRepo, honored when AutoFilter is on) lands in
+// ScopeRepo; the explicit -l value is a pure tag filter (Label) that ANDs with
+// the scope and never clears it. Scope control is -r only: an explicit -r X
+// replaces the board scope with a repo filter (X resolved strictly — a full
+// owner/repo, or a short name matching exactly one repo known to the board),
+// and -r "" means the whole board. -e resolves through the same strict path
+// `epic show` uses (exact id, unique id prefix, unique title substring; a
+// miss/ambiguity is exit 2 + candidates), so a typo never silently returns [];
+// a command without the flag passes "". The filtering stays silent (stderr
+// quiet, stdout pure data).
+func scopedQuery(cmd *cobra.Command, a *app.App, flagLabel, flagRepo, flagEpic string) (app.QueryOpts, error) {
 	o := app.QueryOpts{Label: flagLabel}
 	if a.DefaultRepo != "" && a.AutoFilter {
 		o.ScopeRepo = a.DefaultRepo
@@ -31,6 +35,13 @@ func scopedQuery(cmd *cobra.Command, a *app.App, flagLabel, flagRepo string) (ap
 			o.Repo = r
 		}
 	}
+	if flagEpic != "" {
+		id, err := a.ResolveEpic(flagEpic)
+		if err != nil {
+			return o, err
+		}
+		o.Epic = id
+	}
 	return o, nil
 }
 
@@ -44,6 +55,46 @@ func labelDidYouMean(cmd *cobra.Command, a *app.App, o app.QueryOpts, n int) err
 		return nil
 	}
 	return a.DidYouMeanRepo(o.Label)
+}
+
+// hintEpicScope explains `furrow next`'s active-epic scope on stderr, in the two
+// states where the data alone misleads:
+//
+//   - scope engaged, nothing active: the empty result is deliberate ("no box
+//     open"), not "nothing to do" — name the fix, since this is the one state
+//     where next's contract differs from the classic board.
+//   - an active epic is STUCK (open members, none actionable): next structurally
+//     cannot show why it skipped the focus (it just returns rescue tasks or
+//     nothing), so it says so — unblocking the box is the day's move.
+//
+// It is quiet whenever the scope did not engage (-e, --all-epics, an epic-less
+// board), so the classic read stays byte-identical.
+func hintEpicScope(a *app.App, o app.QueryOpts, tasks []core.Task) {
+	scope, err := a.NextScope(o)
+	if err != nil || !scope.Engaged {
+		return
+	}
+	if len(scope.Active) == 0 {
+		where := o.Repo
+		if where == "" {
+			where = o.ScopeRepo
+		}
+		if where == "" {
+			where = "this board"
+		}
+		fmt.Fprintf(errOut, "note: no active epic for %s, so next is deliberately empty — pick a box with `furrow epic ls` + `furrow epic activate <id>` (--all-epics reads the whole board)\n", where)
+		return
+	}
+	items, err := a.EpicList(app.EpicQueryOpts{})
+	if err != nil {
+		return
+	}
+	for _, it := range items {
+		if scope.Active[it.Epic.ID] && it.Stuck {
+			fmt.Fprintf(errOut, "note: focus %s %q is stuck — it has open tasks but none are actionable; `furrow ls -e %s --blocked` shows what is in the way\n",
+				it.Epic.ID, it.Epic.Title, it.Epic.ID)
+		}
+	}
 }
 
 // hintHiddenDrafts prints the single stderr hint line when a repo-scoped read

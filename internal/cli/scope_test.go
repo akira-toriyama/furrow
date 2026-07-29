@@ -29,7 +29,7 @@ func TestScopedQuery_AutoFilterAppliesSilently(t *testing.T) {
 	defer func() { errOut = os.Stderr }()
 
 	cmd := queryCmd() // neither --label nor --repo changed
-	o, err := scopedQuery(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: true, Dir: "/b/.furrow"}, "", "")
+	o, err := scopedQuery(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: true, Dir: "/b/.furrow"}, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestScopedQuery_AutoFilterAppliesSilently(t *testing.T) {
 // but read filtering is off.
 func TestScopedQuery_AutoFilterFalseDoesNotScope(t *testing.T) {
 	cmd := queryCmd()
-	o, _ := scopedQuery(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: false, Dir: "/b/.furrow"}, "", "")
+	o, _ := scopedQuery(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: false, Dir: "/b/.furrow"}, "", "", "")
 	if o.ScopeRepo != "" {
 		t.Errorf("scope = %q, want empty (auto_filter=false shows the whole board)", o.ScopeRepo)
 	}
@@ -57,7 +57,7 @@ func TestScopedQuery_AutoFilterFalseDoesNotScope(t *testing.T) {
 func TestScopedQuery_ExplicitLabelKeepsScope(t *testing.T) {
 	cmd := queryCmd()
 	_ = cmd.Flags().Set("label", "bug") // Changed=true
-	o, _ := scopedQuery(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: true, Dir: "/b/.furrow"}, "bug", "")
+	o, _ := scopedQuery(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: true, Dir: "/b/.furrow"}, "bug", "", "")
 	if o.ScopeRepo != "me/chord" {
 		t.Errorf("scope = %q, want me/chord (an explicit -l must not clear the scope)", o.ScopeRepo)
 	}
@@ -69,7 +69,7 @@ func TestScopedQuery_ExplicitLabelKeepsScope(t *testing.T) {
 // A board's literal label never read-filters: only DefaultRepo scopes.
 func TestScopedQuery_LiteralBoardLabelDoesNotScope(t *testing.T) {
 	cmd := queryCmd()
-	o, _ := scopedQuery(cmd, &app.App{DefaultLabel: "tracked", AutoFilter: true, Dir: "/b/.furrow"}, "", "")
+	o, _ := scopedQuery(cmd, &app.App{DefaultLabel: "tracked", AutoFilter: true, Dir: "/b/.furrow"}, "", "", "")
 	if o.ScopeRepo != "" || o.Label != "" {
 		t.Errorf("scope = %q label = %q, want both empty (a literal label is add-time only)", o.ScopeRepo, o.Label)
 	}
@@ -79,7 +79,7 @@ func TestScopedQuery_LiteralBoardLabelDoesNotScope(t *testing.T) {
 func TestScopedQuery_ExplicitEmptyRepoEscapes(t *testing.T) {
 	cmd := queryCmd()
 	_ = cmd.Flags().Set("repo", "") // Changed=true, value ""
-	o, err := scopedQuery(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: true, Dir: "/b/.furrow"}, "", "")
+	o, err := scopedQuery(cmd, &app.App{DefaultRepo: "me/chord", AutoFilter: true, Dir: "/b/.furrow"}, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestScopedQuery_ExplicitEmptyRepoEscapes(t *testing.T) {
 
 func TestScopedQuery_NoDefaultRepo(t *testing.T) {
 	cmd := queryCmd()
-	o, _ := scopedQuery(cmd, &app.App{DefaultRepo: "", AutoFilter: true, Dir: "/b/.furrow"}, "", "")
+	o, _ := scopedQuery(cmd, &app.App{DefaultRepo: "", AutoFilter: true, Dir: "/b/.furrow"}, "", "", "")
 	if o.ScopeRepo != "" {
 		t.Errorf("scope = %q, want empty", o.ScopeRepo)
 	}

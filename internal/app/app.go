@@ -884,20 +884,14 @@ type QueryOpts struct {
 	// apply; only the source index changes.
 	Archived bool
 	// Epic is an explicit -e filter, ALREADY resolved to an epic id; "" = none.
-	// It is STRICT: unlike the active-epic scope below it has no carve-out for
-	// unfiled tasks, because naming a box means you want that box.
+	// It is STRICT: unlike Next's implicit active-epic scope it has no carve-out
+	// for unfiled tasks, because naming a box means you want that box.
 	Epic string
-	// EpicScope is `next`'s implicit active-epic scope, and a tri-state on
-	// purpose: nil = no epic scoping at all (every read but next), non-nil ""
-	// = scoping was requested but nothing is active (match NOTHING — the
-	// deliberate empty result that sends you to `furrow epic ls`), non-nil id =
-	// that box, plus the unfiled carve-out. Collapsing the last two into "" would
-	// silently turn "no box open" into "show me the unfiled pile".
-	EpicScope *string
-	// AllEpics is the `--all-epics` escape hatch: ignore the active-epic scope and
-	// read the whole board. Stepping outside the box is allowed — it just has to
-	// leave a trace in the shell history, which is what makes the scope a
-	// mechanism rather than a convention.
+	// AllEpics is the `--all-epics` escape hatch: ignore Next's active-epic scope
+	// and read the whole board. Stepping outside the box is allowed — it just has
+	// to leave a trace in the shell history, which is what makes the scope a
+	// mechanism rather than a convention. Only Next reads it (the scope itself is
+	// computed inside Next — see NextScope).
 	AllEpics bool
 	// Actionable / Blocked are the `ls` derived-state filters, orthogonal to (and
 	// ANDing with) the lane/label/repo scope. Actionable keeps only tasks `furrow
@@ -940,6 +934,12 @@ func (o QueryOpts) match(t *core.Task) bool {
 		return false
 	}
 	if o.Until != nil && t.Updated.After(*o.Until) {
+		return false
+	}
+	// The explicit -e filter is strict membership (a task's epic is 0..1, so this
+	// is equality, not set containment). It applies before the draft short-circuit:
+	// a draft can be filed in a box, and `-e travel --drafts` means both.
+	if o.Epic != "" && t.Epic != o.Epic {
 		return false
 	}
 	if o.Drafts {
@@ -1108,10 +1108,21 @@ func validateSortField(field string) error {
 
 // Next returns the actionable tasks in canonical order — the work that is ready
 // to pick up: status in the configured next-lanes ([next].lanes, default
-// ready+in-progress) AND every dependency already done AND not a container type
-// (an epic is a box, not work — surface boxes with o.IncludeContainers). The
-// query's filters restrict the result with the same semantics as List.
+// ready+in-progress) AND every dependency already done. The query's filters
+// restrict the result with the same semantics as List.
+//
+// On a board that has declared at least one epic, the result is ALSO scoped to
+// the active epic(s) for the read's repo scope, plus the unfiled pile (see
+// NextScope) — the mechanism that keeps a session on the declared focus. The
+// active epics' tasks come first (they ARE the focus; the unfiled rescue rides
+// behind), canonical order within each half. An engaged scope with nothing
+// active matches NOTHING: "no box open" must not silently degrade into "show me
+// the unfiled pile". An explicit -e (o.Epic) or --all-epics bypasses the scope.
 func (a *App) Next(o QueryOpts) ([]core.Task, error) {
+	scope, err := a.NextScope(o)
+	if err != nil {
+		return nil, err
+	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -1143,14 +1154,25 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []core.Task
+	// With the scope engaged, focus (active-epic members) and rescue (unfiled)
+	// collect separately so focus leads the result regardless of canonical
+	// interleaving; the limit therefore applies AFTER the partition, so `-n1`
+	// hands you the focus, not whatever unfiled task sorts first.
+	var out, rescue []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
 		if !o.match(t) {
 			continue
 		}
-		// "Ready" = in a next lane AND every dep done. The container is excluded
-		// unless --containers is set (a box is not work) — the same rule
+		if scope.Engaged {
+			if len(scope.Active) == 0 {
+				break // nothing is active: deliberately empty, never the unfiled pile
+			}
+			if t.Epic != "" && !scope.Active[t.Epic] {
+				continue
+			}
+		}
+		// "Ready" = in a next lane AND every dep done — the same rule
 		// App.actionable/workable encode, expressed here against the (possibly
 		// overridden) lane set so `ls --tree`'s ★ and a plain `next` still agree.
 		ready := inNextLane(t.Status) && idx.Actionable(t, a.Cfg.Terminal, doneIDs)
@@ -1166,10 +1188,18 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 				continue
 			}
 		}
+		if scope.Engaged && t.Epic == "" {
+			rescue = append(rescue, *t)
+			continue
+		}
 		out = append(out, *t)
-		if o.Limit > 0 && len(out) >= o.Limit {
+		if !scope.Engaged && o.Limit > 0 && len(out) >= o.Limit {
 			break
 		}
+	}
+	out = append(out, rescue...)
+	if o.Limit > 0 && len(out) > o.Limit {
+		out = out[:o.Limit]
 	}
 	return out, nil
 }

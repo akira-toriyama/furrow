@@ -406,6 +406,56 @@ func (a *App) ActiveEpicIDs(repo string) ([]string, error) {
 	return out, nil
 }
 
+// EpicScope is how Next scoped (or will scope) a read — exposed so the CLI can
+// explain an empty result without re-deriving the rule.
+type EpicScope struct {
+	// Engaged reports whether the active-epic scope applies at all. It is false
+	// when the read carries an explicit -e or --all-epics (both bypass the
+	// scope), and — deliberately — on a board with no epics at all: a board that
+	// never declared a box is not participating, and scoping it would make every
+	// `furrow next` empty until an epic exists. Declaring the first box is what
+	// switches the discipline on (the same rule epic-required/epic-no-active
+	// follow in lint).
+	Engaged bool
+	// Active is the set of open+active epic ids for the read's repo scope
+	// (o.Repo, else o.ScopeRepo, else board-wide). Empty while Engaged means
+	// "a participating board with no box open": Next matches NOTHING.
+	Active map[string]bool
+}
+
+// NextScope computes the active-epic scope Next will apply to o. One epic is
+// active per repo, so a repo-scoped read sees at most one id; a board-wide read
+// (`-r ''`) sees every repo's active box — their union, not an error, since a
+// cross-repo listing has no single focus to pick.
+func (a *App) NextScope(o QueryOpts) (EpicScope, error) {
+	if o.Epic != "" || o.AllEpics {
+		return EpicScope{}, nil
+	}
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return EpicScope{}, err
+	}
+	if len(epics) == 0 {
+		return EpicScope{}, nil
+	}
+	repo := o.Repo
+	if repo == "" {
+		repo = o.ScopeRepo
+	}
+	s := EpicScope{Engaged: true, Active: map[string]bool{}}
+	for i := range epics {
+		e := &epics[i]
+		if !e.Active || !e.IsOpen() {
+			continue
+		}
+		if repo != "" && !anyRepoMatch(e.Repos, []string{repo}) {
+			continue
+		}
+		s.Active[e.ID] = true
+	}
+	return s, nil
+}
+
 // ResolveEpic turns a user-supplied reference into an epic id, shaped exactly
 // like ResolveRepo so `-e` is as typo-safe as `-r`: an exact id, else a unique id
 // prefix, else a unique case-folded title substring. Anything ambiguous or absent

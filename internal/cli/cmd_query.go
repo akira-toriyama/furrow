@@ -15,6 +15,7 @@ func newLsCmd() *cobra.Command {
 		status     []string
 		label      []string
 		repo       string
+		epicRef    string
 		limit      int
 		drafts     bool
 		since      string
@@ -23,16 +24,14 @@ func newLsCmd() *cobra.Command {
 		reverse    bool
 		archived   bool
 		tree       bool
-		typ        string
-		progRec    bool
 		actionable bool
 		blocked    bool
 		queryStr   string
 	)
 	cmd := &cobra.Command{
-		Use:     "ls [<id>]",
+		Use:     "ls [<epic>]",
 		Aliases: []string{"list"},
-		Short:   "List tasks (canonical lane->priority->id order), or draw the hierarchy with --tree",
+		Short:   "List tasks (canonical lane->priority->id order), or group them by epic with --tree",
 		Long: "List tasks in canonical lane->priority->id order (or reordered with\n" +
 			"--sort). --since/--until window by the updated timestamp (a bare\n" +
 			"YYYY-MM-DD, or a full RFC3339 instant; a bare --until includes the whole\n" +
@@ -40,25 +39,26 @@ func newLsCmd() *cobra.Command {
 			"first; --reverse flips it, and an unset value/effort stays last either\n" +
 			"way); with --sort, -n takes the top N of the sorted set.\n\n" +
 			"Every row carries a one-character state glyph: ★ actionable (a next lane,\n" +
-			"every dep done — exactly what `furrow next` would hand you), ✓ done, ~ parked\n" +
-			"(a terminal lane that is not done), ▣ a container box, · open but not\n" +
-			"available. Filter on it with --actionable (only ★) or --blocked (only rows\n" +
-			"with an unsatisfied dependency); both AND with -s/-l/-r — e.g. `-s ready\n" +
-			"--blocked` is the ready rows that are actually stuck. --json/--ndjson add\n" +
-			"actionable, blocked_by, container, and stuck to each row.\n\n" +
-			"--tree draws the parent hierarchy instead of a flat table: one tree per\n" +
-			"top-level task, or the subtree under <id> when given. Every filter still\n" +
-			"applies, and the forest is built over what matched — a task whose parent was\n" +
-			"filtered out becomes a root rather than disappearing, so --tree never shows\n" +
-			"fewer tasks than the same flags without it. With --tree, -n caps the number\n" +
-			"of TREES (never the tasks: truncating mid-hierarchy would amputate children\n" +
-			"from the trees it did show).\n\n" +
-			"The tree carries the two facts a flat list can't: a ★ marks a task `furrow\n" +
-			"next` would hand you right now (in a next lane, every dep done), and a\n" +
-			"blocked task names what is in its way. Glyphs: ★ actionable, ✓ done, ~ parked\n" +
-			"(a terminal lane that is not done), · open but not available. --json nests\n" +
-			"children and adds `actionable` + `blocked_by` to each node; --ndjson streams\n" +
-			"one whole tree per line.",
+			"every dep done — ready to pick up; `furrow next` additionally scopes to the\n" +
+			"active epic, so ★ is a superset of what next hands you), ✓ done, ~ parked\n" +
+			"(a terminal lane that is not done), · open but not available. Filter on it\n" +
+			"with --actionable (only ★) or --blocked (only rows with an unsatisfied\n" +
+			"dependency); both AND with -s/-l/-r — e.g. `-s ready --blocked` is the\n" +
+			"ready rows that are actually stuck. -e <epic> keeps only that box's members\n" +
+			"(strict: the unfiled pile needs `-q no:epic`, not a box name).\n" +
+			"--json/--ndjson add actionable and blocked_by to each row.\n\n" +
+			"--tree groups the rows by epic instead of a flat table: the active epic\n" +
+			"first, then open epics by id, then closed ones, then the unfiled group —\n" +
+			"or a single box's group when an <epic> argument is given. Every filter\n" +
+			"still applies, and the grouping is built over what matched, so --tree\n" +
+			"never shows fewer tasks than the same flags without it. With --tree, -n\n" +
+			"caps the number of GROUPS (never the tasks: truncating mid-group would\n" +
+			"amputate members from a box it did show). Each group carries the epic's\n" +
+			"member progress ({done,total}, counted over the FULL board so a filter\n" +
+			"can't under-count the box) and a stuck flag (open members but no\n" +
+			"actionable one). --json nests tasks under their group and adds\n" +
+			"`actionable` + `blocked_by` to each node; --ndjson streams one whole\n" +
+			"group per line.",
 		Example: "  furrow ls                 # this repo's board, canonical order\n" +
 			"  furrow ls -s ready --json\n" +
 			"  furrow ls -s inbox,backlog     # comma = OR within a field\n" +
@@ -70,8 +70,9 @@ func newLsCmd() *cobra.Command {
 			"  furrow ls -s ready --blocked   # ready rows that are actually stuck\n" +
 			"  furrow ls -q 'is:actionable value:>=4'   # typed query (see -q below)\n" +
 			"  furrow ls -q 'label:cli,dx -status:done updated:>=-2w'\n" +
-			"  furrow ls --tree          # the hierarchy, ★ = pick this up now\n" +
-			"  furrow ls --tree t-k3m9p  # just what leads to (and hangs under) that goal",
+			"  furrow ls -e travel       # only that box's members\n" +
+			"  furrow ls --tree          # the board grouped by epic, ★ = ready now\n" +
+			"  furrow ls --tree e-k3m9   # just that box's group",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("tree") {
 				return cobra.MaximumNArgs(1)(cmd, args)
@@ -86,7 +87,7 @@ func newLsCmd() *cobra.Command {
 			if drafts && cmd.Flags().Changed("repo") {
 				return core.Validationf("", "--drafts cannot be combined with -r/--repo (a draft has no repo)")
 			}
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo)
+			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
 			if err != nil {
 				return err
 			}
@@ -141,9 +142,8 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sortBy, "sort", "", "reorder by updated|created|value|effort (default: canonical lane->priority->id)")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "reverse the --sort direction (oldest/lowest first; unset value/effort stay last)")
 	cmd.Flags().BoolVar(&archived, "archived", false, "list from the archive store (.furrow/archive/) instead of the hot board")
-	cmd.Flags().BoolVar(&tree, "tree", false, "draw the parent hierarchy (★ = actionable now); with an <id>, just that subtree")
-	cmd.Flags().StringVar(&typ, "type", "", "filter by work-item type (a value from [types].order, e.g. epic; unknown = exit 2 + candidates)")
-	cmd.Flags().BoolVar(&progRec, "progress-recursive", false, "with --tree, roll up container progress over the whole subtree (default: direct children only)")
+	cmd.Flags().BoolVar(&tree, "tree", false, "group the rows by epic (★ = actionable now); with an <epic> argument, just that box's group")
+	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict — no unfiled carve-out)")
 	cmd.Flags().BoolVar(&actionable, "actionable", false, "only tasks `furrow next` would hand you now (★: a next lane, every dep done); ANDs with -s/-l/-r")
 	cmd.Flags().BoolVar(&blocked, "blocked", false, "only tasks with an unsatisfied dependency (a non-empty blocked_by); ANDs with -s/-l/-r")
 	addQueryFlag(cmd, &queryStr)
@@ -161,7 +161,7 @@ func newLsCmd() *cobra.Command {
 func addQueryFlag(cmd *cobra.Command, p *string) {
 	cmd.Flags().StringVarP(p, "query", "q", "",
 		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
-			"is:actionable|blocked|stuck|stale|open|closed|draft|container, "+
+			"is:actionable|blocked|stale|open|closed|draft|unfiled, "+
 			"ordinals+dates with >=,<,.. (updated:>=-2w), graph child-of:/depends-on:/blocks:, "+
 			"free text over title+body; ANDs with the other filters")
 }
@@ -311,6 +311,7 @@ func newNextCmd() *cobra.Command {
 	var (
 		label    []string
 		repo     string
+		epicRef  string
 		limit    int
 		allEpics bool
 		lanes    []string
@@ -318,15 +319,20 @@ func newNextCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "next",
-		Short: "Show actionable tasks (in the next-lanes, all deps done)",
+		Short: "Show actionable tasks (in the next-lanes, all deps done, in the active epic)",
 		Long: "List the tasks ready to pick up: status in the configured next-lanes\n" +
 			"([next].lanes in config.toml, default ready + in-progress) and with every\n" +
-			"dependency already in the done lane, in canonical order. Container types\n" +
-			"Results are scoped to the ACTIVE epic for the repo (plus tasks filed under\n" +
-			"no epic); --all-epics ignores that scope. Use --repo to\n" +
-			"restrict to a repo (a unique short name works) and --label to AND a tag\n" +
-			"filter on top. An empty result is healthy (nothing to pick up right now)\n" +
-			"and exits 0 — the same contract as ls/revisit.\n\n" +
+			"dependency already in the done lane, in canonical order.\n\n" +
+			"On a board that has declared at least one epic, the result is ALSO scoped\n" +
+			"to the ACTIVE epic for the repo, plus tasks filed under no epic — the\n" +
+			"active box's tasks first, then the unfiled pile. With no active epic the\n" +
+			"result is deliberately EMPTY (exit 0, a stderr hint): pick a box with\n" +
+			"`furrow epic activate <id>`. -e <epic> reads one box explicitly (strict —\n" +
+			"no unfiled carve-out) and --all-epics ignores the scope entirely; a board\n" +
+			"with no epics at all is not participating and behaves classically. Use\n" +
+			"--repo to restrict to a repo (a unique short name works) and --label to\n" +
+			"AND a tag filter on top. An empty result is healthy (nothing to pick up\n" +
+			"right now) and exits 0 — the same contract as ls/revisit.\n\n" +
 			"--lanes <csv> overrides which lanes count as \"now\" for THIS call only,\n" +
 			"leaving [next].lanes in config untouched (non-destructive): `next --lanes\n" +
 			"backlog,ready` surfaces a no-dependency backlog task you could start now\n" +
@@ -337,8 +343,9 @@ func newNextCmd() *cobra.Command {
 			"-q ANDs a typed query onto the actionable set — the same language as `ls -q`\n" +
 			"(qualifiers, dates, has:/no:, is:, graph edges, free text over title+body) —\n" +
 			"so `next -q 'value:>=4'` is \"what can I pick up now that is worth a lot\".",
-		Example: "  furrow next               # what to pick up now\n" +
+		Example: "  furrow next               # what to pick up now (active epic + unfiled)\n" +
 			"  furrow next -n1 --json    # just the top task, with a reason\n" +
+			"  furrow next -e travel     # one box explicitly, active or not\n" +
 			"  furrow next --all-epics   # ignore the active-epic scope\n" +
 			"  furrow next --lanes backlog,ready   # temporarily widen the lanes considered\n" +
 			"  furrow next -q 'value:>=4 -label:chore'   # ready AND worth it\n" +
@@ -349,7 +356,7 @@ func newNextCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo)
+			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
 			if err != nil {
 				return err
 			}
@@ -377,6 +384,7 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 			hintHiddenDrafts(o, a.Next)
+			hintEpicScope(a, o, tasks)
 			// "nothing actionable" is a healthy empty result -> exit 0 (same as
 			// ls/revisit). --json/--ndjson attach a reason per task.
 			return emitActionable(tasks)
@@ -384,6 +392,7 @@ func newNextCmd() *cobra.Command {
 	}
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
+	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "read one box explicitly, active or not (id, unique id prefix, or unique title substring; strict — no unfiled carve-out)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; use -n1 for just the top)")
 	cmd.Flags().BoolVar(&allEpics, "all-epics", false, "ignore the active-epic scope and consider the whole board")
 	cmd.Flags().StringArrayVar(&lanes, "lanes", nil, "override [next].lanes for THIS call (OR; comma-separated or repeated; unknown lane = exit 2 + candidates); config untouched")
@@ -423,7 +432,7 @@ func newBriefCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo)
+			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, "")
 			if err != nil {
 				return err
 			}
@@ -454,6 +463,7 @@ func newRevisitCmd() *cobra.Command {
 	var (
 		label     []string
 		repo      string
+		epicRef   string
 		limit     int
 		staleDays int
 		queryStr  string
@@ -488,7 +498,7 @@ func newRevisitCmd() *cobra.Command {
 			if cmd.Flags().Changed("stale-days") {
 				days = staleDays
 			}
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo)
+			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
 			if err != nil {
 				return err
 			}
@@ -508,6 +518,7 @@ func newRevisitCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
+	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict)")
 	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
 	addQueryFlag(cmd, &queryStr)
 	return cmd
@@ -518,6 +529,7 @@ func newStatsCmd() *cobra.Command {
 		status   []string
 		label    []string
 		repo     string
+		epicRef  string
 		queryStr string
 	)
 	cmd := &cobra.Command{
@@ -544,7 +556,7 @@ func newStatsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo)
+			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
 			if err != nil {
 				return err
 			}
@@ -560,6 +572,7 @@ func newStatsCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "scope to a repo (owner/repo or a unique short name; '' = whole board)")
+	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict)")
 	addQueryFlag(cmd, &queryStr)
 	return cmd
 }
@@ -569,6 +582,7 @@ func newSearchCmd() *cobra.Command {
 		status   []string
 		label    []string
 		repo     string
+		epicRef  string
 		limit    int
 		queryStr string
 		archived bool
@@ -605,7 +619,7 @@ func newSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo)
+			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
 			if err != nil {
 				return err
 			}
@@ -624,6 +638,7 @@ func newSearchCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
+	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict)")
 	cmd.Flags().BoolVar(&archived, "archived", false, "search the archive store instead of the hot board (same meaning as on ls/show)")
 	addQueryFlag(cmd, &queryStr)
 	return cmd
