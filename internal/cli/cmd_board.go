@@ -148,11 +148,7 @@ func printBoardHuman(b app.BoardInfo) {
 	fmt.Fprintf(out, "default:  %s\n", b.DefaultLane)
 	fmt.Fprintf(out, "done:     %s\n", b.DoneLane)
 	fmt.Fprintf(out, "terminal: %s\n", strings.Join(b.Terminal, ", "))
-	containers := strings.Join(b.Containers, ", ")
-	if containers == "" {
-		containers = "(none)"
-	}
-	fmt.Fprintf(out, "types:    %s (default: %s, containers: %s)\n", strings.Join(b.Types, ", "), b.DefaultType, containers)
+	fmt.Fprintf(out, "epic id:  %s\n", b.EpicIDPrefix)
 	fmt.Fprintf(out, "schema:   %s\n", schemaLine(b))
 	if line := boardGitLine(b.Git); line != "" {
 		fmt.Fprintf(out, "git:      %s\n", line)

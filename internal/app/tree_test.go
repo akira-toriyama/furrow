@@ -2,380 +2,239 @@ package app
 
 import (
 	"testing"
-
-	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// treeIDs flattens a forest depth-first — the order the human renderer prints.
-func treeIDs(nodes []TreeNode) []string {
-	var out []string
-	for _, n := range nodes {
-		out = append(out, n.Task.ID)
-		out = append(out, treeIDs(n.Children)...)
+// groupIDs names the groups a Tree call produced, in order, using "(none)" for
+// the trailing unfiled group — so a test can assert the ORDER, which is the one
+// property a map-backed implementation would get wrong intermittently.
+func groupIDs(gs []TreeGroup) []string {
+	out := make([]string, 0, len(gs))
+	for _, g := range gs {
+		if g.Epic == nil {
+			out = append(out, "(none)")
+			continue
+		}
+		out = append(out, g.Epic.ID)
 	}
 	return out
 }
 
-func findNode(nodes []TreeNode, id string) *TreeNode {
-	for i := range nodes {
-		if nodes[i].Task.ID == id {
-			return &nodes[i]
-		}
-		if n := findNode(nodes[i].Children, id); n != nil {
-			return n
+func taskTitles(g TreeGroup) []string {
+	out := make([]string, 0, len(g.Tasks))
+	for _, n := range g.Tasks {
+		out = append(out, n.Task.Title)
+	}
+	return out
+}
+
+func findGroup(gs []TreeGroup, id string) *TreeGroup {
+	for i := range gs {
+		if gs[i].Epic != nil && gs[i].Epic.ID == id {
+			return &gs[i]
 		}
 	}
 	return nil
 }
 
-// treeFind builds the whole forest and returns the node for id (t.Fatal if absent).
-func treeFind(t *testing.T, a *App, id string, recursive bool) *TreeNode {
-	t.Helper()
-	nodes, err := a.Tree(QueryOpts{}, "", recursive)
+// The tree groups tasks by epic and orders the groups: active box first, then the
+// other open boxes by id, then closed ones, then the unfiled tasks. That order is
+// the reader's attention order, and it must be total — a tie would make two runs
+// print differently.
+func TestTreeGroupsAndOrder(t *testing.T) {
+	a := newApp()
+	active := mustEpic(t, a, "active box", EpicAddOpts{Repos: []string{"o/r"}})
+	other := mustEpic(t, a, "other box", EpicAddOpts{})
+	closed := mustEpic(t, a, "closed box", EpicAddOpts{})
+	mustActivate(t, a, active)
+	if _, _, err := a.EpicDone(closed); err != nil {
+		t.Fatal(err)
+	}
+
+	mustAdd(t, a, "in active", AddOpts{Epic: active})
+	mustAdd(t, a, "in other", AddOpts{Epic: other})
+	mustAdd(t, a, "in closed", AddOpts{Epic: closed})
+	mustAdd(t, a, "unfiled", AddOpts{})
+
+	groups, err := a.Tree(QueryOpts{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := findNode(nodes, id)
-	if n == nil {
-		t.Fatalf("node %s not found in tree", id)
+	got := groupIDs(groups)
+	want := []string{active, other, closed, "(none)"}
+	if len(got) != len(want) {
+		t.Fatalf("groups = %v, want %v", got, want)
 	}
-	return n
-}
-
-// TestTreeContainerProgressAndStuck pins t-3jd1 §3(c/d): a container shows rolled-up
-// child progress and is "stuck" when it has open work but no actionable descendant.
-func TestTreeContainerProgressAndStuck(t *testing.T) {
-	a := newApp()
-	mk := func(title string, o AddOpts) string {
-		task, err := a.Add(title, o)
-		if err != nil {
-			t.Fatal(err)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("group %d = %s, want %s (active, open, closed, unfiled)", i, got[i], want[i])
 		}
-		return task.ID
 	}
-	epic := mk("epic", AddOpts{Type: "epic", Status: "backlog"})
-	mk("done child", AddOpts{Parent: epic, Status: "done"})
-	back := mk("backlog child", AddOpts{Parent: epic, Status: "backlog"})
-
-	e := treeFind(t, a, epic, false)
-	if !e.Container {
-		t.Error("a type=epic task must be a container")
-	}
-	if e.Progress == nil || e.Progress.Done != 1 || e.Progress.Total != 2 {
-		t.Errorf("progress = %+v, want 1/2", e.Progress)
-	}
-	if !e.Stuck {
-		t.Error("an epic with an open child and no actionable descendant must be stuck")
-	}
-
-	// Moving the open child into a next lane gives the box an actionable descendant.
-	if _, err := a.Move(back, "ready"); err != nil {
-		t.Fatal(err)
-	}
-	if treeFind(t, a, epic, false).Stuck {
-		t.Error("an epic with a ready (actionable) descendant must NOT be stuck")
+	if g := findGroup(groups, active); g == nil || !g.Active {
+		t.Error("the active box's group must report Active")
 	}
 }
 
-// TestTreeStuckRecursesThroughSubEpics pins the design's §3(c) clarification: stuck
-// walks the whole subtree, so a top epic whose only actionable work sits under a
-// SUB-epic is not stuck. And a freshly-declared empty epic is never stuck.
-func TestTreeStuckRecursesThroughSubEpics(t *testing.T) {
+// An unfiled task is drawn in a trailing "(none)" group, never dropped. A tree
+// that showed fewer tasks than the same flags without --tree would be worse than
+// one with an extra group, and unfiled tasks are a lint error the reader has to
+// be able to SEE in order to fix.
+func TestTreeKeepsUnfiledTasks(t *testing.T) {
 	a := newApp()
-	mk := func(title string, o AddOpts) string {
-		task, err := a.Add(title, o)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return task.ID
-	}
-	top := mk("top epic", AddOpts{Type: "epic", Status: "backlog"})
-	sub := mk("sub epic", AddOpts{Type: "epic", Status: "backlog", Parent: top})
-	mk("ready leaf", AddOpts{Status: "ready", Parent: sub})
+	mustAdd(t, a, "orphan", AddOpts{})
 
-	if treeFind(t, a, top, false).Stuck {
-		t.Error("a top epic with a ready leaf under a sub-epic must NOT be stuck (stuck recurses through containers)")
-	}
-
-	empty := mk("empty epic", AddOpts{Type: "epic", Status: "backlog"})
-	ee := treeFind(t, a, empty, false)
-	if ee.Progress == nil || ee.Progress.Total != 0 {
-		t.Errorf("empty epic progress = %+v, want 0/0", ee.Progress)
-	}
-	if ee.Stuck {
-		t.Error("an empty epic (zero children) must NOT be stuck — it is a fresh declaration, not a stalled box")
-	}
-}
-
-// TestTreeRollupIgnoresReadFilter pins the review fix: a container's progress/stuck
-// roll up over its REAL children (the full index), NOT the filtered/rendered
-// subtree. So `ls --tree --type epic` (which filters the task-typed children out of
-// the drawing) must still report the epic's true child count and stuck state — the
-// same full-index basis Actionable/BlockedBy already use.
-func TestTreeRollupIgnoresReadFilter(t *testing.T) {
-	a := newApp()
-	mk := func(title string, o AddOpts) string {
-		task, err := a.Add(title, o)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return task.ID
-	}
-	epic := mk("epic", AddOpts{Type: "epic", Status: "backlog"})
-	mk("task child", AddOpts{Parent: epic, Status: "backlog"}) // task-typed, open, not actionable
-
-	// Filter to epics only: the child is excluded from what the tree DRAWS.
-	nodes, err := a.Tree(QueryOpts{Type: "epic"}, "", false)
+	groups, err := a.Tree(QueryOpts{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := findNode(nodes, epic)
-	if e == nil {
-		t.Fatal("the epic must appear in a --type epic tree")
+	if len(groups) != 1 || groups[0].Epic != nil {
+		t.Fatalf("want a single unfiled group, got %v", groupIDs(groups))
 	}
-	if len(e.Children) != 0 {
-		t.Errorf("the task-typed child must be filtered OUT of the drawing, got %d drawn children", len(e.Children))
+	if titles := taskTitles(groups[0]); len(titles) != 1 || titles[0] != "orphan" {
+		t.Errorf("unfiled group = %v, want [orphan]", titles)
 	}
-	if e.Progress == nil || e.Progress.Total != 1 {
-		t.Errorf("progress must roll up over the REAL child (full index) despite the filter, want total 1, got %+v", e.Progress)
-	}
-	if !e.Stuck {
-		t.Error("the epic has an open non-actionable child, so it must still be stuck even though the child is filtered from the drawing")
+	if groups[0].Progress != nil {
+		t.Error("the unfiled group must carry no progress — 'not in a box' is not progress toward anything")
 	}
 }
 
-// TestTreeProgressRecursive pins the direct-vs-subtree scope of the roll-up.
-func TestTreeProgressRecursive(t *testing.T) {
+// Progress is computed over the FULL index, never the filtered set: a read filter
+// that hides some members must not make a box look finished. This is the
+// regression that matters most about the roll-up, and it is easy to reintroduce
+// by counting the rows you are about to draw.
+func TestTreeProgressIgnoresTheReadFilter(t *testing.T) {
 	a := newApp()
-	mk := func(title string, o AddOpts) string {
-		task, err := a.Add(title, o)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return task.ID
+	box := mustEpic(t, a, "box", EpicAddOpts{})
+	mustAdd(t, a, "m1", AddOpts{Epic: box, Status: "ready"})
+	m2 := mustAdd(t, a, "m2", AddOpts{Epic: box, Status: "ready"})
+	mustAdd(t, a, "m3", AddOpts{Epic: box, Status: "ready"})
+	if _, err := a.Done(m2.ID); err != nil {
+		t.Fatal(err)
 	}
-	top := mk("top", AddOpts{Type: "epic", Status: "backlog"})
-	sub := mk("sub", AddOpts{Type: "epic", Status: "done", Parent: top})
-	mk("leaf done", AddOpts{Status: "done", Parent: sub})
-	mk("leaf open", AddOpts{Status: "backlog", Parent: sub})
 
-	if e := treeFind(t, a, top, false); e.Progress.Done != 1 || e.Progress.Total != 1 {
-		t.Errorf("direct progress = %+v, want 1/1 (the one direct child, done)", e.Progress)
+	// -s ready hides the done member from the DRAWING…
+	groups, err := a.Tree(QueryOpts{Status: "ready"}, "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if e := treeFind(t, a, top, true); e.Progress.Done != 2 || e.Progress.Total != 3 {
-		t.Errorf("recursive progress = %+v, want 2/3 (sub + 2 leaves, two done)", e.Progress)
+	g := findGroup(groups, box)
+	if g == nil {
+		t.Fatal("box group missing")
+	}
+	if len(g.Tasks) != 2 {
+		t.Errorf("drawn tasks = %d, want 2 (the filter applies to the drawing)", len(g.Tasks))
+	}
+	// …but the roll-up still counts all three.
+	if g.Progress == nil || g.Progress.Done != 1 || g.Progress.Total != 3 {
+		t.Errorf("progress = %+v, want {Done:1 Total:3} over the FULL index", g.Progress)
 	}
 }
 
-func TestTreeNestsTheHierarchy(t *testing.T) {
+// A box with open members but not one actionable is stuck — the state `next`
+// structurally cannot show (it would just return empty, which reads as "nothing
+// to do" rather than "everything here is blocked").
+func TestTreeStuck(t *testing.T) {
 	a := newApp()
-	ids := mkParentTasks(t, a, "epic", "slice", "sub-slice", "unrelated")
-	epic, slice, sub, loose := ids[0], ids[1], ids[2], ids[3]
-	if _, err := a.Reparent(slice, epic); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.Reparent(sub, slice); err != nil {
-		t.Fatal(err)
-	}
+	stuck := mustEpic(t, a, "stuck box", EpicAddOpts{})
+	gate := mustAdd(t, a, "gate", AddOpts{Status: "backlog"}) // backlog is not a next lane
+	mustAdd(t, a, "blocked member", AddOpts{Epic: stuck, Status: "ready", Deps: []string{gate.ID}})
 
-	nodes, err := a.Tree(QueryOpts{}, "", false)
+	live := mustEpic(t, a, "live box", EpicAddOpts{})
+	mustAdd(t, a, "ready member", AddOpts{Epic: live, Status: "ready"})
+
+	empty := mustEpic(t, a, "empty box", EpicAddOpts{})
+
+	groups, err := a.Tree(QueryOpts{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 2 {
-		t.Fatalf("want two roots (the epic and the loose task), got %v", treeIDs(nodes))
+	if g := findGroup(groups, stuck); g == nil || !g.Stuck {
+		t.Error("a box whose only open member is blocked must be stuck")
 	}
-	e := findNode(nodes, epic)
-	if e == nil || len(e.Children) != 1 || e.Children[0].Task.ID != slice {
-		t.Fatalf("the slice must nest under the epic: %v", treeIDs(nodes))
+	if g := findGroup(groups, live); g == nil || g.Stuck {
+		t.Error("a box with an actionable member must NOT be stuck")
 	}
-	if len(e.Children[0].Children) != 1 || e.Children[0].Children[0].Task.ID != sub {
-		t.Errorf("the sub-slice must nest two deep: %v", treeIDs(nodes))
-	}
-	if findNode(nodes, loose) == nil {
-		t.Errorf("a parentless task is its own root: %v", treeIDs(nodes))
+	if g := findGroup(groups, empty); g == nil || g.Stuck {
+		t.Error("an empty box must NOT be stuck — declaring it before filling it is legitimate")
 	}
 }
 
-// The star is the point of drawing the tree: it says WHERE the work is available.
-// It must be `next`'s own predicate, not a lookalike.
-func TestTreeStarsExactlyWhatNextWouldHand(t *testing.T) {
+// ls --tree <epic> narrows to one group, and drops the unfiled group: the reader
+// asked about one box, not about the backlog of unfiled work.
+func TestTreeSingleEpic(t *testing.T) {
 	a := newApp()
-	ids := mkParentTasks(t, a, "epic", "gate", "waits on the gate", "still in inbox")
-	epic, gate, waiter, inbox := ids[0], ids[1], ids[2], ids[3]
-	for _, c := range []string{gate, waiter, inbox} {
-		if _, err := a.Reparent(c, epic); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, c := range []string{gate, waiter} {
-		if _, err := a.Move(c, "ready"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := a.AddDeps(waiter, []string{gate}); err != nil {
-		t.Fatal(err)
-	}
+	box := mustEpic(t, a, "the box", EpicAddOpts{})
+	other := mustEpic(t, a, "another box", EpicAddOpts{})
+	mustAdd(t, a, "member", AddOpts{Epic: box})
+	mustAdd(t, a, "elsewhere", AddOpts{Epic: other})
+	mustAdd(t, a, "unfiled", AddOpts{})
 
-	nodes, err := a.Tree(QueryOpts{}, "", false)
+	groups, err := a.Tree(QueryOpts{}, box)
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := a.Next(QueryOpts{})
+	if got := groupIDs(groups); len(got) != 1 || got[0] != box {
+		t.Fatalf("groups = %v, want just %s", got, box)
+	}
+
+	// The reference resolves the same ways -e does: a title substring works too.
+	byTitle, err := a.Tree(QueryOpts{}, "the box")
 	if err != nil {
 		t.Fatal(err)
 	}
-	starred := map[string]bool{}
-	var walk func([]TreeNode)
-	walk = func(ns []TreeNode) {
-		for _, n := range ns {
-			if n.Actionable {
-				starred[n.Task.ID] = true
-			}
-			walk(n.Children)
-		}
-	}
-	walk(nodes)
-
-	if len(next) != 1 || next[0].ID != gate {
-		t.Fatalf("setup: next should hand exactly the gate, got %v", listIDs(next))
-	}
-	if len(starred) != 1 || !starred[gate] {
-		t.Errorf("the tree must star exactly what `next` hands (%s), got %v", gate, starred)
+	if got := groupIDs(byTitle); len(got) != 1 || got[0] != box {
+		t.Errorf("title-substring reference = %v, want just %s", got, box)
 	}
 
-	// And the blocked one says what is in its way — only the deps that are NOT done.
-	w := findNode(nodes, waiter)
-	if w == nil || len(w.BlockedBy) != 1 || w.BlockedBy[0] != gate {
-		t.Fatalf("the waiter must name its blocker, got %+v", w)
-	}
-	if _, err := a.Done(gate); err != nil {
-		t.Fatal(err)
-	}
-	nodes, err = a.Tree(QueryOpts{}, "", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	w = findNode(nodes, waiter)
-	if len(w.BlockedBy) != 0 || !w.Actionable {
-		t.Errorf("once the gate is done the waiter is free and blocked_by empties: %+v", w)
-	}
-	if inboxNode := findNode(nodes, inbox); inboxNode.Actionable {
-		t.Error("an inbox task is not in a next lane, so it is not actionable however free it is")
+	// An unknown reference is an error, never an empty tree that reads like "this
+	// box has nothing in it".
+	if _, err := a.Tree(QueryOpts{}, "no-such-box"); err == nil {
+		t.Error("an unknown epic reference must fail, not draw an empty tree")
 	}
 }
 
-// A tree that showed FEWER tasks than the same filters without it would be lying.
-// A task whose parent was filtered out becomes a root — it is never dropped.
-func TestTreeNeverHidesAMatchWhoseParentWasFiltered(t *testing.T) {
+// -n caps the number of GROUPS, never the tasks: a limit that truncated
+// mid-group would silently amputate members from a box it did show.
+func TestTreeLimitCapsGroups(t *testing.T) {
 	a := newApp()
-	ids := mkParentTasks(t, a, "epic stays in inbox", "child is ready")
-	epic, child := ids[0], ids[1]
-	if _, err := a.Reparent(child, epic); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"box a", "box b", "box c"} {
+		id := mustEpic(t, a, name, EpicAddOpts{})
+		mustAdd(t, a, name+" m1", AddOpts{Epic: id})
+		mustAdd(t, a, name+" m2", AddOpts{Epic: id})
 	}
-	if _, err := a.Move(child, "ready"); err != nil {
-		t.Fatal(err)
-	}
-
-	nodes, err := a.Tree(QueryOpts{Status: "ready"}, "", false)
+	groups, err := a.Tree(QueryOpts{Limit: 2}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := treeIDs(nodes)
-	if len(got) != 1 || got[0] != child {
-		t.Errorf("the child matched the filter and must appear as a root, got %v", got)
+	if len(groups) != 2 {
+		t.Fatalf("groups = %d, want 2", len(groups))
+	}
+	for _, g := range groups {
+		if len(g.Tasks) != 2 {
+			t.Errorf("group %s drew %d tasks, want both members (the limit caps groups, not tasks)", g.Epic.ID, len(g.Tasks))
+		}
 	}
 }
 
-// -n caps TREES, not tasks: truncating mid-hierarchy would amputate children from
-// the very trees it did show.
-func TestTreeLimitCapsRootsNotTasks(t *testing.T) {
+// ★ is the TASK-level predicate and is deliberately NOT epic-scoped, so it stays
+// a strict superset of what `next` hands you. A glyph whose meaning shifted with
+// whichever box happens to be open could not be read at a glance.
+func TestTreeStarIsNotEpicScoped(t *testing.T) {
 	a := newApp()
-	ids := mkParentTasks(t, a, "epic", "a", "b", "c", "second epic")
-	epic := ids[0]
-	for _, c := range ids[1:4] {
-		if _, err := a.Reparent(c, epic); err != nil {
-			t.Fatal(err)
-		}
-	}
+	active := mustEpic(t, a, "active box", EpicAddOpts{Repos: []string{"o/r"}})
+	other := mustEpic(t, a, "other box", EpicAddOpts{})
+	mustActivate(t, a, active)
+	mustAdd(t, a, "in active", AddOpts{Epic: active, Status: "ready"})
+	mustAdd(t, a, "in other", AddOpts{Epic: other, Status: "ready"})
 
-	nodes, err := a.Tree(QueryOpts{Limit: 1}, "", false)
+	groups, err := a.Tree(QueryOpts{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 1 {
-		t.Fatalf("-n 1 must yield one TREE, got %d", len(nodes))
+	g := findGroup(groups, other)
+	if g == nil || len(g.Tasks) != 1 {
+		t.Fatal("other box's member missing")
 	}
-	if len(nodes[0].Children) != 3 {
-		t.Errorf("the tree it did show must be whole (3 children), got %d", len(nodes[0].Children))
-	}
-}
-
-func TestTreeRootArgumentAndItsErrors(t *testing.T) {
-	a := newApp()
-	ids := mkParentTasks(t, a, "epic", "slice", "elsewhere")
-	epic, slice := ids[0], ids[1]
-	if _, err := a.Reparent(slice, epic); err != nil {
-		t.Fatal(err)
-	}
-
-	nodes, err := a.Tree(QueryOpts{}, epic, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := treeIDs(nodes); len(got) != 2 || got[0] != epic || got[1] != slice {
-		t.Errorf("a root id draws just that subtree, got %v", got)
-	}
-
-	// An unknown id is a MISS (exit 1).
-	if _, err := a.Tree(QueryOpts{}, "t-404", false); core.AsError(err) == nil || core.AsError(err).Code != core.CodeNotFound {
-		t.Errorf("an unknown root is exit 1, got %v", err)
-	}
-	// An id that EXISTS but the filters exclude is a validation error — an empty
-	// tree would read as "this task has nothing under it", which is a different fact.
-	if _, err := a.Tree(QueryOpts{Status: "done"}, epic, false); core.AsError(err) == nil || core.AsError(err).Code != core.CodeValidation {
-		t.Errorf("a filtered-out root must say so (exit 2), got %v", err)
-	}
-}
-
-// A parent cycle can only arrive by a git merge of two half-edges (Reparent refuses
-// one, lint reports it). Every task in it has a parent, so none is a root — a naive
-// forest would silently DROP them all. Render them, truncated at the loop.
-func TestTreeSurvivesAParentCycleMergedInBehindUs(t *testing.T) {
-	a := newApp()
-	ids := mkParentTasks(t, a, "a", "b", "innocent bystander")
-	x, y, z := ids[0], ids[1], ids[2]
-
-	idx, err := a.Store.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tx, _ := idx.Find(x)
-	ty, _ := idx.Find(y)
-	tx.Parent, ty.Parent = y, x
-	if err := a.Store.Save(idx); err != nil {
-		t.Fatal(err)
-	}
-
-	done := make(chan []string, 1)
-	go func() {
-		nodes, err := a.Tree(QueryOpts{}, "", false)
-		if err != nil {
-			done <- nil
-			return
-		}
-		done <- treeIDs(nodes)
-	}()
-	got := <-done // if the walker looped, the test times out here rather than hanging a user
-
-	seen := map[string]bool{}
-	for _, id := range got {
-		seen[id] = true
-	}
-	for _, id := range []string{x, y, z} {
-		if !seen[id] {
-			t.Errorf("a corrupt hierarchy must still render every task (%s missing): %v", id, got)
-		}
+	if !g.Tasks[0].Actionable {
+		t.Error("a ready task outside the active box must still be ★ — ls is the board-wide view")
 	}
 }

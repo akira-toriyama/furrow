@@ -14,7 +14,7 @@ import (
 // enforces that, and this test is what tells you it is about to.
 func TestTopLevelKeysFrozen(t *testing.T) {
 	want := []string{
-		"lanes", "priority", "ids", "archive", "ui", "next", "types",
+		"lanes", "priority", "ids", "archive", "ui", "next",
 		"labels", "revisit", "review", "lint", "alias", "standalone",
 	}
 	got := TopLevelKeys()

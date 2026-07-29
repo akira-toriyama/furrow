@@ -37,11 +37,12 @@ func newSchemaCmd() *cobra.Command {
 		Long: "Print the JSON Schema (draft 2020-12) for the store's files. With no\n" +
 			"argument (or \"task\") it prints the schema for one .furrow/tasks/<id>.json\n" +
 			"shard; \"meta\" prints the schema for .furrow/meta.json; \"repo\" prints the\n" +
-			"schema for one .furrow/repos/<owner>__<repo>.json review shard. These are the\n" +
-			"single source of truth; docs/schema/furrow.{task.v2,meta.v2,repo.v1}.json are\n" +
-			"committed copies and CI diffs them so they cannot drift.",
+			"schema for one .furrow/repos/<owner>__<repo>.json review shard; \"epic\" the\n" +
+			"one for .furrow/epics/<id>.json. These are the single source of truth;\n" +
+			"docs/schema/furrow.{task.v2,meta.v2,repo.v1,epic.v1}.json are committed\n" +
+			"copies and CI diffs them so they cannot drift.",
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: []string{"task", "meta", "repo"},
+		ValidArgs: []string{"task", "meta", "repo", "epic"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kind := "task"
 			if len(args) == 1 {
@@ -56,8 +57,10 @@ func newSchemaCmd() *cobra.Command {
 				fmt.Fprint(out, schema.MetaV2)
 			case "repo":
 				fmt.Fprint(out, schema.RepoV1)
+			case "epic":
+				fmt.Fprint(out, schema.EpicV1)
 			default:
-				return core.Validationf("", "unknown schema kind %q (want \"task\", \"meta\", or \"repo\")", kind)
+				return core.Validationf("", "unknown schema kind %q (want \"task\", \"meta\", \"repo\", or \"epic\")", kind)
 			}
 			return nil
 		},

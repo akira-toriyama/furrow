@@ -2,84 +2,113 @@ package app
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// childrenMap indexes tasks by their parent id (pointers into idx.Tasks). The
-// container revisit signals need the hierarchy, which the pure per-task
-// core.RevisitReasons cannot see — this is why they live in the app layer.
-func childrenMap(idx *core.Index) map[string][]*core.Task {
-	m := map[string][]*core.Task{}
+// EpicRevisitItem pairs an epic with the signals it triggered. Epics are
+// reported SEPARATELY from tasks rather than smuggled into RevisitItem: the two
+// are different entities with different ids, and a single list whose rows were
+// sometimes one and sometimes the other would force every consumer to type-switch
+// before it could read a field.
+type EpicRevisitItem struct {
+	Epic    core.Epic
+	Reasons []core.RevisitReason
+}
+
+// epicReasons computes the box-level signals for an OPEN epic:
+//
+//   - epic_all_done — every member is done; consider closing the box
+//   - epic_stuck    — open members, but not one of them actionable
+//   - epic_stale    — an ACTIVE box untouched for staleDays
+//
+// An epic with NO members yields nothing at all: declaring the box before filling
+// it is a legitimate first step, and nagging about it would teach the reader to
+// ignore the signal.
+//
+// all_done and stuck are mutually exclusive by construction (all-done short
+// circuits), but stale is orthogonal and can accompany either — an active box can
+// be both blocked and forgotten, and that is worth saying twice.
+func (a *App) epicReasons(e *core.Epic, idx *core.Index, doneIDs map[string]bool, now time.Time, staleDays int) []core.RevisitReason {
+	if !e.IsOpen() {
+		return nil
+	}
+	var out []core.RevisitReason
+
+	total, open, actionable := 0, 0, 0
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if t.Parent != "" {
-			m[t.Parent] = append(m[t.Parent], t)
-		}
-	}
-	return m
-}
-
-// containerReasons computes the container-only revisit signals for an OPEN
-// container: children_done (has children, all done → consider closing) and
-// stuck_container (open work under it but no actionable descendant). It returns
-// nil for a non-container OR a container with zero children — a freshly-declared
-// empty box must never nag (the flagship "declare the epic first" use-case).
-func (a *App) containerReasons(t *core.Task, kids map[string][]*core.Task, idx *core.Index, doneIDs map[string]bool) []core.RevisitReason {
-	if !a.Cfg.IsContainerType(t.Type) {
-		return nil
-	}
-	children := kids[t.ID]
-	if len(children) == 0 {
-		return nil
-	}
-	allDone := true
-	for _, k := range children {
-		if k.Status != a.Cfg.DoneLane {
-			allDone = false
-			break
-		}
-	}
-	if allDone {
-		return []core.RevisitReason{{Code: core.RevisitChildrenDone, Detail: fmt.Sprintf("all %d children done — consider closing", len(children))}}
-	}
-	// Not all done: it is stuck iff there is open work under it but nothing
-	// actionable anywhere in the subtree (recursing through sub-containers).
-	if a.hasOpenDescendant(t.ID, kids, map[string]bool{}) && !a.hasActionableDescendant(t.ID, kids, idx, doneIDs, map[string]bool{}) {
-		return []core.RevisitReason{{Code: core.RevisitStuckContainer, Detail: "open children but no actionable descendant"}}
-	}
-	return nil
-}
-
-// hasActionableDescendant reports whether any descendant of id is actionable
-// (`next`'s own predicate). seen guards a merged-in parent cycle from looping.
-func (a *App) hasActionableDescendant(id string, kids map[string][]*core.Task, idx *core.Index, doneIDs, seen map[string]bool) bool {
-	for _, k := range kids[id] {
-		if seen[k.ID] {
+		if t.Epic != e.ID {
 			continue
 		}
-		seen[k.ID] = true
-		if a.actionable(idx, k, doneIDs) || a.hasActionableDescendant(k.ID, kids, idx, doneIDs, seen) {
-			return true
-		}
-	}
-	return false
-}
-
-// hasOpenDescendant reports whether any descendant of id sits in a non-terminal
-// lane — genuinely open work, as opposed to parked (done/icebox/waiting).
-func (a *App) hasOpenDescendant(id string, kids map[string][]*core.Task, seen map[string]bool) bool {
-	for _, k := range kids[id] {
-		if seen[k.ID] {
+		total++
+		if a.Cfg.IsTerminal(t.Status) {
 			continue
 		}
-		seen[k.ID] = true
-		if !a.Cfg.IsTerminal(k.Status) || a.hasOpenDescendant(k.ID, kids, seen) {
-			return true
+		open++
+		if a.actionable(idx, t, doneIDs) {
+			actionable++
 		}
 	}
-	return false
+	switch {
+	case total == 0:
+		// A freshly declared box. Nothing to say.
+	case open == 0:
+		out = append(out, core.RevisitReason{Code: core.RevisitEpicAllDone,
+			Detail: fmt.Sprintf("all %d members done — consider closing", total)})
+	case actionable == 0:
+		out = append(out, core.RevisitReason{Code: core.RevisitEpicStuck,
+			Detail: fmt.Sprintf("%d open members but none actionable", open)})
+	}
+
+	// Staleness applies only to the ACTIVE box: a parked epic is SUPPOSED to sit
+	// untouched, so flagging it would make the signal meaningless. The active one
+	// going quiet is exactly the failure this whole feature exists to catch.
+	if e.Active && staleDays > 0 && !e.Updated.IsZero() {
+		if days := int(now.Sub(e.Updated).Hours() / 24); days >= staleDays {
+			out = append(out, core.RevisitReason{Code: core.RevisitEpicStale,
+				Detail: fmt.Sprintf("active but not updated for %d days", days)})
+		}
+	}
+	return out
+}
+
+// RevisitEpics lists the boxes with at least one signal, in EpicList's order
+// (active first). Read-only.
+func (a *App) RevisitEpics(o QueryOpts, staleDays int) ([]EpicRevisitItem, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return nil, err
+	}
+	doneIDs := a.doneSet(idx)
+	now := a.Clock.Now()
+	var out []EpicRevisitItem
+	for i := range epics {
+		e := &epics[i]
+		if o.Repo != "" && !anyRepoMatch(e.Repos, []string{o.Repo}) {
+			continue
+		}
+		if o.ScopeRepo != "" && o.Repo == "" && !anyRepoMatch(e.Repos, []string{o.ScopeRepo}) {
+			continue
+		}
+		if rs := a.epicReasons(e, idx, doneIDs, now, staleDays); len(rs) > 0 {
+			out = append(out, EpicRevisitItem{Epic: *e, Reasons: rs})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, rj := epicRank(out[i].Epic), epicRank(out[j].Epic)
+		if ri != rj {
+			return ri < rj
+		}
+		return out[i].Epic.ID < out[j].Epic.ID
+	})
+	return out, nil
 }
 
 // RevisitItem pairs a task with the re-evaluation signals it triggered. It is the
@@ -92,8 +121,9 @@ type RevisitItem struct {
 
 // Revisit lists open tasks that may need a fresh judgment, in canonical order.
 // It is purely read-only. A task surfaces when it has at least one signal —
-// no_repo, value_unset, effort_unset, stale, dep_done, or (for a container)
-// children_done / stuck_container. Terminal-lane tasks
+// no_repo, value_unset, effort_unset, stale, or dep_done. The three EPIC signals
+// (epic_all_done, epic_stuck, epic_stale) are about a box rather than a task and
+// are reported separately by RevisitEpics. Terminal-lane tasks
 // (done/icebox/waiting) are skipped — there is nothing to re-evaluate about
 // parked or finished work. The query's filters restrict the result like
 // List/Next, with one carve-out: a draft (repos == []) bypasses the board
@@ -106,7 +136,6 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 	}
 	doneIDs := a.doneSet(idx)
 	now := a.Clock.Now()
-	kids := childrenMap(idx)
 	// Compile -q once. It receives THIS call's staleDays (which --stale-days
 	// may have overridden), so `revisit -q is:stale` and revisit's own stale
 	// signal use one threshold within one call.
@@ -124,7 +153,6 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 			continue
 		}
 		reasons := core.RevisitReasons(*t, now, staleDays, doneIDs)
-		reasons = append(reasons, a.containerReasons(t, kids, idx, doneIDs)...)
 		if len(reasons) == 0 {
 			continue
 		}
@@ -161,20 +189,23 @@ type RevisitSummary struct {
 	DepDone    []string         `json:"dep_done"`             // task ids with >=1 dependency in the done lane
 	Stale      []string         `json:"stale"`                // task ids not updated within staleDays
 	Unreviewed []UnreviewedRepo `json:"unreviewed,omitempty"` // repos past [review].stale_after_days (omitted when none, so the existing JSON shape is unchanged)
-	// ChildrenDone / StuckContainer are the container signals. omitempty so a board
-	// with no containers (every board before v5) keeps the exact prior JSON shape.
-	ChildrenDone   []string `json:"children_done,omitempty"`   // open container ids whose children are all done
-	StuckContainer []string `json:"stuck_container,omitempty"` // open container ids with open work but no actionable descendant
+	// The three epic keys carry EPIC ids, not task ids — the entities are distinct
+	// and so are their id spaces. omitempty so a board with no boxes keeps a
+	// minimal JSON shape.
+	EpicAllDone []string `json:"epic_all_done,omitempty"` // open epic ids whose members are all done
+	EpicStuck   []string `json:"epic_stuck,omitempty"`    // open epic ids with open members but none actionable
+	EpicStale   []string `json:"epic_stale,omitempty"`    // ACTIVE epic ids untouched for [revisit].stale_days
 }
 
 // Empty reports whether nothing is worth surfacing (a clean board).
 func (s RevisitSummary) Empty() bool {
 	return len(s.DepDone) == 0 && len(s.Stale) == 0 && len(s.Unreviewed) == 0 &&
-		len(s.ChildrenDone) == 0 && len(s.StuckContainer) == 0
+		len(s.EpicAllDone) == 0 && len(s.EpicStuck) == 0 && len(s.EpicStale) == 0
 }
 
 // RevisitSummary tallies the loop-visible signals over the open (non-terminal)
-// tasks passing o.match — dep_done, stale, children_done and stuck_container —
+// tasks passing o.match — dep_done and stale — plus the three epic signals
+// (epic_all_done, epic_stuck, epic_stale),
 // plus the repo-level unreviewed clock (unreviewedRepos, which is not a task
 // signal at all). With a scope set (ScopeRepo/Repo),
 // repo-less drafts are excluded — the difference from Revisit, which always
@@ -188,7 +219,6 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 	}
 	doneIDs := a.doneSet(idx)
 	now := a.Clock.Now()
-	kids := childrenMap(idx)
 	sum := RevisitSummary{}
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
@@ -210,12 +240,23 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 		if stale {
 			sum.Stale = append(sum.Stale, t.ID)
 		}
-		for _, r := range a.containerReasons(t, kids, idx, doneIDs) {
+	}
+	// The epic signals ride the same pass so `sync` reports boxes and tasks from
+	// one read. RevisitEpics owns the scope rules for boxes (a box's repos, not a
+	// task's), so it is called rather than re-implemented here.
+	eps, err := a.RevisitEpics(o, staleDays)
+	if err != nil {
+		return RevisitSummary{}, err
+	}
+	for _, it := range eps {
+		for _, r := range it.Reasons {
 			switch r.Code {
-			case core.RevisitChildrenDone:
-				sum.ChildrenDone = append(sum.ChildrenDone, t.ID)
-			case core.RevisitStuckContainer:
-				sum.StuckContainer = append(sum.StuckContainer, t.ID)
+			case core.RevisitEpicAllDone:
+				sum.EpicAllDone = append(sum.EpicAllDone, it.Epic.ID)
+			case core.RevisitEpicStuck:
+				sum.EpicStuck = append(sum.EpicStuck, it.Epic.ID)
+			case core.RevisitEpicStale:
+				sum.EpicStale = append(sum.EpicStale, it.Epic.ID)
 			}
 		}
 	}

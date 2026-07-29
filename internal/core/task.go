@@ -28,17 +28,21 @@ import (
 // release (the fleet's task-status CI). Order matters — release furrow, bump
 // every caller's pin, THEN `furrow upgrade --yes` the board. Bump only on a
 // read-breaking layout change, and update docs/schema/ + goldens in the same
-// change. v5 = adds the per-task `type` field (the work-item type; empty == the
-// config default, normally "task"). `next` reads it to skip containers (epics),
-// so an older binary that merely PRESERVED it would still hand you an epic as
-// work — a query reads the field, so by the bump rule it is a schema field, not
-// a label, and the layout goes up. v4 = adds the per-task `reviewed` timestamp
+// change. v6 = the epic pivot: `parent` and `type` are REMOVED and the per-task
+// `epic` field added, alongside a new shard kind (epics/<id>.json). A box is now
+// an entity, not a task wearing a type. `next` scopes on `epic` and `lint`
+// errors on its absence, so a binary that merely PRESERVED the field would hand
+// out work from the wrong box while reporting a clean board — the bump rule's
+// central case. v5 = added the per-task `type` field (the work-item type; empty
+// == the config default, normally "task"). `next` read it to skip containers
+// (epics), so an older binary that merely PRESERVED it would still hand you an
+// epic as work. v4 = adds the per-task `reviewed` timestamp
 // AND the per-repo review shards (.furrow/repos/<owner>__<repo>.json); a v3-only
 // binary must refuse it, or its lenient unmarshal would strip `reviewed` and
 // write the loss back. v3 = shards whose tasks carry the required first-class
 // repos set (the repos pivot). v2 = per-task shards (tasks/<id>.json) +
 // meta.json (v1 was the monolithic index.json).
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into
@@ -150,8 +154,8 @@ func CheckWritable(v int) error {
 //
 // Field order == JSON key order (see Index). `closed` is a pointer so it
 // serializes to null while a task is open.
-// `parent` is omitempty because most tasks have no parent and an empty string
-// key would be noise; both states (absent / present) are deterministic.
+// `epic` is omitempty so an unfiled task's shard carries no empty-string key;
+// both states (absent / present) are deterministic.
 type Task struct {
 	ID       string `json:"id"`       // frozen, == bodies/<id>.md stem; never reused or renumbered
 	Title    string `json:"title"`    // one-line summary
@@ -170,7 +174,6 @@ type Task struct {
 	// means the task is a draft (attached to no repo yet), the issue-draft
 	// analogue. Same set semantics as Labels: sorted+deduped, [] never null.
 	Repos     []string        `json:"repos"`
-	Parent    string          `json:"parent,omitempty"`
 	Deps      []string        `json:"deps"` // ids this task waits on; `next` treats a task ready when all are done
 	Refs      []string        `json:"refs"` // file:line or URL pointers
 	Checklist []ChecklistItem `json:"checklist"`
@@ -184,15 +187,23 @@ type Task struct {
 	Reviewed *time.Time `json:"reviewed"`
 	Body     string     `json:"body"` // relative path, e.g. "bodies/t-0042.md"
 
-	// Type is the work-item TYPE — the DECLARATION that a task is a container (an
-	// epic), not an inference from whether it happens to have children. `next`
-	// reads it to skip containers, so it is a schema field, not a free-form label:
-	// a typo'd `epci` must not silently produce a workable task. Empty (omitempty)
-	// == the default type from config ([types].default, normally "task"), so every
-	// pre-v5 shard is byte-unchanged on disk. It lives at the END of the struct per
-	// the shard-shape rule — a mid-struct field churns key order against an old
-	// binary's extras re-emit (see the extras note below).
-	Type string `json:"type,omitempty"`
+	// Epic is the box this task belongs to (an Epic id, e.g. "e-k3m9"), 0..1.
+	// Membership, not a relationship: a task is worked as part of ONE box, which
+	// is why this is a single id and not a set like Repos — with several, "close
+	// this epic" stops having an answer, and `next`'s scoping loses its meaning.
+	//
+	// It is REQUIRED for an open task, but enforced by `furrow lint` rather than
+	// by `add`: the write path must stay frictionless enough that a thought can be
+	// captured before it is filed, and hiding an unfiled task from `next` would
+	// only make it invisible instead of fixed. Terminal-lane tasks are exempt (a
+	// finished task predating the box it would have belonged to is not a defect).
+	//
+	// `next` scopes on it, so by the bump rule this is a schema field, not a
+	// label: a binary that merely PRESERVED it would keep handing out work from
+	// the wrong box. It lives at the END of the struct per the shard-shape rule —
+	// a mid-struct field churns key order against an old binary's extras re-emit
+	// (see the extras note below).
+	Epic string `json:"epic,omitempty"`
 
 	// extras holds keys this binary does not know — a field written by a NEWER
 	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,

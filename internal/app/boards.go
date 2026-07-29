@@ -131,10 +131,8 @@ func probeBoardEntry(store string, scopes []string, b config.GlobalBoard) BoardE
 // guess dressed as a fact.
 func emptyVocab() BoardVocab {
 	return BoardVocab{
-		Lanes:      []string{},
-		NextLanes:  []string{},
-		Terminal:   []string{},
-		Types:      []string{},
-		Containers: []string{},
+		Lanes:     []string{},
+		NextLanes: []string{},
+		Terminal:  []string{},
 	}
 }

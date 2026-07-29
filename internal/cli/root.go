@@ -47,7 +47,7 @@ var autoCommitApp *app.App
 var mutatingCommands = map[string]bool{
 	"add": true, "note": true, "attach": true, "done": true,
 	"move": true, "reorder": true, "retitle": true, "set": true, "value": true,
-	"effort": true, "check": true, "dep": true, "parent": true, "label": true,
+	"effort": true, "check": true, "dep": true, "epic": true, "label": true,
 	"repo": true, "ref": true, "review": true, "apply": true, "archive": true,
 	"upgrade": true,
 }
@@ -239,7 +239,7 @@ func newRootCmd() *cobra.Command {
 		newEffortCmd(),
 		newCheckCmd(),
 		newDepCmd(),
-		newParentCmd(),
+		newEpicCmd(),
 		newLabelCmd(),
 		newRepoCmd(),
 		newRefCmd(),

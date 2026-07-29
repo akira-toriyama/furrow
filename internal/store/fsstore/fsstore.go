@@ -23,18 +23,19 @@ import (
 // constructed with the few config-derived values it needs (lane order for the
 // marshaller's sort, id prefix/length for NextID) so it never imports config.
 type Store struct {
-	root      string // absolute path to the .furrow directory
-	laneOrder []string
-	idPrefix  string
-	idLen     int
+	root       string // absolute path to the .furrow directory
+	laneOrder  []string
+	idPrefix   string
+	epicPrefix string
+	idLen      int
 }
 
 // compile-time proof fsstore satisfies the port.
 var _ core.Store = (*Store)(nil)
 
 // New builds a Store rooted at the given .furrow directory.
-func New(root string, laneOrder []string, idPrefix string, idLen int) *Store {
-	return &Store{root: root, laneOrder: laneOrder, idPrefix: idPrefix, idLen: idLen}
+func New(root string, laneOrder []string, idPrefix, epicPrefix string, idLen int) *Store {
+	return &Store{root: root, laneOrder: laneOrder, idPrefix: idPrefix, epicPrefix: epicPrefix, idLen: idLen}
 }
 
 func (s *Store) tasksDir() string          { return filepath.Join(s.root, "tasks") }
@@ -49,6 +50,8 @@ func (s *Store) reposDir() string  { return filepath.Join(s.root, "repos") }
 func (s *Store) repoPath(repo string) string {
 	return filepath.Join(s.reposDir(), core.RepoStem(repo)+".json")
 }
+func (s *Store) epicsDir() string          { return filepath.Join(s.root, "epics") }
+func (s *Store) epicPath(id string) string { return filepath.Join(s.epicsDir(), id+".json") }
 
 // BodyFile returns the absolute path of bodies/<id>.md for the CLI to hand to
 // $EDITOR. It does not create the file.
@@ -364,6 +367,110 @@ func (s *Store) ListRepos() ([]core.RepoRecord, error) {
 	}
 	sort.Slice(recs, func(i, j int) bool { return recs[i].Repo < recs[j].Repo })
 	return recs, nil
+}
+
+// LoadEpic returns the epic with this id, or ok=false when no shard exists. The
+// per-epic twin of loading a task shard.
+func (s *Store) LoadEpic(id string) (*core.Epic, bool, error) {
+	// #nosec G304 -- epicPath is a furrow-internal store path (epics/ joined with
+	// an id), not attacker-supplied.
+	b, err := os.ReadFile(s.epicPath(id))
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, core.Internalf(id, "read epic shard: %v", err)
+	}
+	e, err := core.UnmarshalEpic(b)
+	if err != nil {
+		return nil, false, err
+	}
+	return e, true, nil
+}
+
+// LoadEpics returns every epic, sorted by ID. A missing epics/ dir yields nil (a
+// board that has never declared a box), not an error.
+func (s *Store) LoadEpics() ([]core.Epic, error) {
+	entries, err := os.ReadDir(s.epicsDir())
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, core.Internalf("epics", "read epics/: %v", err)
+	}
+	var epics []core.Epic
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		// #nosec G304 -- epics/ entry path is store-internal, not attacker-supplied.
+		b, err := os.ReadFile(filepath.Join(s.epicsDir(), e.Name()))
+		if err != nil {
+			return nil, core.Internalf("epics", "read epic shard %s: %v", e.Name(), err)
+		}
+		ep, err := core.UnmarshalEpic(b)
+		if err != nil {
+			return nil, err
+		}
+		epics = append(epics, *ep)
+	}
+	sort.Slice(epics, func(i, j int) bool { return epics[i].ID < epics[j].ID })
+	return epics, nil
+}
+
+// SaveEpic writes one epic shard via the single core.MarshalEpic path,
+// atomically and only when its bytes changed (zero git churn on a no-op).
+//
+// It is gated on the board's layout version for the same reason SaveRepo is:
+// read-only has to mean read-only for EVERY shard kind. A gate that covered
+// tasks but not epics would let a stale board be mutated through its newest
+// entity — the exact shape of the 2026-07-13 outage, one door further along.
+func (s *Store) SaveEpic(e *core.Epic) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(s.epicsDir(), 0o755); err != nil {
+		return core.Internalf(e.ID, "create epics/: %v", err)
+	}
+	data, err := core.MarshalEpic(e)
+	if err != nil {
+		return err
+	}
+	return s.writeIfChanged(s.epicPath(e.ID), data)
+}
+
+// ListEpicIDs returns the ids of all epic shards (epics/<id>.json), sorted, for
+// the shard-filename/id integrity lint — the epics/ twin of ListTaskIDs. A
+// missing epics/ dir yields nil, not an error.
+func (s *Store) ListEpicIDs() ([]string, error) {
+	entries, err := os.ReadDir(s.epicsDir())
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, core.Internalf("epics", "read epics/: %v", err)
+	}
+	var ids []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		ids = append(ids, strings.TrimSuffix(e.Name(), ".json"))
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+// NextEpicID returns a fresh random epic id: the configured epic prefix plus a
+// random Crockford-base32 suffix, e.g. "e-k3m9". Same collision-resistance
+// argument as NextID (no shared counter); the app verifies the id isn't already
+// in the store, and `furrow lint` flags a duplicate as a backstop.
+func (s *Store) NextEpicID() (string, error) {
+	suffix, err := core.RandomIDSuffix(s.idLen, rand.Reader)
+	if err != nil {
+		return "", err
+	}
+	return s.epicPrefix + suffix, nil
 }
 
 // LoadBody returns bodies/<id>.md, or "" when absent (a task may legitimately

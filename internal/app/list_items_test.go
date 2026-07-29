@@ -23,11 +23,13 @@ func ids(items []ListItem) []string {
 	return out
 }
 
-// TestListItemsDerivedFacts pins the per-row facts `ls` exposes: actionable
-// (a next lane + all deps done), blocked_by (the undone deps), and — for a
-// container box with open work but nothing actionable under it — stuck. These
-// must match what `ls --tree` computes (same helpers), so the flat list and the
-// tree can never disagree.
+// TestListItemsDerivedFacts pins the per-row facts `ls` exposes: actionable (a
+// next lane + all deps done) and blocked_by (the undone deps). These must match
+// what `ls --tree` computes (same helper, factsFor), so the flat list and the
+// grouped one can never disagree.
+//
+// Epic-level state (progress, stuck) is deliberately NOT here: a box is no longer
+// a row in this list, so those facts live on the group / `epic ls`.
 func TestListItemsDerivedFacts(t *testing.T) {
 	a := newApp()
 	mk := func(title string, o AddOpts) string {
@@ -39,22 +41,24 @@ func TestListItemsDerivedFacts(t *testing.T) {
 	}
 	gate := mk("gate", AddOpts{Status: "ready"})
 	blocked := mk("waits on gate", AddOpts{Status: "ready", Deps: []string{gate}})
-	epic := mk("epic", AddOpts{Type: "epic", Status: "backlog"})
-	mk("child blocked", AddOpts{Parent: epic, Status: "ready", Deps: []string{gate}})
+	box := mustEpic(t, a, "box", EpicAddOpts{})
+	member := mk("member blocked", AddOpts{Epic: box, Status: "ready", Deps: []string{gate}})
 
 	items, err := a.ListItems(QueryOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if it := itemFor(items, gate); it == nil || !it.Actionable || it.Container || len(it.BlockedBy) != 0 {
-		t.Errorf("gate should be actionable, non-container, unblocked: %+v", it)
+	if it := itemFor(items, gate); it == nil || !it.Actionable || len(it.BlockedBy) != 0 {
+		t.Errorf("gate should be actionable and unblocked: %+v", it)
 	}
 	if it := itemFor(items, blocked); it == nil || it.Actionable || len(it.BlockedBy) != 1 || it.BlockedBy[0] != gate {
 		t.Errorf("blocked task should be non-actionable with blocked_by=[gate]: %+v", it)
 	}
-	if it := itemFor(items, epic); it == nil || !it.Container || it.Actionable || !it.Stuck {
-		t.Errorf("epic should be a stuck container (open child, no actionable descendant): %+v", it)
+	// A member's own row carries the same facts as any other task — membership
+	// does not change whether IT can be picked up.
+	if it := itemFor(items, member); it == nil || it.Actionable || len(it.BlockedBy) != 1 {
+		t.Errorf("epic member should be non-actionable with one blocker: %+v", it)
 	}
 }
 

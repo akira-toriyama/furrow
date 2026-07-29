@@ -173,7 +173,7 @@ func openAt(dir string) (*App, error) {
 	if err != nil {
 		return nil, core.Validationf("config", "%v", err)
 	}
-	st := fsstore.New(dir, cfg.Lanes, cfg.IDPrefix, cfg.IDWidth)
+	st := fsstore.New(dir, cfg.Lanes, cfg.IDPrefix, cfg.EpicIDPrefix, cfg.IDWidth)
 	return &App{Store: st, Cfg: cfg, Clock: core.SystemClock(), Dir: dir, Warnings: warn}, nil
 }
 
@@ -535,11 +535,17 @@ type AddOpts struct {
 	// Repos attaches the task to repositories. Each entry is resolved strictly
 	// (full owner/repo, or a short name naming exactly one repo in the board's
 	// universe — see resolveRepoIn).
-	Repos  []string
-	Parent string
-	Deps   []string
-	Refs   []string
-	Body   string // initial body markdown; "" seeds a heading from the title
+	Repos []string
+	// Epic is the box to file this task under: an epic REFERENCE (id, unique id
+	// prefix, or unique title substring), resolved by Add through ResolveEpic so a
+	// typo is exit 2 with candidates rather than a task filed under nothing.
+	// Resolution lives here, not in the CLI, so every front-end gets the same
+	// spelling rules. "" leaves the task unfiled — legal at add time, an error in
+	// `furrow lint` while the task is open.
+	Epic string
+	Deps []string
+	Refs []string
+	Body string // initial body markdown; "" seeds a heading from the title
 	// Checklist seeds unchecked checklist items at creation (repeatable --check).
 	// A plain `add --body '- [ ] x'` does NOT populate the shard's checklist —
 	// the body is prose — so this makes a seed-time checklist first-class. Blank
@@ -551,10 +557,6 @@ type AddOpts struct {
 	// suppresses exactly the board-scope repo union (see withBoardRepo) — the
 	// escape hatch for "note this on the board, attach it later".
 	Draft bool
-	// Type is the work-item type ([types].order). "" leaves the shard type-less
-	// (it reads as the configured default). A non-empty value must be in the
-	// vocabulary or Add returns unknownTypeErr (exit 2 + candidates).
-	Type string
 }
 
 // requireNonBlankValues applies the blank rule to every list-valued creation
@@ -604,10 +606,6 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	if err := o.requireNonBlankValues(""); err != nil {
 		return nil, err
 	}
-	if !a.Cfg.IsType(o.Type) {
-		return nil, a.unknownTypeErr("", o.Type)
-	}
-
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -619,18 +617,21 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	}
 	repos = a.withBoardRepo(repos, o.Draft)
 
-	// A --dep/--parent must name a task that exists, the same contract AddDep
-	// enforces — accepting a dangling one silently drops the task out of `next`
-	// (an unknown dep reads as unsatisfied) with no error.
+	// A --dep must name a task that exists, the same contract AddDep enforces —
+	// accepting a dangling one silently drops the task out of `next` (an unknown
+	// dep reads as unsatisfied) with no error.
 	for _, dep := range o.Deps {
 		if !idx.Has(dep) {
 			return nil, core.Validationf("", "dependency %q does not exist", dep)
 		}
 	}
-	if o.Parent != "" && !idx.Has(o.Parent) {
-		return nil, core.Validationf("", "parent %q does not exist", o.Parent)
+	epicID := ""
+	if o.Epic != "" {
+		epicID, err = a.ResolveEpic(o.Epic)
+		if err != nil {
+			return nil, err
+		}
 	}
-
 	id, err := a.uniqueID(idx)
 	if err != nil {
 		return nil, err
@@ -654,10 +655,10 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	t := core.Task{
 		ID: id, Title: title, Status: status, Priority: prio,
 		Value: cloneIntp(o.Value), Effort: cloneIntp(o.Effort),
-		Labels: o.Labels, Repos: repos, Parent: o.Parent, Deps: o.Deps, Refs: o.Refs,
+		Labels: o.Labels, Repos: repos, Deps: o.Deps, Refs: o.Refs,
 		Checklist: seedChecklist(o.Checklist),
 		Created:   now, Updated: now, Closed: closed, Body: core.BodyPath(id),
-		Type: o.Type,
+		Epic: epicID,
 	}
 	idx.Add(t)
 
@@ -866,7 +867,6 @@ func (a *App) BacklinksBatch(ids []string) (map[string][]core.Task, error) {
 type QueryOpts struct {
 	Status    string
 	Label     string // explicit tag filter; ANDs with ScopeRepo
-	Type      string // filter by work-item type ([types].order); "" = no type filter
 	ScopeRepo string // board-scope repo (a pointer's / central board's DefaultRepo)
 	Repo      string // owner/repo filter on the repos field (already resolved)
 	Drafts    bool   // only tasks with repos == []; ignores ScopeRepo/Repo
@@ -883,11 +883,16 @@ type QueryOpts struct {
 	// index (the `ls --archived` browse of retired tasks). The same filters/sort
 	// apply; only the source index changes.
 	Archived bool
-	// IncludeContainers relaxes `furrow next`: by default a container type (an
-	// epic) is never handed out as work; with this set, a container that is
-	// otherwise ready (in a next lane, deps done) is surfaced too (the Jira-style
-	// "show me the boxes" escape hatch). Only `next` reads it; List/Tree ignore it.
-	IncludeContainers bool
+	// Epic is an explicit -e filter, ALREADY resolved to an epic id; "" = none.
+	// It is STRICT: unlike Next's implicit active-epic scope it has no carve-out
+	// for unfiled tasks, because naming a box means you want that box.
+	Epic string
+	// AllEpics is the `--all-epics` escape hatch: ignore Next's active-epic scope
+	// and read the whole board. Stepping outside the box is allowed — it just has
+	// to leave a trace in the shell history, which is what makes the scope a
+	// mechanism rather than a convention. Only Next reads it (the scope itself is
+	// computed inside Next — see NextScope).
+	AllEpics bool
 	// Actionable / Blocked are the `ls` derived-state filters, orthogonal to (and
 	// ANDing with) the lane/label/repo scope. Actionable keeps only tasks `furrow
 	// next` would hand you (a next lane, every dep done, not a container); Blocked
@@ -929,6 +934,12 @@ func (o QueryOpts) match(t *core.Task) bool {
 		return false
 	}
 	if o.Until != nil && t.Updated.After(*o.Until) {
+		return false
+	}
+	// The explicit -e filter is strict membership (a task's epic is 0..1, so this
+	// is equality, not set containment). It applies before the draft short-circuit:
+	// a draft can be filed in a box, and `-e travel --drafts` means both.
+	if o.Epic != "" && t.Epic != o.Epic {
 		return false
 	}
 	if o.Drafts {
@@ -981,9 +992,6 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 	if err := validateSortField(o.Sort); err != nil {
 		return nil, nil, err
 	}
-	if err := a.validateTypeFilter(o.Type); err != nil {
-		return nil, nil, err
-	}
 	idx, err := a.listIndex(o)
 	if err != nil {
 		return nil, nil, err
@@ -1011,7 +1019,7 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 	var out []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if !o.match(t) || !a.matchType(o, t) {
+		if !o.match(t) {
 			continue
 		}
 		if o.Actionable && !a.actionable(idx, t, doneIDs) {
@@ -1041,40 +1049,33 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 }
 
 // ListItem is a task plus the derived facts `ls` exposes on every row — the same
-// two the tree carries (actionable, blocked_by) plus the container roll-up (stuck),
-// so the flat list answers "what can I pick up / what's in the way" without a
-// separate `--tree`. Container rides along because the glyph distinguishes a box.
+// two the tree carries — so the flat list answers "what can I pick up / what's in
+// the way" without a separate `--tree`.
 type ListItem struct {
 	Task       core.Task
 	Actionable bool
 	BlockedBy  []string
-	Container  bool
-	Stuck      bool
 }
 
-// ListItems is List enriched with per-row derived facts (actionable / blocked_by /
-// container / stuck), for the flat `ls` human table (the glyph) and its --json.
-// It reuses listMatched's single load, and computes each fact through the SAME
-// helpers the tree uses (factsFor / isStuck), so flat and tree never disagree.
+// ListItems is List enriched with per-row derived facts (actionable /
+// blocked_by), for the flat `ls` human table (the glyph) and its --json. It
+// reuses listMatched's single load and computes each fact through the SAME
+// helper the tree uses (factsFor), so flat and tree never disagree.
+//
+// The v5 `container`/`stuck` columns are gone with the type: a box is no longer a
+// row in this list at all. Epic-level state lives on the epic, where `epic ls`
+// and `ls --tree`'s groups report it.
 func (a *App) ListItems(o QueryOpts) ([]ListItem, error) {
 	tasks, idx, err := a.listMatched(o)
 	if err != nil {
 		return nil, err
 	}
 	doneIDs := a.doneSet(idx)
-	var kids map[string][]*core.Task // built lazily: only a container needs it
 	items := make([]ListItem, 0, len(tasks))
 	for i := range tasks {
 		t := &tasks[i]
-		actionable, blockedBy, container := a.factsFor(idx, t, doneIDs)
-		stuck := false
-		if container {
-			if kids == nil {
-				kids = childrenMap(idx)
-			}
-			stuck = a.isStuck(idx, t.ID, kids, doneIDs)
-		}
-		items = append(items, ListItem{Task: *t, Actionable: actionable, BlockedBy: blockedBy, Container: container, Stuck: stuck})
+		actionable, blockedBy := a.factsFor(idx, t, doneIDs)
+		items = append(items, ListItem{Task: *t, Actionable: actionable, BlockedBy: blockedBy})
 	}
 	return items, nil
 }
@@ -1089,23 +1090,6 @@ func (a *App) doneSet(idx *core.Index) map[string]bool {
 		}
 	}
 	return done
-}
-
-// validateTypeFilter rejects an unknown --type filter with the configured types
-// in Candidates (symmetric with the unknown-lane guard) — a typo'd `--type epci`
-// must not silently return []. Empty = no type filter, always valid.
-func (a *App) validateTypeFilter(typ string) error {
-	if typ == "" || a.Cfg.IsType(typ) {
-		return nil
-	}
-	return a.unknownTypeErr("", typ)
-}
-
-// matchType applies a --type filter by EFFECTIVE type, so `--type task` matches
-// the type-less majority (whose effective type is the default) as well as tasks
-// explicitly typed "task". "" = no filter.
-func (a *App) matchType(o QueryOpts, t *core.Task) bool {
-	return o.Type == "" || a.Cfg.EffectiveType(t.Type) == o.Type
 }
 
 // validateSortField rejects an unknown --sort key with the valid fields in
@@ -1124,10 +1108,21 @@ func validateSortField(field string) error {
 
 // Next returns the actionable tasks in canonical order — the work that is ready
 // to pick up: status in the configured next-lanes ([next].lanes, default
-// ready+in-progress) AND every dependency already done AND not a container type
-// (an epic is a box, not work — surface boxes with o.IncludeContainers). The
-// query's filters restrict the result with the same semantics as List.
+// ready+in-progress) AND every dependency already done. The query's filters
+// restrict the result with the same semantics as List.
+//
+// On a board that has declared at least one epic, the result is ALSO scoped to
+// the active epic(s) for the read's repo scope, plus the unfiled pile (see
+// NextScope) — the mechanism that keeps a session on the declared focus. The
+// active epics' tasks come first (they ARE the focus; the unfiled rescue rides
+// behind), canonical order within each half. An engaged scope with nothing
+// active matches NOTHING: "no box open" must not silently degrade into "show me
+// the unfiled pile". An explicit -e (o.Epic) or --all-epics bypasses the scope.
 func (a *App) Next(o QueryOpts) ([]core.Task, error) {
+	scope, err := a.NextScope(o)
+	if err != nil {
+		return nil, err
+	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -1159,20 +1154,28 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []core.Task
+	// With the scope engaged, focus (active-epic members) and rescue (unfiled)
+	// collect separately so focus leads the result regardless of canonical
+	// interleaving; the limit therefore applies AFTER the partition, so `-n1`
+	// hands you the focus, not whatever unfiled task sorts first.
+	var out, rescue []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
 		if !o.match(t) {
 			continue
 		}
-		// "Ready" = in a next lane AND every dep done. The container is excluded
-		// unless --containers is set (a box is not work) — the same rule
+		if scope.Engaged {
+			if len(scope.Active) == 0 {
+				break // nothing is active: deliberately empty, never the unfiled pile
+			}
+			if t.Epic != "" && !scope.Active[t.Epic] {
+				continue
+			}
+		}
+		// "Ready" = in a next lane AND every dep done — the same rule
 		// App.actionable/workable encode, expressed here against the (possibly
 		// overridden) lane set so `ls --tree`'s ★ and a plain `next` still agree.
 		ready := inNextLane(t.Status) && idx.Actionable(t, a.Cfg.Terminal, doneIDs)
-		if ready && !o.IncludeContainers {
-			ready = !a.Cfg.IsContainerType(t.Type)
-		}
 		if !ready {
 			continue
 		}
@@ -1185,10 +1188,18 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 				continue
 			}
 		}
+		if scope.Engaged && t.Epic == "" {
+			rescue = append(rescue, *t)
+			continue
+		}
 		out = append(out, *t)
-		if o.Limit > 0 && len(out) >= o.Limit {
+		if !scope.Engaged && o.Limit > 0 && len(out) >= o.Limit {
 			break
 		}
+	}
+	out = append(out, rescue...)
+	if o.Limit > 0 && len(out) > o.Limit {
+		out = out[:o.Limit]
 	}
 	return out, nil
 }
@@ -1702,7 +1713,12 @@ type SetOpts struct {
 	ClearEffort bool     // unset the effort estimate (wins over Effort)
 	AddLabels   []string // labels to union on
 	RmLabels    []string // labels to drop
-	Type        *string  // set the work-item type (validated against [types].order)
+	// Epic re-files the task into a box: an epic REFERENCE, resolved by Set
+	// through ResolveEpic exactly as Add resolves its own — storing a raw ref
+	// would file the task under a box that does not exist. A non-nil pointer to ""
+	// unfiles it (the deliberate escape, still a lint error while the task is
+	// open); nil leaves membership untouched.
+	Epic *string
 }
 
 // empty reports whether o requests no change at all — Set rejects that rather
@@ -1711,13 +1727,13 @@ func (o SetOpts) empty() bool {
 	return o.Status == nil && o.Priority == nil && o.Before == "" && o.After == "" &&
 		o.Value == nil && !o.ClearValue &&
 		o.Effort == nil && !o.ClearEffort && len(o.AddLabels) == 0 && len(o.RmLabels) == 0 &&
-		o.Type == nil
+		o.Epic == nil
 }
 
 // Set applies several triage edits to one task in a single load/save: move a
 // lane, position it (absolute priority, or relative to a lane-mate), set/clear
-// value and effort, add/remove labels, and set the work-item type — so `set`
-// replaces the move+reorder+value+effort+label+type dance without that many
+// value and effort, add/remove labels, and re-file into an epic — so `set`
+// replaces the move+reorder+value+effort+label+epic dance without that many
 // separate writes (and `updated` stamps). Everything is validated up front (unknown lane → exit 2
 // with candidates like Move; a change that would strip the last label under
 // [labels].required → exit 2; a relative target outside the destination lane →
@@ -1754,11 +1770,13 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 	if o.Status != nil && !a.Cfg.IsLane(*o.Status) {
 		return a.unknownLaneErr(id, *o.Status)
 	}
-	if o.Type != nil && !a.Cfg.IsType(*o.Type) {
-		return a.unknownTypeErr(id, *o.Type)
+	if o.Epic != nil && *o.Epic != "" {
+		if _, err := a.ResolveEpic(*o.Epic); err != nil {
+			return err
+		}
 	}
 	if o.empty() {
-		return core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / --type)")
+		return core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / -e)")
 	}
 	if err := requireNonBlank(id, "--add-label", o.AddLabels); err != nil {
 		return err
@@ -1897,8 +1915,18 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts) ([]core.PriorityCh
 	case o.Effort != nil:
 		t.Effort = cloneIntp(o.Effort)
 	}
-	if o.Type != nil {
-		t.Type = *o.Type
+	if o.Epic != nil {
+		// Already validated in validateSetOpts; resolve again to store the ID, not
+		// whatever spelling the caller used.
+		if *o.Epic == "" {
+			t.Epic = ""
+		} else {
+			id, err := a.ResolveEpic(*o.Epic)
+			if err != nil {
+				return renumbered, err
+			}
+			t.Epic = id
+		}
 	}
 	t.Labels = nextLabels
 	t.Updated = a.Clock.Now()
@@ -2153,19 +2181,6 @@ func (a *App) unknownLaneErr(id, lane string) *core.Error {
 		ID:         id,
 		Msg:        fmt.Sprintf("unknown lane %q (configured: %s)", lane, strings.Join(a.Cfg.Lanes, ", ")),
 		Candidates: append([]string(nil), a.Cfg.Lanes...),
-	}
-}
-
-// unknownTypeErr is the type-side twin of unknownLaneErr: every type gate (add
-// --type, set --type, ls --type) returns it, so a typo'd `--type epci` is exit 2
-// with the configured types in Candidates rather than a silent bogus type. The
-// empty string is always valid (it means the default type) and never reaches here.
-func (a *App) unknownTypeErr(id, typ string) *core.Error {
-	return &core.Error{
-		Code:       core.CodeValidation,
-		ID:         id,
-		Msg:        fmt.Sprintf("unknown type %q (configured: %s)", typ, strings.Join(a.Cfg.Types, ", ")),
-		Candidates: append([]string(nil), a.Cfg.Types...),
 	}
 }
 

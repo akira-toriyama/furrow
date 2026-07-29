@@ -74,7 +74,7 @@ scheduler — see [scheduling.md](scheduling.md) for launchd recipes.
 
 The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
 (structured metadata, machine-written) + `.furrow/meta.json`
-(`{"schema_version": 5}`, the board-wide layout version) +
+(`{"schema_version": 6}`, the board-wide layout version) +
 `.furrow/bodies/<id>.md` (long-form prose, hand/agent
 editable) + `.furrow/bodies/assets/` (media copied in by `furrow attach` as
 collision-free `<id>-<name>` files, referenced from the body by a relative
@@ -181,7 +181,7 @@ To keep this list honest about today's reality (not aspirations):
   `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`, `board`,
   `boards`, `doctor`, `edit`,
   `note`, `attach`, `done`, `move`, `set`, `reorder`,
-  `retitle`, `value`, `effort`, `check`, `dep`, `parent`, `label`, `repo`, `ref`,
+  `retitle`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`,
   `review`, `apply`, `sync`,
   `migrate`, `archive`, `upgrade`, `lint`, `config init|path`, `schema`, `version`.
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,

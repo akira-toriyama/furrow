@@ -17,13 +17,15 @@ import (
 // is an independent record" semantics (no shared array to imply ordering). The
 // zero value is not ready — use New.
 type Store struct {
-	tasks    map[string]core.Task // id -> task, one entry per shard
-	bodies   map[string]string
-	assets   map[string][]byte          // basename -> bytes, the in-memory twin of bodies/assets/<name>
-	repos    map[string]core.RepoRecord // owner/repo -> review record, one entry per repos/ shard
-	idPrefix string
-	idLen    int
-	nextID   func() (string, error) // id generator; random by default
+	tasks      map[string]core.Task // id -> task, one entry per shard
+	bodies     map[string]string
+	assets     map[string][]byte          // basename -> bytes, the in-memory twin of bodies/assets/<name>
+	repos      map[string]core.RepoRecord // owner/repo -> review record, one entry per repos/ shard
+	epics      map[string]core.Epic       // id -> epic, one entry per epics/ shard
+	idPrefix   string
+	epicPrefix string
+	idLen      int
+	nextID     func() (string, error) // id generator; random by default
 	// schemaVersion mirrors fsstore's meta.json so tests can exercise the
 	// version gate (Load/Save refuse a board newer than the binary). Defaults
 	// to the current core.SchemaVersion via New.
@@ -34,13 +36,15 @@ type Store struct {
 var _ core.Store = (*Store)(nil)
 
 // New returns an empty in-memory store with the given id formatting.
-func New(idPrefix string, idLen int) *Store {
+func New(idPrefix, epicPrefix string, idLen int) *Store {
 	s := &Store{
 		tasks:         map[string]core.Task{},
 		bodies:        map[string]string{},
 		assets:        map[string][]byte{},
 		repos:         map[string]core.RepoRecord{},
+		epics:         map[string]core.Epic{},
 		idPrefix:      idPrefix,
+		epicPrefix:    epicPrefix,
 		idLen:         idLen,
 		schemaVersion: core.SchemaVersion,
 	}
@@ -157,6 +161,77 @@ func (s *Store) ListRepos() ([]core.RepoRecord, error) {
 	}
 	sort.Slice(recs, func(i, j int) bool { return recs[i].Repo < recs[j].Repo })
 	return recs, nil
+}
+
+// LoadEpic returns a copy of the epic, or ok=false when absent — the in-memory
+// twin of reading epics/<id>.json.
+func (s *Store) LoadEpic(id string) (*core.Epic, bool, error) {
+	e, ok := s.epics[id]
+	if !ok {
+		return nil, false, nil
+	}
+	return &e, true, nil
+}
+
+// LoadEpics returns every epic, sorted by ID — the in-memory twin of listing
+// epics/. An empty store yields nil (a board with no boxes declared).
+func (s *Store) LoadEpics() ([]core.Epic, error) {
+	if len(s.epics) == 0 {
+		return nil, nil
+	}
+	epics := make([]core.Epic, 0, len(s.epics))
+	for _, e := range s.epics {
+		epics = append(epics, e)
+	}
+	sort.Slice(epics, func(i, j int) bool { return epics[i].ID < epics[j].ID })
+	return epics, nil
+}
+
+// SaveEpic stores one epic — the in-memory twin of writing an epics/ shard. The
+// record round-trips through the single MarshalEpic/UnmarshalEpic path (not just
+// assigned) so the in-memory copy is canonicalized exactly as fsstore would
+// persist it: a test that saves an epic with unsorted labels must read back the
+// sorted ones, or memstore-backed tests would pass on shapes the disk rejects.
+func (s *Store) SaveEpic(e *core.Epic) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+	data, err := core.MarshalEpic(e)
+	if err != nil {
+		return err
+	}
+	norm, err := core.UnmarshalEpic(data)
+	if err != nil {
+		return err
+	}
+	s.epics[norm.ID] = *norm
+	return nil
+}
+
+// ListEpicIDs returns every epic id, sorted — the in-memory twin of listing
+// epics/<id>.json filenames. Identical to the ids in LoadEpics here (memory has
+// no filename that can disagree with its content), which is exactly why the
+// integrity lint it feeds can only ever fire against fsstore.
+func (s *Store) ListEpicIDs() ([]string, error) {
+	if len(s.epics) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, 0, len(s.epics))
+	for id := range s.epics {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+// NextEpicID returns a fresh random epic id — the epic prefix plus the same
+// random suffix NextID uses.
+func (s *Store) NextEpicID() (string, error) {
+	suffix, err := core.RandomIDSuffix(s.idLen, rand.Reader)
+	if err != nil {
+		return "", err
+	}
+	return s.epicPrefix + suffix, nil
 }
 
 func (s *Store) LoadBody(id string) (string, error) { return s.bodies[id], nil }

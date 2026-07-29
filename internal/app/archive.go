@@ -128,7 +128,7 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 	if err := a.Store.Writable(); err != nil {
 		return nil, err
 	}
-	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.IDWidth)
+	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.EpicIDPrefix, a.Cfg.IDWidth)
 	arcIdx, err := arc.Load()
 	if err != nil {
 		return nil, err

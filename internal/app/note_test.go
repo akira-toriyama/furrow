@@ -14,7 +14,7 @@ import (
 // a note's effect on Updated is observable (newApp's clock is fixed).
 func appWithClock(start time.Time) (*App, *fixedClock) {
 	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	clk := &fixedClock{t: start}
 	return NewWithStore(st, cfg, clk), clk
 }

@@ -24,7 +24,7 @@ func (c *fixedClock) Now() time.Time { return c.t.UTC().Truncate(time.Second) }
 
 func newApp() *App {
 	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	clk := &fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)}
 	return NewWithStore(st, cfg, clk)
 }
@@ -147,39 +147,42 @@ func TestAddManyMatchesSingleAdd(t *testing.T) {
 	}
 }
 
-// TestAddManyCarriesAndValidatesType guards the v5 `type` field across the same
-// bulk-vs-single parity: `add --stdin --type epic` must PERSIST the type (it was
-// silently dropped to a plain task), and `--type bogus` must fail up front (it was
-// silently created). Regression for the AddMany/Add divergence (glyph-import audit).
-func TestAddManyCarriesAndValidatesType(t *testing.T) {
+// TestAddManyCarriesAndResolvesEpic guards the `epic` field across the same
+// bulk-vs-single parity the --type field needed: `add --stdin -e <ref>` must
+// RESOLVE the reference exactly as single Add does (storing the raw ref would
+// file the task under a box that does not exist, visible only to lint), an
+// epic-less spec must stay epic-less, and an unknown epic must fail the whole
+// batch up front rather than being silently created.
+func TestAddManyCarriesAndResolvesEpic(t *testing.T) {
 	a := newApp()
+	box := mustEpic(t, a, "the travel box", EpicAddOpts{})
+
 	created, err := a.AddMany([]AddSpec{
-		{Title: "an epic", AddOpts: AddOpts{Type: "epic"}},
-		{Title: "a plain task", AddOpts: AddOpts{}},
+		// Deliberately a TITLE SUBSTRING, not the id: that is what makes this a
+		// resolution test rather than an assignment test.
+		{Title: "filed", AddOpts: AddOpts{Epic: "travel"}},
+		{Title: "unfiled", AddOpts: AddOpts{}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// (1) the declared type is persisted, exactly as single Add does.
-	if created[0].Type != "epic" {
-		t.Errorf("AddMany dropped --type: got %q, want %q", created[0].Type, "epic")
+	if created[0].Epic != box {
+		t.Errorf("AddMany stored the raw reference instead of resolving it: got %q, want %q", created[0].Epic, box)
 	}
-	// a type-less spec stays type-less (resolves to the default), matching single Add.
-	if created[1].Type != "" {
-		t.Errorf("type-less spec should stay type-less, got %q", created[1].Type)
+	if created[1].Epic != "" {
+		t.Errorf("an epic-less spec must stay epic-less, got %q", created[1].Epic)
 	}
-	// (2) the persisted type survives a fresh read (bulk output == a later ls).
+	// The membership survives a fresh read (bulk output == a later ls).
 	got, _, err := a.Get(created[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Type != "epic" {
-		t.Errorf("persisted type diverges from a read: got %q, want %q", got.Type, "epic")
+	if got.Epic != box {
+		t.Errorf("persisted epic diverges from a read: got %q, want %q", got.Epic, box)
 	}
-	// (3) an unknown type fails the whole batch up front (exit 2), like single Add,
-	// instead of being silently created.
-	if _, err := a.AddMany([]AddSpec{{Title: "bad", AddOpts: AddOpts{Type: "bogus"}}}); core.ExitCode(err) != int(core.CodeValidation) {
-		t.Errorf("AddMany with an unknown type should be a validation error, got %v", err)
+	// An unknown epic fails the whole batch up front (exit 2), like single Add.
+	if _, err := a.AddMany([]AddSpec{{Title: "bad", AddOpts: AddOpts{Epic: "no-such-box"}}}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("AddMany with an unknown epic should be a validation error, got %v", err)
 	}
 }
 
@@ -280,7 +283,7 @@ func TestDoneBackfillsClosedOnZombie(t *testing.T) {
 // re-close must not refresh the date even as the clock advances.
 func TestDonePreservesOriginalClosed(t *testing.T) {
 	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	clk := &fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)}
 	a := NewWithStore(st, cfg, clk)
 
@@ -328,31 +331,32 @@ func TestLintFlagsDoneWithoutClosed(t *testing.T) {
 	}
 }
 
-// (b) add must reject a dangling --dep / --parent up front (exit 2), the same
+// (b) add must reject a dangling --dep / -e up front (exit 2), the same
 // existence contract AddDep enforces — instead of silently accepting it.
-func TestAddRejectsDanglingDepAndParent(t *testing.T) {
+func TestAddRejectsDanglingDepAndEpic(t *testing.T) {
 	a := newApp()
 	if _, err := a.Add("x", AddOpts{Deps: []string{"t-nope"}}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("add with a non-existent dep should be a validation error, got %v", err)
 	}
-	if _, err := a.Add("y", AddOpts{Parent: "t-nosuch"}); core.ExitCode(err) != int(core.CodeValidation) {
-		t.Errorf("add with a non-existent parent should be a validation error, got %v", err)
+	if _, err := a.Add("y", AddOpts{Epic: "e-nosuch"}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("add with a non-existent epic should be a validation error, got %v", err)
 	}
 	base, _ := a.Add("base", AddOpts{})
-	if _, err := a.Add("child", AddOpts{Deps: []string{base.ID}, Parent: base.ID}); err != nil {
-		t.Errorf("add with an existing dep/parent should succeed, got %v", err)
+	box := mustEpic(t, a, "a box", EpicAddOpts{})
+	if _, err := a.Add("member", AddOpts{Deps: []string{base.ID}, Epic: box}); err != nil {
+		t.Errorf("add with an existing dep/epic should succeed, got %v", err)
 	}
 }
 
 // (b) the same existence check on the bulk path, for both a dangling dep and a
-// dangling parent.
+// dangling epic.
 func TestAddManyRejectsDanglingDep(t *testing.T) {
 	a := newApp()
 	if _, err := a.AddMany([]AddSpec{{Title: "x", AddOpts: AddOpts{Deps: []string{"t-ghost"}}}}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("AddMany with a dangling dep should be a validation error, got %v", err)
 	}
-	if _, err := a.AddMany([]AddSpec{{Title: "y", AddOpts: AddOpts{Parent: "t-nosuch"}}}); core.ExitCode(err) != int(core.CodeValidation) {
-		t.Errorf("AddMany with a dangling parent should be a validation error, got %v", err)
+	if _, err := a.AddMany([]AddSpec{{Title: "y", AddOpts: AddOpts{Epic: "e-nosuch"}}}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("AddMany with a dangling epic should be a validation error, got %v", err)
 	}
 }
 
@@ -814,7 +818,7 @@ func TestCheckTogglesChecklist(t *testing.T) {
 func TestLabelsRequiredEnforced(t *testing.T) {
 	cfg := config.Default()
 	cfg.LabelsRequired = true
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	a := NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
 
 	// add without a label -> validation error.
@@ -845,7 +849,7 @@ func TestLabelsRequiredEnforced(t *testing.T) {
 
 	// default config (not required) accepts a label-less add.
 	cfg2 := config.Default()
-	a2 := NewWithStore(memstore.New(cfg2.IDPrefix, cfg2.IDWidth), cfg2, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
+	a2 := NewWithStore(memstore.New(cfg2.IDPrefix, "e-", cfg2.IDWidth), cfg2, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
 	if _, err := a2.Add("fine", AddOpts{Status: "ready"}); err != nil {
 		t.Errorf("label-less add should succeed when not required, got %v", err)
 	}
@@ -1249,7 +1253,7 @@ func TestRerefAddsRemovesIdempotentlyKeepingOrder(t *testing.T) {
 func TestRelabelRespectsLabelsRequired(t *testing.T) {
 	cfg := config.Default()
 	cfg.LabelsRequired = true
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	a := NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
 	tk, err := a.Add("x", AddOpts{Labels: []string{"only"}})
 	if err != nil {

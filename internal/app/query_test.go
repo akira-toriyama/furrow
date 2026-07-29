@@ -184,30 +184,33 @@ func TestQueryIsStale(t *testing.T) {
 	}
 }
 
-// TestQueryGraph pins the direct-edge graph qualifiers: parent:/child-of: (two
-// spellings of the same down edge), depends-on: and blocks: (the two directions
-// of the Deps edge), and the lenient unknown-id contract (0 rows, exit 0).
+// TestQueryGraph pins the direct-edge graph qualifiers: epic: (membership),
+// depends-on: and blocks: (the two directions of the Deps edge), and the lenient
+// unknown-id contract (0 rows, exit 0).
+//
+// parent:/child-of: are gone with the hierarchy; epic: is the grouping spelling
+// that replaced them.
 func TestQueryGraph(t *testing.T) {
 	a := newApp()
-	p := mustAdd(t, a, "p", AddOpts{})
-	c1 := mustAdd(t, a, "c1", AddOpts{Parent: p.ID})
-	c2 := mustAdd(t, a, "c2", AddOpts{Parent: p.ID, Deps: []string{c1.ID}})
+	box := mustEpic(t, a, "the box", EpicAddOpts{})
+	mustAdd(t, a, "p", AddOpts{})
+	c1 := mustAdd(t, a, "c1", AddOpts{Epic: box})
+	c2 := mustAdd(t, a, "c2", AddOpts{Epic: box, Deps: []string{c1.ID}})
 	mustAdd(t, a, "d3", AddOpts{Deps: []string{c1.ID, c2.ID}})
 
 	cases := []struct {
 		q    string
 		want []string
 	}{
-		{"parent:" + p.ID, []string{"c1", "c2"}},
-		{"child-of:" + p.ID, []string{"c1", "c2"}}, // the graph spelling of parent:
-		{"-child-of:" + p.ID, []string{"d3", "p"}},
+		{"epic:" + box, []string{"c1", "c2"}},
+		{"-epic:" + box, []string{"d3", "p"}},
 		{"depends-on:" + c1.ID, []string{"c2", "d3"}},
 		{"depends-on:" + c2.ID, []string{"d3"}},
 		{"depends-on:" + c1.ID + "," + c2.ID, []string{"c2", "d3"}}, // comma = OR
 		{"blocks:" + c2.ID, []string{"c1"}},
 		{"blocks:t-nope0", []string{}}, // unknown id blocks nothing — lenient
 		{"depends-on:t-nope0", []string{}},
-		{"child-of:t-nope0", []string{}},
+		{"epic:e-nope0", []string{}},
 	}
 	for _, c := range cases {
 		if got := qTitles(t, a, c.q); !slices.Equal(got, c.want) {
@@ -336,7 +339,7 @@ func TestQueryErrors(t *testing.T) {
 	// The unknown-field candidates name the full v1 vocabulary, including the
 	// part-2 fields — the did-you-mean surface a front-end completes from.
 	ce := qErr(t, a, "descendant-of:t-1")
-	for _, want := range []string{"child-of", "depends-on", "blocks", "created", "updated", "closed", "reviewed", "body"} {
+	for _, want := range []string{"epic", "depends-on", "blocks", "created", "updated", "closed", "reviewed", "body"} {
 		if !slices.Contains(ce.Candidates, want) {
 			t.Errorf("unknown-field candidates missing %q: %v", want, ce.Candidates)
 		}

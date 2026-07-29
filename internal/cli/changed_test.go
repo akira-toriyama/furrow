@@ -7,27 +7,27 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// TestChangedFieldsTracksType pins the review fix: the `set --json` mutation
-// envelope's `changed` array must include "type" when the type actually changes.
-// Otherwise a headless agent that branches on `changed` (per the integration
-// contract) reads a `set --type epic` as a no-op and thinks the declaration never
-// took, even though the shard was written.
-func TestChangedFieldsTracksType(t *testing.T) {
+// TestChangedFieldsTracksEpic pins the same contract the `type` field needed: the
+// `set --json` envelope's `changed` array must include "epic" when membership
+// actually changes. Otherwise a headless agent that branches on `changed` (per
+// the integration contract) reads a `set -e <box>` as a no-op and thinks the
+// filing never took, even though the shard was written.
+func TestChangedFieldsTracksEpic(t *testing.T) {
 	before := &core.Task{ID: "t-1"}
-	after := &core.Task{ID: "t-1", Type: "epic"}
+	after := &core.Task{ID: "t-1", Epic: "e-k3m9"}
 
 	changed := changedFields(before, after)
 	found := false
 	for _, c := range changed {
-		if c == "type" {
+		if c == "epic" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf(`changedFields must report "type" when it changes; got %v`, changed)
+		t.Errorf(`changedFields must report "epic" when it changes; got %v`, changed)
 	}
 
-	// An unchanged type must not be reported.
+	// Unchanged membership must not be reported.
 	if got := changedFields(after, after); len(got) != 0 {
 		t.Errorf("an all-equal pair must report no changes; got %v", got)
 	}

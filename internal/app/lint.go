@@ -11,6 +11,34 @@ import (
 	"github.com/akira-toriyama/furrow/internal/store/fsstore"
 )
 
+// LintErrorSummary counts lint ERRORS by code — the terse ride-along `furrow
+// sync` prints beside its revisit summary. Warnings are deliberately excluded:
+// the sync line exists so an error (a state someone must fix, e.g.
+// epic-required after a migration) surfaces in the loop that always runs, and
+// folding warnings in would train the reader to ignore the line.
+type LintErrorSummary struct {
+	Errors int            `json:"errors"`
+	Codes  map[string]int `json:"codes"`
+}
+
+// LintErrorCounts runs the ordinary lint pass and reduces it to error counts by
+// code. It is exactly a.Lint() plus counting — no second rule set — so the sync
+// summary can never disagree with `furrow lint`.
+func (a *App) LintErrorCounts() (LintErrorSummary, error) {
+	ps, err := a.Lint()
+	if err != nil {
+		return LintErrorSummary{}, err
+	}
+	sum := LintErrorSummary{Codes: map[string]int{}}
+	for _, p := range ps {
+		if p.Severity == core.SevError {
+			sum.Errors++
+			sum.Codes[p.Code]++
+		}
+	}
+	return sum, nil
+}
+
 // Lint runs the full consistency check: core's in-memory rules plus the
 // filesystem-level index<->body 1:1 mapping (every task has a body file and
 // vice versa). Config clamp warnings are surfaced too, so `furrow lint` is the
@@ -31,15 +59,24 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// canonicalize after and validate as before.
 	ps := core.EstimateProblems(idx)
 	core.Canonicalize(idx, a.Cfg.Lanes)
-	ps = append(ps, core.Validate(idx, a.Cfg.Lanes, a.Cfg.Types, a.Cfg.IDPattern())...)
+	ps = append(ps, core.Validate(idx, a.Cfg.Lanes, a.Cfg.IDPattern())...)
 	// Dependency cycles: prevented at mutation time, but a concurrent merge of
 	// two half-edges on separate shards can slip one in silently (the tasks then
 	// wait on each other forever and never surface in `next`). lint is the backstop.
 	ps = append(ps, core.CycleProblems(idx)...)
-	// The same backstop on the hierarchy edge. Reparent refuses a loop, but a git
-	// merge of two half-edges can still close one — and a parent cycle has no root,
-	// so every task in it belongs to no tree and appears under nothing.
-	ps = append(ps, core.ParentCycleProblems(idx)...)
+	// The epic rules need a SECOND store read (the boxes), which is why they are
+	// their own entry point rather than another Validate parameter — Validate's
+	// contract is "everything derivable from the Index alone".
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return nil, err
+	}
+	ps = append(ps, core.EpicProblems(idx, epics, a.Cfg.Terminal, a.Cfg.EpicIDPattern())...)
+	for _, e := range epics {
+		if p, ok := unknownKeyProblem(e.ID, "epic shard "+core.EpicPath(e.ID), e.ExtraKeys()); ok {
+			ps = append(ps, p)
+		}
+	}
 
 	// One pass over the task shards: collect the done set and flag per-shard
 	// findings (unknown keys, done-unclosed) on the way.
@@ -84,10 +121,6 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// reconcile-on-close — the always-on (hook/CI) twin of the `dep_done` revisit
 	// signal, so an epic whose slice shipped never silently keeps a stale body.
 	ps = append(ps, core.StaleDepProblems(idx, a.Cfg.Terminal, doneIDs)...)
-	// The hierarchy twin of the reconcile gap: an open task still hanging under a
-	// DONE parent — an epic closed with work left under it. Nothing reported this
-	// before, and until `furrow parent` there was no way to fix it once you noticed.
-	ps = append(ps, core.ParentDoneProblems(idx, a.Cfg.Terminal, doneIDs)...)
 
 	rps, err := a.lintRecordKeys()
 	if err != nil {
@@ -95,13 +128,13 @@ func (a *App) Lint() ([]core.Problem, error) {
 	}
 	ps = append(ps, rps...)
 
-	shapePs, hasTask, bodyIDs, err := a.lintStoreShape(idx)
+	shapePs, hasTask, hasEpic, bodyIDs, err := a.lintStoreShape(idx, epics)
 	if err != nil {
 		return nil, err
 	}
 	ps = append(ps, shapePs...)
 
-	bodyPs, err := a.lintBodyContent(hasTask, bodyIDs)
+	bodyPs, err := a.lintBodyContent(hasTask, hasEpic, bodyIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -163,21 +196,21 @@ func (a *App) lintRecordKeys() ([]core.Problem, error) {
 	return ps, nil
 }
 
-// lintStoreShape checks tasks/ <-> bodies/ 1:1 + shard filename/id integrity —
-// all by directory enumeration. Sharding makes a duplicate filename impossible;
-// a duplicate id can only appear as two shards carrying the same id field,
-// which the fold (Load) surfaces to core.Validate as a "duplicate id". It
-// returns the live-task id set and the body id list so the body-content scan
-// reuses them instead of re-listing.
-func (a *App) lintStoreShape(idx *core.Index) ([]core.Problem, map[string]bool, []string, error) {
+// lintStoreShape checks {tasks/, epics/} <-> bodies/ 1:1 + shard filename/id
+// integrity — all by directory enumeration. Sharding makes a duplicate filename
+// impossible; a duplicate id can only appear as two shards carrying the same id
+// field, which the fold (Load) surfaces to core.Validate as a "duplicate id".
+// It returns the live task and epic id sets and the body id list so the
+// body-content scan reuses them instead of re-listing.
+func (a *App) lintStoreShape(idx *core.Index, epics []core.Epic) ([]core.Problem, map[string]bool, map[string]bool, []string, error) {
 	var ps []core.Problem
 	taskFileIDs, err := a.Store.ListTaskIDs()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	bodyIDs, err := a.Store.ListBodyIDs()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	hasBody := map[string]bool{}
 	for _, id := range bodyIDs {
@@ -196,9 +229,19 @@ func (a *App) lintStoreShape(idx *core.Index) ([]core.Problem, map[string]bool, 
 			ps = append(ps, core.Problem{Severity: core.SevError, Code: "missing-body", ID: t.ID, Msg: fmt.Sprintf("task has no body file (%s)", core.BodyPath(t.ID))})
 		}
 	}
+	// Epics share bodies/ with the tasks (ids are prefix-disjoint), so the same
+	// 1:1 contract holds: every epic owns a body (EpicAdd seeds one, the v6
+	// migration renames or seeds one), and an epic's body is nobody's orphan.
+	hasEpic := map[string]bool{}
+	for i := range epics {
+		hasEpic[epics[i].ID] = true
+		if !hasBody[epics[i].ID] {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "missing-body", ID: epics[i].ID, Msg: fmt.Sprintf("epic has no body file (%s)", core.BodyPath(epics[i].ID))})
+		}
+	}
 	for _, id := range bodyIDs {
-		if !hasTask[id] {
-			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "orphan-body", ID: id, Msg: fmt.Sprintf("orphan body file %s has no task", core.BodyPath(id))})
+		if !hasTask[id] && !hasEpic[id] {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "orphan-body", ID: id, Msg: fmt.Sprintf("orphan body file %s has no task or epic", core.BodyPath(id))})
 		}
 	}
 	// Shard filename integrity: every shard file's name must equal the id it
@@ -210,7 +253,7 @@ func (a *App) lintStoreShape(idx *core.Index) ([]core.Problem, map[string]bool, 
 			ps = append(ps, core.Problem{Severity: core.SevError, Code: "shard-misnamed", ID: id, Msg: fmt.Sprintf("task shard %s's filename does not match the id it carries", core.TaskPath(id))})
 		}
 	}
-	return ps, hasTask, bodyIDs, nil
+	return ps, hasTask, hasEpic, bodyIDs, nil
 }
 
 // lintBodyContent scans every body ONCE for all three content findings —
@@ -218,15 +261,20 @@ func (a *App) lintStoreShape(idx *core.Index) ([]core.Problem, map[string]bool, 
 // the asset ledger (orphan / oversized). Keep it one pass: the [[id]] link
 // check and the asset-ref check deliberately share the same body read, and the
 // "referenced" set the pass accumulates is what the orphan check consumes.
-func (a *App) lintBodyContent(hasTask map[string]bool, bodyIDs []string) ([]core.Problem, error) {
+func (a *App) lintBodyContent(hasTask, hasEpic map[string]bool, bodyIDs []string) ([]core.Problem, error) {
 	var ps []core.Problem
-	// Dangling [[t-x]] links (warn): a body's [[id]] reference to an id that
-	// exists in neither the hot store nor the archive is a typo or a since-deleted
-	// task. It breaks nothing (hence warn), but backlinks (`show --backlinks`) and
-	// agents follow these links, so a broken one should surface. Known ids are the
-	// hot tasks (hasTask) plus the archive, so a link to an archived task is fine.
-	known := make(map[string]bool, len(hasTask))
+	// Dangling [[t-x]] / [[e-x]] links (warn): a body's [[id]] reference to an
+	// id that exists in neither the hot store nor the archive is a typo or a
+	// since-deleted record. It breaks nothing (hence warn), but backlinks
+	// (`show --backlinks`) and agents follow these links, so a broken one should
+	// surface. Known ids are the hot tasks and epics plus both archive kinds, so
+	// a link to an archived task — or to an epic the v6 migration filed in the
+	// archive store — is fine.
+	known := make(map[string]bool, len(hasTask)+len(hasEpic))
 	for id := range hasTask {
+		known[id] = true
+	}
+	for id := range hasEpic {
 		known[id] = true
 	}
 	arcIDs, err := a.archivedIDs()
@@ -254,6 +302,7 @@ func (a *App) lintBodyContent(hasTask map[string]bool, bodyIDs []string) ([]core
 	referenced := map[string]bool{}
 
 	linkRe := core.LinkPattern(a.Cfg.IDPrefix)
+	epicLinkRe := core.LinkPattern(a.Cfg.EpicIDPrefix)
 	for _, bid := range bodyIDs {
 		body, err := a.Store.LoadBody(bid)
 		if err != nil {
@@ -276,6 +325,11 @@ func (a *App) lintBodyContent(hasTask map[string]bool, bodyIDs []string) ([]core
 		for _, ref := range core.ExtractLinks(body, linkRe) {
 			if !known[ref] {
 				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "dangling-link", ID: bid, Msg: fmt.Sprintf("body links to %s via [[%s]] but no such task exists", ref, ref)})
+			}
+		}
+		for _, ref := range core.ExtractLinks(body, epicLinkRe) {
+			if !known[ref] {
+				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "dangling-link", ID: bid, Msg: fmt.Sprintf("body links to %s via [[%s]] but no such epic exists", ref, ref)})
 			}
 		}
 		// assets/<name> refs share this one body scan with the [[id]] links. A ref
@@ -358,17 +412,27 @@ func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
 	return ps
 }
 
-// archivedIDs returns the ids in the sibling archive store (.furrow/archive/),
-// or nil for a store that is not file-backed (an in-memory app has no archive on
-// disk). The dangling-link check treats these as known, so a [[id]] pointing at
-// an archived task is not flagged. Construction mirrors Archive's; ListTaskIDs
-// reads shard filenames only (no parse), and a missing archive dir yields nil.
+// archivedIDs returns the task AND epic ids in the sibling archive store
+// (.furrow/archive/), or nil for a store that is not file-backed (an in-memory
+// app has no archive on disk). The dangling-link check treats these as known,
+// so a [[id]] pointing at an archived task — or at an epic the v6 migration
+// filed in the archive store — is not flagged. Construction mirrors Archive's;
+// both List*IDs read shard filenames only (no parse), and a missing dir yields
+// nil.
 func (a *App) archivedIDs() ([]string, error) {
 	if a.Dir == "" {
 		return nil, nil
 	}
-	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.IDWidth)
-	return arc.ListTaskIDs()
+	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.EpicIDPrefix, a.Cfg.IDWidth)
+	ids, err := arc.ListTaskIDs()
+	if err != nil {
+		return nil, err
+	}
+	eids, err := arc.ListEpicIDs()
+	if err != nil {
+		return nil, err
+	}
+	return append(ids, eids...), nil
 }
 
 // assetOwner returns the task id that owns asset name — the id in taskIDs for

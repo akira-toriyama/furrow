@@ -1,0 +1,22 @@
+{
+  "id": "e-frzn1",
+  "title": "a frozen epic carrying every field furrow persists",
+  "goal": "pin an epic shard's bytes so a shape change shows the damage",
+  "active": true,
+  "labels": [
+    "cli",
+    "dx"
+  ],
+  "repos": [
+    "akira-toriyama/furrow"
+  ],
+  "meta": {
+    "place": "北海道",
+    "span": "2026/08/10 ~ 2026/08/15"
+  },
+  "created": "2026-07-01T09:00:00Z",
+  "updated": "2026-07-13T04:15:00Z",
+  "closed": null,
+  "body": "bodies/e-frzn1.md",
+  "budget": 1200
+}

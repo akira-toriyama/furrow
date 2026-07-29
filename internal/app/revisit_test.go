@@ -12,7 +12,7 @@ import (
 // revisitApp builds an app with a mutable clock so tests can age tasks.
 func revisitApp() (*App, *fixedClock) {
 	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, cfg.IDWidth)
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
 	clk := &fixedClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	return NewWithStore(st, cfg, clk), clk
 }
@@ -32,12 +32,13 @@ func codesByID(items []RevisitItem) map[string][]string {
 
 func p(n int) *int { return &n }
 
-// TestRevisitContainerSignals pins t-3jd1 §3(d): children_done fires for an open
-// container whose children are all done, stuck_container for one with open work but
-// no actionable descendant, a fresh EMPTY epic gets neither (hole ①), and a plain
-// (non-container) parent never gets a container signal.
-func TestRevisitContainerSignals(t *testing.T) {
-	a, _ := revisitApp()
+// The three epic signals, and the two states that must stay QUIET.
+//
+// epic_all_done and epic_stuck are mutually exclusive by construction (all-done
+// short-circuits). epic_stale is orthogonal and rides along: an ACTIVE box can be
+// both blocked and forgotten, and that is worth saying twice.
+func TestRevisitEpicSignals(t *testing.T) {
+	a, clk := revisitApp()
 	mk := func(title string, o AddOpts) string {
 		task, err := a.Add(title, o)
 		if err != nil {
@@ -45,13 +46,11 @@ func TestRevisitContainerSignals(t *testing.T) {
 		}
 		return task.ID
 	}
-	allDone := mk("epic all done", AddOpts{Type: "epic", Status: "backlog"})
-	mk("done kid", AddOpts{Parent: allDone, Status: "done"})
-	stuck := mk("epic stuck", AddOpts{Type: "epic", Status: "backlog"})
-	mk("backlog kid", AddOpts{Parent: stuck, Status: "backlog"})
-	empty := mk("epic empty", AddOpts{Type: "epic", Status: "backlog"})
-	plain := mk("plain parent", AddOpts{Status: "backlog"})
-	mk("done kid 2", AddOpts{Parent: plain, Status: "done"})
+	allDone := mustEpic(t, a, "box all done", EpicAddOpts{})
+	mk("done member", AddOpts{Epic: allDone, Status: "done"})
+	stuck := mustEpic(t, a, "box stuck", EpicAddOpts{})
+	mk("backlog member", AddOpts{Epic: stuck, Status: "backlog"}) // open, but backlog is not a next lane
+	empty := mustEpic(t, a, "box empty", EpicAddOpts{})
 
 	sum, err := a.RevisitSummary(QueryOpts{}, 0)
 	if err != nil {
@@ -65,17 +64,32 @@ func TestRevisitContainerSignals(t *testing.T) {
 		}
 		return false
 	}
-	if !has(sum.ChildrenDone, allDone) || has(sum.StuckContainer, allDone) {
-		t.Errorf("all-done epic: want children_done only; done=%v stuck=%v", sum.ChildrenDone, sum.StuckContainer)
+	if !has(sum.EpicAllDone, allDone) || has(sum.EpicStuck, allDone) {
+		t.Errorf("all-done box: want epic_all_done only; done=%v stuck=%v", sum.EpicAllDone, sum.EpicStuck)
 	}
-	if !has(sum.StuckContainer, stuck) || has(sum.ChildrenDone, stuck) {
-		t.Errorf("stuck epic: want stuck_container only; done=%v stuck=%v", sum.ChildrenDone, sum.StuckContainer)
+	if !has(sum.EpicStuck, stuck) || has(sum.EpicAllDone, stuck) {
+		t.Errorf("stuck box: want epic_stuck only; done=%v stuck=%v", sum.EpicAllDone, sum.EpicStuck)
 	}
-	if has(sum.ChildrenDone, empty) || has(sum.StuckContainer, empty) {
-		t.Error("an empty epic (zero children) must get NEITHER container signal — hole ①")
+	if has(sum.EpicAllDone, empty) || has(sum.EpicStuck, empty) {
+		t.Error("an empty box (zero members) must get NEITHER signal — declaring it first is legitimate")
 	}
-	if has(sum.ChildrenDone, plain) || has(sum.StuckContainer, plain) {
-		t.Error("a non-container parent must get NO container signal")
+
+	// epic_stale fires only for the ACTIVE box: a parked epic is SUPPOSED to sit
+	// untouched, so flagging it would make the signal meaningless.
+	active := mustEpic(t, a, "the active box", EpicAddOpts{Repos: []string{"o/r"}})
+	mk("live member", AddOpts{Epic: active, Status: "ready"})
+	mustActivate(t, a, active)
+	clk.t = clk.t.AddDate(0, 0, 60)
+
+	sum, err = a.RevisitSummary(QueryOpts{}, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !has(sum.EpicStale, active) {
+		t.Errorf("an active box untouched for 60d must be epic_stale; got %v", sum.EpicStale)
+	}
+	if has(sum.EpicStale, stuck) {
+		t.Errorf("a NON-active box must never be epic_stale (parked is not forgotten); got %v", sum.EpicStale)
 	}
 }
 

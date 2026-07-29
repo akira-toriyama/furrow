@@ -40,17 +40,17 @@ func TestLsQueryFilters(t *testing.T) {
 	initStore(t)
 	cli := addTask(t, "cli bug fix", "-s", "ready", "-l", "cli,bug", "--value", "4", "--effort", "2")
 	docs := addTask(t, "docs sweep", "-s", "backlog", "-l", "docs", "--value", "2", "--effort", "1")
-	epic := addTask(t, "an epic", "-s", "backlog", "--type", "epic")
+	parked := addTask(t, "parked", "-s", "backlog")
 	base := addTask(t, "base", "-s", "ready")
 	waiter := addTask(t, "waiter", "-s", "ready", "--dep", base)
 
-	// is:actionable — a next lane, deps done, not a container.
+	// is:actionable — a next lane with every dep done.
 	act := qIDs(t, "is:actionable")
 	if !slices.Contains(act, cli) || !slices.Contains(act, base) {
 		t.Errorf("is:actionable must include cli+base: %v", act)
 	}
-	if slices.Contains(act, waiter) || slices.Contains(act, docs) || slices.Contains(act, epic) {
-		t.Errorf("is:actionable must exclude waiter/docs/epic: %v", act)
+	if slices.Contains(act, waiter) || slices.Contains(act, docs) || slices.Contains(act, parked) {
+		t.Errorf("is:actionable must exclude waiter/docs/parked: %v", act)
 	}
 
 	// is:blocked — the waiter has an unsatisfied dep.
@@ -58,9 +58,11 @@ func TestLsQueryFilters(t *testing.T) {
 		t.Errorf("is:blocked = %v; want just waiter", b)
 	}
 
-	// is:container — the epic.
-	if c := qIDs(t, "is:container"); !slices.Contains(c, epic) || len(c) != 1 {
-		t.Errorf("is:container = %v; want just the epic", c)
+	// is:unfiled — every task here, since none was filed under a box. It replaces
+	// v5's is:container/is:stuck, which described a box; a box is no longer a task,
+	// so a TASK-level flag about one cannot exist.
+	if u := qIDs(t, "is:unfiled"); len(u) != 5 {
+		t.Errorf("is:unfiled = %v; want all five (none is filed)", u)
 	}
 
 	// comma-OR label + numeric comparison: cli(v4) and docs(v2) both qualify.
@@ -69,9 +71,9 @@ func TestLsQueryFilters(t *testing.T) {
 		t.Errorf("label:cli,docs value:>=2 = %v; want cli+docs", or)
 	}
 
-	// negation: everything not in the backlog excludes docs+epic.
-	if nb := qIDs(t, "-status:backlog"); slices.Contains(nb, docs) || slices.Contains(nb, epic) {
-		t.Errorf("-status:backlog must exclude docs+epic: %v", nb)
+	// negation: everything not in the backlog excludes docs+parked.
+	if nb := qIDs(t, "-status:backlog"); slices.Contains(nb, docs) || slices.Contains(nb, parked) {
+		t.Errorf("-status:backlog must exclude docs+parked: %v", nb)
 	}
 
 	// has:/no: presence.

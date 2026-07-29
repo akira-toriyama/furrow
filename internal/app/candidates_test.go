@@ -7,7 +7,8 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// A closed vocabulary (lanes, types) must ALWAYS fail with the vocabulary in
+// A closed vocabulary (lanes) — and any almost-resolving reference (an epic) —
+// must ALWAYS fail with the candidates in
 // Candidates — CLAUDE.md tells agents to branch on that array and never regex
 // the prose, so a gate that omits it is a silent contract break, not a cosmetic
 // one. Before this test, unknownTypeErr had no coverage at all and AddMany
@@ -16,13 +17,19 @@ import (
 // divergence class of t-adx9 / t-ek9y, this time in the error shape).
 func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 	lanes := []string{"inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"}
-	types := []string{"task", "epic"}
+
+	// The epic cases need a box to suggest: candidates are the board's epic ids,
+	// not a compiled-in vocabulary, so a helper seeds one and reports its id.
+	seedEpic := func(a *App) []string { return []string{mustEpic(t, a, "seed box", EpicAddOpts{})} }
 
 	cases := []struct {
-		name  string
-		call  func(a *App) error
-		want  []string
-		inMsg string // a substring the message must keep (bulk gates say WHICH spec)
+		name string
+		call func(a *App) error
+		want []string
+		// wantFn seeds the board and returns the expected candidates, for the cases
+		// whose vocabulary is DATA (epic ids) rather than a compiled-in list.
+		wantFn func(a *App) []string
+		inMsg  string // a substring the message must keep (bulk gates say WHICH spec)
 	}{
 		{
 			name: "add --status",
@@ -30,9 +37,9 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 			want: lanes,
 		},
 		{
-			name: "add --type",
-			call: func(a *App) error { _, err := a.Add("x", AddOpts{Type: "epci"}); return err },
-			want: types,
+			name:   "add -e",
+			call:   func(a *App) error { _, err := a.Add("x", AddOpts{Epic: "no-such-box"}); return err },
+			wantFn: seedEpic,
 		},
 		{
 			name: "add --stdin --status",
@@ -44,31 +51,26 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 			inMsg: `spec 0 ("bulk")`,
 		},
 		{
-			name: "add --stdin --type",
+			name: "add --stdin -e",
 			call: func(a *App) error {
-				_, err := a.AddMany([]AddSpec{{Title: "bulk", AddOpts: AddOpts{Type: "epci"}}})
+				_, err := a.AddMany([]AddSpec{{Title: "bulk", AddOpts: AddOpts{Epic: "no-such-box"}}})
 				return err
 			},
-			want:  types,
-			inMsg: `spec 0 ("bulk")`,
+			wantFn: seedEpic,
+			inMsg:  `spec 0 ("bulk")`,
 		},
 		{
-			name: "set --type",
+			name: "set -e",
 			call: func(a *App) error {
 				task, err := a.Add("x", AddOpts{})
 				if err != nil {
 					return err
 				}
-				bad := "epci"
-				_, _, err = a.Set(task.ID, SetOpts{Type: &bad})
+				bad := "no-such-box"
+				_, _, err = a.Set(task.ID, SetOpts{Epic: &bad})
 				return err
 			},
-			want: types,
-		},
-		{
-			name: "ls --type",
-			call: func(a *App) error { _, err := a.List(QueryOpts{Type: "epci"}); return err },
-			want: types,
+			wantFn: seedEpic,
 		},
 		{
 			name: "ls -s",
@@ -91,7 +93,12 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.call(newApp())
+			a := newApp()
+			want := tc.want
+			if tc.wantFn != nil {
+				want = tc.wantFn(a) // seeds the board AND names the expected candidates
+			}
+			err := tc.call(a)
 			if err == nil {
 				t.Fatal("a value outside the closed vocabulary must fail")
 			}
@@ -102,8 +109,8 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 			if fe.Code != core.CodeValidation {
 				t.Errorf("code = %d, want %d (bad input, do not retry)", fe.Code, core.CodeValidation)
 			}
-			if !equalStrings(fe.Candidates, tc.want) {
-				t.Errorf("candidates = %v, want %v — an agent branches on this array", fe.Candidates, tc.want)
+			if !equalStrings(fe.Candidates, want) {
+				t.Errorf("candidates = %v, want %v — an agent branches on this array", fe.Candidates, want)
 			}
 			if tc.inMsg != "" && !strings.Contains(fe.Msg, tc.inMsg) {
 				t.Errorf("message %q lost the spec context %q — a bulk failure must say which input", fe.Msg, tc.inMsg)

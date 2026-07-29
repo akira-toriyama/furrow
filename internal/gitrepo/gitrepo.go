@@ -162,6 +162,41 @@ func (r *Repo) DirtyChanges(ctx context.Context, pathspec string) ([]Change, err
 	return changes, nil
 }
 
+// AddedLine is one line the unpushed commits add to a file: its slash-form path
+// relative to the work-tree toplevel, and the line's text without the leading
+// "+". The parse stays here, in the adapter, so app never sees diff wire format.
+type AddedLine struct {
+	Path string
+	Text string
+}
+
+// AddedLines returns the lines that commits not yet on the upstream
+// (@{upstream}..HEAD) add under pathspec — what a `git push` from here would
+// publish. It is a best-effort DISPLAY read: any failure (no upstream
+// configured, detached HEAD) returns nil rather than an error, because no
+// caller should ever fail a sync over a summary line. --unified=0 keeps context
+// lines out so every "+" line really was added.
+func (r *Repo) AddedLines(ctx context.Context, pathspec string) []AddedLine {
+	out, _, err := runGit(ctx, r.git, r.top, "-c", "core.quotepath=false",
+		"diff", "--unified=0", "@{upstream}..HEAD", "--", pathspec)
+	if err != nil {
+		return nil
+	}
+	var lines []AddedLine
+	path := ""
+	for _, l := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(l, "+++ b/"):
+			path = filepath.ToSlash(strings.TrimPrefix(l, "+++ b/"))
+		case strings.HasPrefix(l, "+++"):
+			path = "" // a deletion's "+++ /dev/null"
+		case strings.HasPrefix(l, "+") && path != "":
+			lines = append(lines, AddedLine{Path: path, Text: strings.TrimPrefix(l, "+")})
+		}
+	}
+	return lines
+}
+
 // Commit stages and commits ONLY the given pathspecs (`git add -- <p>...` then
 // `git commit -m <msg> -- <p>...`), so other dirty files in the board repo —
 // notes, drafts, or a co-located operator's uncommitted body — are never swept

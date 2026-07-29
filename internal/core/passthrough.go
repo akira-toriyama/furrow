@@ -182,6 +182,7 @@ func spliceExtras(obj []byte, extras Extras) ([]byte, error) {
 var (
 	taskKnownKeys = knownNames(Task{})
 	repoKnownKeys = knownNames(RepoRecord{})
+	epicKnownKeys = knownNames(Epic{})
 	metaKnownKeys = knownNames(Meta{})
 )
 
@@ -215,6 +216,29 @@ func encodeCanonicalWithExtras(v any, extras Extras) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// extrasStringValue decodes the extras value under EXACTLY this key as a JSON
+// string. ok is false when the key is absent; isString is false when it is
+// present but not a JSON string — the caller then leaves it alone, because a
+// value we cannot read is a value we must not consume. It lives here (not in
+// migrate_v6.go) because decoding a shard's bytes is this file's monopoly:
+// check-marshal-singlepath.sh guards every other file against encoding/json.
+//
+// The lookup is deliberately exact, not EqualFold: v5's own marshaller wrote
+// the retired keys canonically ("type", "parent"), so a case-variant can only
+// come from a hand edit — and those stay parked, where lint's
+// unknown-shard-key makes them a human's decision instead of a guess.
+func extrasStringValue(e Extras, key string) (val string, ok, isString bool) {
+	raw, present := e[key]
+	if !present {
+		return "", false, false
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", true, false
+	}
+	return s, true, true
+}
+
 // extraKeys names the unknown keys a record arrived with, sorted; nil when there
 // are none. It is the ONLY way out of an extras map, and there is deliberately no
 // way IN other than unmarshalling a shard: furrow must never be able to invent an
@@ -233,13 +257,13 @@ func extraKeys(e Extras) []string {
 
 // ExtraKeys reports the keys this record carried that furrow does not know.
 //
-// All THREE persisted types expose it, and that is not symmetry for its own sake:
-// all three are machine-written, and all three now declare additionalProperties:
-// true in their published schema — so `furrow lint` (internal/app.Lint) is the
-// only thing left that can say "this key is preserved, but IGNORED". A type that
-// parked unknown keys without an accessor would hide a typo in meta.json or a repo
-// review shard from every tool furrow has, forever, because nothing ever deletes
-// an extra.
+// All FOUR persisted types expose it, and that is not symmetry for its own sake:
+// all four are machine-written, and all four declare additionalProperties: true
+// in their published schema — so `furrow lint` (internal/app.Lint) is the only
+// thing left that can say "this key is preserved, but IGNORED". A type that
+// parked unknown keys without an accessor would hide a typo in meta.json, a repo
+// review shard, or an epic from every tool furrow has, forever, because nothing
+// ever deletes an extra.
 func (t *Task) ExtraKeys() []string { return extraKeys(t.extras) }
 
 // ExtraKeys reports the keys meta.json carried that furrow does not know.
@@ -247,3 +271,6 @@ func (m *Meta) ExtraKeys() []string { return extraKeys(m.extras) }
 
 // ExtraKeys reports the keys this repo review shard carried that furrow does not know.
 func (r *RepoRecord) ExtraKeys() []string { return extraKeys(r.extras) }
+
+// ExtraKeys reports the keys this epic shard carried that furrow does not know.
+func (e *Epic) ExtraKeys() []string { return extraKeys(e.extras) }

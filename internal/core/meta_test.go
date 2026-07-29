@@ -10,7 +10,7 @@ func TestMarshalMetaCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"schema_version\": 5\n}\n"
+	want := "{\n  \"schema_version\": 6\n}\n"
 	if string(b) != want {
 		t.Errorf("MarshalMeta bytes = %q, want %q", b, want)
 	}
@@ -31,12 +31,17 @@ func TestUnmarshalMetaRejectsGarbage(t *testing.T) {
 	}
 }
 
-// SchemaVersion is 5: the per-task `type` field was additive but layout-breaking
-// (next reads it to skip containers, so a v4 binary that merely preserved it
-// would still hand you an epic as work), so the flag-day bumped every board — a
-// v4 binary refuses it (the version gate) instead of ignoring the new field.
-func TestSchemaVersionIsFive(t *testing.T) {
-	if SchemaVersion != 5 {
-		t.Errorf("SchemaVersion = %d, want 5 (per-task type field)", SchemaVersion)
+// SchemaVersion is 6: the epic pivot removed `parent` and `type`, added the
+// per-task `epic` field, and introduced a new shard kind (epics/<id>.json).
+// `next` scopes on `epic` and `lint` errors on its absence, so a v5 binary that
+// merely PRESERVED the field would hand out work from the wrong box while
+// reporting a clean board — the gate must refuse the layout, not ignore it.
+//
+// The literal is deliberate (not `!= SchemaVersion`): this test's whole job is to
+// make a bump impossible to do by accident, so it has to fail when the const moves
+// and force the author to confirm the flag day.
+func TestSchemaVersionIsSix(t *testing.T) {
+	if SchemaVersion != 6 {
+		t.Errorf("SchemaVersion = %d, want 6 (the epic pivot)", SchemaVersion)
 	}
 }

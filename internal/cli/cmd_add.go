@@ -21,13 +21,12 @@ func newAddCmd() *cobra.Command {
 		labels   []string
 		repos    []string
 		draft    bool
-		parent   string
 		deps     []string
 		refs     []string
 		body     string
 		checks   []string
 		stdin    bool
-		typ      string
+		epicRef  string
 	)
 	cmd := &cobra.Command{
 		Use:   "add <title>...",
@@ -54,8 +53,8 @@ func newAddCmd() *cobra.Command {
 			}
 			opts := app.AddOpts{
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
-				Parent: parent, Deps: deps, Refs: refs, Body: body, Checklist: checks,
-				Type: typ,
+				Deps: deps, Refs: refs, Body: body, Checklist: checks,
+				Epic: epicRef,
 			}
 			if cmd.Flags().Changed("priority") {
 				p := priority
@@ -99,14 +98,13 @@ func newAddCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "lane (default: config lanes.default)")
-	cmd.Flags().StringVar(&typ, "type", "", "work-item type (a value from [types].order, e.g. epic; unknown = exit 2 + candidates)")
 	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "explicit priority (default: append in lane)")
 	cmd.Flags().IntVar(&value, "value", 0, "coarse 1..5 value estimate (clamped; omit to leave unset)")
 	cmd.Flags().IntVar(&effort, "effort", 0, "coarse 1..5 effort estimate (clamped; omit to leave unset)")
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable)")
 	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "repo to attach (owner/repo, or a unique short name; repeatable)")
 	cmd.Flags().BoolVar(&draft, "draft", false, "create as a draft (no repo attached; suppresses the board repo); conflicts with -r")
-	cmd.Flags().StringVar(&parent, "parent", "", "parent task id")
+	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "epic to file this task under (id, unique id prefix, or unique title substring)")
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
 	cmd.Flags().StringSliceVar(&refs, "ref", nil, "reference (file:line or URL, repeatable)")
 	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (`-` reads stdin; default: a heading from the title)")

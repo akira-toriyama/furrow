@@ -120,7 +120,7 @@ a weekly `StartCalendarInterval` — schedules the nudge; point the script at
 `furrow review <repo>` after the review to reset the clock.
 
 `furrow revisit` is the per-TASK view (`no_repo`, `value_unset`, `effort_unset`,
-`stale`, `dep_done`, and a container's `children_done` / `stuck_container`); the
+`stale`, `dep_done`, and a box's `epic_all_done` / `epic_stuck` / `epic_stale`); the
 repo clock is a board-level tally, so it rides on the summary that `sync` and
 `brief` return, not on `revisit`.
 

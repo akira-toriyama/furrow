@@ -12,5 +12,6 @@
   "updated": "2026-07-01T09:00:00Z",
   "closed": null,
   "reviewed": null,
-  "body": "bodies/t-frzn2.md"
+  "body": "bodies/t-frzn2.md",
+  "epic": "e-frzn1"
 }

@@ -12,7 +12,6 @@
   "repos": [
     "akira-toriyama/furrow"
   ],
-  "parent": "t-frzn2",
   "deps": [
     "t-frzn3"
   ],
@@ -35,6 +34,7 @@
   "closed": null,
   "reviewed": "2026-07-10T00:00:00Z",
   "body": "bodies/t-frzn1.md",
+  "epic": "e-frzn1",
   "blocked": true,
   "blocked_by": {
     "kind": "review",

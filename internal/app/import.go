@@ -77,19 +77,12 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		if err := s.requireNonBlankValues(""); err != nil {
 			return nil, specf(err)
 		}
-		// Mirror single Add's type gate (app.go): a bulk spec's type must be in the
-		// [types].order vocabulary, else the whole batch fails before anything is
-		// written. Same precedence as Add (after the draft check, before repo
-		// resolution). Without this, `add --stdin --type bogus` was silently created.
-		if !a.Cfg.IsType(s.Type) {
-			return nil, specf(a.unknownTypeErr("", s.Type))
-		}
 		repos, err := resolveRepoArgs(s.Repos, "", universe)
 		if err != nil {
 			return nil, specf(err)
 		}
 		specs[i].Repos = a.withBoardRepo(repos, s.Draft)
-		// A dep/parent must pre-exist (validated against the pre-batch index):
+		// A dep must pre-exist (validated against the pre-batch index):
 		// batch ids are minted below, so an intra-batch reference is impossible —
 		// a dangling one would silently drop the task out of `next`. Checked after
 		// repo resolution so the error precedence matches single Add.
@@ -98,8 +91,17 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 				return nil, core.Validationf("", "spec %d (%q): dependency %q does not exist", i, s.Title, dep)
 			}
 		}
-		if s.Parent != "" && !idx.Has(s.Parent) {
-			return nil, core.Validationf("", "spec %d (%q): parent %q does not exist", i, s.Title, s.Parent)
+		// Mirror single Add's epic resolution. Without this the bulk path would
+		// store the raw REFERENCE (a title substring, an id prefix) as if it were an
+		// epic id — a task filed under a box that does not exist, reported only by
+		// lint. This is the exact bulk-vs-single divergence add_parity_test.go
+		// exists to catch, and --type had it before this field did.
+		if s.Epic != "" {
+			resolved, err := a.ResolveEpic(s.Epic)
+			if err != nil {
+				return nil, specf(err)
+			}
+			specs[i].Epic = resolved
 		}
 	}
 
@@ -123,10 +125,10 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		t := core.Task{
 			ID: id, Title: s.Title, Status: lane, Priority: prio,
 			Value: cloneIntp(s.Value), Effort: cloneIntp(s.Effort),
-			Labels: s.Labels, Repos: s.Repos, Parent: s.Parent, Deps: s.Deps, Refs: s.Refs,
+			Labels: s.Labels, Repos: s.Repos, Deps: s.Deps, Refs: s.Refs,
 			Checklist: seedChecklist(s.Checklist),
 			Created:   now, Updated: now, Body: core.BodyPath(id),
-			Type: s.Type,
+			Epic: s.Epic,
 		}
 		// Mirror Add: a task born in the done lane is closed at birth, so bulk
 		// `add --stdin -s done` doesn't leak the same closed:null zombie. A
