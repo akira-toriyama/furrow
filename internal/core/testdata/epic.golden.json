@@ -17,5 +17,9 @@
   "created": "2026-07-28T01:02:03Z",
   "updated": "2026-07-28T01:02:03Z",
   "closed": null,
-  "body": "bodies/e-k3m9.md"
+  "body": "bodies/e-k3m9.md",
+  "deps": [
+    "e-aa01",
+    "e-zz10"
+  ]
 }

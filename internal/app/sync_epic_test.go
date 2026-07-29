@@ -13,7 +13,7 @@ func TestSyncReportsPublishedEpicSwitches(t *testing.T) {
 	_, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	id := mustEpic(t, a, "focus box", EpicAddOpts{Repos: []string{"o/r"}})
-	if _, _, err := a.EpicActivate(id, "session start"); err != nil {
+	if _, _, _, err := a.EpicActivate(id, "session start"); err != nil {
 		t.Fatal(err)
 	}
 

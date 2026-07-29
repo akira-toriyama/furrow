@@ -17,6 +17,10 @@ type EpicItem struct {
 	Epic     core.Epic
 	Progress Progress
 	Stuck    bool
+	// OpenDeps are the epic's deps still open (openEpicDeps) — the unsatisfied
+	// "open after" edges, resolved here so a row can say what it waits on
+	// without a second read. Empty for a box whose deps are all closed.
+	OpenDeps []string
 }
 
 // EpicDetail is `epic show`: the box, its roll-up, its members in canonical
@@ -27,8 +31,12 @@ type EpicDetail struct {
 	Epic     core.Epic
 	Progress Progress
 	Stuck    bool
-	Tasks    []ListItem
-	Body     string
+	// Deps are the epic's dep edges resolved to id+title+state (EpicRef), so
+	// `epic show` can print what this box waits on without a second read; the
+	// raw id set rides in Epic.Deps.
+	Deps  []EpicRef
+	Tasks []ListItem
+	Body  string
 }
 
 // EpicAddOpts are the creation options for `furrow epic add`.
@@ -145,7 +153,8 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 		if o.Repo != "" && !anyRepoMatch(e.Repos, []string{o.Repo}) {
 			continue
 		}
-		out = append(out, EpicItem{Epic: e, Progress: counts[e.ID], Stuck: a.epicStuck(idx, e.ID, doneIDs)})
+		out = append(out, EpicItem{Epic: e, Progress: counts[e.ID], Stuck: a.epicStuck(idx, e.ID, doneIDs),
+			OpenDeps: openEpicDeps(&e, epics)})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		ri, rj := epicRank(out[i].Epic), epicRank(out[j].Epic)
@@ -171,18 +180,26 @@ func epicRank(e core.Epic) int {
 	}
 }
 
-// EpicShow resolves ref and returns the box with its members.
+// EpicShow resolves ref and returns the box with its members. It loads the
+// whole epic set (not just the one shard) so the dep edges can be resolved to
+// titles+states in the same read.
 func (a *App) EpicShow(ref string) (*EpicDetail, error) {
-	id, err := a.ResolveEpic(ref)
+	epics, err := a.Store.LoadEpics()
 	if err != nil {
 		return nil, err
 	}
-	e, ok, err := a.Store.LoadEpic(id)
+	id, err := a.resolveEpicIn(ref, epics)
 	if err != nil {
 		return nil, err
 	}
-	if !ok {
-		return nil, core.NotFound(id)
+	byID := make(map[string]*core.Epic, len(epics))
+	for i := range epics {
+		byID[epics[i].ID] = &epics[i]
+	}
+	e := byID[id]
+	deps := []EpicRef{}
+	for _, d := range e.Deps {
+		deps = append(deps, resolveEpicRef(byID, d))
 	}
 	idx, err := a.Store.Load()
 	if err != nil {
@@ -200,6 +217,7 @@ func (a *App) EpicShow(ref string) (*EpicDetail, error) {
 		Epic:     *e,
 		Progress: epicProgress(idx, a.Cfg.DoneLane)[id],
 		Stuck:    a.epicStuck(idx, id, a.doneSet(idx)),
+		Deps:     deps,
 		Tasks:    items,
 		Body:     body,
 	}, nil
@@ -268,14 +286,21 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, error)
 // surfaces the session's switches. The risk worth catching is not "the agent
 // switched on purpose" but "the agent read an instruction AS a switch", and a
 // record makes that visible in the same session rather than weeks later.
-func (a *App) EpicActivate(ref, reason string) (*core.Epic, *core.Epic, error) {
+//
+// openDeps names the target's deps still open (openEpicDeps) — the "this box
+// was meant to open after those" edges being crossed. Deliberately a WARNING
+// payload, never a gate: the dep is information (see Epic.Deps), the ordering
+// is advice, and the day it must be crossed the tool must not stand in the
+// way. The CLI prints it to stderr and puts it in the --json envelope; lint's
+// epic-dep-open keeps the state visible afterwards.
+func (a *App) EpicActivate(ref, reason string) (before, after *core.Epic, openDeps []string, err error) {
 	id, err := a.ResolveEpic(ref)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	epics, err := a.Store.LoadEpics()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var target *core.Epic
 	for i := range epics {
@@ -284,31 +309,32 @@ func (a *App) EpicActivate(ref, reason string) (*core.Epic, *core.Epic, error) {
 		}
 	}
 	if target == nil {
-		return nil, nil, core.NotFound(id)
+		return nil, nil, nil, core.NotFound(id)
 	}
 	if !target.IsOpen() {
-		return nil, nil, core.Validationf(id, "epic %s is closed — reopen it before activating", id)
+		return nil, nil, nil, core.Validationf(id, "epic %s is closed — reopen it before activating", id)
 	}
 	if len(target.Repos) == 0 {
-		return nil, nil, core.Validationf(id, "epic %s names no repo — attach one first (`furrow epic set %s --add-repo <owner/repo>`); a repo-less box would bypass the one-active-per-repo rule", id, id)
+		return nil, nil, nil, core.Validationf(id, "epic %s names no repo — attach one first (`furrow epic set %s --add-repo <owner/repo>`); a repo-less box would bypass the one-active-per-repo rule", id, id)
 	}
+	openDeps = openEpicDeps(target, epics)
 	if target.Active {
 		// Idempotent: re-activating the open box is a no-op, not an error.
-		before := *target
-		return &before, target, nil
+		b := *target
+		return &b, target, openDeps, nil
 	}
 	if err := a.checkRepoSlots(target, epics); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	before, after, err := a.mutateEpic(id, func(e *core.Epic) error { e.Active = true; return nil })
+	before, after, err = a.mutateEpic(id, func(e *core.Epic) error { e.Active = true; return nil })
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := a.recordSwitch(id, reason); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return before, after, nil
+	return before, after, openDeps, nil
 }
 
 // checkRepoSlots refuses an activation that would give a repo two active boxes,

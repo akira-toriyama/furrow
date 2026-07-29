@@ -73,6 +73,20 @@ the user-level config. When you work with any furrow store:
   a legitimate record. `lint` names the two states that follow: `parent-cycle`
   (error, the git-merge backstop) and `parent-done` (warn — an open task under a
   closed epic).
+- **An epic can WAIT ON other epics (schema v7): `furrow epic dep <id>
+  <dep-id>...` / `--rm` / `--list`** — the task `dep` contract carried to boxes
+  (variadic, all-or-nothing, acyclic on the write path, `--list` = both
+  directions resolved to id+title+state). The edge is the order boxes OPEN in,
+  and it is INFORMATION, not enforcement — deliberately weaker than a task dep:
+  `epic activate` on a box with an open dep WARNS and proceeds (stderr note +
+  `open_deps` in the `--json` envelope), a dep on a CLOSED epic is simply
+  satisfied, and parallel branches are just two epics sharing a dep. `epic
+  ls`/`epic show`/`brief` surface the waiting state (`open_deps` / a `deps:`
+  line / ⏳ waits); `revisit` and `sync` raise **`epic_dep_done`** when every
+  dep of a PARKED box is closed — that box's turn to open (furrow still never
+  chooses: activating it stays the human's call). `lint` backstops what merges
+  let through: `epic-dep-cycle` (error), `epic-dep-missing` (error),
+  `epic-dep-open` (warn — an ACTIVE box still waiting on an open one).
 - **`type` is first-class; an epic is a container, declared not inferred (schema
   v5).** A task carries a `type` from the closed `[types].order` vocabulary
   (default `task`, `epic`; `default`/`containers` alongside it, same
@@ -144,8 +158,9 @@ the user-level config. When you work with any furrow store:
   `add --stdin` bulk-creates one task per stdin line;
   `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) and
   `revisit --json` a `revisit` array (`no_repo`, `value_unset`, `effort_unset`,
-  `stale`, `dep_done`) per task, and the three box-level ones
-  (`epic_all_done` / `epic_stuck` / `epic_stale`) alongside.
+  `stale`, `dep_done`) per task, and the four box-level ones
+  (`epic_all_done` / `epic_stuck` / `epic_stale` / `epic_dep_done` — the last
+  says every epic this box waited on is closed, its turn to open) alongside.
 - **Batch reads by id: `show <id>... --no-body`** — any id set in one process,
   metadata only (no `body_text`), input order. `--json` = array for ≥2 ids (a
   single id keeps the classic object), `--ndjson` = one line per task at any
@@ -223,7 +238,7 @@ the user-level config. When you work with any furrow store:
   and is not flagged.
   A successful sync also gains a `revisit` key
   (`{dep_done:[ids], stale:[ids], epic_all_done:[ids], epic_stuck:[ids],
-  epic_stale:[ids], unreviewed:[{repo,days}]}` — each sub-key omitted when empty, repo-scoped, the
+  epic_stale:[ids], epic_dep_done:[ids], unreviewed:[{repo,days}]}` — each sub-key omitted when empty, repo-scoped, the
   whole key omitted when the board is clean) — the loop-visible staleness nudge;
   run `furrow revisit` for task detail, `furrow review <repo>` to reset a repo's
   `unreviewed` clock.
@@ -328,7 +343,7 @@ their repositories in the first-class `repos` field) or a store can live
 repo-local. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
-(`{"schema_version": 5}`); long-form prose lives in
+(`{"schema_version": 7}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI drives it (CLI-only — any TUI/GUI is a
 separate out-of-repo front-end that speaks the CLI/JSON contract). Go,

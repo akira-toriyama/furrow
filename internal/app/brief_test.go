@@ -137,7 +137,7 @@ func TestBriefCarriesTheEpicHeaderAndLintRideAlong(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := a.EpicActivate(e.ID, ""); err != nil {
+	if _, _, _, err := a.EpicActivate(e.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	eid := e.ID

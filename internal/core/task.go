@@ -28,7 +28,13 @@ import (
 // release (the fleet's task-status CI). Order matters — release furrow, bump
 // every caller's pin, THEN `furrow upgrade --yes` the board. Bump only on a
 // read-breaking layout change, and update docs/schema/ + goldens in the same
-// change. v6 = the epic pivot: `parent` and `type` are REMOVED and the per-task
+// change. v7 = epic-to-epic deps: the epic shard (epics/<id>.json) gains the
+// required `deps` set — the order boxes open in. The edge is informational
+// (activate warns, never refuses), but revisit's epic_dep_done and lint's
+// epic-dep-* rules read it, so a binary that merely PRESERVED it would report a
+// clean board while silently ignoring the ordering it encodes — and, being a
+// non-omitempty set, every epic shard rewrites on its next save, which alone is
+// the flag-day case. v6 = the epic pivot: `parent` and `type` are REMOVED and the per-task
 // `epic` field added, alongside a new shard kind (epics/<id>.json). A box is now
 // an entity, not a task wearing a type. `next` scopes on `epic` and `lint`
 // errors on its absence, so a binary that merely PRESERVED the field would hand
@@ -42,7 +48,7 @@ import (
 // write the loss back. v3 = shards whose tasks carry the required first-class
 // repos set (the repos pivot). v2 = per-task shards (tasks/<id>.json) +
 // meta.json (v1 was the monolithic index.json).
-const SchemaVersion = 6
+const SchemaVersion = 7
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into

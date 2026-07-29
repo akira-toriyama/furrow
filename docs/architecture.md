@@ -512,12 +512,15 @@ A `.furrow/` store directory contains:
   tasks/               structured metadata, one JSON shard per task
     t-k3m9p.json         written ONLY via core.MarshalTask
     t-9qw2z.json
-  bodies/<id>.md       long-form prose, one file per task (hand/agent editable)
+  epics/               one JSON shard per epic (epics/<id>.json, e- ids) — core.MarshalEpic;
+                         the box's goal/active/meta plus its deps (the epic ids it waits on, v7)
+  bodies/<id>.md       long-form prose, one file per task OR epic (hand/agent editable;
+                         ids are prefix-disjoint, so the shared directory is unambiguous)
   bodies/assets/       attached media, one file per attachment: <id>-<sanitized-name>
     t-k3m9p-shot.png     written ONLY via Store.SaveAsset (atomic, collision-free
                          basename); linked from the body by `furrow attach`; scanned
                          by `furrow lint` (dangling / orphan / oversized warnings)
-  meta.json            board-wide layout version {"schema_version": 6} — MarshalMeta,
+  meta.json            board-wide layout version {"schema_version": 7} — MarshalMeta,
                          stamped only on a fresh store (`init`) or by `furrow upgrade`;
                          an ordinary Save READS it (the write gate) and leaves it alone
   repos/               one review shard per repo (repos/<owner>__<repo>.json) — MarshalRepo
@@ -685,14 +688,21 @@ except where noted:
   Adding is acyclic (rejects self- and cycle-creating edges) and idempotent.
 - **`epic`** is the box entity's command group (`internal/cli/cmd_epic.go` →
   `internal/app/epic.go`, the same mutation-funnel shape as `repo`/`review`):
-  `add` / `ls` / `show` / `set` / `activate` / `deactivate` / `done`.
+  `add` / `ls` / `show` / `set` / `activate` / `deactivate` / `done` / `dep`.
+  `dep` is the task-side `dep` contract carried to boxes (variadic add/`--rm`,
+  all-or-nothing, acyclic at write time — `core.EpicDependsOn` — with lint's
+  `epic-dep-cycle`/`epic-dep-missing` as the merge backstop, `--list` = both
+  directions via `EpicDepList`); the edge means "open this box after those
+  close" and is information, not enforcement.
   `activate` enforces the **per-repo single-active invariant** (`checkRepoSlots`
   — a clash is exit 2 naming the incumbent per repo in `details.held`; an epic
   naming several repos consumes a slot in every one; a repo-LESS epic cannot be
   activated at all, or it would bypass the count) and records the switch in the
   epic's BODY (`recordSwitch`: a timestamped line, `--reason` appended) — furrow
   does not police WHO switches, it makes the switch visible: `furrow sync`
-  reports the activation records it publishes. `done` stamps `closed` and
+  reports the activation records it publishes. Activating a box whose `deps`
+  are not all closed likewise WARNS and proceeds (a stderr note + `open_deps`
+  beside the envelope; `lint`'s `epic-dep-open` keeps it visible after). `done` stamps `closed` and
   clears `active` in the SAME write (a closed box holding its repos' slots
   forever could never be replaced) and deliberately never picks the next box —
   that judgment is the human's; `lint`'s `epic-no-active` nags until someone

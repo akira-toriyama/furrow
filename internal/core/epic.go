@@ -4,9 +4,12 @@ import "time"
 
 // Epic is one box of work: the object in a single .furrow/epics/<id>.json shard.
 // It is NOT a task and deliberately does not reuse Task — a box is not a work
-// item, and the fields a work item needs (lane, priority, value/effort, deps)
-// are exactly the ones a box must not have, because furrow would then have to
-// answer "what is the ROI of a container?" for every query it owns.
+// item, and the fields a work item needs (lane, priority, value/effort) are
+// exactly the ones a box must not have, because furrow would then have to
+// answer "what is the ROI of a container?" for every query it owns. Deps is
+// the one deliberate exception (v7): an epic-to-epic edge is about the order
+// boxes OPEN in, not about a work item's readiness, so it carries none of the
+// ROI arithmetic the other task fields would drag in — see the field comment.
 //
 // Like a task shard it is one entity per file (concurrent edits to different
 // epics touch disjoint files), self-describing, and carries NO schema_version —
@@ -73,6 +76,20 @@ type Epic struct {
 	// .gitattributes rule, and the orphan-body lint all keep working unchanged. A
 	// separate epics/bodies/ dir would have duplicated every one of them.
 	Body string `json:"body"`
+
+	// Deps are the epic ids this box waits on: "open this one after those close"
+	// (schema v7). Same set semantics as a task's Deps — sorted+deduped, [] not
+	// null, acyclic (enforced on the write path, with lint's epic-dep-cycle as
+	// the git-merge backstop).
+	//
+	// The edge is INFORMATION, not enforcement — deliberately weaker than a task
+	// dep, which gates `furrow next`. Nothing here is ever gated: `epic activate`
+	// WARNS about a still-open dependency and proceeds (furrow never chooses, and
+	// never refuses, which box a human opens), a dep on a CLOSED epic is simply a
+	// satisfied one, and revisit's epic_dep_done says "every box this one waited
+	// on is closed — its turn" without acting on it. Parallelism needs no
+	// feature: two epics with the same dep are two branches of the graph.
+	Deps []string `json:"deps"`
 
 	// extras holds keys this binary does not know — a field written by a NEWER
 	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,

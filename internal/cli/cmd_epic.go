@@ -28,7 +28,7 @@ func newEpicCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
 	cmd.AddCommand(newEpicAddCmd(), newEpicLsCmd(), newEpicShowCmd(), newEpicSetCmd(),
-		newEpicActivateCmd(), newEpicDeactivateCmd(), newEpicDoneCmd())
+		newEpicActivateCmd(), newEpicDeactivateCmd(), newEpicDoneCmd(), newEpicDepCmd())
 	return cmd
 }
 
@@ -203,16 +203,26 @@ func newEpicActivateCmd() *cobra.Command {
 			"furrow does not police WHO switches — a CLI has no caller identity. It\n" +
 			"RECORDS instead: the switch is appended to the epic's body and `furrow\n" +
 			"sync` surfaces it, so a misread instruction shows up in the same session\n" +
-			"rather than weeks later. Pass --reason to say who asked and why.",
+			"rather than weeks later. Pass --reason to say who asked and why.\n\n" +
+			"An epic still waiting on open deps (`furrow epic dep`) activates with a\n" +
+			"WARNING, never a refusal — the ordering is advice, and the stderr note\n" +
+			"plus the envelope's open_deps (and lint's epic-dep-open afterwards) are\n" +
+			"what keep the crossing visible.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			return emitEpicMutation(func() (*core.Epic, *core.Epic, error) {
-				return a.EpicActivate(args[0], reason)
-			})
+			before, after, openDeps, err := a.EpicActivate(args[0], reason)
+			if err != nil {
+				return err
+			}
+			if len(openDeps) > 0 {
+				fmt.Fprintf(errOut, "note: %s still waits on open epic(s) %s — activating anyway; `furrow epic dep %s --list` shows the edges\n",
+					after.ID, strings.Join(openDeps, ", "), after.ID)
+			}
+			return emitEpicMutationResult(before, after, openDeps)
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "who asked for this switch and why (recorded in the epic's body)")
@@ -250,6 +260,61 @@ func newEpicDoneCmd() *cobra.Command {
 			return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicDone(args[0]) })
 		},
 	}
+}
+
+// newEpicDepCmd is `furrow dep`'s epic twin (v7): the same variadic add/rm and
+// the same read-only --list, over the epic dep graph.
+func newEpicDepCmd() *cobra.Command {
+	var rm, list bool
+	cmd := &cobra.Command{
+		Use:   "dep <epic> [<dep-epic>...]",
+		Short: "Add/remove an epic's deps (open after those close), or list them both ways with --list",
+		Long: "Make <epic> wait on each <dep-epic>: \"open this box after those close\".\n" +
+			"Several deps in one call apply in a single write; --rm removes them instead.\n" +
+			"Adding is acyclic and idempotent, the batch is all-or-nothing, and every\n" +
+			"argument resolves like any epic reference (id, unique prefix, or unique\n" +
+			"title substring — a dangling edge is still removable by its literal id).\n\n" +
+			"The edge is INFORMATION, not enforcement — deliberately weaker than a task\n" +
+			"dep: `epic activate` warns about a still-open dep and proceeds, a dep on a\n" +
+			"closed epic is simply satisfied, and `furrow revisit` raises epic_dep_done\n" +
+			"when every box this one waited on is closed — its turn to open. Parallel\n" +
+			"branches need no feature: two epics sharing a dep are two branches.\n\n" +
+			"With --list, don't mutate — read the neighborhood in BOTH directions: what\n" +
+			"it waits on (depends_on) and what waits on it (blocks), each resolved to\n" +
+			"id+title+state.",
+		Example: "  furrow epic dep e-k3m9 e-a1b2\n" +
+			"  furrow epic dep e-k3m9 e-a1b2 e-d4e5   # wait on both in one write\n" +
+			"  furrow epic dep e-k3m9 e-a1b2 --rm\n" +
+			"  furrow epic dep e-k3m9 --list --json   # what it waits on and what it blocks",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("list") {
+				return cobra.ExactArgs(1)(cmd, args)
+			}
+			return cobra.MinimumNArgs(2)(cmd, args)
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			if list {
+				res, err := a.EpicDepList(args[0])
+				if err != nil {
+					return err
+				}
+				return emitEpicDepList(res)
+			}
+			ref, deps := args[0], args[1:]
+			if rm {
+				return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicRemoveDeps(ref, deps) })
+			}
+			return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicAddDeps(ref, deps) })
+		},
+	}
+	cmd.Flags().BoolVar(&rm, "rm", false, "remove the deps instead of adding them")
+	cmd.Flags().BoolVar(&list, "list", false, "read-only: list what <epic> waits on and what waits on it (both directions)")
+	cmd.MarkFlagsMutuallyExclusive("list", "rm")
+	return cmd
 }
 
 // parseMetaPairs turns repeated --meta k=v flags into a map. A pair with no "="

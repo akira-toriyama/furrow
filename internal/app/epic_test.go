@@ -25,7 +25,7 @@ func TestEpicActivateEnforcesOnePerRepo(t *testing.T) {
 
 	// A second box for the SAME repo is refused, and says which box holds the slot
 	// — an agent has to be able to act on the answer without parsing prose.
-	_, _, err := a.EpicActivate(second, "")
+	_, _, _, err := a.EpicActivate(second, "")
 	if err == nil {
 		t.Fatal("a second active epic for the same repo must be refused")
 	}
@@ -41,7 +41,7 @@ func TestEpicActivateEnforcesOnePerRepo(t *testing.T) {
 
 	// A box for a DIFFERENT repo is unaffected: the limit is per repo, not per
 	// board, because reads are repo-scoped by default.
-	if _, _, err := a.EpicActivate(elsewhere, ""); err != nil {
+	if _, _, _, err := a.EpicActivate(elsewhere, ""); err != nil {
 		t.Errorf("a box for another repo must still be activatable: %v", err)
 	}
 }
@@ -55,7 +55,7 @@ func TestEpicActivateConsumesEveryNamedRepo(t *testing.T) {
 	justB := mustEpic(t, a, "b box", EpicAddOpts{Repos: []string{"o/b"}})
 
 	mustActivate(t, a, fleet)
-	if _, _, err := a.EpicActivate(justB, ""); err == nil {
+	if _, _, _, err := a.EpicActivate(justB, ""); err == nil {
 		t.Error("a multi-repo active box must hold the slot in each of its repos")
 	}
 }
@@ -66,7 +66,7 @@ func TestEpicActivateConsumesEveryNamedRepo(t *testing.T) {
 func TestEpicActivateRefusesARepolessBox(t *testing.T) {
 	a := newApp()
 	draft := mustEpic(t, a, "draft box", EpicAddOpts{})
-	if _, _, err := a.EpicActivate(draft, ""); err == nil {
+	if _, _, _, err := a.EpicActivate(draft, ""); err == nil {
 		t.Error("a box naming no repo must not be activatable")
 	}
 }
@@ -77,7 +77,7 @@ func TestEpicActivateIsIdempotent(t *testing.T) {
 	a := newApp()
 	box := mustEpic(t, a, "box", EpicAddOpts{Repos: []string{"o/r"}})
 	mustActivate(t, a, box)
-	if _, _, err := a.EpicActivate(box, ""); err != nil {
+	if _, _, _, err := a.EpicActivate(box, ""); err != nil {
 		t.Errorf("re-activating the active box must be a no-op, got %v", err)
 	}
 }
@@ -102,7 +102,7 @@ func TestEpicDoneClearsActiveAndFreesTheSlot(t *testing.T) {
 		t.Error("closing a box must stamp closed")
 	}
 	// …and the slot is genuinely free.
-	if _, _, err := a.EpicActivate(next, ""); err != nil {
+	if _, _, _, err := a.EpicActivate(next, ""); err != nil {
 		t.Errorf("the closed box must have released its repo's slot: %v", err)
 	}
 	// furrow does NOT pick the successor itself — that judgement is the human's.
@@ -118,7 +118,7 @@ func TestEpicActivateRefusesAClosedBox(t *testing.T) {
 	if _, _, err := a.EpicDone(box); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := a.EpicActivate(box, ""); err == nil {
+	if _, _, _, err := a.EpicActivate(box, ""); err == nil {
 		t.Error("a closed box must not be activatable")
 	}
 }
@@ -129,7 +129,7 @@ func TestEpicActivateRefusesAClosedBox(t *testing.T) {
 func TestEpicActivateRecordsTheSwitch(t *testing.T) {
 	a := newApp()
 	box := mustEpic(t, a, "box", EpicAddOpts{Repos: []string{"o/r"}})
-	if _, _, err := a.EpicActivate(box, "asked for by the human at standup"); err != nil {
+	if _, _, _, err := a.EpicActivate(box, "asked for by the human at standup"); err != nil {
 		t.Fatal(err)
 	}
 	body, err := a.Store.LoadBody(box)
