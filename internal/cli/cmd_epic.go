@@ -122,7 +122,7 @@ func newEpicLsCmd() *cobra.Command {
 func newEpicShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <epic>",
-		Short: "Show one epic: goal, meta, progress, and its member tasks",
+		Short: "Show one epic: goal, meta, progress, member tasks, and its body",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()

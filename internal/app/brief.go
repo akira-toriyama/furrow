@@ -10,11 +10,23 @@ import "strings"
 // existing reads — Next, GetBatch, ListItems, RevisitSummary, List — so its
 // answers can never diverge from the commands it summarizes.
 type BriefData struct {
-	Next      []ShowItem
-	NextTotal int // actionable count BEFORE the display cap — a cap must never hide the size of the queue
-	Blocked   []ListItem
-	Revisit   RevisitSummary
-	Drafts    int // repo-less tasks, board-wide by definition (a draft has no repo, so no scope can own it)
+	// Active is the open+active epic(s) for the scope — the focus Next scopes to,
+	// with the member roll-up. EpicsDeclared distinguishes the two empty cases a
+	// reader must tell apart: false = the board never declared a box (the scope
+	// discipline is off, Next is board-wide), true+empty = participating board
+	// with nothing active, so Next is DELIBERATELY empty until someone runs
+	// `furrow epic activate`.
+	Active        []EpicItem
+	EpicsDeclared bool
+	Next          []ShowItem
+	NextTotal     int // actionable count BEFORE the display cap — a cap must never hide the size of the queue
+	Blocked       []ListItem
+	Revisit       RevisitSummary
+	Drafts        int // repo-less tasks, board-wide by definition (a draft has no repo, so no scope can own it)
+	// Lint is the error-count ride-along sync also prints (LintErrorCounts —
+	// errors only, by code). Best-effort: a lint failure zeroes it rather than
+	// failing the orientation read.
+	Lint LintErrorSummary
 }
 
 // Brief assembles BriefData under the query's scope (repo/label). nextLimit
@@ -62,11 +74,43 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		return nil, err
 	}
 
+	// The epic header: EpicsDeclared is board-wide (participation is a board
+	// property), Active is scoped like Next's own scope (o.Repo, else the
+	// board's ScopeRepo) so the line names the focus THIS session's next obeys.
+	all, err := a.Store.LoadEpics()
+	if err != nil {
+		return nil, err
+	}
+	repoScope := o.Repo
+	if repoScope == "" {
+		repoScope = o.ScopeRepo
+	}
+	items, err := a.EpicList(EpicQueryOpts{Repo: repoScope})
+	if err != nil {
+		return nil, err
+	}
+	var active []EpicItem
+	for _, it := range items {
+		if it.Epic.Active {
+			active = append(active, it)
+		}
+	}
+
+	// Best-effort, exactly like sync's ride-along: orientation must not fail
+	// because a lint sweep hit an IO error.
+	lint, err := a.LintErrorCounts()
+	if err != nil {
+		lint = LintErrorSummary{}
+	}
+
 	return &BriefData{
-		Next:      picks,
-		NextTotal: total,
-		Blocked:   blocked,
-		Revisit:   sum,
-		Drafts:    len(drafts),
+		Active:        active,
+		EpicsDeclared: len(all) > 0,
+		Next:          picks,
+		NextTotal:     total,
+		Blocked:       blocked,
+		Revisit:       sum,
+		Drafts:        len(drafts),
+		Lint:          lint,
 	}, nil
 }

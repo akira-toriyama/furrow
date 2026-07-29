@@ -18,11 +18,15 @@ the user-level config. When you work with any furrow store:
   of the hybrid store. One body file per task id, 1:1 with its shard.
 - Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
   **`furrow brief [--json]` is the session-start read**: the sync → `next -r` →
-  `show <id>` ritual in ONE process — the top `-n` (default 3) actionable tasks
+  `show <id>` ritual in ONE process — the epic header (`active`, the open+active
+  epic(s) `next` scopes to, and `epics_declared`, which tells a non-participating
+  board apart from "nothing active, so `next` is deliberately empty"), the top
+  `-n` (default 3) actionable tasks
   WITH `body_text`, `next_total` (the uncapped count — a cap never hides the
   queue), `blocked` (next-lane tasks with an unsatisfied dep + `blocked_by`,
   the in-flight work plain `next` hides), the `revisit` summary (sync's shape),
-  and the `drafts` count. Read-only, never touches git — orient a shared board
+  the `drafts` count, and sync's `lint` error-count ride-along (omitted when
+  clean). Read-only, never touches git — orient a shared board
   with `furrow sync && furrow brief`.
   `set <id>` combines lane/**priority**/value/effort/labels/**type** in one
   write (the triage shortcut for move+reorder+value+effort+label): `--priority`

@@ -112,3 +112,53 @@ func TestBriefHonorsTheRepoScope(t *testing.T) {
 	}
 	_ = ids
 }
+
+// The epic header: EpicsDeclared distinguishes a non-participating board from
+// one where nothing is active, Active carries the scoped focus with its
+// roll-up, and the lint ride-along surfaces the epic-required errors the same
+// board now has.
+func TestBriefCarriesTheEpicHeaderAndLintRideAlong(t *testing.T) {
+	a, ids := briefBoard(t)
+
+	b, err := a.Brief(QueryOpts{}, 3, 0)
+	if err != nil {
+		t.Fatalf("Brief: %v", err)
+	}
+	if b.EpicsDeclared || len(b.Active) != 0 {
+		t.Fatalf("a board with no epics must report EpicsDeclared=false and no Active, got %v/%d", b.EpicsDeclared, len(b.Active))
+	}
+	if b.Lint.Errors != 0 {
+		t.Fatalf("the fixture board lints clean pre-epic, got %+v", b.Lint)
+	}
+
+	// Declare a box and activate it: the header flips on, and epic-required now
+	// errors on every open task left unfiled.
+	e, err := a.EpicAdd("the focus", EpicAddOpts{Repos: []string{"o/r"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.EpicActivate(e.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	eid := e.ID
+	if _, _, err := a.Set(ids["ready-a"], SetOpts{Epic: &eid}); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err = a.Brief(QueryOpts{}, 3, 0)
+	if err != nil {
+		t.Fatalf("Brief: %v", err)
+	}
+	if !b.EpicsDeclared {
+		t.Error("EpicsDeclared must be true once a box exists")
+	}
+	if len(b.Active) != 1 || b.Active[0].Epic.ID != e.ID {
+		t.Fatalf("Active = %+v, want the one activated epic", b.Active)
+	}
+	if b.Active[0].Progress.Total != 1 {
+		t.Errorf("active epic progress total = %d, want the 1 filed member", b.Active[0].Progress.Total)
+	}
+	if b.Lint.Errors == 0 || b.Lint.Codes["epic-required"] == 0 {
+		t.Errorf("lint ride-along must count the unfiled open tasks as epic-required, got %+v", b.Lint)
+	}
+}
