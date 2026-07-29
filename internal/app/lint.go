@@ -11,6 +11,34 @@ import (
 	"github.com/akira-toriyama/furrow/internal/store/fsstore"
 )
 
+// LintErrorSummary counts lint ERRORS by code — the terse ride-along `furrow
+// sync` prints beside its revisit summary. Warnings are deliberately excluded:
+// the sync line exists so an error (a state someone must fix, e.g.
+// epic-required after a migration) surfaces in the loop that always runs, and
+// folding warnings in would train the reader to ignore the line.
+type LintErrorSummary struct {
+	Errors int            `json:"errors"`
+	Codes  map[string]int `json:"codes"`
+}
+
+// LintErrorCounts runs the ordinary lint pass and reduces it to error counts by
+// code. It is exactly a.Lint() plus counting — no second rule set — so the sync
+// summary can never disagree with `furrow lint`.
+func (a *App) LintErrorCounts() (LintErrorSummary, error) {
+	ps, err := a.Lint()
+	if err != nil {
+		return LintErrorSummary{}, err
+	}
+	sum := LintErrorSummary{Codes: map[string]int{}}
+	for _, p := range ps {
+		if p.Severity == core.SevError {
+			sum.Errors++
+			sum.Codes[p.Code]++
+		}
+	}
+	return sum, nil
+}
+
 // Lint runs the full consistency check: core's in-memory rules plus the
 // filesystem-level index<->body 1:1 mapping (every task has a body file and
 // vice versa). Config clamp warnings are surfaced too, so `furrow lint` is the

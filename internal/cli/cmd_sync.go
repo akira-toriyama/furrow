@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/app"
@@ -14,7 +15,8 @@ import (
 // the historical one.
 type syncOutput struct {
 	*app.SyncProgress
-	Revisit *app.RevisitSummary `json:"revisit,omitempty"`
+	Revisit *app.RevisitSummary   `json:"revisit,omitempty"`
+	Lint    *app.LintErrorSummary `json:"lint,omitempty"`
 }
 
 // boardScopeRepo is the board's auto scope repo (owner/repo) when auto-filtering
@@ -155,7 +157,12 @@ func newSyncCmd() *cobra.Command {
 			"stale, plus any repos whose human review is older than [review].stale_after_days\n" +
 			"— a human runs `furrow review <repo>`, an agent sweep uses --by agent) so\n" +
 			"freshly-pulled staleness surfaces in the loop;\n" +
-			"the JSON gains a \"revisit\" key when non-empty. It is a thin git wrapper — not a\n" +
+			"the JSON gains a \"revisit\" key when non-empty. Two more ride-alongs share\n" +
+			"that contract: a lint ERROR count by code (a \"lint\" key / one terse line;\n" +
+			"detail via `furrow lint` — lint never changes sync's exit code), and the\n" +
+			"`epic activate` records this sync publishes (a \"switches\" key / one\n" +
+			"\"epic: activated …\" line each), so a focus switch surfaces in the same\n" +
+			"session that made it. It is a thin git wrapper — not a\n" +
 			"daemon or a sync server (see docs/non-goals.md).",
 		Example: "  furrow sync                   # commit shards + new bodies, pull --rebase, push\n" +
 			"  furrow sync -m \"triage inbox\"\n" +
@@ -169,23 +176,40 @@ func newSyncCmd() *cobra.Command {
 			}
 			prog, syncErr := a.Sync(cmd.Context(), app.SyncOpts{Message: message, Bodies: bodies, AllBodies: allBodies})
 
-			// Compute the revisit summary only on a fully-successful sync (a
-			// fresh, consistent, freshly-pulled board). On failure, skip it.
+			// Compute the revisit + lint summaries only on a fully-successful sync
+			// (a fresh, consistent, freshly-pulled board). On failure, skip them.
 			var sum app.RevisitSummary
+			var lint app.LintErrorSummary
 			if syncErr == nil {
 				if s, err := a.RevisitSummary(syncScope(a), a.Cfg.RevisitStaleDays); err == nil {
 					sum = s
 				} else {
 					fmt.Fprintf(errOut, "revisit summary skipped: %v\n", err)
 				}
+				// The lint ride-along: sync is the one loop that always runs, so an
+				// ERROR count surfaces here (codes only; the detail is `furrow lint`).
+				// It never changes sync's exit code — sync's job is publishing the
+				// board, and "lint is red so the board cannot sync" is the worst
+				// possible coupling.
+				if ls, err := a.LintErrorCounts(); err == nil {
+					lint = ls
+				}
 			}
 
 			if jsonMode() {
-				emitObject(syncOutput{prog, summaryPtr(sum)})
+				emitObject(syncOutput{prog, summaryPtr(sum), lintPtr(lint)})
 			} else {
 				fmt.Fprintln(out, prog.SyncSummary())
 				if line := revisitLine(sum, revisitScopeLabel(a)); line != "" {
 					fmt.Fprintln(out, line)
+				}
+				if lint.Errors > 0 {
+					fmt.Fprintln(out, lintLine(lint))
+				}
+				// The switch records this sync published (the activate log's exit
+				// point) — one line per switch, only when a switch happened.
+				for _, sw := range prog.Switches {
+					fmt.Fprintln(out, epicSwitchLine(sw))
 				}
 				if len(prog.PendingBodies) > 0 {
 					fmt.Fprintln(errOut, pendingBodiesNote(prog.PendingBodies))
@@ -229,4 +253,39 @@ func summaryPtr(sum app.RevisitSummary) *app.RevisitSummary {
 		return nil
 	}
 	return &sum
+}
+
+// lintPtr returns nil for a clean board so the lint JSON key is omitted — the
+// same "quiet when clean" contract as the revisit key.
+func lintPtr(sum app.LintErrorSummary) *app.LintErrorSummary {
+	if sum.Errors == 0 {
+		return nil
+	}
+	return &sum
+}
+
+// lintLine renders the error counts as one terse line: "lint: 2 error(s)
+// (epic-required 2) — furrow lint". Codes are sorted so two runs print alike.
+func lintLine(sum app.LintErrorSummary) string {
+	codes := make([]string, 0, len(sum.Codes))
+	for c := range sum.Codes {
+		codes = append(codes, c)
+	}
+	sort.Strings(codes)
+	parts := make([]string, len(codes))
+	for i, c := range codes {
+		parts[i] = fmt.Sprintf("%s %d", c, sum.Codes[c])
+	}
+	return fmt.Sprintf("lint: %d error(s) (%s) — furrow lint", sum.Errors, strings.Join(parts, ", "))
+}
+
+// epicSwitchLine renders one published activation record: "epic: activated
+// e-k3m9 \"title\" 2026-07-29 14:32 — reason" (the reason clause only when one
+// was recorded).
+func epicSwitchLine(sw app.EpicSwitch) string {
+	line := fmt.Sprintf("epic: activated %s %q %s", sw.Epic, sw.Title, sw.At)
+	if sw.Reason != "" {
+		line += " — " + sw.Reason
+	}
+	return line
 }

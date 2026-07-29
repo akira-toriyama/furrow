@@ -86,16 +86,26 @@ func TestRevisitScopeLabelAndSyncScope(t *testing.T) {
 func TestSyncOutputJSONShape(t *testing.T) {
 	prog := &app.SyncProgress{Pulled: true, Pushed: true}
 	// With a summary: revisit object carries the ids.
-	withSum := mustJSON(syncOutput{prog, &app.RevisitSummary{DepDone: []string{"t-0046"}}})
+	withSum := mustJSON(syncOutput{prog, &app.RevisitSummary{DepDone: []string{"t-0046"}}, nil})
 	for _, want := range []string{`"pulled": true`, `"revisit"`, `"dep_done"`, `"t-0046"`} {
 		if !strings.Contains(string(withSum), want) {
 			t.Errorf("json missing %s:\n%s", want, withSum)
 		}
 	}
 	// Without a summary: no revisit key at all (omitempty via nil pointer).
-	noSum := mustJSON(syncOutput{prog, nil})
+	noSum := mustJSON(syncOutput{prog, nil, nil})
 	if strings.Contains(string(noSum), "revisit") {
 		t.Errorf("empty summary must omit revisit key:\n%s", noSum)
+	}
+	// A clean board omits the lint key the same way; errors surface it.
+	if strings.Contains(string(noSum), "lint") {
+		t.Errorf("clean board must omit lint key:\n%s", noSum)
+	}
+	withLint := mustJSON(syncOutput{prog, nil, &app.LintErrorSummary{Errors: 2, Codes: map[string]int{"epic-required": 2}}})
+	for _, want := range []string{`"lint"`, `"errors": 2`, `"epic-required": 2`} {
+		if !strings.Contains(string(withLint), want) {
+			t.Errorf("json missing %s:\n%s", want, withLint)
+		}
 	}
 }
 
