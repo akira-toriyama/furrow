@@ -5,9 +5,16 @@
 # source of truth, not README ⇄ README. Two pure-text-extraction guards, no
 # git-tag or network dependency (deterministic):
 #   1. the concrete sync-task-status.yml@vN.N.N pin the README teaches in its
-#      `uses:` example must match the canonical caller,
-#      .github/workflows/task-status.yml (furrow dogfooding its own reusable
-#      workflow) — so a reader never copies a stale pin;
+#      `uses:` example must match the `furrow-version` default of the reusable
+#      itself (.github/workflows/sync-task-status.yml) — the authoritative
+#      "current release" pin, bumped right before tagging — so a reader never
+#      copies a stale pin. NOT .github/workflows/task-status.yml: that file is a
+#      fleet-synced COPY owned by akira-toriyama/.github's fleet/task-status.yml
+#      (its header says so), and this guard used to compare against it, which
+#      made release-prep bump a file furrow does not own — the next scheduled
+#      fleet-sync then overwrote it back, reverting 3 of 4 caller-bump releases
+#      (once for ~46h, t-2268). It catches up when the hub rollout lands;
+#      release-prep must leave it alone.
 #   2. every {"schema_version": N} literal in README.md and docs/*.md must equal
 #      const SchemaVersion in internal/core/task.go, in the JSON literal AND in
 #      "board layout vN" prose (both forms drifted to v3 against a v4 board once).
@@ -21,27 +28,35 @@ pin_tag() {
 }
 
 readme="$(pin_tag README.md)"
-canon="$(pin_tag .github/workflows/task-status.yml)"
 
-if [ -z "$readme" ] || [ -z "$canon" ]; then
-  echo "✖ could not find a concrete sync-task-status.yml@vN.N.N pin in both files:" >&2
-  echo "  README.md:                         ${readme:-<none>}" >&2
-  echo "  .github/workflows/task-status.yml: ${canon:-<none>}" >&2
+# The release pin the repo itself maintains: sync-task-status.yml's
+# `furrow-version` default. The same anchored extraction as
+# check-version-lockstep.sh, for the same reasons (only the 8-space input-default
+# indent matches; the description prose, indented deeper, cannot).
+release="$(sed -n 's/^        default:[[:space:]]*\(v[0-9][^[:space:]]*\).*/\1/p' \
+  .github/workflows/sync-task-status.yml | head -1)"
+
+if [ -z "$readme" ] || [ -z "$release" ]; then
+  echo "✖ could not find a concrete release pin in both files:" >&2
+  echo "  README.md sync-task-status.yml@vN.N.N:      ${readme:-<none>}" >&2
+  echo "  sync-task-status.yml furrow-version default: ${release:-<none>}" >&2
   exit 1
 fi
 
-if [ "$readme" != "$canon" ]; then
-  echo "✖ README's sync-task-status pin does not match the canonical caller workflow:" >&2
-  echo "  README.md:                         $readme" >&2
-  echo "  .github/workflows/task-status.yml: $canon" >&2
+if [ "$readme" != "$release" ]; then
+  echo "✖ README's sync-task-status pin does not match the release pin:" >&2
+  echo "  README.md:                                   $readme" >&2
+  echo "  sync-task-status.yml furrow-version default: $release" >&2
   echo >&2
-  echo "The concrete pin in README's uses: example must match the pin furrow itself" >&2
-  echo "runs in .github/workflows/task-status.yml — bump them together so a reader" >&2
-  echo "never copies a stale pin." >&2
+  echo "The concrete pin in README's uses: example must match the furrow-version" >&2
+  echo "default of the reusable itself — bump them together (release-prep) so a" >&2
+  echo "reader never copies a stale pin. Do NOT bump .github/workflows/" >&2
+  echo "task-status.yml to match: that file is a fleet-synced copy owned by the" >&2
+  echo "hub canonical; it catches up when the hub rollout lands." >&2
   exit 1
 fi
 
-echo "ok — README pin matches the canonical caller workflow ($readme)"
+echo "ok — README pin matches the release pin ($readme)"
 
 # The board's layout version: the README prints it as {"schema_version": N}, and
 # it must equal the const the binary writes. This used to be claimed and NOT
