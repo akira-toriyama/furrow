@@ -409,17 +409,21 @@ func newBriefCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "brief",
-		Short: "One-shot session-orient read: next picks with bodies, blocked, revisit, drafts",
+		Short: "One-shot session-orient read: active epic, next picks with bodies, blocked, revisit, drafts",
 		Long: "Answer \"where am I?\" in ONE process at session start — the sync → next →\n" +
-			"show ritual folded into a single read. Four sections, each keeping the\n" +
-			"contract of the command it summarizes: `next` = the top -n actionable tasks\n" +
+			"show ritual folded into a single read. Each section keeps the\n" +
+			"contract of the command it summarizes: `active` = the open+active epic(s)\n" +
+			"next scopes to, with their member roll-up (epics_declared tells a\n" +
+			"non-participating board apart from \"nothing active, so next is\n" +
+			"deliberately empty\"); `next` = the top -n actionable tasks\n" +
 			"(next's predicate) WITH their bodies (show's body_text — the follow-up read\n" +
 			"folded in), plus next_total, the uncapped count, so the cap never hides the\n" +
 			"queue size; `blocked` = next-lane tasks with an unsatisfied dep and their\n" +
 			"blocked_by (started or queued work that plain `next` deliberately hides);\n" +
 			"`revisit` = the summary sync reports ({dep_done, stale, …} id arrays);\n" +
 			"`drafts` = the repo-less count, board-wide by definition (a draft has no\n" +
-			"repo, so no scope can own it). Scope with -r/-l like every read; human mode\n" +
+			"repo, so no scope can own it); `lint` = sync's error-count ride-along\n" +
+			"(omitted when clean). Scope with -r/-l like every read; human mode\n" +
 			"is a compact dashboard without bodies (prose is --json's payload). Read-only:\n" +
 			"it never touches git — run `furrow sync && furrow brief` to orient on a\n" +
 			"shared board.",

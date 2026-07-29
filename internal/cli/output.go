@@ -989,12 +989,21 @@ func atoiArg(name, s string) (int, error) {
 // blocked_by, revisit is sync's RevisitSummary. next_total is the uncapped
 // actionable count, so a -n cap never silently hides the queue size.
 type briefView struct {
-	Repo      string             `json:"repo"`
-	Next      []taskView         `json:"next"`
-	NextTotal int                `json:"next_total"`
-	Blocked   []briefBlockedView `json:"blocked"`
-	Revisit   app.RevisitSummary `json:"revisit"`
-	Drafts    int                `json:"drafts"`
+	Repo string `json:"repo"`
+	// active is the open+active epic(s) next scopes to ([], never null);
+	// epics_declared tells the two empty cases apart (false = the board has no
+	// boxes and the scope discipline is off; true = empty means nothing active,
+	// so next is deliberately empty).
+	Active        []epicView         `json:"active"`
+	EpicsDeclared bool               `json:"epics_declared"`
+	Next          []taskView         `json:"next"`
+	NextTotal     int                `json:"next_total"`
+	Blocked       []briefBlockedView `json:"blocked"`
+	Revisit       app.RevisitSummary `json:"revisit"`
+	Drafts        int                `json:"drafts"`
+	// lint mirrors sync's ride-along: omitted when clean, error counts by code
+	// otherwise.
+	Lint *app.LintErrorSummary `json:"lint,omitempty"`
 }
 
 // briefBlockedView is a brief blocked entry: the task plus what is in the way.
@@ -1011,12 +1020,18 @@ type briefBlockedView struct {
 func printBrief(b *app.BriefData, scope string) {
 	if jsonMode() {
 		v := briefView{
-			Repo:      scope,
-			Next:      make([]taskView, 0, len(b.Next)),
-			NextTotal: b.NextTotal,
-			Blocked:   make([]briefBlockedView, 0, len(b.Blocked)),
-			Revisit:   b.Revisit,
-			Drafts:    b.Drafts,
+			Repo:          scope,
+			Active:        make([]epicView, 0, len(b.Active)),
+			EpicsDeclared: b.EpicsDeclared,
+			Next:          make([]taskView, 0, len(b.Next)),
+			NextTotal:     b.NextTotal,
+			Blocked:       make([]briefBlockedView, 0, len(b.Blocked)),
+			Revisit:       b.Revisit,
+			Drafts:        b.Drafts,
+			Lint:          lintPtr(b.Lint),
+		}
+		for _, it := range b.Active {
+			v.Active = append(v.Active, toEpicView(it))
 		}
 		// sync hides an empty summary behind omitempty; brief always shows it,
 		// so the two non-omitempty id arrays must come out [] never null (an
@@ -1042,6 +1057,16 @@ func printBrief(b *app.BriefData, scope string) {
 	}
 	if scope != "" {
 		fmt.Fprintf(out, "repo: %s\n", scope)
+	}
+	// The focus header, only on a participating board: which box `next` is
+	// scoped to — or the fact that none is, which is WHY next is empty.
+	if b.EpicsDeclared {
+		if len(b.Active) == 0 {
+			fmt.Fprintln(out, "epic: (none active — next is empty until `furrow epic activate <id>`; pick with `furrow epic ls`)")
+		}
+		for _, it := range b.Active {
+			fmt.Fprintf(out, "epic: ▶ %s  %d/%d  %s\n", it.Epic.ID, it.Progress.Done, it.Progress.Total, it.Epic.Title)
+		}
 	}
 	fmt.Fprintf(out, "next (%d/%d):\n", len(b.Next), b.NextTotal)
 	if len(b.Next) == 0 {
@@ -1071,6 +1096,9 @@ func printBrief(b *app.BriefData, scope string) {
 	}
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "drafts: %d\n", b.Drafts)
+	if b.Lint.Errors > 0 {
+		fmt.Fprintln(out, lintLine(b.Lint))
+	}
 }
 
 // epicView is one epic row/record in --json. core.Epic is embedded for the same
@@ -1132,12 +1160,13 @@ type epicDetailView struct {
 	Progress app.Progress   `json:"progress"`
 	Stuck    bool           `json:"stuck"`
 	Tasks    []listItemView `json:"tasks"`
+	BodyText string         `json:"body_text"`
 }
 
 // emitEpicDetail renders `furrow epic show`.
 func emitEpicDetail(a *app.App, d *app.EpicDetail) error {
 	if jsonMode() {
-		v := epicDetailView{Epic: d.Epic, Progress: d.Progress, Stuck: d.Stuck}
+		v := epicDetailView{Epic: d.Epic, Progress: d.Progress, Stuck: d.Stuck, BodyText: d.Body}
 		v.Tasks = make([]listItemView, 0, len(d.Tasks))
 		for _, it := range d.Tasks {
 			v.Tasks = append(v.Tasks, toListItemView(it))
@@ -1173,6 +1202,11 @@ func emitEpicDetail(a *app.App, d *app.EpicDetail) error {
 	fmt.Fprintf(out, "tasks (%d):\n", len(d.Tasks))
 	for _, it := range d.Tasks {
 		fmt.Fprintf(out, "  %s %s  [%s]  %s\n", stateGlyph(a, it.Actionable, it.Task.Status), it.Task.ID, it.Task.Status, it.Task.Title)
+	}
+	// The body last, exactly as `show` prints a task's: the compact dashboard
+	// first, the prose (goal context, the activation log) after it.
+	if strings.TrimSpace(d.Body) != "" {
+		fmt.Fprintf(out, "\n%s\n", strings.TrimRight(d.Body, "\n"))
 	}
 	return nil
 }

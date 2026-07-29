@@ -19,13 +19,16 @@ type EpicItem struct {
 	Stuck    bool
 }
 
-// EpicDetail is `epic show`: the box, its roll-up, and its members in canonical
-// order (lane -> priority -> id, the same order `ls` prints).
+// EpicDetail is `epic show`: the box, its roll-up, its members in canonical
+// order (lane -> priority -> id, the same order `ls` prints), and its body —
+// the prose record (goal context, the activation log) a task's `show` would
+// print, folded in for the same reason: the follow-up read is the read.
 type EpicDetail struct {
 	Epic     core.Epic
 	Progress Progress
 	Stuck    bool
 	Tasks    []ListItem
+	Body     string
 }
 
 // EpicAddOpts are the creation options for `furrow epic add`.
@@ -189,11 +192,16 @@ func (a *App) EpicShow(ref string) (*EpicDetail, error) {
 	if err != nil {
 		return nil, err
 	}
+	body, err := a.Store.LoadBody(id)
+	if err != nil {
+		return nil, err
+	}
 	return &EpicDetail{
 		Epic:     *e,
 		Progress: epicProgress(idx, a.Cfg.DoneLane)[id],
 		Stuck:    a.epicStuck(idx, id, a.doneSet(idx)),
 		Tasks:    items,
+		Body:     body,
 	}, nil
 }
 

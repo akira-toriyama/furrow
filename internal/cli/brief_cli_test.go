@@ -113,3 +113,89 @@ func TestCLIBriefEmptyCollectionsAreNeverNull(t *testing.T) {
 		t.Errorf("brief --json must not contain null (empty = []):\n%s", out)
 	}
 }
+
+// The epic header end to end: JSON carries active[] + epics_declared (and the
+// lint ride-along when the board has errors); human mode explains BOTH states —
+// the active focus line, and why next is empty when nothing is active.
+func TestCLIBriefEpicHeader(t *testing.T) {
+	initStore(t)
+	addTask(t, "ready a", "-s", "ready", "-r", "o/r")
+	run(t, "epic", "add", "the focus", "-r", "o/r")
+
+	// Participating board, nothing active: human says WHY next is empty.
+	out, code := run(t, "brief")
+	if code != 0 {
+		t.Fatalf("brief exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "none active") {
+		t.Errorf("human brief must explain the empty next on a participating board:\n%s", out)
+	}
+
+	out, code = run(t, "epic", "activate", "focus")
+	if code != 0 {
+		t.Fatalf("activate exit = %d:\n%s", code, out)
+	}
+
+	out, code = run(t, "--json", "brief")
+	if code != 0 {
+		t.Fatalf("brief exit = %d:\n%s", code, out)
+	}
+	var b struct {
+		Active []struct {
+			ID       string `json:"id"`
+			Progress struct {
+				Total int `json:"total"`
+			} `json:"progress"`
+		} `json:"active"`
+		EpicsDeclared bool `json:"epics_declared"`
+		Lint          *struct {
+			Errors int            `json:"errors"`
+			Codes  map[string]int `json:"codes"`
+		} `json:"lint"`
+	}
+	if err := json.Unmarshal([]byte(out), &b); err != nil {
+		t.Fatalf("parse brief --json: %v\n%s", err, out)
+	}
+	if !b.EpicsDeclared || len(b.Active) != 1 || !strings.HasPrefix(b.Active[0].ID, "e-") {
+		t.Fatalf("active/epics_declared = %+v, want the one active epic", b)
+	}
+	// The open task is unfiled, so the lint ride-along must surface
+	// epic-required — the state a session must fix.
+	if b.Lint == nil || b.Lint.Codes["epic-required"] == 0 {
+		t.Errorf("lint ride-along should count epic-required, got %+v\n%s", b.Lint, out)
+	}
+
+	out, _ = run(t, "brief")
+	if !strings.Contains(out, "epic: ▶") {
+		t.Errorf("human brief must lead with the active focus line:\n%s", out)
+	}
+	if !strings.Contains(out, "lint:") {
+		t.Errorf("human brief must print the lint line when errors exist:\n%s", out)
+	}
+}
+
+// epic show folds the body in, both modes — the prose (goal context, the
+// activation log) is the follow-up read a session actually wants.
+func TestCLIEpicShowCarriesTheBody(t *testing.T) {
+	initStore(t)
+	run(t, "epic", "add", "the focus", "-r", "o/r", "--body", "# the focus\n\nthe plan lives here\n")
+
+	out, code := run(t, "--json", "epic", "show", "focus")
+	if code != 0 {
+		t.Fatalf("epic show exit = %d:\n%s", code, out)
+	}
+	var v struct {
+		BodyText string `json:"body_text"`
+	}
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		t.Fatalf("parse epic show --json: %v\n%s", err, out)
+	}
+	if !strings.Contains(v.BodyText, "the plan lives here") {
+		t.Errorf("body_text must carry the body, got %q", v.BodyText)
+	}
+
+	out, _ = run(t, "epic", "show", "focus")
+	if !strings.Contains(out, "the plan lives here") {
+		t.Errorf("human epic show must print the body:\n%s", out)
+	}
+}
