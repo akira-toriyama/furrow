@@ -631,9 +631,14 @@ back into place — see the marshaller-path section.
   Load-bearing facts stay in lockstep with the code/CI that own them, and
   [`scripts/check-readme-parity.sh`](scripts/check-readme-parity.sh) enforces
   it by pure text extraction: the `sync-task-status.yml@vX.Y.Z` pin in README's
-  `uses:` example must match the canonical caller
-  [`.github/workflows/task-status.yml`](.github/workflows/task-status.yml) (so a
-  reader never copies a stale pin), and every `{"schema_version": N}` literal —
+  `uses:` example must match the `furrow-version` default of
+  [`.github/workflows/sync-task-status.yml`](.github/workflows/sync-task-status.yml)
+  itself (so a reader never copies a stale pin — NOT
+  `.github/workflows/task-status.yml`, which is a fleet-synced copy owned by the
+  hub canonical: release-prep used to bump it ahead of the tag and the next
+  scheduled fleet-sync reverted it, 3 of 4 releases, once for ~46h; leave it
+  alone and it catches up when the hub rollout lands), and every
+  `{"schema_version": N}` literal —
   in README.md (required) **and any docs/*.md that writes one** — must equal
   `const SchemaVersion` in `internal/core/task.go` (the claim used to be made
   and NOT checked — which is exactly how the README came to say "board layout
