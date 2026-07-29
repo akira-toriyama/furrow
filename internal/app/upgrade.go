@@ -98,6 +98,7 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 	// Pass 1: load every outdated store and plan its epic conversions.
 	var pend []pendingUpgrade
 	conv := map[string]string{}
+	derived := map[string]string{} // epic id -> the task it was derived from
 	for _, t := range a.boardStores() {
 		if t.Err != nil {
 			return nil, t.Err
@@ -121,10 +122,12 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 		}
 		plans := core.PlanV6Epics(idx, a.migrationEpicID, a.taskArrivesClosed)
 		for _, p := range plans {
-			// The derived id must be genuinely fresh. A clash can only happen if
-			// someone hand-created an epics/ shard on a pre-v6 board — refuse
-			// rather than guess, so the human resolves it with the evidence intact.
-			if other, dup := conv[p.Epic.ID]; dup {
+			// The derived id must be genuinely fresh. A clash can only come from a
+			// hand-made shape (an id missing the task prefix, or a hand-created
+			// epics/ shard on a pre-v6 board) — refuse rather than guess, so the
+			// human resolves it with the evidence intact. conv is keyed by TASK id,
+			// so the clash test needs the reverse map.
+			if other, dup := derived[p.Epic.ID]; dup {
 				return nil, core.Internalf(p.TaskID,
 					"migration derives epic id %s for both %s and %s — resolve by hand and re-run",
 					p.Epic.ID, other, p.TaskID)
@@ -136,6 +139,7 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 					"cannot convert %s: epic %s already exists in %s", p.TaskID, p.Epic.ID, t.Path)
 			}
 			conv[p.TaskID] = p.Epic.ID
+			derived[p.Epic.ID] = p.TaskID
 		}
 		pend = append(pend, pendingUpgrade{sv: t, idx: idx, plans: plans})
 	}

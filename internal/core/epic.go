@@ -37,8 +37,9 @@ type Epic struct {
 	// Active marks the ONE box currently being worked. `furrow next` scopes to it,
 	// which is the whole point of the entity: without it, every session picks the
 	// juiciest single task from the whole board and the work scatters. At most one
-	// epic may be active board-wide; the app enforces that on the write path and
-	// `furrow lint` reports a violation merged in from another machine.
+	// epic may be active PER REPO (an epic naming several repos holds a slot in
+	// every one of them); the app enforces that on the write path (EpicActivate)
+	// and `furrow lint` reports a violation merged in from another machine.
 	//
 	// furrow does NOT police WHO flips it — it cannot; a CLI has no caller
 	// identity. That rule lives in the operator's own docs, and if it must be

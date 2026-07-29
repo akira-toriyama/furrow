@@ -305,3 +305,20 @@ func TestUpgradeV6RehomesAcrossStores(t *testing.T) {
 		t.Errorf("hot rehomed = %d, want 2 (t-kid1, t-kid2)", rep.Stores[0].Rehomed)
 	}
 }
+
+// Two v5 epic-tasks whose ids differ only by the task prefix ("t-same" and a
+// hand-made "same") derive the SAME epic id. The migration must refuse — a
+// silent last-writer-wins would destroy the first epic's shard and body.
+func TestUpgradeV6RefusesDuplicateDerivedEpicIDs(t *testing.T) {
+	a, fdir := v5Board(t)
+	writeV5Shard(t, fdir, "t-same", "box a", "backlog", `[]`, `,
+  "type": "epic"`)
+	writeV5Shard(t, fdir, "same", "box b", "backlog", `[]`, `,
+  "type": "epic"`)
+
+	if _, err := a.Upgrade(false); err == nil {
+		t.Fatal("Upgrade must refuse two tasks deriving the same epic id, got nil error")
+	} else if !strings.Contains(err.Error(), "e-same") {
+		t.Fatalf("error should name the clashing epic id, got: %v", err)
+	}
+}
