@@ -19,8 +19,10 @@ the user-level config. When you work with any furrow store:
 - Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
   **`furrow brief [--json]` is the session-start read**: the sync → `next -r` →
   `show <id>` ritual in ONE process — the epic header (`active`, the open+active
-  epic(s) `next` scopes to, and `epics_declared`, which tells a non-participating
-  board apart from "nothing active, so `next` is deliberately empty"), the top
+  epic(s) `next` scopes to; `pinned`, the open pinned channel(s) whose tasks
+  lead `next` regardless of the active scope; and `epics_declared`, which tells
+  a non-participating board apart from "nothing active, so `next` is
+  deliberately empty — except the pinned band"), the top
   `-n` (default 3) actionable tasks
   WITH `body_text`, `next_total` (the uncapped count — a cap never hides the
   queue), `blocked` (next-lane tasks with an unsatisfied dep + `blocked_by`,
@@ -87,6 +89,19 @@ the user-level config. When you work with any furrow store:
   chooses: activating it stays the human's call). `lint` backstops what merges
   let through: `epic-dep-cycle` (error), `epic-dep-missing` (error),
   `epic-dep-open` (warn — an ACTIVE box still waiting on an open one).
+- **`standing` / `pinned` are the v7 permanent-channel declarations (`epic set
+  --standing / --pinned`; `--standing=false` / `--pinned=false` clears).** A
+  STANDING box is one whose goal is to sit there (a mandate inbox, a parking
+  lot): it is exempt from the finish-shaped revisit nags — `epic_all_done`
+  (open 0 is its healthy state) and `epic_dep_done` (an always-on box has no
+  "turn to open") — while `epic_stuck` still fires. A PINNED box's actionable
+  tasks LEAD `next`/`brief` regardless of the active scope (shown even when
+  nothing is active), without holding a repo slot — the read's own repo filter
+  scopes the tasks. Orthogonal to each other and to activate: mandate =
+  standing+pinned, parking lot = standing only, and a box can be pinned AND
+  active (it shows once, in the pinned band). furrow never binds NAMES to
+  these flags — which boxes deserve them is the operator's convention
+  (projects' reserved-epics.md).
 - **`type` is first-class; an epic is a container, declared not inferred (schema
   v5).** A task carries a `type` from the closed `[types].order` vocabulary
   (default `task`, `epic`; `default`/`containers` alongside it, same

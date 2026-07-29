@@ -149,11 +149,22 @@ func newEpicSetCmd() *cobra.Command {
 		rmLabels  []string
 		addRepos  []string
 		rmRepos   []string
+		standing  bool
+		pinned    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "set <epic>",
-		Short: "Edit an epic's title, goal, meta, labels or repos",
-		Args:  cobra.ExactArgs(1),
+		Short: "Edit an epic's title, goal, meta, labels, repos, or its standing/pinned declarations",
+		Long: "Edit a box's metadata. --standing and --pinned (v7) are the two PERMANENT-\n" +
+			"channel declarations: a standing box is exempt from the finish-shaped nags\n" +
+			"(revisit's epic_all_done / epic_dep_done; stuck still fires), and a pinned\n" +
+			"box's actionable tasks lead `next`/`brief` regardless of the active scope.\n" +
+			"They are orthogonal to each other and to activate (a mandate box is\n" +
+			"standing + pinned; a parking lot is standing only). Clear one explicitly\n" +
+			"with --standing=false / --pinned=false — an omitted flag never touches the\n" +
+			"stored value. Which boxes carry them is an operating convention, not\n" +
+			"furrow's: furrow stays name-independent.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -174,6 +185,12 @@ func newEpicSetCmd() *cobra.Command {
 			if cmd.Flags().Changed("goal") {
 				o.Goal = &goal
 			}
+			if cmd.Flags().Changed("standing") {
+				o.Standing = &standing
+			}
+			if cmd.Flags().Changed("pinned") {
+				o.Pinned = &pinned
+			}
 			return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicSet(args[0], o) })
 		},
 	}
@@ -185,6 +202,8 @@ func newEpicSetCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&rmLabels, "rm-label", nil, "remove a label (repeatable)")
 	cmd.Flags().StringArrayVar(&addRepos, "add-repo", nil, "attach an owner/repo (repeatable)")
 	cmd.Flags().StringArrayVar(&rmRepos, "rm-repo", nil, "detach an owner/repo (repeatable)")
+	cmd.Flags().BoolVar(&standing, "standing", false, "declare a permanent box (exempt from epic_all_done/epic_dep_done; --standing=false clears)")
+	cmd.Flags().BoolVar(&pinned, "pinned", false, "surface this box's actionable tasks in next/brief regardless of the active scope (--pinned=false clears)")
 	return cmd
 }
 

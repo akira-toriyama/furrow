@@ -21,5 +21,7 @@
   "deps": [
     "e-aa01",
     "e-zz10"
-  ]
+  ],
+  "standing": false,
+  "pinned": false
 }

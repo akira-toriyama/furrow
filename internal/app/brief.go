@@ -18,11 +18,17 @@ type BriefData struct {
 	// `furrow epic activate`.
 	Active        []EpicItem
 	EpicsDeclared bool
-	Next          []ShowItem
-	NextTotal     int // actionable count BEFORE the display cap — a cap must never hide the size of the queue
-	Blocked       []ListItem
-	Revisit       RevisitSummary
-	Drafts        int // repo-less tasks, board-wide by definition (a draft has no repo, so no scope can own it)
+	// Pinned is the open pinned epic(s) NOT already listed in Active — the
+	// always-visible channels whose tasks lead Next regardless of the active
+	// scope (v7). Board-wide like NextScope's pinned band (pinning is not
+	// repo-slotted; the tasks repo-filter themselves), and deduped against
+	// Active so a box both active and pinned appears once, as the focus.
+	Pinned    []EpicItem
+	Next      []ShowItem
+	NextTotal int // actionable count BEFORE the display cap — a cap must never hide the size of the queue
+	Blocked   []ListItem
+	Revisit   RevisitSummary
+	Drafts    int // repo-less tasks, board-wide by definition (a draft has no repo, so no scope can own it)
 	// Lint is the error-count ride-along sync also prints (LintErrorCounts —
 	// errors only, by code). Best-effort: a lint failure zeroes it rather than
 	// failing the orientation read.
@@ -95,6 +101,18 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 			active = append(active, it)
 		}
 	}
+	// The pinned channels, board-wide (EpicList with no repo filter): a pinned
+	// box outside this repo can still lead Next when its tasks match the scope.
+	allItems, err := a.EpicList(EpicQueryOpts{})
+	if err != nil {
+		return nil, err
+	}
+	var pinned []EpicItem
+	for _, it := range allItems {
+		if it.Epic.Pinned && !it.Epic.Active {
+			pinned = append(pinned, it)
+		}
+	}
 
 	// Best-effort, exactly like sync's ride-along: orientation must not fail
 	// because a lint sweep hit an IO error.
@@ -106,6 +124,7 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 	return &BriefData{
 		Active:        active,
 		EpicsDeclared: len(all) > 0,
+		Pinned:        pinned,
 		Next:          picks,
 		NextTotal:     total,
 		Blocked:       blocked,

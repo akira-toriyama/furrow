@@ -1053,13 +1053,17 @@ type briefView struct {
 	// epics_declared tells the two empty cases apart (false = the board has no
 	// boxes and the scope discipline is off; true = empty means nothing active,
 	// so next is deliberately empty).
-	Active        []epicView         `json:"active"`
-	EpicsDeclared bool               `json:"epics_declared"`
-	Next          []taskView         `json:"next"`
-	NextTotal     int                `json:"next_total"`
-	Blocked       []briefBlockedView `json:"blocked"`
-	Revisit       app.RevisitSummary `json:"revisit"`
-	Drafts        int                `json:"drafts"`
+	Active        []epicView `json:"active"`
+	EpicsDeclared bool       `json:"epics_declared"`
+	// pinned is the open pinned box(es) not already in active — the always-
+	// visible channels whose tasks lead next (omitted when none, so the
+	// pre-v7 shape is unchanged on a board that uses no pins).
+	Pinned    []epicView         `json:"pinned,omitempty"`
+	Next      []taskView         `json:"next"`
+	NextTotal int                `json:"next_total"`
+	Blocked   []briefBlockedView `json:"blocked"`
+	Revisit   app.RevisitSummary `json:"revisit"`
+	Drafts    int                `json:"drafts"`
 	// lint mirrors sync's ride-along: omitted when clean, error counts by code
 	// otherwise.
 	Lint *app.LintErrorSummary `json:"lint,omitempty"`
@@ -1091,6 +1095,9 @@ func printBrief(b *app.BriefData, scope string) {
 		}
 		for _, it := range b.Active {
 			v.Active = append(v.Active, toEpicView(it))
+		}
+		for _, it := range b.Pinned {
+			v.Pinned = append(v.Pinned, toEpicView(it))
 		}
 		// sync hides an empty summary behind omitempty; brief always shows it,
 		// so the two non-omitempty id arrays must come out [] never null (an
@@ -1129,6 +1136,11 @@ func printBrief(b *app.BriefData, scope string) {
 				line += "  ⏳ waits: " + strings.Join(it.OpenDeps, ", ")
 			}
 			fmt.Fprintln(out, line)
+		}
+		// The pinned channels ride under the focus line: their tasks lead next,
+		// so the header must say which boxes injected them.
+		for _, it := range b.Pinned {
+			fmt.Fprintf(out, "epic: 📌 %s  %d/%d  %s\n", it.Epic.ID, it.Progress.Done, it.Progress.Total, it.Epic.Title)
 		}
 	}
 	fmt.Fprintf(out, "next (%d/%d):\n", len(b.Next), b.NextTotal)
@@ -1205,6 +1217,12 @@ func emitEpicList(items []app.EpicItem) error {
 				mark = "▶"
 			}
 			line := fmt.Sprintf("%s %s  %d/%d  %s", mark, v.ID, v.Progress.Done, v.Progress.Total, v.Title)
+			if v.Pinned {
+				line += "  📌 pinned"
+			}
+			if v.Standing {
+				line += "  [standing]"
+			}
 			if !v.IsOpen() {
 				line += "  [closed]"
 			}
@@ -1254,6 +1272,12 @@ func emitEpicDetail(a *app.App, d *app.EpicDetail) error {
 	}
 	if d.Epic.Active {
 		state += ", active"
+	}
+	if d.Epic.Pinned {
+		state += ", pinned"
+	}
+	if d.Epic.Standing {
+		state += ", standing"
 	}
 	fmt.Fprintf(out, "state:    %s\n", state)
 	fmt.Fprintf(out, "progress: %d/%d\n", d.Progress.Done, d.Progress.Total)
@@ -1352,6 +1376,12 @@ func changedEpicFields(before, after *core.Epic) []string {
 	}
 	if !strsEq(before.Deps, after.Deps) {
 		ch = append(ch, "deps")
+	}
+	if before.Standing != after.Standing {
+		ch = append(ch, "standing")
+	}
+	if before.Pinned != after.Pinned {
+		ch = append(ch, "pinned")
 	}
 	if (before.Closed == nil) != (after.Closed == nil) {
 		ch = append(ch, "closed")

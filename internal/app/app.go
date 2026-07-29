@@ -1113,11 +1113,15 @@ func validateSortField(field string) error {
 //
 // On a board that has declared at least one epic, the result is ALSO scoped to
 // the active epic(s) for the read's repo scope, plus the unfiled pile (see
-// NextScope) — the mechanism that keeps a session on the declared focus. The
-// active epics' tasks come first (they ARE the focus; the unfiled rescue rides
-// behind), canonical order within each half. An engaged scope with nothing
-// active matches NOTHING: "no box open" must not silently degrade into "show me
-// the unfiled pile". An explicit -e (o.Epic) or --all-epics bypasses the scope.
+// NextScope) — the mechanism that keeps a session on the declared focus. A
+// PINNED box's tasks pass through that scope entirely and lead the result (v7):
+// a pinned channel (a mandate box) must be seen without stealing `active` from
+// the box being worked. Then the active epics' tasks (they ARE the focus), then
+// the unfiled rescue — canonical order within each band. An engaged scope with
+// nothing active matches nothing BUT the pinned band: "no box open" must not
+// silently degrade into "show me the unfiled pile", while an always-visible
+// channel stays visible by definition. An explicit -e (o.Epic) or --all-epics
+// bypasses the scope, pinned band included.
 func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 	scope, err := a.NextScope(o)
 	if err != nil {
@@ -1154,19 +1158,20 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	// With the scope engaged, focus (active-epic members) and rescue (unfiled)
-	// collect separately so focus leads the result regardless of canonical
-	// interleaving; the limit therefore applies AFTER the partition, so `-n1`
-	// hands you the focus, not whatever unfiled task sorts first.
-	var out, rescue []core.Task
+	// With the scope engaged, pinned (pass-through), focus (active-epic members)
+	// and rescue (unfiled) collect separately so the bands stack in that order
+	// regardless of canonical interleaving; the limit therefore applies AFTER
+	// the partition, so `-n1` hands you the pinned channel first, then the
+	// focus, never whatever unfiled task sorts first.
+	var pinned, out, rescue []core.Task
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
 		if !o.match(t) {
 			continue
 		}
-		if scope.Engaged {
+		if scope.Engaged && !scope.Pinned[t.Epic] {
 			if len(scope.Active) == 0 {
-				break // nothing is active: deliberately empty, never the unfiled pile
+				continue // nothing is active: deliberately empty (pinned only), never the unfiled pile
 			}
 			if t.Epic != "" && !scope.Active[t.Epic] {
 				continue
@@ -1188,7 +1193,13 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 				continue
 			}
 		}
-		if scope.Engaged && t.Epic == "" {
+		switch {
+		case scope.Engaged && scope.Pinned[t.Epic]:
+			// A box both pinned and active lands here: the pass-through band is
+			// the stronger claim on attention.
+			pinned = append(pinned, *t)
+			continue
+		case scope.Engaged && t.Epic == "":
 			rescue = append(rescue, *t)
 			continue
 		}
@@ -1197,7 +1208,7 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 			break
 		}
 	}
-	out = append(out, rescue...)
+	out = append(pinned, append(out, rescue...)...)
 	if o.Limit > 0 && len(out) > o.Limit {
 		out = out[:o.Limit]
 	}
