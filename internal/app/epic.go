@@ -425,7 +425,7 @@ type EpicScope struct {
 
 // NextScope computes the active-epic scope Next will apply to o. One epic is
 // active per repo, so a repo-scoped read sees at most one id; a board-wide read
-// (`-r ''`) sees every repo's active box — their union, not an error, since a
+// (`-r ”`) sees every repo's active box — their union, not an error, since a
 // cross-repo listing has no single focus to pick.
 func (a *App) NextScope(o QueryOpts) (EpicScope, error) {
 	if o.Epic != "" || o.AllEpics {

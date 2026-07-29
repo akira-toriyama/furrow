@@ -312,9 +312,10 @@ The passthrough itself shipped **without** a bump — `core.SchemaVersion` staye
 to the previous release's output; bumping would have taken every board read-only
 and bricked every pinned CI caller in order to advertise a feature to exactly
 the binaries that do not have it. The bump to **5** came separately, with the
-first-class `type` field (`v0.10.0`) — a field `next`'s container skip and `ls
---type` actually read, i.e. exactly the class the golden test below says must
-bump.
+first-class `type` field (`v0.10.0`) — a field v5's `next` container skip and
+`ls --type` actually read, i.e. exactly the class the golden test below says
+must bump. (v6 then REMOVED `type` and `parent` for the epic entity — a shape
+change from the other direction, and the same flag day.)
 
 ### How the invariant is guarded
 
@@ -332,8 +333,8 @@ bump.
   shard and it fails, telling you to bump `core.SchemaVersion` — a flag day —
   unless no query, sort, filter, or lane decision reads the new field. (Worth
   knowing before arguing "but my field is purely additive": every field ever added
-  to `Task` — value, effort, repos, reviewed, deps, refs, checklist, parent — is
-  read by one. That class has never had a member; the default answer is BUMP.)
+  to `Task` — value, effort, repos, reviewed, deps, refs, checklist, parent
+  (v5; replaced by `epic` in v6) — is read by one. That class has never had a member; the default answer is BUMP.)
   Accept a new shape deliberately, with
   `go test ./internal/core -run TestShardFieldsGolden -update-fields`. This is the
   teeth on a rule that otherwise fails **silently**: add a field, forget the bump,
@@ -624,36 +625,32 @@ A few app-level rules worth stating, all verified against the code:
   `icebox`) leave `Closed` alone — *parked is not closed*.
 - **`Next`** returns actionable tasks: in one of the configured `[next].lanes`
   (default `ready` + `in-progress` — intake lanes like `inbox` are deliberately
-  excluded), with every named dependency already in the done lane, **and not a
-  container type**. Lane semantics live in config, not core — `Index.Actionable`
-  takes the terminal set and the done-id set as arguments, the `[next].lanes` gate
-  is applied in `app` via `Config.IsNextLane`, and the container gate via
-  `Config.IsContainerType` (a `[types].containers` type, e.g. `epic`, is a box, not
-  work). `App.workable` is the type-blind readiness test (lane + deps); the composed
-  predicate `App.actionable` = `workable && !container`, shared with `Tree` so the
-  two never drift on "you could pick this up now". `furrow next --containers`
-  relaxes `Next` to `workable` so a ready box surfaces on request; the tree ★ never
-  does (a box is never actionable).
-- **`Tree`** (`ls --tree`) builds the **parent** forest — furrow stores two
-  relations between tasks and this is the one that nests. `parent` is the SKELETON
-  (one parent, many children: a real tree); `deps` are the GATE (a DAG *across* the
-  tree — a task in one branch can wait on one in another), so they can't nest and
-  ride along as each node's `blocked_by`. Every node carries the derived facts
-  the drawing exists to convey: `Actionable` (the `App.actionable` predicate above)
-  and `BlockedBy` (deps not yet done); a **container** node additionally carries
-  `Container`, a `Progress {done,total}` roll-up (direct children, or the whole
-  subtree with `--progress-recursive`), and `Stuck` (open work under it but no
-  actionable descendant — always a subtree walk, recursing through sub-epics, so a
-  box with a ready task under a child epic is not stuck; a zero-child epic is never
-  stuck). These are DERIVED, never stored. Three deliberate properties: the forest is
-  built over the FILTERED set, and a task whose parent was filtered out becomes a
-  root rather than disappearing (a `--tree` that shows fewer tasks than the same
-  flags without it would be lying); `Limit` caps ROOTS, not tasks (truncating
-  mid-hierarchy would amputate children from the trees it did show); and a **parent
-  cycle** — which only a git merge of two half-edges can create — leaves every task
-  in it parented-but-unreachable, i.e. invisible, so those are surfaced as roots and
-  the descent carries a visited set. A corrupt hierarchy renders, truncated at the
-  loop; it never vanishes and never hangs.
+  excluded), with every named dependency already in the done lane. Lane
+  semantics live in config, not core — `Index.Actionable` takes the terminal
+  set and the done-id set as arguments, and the `[next].lanes` gate is applied
+  in `app` via `Config.IsNextLane`. On a board with at least one epic the
+  result is ALSO scoped to the **active** epic(s) for the read's repo
+  (`App.NextScope`): the focus box's tasks lead, the unfiled pile rides behind,
+  a task in another box is out, and nothing active means a deliberately EMPTY
+  result (exit 0, a stderr hint) — never a silent fall-through to the unfiled
+  pile. `-e` (strict, one box) and `--all-epics` bypass the scope; a board with
+  no epics is not participating and behaves classically. `App.actionable` (the
+  task-level test — lane + deps, deliberately NOT epic-aware) is shared with
+  `Tree`, so ★ keeps one board-wide meaning and is a strict superset of what
+  `next` hands you.
+- **`Tree`** (`ls --tree`) groups the matched tasks by **epic** — one level, no
+  nesting (epics do not nest; a task's internal breakdown is its checklist).
+  `epic` is the GROUPING; `deps` are the GATE (a DAG *across* boxes — a task in
+  one epic can wait on one in another), so they can never nest and ride along
+  as each node's `blocked_by`. Every node carries `Actionable` and `BlockedBy`;
+  every epic group carries `Progress {done,total}` (counted over the FULL
+  index, so a read filter cannot under-count the box) and `Stuck` (open
+  members, none actionable — org-mode's stuck project, the state `next`
+  structurally cannot show). These are DERIVED, never stored. Groups are
+  ordered active → open by id → closed → the unfiled group last; `Limit` caps
+  GROUPS, not tasks (truncating mid-group would amputate members from a box it
+  did show); the unfiled group exists because a tree that dropped unfiled tasks
+  would show fewer tasks than the same flags without `--tree`.
 - **`Archive`** selects done-lane tasks whose `Closed` is older than the cutoff
   and moves them (shard + body) into the sibling `.furrow/archive/` store (its own
   `tasks/`, `meta.json`, and `bodies/`).
@@ -675,9 +672,9 @@ except where noted:
 
 - **`set`** applies the routine triage edits — lane, POSITION (`--priority`, or
   `--before`/`--after` a task in the DESTINATION lane, so a cross-lane drop is
-  lane + position in one write), value, effort, labels, and `--type` — in one
+  lane + position in one write), value, effort, labels, and `-e/--epic` — in one
   write (the combined-edit funnel `App.Set`), so triage isn't move+reorder+value+
-  effort+label+type as separate commands, over ONE id or several (`set <id>...`
+  effort+label+epic as separate commands, over ONE id or several (`set <id>...`
   is the bulk-triage twin of `MoveMany`: resolve every id, then one Save; the
   position flags place a single task and are refused for a batch). It reuses
   `applyLane`/`labelDelta` and
@@ -686,21 +683,22 @@ except where noted:
 - **`dep`** adds or removes dependency edges on an existing task (`--rm`); it is
   variadic (`dep a b c`), applying/removing several in one all-or-nothing write.
   Adding is acyclic (rejects self- and cycle-creating edges) and idempotent.
-- **`parent`** is the same command shape for the OTHER edge furrow stores — the
-  hierarchy: `parent <id> <parent-id>` files a task under another, `--rm` detaches
-  it to top-level, and `--list` reads both directions (the parent, `null` when
-  top-level; the children, `[]` when none) resolved to id+title+lane, exactly like
-  `dep --list`. It exists because `parent` was the one persisted field with no
-  command: settable at `add --parent` and never again, so the only way to re-file a
-  task was to hand-edit a machine-written shard. Re-parenting is acyclic (`core.
-  Index.HasAncestor` is the predicate: setting id's parent to p closes a loop
-  exactly when id is already p's ancestor), and it deliberately ALLOWS a done
-  parent — refusing would make "this leftover belongs to the epic that shipped"
-  unrepresentable. The two states that follow are lint's: `parent-cycle` (error;
-  `core.ParentCycleProblems`, which shares the SCC engine with `dep-cycle`) and
-  `parent-done` (warn; `core.ParentDoneProblems`, the hierarchy twin of the
-  reconcile gap). Every hierarchy walker (`core.Index.Ancestors`) carries a visited
-  set, because a git merge of two half-edges can close a cycle behind the app.
+- **`epic`** is the box entity's command group (`internal/cli/cmd_epic.go` →
+  `internal/app/epic.go`, the same mutation-funnel shape as `repo`/`review`):
+  `add` / `ls` / `show` / `set` / `activate` / `deactivate` / `done`.
+  `activate` enforces the **per-repo single-active invariant** (`checkRepoSlots`
+  — a clash is exit 2 naming the incumbent per repo in `details.held`; an epic
+  naming several repos consumes a slot in every one; a repo-LESS epic cannot be
+  activated at all, or it would bypass the count) and records the switch in the
+  epic's BODY (`recordSwitch`: a timestamped line, `--reason` appended) — furrow
+  does not police WHO switches, it makes the switch visible: `furrow sync`
+  reports the activation records it publishes. `done` stamps `closed` and
+  clears `active` in the SAME write (a closed box holding its repos' slots
+  forever could never be replaced) and deliberately never picks the next box —
+  that judgment is the human's; `lint`'s `epic-no-active` nags until someone
+  decides. A task's own membership is a plain field edit (`add -e` / `set -e`,
+  resolved through `ResolveEpic`: exact id → unique id prefix → unique title
+  substring, ambiguity = exit 2 + candidates).
 - **`repo`** attaches/detaches `owner/repo` values on a task (`--add`/`--rm`,
   both repeatable); short names resolve against the board's known repos or
   fail with `candidates`. A task with no repos is a **draft** (`ls --drafts`).
@@ -887,9 +885,8 @@ Sections and their defaults:
 |---|---|---|
 | `[lanes]` | `order`, `default`, `done`, `terminal` | `inbox, backlog, ready, in-progress, waiting, done, icebox`; default `inbox`; done `done`; terminal `done, icebox, waiting` |
 | `[next]` | `lanes` | `ready, in-progress` (falls back to all non-terminal lanes when neither exists) |
-| `[types]` | `order`, `default`, `containers` | `task, epic`; default `task`; containers `epic`. The default MUST NOT be a container — a container default is clamped back, else every type-less shard would vanish from `next` |
 | `[priority]` | `step`, `default` | `10`, `100` |
-| `[ids]` | `prefix`, `width` | `t-`, `5` |
+| `[ids]` | `prefix`, `epic_prefix`, `width` | `t-`, `e-`, `5` (`epic_prefix` must differ from `prefix`, else it clamps back to `e-`) |
 | `[labels]` | `required` | `false` |
 | `[archive]` | `older_than_days` | `30` |
 | `[lint]` | `archive_done`, `ignore_codes` | `0` (the archive-backlog nudge is off), `[]` (an entry naming no real code only warns) |
