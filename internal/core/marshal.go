@@ -187,8 +187,12 @@ func canonicalizeEpic(e *Epic) {
 	if e.Meta == nil {
 		e.Meta = map[string]string{}
 	}
+	if e.Deps == nil {
+		e.Deps = []string{}
+	}
 	e.Labels = sortDedup(e.Labels)
 	e.Repos = sortDedup(e.Repos)
+	e.Deps = sortDedup(e.Deps)
 
 	e.Created = normTime(e.Created)
 	e.Updated = normTime(e.Updated)

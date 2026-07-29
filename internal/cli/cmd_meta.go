@@ -39,7 +39,7 @@ func newSchemaCmd() *cobra.Command {
 			"shard; \"meta\" prints the schema for .furrow/meta.json; \"repo\" prints the\n" +
 			"schema for one .furrow/repos/<owner>__<repo>.json review shard; \"epic\" the\n" +
 			"one for .furrow/epics/<id>.json. These are the single source of truth;\n" +
-			"docs/schema/furrow.{task.v2,meta.v2,repo.v1,epic.v1}.json are committed\n" +
+			"docs/schema/furrow.{task.v2,meta.v2,repo.v1,epic.v2}.json are committed\n" +
 			"copies and CI diffs them so they cannot drift.",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"task", "meta", "repo", "epic"},
@@ -58,7 +58,7 @@ func newSchemaCmd() *cobra.Command {
 			case "repo":
 				fmt.Fprint(out, schema.RepoV1)
 			case "epic":
-				fmt.Fprint(out, schema.EpicV1)
+				fmt.Fprint(out, schema.EpicV2)
 			default:
 				return core.Validationf("", "unknown schema kind %q (want \"task\", \"meta\", \"repo\", or \"epic\")", kind)
 			}

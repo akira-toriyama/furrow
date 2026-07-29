@@ -1,16 +1,17 @@
 // Package schema is the single source of the JSON Schema for furrow's on-disk
 // store. `furrow schema [task|meta|repo|epic]` prints TaskV2 / MetaV2 / RepoV1 /
-// EpicV1;
+// EpicV2;
 // docs/schema/*.json are committed copies of the same bytes, and CI diffs them
 // so they can never drift.
 //
 // The store is per-task shards (tasks/<id>.json, described by TaskV2), per-repo
 // review shards (repos/<owner>__<repo>.json, described by RepoV1), per-epic
-// shards (epics/<id>.json, described by EpicV1), plus one
+// shards (epics/<id>.json, described by EpicV2), plus one
 // board-wide meta.json (described by MetaV2). Versioning: the version here
 // numbers each schema document; the board LAYOUT version lives in meta.json's
-// schema_version (currently 5 — 4 added the review shards + per-task reviewed,
-// 3 was the repos pivot, 2 pre-repos shards, 1 the monolithic index.json).
+// schema_version (currently 7 — 6 was the epic pivot, 5 the per-task type
+// field, 4 the review shards + per-task reviewed, 3 the repos pivot,
+// 2 pre-repos shards, 1 the monolithic index.json).
 package schema
 
 // TaskV2 is the JSON Schema (draft 2020-12) for one task shard: the object in a
@@ -67,20 +68,20 @@ const TaskV2 = `{
 // file and no shard becomes a merge point. Keep the const in lockstep with
 // internal/core.Meta and core.SchemaVersion. The schema DOCUMENT stays v2 (its
 // filename never changes) while the pinned layout version advances: it now pins
-// layout version 5 (the per-task type field); 4 was the review shards +
-// per-task reviewed field, 3 the repos pivot. v1 (which pinned layout 2) is
-// retired, not dual-supported.
+// layout version 7 (epic-to-epic deps; 6 was the epic pivot, 5 the per-task
+// type field, 4 the review shards + per-task reviewed, 3 the repos pivot). v1
+// (which pinned layout 2) is retired, not dual-supported.
 const MetaV2 = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.meta.v2.json",
   "title": "furrow meta v2",
-  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 5 = adds the per-task type field (task/epic; container skipped by next); 4 = the per-repo review shards (repos/) and the per-task reviewed timestamp (3 = the repos pivot, 2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
+  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 7 = epic-to-epic deps (the epics/<id>.json shard gains the required deps set); 6 = the epic pivot (per-task type/parent removed, per-task epic + the epics/ shard kind added); 5 = the per-task type field; 4 = the per-repo review shards (repos/) and the per-task reviewed timestamp (3 = the repos pivot, 2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": true,
   "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a meta.json furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (blamed on the id \"meta\", since meta.json belongs to no task) — nothing else can, since nothing ever deletes an extra. This document has no nested objects, so the top-level-only limit of the passthrough has nothing to qualify here; the task shard's schema explains it.",
   "required": ["schema_version"],
   "properties": {
-    "schema_version": { "const": 5 }
+    "schema_version": { "const": 7 }
   }
 }
 `
@@ -92,18 +93,21 @@ const MetaV2 = `{
 // tags. Both timestamps are nullable (null = never reviewed by that actor);
 // last_reviewed is the human review clock the staleness nudge reads,
 // last_agent_reviewed logs an agent sweep without advancing it.
-// EpicV1 is the JSON Schema (draft 2020-12) for one epic shard: the object in a
+// EpicV2 is the JSON Schema (draft 2020-12) for one epic shard: the object in a
 // single .furrow/epics/<id>.json. Like the other shard kinds it carries no
-// schema_version — that lives in meta.json (see MetaV2).
-const EpicV1 = `{
+// schema_version — that lives in meta.json (see MetaV2). v2 adds the required
+// deps set (board layout v7): the epic ids this box waits on. v1 is retired,
+// not dual-supported — the published v1 document is deleted rather than
+// silently rewritten.
+const EpicV2 = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.epic.v1.json",
-  "title": "furrow epic shard v1",
-  "description": "Schema for one .furrow/epics/<id>.json shard (a single epic: a box of work with member tasks). The board-wide schema_version lives in .furrow/meta.json, never in a shard. Pin to a tagged URL or vendor this file.",
+  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.epic.v2.json",
+  "title": "furrow epic shard v2",
+  "description": "Schema for one .furrow/epics/<id>.json shard (a single epic: a box of work with member tasks). The board-wide schema_version lives in .furrow/meta.json, never in a shard. v2 adds the required deps set (board layout v7): the epic ids this box waits on — information, not enforcement (epic activate warns about an open dep and proceeds). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": true,
   "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a shard furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (naming the epic) — nothing else can, since nothing ever deletes an extra.",
-  "required": ["id", "title", "goal", "active", "labels", "repos", "meta", "created", "updated", "closed", "body"],
+  "required": ["id", "title", "goal", "active", "labels", "repos", "meta", "created", "updated", "closed", "body", "deps"],
   "properties": {
     "id": { "type": "string", "description": "frozen id, e- prefixed; == the shard filename stem and bodies/<id>.md stem" },
     "title": { "type": "string" },
@@ -115,7 +119,8 @@ const EpicV1 = `{
     "created": { "type": "string", "format": "date-time" },
     "updated": { "type": "string", "format": "date-time" },
     "closed": { "type": ["string", "null"], "format": "date-time", "description": "null while open; an epic has no lane — open/closed is its whole state model" },
-    "body": { "type": "string", "description": "relative path, e.g. bodies/e-k3m9.md — the SAME directory task bodies live in (ids are prefix-disjoint)" }
+    "body": { "type": "string", "description": "relative path, e.g. bodies/e-k3m9.md — the SAME directory task bodies live in (ids are prefix-disjoint)" },
+    "deps": { "type": "array", "items": { "type": "string" }, "description": "epic ids this box waits on (open after those close), sorted+deduped, acyclic. Information, not enforcement: epic activate warns about a still-open dep and proceeds, a dep on a closed epic is satisfied, and revisit raises epic_dep_done when every dep is closed. furrow lint backstops the graph (epic-dep-cycle, epic-dep-missing, epic-dep-open)." }
   }
 }
 `

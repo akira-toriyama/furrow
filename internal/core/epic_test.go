@@ -29,6 +29,7 @@ func sampleEpic() *Epic {
 		Updated: created,
 		Closed:  nil,
 		Body:    "bodies/e-k3m9.md",
+		Deps:    []string{"e-zz10", "e-aa01", "e-zz10"}, // unsorted + duplicated, like Labels
 	}
 }
 

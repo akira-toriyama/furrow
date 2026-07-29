@@ -20,6 +20,8 @@ import (
 //   - epic-multi-active (error) two active epics naming the same repo
 //   - epic-no-active  (warn)  a repo with open work but no active epic
 //   - epic-id-pattern / epic-duplicate-id (error) the id-shape backstops
+//   - epic-dep-missing / epic-dep-cycle (error), epic-dep-open (warn) — the
+//     epic dep graph rules (epic_deps.go)
 //
 // terminal is the configured terminal-lane set: a done or parked task predating
 // the box it would have belonged to is not a defect, so those are exempt from
@@ -49,6 +51,7 @@ func EpicProblems(idx *Index, epics []Epic, terminal map[string]bool, epicIDPatt
 	// a requirement.
 	out = append(out, epicMembershipProblems(idx, byID, terminal, len(epics) > 0)...)
 	out = append(out, activeEpicProblems(idx, epics, terminal)...)
+	out = append(out, epicDepProblems(epics)...)
 
 	sortProblems(out)
 	return out

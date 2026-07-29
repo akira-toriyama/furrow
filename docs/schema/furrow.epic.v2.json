@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.epic.v1.json",
-  "title": "furrow epic shard v1",
-  "description": "Schema for one .furrow/epics/<id>.json shard (a single epic: a box of work with member tasks). The board-wide schema_version lives in .furrow/meta.json, never in a shard. Pin to a tagged URL or vendor this file.",
+  "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.epic.v2.json",
+  "title": "furrow epic shard v2",
+  "description": "Schema for one .furrow/epics/<id>.json shard (a single epic: a box of work with member tasks). The board-wide schema_version lives in .furrow/meta.json, never in a shard. v2 adds the required deps set (board layout v7): the epic ids this box waits on — information, not enforcement (epic activate warns about an open dep and proceeds). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": true,
   "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a shard furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (naming the epic) — nothing else can, since nothing ever deletes an extra.",
-  "required": ["id", "title", "goal", "active", "labels", "repos", "meta", "created", "updated", "closed", "body"],
+  "required": ["id", "title", "goal", "active", "labels", "repos", "meta", "created", "updated", "closed", "body", "deps"],
   "properties": {
     "id": { "type": "string", "description": "frozen id, e- prefixed; == the shard filename stem and bodies/<id>.md stem" },
     "title": { "type": "string" },
@@ -18,6 +18,7 @@
     "created": { "type": "string", "format": "date-time" },
     "updated": { "type": "string", "format": "date-time" },
     "closed": { "type": ["string", "null"], "format": "date-time", "description": "null while open; an epic has no lane — open/closed is its whole state model" },
-    "body": { "type": "string", "description": "relative path, e.g. bodies/e-k3m9.md — the SAME directory task bodies live in (ids are prefix-disjoint)" }
+    "body": { "type": "string", "description": "relative path, e.g. bodies/e-k3m9.md — the SAME directory task bodies live in (ids are prefix-disjoint)" },
+    "deps": { "type": "array", "items": { "type": "string" }, "description": "epic ids this box waits on (open after those close), sorted+deduped, acyclic. Information, not enforcement: epic activate warns about a still-open dep and proceeds, a dep on a closed epic is satisfied, and revisit raises epic_dep_done when every dep is closed. furrow lint backstops the graph (epic-dep-cycle, epic-dep-missing, epic-dep-open)." }
   }
 }

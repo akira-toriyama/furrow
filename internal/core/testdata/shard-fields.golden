@@ -1,6 +1,6 @@
 # The on-disk shape of every furrow shard. See TestShardFieldsGolden.
 # Changing this file means changing what other furrows read.
-schema_version 6
+schema_version 7
 
 Task
   id string
@@ -28,6 +28,20 @@ RepoRecord
   repo string
   last_reviewed *time.Time
   last_agent_reviewed *time.Time
+
+Epic
+  id string
+  title string
+  goal string
+  active bool
+  labels []string
+  repos []string
+  meta map[string]string
+  created time.Time
+  updated time.Time
+  closed *time.Time
+  body string
+  deps []string
 
 ChecklistItem
   text string

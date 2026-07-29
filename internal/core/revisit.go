@@ -25,6 +25,12 @@ const (
 	// furrow has no notion of a session, and inventing a second clock so that one
 	// signal could use it would put two thresholds on the same board.
 	RevisitEpicStale = "epic_stale"
+	// RevisitEpicDepDone is dep_done's box-level twin (v7): a parked epic whose
+	// Deps are ALL closed — every box it waited on is done, so it is this one's
+	// turn to be opened. It never fires for the active epic (already open) and
+	// stays quiet while any dep is open or dangling: a broken edge is lint's
+	// epic-dep-missing, and "time to open" must not be said on a broken graph.
+	RevisitEpicDepDone = "epic_dep_done"
 )
 
 // RevisitCodeList returns every revisit signal code — the complete `furrow
@@ -45,6 +51,7 @@ func RevisitCodeList() []string {
 		RevisitEpicAllDone,
 		RevisitEpicStuck,
 		RevisitEpicStale,
+		RevisitEpicDepDone,
 	}
 }
 

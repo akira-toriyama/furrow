@@ -16,7 +16,7 @@ func mustEpic(t *testing.T, a *App, title string, o EpicAddOpts) string {
 // mustActivate opens a box, failing the test on error.
 func mustActivate(t *testing.T, a *App, id string) {
 	t.Helper()
-	if _, _, err := a.EpicActivate(id, ""); err != nil {
+	if _, _, _, err := a.EpicActivate(id, ""); err != nil {
 		t.Fatalf("epic activate %s: %v", id, err)
 	}
 }

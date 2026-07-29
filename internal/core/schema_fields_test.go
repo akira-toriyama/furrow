@@ -85,7 +85,9 @@ func fingerprint() string {
 	b.WriteString("# The on-disk shape of every furrow shard. See TestShardFieldsGolden.\n")
 	b.WriteString("# Changing this file means changing what other furrows read.\n")
 	b.WriteString("schema_version " + strconv.Itoa(SchemaVersion) + "\n")
-	for _, ty := range []any{Task{}, Meta{}, RepoRecord{}, ChecklistItem{}} {
+	// Epic joined the list with v7: v6 introduced the shard kind but forgot to
+	// freeze it here, so an Epic shape change had no teeth until then.
+	for _, ty := range []any{Task{}, Meta{}, RepoRecord{}, Epic{}, ChecklistItem{}} {
 		rt := reflect.TypeOf(ty)
 		b.WriteString("\n" + rt.Name() + "\n")
 		for i := 0; i < rt.NumField(); i++ {

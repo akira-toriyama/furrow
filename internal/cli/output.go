@@ -566,6 +566,65 @@ func printTaskRefs(refs []app.TaskRef) {
 	}
 }
 
+// epicRefView is taskRefView's epic twin: an epic has no lane, so the third
+// fact is `state` ("open" | "closed"; "" for a dangling edge).
+type epicRefView struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	State string `json:"state"`
+}
+
+// epicDepListView is `epic dep --list`'s JSON object — the same both-directions
+// shape as depListView, so a front-end reads one layout whichever entity it
+// asked about.
+type epicDepListView struct {
+	ID        string        `json:"id"`
+	Title     string        `json:"title"`
+	DependsOn []epicRefView `json:"depends_on"`
+	Blocks    []epicRefView `json:"blocks"`
+}
+
+func toEpicRefViews(refs []app.EpicRef) []epicRefView {
+	out := make([]epicRefView, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, epicRefView{ID: r.ID, Title: r.Title, State: r.State})
+	}
+	return out
+}
+
+// emitEpicDepList renders `epic dep --list`, mirroring emitDepList.
+func emitEpicDepList(r app.EpicDepListResult) error {
+	if jsonMode() {
+		emitObject(epicDepListView{
+			ID:        r.ID,
+			Title:     r.Title,
+			DependsOn: toEpicRefViews(r.DependsOn),
+			Blocks:    toEpicRefViews(r.Blocks),
+		})
+		return nil
+	}
+	fmt.Fprintf(out, "%s  %s\n", r.ID, r.Title)
+	fmt.Fprintf(out, "waits on (%d):\n", len(r.DependsOn))
+	printEpicRefs(r.DependsOn)
+	fmt.Fprintf(out, "blocks (%d):\n", len(r.Blocks))
+	printEpicRefs(r.Blocks)
+	return nil
+}
+
+func printEpicRefs(refs []app.EpicRef) {
+	if len(refs) == 0 {
+		fmt.Fprintln(out, "  (none)")
+		return
+	}
+	for _, r := range refs {
+		st := r.State
+		if st == "" {
+			st = "?" // a dangling edge: an id naming no epic (lint: epic-dep-missing)
+		}
+		fmt.Fprintf(out, "  %s  [%s]  %s\n", r.ID, st, r.Title)
+	}
+}
+
 // laneCountView / repoCountView / labelCountView are one distribution row each,
 // named for their category so an agent reads by_lane[].lane, by_repo[].repo,
 // by_label[].label rather than a generic "key".
@@ -1065,7 +1124,11 @@ func printBrief(b *app.BriefData, scope string) {
 			fmt.Fprintln(out, "epic: (none active — next is empty until `furrow epic activate <id>`; pick with `furrow epic ls`)")
 		}
 		for _, it := range b.Active {
-			fmt.Fprintf(out, "epic: ▶ %s  %d/%d  %s\n", it.Epic.ID, it.Progress.Done, it.Progress.Total, it.Epic.Title)
+			line := fmt.Sprintf("epic: ▶ %s  %d/%d  %s", it.Epic.ID, it.Progress.Done, it.Progress.Total, it.Epic.Title)
+			if len(it.OpenDeps) > 0 {
+				line += "  ⏳ waits: " + strings.Join(it.OpenDeps, ", ")
+			}
+			fmt.Fprintln(out, line)
 		}
 	}
 	fmt.Fprintf(out, "next (%d/%d):\n", len(b.Next), b.NextTotal)
@@ -1086,7 +1149,7 @@ func printBrief(b *app.BriefData, scope string) {
 	for _, c := range []struct {
 		label string
 		ids   []string
-	}{{"epic_all_done", b.Revisit.EpicAllDone}, {"epic_stuck", b.Revisit.EpicStuck}, {"epic_stale", b.Revisit.EpicStale}} {
+	}{{"epic_all_done", b.Revisit.EpicAllDone}, {"epic_stuck", b.Revisit.EpicStuck}, {"epic_stale", b.Revisit.EpicStale}, {"epic_dep_done", b.Revisit.EpicDepDone}} {
 		if n := len(c.ids); n > 0 {
 			fmt.Fprintf(out, ", %d %s", n, c.label)
 		}
@@ -1108,10 +1171,14 @@ type epicView struct {
 	core.Epic
 	Progress app.Progress `json:"progress"`
 	Stuck    bool         `json:"stuck"`
+	// OpenDeps are the deps still open (the unsatisfied "open after" edges) —
+	// derived, so it sits beside the stored deps set rather than replacing it.
+	// omitempty: a box with no waits keeps the pre-v7 row shape.
+	OpenDeps []string `json:"open_deps,omitempty"`
 }
 
 func toEpicView(it app.EpicItem) epicView {
-	return epicView{Epic: it.Epic, Progress: it.Progress, Stuck: it.Stuck}
+	return epicView{Epic: it.Epic, Progress: it.Progress, Stuck: it.Stuck, OpenDeps: it.OpenDeps}
 }
 
 // emitEpicList renders `furrow epic ls`.
@@ -1143,6 +1210,9 @@ func emitEpicList(items []app.EpicItem) error {
 			}
 			if v.Stuck {
 				line += "  ⚠ stuck"
+			}
+			if len(v.OpenDeps) > 0 {
+				line += "  ⏳ waits: " + strings.Join(v.OpenDeps, ", ")
 			}
 			if v.Goal != "" {
 				line += "\n    goal: " + v.Goal
@@ -1196,6 +1266,17 @@ func emitEpicDetail(a *app.App, d *app.EpicDetail) error {
 	if len(d.Epic.Repos) > 0 {
 		fmt.Fprintf(out, "repos:    %s\n", strings.Join(d.Epic.Repos, ", "))
 	}
+	if len(d.Deps) > 0 {
+		parts := make([]string, 0, len(d.Deps))
+		for _, r := range d.Deps {
+			state := r.State
+			if state == "" {
+				state = "missing" // a dangling edge — lint's epic-dep-missing
+			}
+			parts = append(parts, fmt.Sprintf("%s (%s)", r.ID, state))
+		}
+		fmt.Fprintf(out, "deps:     %s\n", strings.Join(parts, ", "))
+	}
 	for _, k := range sortedKeys(d.Epic.Meta) {
 		fmt.Fprintf(out, "meta:     %s = %s\n", k, d.Epic.Meta[k])
 	}
@@ -1218,12 +1299,25 @@ func emitEpicMutation(mutate func() (*core.Epic, *core.Epic, error)) error {
 	if err != nil {
 		return err
 	}
+	return emitEpicMutationResult(before, after, nil)
+}
+
+// emitEpicMutationResult renders the epic {before,after,changed} envelope.
+// openDeps, when non-empty, rides beside it as `open_deps` — activate's
+// crossed-ordering warning made machine-readable (the same pattern as
+// reorder's `renumbered` and set's `clamped`: an envelope key for the fact the
+// stderr note narrates).
+func emitEpicMutationResult(before, after *core.Epic, openDeps []string) error {
 	if jsonMode() {
-		emitObject(map[string]any{
+		env := map[string]any{
 			"before":  before,
 			"after":   after,
 			"changed": changedEpicFields(before, after),
-		})
+		}
+		if len(openDeps) > 0 {
+			env["open_deps"] = openDeps
+		}
+		emitObject(env)
 		return nil
 	}
 	fmt.Fprintf(out, "%s  %s\n", after.ID, after.Title)
@@ -1255,6 +1349,9 @@ func changedEpicFields(before, after *core.Epic) []string {
 	}
 	if !metaEq(before.Meta, after.Meta) {
 		ch = append(ch, "meta")
+	}
+	if !strsEq(before.Deps, after.Deps) {
+		ch = append(ch, "deps")
 	}
 	if (before.Closed == nil) != (after.Closed == nil) {
 		ch = append(ch, "closed")

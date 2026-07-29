@@ -10,7 +10,7 @@ func TestMarshalMetaCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"schema_version\": 6\n}\n"
+	want := "{\n  \"schema_version\": 7\n}\n"
 	if string(b) != want {
 		t.Errorf("MarshalMeta bytes = %q, want %q", b, want)
 	}
@@ -31,17 +31,18 @@ func TestUnmarshalMetaRejectsGarbage(t *testing.T) {
 	}
 }
 
-// SchemaVersion is 6: the epic pivot removed `parent` and `type`, added the
-// per-task `epic` field, and introduced a new shard kind (epics/<id>.json).
-// `next` scopes on `epic` and `lint` errors on its absence, so a v5 binary that
-// merely PRESERVED the field would hand out work from the wrong box while
-// reporting a clean board — the gate must refuse the layout, not ignore it.
+// SchemaVersion is 7: epic-to-epic deps — the epic shard gained the required
+// `deps` set (the order boxes open in). revisit's epic_dep_done and lint's
+// epic-dep-* rules read it, so a v6 binary that merely PRESERVED the field
+// would report a clean board while ignoring the ordering it encodes; and being
+// a non-omitempty set, every epic shard rewrites on its next save — the gate
+// must refuse the layout, not ignore it.
 //
 // The literal is deliberate (not `!= SchemaVersion`): this test's whole job is to
 // make a bump impossible to do by accident, so it has to fail when the const moves
 // and force the author to confirm the flag day.
-func TestSchemaVersionIsSix(t *testing.T) {
-	if SchemaVersion != 6 {
-		t.Errorf("SchemaVersion = %d, want 6 (the epic pivot)", SchemaVersion)
+func TestSchemaVersionIsSeven(t *testing.T) {
+	if SchemaVersion != 7 {
+		t.Errorf("SchemaVersion = %d, want 7 (epic-to-epic deps)", SchemaVersion)
 	}
 }

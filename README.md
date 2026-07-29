@@ -119,12 +119,14 @@ furrow uses a **hybrid** layout: one machine-written JSON shard per task for str
 ```text
 .furrow/
 ├── config.toml          # human config (furrow only READS this; never rewrites it)
-├── meta.json            # board-wide layout version {"schema_version": 6} — written ONLY by furrow, raised ONLY by `furrow upgrade`
+├── meta.json            # board-wide layout version {"schema_version": 7} — written ONLY by furrow, raised ONLY by `furrow upgrade`
 ├── tasks/
 │   ├── t-0001.json      # one metadata shard per task — written ONLY by the single core.MarshalTask path
 │   └── t-0002.json
 ├── repos/               # one review shard per repo — furrow review <repo> (last_reviewed clock)
 │   └── akira-toriyama__furrow.json
+├── epics/               # one shard per epic (box of work) — goal/active/meta + deps (the epics it waits on)
+│   └── e-k3m9.json
 ├── bodies/
 │   ├── t-0001.md        # long-form prose for t-0001 (hand/agent editable)
 │   └── t-0002.md
@@ -163,7 +165,7 @@ The board-wide layout version lives on its own in `meta.json` (never inside a sh
 
 ```json
 {
-  "schema_version": 6
+  "schema_version": 7
 }
 ```
 
@@ -267,6 +269,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `epic activate <epic>` | Make this the active epic for its repos (at most one each) | `--reason` |
 | `epic deactivate <epic>` | Clear the active flag without closing the epic | — |
 | `epic done <epic>` | Close an epic (clears active; never picks the next one) | — |
+| `epic dep <epic> [<dep-epic>...]` | Add/remove an epic's deps (open after those close), or list them both ways with --list | `--list`, `--rm` |
 | `label <id>` | Add and/or remove labels on a task | `--add`, `--remove` |
 | `repo <id>` | Attach and/or detach repos (owner/repo) on a task | `--add`, `--rm` |
 | `ref <id>` | Add and/or remove refs (file:line or URL) on a task | `--add`, `--rm` |
@@ -296,7 +299,7 @@ The generated table is the machine-guaranteed surface; these are the behavior co
 - **`show`** — any number of ids in one read, in input order: several ids emit a `--json` array or `---`-separated text (one id keeps the classic single-object shape; `--ndjson` is one task per line at any arity). `--no-body` omits `body_text` — the lean metadata-only batch read. A partial miss still prints the found tasks and exits 1 with `details.missing`; if a missing id is **archived**, the error also carries `details.archived` and the message says to retry with `--archived`. `--backlinks` adds the tasks whose body mentions each one via `[[id]]` (a `mentioned_by` array under `--json`; can't combine with `--archived`).
 - **`next`** — "actionable" means: lane is in `[next].lanes` (default `ready` + `in-progress`, so intake stays out) **and** every dep is done. On a board with at least one epic, the result is ALSO scoped to the **active** epic for the repo, plus the unfiled pile — the focus box's tasks first; with no active epic the result is deliberately empty (exit 0, a stderr hint names the fix). `-e <epic>` reads one box explicitly (strict) and `--all-epics` ignores the scope; a board with no epics behaves classically. `--lanes <csv>` overrides which lanes count as "now" for this call only (config untouched): `next --lanes backlog,ready` surfaces a no-dependency backlog task without first promoting it; an unknown lane is exit 2 with `candidates`. `--json` attaches a `reason` per task (`in_next_lane` — the lane it matched — and `deps_satisfied`).
 - **`brief`** — the one-shot session-orient read: the **epic header** (`active`, the open+active epic(s) `next` scopes to with their member roll-up, and `epics_declared`, which tells a non-participating board apart from "nothing active, so `next` is deliberately empty"); `next`'s top `-n` picks (default 3) **with their bodies** (`body_text` — the `show` follow-up folded in) plus `next_total`, the uncapped actionable count (a cap never hides the queue size); `blocked`, the next-lane tasks with an unsatisfied dep and their `blocked_by` (started or queued work that plain `next` deliberately hides); the `revisit` summary in `sync`'s shape; the `drafts` count (board-wide by definition — a draft has no repo, so no scope can own it); and `sync`'s `lint` error-count ride-along (omitted when clean). Scope with `-r`/`-l` like every read. Human mode is a compact dashboard **without** bodies (prose is `--json`'s payload for agents). Read-only and git-free: orient on a shared board with `furrow sync && furrow brief`.
-- **`revisit`** — read-only; `--json` attaches a `revisit` array of `{code, detail}` (`no_repo`, `value_unset`, `effort_unset`, `stale`, `dep_done`; the box-level `epic_all_done` / `epic_stuck` / `epic_stale` are reported alongside, keyed by epic id) so an agent knows what to fix. Drafts surface regardless of scope. `--stale-days 0` disables the stale signal.
+- **`revisit`** — read-only; `--json` attaches a `revisit` array of `{code, detail}` (`no_repo`, `value_unset`, `effort_unset`, `stale`, `dep_done`; the box-level `epic_all_done` / `epic_stuck` / `epic_stale` / `epic_dep_done` are reported alongside, keyed by epic id) so an agent knows what to fix. Drafts surface regardless of scope. `--stale-days 0` disables the stale signal.
 - **`search`** — case-insensitive substring over every title **and** Markdown body, in canonical order; several words are one literal phrase. Honors the same `-s/-l/-r/-n` scope as `ls`, and the same `-q` typed query. `--archived` searches the sibling archive store **instead of** the hot board (the meaning it has on `ls`/`show`), so digging up why something was done no longer falls back to grepping `.furrow/archive/bodies` — the archive's own bodies are read, not the hot store's. Each hit reports `matched_field` (`title`|`body`) and a one-line `snippet`; a title match never reads the body.
 - **`stats`** — `total`, `drafts`, and counts `by_lane` (a complete histogram in configured lane order, 0-count lanes included), `by_repo`, and `by_label` (most-used first). `stats -r ''` describes the whole board — the call that learns the label/repo vocabulary before guessing a `-l`/`-r`.
 - **`board`** — the introspection snapshot: store path, discovery `source` (`env`/`local`/`pointer`/`user-config`), repo scope, lane vocabulary, stale/archive windows, and the schema triple (`schema_version`, `binary_schema_version`, `schema_state`, `writable`). It **never fails on a version mismatch — it reports one**, so it is the pre-flight that diagnoses a board no other command can open.
@@ -311,7 +314,7 @@ The generated table is the machine-guaranteed surface; these are the behavior co
 - **`set`** — the routine triage edits (lane, priority, value, effort, labels, epic) in **one** write instead of several commands. Several ids apply the same edits to all of them in one all-or-nothing write (bulk triage: a miss sets nothing and exits 1 with every miss in `details.missing`; `--json` is an array of envelopes for ≥2 ids, the classic object for one). The position flags (`--priority`/`--before`/`--after`) place ONE task and are exit 2 for a batch. `--priority` sets the position directly; `--before`/`--after <id>` place the task relative to one in the **destination** lane, so a cross-column drop (`-s <lane> --before <id>`) is lane + position in one write — the same respace/`renumbered` contract as `reorder`, and the three position flags are mutually exclusive. At least one change required; an unknown lane (or an unresolvable `-e` epic) is exit 2 with `candidates`, and so is a relative target outside the destination lane; under `[labels].required` a set that would strip the last label is refused.
 - **`check`** — indexes are zero-based; marking done is an idempotent set, not a toggle (`--off` unchecks); `--add` appends verbatim (repeatable); `--rm` deletes at an index; `--reword` replaces its text. Mode flags are mutually exclusive; an out-of-range index is exit 2.
 - **`dep`** — variadic add/remove in a single all-or-nothing write (a bad dep-id aborts without partial change); acyclic and idempotent. `--list` reads (never mutates) the dependency neighborhood **both ways** — `depends_on` and `blocks` (what unblocks if I finish this) — resolved to id+title+lane; a dangling dep resolves to its id alone (lint flags it).
-- **`epic`** — the box's own subcommands: `add` (never active at birth — opening a box is a separate, deliberate act), `ls` (active first, then open by id, then closed; `--all` includes closed), `show` (goal, meta, member progress, and the members in canonical order), `set` (title/goal/meta/labels/repos), `activate` (enforces at most one active epic **per repo** — a clash is exit 2 naming the incumbent in `details.held`; `--reason` is recorded, with the timestamp, in the epic's body, and `furrow sync` surfaces the switches it publishes), `deactivate`, and `done` (stamps `closed` and clears `active` in the same write; deliberately never picks the next box — that judgment is the human's, and `lint`'s `epic-no-active` nags until someone decides). A task's own membership is edited with `add -e` / `set -e` (`-e ''` unfiles).
+- **`epic`** — the box's own subcommands: `add` (never active at birth — opening a box is a separate, deliberate act), `ls` (active first, then open by id, then closed; `--all` includes closed), `show` (goal, meta, member progress, and the members in canonical order), `set` (title/goal/meta/labels/repos), `activate` (enforces at most one active epic **per repo** — a clash is exit 2 naming the incumbent in `details.held`; `--reason` is recorded, with the timestamp, in the epic's body, and `furrow sync` surfaces the switches it publishes), `deactivate`, `done` (stamps `closed` and clears `active` in the same write; deliberately never picks the next box — that judgment is the human's, and `lint`'s `epic-no-active` nags until someone decides), and `dep` (v7): `epic dep <epic> <dep-epic>...` makes a box WAIT ON others — "open this one after those close" — with the task-side `dep` contract (variadic, all-or-nothing, acyclic at write time, `--rm`, `--list` = both directions resolved to id+title+state). The edge is information, not enforcement: `activate` on a box with an open dep warns and proceeds (stderr note + `open_deps` beside the envelope), a dep on a closed epic is satisfied, `epic ls`/`brief` mark the waiting box (`open_deps` / ⏳ waits), `revisit` raises `epic_dep_done` when every dep is closed, and `lint` backstops merges (`epic-dep-cycle`, `epic-dep-missing`, `epic-dep-open`). A task's own membership is edited with `add -e` / `set -e` (`-e ''` unfiles).
 - **`repo`** — each value must be a full `owner/repo` or a short name uniquely resolving against the board's repos (else exit 2 with `candidates`); a task with no repos is a draft.
 - **`review`** — an id-shaped argument stamps that task's `reviewed` timestamp (tracked apart from `updated`: a review changes no content); anything else records a per-repo review clock. `--by human` (default) advances the staleness-nudge clock; `--by agent` logs a sweep without advancing it, so an autonomous re-evaluation never stops furrow nudging a human.
 - **`apply`** — parses `SetStatus-task: <body-link> [<lane>]` directives from PR/commit text (stdin or `--body-file`) — the CI hook behind [auto status updates](#ci-auto-update-a-tracker-from-prs). `--on open` nudges to in-progress; `--on merge` applies the lane. Validation is non-blocking.
@@ -588,7 +591,7 @@ taxonomy (with the git-level reasons) is in
 On a **successful** sync furrow also prints a repo-scoped `revisit` summary —
 open tasks with a done dependency (`dep_done`) or gone stale (`stale`), epics
 whose members are all done (`epic_all_done`), that hold open members with none
-actionable (`epic_stuck`), or that are ACTIVE and untouched (`epic_stale`), and repos whose review clock has lapsed
+actionable (`epic_stuck`), that are ACTIVE and untouched (`epic_stale`), or parked with every dep epic closed (`epic_dep_done` — its turn to open), and repos whose review clock has lapsed
 (`unreviewed`) — a nudge to run `furrow revisit`; `--json` gains a `revisit` key
 with the id lists, each omitted when empty and the whole key omitted when the
 board is clean. Two more ride-alongs share that quiet-when-clean contract: a
@@ -737,7 +740,7 @@ furrow's write path is byte-stable on purpose: every shard goes through one mars
 
 - **Working:** furrow is **CLI-only** — the core domain (`internal/core`) with
   the first-class `repos`
-  field and first-class **epics** (board layout v6 + the two-sided version gate: read-refuse a newer board,
+  field and first-class **epics** with epic-to-epic deps (board layout v7 + the two-sided version gate: read-refuse a newer board,
   write-refuse an older one, and `furrow upgrade` as the only raiser), config
   loader, filesystem store, app
   coordinator, the full CLI (incl. `repo`, drafts, `-r` scoping, `apply`, and
