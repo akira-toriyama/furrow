@@ -633,10 +633,12 @@ A few app-level rules worth stating, all verified against the code:
   set and the done-id set as arguments, and the `[next].lanes` gate is applied
   in `app` via `Config.IsNextLane`. On a board with at least one epic the
   result is ALSO scoped to the **active** epic(s) for the read's repo
-  (`App.NextScope`): the focus box's tasks lead, the unfiled pile rides behind,
-  a task in another box is out, and nothing active means a deliberately EMPTY
-  result (exit 0, a stderr hint) — never a silent fall-through to the unfiled
-  pile. `-e` (strict, one box) and `--all-epics` bypass the scope; a board with
+  (`App.NextScope`): a PINNED box's actionable tasks pass through the scope and
+  lead (v7 — the always-visible channel, board-wide, no repo slot), then the
+  focus box's tasks, then the unfiled pile; a task in another box is out, and
+  nothing active means a deliberately EMPTY result apart from the pinned band
+  (exit 0, a stderr hint either way) — never a silent fall-through to the
+  unfiled pile. `-e` (strict, one box) and `--all-epics` bypass the scope; a board with
   no epics is not participating and behaves classically. `App.actionable` (the
   task-level test — lane + deps, deliberately NOT epic-aware) is shared with
   `Tree`, so ★ keeps one board-wide meaning and is a strict superset of what
@@ -689,6 +691,10 @@ except where noted:
 - **`epic`** is the box entity's command group (`internal/cli/cmd_epic.go` →
   `internal/app/epic.go`, the same mutation-funnel shape as `repo`/`review`):
   `add` / `ls` / `show` / `set` / `activate` / `deactivate` / `done` / `dep`.
+  `set --standing/--pinned` (v7) flip the permanent-channel declarations: a
+  standing box is exempt from revisit's epic_all_done/epic_dep_done (stuck
+  still fires), a pinned box's actionable tasks lead `next`/`brief` past the
+  active scope (EpicScope.Pinned — board-wide, holding no repo slot).
   `dep` is the task-side `dep` contract carried to boxes (variadic add/`--rm`,
   all-or-nothing, acyclic at write time — `core.EpicDependsOn` — with lint's
   `epic-dep-cycle`/`epic-dep-missing` as the merge backstop, `--list` = both

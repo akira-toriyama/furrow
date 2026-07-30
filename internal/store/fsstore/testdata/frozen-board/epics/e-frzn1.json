@@ -19,5 +19,7 @@
   "closed": null,
   "body": "bodies/e-frzn1.md",
   "deps": [],
+  "standing": false,
+  "pinned": false,
   "budget": 1200
 }

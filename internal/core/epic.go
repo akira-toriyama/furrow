@@ -91,6 +91,27 @@ type Epic struct {
 	// feature: two epics with the same dep are two branches of the graph.
 	Deps []string `json:"deps"`
 
+	// Standing declares a PERMANENT box (schema v7): one whose goal is to sit
+	// there — an inbox-like channel (a mandate box), a parking lot. Its whole
+	// effect is to silence the lifecycle nags that assume a box is meant to
+	// finish: revisit's epic_all_done (open 0 is this box's HEALTHY state, not
+	// "consider closing") and epic_dep_done (an always-on box has no "turn to
+	// open"). epic_stuck still fires — open members none of which are actionable
+	// is a real problem in any box — and furrow still never auto-closes anything.
+	// Which boxes get the flag is an operating convention (the operator's
+	// reserved-epics doc), not furrow's: furrow stays name-independent.
+	Standing bool `json:"standing"`
+	// Pinned makes the box's actionable tasks surface in `next`/`brief`
+	// REGARDLESS of the active-epic scope, at the top (schema v7) — the
+	// pass-through channel a mandate box needs: its instructions must be seen
+	// without stealing `active` from the box being worked. Orthogonal to both
+	// Active (a box can be pinned and active) and Standing (mandate = standing +
+	// pinned; a parking lot = standing only). Unlike activation it needs no repo
+	// slot and no repo at all — the read's own repo filter already scopes the
+	// TASKS it surfaces. It shows and never opens: `furrow next` still hands out
+	// work, and which box is "the focus" stays the human's declaration.
+	Pinned bool `json:"pinned"`
+
 	// extras holds keys this binary does not know — a field written by a NEWER
 	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,
 	// one ordinary write would silently destroy that field (see passthrough.go).

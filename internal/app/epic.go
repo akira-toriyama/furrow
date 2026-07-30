@@ -60,11 +60,17 @@ type EpicSetOpts struct {
 	RmLabels  []string
 	AddRepos  []string
 	RmRepos   []string
+	// Standing / Pinned flip the v7 declarations (see core.Epic); a nil pointer
+	// leaves the flag alone, so `--standing=false` is an explicit clear, never a
+	// default.
+	Standing *bool
+	Pinned   *bool
 }
 
 func (o EpicSetOpts) empty() bool {
 	return o.Title == nil && o.Goal == nil && len(o.SetMeta) == 0 && len(o.RmMeta) == 0 &&
-		len(o.AddLabels) == 0 && len(o.RmLabels) == 0 && len(o.AddRepos) == 0 && len(o.RmRepos) == 0
+		len(o.AddLabels) == 0 && len(o.RmLabels) == 0 && len(o.AddRepos) == 0 && len(o.RmRepos) == 0 &&
+		o.Standing == nil && o.Pinned == nil
 }
 
 // EpicAdd creates a box. It never sets Active: opening a box is a separate,
@@ -169,14 +175,19 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 	return out, nil
 }
 
+// epicRank orders `epic ls`: the active box first (the focus), then pinned
+// open boxes (the always-visible channels), then plain open, then closed. A
+// box both active and pinned ranks as active — focus outranks channel.
 func epicRank(e core.Epic) int {
 	switch {
 	case e.Active && e.IsOpen():
 		return 0
-	case e.IsOpen():
+	case e.Pinned && e.IsOpen():
 		return 1
-	default:
+	case e.IsOpen():
 		return 2
+	default:
+		return 3
 	}
 }
 
@@ -246,6 +257,12 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, error)
 		}
 		if o.Goal != nil {
 			e.Goal = strings.TrimSpace(*o.Goal)
+		}
+		if o.Standing != nil {
+			e.Standing = *o.Standing
+		}
+		if o.Pinned != nil {
+			e.Pinned = *o.Pinned
 		}
 		if len(o.SetMeta) > 0 && e.Meta == nil {
 			e.Meta = map[string]string{}
@@ -453,14 +470,22 @@ type EpicScope struct {
 	Engaged bool
 	// Active is the set of open+active epic ids for the read's repo scope
 	// (o.Repo, else o.ScopeRepo, else board-wide). Empty while Engaged means
-	// "a participating board with no box open": Next matches NOTHING.
+	// "a participating board with no box open": Next matches nothing EXCEPT the
+	// pinned pass-through below.
 	Active map[string]bool
+	// Pinned is the set of open+PINNED epic ids (v7) — the boxes whose
+	// actionable tasks pass through the active scope, at the top of the result.
+	// Deliberately NOT repo-filtered, unlike Active: pinning holds no per-repo
+	// slot, and the read's own repo filter already scopes the TASKS it can
+	// surface — filtering the boxes too would only hide a cross-repo channel.
+	Pinned map[string]bool
 }
 
 // NextScope computes the active-epic scope Next will apply to o. One epic is
 // active per repo, so a repo-scoped read sees at most one id; a board-wide read
 // (`-r ”`) sees every repo's active box — their union, not an error, since a
-// cross-repo listing has no single focus to pick.
+// cross-repo listing has no single focus to pick. Pinned boxes ride alongside
+// regardless of repo (see EpicScope.Pinned).
 func (a *App) NextScope(o QueryOpts) (EpicScope, error) {
 	if o.Epic != "" || o.AllEpics {
 		return EpicScope{}, nil
@@ -476,10 +501,16 @@ func (a *App) NextScope(o QueryOpts) (EpicScope, error) {
 	if repo == "" {
 		repo = o.ScopeRepo
 	}
-	s := EpicScope{Engaged: true, Active: map[string]bool{}}
+	s := EpicScope{Engaged: true, Active: map[string]bool{}, Pinned: map[string]bool{}}
 	for i := range epics {
 		e := &epics[i]
-		if !e.Active || !e.IsOpen() {
+		if !e.IsOpen() {
+			continue
+		}
+		if e.Pinned {
+			s.Pinned[e.ID] = true
+		}
+		if !e.Active {
 			continue
 		}
 		if repo != "" && !anyRepoMatch(e.Repos, []string{repo}) {

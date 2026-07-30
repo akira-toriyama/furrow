@@ -42,6 +42,8 @@ Epic
   closed *time.Time
   body string
   deps []string
+  standing bool
+  pinned bool
 
 ChecklistItem
   text string

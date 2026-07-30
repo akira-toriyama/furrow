@@ -82,7 +82,13 @@ func hintEpicScope(a *app.App, o app.QueryOpts, tasks []core.Task) {
 		if where == "" {
 			where = "this board"
 		}
-		fmt.Fprintf(errOut, "note: no active epic for %s, so next is deliberately empty — pick a box with `furrow epic ls` + `furrow epic activate <id>` (--all-epics reads the whole board)\n", where)
+		// A pinned channel can populate the result even with nothing active, so
+		// the wording must not call a non-empty listing "empty".
+		if len(tasks) > 0 {
+			fmt.Fprintf(errOut, "note: no active epic for %s — these are the PINNED box(es)' tasks only; pick a focus with `furrow epic ls` + `furrow epic activate <id>`\n", where)
+		} else {
+			fmt.Fprintf(errOut, "note: no active epic for %s, so next is deliberately empty — pick a box with `furrow epic ls` + `furrow epic activate <id>` (--all-epics reads the whole board)\n", where)
+		}
 		return
 	}
 	items, err := a.EpicList(app.EpicQueryOpts{})
