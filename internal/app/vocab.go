@@ -15,10 +15,12 @@ import (
 // here can never be a second copy that itself drifts:
 //
 //   - config-keys:          reflection over internal/config's decode struct
+//   - doctor-codes:         doctor's finding-code registry (doctor.go)
 //   - error-kinds:          core's error-kind registry (the envelope's `kind`)
 //   - lint-codes:           core's lint-code registry (the `--code` candidates)
 //   - revisit-codes:        core's revisit signal constants
 //   - revisit-summary-keys: reflection over RevisitSummary's json tags
+//   - sync-progress-keys:   reflection over SyncProgress's json tags
 //   - query-qualifiers/-presence/-is: the `-q` compiler's own candidate lists
 //
 // The `commands` vocabulary is deliberately absent: only internal/cli can walk
@@ -28,10 +30,12 @@ import (
 func Vocabularies() map[string][]string {
 	return map[string][]string{
 		"config-keys":          config.TopLevelKeys(),
+		"doctor-codes":         DoctorCodeList(),
 		"error-kinds":          core.ErrorKindList(),
 		"lint-codes":           core.LintCodeList(),
 		"revisit-codes":        core.RevisitCodeList(),
 		"revisit-summary-keys": revisitSummaryKeys(),
+		"sync-progress-keys":   jsonKeys(reflect.TypeOf(SyncProgress{})),
 		"query-qualifiers":     append([]string(nil), qualifierVocab...),
 		"query-presence":       append([]string(nil), presenceVocab...),
 		"query-is":             append([]string(nil), stateVocab...),
@@ -39,11 +43,14 @@ func Vocabularies() map[string][]string {
 }
 
 // revisitSummaryKeys returns RevisitSummary's json keys in struct order — the
-// `revisit` summary shape `furrow sync`/`brief` emit. Reflection, not a
+// `revisit` summary shape `furrow sync`/`brief` emit.
+func revisitSummaryKeys() []string { return jsonKeys(reflect.TypeOf(RevisitSummary{})) }
+
+// jsonKeys returns a struct's json tag names in field order. Reflection, not a
 // hand-list, so a field added to the struct is in the vocabulary (and therefore
-// required of the docs that enumerate the shape) automatically.
-func revisitSummaryKeys() []string {
-	t := reflect.TypeOf(RevisitSummary{})
+// required of the docs that enumerate the shape) automatically — the mechanism
+// behind revisit-summary-keys and sync-progress-keys.
+func jsonKeys(t reflect.Type) []string {
 	keys := make([]string, 0, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
 		tag := t.Field(i).Tag.Get("json")

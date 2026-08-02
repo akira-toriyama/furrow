@@ -483,6 +483,8 @@ while IFS='|' read -r dir vocab shape file start end; do
 done <<'CLAIMS'
 complete|commands||CLAUDE.md|^- Canonical commands:|^  \*\*`furrow brief \[--json\]`
 complete|error-kinds||README.md|^- \*\*`kind`\*\*|^- \*\*`retryable`\*\*
+complete|sync-progress-keys||README.md|^.\{committed, pulled, pushed|^failure alike
+complete|sync-progress-keys||docs/architecture.md|^  failure — carries|^  omitted when empty
 complete|commands||docs/non-goals.md|^- \*\*Built and real today\*\*|^  Destructive ops are guarded
 complete|config-keys||CLAUDE.md|^`furrow lint` surfaces\. Read it through `internal/config`|^user-level central-board config
 complete|config-keys||docs/architecture.md|^Sections and their defaults:|^`status` is just a lane
@@ -497,6 +499,13 @@ complete|query-presence||README.md|^- \*\*presence\*\*|^- \*\*computed flags\*\*
 complete|query-is||README.md|^- \*\*computed flags\*\*|^- \*\*free text\*\*
 subset|lint-codes|^[a-z]+(-[a-z]+)+$|README.md|^- \*\*`lint`\*\* — every finding carries|^- \*\*`migrate`\*\*
 subset|lint-codes|^[a-z]+(-[a-z]+)+$|CLAUDE.md|a stable kebab-case `code`|^  Mutations \(
+# doctor-codes is registered in `furrow vocab` but deliberately UNCLAIMED: every
+# doc region that names doctor codes (README's doctor bullet, CLAUDE.md's,
+# glossary's) also names `doctor-unhealthy` — an ERROR KIND, kebab-shaped, not a
+# doctor code — so a subset claim would flag it as nonexistent on every run, and
+# the regions are partial so `complete` cannot apply. Cry-wolf kills guards;
+# the registry + TestDoctorCodeRegistryCoversEmitted (both directions, single
+# emission file) carry the freight instead.
 CLAIMS
 
 if [ "$status" -ne 0 ]; then
