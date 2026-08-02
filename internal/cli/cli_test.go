@@ -34,7 +34,7 @@ func runCLI(t *testing.T, stdin string, args ...string) (*core.Error, string) {
 	}
 	fe := core.AsError(err)
 	if fe == nil {
-		fe = &core.Error{Code: core.CodeValidation, Msg: err.Error()}
+		fe = &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: err.Error()}
 	}
 	return fe, buf.String()
 }

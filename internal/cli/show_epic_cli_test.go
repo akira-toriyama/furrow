@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/internal/core"
 )
 
 // `show <epic-id>` renders the BOX view — byte-for-byte the one `epic show`
@@ -185,11 +187,13 @@ func TestCLIShowEpicMisses(t *testing.T) {
 	}
 
 	// --archived reads the task archive only: boxes are never archived. The box
-	// EXISTS on the board, so the miss must not claim otherwise — it names the
-	// flag as the reason.
+	// EXISTS on the board, so neither the kind nor the exit may claim otherwise:
+	// this is bad usage (drop the flag), kind validation, exit 2 — a not-found
+	// kind here would send a kind-branching consumer looking for a box that is
+	// right there on the board.
 	fe, _ = runErr(t, "show", epic, "--archived")
-	if fe == nil || int(fe.Code) != 1 {
-		t.Fatalf("an epic id under --archived want exit 1, got %v", fe)
+	if fe == nil || fe.Code != core.CodeValidation || fe.Kind != core.KindValidation {
+		t.Fatalf("an epic id under --archived want kind validation exit 2, got %+v", fe)
 	}
 	if !strings.Contains(fe.Msg, "is an epic") || !strings.Contains(fe.Msg, "archive") {
 		t.Errorf("the message should blame the flag, not the board: %q", fe.Msg)

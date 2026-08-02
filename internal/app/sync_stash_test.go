@@ -58,7 +58,7 @@ func TestSyncReportsStrandedAutostashOnCleanRebase(t *testing.T) {
 		t.Fatalf("sync must NOT report success while the operator's changes sit in a stash (progress %+v)", p)
 	}
 	fe := core.AsError(err)
-	if fe == nil || fe.ID != "sync-stash-stranded" {
+	if fe == nil || fe.Kind != core.KindSyncStashStranded {
 		t.Fatalf("want id sync-stash-stranded, got %v", err)
 	}
 	if fe.Code != core.CodeInternal {
@@ -119,7 +119,7 @@ func TestSyncPreflightExplainsUnmergedIndex(t *testing.T) {
 
 	p, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{})
 	fe := core.AsError(err)
-	if fe == nil || fe.ID != "sync-unmerged" {
+	if fe == nil || fe.Kind != core.KindSyncUnmerged {
 		t.Fatalf("the follow-up sync must name the state it is in, not relay git's \"unmerged\"; got %v", err)
 	}
 	if fe.Code != core.CodeValidation {
@@ -213,7 +213,7 @@ func TestSyncRefusesToCommitBodyWithConflictMarkers(t *testing.T) {
 
 	p, err := a.Sync(context.Background(), SyncOpts{Bodies: []string{task.ID}})
 	fe := core.AsError(err)
-	if fe == nil || fe.ID != "body-conflict-marker" {
+	if fe == nil || fe.Kind != core.KindBodyConflictMarker {
 		t.Fatalf("want id body-conflict-marker, got %v (progress %+v)", err, p)
 	}
 	if fe.Code != core.CodeValidation {
@@ -246,7 +246,7 @@ func TestSyncRefusesToCommitNewBodyWithConflictMarkers(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, err := a.Sync(context.Background(), SyncOpts{})
-	if fe := core.AsError(err); fe == nil || fe.ID != "body-conflict-marker" {
+	if fe := core.AsError(err); fe == nil || fe.Kind != core.KindBodyConflictMarker {
 		t.Fatalf("an untracked body is committed with no opt-in, so it must be guarded too; got %v (progress %+v)", err, p)
 	}
 }

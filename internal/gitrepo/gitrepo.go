@@ -38,6 +38,15 @@ var ErrNonFastForward = errors.New("push rejected: non-fast-forward")
 // this" apart from a real conflict or an ordinary failure.
 var ErrTransientFetchRace = errors.New("sync pull (fetch+rebase): transient concurrent-fetch race")
 
+// gitFailed classifies a failed git invocation (KindGitFailed, exit 3). The
+// message names the command and relays git's own words; there is no finer
+// class because the remedy is always "read what git said" — the failures a
+// caller can act on mechanically (conflict, push race, stale lock) are
+// re-classified by app.Sync into their own kinds before they reach a consumer.
+func gitFailed(format string, a ...any) *core.Error {
+	return &core.Error{Code: core.CodeInternal, Kind: core.KindGitFailed, Msg: fmt.Sprintf(format, a...)}
+}
+
 // Repo drives git inside one working tree (the repo enclosing a .furrow board).
 type Repo struct {
 	git string // resolved git binary
@@ -51,11 +60,19 @@ type Repo struct {
 func Open(ctx context.Context, dir string) (*Repo, error) {
 	git, err := exec.LookPath("git")
 	if err != nil {
-		return nil, core.Internalf("sync", "git not found on PATH: %v", err)
+		return nil, &core.Error{
+			Code: core.CodeInternal,
+			Kind: core.KindGitMissing,
+			Msg:  fmt.Sprintf("git not found on PATH: %v", err),
+		}
 	}
 	out, stderr, err := runGit(ctx, git, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return nil, core.Validationf("sync", "%s is not inside a git repository (sync is a git wrapper): %s", dir, firstLine(stderr))
+		return nil, &core.Error{
+			Code: core.CodeValidation,
+			Kind: core.KindNoGitRepo,
+			Msg:  fmt.Sprintf("%s is not inside a git repository (sync is a git wrapper): %s", dir, firstLine(stderr)),
+		}
 	}
 	return &Repo{git: git, top: strings.TrimSpace(out)}, nil
 }
@@ -72,7 +89,7 @@ func (r *Repo) Toplevel() string { return r.top }
 func (r *Repo) RelPath(p string) (string, error) {
 	abs, err := filepath.Abs(p)
 	if err != nil {
-		return "", core.Internalf("sync", "abs %s: %v", p, err)
+		return "", core.Internalf("", "abs %s: %v", p, err)
 	}
 	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = resolved
@@ -83,7 +100,7 @@ func (r *Repo) RelPath(p string) (string, error) {
 	}
 	rel, err := filepath.Rel(top, abs)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		return "", core.Internalf("sync", "%s is not under the git toplevel %s", p, r.top)
+		return "", core.Internalf("", "%s is not under the git toplevel %s", p, r.top)
 	}
 	return filepath.ToSlash(rel), nil
 }
@@ -144,7 +161,7 @@ func (r *Repo) DirtyChanges(ctx context.Context, pathspec string) ([]Change, err
 	// committed_bodies AND to the conflict-marker guard. Enumerate files, always.
 	out, stderr, err := runGit(ctx, r.git, r.top, "-c", "core.quotepath=false", "status", "--porcelain", "-uall", "--", pathspec)
 	if err != nil {
-		return nil, core.Internalf("sync", "git status: %s", firstLine(stderr))
+		return nil, gitFailed("git status: %s", firstLine(stderr))
 	}
 	changes := []Change{} // [] not null, matching the store's slice style
 	for _, l := range strings.Split(out, "\n") {
@@ -208,10 +225,10 @@ func (r *Repo) Commit(ctx context.Context, message string, pathspecs ...string) 
 		return nil
 	}
 	if _, stderr, err := runGit(ctx, r.git, r.top, append([]string{"add", "--"}, pathspecs...)...); err != nil {
-		return core.Internalf("sync", "git add: %s", firstLine(stderr))
+		return gitFailed("git add: %s", firstLine(stderr))
 	}
 	if _, stderr, err := runGit(ctx, r.git, r.top, append([]string{"commit", "-q", "-m", message, "--"}, pathspecs...)...); err != nil {
-		return core.Internalf("sync", "git commit: %s", firstLine(stderr))
+		return gitFailed("git commit: %s", firstLine(stderr))
 	}
 	return nil
 }
@@ -247,7 +264,7 @@ func (r *Repo) PullRebase(ctx context.Context) error {
 		if isTransientRace(stderr) {
 			return fmt.Errorf("%w: %s", ErrTransientFetchRace, firstLine(stderr))
 		}
-		return core.Internalf("sync", "git fetch: %s", firstLine(stderr))
+		return gitFailed("git fetch: %s", firstLine(stderr))
 	}
 	// rebase onto @{u} (the ref fetch just moved), autostashing anything outside
 	// the sync commit. A conflict stops the rebase in progress (the caller's to
@@ -256,7 +273,7 @@ func (r *Repo) PullRebase(ctx context.Context) error {
 		if !r.RebaseInProgress(ctx) && isTransientRace(stderr) {
 			return fmt.Errorf("%w: %s", ErrTransientFetchRace, firstLine(stderr))
 		}
-		return core.Internalf("sync", "git rebase: %s", firstLine(stderr))
+		return gitFailed("git rebase: %s", firstLine(stderr))
 	}
 	return nil
 }
@@ -384,15 +401,15 @@ func (r *Repo) LastCommit(ctx context.Context) (c Commit, hasCommit bool, err er
 		if isNoCommits(stderr) {
 			return Commit{}, false, nil
 		}
-		return Commit{}, false, core.Internalf("board", "git log -1: %s", firstLine(stderr))
+		return Commit{}, false, gitFailed("git log -1: %s", firstLine(stderr))
 	}
 	parts := strings.SplitN(strings.TrimRight(out, "\n"), " ", 3)
 	if len(parts) < 2 {
-		return Commit{}, false, core.Internalf("board", "git log -1: unexpected output %q", strings.TrimSpace(out))
+		return Commit{}, false, gitFailed("git log -1: unexpected output %q", strings.TrimSpace(out))
 	}
 	when, terr := time.Parse(time.RFC3339, parts[1])
 	if terr != nil {
-		return Commit{}, false, core.Internalf("board", "git log -1: unparsable date %q", parts[1])
+		return Commit{}, false, gitFailed("git log -1: unparsable date %q", parts[1])
 	}
 	c = Commit{SHA: parts[0], When: when}
 	if len(parts) == 3 {
@@ -418,17 +435,17 @@ func (r *Repo) AheadBehind(ctx context.Context) (ahead, behind int, hasUpstream 
 		if isNoUpstream(stderr) {
 			return 0, 0, false, nil
 		}
-		return 0, 0, false, core.Internalf("doctor", "git rev-list @{u}...HEAD: %s", firstLine(stderr))
+		return 0, 0, false, gitFailed("git rev-list @{u}...HEAD: %s", firstLine(stderr))
 	}
 	fields := strings.Fields(out)
 	if len(fields) != 2 {
-		return 0, 0, false, core.Internalf("doctor", "git rev-list --left-right --count: unexpected output %q", strings.TrimSpace(out))
+		return 0, 0, false, gitFailed("git rev-list --left-right --count: unexpected output %q", strings.TrimSpace(out))
 	}
 	if behind, err = strconv.Atoi(fields[0]); err == nil {
 		ahead, err = strconv.Atoi(fields[1])
 	}
 	if err != nil {
-		return 0, 0, false, core.Internalf("doctor", "git rev-list --left-right --count: unexpected output %q", strings.TrimSpace(out))
+		return 0, 0, false, gitFailed("git rev-list --left-right --count: unexpected output %q", strings.TrimSpace(out))
 	}
 	return ahead, behind, true, nil
 }
@@ -455,7 +472,7 @@ func (r *Repo) AbortRebase(ctx context.Context) error {
 	// the contract promises never to leave. Detach from cancellation (values kept)
 	// so the abort always runs to completion.
 	if _, stderr, err := runGit(context.WithoutCancel(ctx), r.git, r.top, "rebase", "--abort"); err != nil {
-		return core.Internalf("sync", "git rebase --abort: %s", firstLine(stderr))
+		return gitFailed("git rebase --abort: %s", firstLine(stderr))
 	}
 	return nil
 }
@@ -471,7 +488,7 @@ func (r *Repo) Push(ctx context.Context) error {
 	if isNonFastForward(stderr) {
 		return fmt.Errorf("%w: %s", ErrNonFastForward, firstLine(stderr))
 	}
-	return core.Internalf("sync", "git push: %s", errorLine(stderr))
+	return gitFailed("git push: %s", errorLine(stderr))
 }
 
 // isNonFastForward classifies a push rejection from git's stderr. git phrases

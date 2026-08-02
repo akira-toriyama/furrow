@@ -204,26 +204,27 @@ the user-level config. When you work with any furrow store:
   alone. It
   rebases onto the tracking ref, not `FETCH_HEAD`, so a co-writer's concurrent
   fetch can't race it into `Cannot rebase onto multiple branches`. On a true
-  conflict it aborts the rebase itself and exits 3 with id `sync-conflict` + the
+  conflict it aborts the rebase itself and exits 3 with kind `sync-conflict` + the
   conflicted shard paths in `details`. A concurrent writer's transient race is
   waited out with a bounded backoff, handled by cause: a foreign rebase caught
-  by the pre-flight, if still stuck past the budget, exits 3 with id `sync-busy`
-  — a **retryable** condition (re-run), NOT the do-not-retry `exit 2`; a
+  by the pre-flight, if still stuck past the budget, exits 3 with kind `sync-busy`
+  — marked `retryable` in the envelope (re-run), NOT the do-not-retry `exit 2`; a
   fetch/ref-lock race during the pull is retried and, if a lock still blocks
-  past the budget (a likely-stale `.git/*.lock`), fails terminally (id `sync`)
-  naming the lock to remove, NOT `sync-busy`. A co-writer that keeps winning the
-  **push** race is the third retryable id, `sync-push-rejected` (exit 3): the
+  past the budget (a likely-stale `.git/*.lock`), fails terminally
+  (`sync-lock-stale`) naming the lock to remove, NOT `sync-busy`. A co-writer
+  that keeps winning the
+  **push** race is the third retryable kind, `sync-push-rejected` (exit 3): the
   board is untouched and the local sync commit intact, so re-running is the whole
-  fix. It is deliberately NOT folded into `sync` — a caller that must retry a race
+  fix. It is deliberately its own kind — a caller that must retry a race
   but stop on a conflict could otherwise only tell them apart by matching the
   message, which this file tells you never to do. `sync-task-status.yml` retries
-  exactly `sync-push-rejected` and `sync-busy`; every other id is terminal there.
+  whatever the envelope marks `retryable`; every other kind is terminal there.
   A SIGINT/SIGTERM cancels the
-  in-flight git and exits **128+signal (130 for SIGINT, 143 for SIGTERM)** with id
-  `sync-interrupted` — retryable, just re-run (a genuine conflict is never masked
+  in-flight git and exits **128+signal (130 for SIGINT, 143 for SIGTERM)** with
+  kind `sync-interrupted` — retryable, just re-run (a genuine conflict is never masked
   by the signal: it still surfaces as `sync-conflict` with its `details.paths`,
-  keeping its exit 3). Branch on the `id`, not the exit
-  code, to tell these apart.
+  keeping its exit 3). Branch on the `kind` (and the `retryable` flag), not the
+  exit code, to tell these apart.
   **A sync can lose your WORK without losing the BOARD, and git's exit code only
   ever talks about the board.** `--autostash` stashes your other dirty files for
   the rebase; when the re-apply conflicts with what was pulled, git keeps them **in
@@ -260,12 +261,12 @@ the user-level config. When you work with any furrow store:
 - **The board's layout version gates writes, and it is an INPUT — never an
   output.** A binary writes only a board whose `meta.json` already declares
   exactly its own `schema_version`; an ordinary write NEVER raises it (that is
-  what `furrow upgrade` is for). Two stable ids, told apart by exit code alone:
+  what `furrow upgrade` is for). Two stable kinds, told apart by exit code alone:
   **`schema-upgrade-required`** (exit 2 — the BOARD is behind this binary; it
   stays fully readable but is read-only until `furrow upgrade` runs) and
   **`schema-too-new`** (exit 3 — the BINARY is behind the board; update furrow /
   bump the pin). Both carry `details {board_schema, binary_schema}` — branch on
-  the id, not the message. **`furrow board [--json]` reports the state without
+  the kind, not the message. **`furrow board [--json]` reports the state without
   failing**: `schema_version` (what the board declares; 0 = absent/unreadable),
   `binary_schema_version`, `schema_state` (`current`|`outdated`|`too-new`|
   `unreadable`) and `writable` — it is the last command that still works when
@@ -287,7 +288,7 @@ the user-level config. When you work with any furrow store:
   `.furrow`/pointer shadows the board inside its own scopes (severity `info`,
   never unhealthy). It simulates discovery at cwd (informational) and at each
   argument dir (an assertion — `dir-unresolved` is an error with the fix).
-  Exit 0 = healthy, exit 1 = problems (id `doctor-unhealthy`; branch on each
+  Exit 0 = healthy, exit 1 = problems (kind `doctor-unhealthy`; branch on each
   finding's kebab-case `code`) — so `furrow doctor --json | jq -e '.healthy'`
   is the setup pre-flight on a new machine.
 - **A shard key this binary does not know is PRESERVED, not dropped.** The gate
@@ -354,10 +355,16 @@ the user-level config. When you work with any furrow store:
   **specifically requested id** was not found (e.g. `show <id>`), never an empty
   list / `2` bad-usage|validation / `3+` internal|IO (a signal-interrupted run is
   `130`/`143` = 128+signal, not `3` — see `sync-interrupted` above). The contract
-  is also in the binary's own `--help`. On non-zero, an `{"error":{"code","id","message"}}`
-  object is on stderr — plus an optional machine-actionable `details` (see `sync`
+  is also in the binary's own `--help`. On non-zero, an
+  `{"error":{"kind","subject","retryable","exit","message"}}` object is on stderr
+  — `kind` is the stable kebab-case failure class (closed vocabulary: `furrow
+  vocab error-kinds`; generic trio `not-found`/`validation`/`internal`, named
+  kinds where the remedy is more specific), `subject` the entity at fault (task/
+  epic id, `owner/repo`, `config`, `meta`, …; omitted when none), `retryable`
+  the one-key retry decision, `exit` the process exit code — plus an optional
+  machine-actionable `details` (see `sync`
   above) and an optional `candidates` array when an input almost resolved (an
-  ambiguous repo short name, an unknown lane, a parent command's unknown
+  ambiguous repo short name, an unknown lane, a top-level or parent command's unknown
   subcommand like `config show`, or `-l <x>` matching nothing while `x` uniquely
   names a repo — the did-you-mean guard). Branch on the array, never regex the
   message.
@@ -623,7 +630,7 @@ writes — not what the board declares.** The board's number lives in `meta.json
 and is an **input** to every write:
 
 - `core.CheckSchemaVersion(v)` — the READ gate. A board NEWER than the binary is
-  refused (id **`schema-too-new`**, exit 3 — the fix is the binary, not the
+  refused (kind **`schema-too-new`**, exit 3 — the fix is the binary, not the
   input), so an old binary can never MISREAD such a board: a v3-only binary would
   happily load a v4 shard and then act as if `reviewed` did not exist. (It no
   longer guards against DESTROYING the fields it doesn't know — the passthrough
@@ -631,14 +638,14 @@ and is an **input** to every write:
   gate stays.)
 - `core.CheckWritable(v)` — the WRITE gate. A binary may write only a board that
   already declares exactly its own layout. An OLDER board — or one with shards
-  but no `meta.json` at all — is fully READABLE but READ-ONLY (id
+  but no `meta.json` at all — is fully READABLE but READ-ONLY (kind
   **`schema-upgrade-required`**, exit 2: the BOARD is stale and an explicit
-  command fixes it). Both ids carry `details {board_schema, binary_schema}`; the
+  command fixes it). Both kinds carry `details {board_schema, binary_schema}`; the
   exit code alone says which side is stale.
 - Consequently **an ordinary write never touches `meta.json`'s
   `schema_version`.** `fsstore.Save` stamps it in exactly one case: a genuinely
   fresh, empty store (what `furrow init` hits). A garbled `meta.json` is an error
-  (exit 3, id `meta`), never a fallback to "whatever version this binary is" —
+  (exit 3, kind `internal`, subject `meta`), never a fallback to "whatever version this binary is" —
   that old fallback silently DISABLED the gate.
 
 **The only raiser is `furrow upgrade`** (preview unless `--yes`; raises

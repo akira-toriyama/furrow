@@ -53,7 +53,7 @@ func newApplyCmd() *cobra.Command {
 			if code := res.WorstCode(); code != int(core.CodeOK) {
 				// Non-blocking by contract: stdout already carries the full report;
 				// this exit lets the workflow comment + fail the (non-required) job.
-				return &core.Error{Code: core.Code(code), Msg: applyErrorSummary(res)}
+				return &core.Error{Code: core.Code(code), Kind: core.KindForCode(core.Code(code)), Msg: applyErrorSummary(res)}
 			}
 			return nil
 		},

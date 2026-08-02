@@ -482,6 +482,7 @@ while IFS='|' read -r dir vocab shape file start end; do
   checked=$((checked + 1))
 done <<'CLAIMS'
 complete|commands||CLAUDE.md|^- Canonical commands:|^  \*\*`furrow brief \[--json\]`
+complete|error-kinds||README.md|^- \*\*`kind`\*\*|^- \*\*`retryable`\*\*
 complete|commands||docs/non-goals.md|^- \*\*Built and real today\*\*|^  Destructive ops are guarded
 complete|config-keys||CLAUDE.md|^`furrow lint` surfaces\. Read it through `internal/config`|^user-level central-board config
 complete|config-keys||docs/architecture.md|^Sections and their defaults:|^`status` is just a lane

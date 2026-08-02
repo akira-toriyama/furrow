@@ -109,7 +109,7 @@ func CheckSchemaVersion(v int) error {
 	if v > SchemaVersion {
 		return &Error{
 			Code: CodeInternal,
-			ID:   "schema-too-new",
+			Kind: KindSchemaTooNew,
 			// Message is deliberately CI-agnostic: core is pure and must not name a
 			// specific CI workflow. The presentation layer (which can read config)
 			// adds any shared-board / pinned-CI guidance.
@@ -141,7 +141,7 @@ func CheckWritable(v int) error {
 	if v < SchemaVersion {
 		return &Error{
 			Code: CodeValidation,
-			ID:   "schema-upgrade-required",
+			Kind: KindSchemaUpgradeRequired,
 			// Message is deliberately CI-agnostic: core is pure and must not name a
 			// specific CI workflow. It just points at `furrow upgrade`, which is
 			// where the standalone-vs-shared guidance (flag-day checklist vs a plain

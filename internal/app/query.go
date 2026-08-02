@@ -109,10 +109,10 @@ func (a *App) compileQuery(raw string, idx *core.Index, staleDays int, loadBody 
 	if err != nil {
 		var pe *query.ParseError
 		if errors.As(err, &pe) {
-			e := &core.Error{Code: core.CodeValidation, ID: "query-parse", Msg: "invalid query: " + pe.Error()}
+			e := &core.Error{Code: core.CodeValidation, Kind: core.KindQueryParse, Msg: "invalid query: " + pe.Error()}
 			return nil, e
 		}
-		return nil, core.Validationf("query-parse", "invalid query: %v", err)
+		return nil, &core.Error{Code: core.CodeValidation, Kind: core.KindQueryParse, Msg: "invalid query: " + err.Error()}
 	}
 
 	if loadBody == nil {
@@ -176,7 +176,7 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 
 	case query.State:
 		if !contains(stateVocab, term.Field) {
-			return nil, unknownQueryErr("query-unknown-flag", "unknown is: flag "+strconv.Quote(term.Field), stateVocab)
+			return nil, unknownQueryErr(core.KindQueryUnknownFlag, "unknown is: flag "+strconv.Quote(term.Field), stateVocab)
 		}
 		f := term.Field
 		return neg(func(t *core.Task) bool {
@@ -203,7 +203,7 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 
 	case query.Presence:
 		if !contains(presenceVocab, term.Field) {
-			return nil, unknownQueryErr("query-unknown-field", "has:/no: unknown field "+strconv.Quote(term.Field), presenceVocab)
+			return nil, unknownQueryErr(core.KindQueryUnknownField, "has:/no: unknown field "+strconv.Quote(term.Field), presenceVocab)
 		}
 		f := term.Field
 		return neg(func(t *core.Task) bool {
@@ -253,13 +253,13 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	// fell into the ordered-field gate and was answered with `query-type` and
 	// NO candidates, in a message asserting the field exists.
 	if !contains(qualifierVocab, f) {
-		return nil, unknownQueryErr("query-unknown-field", "unknown qualifier "+strconv.Quote(f), qualifierVocab)
+		return nil, unknownQueryErr(core.KindQueryUnknownField, "unknown qualifier "+strconv.Quote(f), qualifierVocab)
 	}
 	// Ordered fields — the ordinals and the date timestamps — take
 	// comparisons/ranges; everything else is equality only.
 	ordinal := f == "value" || f == "effort" || f == "priority" || f == "roi"
 	if term.Op != query.Eq && !ordinal && !isDateField(f) {
-		return nil, unknownQueryErr("query-type", "field "+strconv.Quote(f)+" takes an equality value, not a comparison/range (only value/effort/priority/roi and created/updated/closed/reviewed are ordered)", nil)
+		return nil, unknownQueryErr(core.KindQueryType, "field "+strconv.Quote(f)+" takes an equality value, not a comparison/range (only value/effort/priority/roi and created/updated/closed/reviewed are ordered)", nil)
 	}
 
 	switch f {
@@ -356,7 +356,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	}
 	// Unreachable: the vocabulary gate above already rejected an unknown field.
 	// Kept as a compile-time-exhaustive backstop in case the two lists drift.
-	return nil, unknownQueryErr("query-unknown-field", "unknown qualifier "+strconv.Quote(f), qualifierVocab)
+	return nil, unknownQueryErr(core.KindQueryUnknownField, "unknown qualifier "+strconv.Quote(f), qualifierVocab)
 }
 
 // compileNumeric binds an ordinal field (value/effort/priority/roi) with an
@@ -391,7 +391,7 @@ func compileNumeric(term query.Term, neg func(func(*core.Task) bool) func(*core.
 	parse := func(s string) (float64, error) {
 		n, err := strconv.ParseFloat(s, 64)
 		if err != nil {
-			return 0, unknownQueryErr("query-type", "field "+strconv.Quote(f)+" needs a number, got "+strconv.Quote(s), nil)
+			return 0, unknownQueryErr(core.KindQueryType, "field "+strconv.Quote(f)+" needs a number, got "+strconv.Quote(s), nil)
 		}
 		return n, nil
 	}
@@ -473,10 +473,10 @@ func compileNumeric(term query.Term, neg func(func(*core.Task) bool) func(*core.
 	}
 }
 
-// unknownQueryErr builds an exit-2 query validation error with a stable id and
-// optional did-you-mean candidates.
-func unknownQueryErr(id, msg string, candidates []string) *core.Error {
-	e := &core.Error{Code: core.CodeValidation, ID: id, Msg: msg}
+// unknownQueryErr builds an exit-2 query validation error with a stable kind
+// and optional did-you-mean candidates.
+func unknownQueryErr(kind, msg string, candidates []string) *core.Error {
+	e := &core.Error{Code: core.CodeValidation, Kind: kind, Msg: msg}
 	if len(candidates) > 0 {
 		e.Candidates = append([]string(nil), candidates...)
 	}

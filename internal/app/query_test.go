@@ -331,8 +331,8 @@ func TestQueryErrors(t *testing.T) {
 		if ce.Code != core.CodeValidation {
 			t.Errorf("-q %q code = %v, want validation", c.q, ce.Code)
 		}
-		if ce.ID != c.id {
-			t.Errorf("-q %q id = %q, want %q", c.q, ce.ID, c.id)
+		if ce.Kind != c.id {
+			t.Errorf("-q %q kind = %q, want %q", c.q, ce.Kind, c.id)
 		}
 	}
 

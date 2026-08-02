@@ -133,20 +133,21 @@ func newSyncCmd() *cobra.Command {
 			"  3. git push (one pull→push retry on non-fast-forward)\n\n" +
 			"On a rebase conflict the rebase is aborted automatically (the board is never\n" +
 			"left with conflict markers; your local sync commit survives) and the error\n" +
-			"envelope carries id \"sync-conflict\" plus the conflicted paths. A co-writer's\n" +
+			"envelope carries kind \"sync-conflict\" plus the conflicted paths. A co-writer's\n" +
 			"fetch racing a ref/index lock during the pull is waited out with a bounded\n" +
 			"backoff; a live race clears in under a second, so a lock that persists is a\n" +
-			"likely-stale .git/*.lock and sync fails terminally naming it (a pre-flight\n" +
-			"foreign rebase that stays stuck instead exits with the retryable id\n" +
+			"likely-stale .git/*.lock and sync fails terminally naming it (kind\n" +
+			"\"sync-lock-stale\"; a pre-flight\n" +
+			"foreign rebase that stays stuck instead exits with the retryable kind\n" +
 			"\"sync-busy\").\n\n" +
 			"Your OWN dirty files are autostashed for the rebase. If git cannot put them\n" +
 			"back (its re-apply conflicts with what was pulled), it keeps them in the stash,\n" +
 			"warns only on stderr, and exits 0 — so sync probes the stash itself and fails\n" +
-			"with id \"sync-stash-stranded\" (nothing is pushed), reporting them in\n" +
+			"with kind \"sync-stash-stranded\" (nothing is pushed), reporting them in\n" +
 			"pending_stash until they are popped. The unmerged index that failure leaves\n" +
-			"behind is explained by a pre-flight (id \"sync-unmerged\", exit 2), not relayed\n" +
+			"behind is explained by a pre-flight (kind \"sync-unmerged\", exit 2), not relayed\n" +
 			"as git's opaque \"<path>: unmerged\". Relatedly, a body still carrying conflict\n" +
-			"markers is never auto-committed (id \"body-conflict-marker\", exit 2): a commit\n" +
+			"markers is never auto-committed (kind \"body-conflict-marker\", exit 2): a commit\n" +
 			"cannot be un-published, and `furrow lint` flags any that got in already.\n\n" +
 			"The progress object {committed, pulled, pushed, conflict, complete,\n" +
 			"committed_bodies, pending_bodies, pending_stash} goes to stdout even on\n" +

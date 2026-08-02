@@ -395,7 +395,7 @@ motivated the **version gate**. The gate's governing idea:
 and the board's is an **INPUT to every write, never an output**.
 
 - **`core.CheckSchemaVersion(v)` — the READ gate.** A board declaring a layout
-  *newer* than the binary knows is refused: error id **`schema-too-new`**, exit 3
+  *newer* than the binary knows is refused: error kind **`schema-too-new`**, exit 3
   (internal — the fix is updating the binary, not the input), carrying
   `details {board_schema, binary_schema}`. It guards against **misreading** such a
   board: a v3-only binary would happily load a v4 shard and then act as if
@@ -406,7 +406,7 @@ and the board's is an **INPUT to every write, never an output**.
 - **`core.CheckWritable(v)` — the WRITE gate.** A binary may write only a board
   that already declares *exactly* its own layout. An *older* board — or one with
   shards but no `meta.json` at all (`v == 0`) — is fully **readable** (lenient
-  forward-compat is the store's normal read) but **read-only**: error id
+  forward-compat is the store's normal read) but **read-only**: error kind
   **`schema-upgrade-required`**, exit 2 (validation — the *board* is stale and an
   explicit command fixes it), same `details` payload. Exit code alone therefore
   says which side is stale: 3 = the binary, 2 = the board.
@@ -415,7 +415,7 @@ Both store adapters (`fsstore`, `memstore`) enforce the read gate on `Load` and
 the write gate on `Save`. **No ordinary write raises `meta.json`'s version**;
 `Save` stamps it in exactly one case, a genuinely fresh, empty store (what
 `furrow init` hits) — there is no prior layout to misrepresent. A garbled
-`meta.json` is an **error** (exit 3, id `meta`), never a fall back to "whatever
+`meta.json` is an **error** (exit 3, kind `internal`, subject `meta`), never a fall back to "whatever
 version this binary is": that fallback quietly *disabled* the gate, making any
 binary believe the board was exactly as new as itself.
 
@@ -760,12 +760,15 @@ except where noted:
   empty). `complete` is `false` whenever a body or stash is left pending (the
   stdout summary line names that count too), so a pushed-but-incomplete sync is
   never mistaken for a fully-published one. Failure modes, branch
-  on the error `id`: `sync-conflict` (exit 3, definitive — the rebase is
+  on the error `kind` (each also marked `retryable` or not in the envelope):
+  `sync-conflict` (exit 3, definitive — the rebase is
   aborted automatically, conflicted paths in `details`), `sync-busy` (exit 3,
   retryable — a foreign in-progress rebase outlived the bounded backoff),
   `sync-push-rejected` (exit 3, retryable — a co-writer kept winning the push
   race, so the board is untouched and the local sync commit intact; re-run),
-  `sync` (terminal — a likely-stale `.git/*.lock`, named in the message),
+  `sync-lock-stale` (terminal — a likely-stale `.git/*.lock`, named in the
+  message), `sync-op-in-progress` (exit 2 — your own non-rebase git operation, a
+  merge say, blocks sync),
   `sync-interrupted` (exit 130/143 = 128+signal, retryable — SIGINT/SIGTERM
   cancelled the in-flight git; a genuine conflict is never masked by the signal,
   keeping its exit 3), `sync-stash-stranded` (exit 3 — see below), `sync-unmerged`
@@ -868,10 +871,15 @@ except where noted:
   SIGINT/SIGTERM interrupted (`sync-interrupted`; see the `sync` failure modes
   above). The exit-code contract also lives in the binary's own
   `--help` (the root command's long help) and each affected command's help, not
-  just here. On a non-zero exit the CLI prints `{"error":{"code","id","message"}}`
-  to stderr, plus optional machine-actionable fields: `candidates` (a near-miss
-  that almost resolved — an ambiguous repo short name, an unknown lane, or a
-  parent command's unknown subcommand) and `details` (e.g. `sync-conflict`
+  just here. On a non-zero exit the CLI prints
+  `{"error":{"kind","subject","retryable","exit","message"}}` to stderr —
+  `kind` is the stable kebab-case failure class (a closed vocabulary, `furrow
+  vocab error-kinds`), `subject` the entity at fault (a task/epic id, an
+  `owner/repo`, `config`, …; omitted when none), `retryable` whether re-running
+  the same command is the documented recovery, and `exit` mirrors the process
+  exit code — plus optional machine-actionable fields: `candidates` (a near-miss
+  that almost resolved — an ambiguous repo short name, an unknown lane, or an
+  unknown (sub)command, the root command included) and `details` (e.g. `sync-conflict`
   carries the conflicted paths; the version gate's `schema-too-new` /
   `schema-upgrade-required` carry `{board_schema, binary_schema}`). A parent command like `config` treats an unknown
   subcommand as exit 2 with `candidates`, not the exit-0 help prose cobra

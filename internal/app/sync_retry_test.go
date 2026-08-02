@@ -38,7 +38,7 @@ func TestPullWithRetry(t *testing.T) {
 	race := func() error {
 		return errors.Join(gitrepo.ErrTransientFetchRace, errors.New("cannot lock ref"))
 	}
-	conflict := &core.Error{Code: core.CodeInternal, ID: "sync-conflict", Msg: "conflict"}
+	conflict := &core.Error{Code: core.CodeInternal, Kind: core.KindSyncConflict, Msg: "conflict"}
 
 	// the exact bounded-exponential sequence for testRebaseWait — pullWithRetry
 	// must advance its OWN backoff via pol.next each iteration, not sit at base.
@@ -52,19 +52,19 @@ func TestPullWithRetry(t *testing.T) {
 		script       []error
 		wantSleeps   int
 		wantSleepSeq []time.Duration // when set, the exact backoff durations
-		wantErrID    string          // "" = nil error; else the *core.Error ID we expect
+		wantErrKind  string          // "" = nil error; else the *core.Error Kind we expect
 		wantSame     error           // when set, the exact error value that must pass through
 		wantMsgHas   string          // when set, a substring the message must contain
 	}{
 		{
 			name:       "succeeds on the first attempt, no sleep",
 			script:     []error{nil},
-			wantSleeps: 0, wantErrID: "",
+			wantSleeps: 0, wantErrKind: "",
 		},
 		{
 			name:       "a transient race clears after two retries",
 			script:     []error{race(), race(), nil},
-			wantSleeps: 2, wantErrID: "",
+			wantSleeps: 2, wantErrKind: "",
 		},
 		{
 			// A race outliving the whole budget is a stale lock / permanent
@@ -73,12 +73,12 @@ func TestPullWithRetry(t *testing.T) {
 			name:       "a race that never clears fails terminally, naming the stale lock",
 			script:     []error{race()},
 			wantSleeps: testRebaseWait.max, wantSleepSeq: fullBackoff,
-			wantErrID: "sync", wantMsgHas: "stale lock",
+			wantErrKind: core.KindSyncLockStale, wantMsgHas: "stale lock",
 		},
 		{
 			name:       "a conflict on the FIRST attempt is not transient: returned immediately",
 			script:     []error{conflict},
-			wantSleeps: 0, wantErrID: "sync-conflict", wantSame: conflict,
+			wantSleeps: 0, wantErrKind: core.KindSyncConflict, wantSame: conflict,
 		},
 		{
 			// A race on attempt 1 that becomes a genuine conflict on retry (a
@@ -86,7 +86,7 @@ func TestPullWithRetry(t *testing.T) {
 			// sync-conflict, never be swallowed into the retry/terminal path.
 			name:       "a conflict surfacing on a retry is returned, not retried",
 			script:     []error{race(), conflict},
-			wantSleeps: 1, wantErrID: "sync-conflict", wantSame: conflict,
+			wantSleeps: 1, wantErrKind: core.KindSyncConflict, wantSame: conflict,
 		},
 	}
 	for _, tc := range tests {
@@ -101,7 +101,7 @@ func TestPullWithRetry(t *testing.T) {
 			if tc.wantSleepSeq != nil && !slices.Equal(sleeps, tc.wantSleepSeq) {
 				t.Errorf("backoff = %v, want %v", sleeps, tc.wantSleepSeq)
 			}
-			if tc.wantErrID == "" {
+			if tc.wantErrKind == "" {
 				if err != nil {
 					t.Fatalf("err = %v, want nil", err)
 				}
@@ -111,8 +111,8 @@ func TestPullWithRetry(t *testing.T) {
 				t.Errorf("err = %v, want the same value passed through", err)
 			}
 			fe := core.AsError(err)
-			if fe == nil || fe.ID != tc.wantErrID {
-				t.Fatalf("err = %v, want *core.Error id %q", err, tc.wantErrID)
+			if fe == nil || fe.Kind != tc.wantErrKind {
+				t.Fatalf("err = %v, want *core.Error kind %q", err, tc.wantErrKind)
 			}
 			if fe.Code != core.CodeInternal {
 				t.Errorf("code = %d, want %d (internal, not validation)", fe.Code, core.CodeInternal)
@@ -126,7 +126,7 @@ func TestPullWithRetry(t *testing.T) {
 			if errors.Is(err, gitrepo.ErrTransientFetchRace) {
 				t.Errorf("returned error must not still satisfy errors.Is(ErrTransientFetchRace)")
 			}
-			if fe.ID == "sync-busy" {
+			if fe.Kind == core.KindSyncBusy || fe.Retryable {
 				t.Errorf("a persistent pull race must not classify as retryable sync-busy: %v", err)
 			}
 		})
@@ -279,23 +279,23 @@ func TestWaitForRebaseBailsWhenSleepCancelled(t *testing.T) {
 // leave it intact.
 func TestInterruptError(t *testing.T) {
 	cancelled := context.Canceled
-	conflict := &core.Error{Code: core.CodeInternal, ID: "sync-conflict", Msg: "conflict",
+	conflict := &core.Error{Code: core.CodeInternal, Kind: core.KindSyncConflict, Msg: "conflict",
 		Details: map[string]any{"paths": []string{".furrow/tasks/t-1.json"}}}
-	killed := core.Internalf("sync", "git fetch: (no output)")
-	notARepo := core.Validationf("sync", "x is not inside a git repository")
+	killed := &core.Error{Code: core.CodeInternal, Kind: core.KindGitFailed, Msg: "git fetch: (no output)"}
+	notARepo := &core.Error{Code: core.CodeValidation, Kind: core.KindNoGitRepo, Msg: "x is not inside a git repository"}
 
 	tests := []struct {
-		name   string
-		err    error
-		ctxErr error
-		wantID string // expected *core.Error ID of the result ("" skips the id check)
-		want   error  // when non-nil, the exact value that must pass through unchanged
+		name     string
+		err      error
+		ctxErr   error
+		wantKind string // expected *core.Error Kind of the result ("" skips the kind check)
+		want     error  // when non-nil, the exact value that must pass through unchanged
 	}{
 		{"nil error is never reclassified", nil, cancelled, "", nil},
 		{"no cancellation passes the error through", killed, nil, "", killed},
-		{"a killed subprocess becomes sync-interrupted", killed, cancelled, "sync-interrupted", nil},
-		{"a cancelled Open (mis-said 'not a git repo') becomes sync-interrupted", notARepo, cancelled, "sync-interrupted", nil},
-		{"a real sync-conflict is preserved with its paths", conflict, cancelled, "sync-conflict", conflict},
+		{"a killed subprocess becomes sync-interrupted", killed, cancelled, core.KindSyncInterrupted, nil},
+		{"a cancelled Open (mis-said 'not a git repo') becomes sync-interrupted", notARepo, cancelled, core.KindSyncInterrupted, nil},
+		{"a real sync-conflict is preserved with its paths", conflict, cancelled, core.KindSyncConflict, conflict},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -309,10 +309,10 @@ func TestInterruptError(t *testing.T) {
 				}
 				return
 			}
-			if tc.wantID != "" {
+			if tc.wantKind != "" {
 				fe := core.AsError(got)
-				if fe == nil || fe.ID != tc.wantID {
-					t.Fatalf("got %v, want *core.Error id %q", got, tc.wantID)
+				if fe == nil || fe.Kind != tc.wantKind {
+					t.Fatalf("got %v, want *core.Error kind %q", got, tc.wantKind)
 				}
 			}
 		})
@@ -329,13 +329,13 @@ func TestPushWithRetryClassifiesTheExhaustedRace(t *testing.T) {
 	other := errors.New("disk on fire")
 
 	tests := []struct {
-		name       string
-		pushErrs   []error // one per push attempt, nil = success
-		pullErr    error
-		wantErrID  string // "" = no *core.Error expected
-		wantErr    error  // non-nil: must be returned unchanged (errors.Is)
-		wantPushes int
-		wantPulls  int
+		name        string
+		pushErrs    []error // one per push attempt, nil = success
+		pullErr     error
+		wantErrKind string // "" = no *core.Error expected
+		wantErr     error  // non-nil: must be returned unchanged (errors.Is)
+		wantPushes  int
+		wantPulls   int
 	}{
 		{
 			name:       "a clean push does not pull at all",
@@ -349,11 +349,11 @@ func TestPushWithRetryClassifiesTheExhaustedRace(t *testing.T) {
 			wantPulls:  1,
 		},
 		{
-			name:       "still rejected after the retry is the retryable id",
-			pushErrs:   []error{nfe, nfe},
-			wantErrID:  "sync-push-rejected",
-			wantPushes: 2,
-			wantPulls:  1,
+			name:        "still rejected after the retry is the retryable id",
+			pushErrs:    []error{nfe, nfe},
+			wantErrKind: core.KindSyncPushRejected,
+			wantPushes:  2,
+			wantPulls:   1,
 		},
 		{
 			name:       "a non-race push failure is returned unchanged and never retried",
@@ -405,15 +405,15 @@ func TestPushWithRetryClassifiesTheExhaustedRace(t *testing.T) {
 					t.Fatalf("err = %v, want it to wrap %v", err, tc.wantErr)
 				}
 				if fe := core.AsError(err); fe != nil {
-					t.Errorf("a pass-through error must not be reclassified, got id %q", fe.ID)
+					t.Errorf("a pass-through error must not be reclassified, got kind %q", fe.Kind)
 				}
-			case tc.wantErrID != "":
+			case tc.wantErrKind != "":
 				fe := core.AsError(err)
 				if fe == nil {
-					t.Fatalf("err = %v, want a *core.Error with id %q", err, tc.wantErrID)
+					t.Fatalf("err = %v, want a *core.Error with id %q", err, tc.wantErrKind)
 				}
-				if fe.ID != tc.wantErrID {
-					t.Errorf("id = %q, want %q", fe.ID, tc.wantErrID)
+				if fe.Kind != tc.wantErrKind {
+					t.Errorf("kind = %q, want %q", fe.Kind, tc.wantErrKind)
 				}
 				if fe.Code != core.CodeInternal {
 					t.Errorf("code = %d, want %d (retryable exit 3, not the do-not-retry exit 2)", fe.Code, core.CodeInternal)

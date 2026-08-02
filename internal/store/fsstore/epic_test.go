@@ -165,7 +165,7 @@ func TestSaveEpicRefusedOnOutdatedBoard(t *testing.T) {
 		t.Fatal("SaveEpic on an outdated board must be refused")
 	}
 	var fe *core.Error
-	if !errors.As(err, &fe) || fe.ID != "schema-upgrade-required" {
+	if !errors.As(err, &fe) || fe.Kind != core.KindSchemaUpgradeRequired {
 		t.Errorf("SaveEpic error = %v, want id schema-upgrade-required", err)
 	}
 	// And reading still works — read-only means read-ONLY, not unusable.

@@ -96,8 +96,8 @@ func TestQueryUnknownFieldWithOperator(t *testing.T) {
 	a := newApp()
 	for _, q := range []string{"updatd:>=-2w", "valu:>3", "creatd:2026-01-01..2026-02-01", "zzz:1"} {
 		e := qErr(t, a, q)
-		if e.ID != "query-unknown-field" {
-			t.Errorf("-q %q: id = %q, want query-unknown-field", q, e.ID)
+		if e.Kind != "query-unknown-field" {
+			t.Errorf("-q %q: id = %q, want query-unknown-field", q, e.Kind)
 		}
 		if len(e.Candidates) == 0 {
 			t.Errorf("-q %q: an unknown qualifier must carry candidates", q)
@@ -149,8 +149,8 @@ func TestQueryRelativeOffsetOverflowIsRefused(t *testing.T) {
 		t.Errorf("a large but representable offset should still match: %v", got)
 	}
 	for _, q := range []string{"updated:>=-106752d", "updated:>=-15251w", "updated:<-1000000d"} {
-		if e := qErr(t, a, q); e.ID != "query-type" {
-			t.Errorf("-q %q: id = %q, want query-type (never a silently inverted result)", q, e.ID)
+		if e := qErr(t, a, q); e.Kind != "query-type" {
+			t.Errorf("-q %q: id = %q, want query-type (never a silently inverted result)", q, e.Kind)
 		}
 	}
 }

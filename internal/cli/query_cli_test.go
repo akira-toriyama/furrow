@@ -92,7 +92,7 @@ func TestLsQueryErrors(t *testing.T) {
 	initStore(t)
 	addTask(t, "x", "-s", "ready")
 
-	cases := []struct{ query, id string }{
+	cases := []struct{ query, kind string }{
 		{"is:bogus", "query-unknown-flag"},
 		{"xyz:1", "query-unknown-field"},
 		{"status:>ready", "query-type"},
@@ -105,8 +105,8 @@ func TestLsQueryErrors(t *testing.T) {
 			t.Errorf("ls -q %q should be exit 2, got %+v", c.query, fe)
 			continue
 		}
-		if fe.ID != c.id {
-			t.Errorf("ls -q %q id = %q, want %q", c.query, fe.ID, c.id)
+		if fe.Kind != c.kind {
+			t.Errorf("ls -q %q kind = %q, want %q", c.query, fe.Kind, c.kind)
 		}
 	}
 
@@ -246,7 +246,7 @@ func TestQueryDatesCLI(t *testing.T) {
 	}
 	// A malformed date is exit 2 with the stable id.
 	fe, _ := runErr(t, "ls", "-q", "created:sometime")
-	if fe == nil || fe.ID != "query-type" {
+	if fe == nil || fe.Kind != "query-type" {
 		t.Errorf("created:sometime should be query-type, got %+v", fe)
 	}
 }

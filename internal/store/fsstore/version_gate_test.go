@@ -115,7 +115,7 @@ func TestSaveNeverRaisesBoardVersion(t *testing.T) {
 		t.Fatal("Save onto an outdated board must refuse — it used to silently migrate it")
 	}
 	var fe *core.Error
-	if !errors.As(err, &fe) || fe.ID != "schema-upgrade-required" {
+	if !errors.As(err, &fe) || fe.Kind != core.KindSchemaUpgradeRequired {
 		t.Fatalf("Save error = %v, want id schema-upgrade-required", err)
 	}
 	if fe.Code != core.CodeValidation {
@@ -152,7 +152,7 @@ func TestSaveRefusesShardsWithoutMeta(t *testing.T) {
 		{ID: "t-0001", Title: "x", Status: "ready", Priority: 100, Body: core.BodyPath("t-0001")},
 	}})
 	var fe *core.Error
-	if !errors.As(err, &fe) || fe.ID != "schema-upgrade-required" {
+	if !errors.As(err, &fe) || fe.Kind != core.KindSchemaUpgradeRequired {
 		t.Fatalf("Save error = %v, want id schema-upgrade-required", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "meta.json")); !os.IsNotExist(err) {
@@ -192,7 +192,7 @@ func TestOutdatedBoardIsReadOnlyForEveryWrite(t *testing.T) {
 	for name, w := range writes {
 		t.Run(name, func(t *testing.T) {
 			var fe *core.Error
-			if err := w(); !errors.As(err, &fe) || fe.ID != "schema-upgrade-required" {
+			if err := w(); !errors.As(err, &fe) || fe.Kind != core.KindSchemaUpgradeRequired {
 				t.Fatalf("%s on an outdated board = %v, want schema-upgrade-required", name, err)
 			}
 		})

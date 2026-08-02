@@ -100,7 +100,7 @@ furrow stats -q is:stale                                    # the stale board's 
 furrow ls -q 'roi:>2 "typed query"'                         # ROI>2 with a text phrase
 ```
 
-- **qualifiers** (`field:value`, comma = OR, repeat = AND): `status`/`lane`, `epic`, `label`, `repo` (resolved exactly as `-r` does: a full `owner/repo` or a short name naming exactly one — ambiguous is exit 2 with candidates), `id` (prefix), `title`, `body`. A bad query is **exit 2**, never a silent empty result — but the keys differ by fault: an unknown *qualifier* or `is:` flag carries both a stable error `id` and did-you-mean `candidates`; an unknown `status` value or an ambiguous `repo:` routes through furrow's existing lane/repo errors, which carry `candidates` (and no `id`, as elsewhere in furrow); an operator on a non-ordered field is `id: query-type` with no candidates.
+- **qualifiers** (`field:value`, comma = OR, repeat = AND): `status`/`lane`, `epic`, `label`, `repo` (resolved exactly as `-r` does: a full `owner/repo` or a short name naming exactly one — ambiguous is exit 2 with candidates), `id` (prefix), `title`, `body`. A bad query is **exit 2**, never a silent empty result — but the keys differ by fault: an unknown *qualifier* or `is:` flag carries both a stable error `kind` (`query-unknown-field` / `query-unknown-flag`) and did-you-mean `candidates`; an unknown `status` value or an ambiguous `repo:` routes through furrow's existing lane/repo errors (`unknown-lane` / `repo-ambiguous`), which carry `candidates`; an operator on a non-ordered field is kind `query-type` with no candidates.
 - **ordinal** (`value`, `effort`, `priority`, `roi`): comparison `>`, `>=`, `<`, `<=` and range `2..4` / `*..3` / `3..*`. An unset estimate (and an undefined `roi`) never satisfies a comparison.
 - **dates** (`created`, `updated`, `closed`, `reviewed` — the `-q` generalization of `--since/--until`): absolute `YYYY-MM-DD` (the whole UTC day, so `created:>2026-07-01` means *after* that day) or RFC3339, plus signed **relative offsets** from now, `updated:>=-2w` (JQL's units `m/h/d/w` — `m` is minutes, not months; an offset needs a comparison or range, never a bare equality). Ranges are inclusive with `*` open ends. A `null` `closed`/`reviewed` satisfies **no** comparison (existence is `has:`/`no:`'s job) — so negation *includes* the unset, like the estimates.
 - **graph** (direct edges, exact ids; an unknown id just matches nothing): `epic:X` selects a box's members (lenient on an unknown id — a box that does not exist simply has no members, and `lint` owns reporting the dangling reference; the STRICT spelling is the `-e` flag, which resolves and fails with candidates); `depends-on:X` and `blocks:X` are the two directions of the dep edge (the tasks waiting on X, and the tasks X waits on). Epics do not nest, so there is no transitive hierarchy walk to spell.
@@ -341,26 +341,35 @@ furrow is **non-interactive by default** — it never prompts. Destructive opera
 | Code | Meaning |
 |---|---|
 | `0` | OK — **including an empty query result** (`ls`/`next`/`revisit` matching nothing still succeeded) |
-| `1` | a **specifically requested id** was not found (e.g. `show <id>`) — never an empty list; also `furrow doctor`'s **problems found** (id `doctor-unhealthy`, the health-check convention) |
+| `1` | a **specifically requested id** was not found (e.g. `show <id>`) — never an empty list; also `furrow doctor`'s **problems found** (kind `doctor-unhealthy`, the health-check convention) |
 | `2` | bad usage / validation |
 | `3+` | internal / I/O error |
 | `130` / `143` | a `SIGINT` / `SIGTERM` interrupted the run (128+signal by Unix convention) — e.g. Ctrl-C during `furrow sync`, which returns `sync-interrupted` (retryable). A deliberate `sync-conflict` is not a cancellation and keeps its exit `3`. |
 
-The **schema gate** is the one place where the exit code, not the id, says which side is stale: `schema-upgrade-required` (exit 2) = the board is behind, run `furrow upgrade`; `schema-too-new` (exit 3) = the binary is behind, update furrow (in CI, bump the `sync-task-status.yml@vX.Y.Z` pin). Both carry `details {board_schema, binary_schema}`; to ask "can I write here?" **without provoking an error**, read `furrow board --json`'s `writable`/`schema_state` (see [the layout gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)). The same contract is printed by `furrow --help` (and each affected command's help), so it is discoverable from the binary, not just here.
+The **schema gate** is the one place where the exit code, not the kind, says which side is stale: `schema-upgrade-required` (exit 2) = the board is behind, run `furrow upgrade`; `schema-too-new` (exit 3) = the binary is behind, update furrow (in CI, bump the `sync-task-status.yml@vX.Y.Z` pin). Both carry `details {board_schema, binary_schema}`; to ask "can I write here?" **without provoking an error**, read `furrow board --json`'s `writable`/`schema_state` (see [the layout gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)). The same contract is printed by `furrow --help` (and each affected command's help), so it is discoverable from the binary, not just here.
 
 On a non-zero exit, furrow prints a structured error object to stderr:
 
 ```json
-{"error":{"code":2,"id":"t-0001","message":"unknown lane \"backlogg\""}}
+{"error":{"kind":"unknown-lane","subject":"t-0001","retryable":false,"exit":2,"message":"unknown lane \"backlogg\" (configured: …)","candidates":["backlog","ready"]}}
 ```
 
-When an input *almost* resolved, the envelope adds a `"candidates": [ … ]` array
+Two fields carry the decision, so a consumer never parses prose:
+
+- **`kind`** — the stable kebab-case failure class, a **closed vocabulary** (`furrow vocab error-kinds` prints it; every member below). The generic trio mirrors the exit classes — `not-found`, `validation`, `internal` — and a named kind exists exactly where the remedy is more specific than the exit code: `body-conflict-marker`, `doctor-unhealthy`, `epic-active-clash`, `epic-ambiguous`, `epic-not-found`, `git-failed`, `git-missing`, `no-git-repo`, `query-parse`, `query-type`, `query-unknown-field`, `query-unknown-flag`, `repo-ambiguous`, `repo-unknown`, `schema-too-new`, `schema-upgrade-required`, `sync-busy`, `sync-conflict`, `sync-interrupted`, `sync-lock-stale`, `sync-op-in-progress`, `sync-push-rejected`, `sync-stash-stranded`, `sync-unmerged`, `unknown-lane`, `unknown-subcommand`.
+- **`retryable`** — `true` means re-running the same command is the documented recovery (`sync-busy`, `sync-push-rejected`, `sync-interrupted`); always present, so "retry or escalate?" is one key, not a memorized table.
+
+`subject` names the entity the failure is about — a task or epic id, an
+`owner/repo`, an asset name, or a store file (`config`, `meta`) — and is omitted
+when there is none; `exit` mirrors the process exit code (named `exit`, not
+`code`: in furrow's vocabulary `code` is lint's kebab-case problem slug). When
+an input *almost* resolved, the envelope adds a `"candidates": [ … ]` array
 so a script picks an alternative instead of parsing prose — an ambiguous repo
-short name, an unknown lane, a parent command's unknown subcommand (`config
-show`), or a label that uniquely names a repo (the did-you-mean guard). A partial
+short name, an unknown lane, an unknown (sub)command, or a label that uniquely
+names a repo (the did-you-mean guard). A partial
 `show` batch adds `"details": {"missing": ["t-…", …]}` and exits 1; the version
 gate adds `"details": {"board_schema": N, "binary_schema": M}`. Branch on the
-array, never the message.
+kind, the flag, and the arrays — never the message.
 
 ### CI: auto-update a tracker from PRs
 
@@ -550,7 +559,7 @@ conflict stays real — union on JSON would corrupt it). A board initialized bef
 the scaffold just adds that line; `furrow doctor` warns `no-body-union-merge`
 until it does. On a real conflict sync **aborts the rebase automatically** (the
 board is never left with markers; your local sync commit survives) and exits 3
-with `"id": "sync-conflict"` + `"details": {"paths": [...]}`. The progress object
+with `"kind": "sync-conflict"` + `"details": {"paths": [...]}`. The progress object
 `{committed, pulled, pushed, conflict, complete, committed_bodies,
 pending_bodies, pending_stash}` prints to stdout on success and failure alike
 (empty lists omitted); **`complete`** — not `pushed` — is the "fully published"
@@ -558,7 +567,7 @@ flag, `false` whenever a body or stash is left pending.
 
 ### Sync failure modes
 
-Two failures are worth knowing; both are branch-on-the-`id`, and the full
+Two failures are worth knowing; both are branch-on-the-`kind` (with `retryable` saying whether a re-run is the fix), and the full
 taxonomy (with the git-level reasons) is in
 [docs/architecture.md](docs/architecture.md):
 
@@ -580,13 +589,14 @@ taxonomy (with the git-level reasons) is in
   class — usually the other writer has finished by then; a rebase genuinely stuck
   *here* is cleared with a manual `git rebase --abort`); a fetch/lock race is
   retried, and a lock still blocking past the budget (a likely-stale
-  `.git/*.lock`) fails **terminally** naming the lock, rather than looping an
-  agent on a `sync-busy` that will never clear. A co-writer that keeps winning
-  the **push** race is its own **retryable** id, `sync-push-rejected` — the board
+  `.git/*.lock`) fails **terminally** (`sync-lock-stale`) naming the lock, rather
+  than looping an agent on a `sync-busy` that will never clear. A co-writer that keeps winning
+  the **push** race is its own **retryable** kind, `sync-push-rejected` — the board
   is untouched and your local sync commit intact, so re-running is the whole fix.
-  It is separate from `sync` precisely so a caller can retry it without matching
-  error text: furrow's own `sync-task-status.yml` retries `sync-push-rejected` and
-  `sync-busy`, and treats every other id as terminal.
+  It is a kind of its own precisely so a caller can retry it without matching
+  error text: furrow's own `sync-task-status.yml` retries whatever the envelope
+  marks `retryable` (today `sync-push-rejected`, `sync-busy`, `sync-interrupted`),
+  and treats every other kind as terminal.
 
 On a **successful** sync furrow also prints a repo-scoped `revisit` summary —
 open tasks with a done dependency (`dep_done`) or gone stale (`stale`), epics

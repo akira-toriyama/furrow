@@ -189,7 +189,7 @@ func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
 		t.Errorf("progress = %+v; want committed=true pulled=false pushed=false conflict=true", p)
 	}
 	fe := core.AsError(err)
-	if fe == nil || fe.ID != "sync-conflict" || fe.Code != core.CodeInternal {
+	if fe == nil || fe.Kind != core.KindSyncConflict || fe.Code != core.CodeInternal {
 		t.Fatalf("want sync-conflict internal error, got %+v", err)
 	}
 	details, ok := fe.Details.(map[string]any)
@@ -317,7 +317,7 @@ func TestSyncRebaseBusyIsRetryableNotValidation(t *testing.T) {
 		t.Errorf("exit = %d, want %d (retryable, not validation)", got, core.CodeInternal)
 	}
 	fe := core.AsError(err)
-	if fe == nil || fe.ID != "sync-busy" {
+	if fe == nil || fe.Kind != core.KindSyncBusy {
 		t.Fatalf("want id sync-busy, got %+v", err)
 	}
 	if p == nil || p.Committed || p.Pulled || p.Pushed || p.Conflict {
@@ -439,7 +439,7 @@ func TestSyncInterruptedByCancelledContext(t *testing.T) {
 		t.Fatal("a cancelled sync must return an error")
 	}
 	fe := core.AsError(err)
-	if fe == nil || fe.ID != "sync-interrupted" {
+	if fe == nil || fe.Kind != core.KindSyncInterrupted {
 		t.Fatalf("err = %v, want *core.Error id \"sync-interrupted\"", err)
 	}
 	if p.Pushed {

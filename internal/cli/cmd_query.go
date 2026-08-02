@@ -265,8 +265,14 @@ func newShowCmd() *cobra.Command {
 				// than a "not found" that is false about the board.
 				if epic, rerr := a.RefTargetsEpic(missing[0]); rerr == nil && epic {
 					if archived {
+						// The box EXISTS — the flag is what is wrong, so the kind
+						// must not say not-found (a consumer branching on the kind
+						// would conclude the box is gone). Bad usage: exit 2.
+						fe.Kind = core.KindValidation
+						fe.Code = core.CodeValidation
 						fe.Msg = fmt.Sprintf("%s is an epic — --archived reads the task archive, and boxes are never archived (drop the flag to read it)", missing[0])
 					} else {
+						fe.Kind = core.KindEpicNotFound
 						fe.Msg = fmt.Sprintf("epic not found: %s", missing[0])
 					}
 				}
@@ -300,6 +306,7 @@ func newShowCmd() *cobra.Command {
 			if len(missing) > 0 {
 				return &core.Error{
 					Code:    core.CodeNotFound,
+					Kind:    core.KindNotFound,
 					Msg:     fmt.Sprintf("%d of %d ids not found", len(missing), len(entries)+len(missing)) + archivedSuffix(inArchive),
 					Details: missDetails(missing, inArchive),
 				}

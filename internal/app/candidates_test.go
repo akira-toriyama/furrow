@@ -122,7 +122,7 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 // A prefixed error must be a COPY: prefixing per spec inside a loop may not
 // mutate the shared value the next iteration reads.
 func TestWithPrefixfCopiesAndKeepsCandidates(t *testing.T) {
-	base := &core.Error{Code: core.CodeValidation, ID: "t-1", Msg: "unknown lane", Candidates: []string{"inbox"}}
+	base := &core.Error{Code: core.CodeValidation, Kind: core.KindUnknownLane, Subject: "t-1", Msg: "unknown lane", Candidates: []string{"inbox"}}
 	got := base.WithPrefixf("spec %d (%q): ", 2, "title")
 
 	if base.Msg != "unknown lane" {
@@ -131,7 +131,7 @@ func TestWithPrefixfCopiesAndKeepsCandidates(t *testing.T) {
 	if got.Msg != `spec 2 ("title"): unknown lane` {
 		t.Errorf("Msg = %q", got.Msg)
 	}
-	if got.Code != base.Code || got.ID != base.ID || !equalStrings(got.Candidates, base.Candidates) {
+	if got.Code != base.Code || got.Kind != base.Kind || got.Subject != base.Subject || !equalStrings(got.Candidates, base.Candidates) {
 		t.Errorf("WithPrefixf dropped a field: %+v", got)
 	}
 }

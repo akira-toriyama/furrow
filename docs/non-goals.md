@@ -191,8 +191,10 @@ To keep this list honest about today's reality (not aspirations):
   Exit-code
   contract: `0` ok (an empty query result included) / `1` a specifically
   requested id not found / `2` bad-usage|validation / `3+`
-  internal|IO, with `{"error":{"code","id","message"}}` to stderr
-  (`internal/core/errors.go`), plus optional `candidates` / `details` fields
+  internal|IO, with `{"error":{"kind","subject","retryable","exit","message"}}`
+  to stderr (`internal/core/errors.go` — `kind` is the closed branch vocabulary,
+  `furrow vocab error-kinds`; `retryable` says whether a re-run is the fix),
+  plus optional `candidates` / `details` fields
   when there is something machine-actionable to say. `furrow migrate`
   (importing a legacy `Task.md`) is wired and working too.
 - **Not built here** — furrow is CLI-only: any interactive TUI/GUI is a separate

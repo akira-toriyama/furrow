@@ -25,17 +25,17 @@ func TestInterruptedExitCode(t *testing.T) {
 		caught int64
 		want   core.Code
 	}{
-		{"sigint interrupts sync", &core.Error{Code: core.CodeInternal, ID: "sync-interrupted"}, sigint, 130},
-		{"sigterm interrupts sync", &core.Error{Code: core.CodeInternal, ID: "sync-interrupted"}, sigterm, 143},
-		{"no signal keeps exit 3", &core.Error{Code: core.CodeInternal, ID: "sync-interrupted"}, 0, core.CodeInternal},
-		{"conflict racing signal stays exit 3", &core.Error{Code: core.CodeInternal, ID: "sync-conflict"}, sigint, core.CodeInternal},
-		{"unrelated error with signal keeps its code", &core.Error{Code: core.CodeValidation, ID: "bad-input"}, sigterm, core.CodeValidation},
+		{"sigint interrupts sync", &core.Error{Code: core.CodeInternal, Kind: core.KindSyncInterrupted}, sigint, 130},
+		{"sigterm interrupts sync", &core.Error{Code: core.CodeInternal, Kind: core.KindSyncInterrupted}, sigterm, 143},
+		{"no signal keeps exit 3", &core.Error{Code: core.CodeInternal, Kind: core.KindSyncInterrupted}, 0, core.CodeInternal},
+		{"conflict racing signal stays exit 3", &core.Error{Code: core.CodeInternal, Kind: core.KindSyncConflict}, sigint, core.CodeInternal},
+		{"unrelated error with signal keeps its code", &core.Error{Code: core.CodeValidation, Kind: core.KindValidation}, sigterm, core.CodeValidation},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if got := interruptedExitCode(c.fe, c.caught); got != c.want {
 				t.Errorf("interruptedExitCode(id=%q code=%d, caught=%d) = %d, want %d",
-					c.fe.ID, c.fe.Code, c.caught, got, c.want)
+					c.fe.Kind, c.fe.Code, c.caught, got, c.want)
 			}
 		})
 	}
@@ -61,7 +61,7 @@ func TestInstallSignalTrapRealSignal(t *testing.T) {
 		t.Fatalf("caught signal = %d, want %d (SIGINT)", got, int64(syscall.SIGINT))
 	}
 	// The mapping then yields 130 for a sync interruption caused by this SIGINT.
-	if got := interruptedExitCode(&core.Error{Code: core.CodeInternal, ID: "sync-interrupted"}, caught.Load()); got != 130 {
+	if got := interruptedExitCode(&core.Error{Code: core.CodeInternal, Kind: core.KindSyncInterrupted}, caught.Load()); got != 130 {
 		t.Errorf("exit code after SIGINT = %d, want 130", got)
 	}
 }

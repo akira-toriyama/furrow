@@ -161,7 +161,8 @@ func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMod
 			if !a.Cfg.IsLane(openLane) {
 				fail(out, &core.Error{
 					Code:       core.CodeValidation,
-					ID:         d.ID,
+					Kind:       core.KindUnknownLane,
+					Subject:    d.ID,
 					Msg:        fmt.Sprintf("--open-lane %q is not a configured lane (configured: %s)", openLane, strings.Join(a.Cfg.Lanes, ", ")),
 					Candidates: append([]string(nil), a.Cfg.Lanes...),
 				})

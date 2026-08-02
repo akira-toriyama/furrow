@@ -381,7 +381,8 @@ func (a *App) checkRepoSlots(target *core.Epic, epics []core.Epic) error {
 	sort.Strings(clashes)
 	return &core.Error{
 		Code:    core.CodeValidation,
-		ID:      target.ID,
+		Kind:    core.KindEpicActiveClash,
+		Subject: target.ID,
 		Msg:     fmt.Sprintf("another epic is already active for %s — deactivate it first (`furrow epic deactivate <id>`)", strings.Join(clashes, ", ")),
 		Details: map[string]any{"held": details},
 	}
@@ -650,7 +651,7 @@ func (a *App) resolveEpicIn(ref string, epics []core.Epic) (string, error) {
 			sort.Strings(hits)
 			return "", &core.Error{
 				Code:       core.CodeValidation,
-				ID:         "",
+				Kind:       core.KindEpicAmbiguous,
 				Msg:        fmt.Sprintf("epic %q is ambiguous (%s)", ref, strings.Join(hits, ", ")),
 				Candidates: hits,
 			}
@@ -658,7 +659,7 @@ func (a *App) resolveEpicIn(ref string, epics []core.Epic) (string, error) {
 	}
 	return "", &core.Error{
 		Code:       core.CodeValidation,
-		ID:         "",
+		Kind:       core.KindEpicNotFound,
 		Msg:        fmt.Sprintf("unknown epic %q", ref),
 		Candidates: ids,
 	}
