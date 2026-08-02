@@ -202,7 +202,7 @@ func newShowCmd() *cobra.Command {
 	var backlinks, noBody, archived bool
 	cmd := &cobra.Command{
 		Use:   "show <id>...",
-		Short: "Show tasks with metadata and markdown body (batch-friendly)",
+		Short: "Show tasks or epics with metadata and markdown body (batch-friendly)",
 		Long: "Show one or more tasks' metadata and Markdown body in a single read, in\n" +
 			"input order. --json emits an array for several ids (a single id keeps the\n" +
 			"historical single object); --ndjson emits one task per line at any arity;\n" +
@@ -210,6 +210,12 @@ func newShowCmd() *cobra.Command {
 			"(the body_text key in JSON) — the lean metadata-only read for agents. When\n" +
 			"some ids are missing, the found tasks are still emitted and the not-found\n" +
 			"error carries details.missing, so a partial read is never wasted.\n" +
+			"An id may name an EPIC: store membership routes each one (never the id's\n" +
+			"prefix), and a box is rendered as the box view `furrow epic show` prints —\n" +
+			"goal, member roll-up, body — so a mixed batch's --json array carries one\n" +
+			"shape per entity. --archived reads the task archive only (boxes are never\n" +
+			"archived), and --backlinks names the tasks whose [[id]] links point at a\n" +
+			"TASK, so a box carries no mentioned_by.\n" +
 			"With --backlinks, also list the tasks whose body mentions each one via the\n" +
 			"[[id]] notation (the local, rate-limit-free twin of GitHub's \"mentioned\n" +
 			"in\"); --json adds a mentioned_by array. The scan is opt-in, so a plain\n" +
@@ -225,13 +231,18 @@ func newShowCmd() *cobra.Command {
 				return err
 			}
 			var (
-				items   []app.ShowItem
+				entries []app.ShowEntry
 				missing []string
 			)
 			if archived {
+				// The archive holds tasks only, so this read never routes to a box.
+				var items []app.ShowItem
 				items, missing, err = a.GetBatchArchived(args, !noBody)
+				for i := range items {
+					entries = append(entries, app.ShowEntry{Task: &items[i]})
+				}
 			} else {
-				items, missing, err = a.GetBatch(args, !noBody)
+				entries, missing, err = a.ShowBatch(args, !noBody)
 			}
 			if err != nil {
 				return err
@@ -247,31 +258,49 @@ func newShowCmd() *cobra.Command {
 			// details.missing rides along so agents branch the same at any arity.
 			if len(args) == 1 && len(missing) > 0 {
 				fe := core.NotFound(missing[0])
+				// A miss whose ref reads as a box says so: "task not found" for
+				// an `e-` id would send the reader looking in the wrong store.
+				// Under --archived the box may well EXIST — the archive simply
+				// holds tasks — so that reading gets its own sentence rather
+				// than a "not found" that is false about the board.
+				if epic, rerr := a.RefTargetsEpic(missing[0]); rerr == nil && epic {
+					if archived {
+						fe.Msg = fmt.Sprintf("%s is an epic — --archived reads the task archive, and boxes are never archived (drop the flag to read it)", missing[0])
+					} else {
+						fe.Msg = fmt.Sprintf("epic not found: %s", missing[0])
+					}
+				}
 				fe.Msg += archivedSuffix(inArchive)
 				fe.Details = missDetails(missing, inArchive)
 				return fe
 			}
 			var mentions [][]core.Task
 			if backlinks {
-				ids := make([]string, len(items))
-				for i := range items {
-					ids[i] = items[i].Task.ID
+				// Boxes are skipped: [[id]] links name tasks (core.LinkPattern is
+				// built from [ids].prefix), so a box has no backlinks by construction.
+				ids := make([]string, 0, len(entries))
+				for i := range entries {
+					if entries[i].Task != nil {
+						ids = append(ids, entries[i].Task.Task.ID)
+					}
 				}
 				// One board pass for the whole batch (O(board), not O(ids×board)).
 				bl, err := a.BacklinksBatch(ids)
 				if err != nil {
 					return err
 				}
-				mentions = make([][]core.Task, len(items))
-				for i := range items {
-					mentions[i] = bl[items[i].Task.ID]
+				mentions = make([][]core.Task, len(entries))
+				for i := range entries {
+					if entries[i].Task != nil {
+						mentions[i] = bl[entries[i].Task.Task.ID]
+					}
 				}
 			}
-			emitShow(items, mentions, len(args) == 1, noBody, backlinks)
+			emitShow(a, entries, mentions, len(args) == 1, noBody, backlinks)
 			if len(missing) > 0 {
 				return &core.Error{
 					Code:    core.CodeNotFound,
-					Msg:     fmt.Sprintf("%d of %d ids not found", len(missing), len(items)+len(missing)) + archivedSuffix(inArchive),
+					Msg:     fmt.Sprintf("%d of %d ids not found", len(missing), len(entries)+len(missing)) + archivedSuffix(inArchive),
 					Details: missDetails(missing, inArchive),
 				}
 			}

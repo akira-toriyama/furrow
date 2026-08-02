@@ -219,7 +219,7 @@ func newNoteCmd() *cobra.Command {
 			// would show changed:[] — surface the effect instead. Both entities
 			// carry the same key, so a caller reads one shape either way.
 			appended := map[string]any{"appended": strings.TrimRight(text, "\n")}
-			epic, rerr := a.NoteTargetsEpic(args[0])
+			epic, rerr := a.RefTargetsEpic(args[0])
 			if rerr != nil {
 				return rerr
 			}

@@ -727,43 +727,65 @@ func showView(it app.ShowItem, mentions []core.Task, noBody, backlinks bool) any
 	}
 }
 
-// emitShow renders `show` results in input order. --ndjson is one task per
-// line at any arity; --json keeps the historical single object for one id and
-// emits an array for a batch (so a batch of misses still prints []); the human
-// output separates detail blocks with a --- line. mentions is non-nil only
-// when --backlinks ran, aligned index-for-index with items.
-func emitShow(items []app.ShowItem, mentions [][]core.Task, single, noBody, backlinks bool) {
+// emitShow renders `show` results in input order, each entry as the entity it
+// IS: a task's dashboard or a box's goal + roll-up (the very object `epic show`
+// prints). --ndjson is one entry per line at any arity; --json keeps the
+// historical single object for one id and emits an array for a batch (so a
+// batch of misses still prints []) — a mixed batch's array is therefore
+// heterogeneous, which is what an id naming its own entity kind implies;
+// the human output separates detail blocks with a --- line. mentions is
+// non-nil only when --backlinks ran, aligned index-for-index with entries;
+// a box has no entry there, since [[id]] links name tasks
+// (core.LinkPattern is built from [ids].prefix).
+func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, single, noBody, backlinks bool) {
 	mentionsAt := func(i int) []core.Task {
 		if mentions == nil {
 			return nil
 		}
 		return mentions[i]
 	}
+	view := func(i int) any {
+		if e := entries[i].Epic; e != nil {
+			if noBody {
+				// --no-body OMITS the key, as it does for a task (showView drops
+				// to the bare core.Task) — not an empty string, which a consumer
+				// cannot tell from a box whose body really is empty.
+				v := toEpicDetailView(e)
+				return epicMetaView{Epic: v.Epic, Progress: v.Progress, Stuck: v.Stuck, Tasks: v.Tasks}
+			}
+			return toEpicDetailView(e)
+		}
+		return showView(*entries[i].Task, mentionsAt(i), noBody, backlinks)
+	}
 	switch {
 	case flagNDJSON:
-		for i, it := range items {
-			printNDJSONValue(showView(it, mentionsAt(i), noBody, backlinks))
+		for i := range entries {
+			printNDJSONValue(view(i))
 		}
 	case flagJSON:
 		if single {
-			// exactly one item: a single-id miss error-returns before emission
-			printJSON(showView(items[0], mentionsAt(0), noBody, backlinks))
+			// exactly one entry: a single-id miss error-returns before emission
+			printJSON(view(0))
 			return
 		}
-		views := make([]any, 0, len(items))
-		for i, it := range items {
-			views = append(views, showView(it, mentionsAt(i), noBody, backlinks))
+		views := make([]any, 0, len(entries))
+		for i := range entries {
+			views = append(views, view(i))
 		}
 		printJSON(views)
 	default:
-		for i := range items {
+		for i := range entries {
 			if i > 0 {
 				fmt.Fprintln(out, "---")
 			}
+			if e := entries[i].Epic; e != nil {
+				printEpicDetail(a, e)
+				continue
+			}
 			if backlinks {
-				printTaskDetailWithBacklinks(&items[i].Task, items[i].Body, mentionsAt(i))
+				printTaskDetailWithBacklinks(&entries[i].Task.Task, entries[i].Task.Body, mentionsAt(i))
 			} else {
-				printTaskDetail(&items[i].Task, items[i].Body)
+				printTaskDetail(&entries[i].Task.Task, entries[i].Task.Body)
 			}
 		}
 	}
@@ -1251,17 +1273,41 @@ type epicDetailView struct {
 	BodyText string         `json:"body_text"`
 }
 
+// epicMetaView is epicDetailView minus the prose — `show <epic-id> --no-body`.
+// A separate struct rather than `omitempty` on BodyText, so `epic show` keeps
+// emitting the key for a box whose body is genuinely empty: the flag decides
+// whether the key exists, never the content.
+type epicMetaView struct {
+	core.Epic
+	Progress app.Progress   `json:"progress"`
+	Stuck    bool           `json:"stuck"`
+	Tasks    []listItemView `json:"tasks"`
+}
+
 // emitEpicDetail renders `furrow epic show`.
 func emitEpicDetail(a *app.App, d *app.EpicDetail) error {
 	if jsonMode() {
-		v := epicDetailView{Epic: d.Epic, Progress: d.Progress, Stuck: d.Stuck, BodyText: d.Body}
-		v.Tasks = make([]listItemView, 0, len(d.Tasks))
-		for _, it := range d.Tasks {
-			v.Tasks = append(v.Tasks, toListItemView(it))
-		}
-		emitObject(v)
+		emitObject(toEpicDetailView(d))
 		return nil
 	}
+	printEpicDetail(a, d)
+	return nil
+}
+
+// toEpicDetailView is the epic detail's JSON value, split out so `furrow show
+// <epic-id>` emits the SAME object `epic show` does — one shape per entity, no
+// second box view to keep in step.
+func toEpicDetailView(d *app.EpicDetail) epicDetailView {
+	v := epicDetailView{Epic: d.Epic, Progress: d.Progress, Stuck: d.Stuck, BodyText: d.Body}
+	v.Tasks = make([]listItemView, 0, len(d.Tasks))
+	for _, it := range d.Tasks {
+		v.Tasks = append(v.Tasks, toListItemView(it))
+	}
+	return v
+}
+
+// printEpicDetail is the human half, likewise shared with `show`.
+func printEpicDetail(a *app.App, d *app.EpicDetail) {
 	fmt.Fprintf(out, "%s  %s\n", d.Epic.ID, d.Epic.Title)
 	if d.Epic.Goal != "" {
 		fmt.Fprintf(out, "goal:     %s\n", d.Epic.Goal)
@@ -1313,7 +1359,6 @@ func emitEpicDetail(a *app.App, d *app.EpicDetail) error {
 	if strings.TrimSpace(d.Body) != "" {
 		fmt.Fprintf(out, "\n%s\n", strings.TrimRight(d.Body, "\n"))
 	}
-	return nil
 }
 
 // emitEpicMutation is emitMutation's epic twin: the same {before,after,changed}

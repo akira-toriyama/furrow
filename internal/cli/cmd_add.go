@@ -151,10 +151,14 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 func newEditCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "edit <id>",
-		Short: "Edit a task's markdown body in $EDITOR",
+		Short: "Edit a task's or epic's markdown body in $EDITOR",
 		Long: "Open bodies/<id>.md in $EDITOR. In a non-interactive context (no TTY) it\n" +
 			"prints the absolute body path instead of launching an editor, so an agent\n" +
-			"can edit the file directly.",
+			"can edit the file directly.\n\n" +
+			"<id> may name a TASK or an EPIC — both entities' prose lives in the one\n" +
+			"bodies/ directory, so this is the same file either way; store membership\n" +
+			"routes it, never the id's prefix. Prefer `furrow note <id>` for a progress\n" +
+			"record: a direct file edit does not advance the shard's `updated`.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()

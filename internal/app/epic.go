@@ -404,7 +404,7 @@ func (a *App) recordSwitch(id, reason string) error {
 // rather than a second one wearing an epic's name: epic bodies live in the
 // task bodies/ directory (see core.Epic.Body), appendBody is shared, and the
 // only thing that differs is which shard's `updated` moves. That is why
-// `furrow note` routes to it (NoteTargetsEpic) instead of growing an `epic
+// `furrow note` routes to it (RefTargetsEpic) instead of growing an `epic
 // note` verb — a box's progress record is not a different kind of writing.
 //
 // The write ORDER matches AddNote's for the same reason: the body lands inside
@@ -424,9 +424,9 @@ func (a *App) EpicNote(ref, text string) (*core.Epic, *core.Epic, error) {
 	return a.mutateEpic(ref, func(e *core.Epic) error { return a.appendBody(e.ID, text) })
 }
 
-// NoteTargetsEpic reports whether a body-keyed write for ref belongs to the
-// EPIC store rather than the task index — the routing decision behind `furrow
-// note <id>` taking either entity.
+// RefTargetsEpic reports whether an id-keyed command's ref belongs to the EPIC
+// store rather than the task index — the one routing decision behind `furrow
+// note` / `edit` / `show` taking either entity.
 //
 // MEMBERSHIP decides, never the id's prefix. sync.go's publishedSwitches
 // already states the rule and the reason ("Membership in the epic store — not
@@ -447,7 +447,7 @@ func (a *App) EpicNote(ref, text string) (*core.Epic, *core.Epic, error) {
 // store cannot be read: an unresolvable ref is a routing answer, not a failure,
 // which is what keeps the write paths' own validation order intact (an empty
 // note is still exit 2 before any lookup).
-func (a *App) NoteTargetsEpic(ref string) (bool, error) {
+func (a *App) RefTargetsEpic(ref string) (bool, error) {
 	idx, err := a.load()
 	if err != nil {
 		return false, err
@@ -468,7 +468,7 @@ func (a *App) NoteTargetsEpic(ref string) (bool, error) {
 // isEpicIDShape reports whether ref LOOKS like an epic id ([ids].epic_prefix +
 // base32) — "an id names its entity kind on sight" (core.Epic.ID). It is a
 // guess, deliberately confined to choosing the error for a ref that resolved to
-// nothing at all: see NoteTargetsEpic for why it must never route a write.
+// nothing at all: see RefTargetsEpic for why it must never route a write.
 func (a *App) isEpicIDShape(ref string) bool {
 	if !a.Cfg.EpicIDPattern().MatchString(ref) {
 		return false
