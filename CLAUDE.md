@@ -337,8 +337,13 @@ the user-level config. When you work with any furrow store:
   guess is wrong here for the same reason `sync`'s activation scan refuses one:
   `[ids].epic_prefix` may EXTEND `[ids].prefix`, and ids are prefix + random
   base32, so on such a board ~1 task id in 32 is shaped like an epic id. The
-  envelope is the noted entity's own. `edit` and `show` are still task-only: an
-  epic body is read with `furrow epic show <id>` and written with `note`.
+  envelope is the noted entity's own. **`edit` and `show` route the same way**:
+  `furrow edit <epic-id>` hands back the box's `bodies/<id>.md` (the same file,
+  created on demand), and `furrow show <epic-id>` renders the box view `epic
+  show` prints — so a mixed `show t-… e-…` batch's `--json` array carries one
+  shape per entity, and an epic-shaped miss reads `epic not found`. Two
+  deliberate task-only edges there: `--archived` (boxes are never archived) and
+  `--backlinks` (`[[id]]` links carry the TASK prefix, so a box has none).
   Closing with a word — the reslice's "→ continued in t-xxx", the one-liner at
   close time — is that contract folded into the close: **`furrow done <id>...
   --note "<text>"`** appends the note to every closed task's body in the same

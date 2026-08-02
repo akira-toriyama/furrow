@@ -711,13 +711,23 @@ except where noted:
   `appendBody`, then `mutateEpic`'s `updated` stamp — the task path's write
   order, so a partial failure costs a timestamp and never content). There is no
   `epic note` verb because the two entities share `bodies/` and only the shard
-  that stamps `updated` differs; the CLI routes on **`App.NoteTargetsEpic`**,
-  which decides by MEMBERSHIP (task index → epic store → for a ref that resolves
-  to neither, the id shape, and then only to choose which store's ERROR the
-  caller gets). The same rule `publishedSwitches` states — an id-prefix guess
-  must not decide whose body a file is — and for the same reason: `[ids]`
-  accepts an `epic_prefix` that extends `prefix`, and ids are prefix + random
-  base32, so a shape test captures ~1 id in 32 of the shorter-prefixed entity. Activating a box whose `deps`
+  that stamps `updated` differs. The **id-keyed commands** — `note`, `edit`
+  (`App.EditPath`) and `show` (`App.ShowBatch`, whose `ShowEntry` is a
+  task-or-box sum type, whose miss stays DATA rather than becoming the box
+  resolver's exit 2, and which reads the epic store ONCE up front so a corrupt
+  shard surfaces as the error every sibling command reports instead of being
+  laundered into "this id names nothing" — both are `CodeValidation`; dedup is
+  by the RESOLVED id, since a box answers to several refs) — all route through **`App.RefTargetsEpic`**, which decides
+  by MEMBERSHIP (task index → epic store → for a ref that resolves to neither,
+  the id shape, and then only to choose which store's ERROR the caller gets).
+  The same rule `publishedSwitches` states — an id-prefix guess must not decide
+  whose body a file is — and for the same reason: `[ids]` accepts an
+  `epic_prefix` that extends `prefix`, and ids are prefix + random base32, so a
+  shape test captures ~1 id in 32 of the shorter-prefixed entity. Two edges stay
+  task-only by nature: the archive (boxes are never archived) and `--backlinks`
+  (`core.LinkPattern` is built from `[ids].prefix`, so `[[id]]` links name
+  tasks). `show <epic-id>` reuses `epic show`'s renderer (`toEpicDetailView` /
+  `printEpicDetail`), so there is one box view, not two. Activating a box whose `deps`
   are not all closed likewise WARNS and proceeds (a stderr note + `open_deps`
   beside the envelope; `lint`'s `epic-dep-open` keeps it visible after). `done` stamps `closed` and
   clears `active` in the SAME write (a closed box holding its repos' slots

@@ -132,7 +132,7 @@ func TestEpicNoteResolutionAndValidation(t *testing.T) {
 // The routing table on an ordinary board: a real id of either entity goes to
 // its own store, an epic REF resolves like every other one, and a ref naming
 // nothing routes by shape — which only picks whose error the caller gets.
-func TestNoteTargetsEpicRoutes(t *testing.T) {
+func TestRefTargetsEpicRoutes(t *testing.T) {
 	a, _ := appWithClock(time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC))
 	tk, err := a.Add("a task", AddOpts{})
 	if err != nil {
@@ -158,12 +158,12 @@ func TestNoteTargetsEpicRoutes(t *testing.T) {
 		{"e-", true, "a bare prefix still resolves while it is UNIQUE — the epic ref rule, not a shape rule"},
 		{"", false, ""},
 	} {
-		got, err := a.NoteTargetsEpic(tc.ref)
+		got, err := a.RefTargetsEpic(tc.ref)
 		if err != nil {
-			t.Fatalf("NoteTargetsEpic(%q): %v", tc.ref, err)
+			t.Fatalf("RefTargetsEpic(%q): %v", tc.ref, err)
 		}
 		if got != tc.want {
-			t.Errorf("NoteTargetsEpic(%q) = %v, want %v — %s", tc.ref, got, tc.want, tc.why)
+			t.Errorf("RefTargetsEpic(%q) = %v, want %v — %s", tc.ref, got, tc.want, tc.why)
 		}
 	}
 }
@@ -176,7 +176,7 @@ func TestNoteTargetsEpicRoutes(t *testing.T) {
 // epic"), and real boxes were unreachable (exit 1 "task not found"). Membership
 // decides instead, so both stay reachable. The ids here are planted rather than
 // minted because the collision is random.
-func TestNoteTargetsEpicIgnoresOverlappingPrefixes(t *testing.T) {
+func TestRefTargetsEpicIgnoresOverlappingPrefixes(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		cfg        string
@@ -201,10 +201,10 @@ func TestNoteTargetsEpicIgnoresOverlappingPrefixes(t *testing.T) {
 			plantTask(t, a, tc.taskID)
 			plantEpic(t, a, tc.epicID)
 
-			if got, err := a.NoteTargetsEpic(tc.taskID); err != nil || got {
+			if got, err := a.RefTargetsEpic(tc.taskID); err != nil || got {
 				t.Errorf("task %s routed to the box path (%v, %v)", tc.taskID, got, err)
 			}
-			if got, err := a.NoteTargetsEpic(tc.epicID); err != nil || !got {
+			if got, err := a.RefTargetsEpic(tc.epicID); err != nil || !got {
 				t.Errorf("epic %s routed to the task path (%v, %v)", tc.epicID, got, err)
 			}
 			// Both are reachable, which is the point: the shape alone would have

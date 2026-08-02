@@ -72,13 +72,11 @@ type Epic struct {
 
 	// Body is the relative path to the long-form prose, e.g. "bodies/e-k3m9.md".
 	// It shares the TASK body directory on purpose: ids are prefix-disjoint, so
-	// `furrow note <id>` (which routes by store MEMBERSHIP — not by the prefix —
-	// and stamps THIS shard's Updated), `furrow sync -b <id>`, the
-	// bodies/*.md union-merge .gitattributes
-	// rule, and the orphan-body lint all work on a box unchanged. A separate
-	// epics/bodies/ dir would have duplicated every one of them. (`furrow edit`
-	// and `furrow show` remain task-only — they resolve through the task index,
-	// not the id's prefix.)
+	// the id-keyed commands (`furrow note`/`edit`/`show`, which route by store
+	// MEMBERSHIP — never by the prefix — and address THIS shard), `furrow sync
+	// -b <id>`, the bodies/*.md union-merge .gitattributes rule, and the
+	// orphan-body lint all work on a box unchanged. A separate epics/bodies/
+	// dir would have duplicated every one of them.
 	Body string `json:"body"`
 
 	// Deps are the epic ids this box waits on: "open this one after those close"

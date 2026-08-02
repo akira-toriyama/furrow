@@ -762,6 +762,97 @@ func getBatchFrom(idx *core.Index, loadBody func(string) (string, error), ids []
 	return items, missing, nil
 }
 
+// ShowEntry is one result of ShowBatch: exactly one of Task / Epic is set. A
+// sum type rather than a widened ShowItem, because a box is not a task wearing
+// a type (core.Epic) and the two views a reader wants are genuinely different —
+// a task's lane/priority dashboard vs a box's goal + member roll-up.
+type ShowEntry struct {
+	Task *ShowItem
+	Epic *EpicDetail
+}
+
+// ShowBatch resolves refs across BOTH entities in input order — the read behind
+// `furrow show <id>...` taking an epic id. MEMBERSHIP routes each ref, the same
+// rule RefTargetsEpic states: a ref naming a real task is that task, else a ref
+// the epic store resolves is that box, else it is missing. Duplicates collapse
+// to their first occurrence, as in GetBatch.
+//
+// A miss stays a MISS here rather than becoming the box resolver's exit 2:
+// `show` is a batch read whose partial failure is data (details.missing), and a
+// resolution error would throw away the entries that were found. withBody=false
+// drops both entities' prose, so --no-body means one thing.
+//
+// Two things it must NOT do, both learned the hard way:
+//   - Read the epic store per ref and treat ANY failure as "not a box".
+//     core.UnmarshalEpic reports a corrupt shard as a VALIDATION error, exactly
+//     like an unresolvable ref, so that shape launders store corruption into
+//     "this id names nothing" — `show` would report a box that is on disk as
+//     missing while `epic show`, `note`, `edit` and `lint` all report the
+//     unreadable shard. The store is therefore read ONCE, up front, and a read
+//     failure is returned: "not found" and "unreadable" are different answers.
+//   - Dedupe by the REF. A box takes several refs (id, unique prefix, unique
+//     title substring), so `show <id> <prefix>` would render it twice and
+//     inflate the "N of M ids not found" arithmetic. Dedup is by the RESOLVED
+//     id; the ref-level set only keeps a repeated MISS from being listed twice.
+func (a *App) ShowBatch(refs []string, withBody bool) ([]ShowEntry, []string, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, nil, err
+	}
+	var (
+		epics       []core.Epic
+		epicsLoaded bool
+	)
+	out, missing := []ShowEntry{}, []string{}
+	seenRef, seenID := map[string]bool{}, map[string]bool{}
+	for _, ref := range refs {
+		if seenRef[ref] {
+			continue
+		}
+		seenRef[ref] = true
+		if t, i := idx.Find(ref); i >= 0 {
+			if seenID[t.ID] {
+				continue
+			}
+			seenID[t.ID] = true
+			body := ""
+			if withBody {
+				if body, err = a.Store.LoadBody(t.ID); err != nil {
+					return nil, nil, err
+				}
+			}
+			out = append(out, ShowEntry{Task: &ShowItem{Task: *t, Body: body}})
+			continue
+		}
+		if !epicsLoaded {
+			if epics, err = a.Store.LoadEpics(); err != nil {
+				return nil, nil, err
+			}
+			epicsLoaded = true
+		}
+		id, rerr := a.resolveEpicIn(ref, epics)
+		if rerr != nil {
+			// The store READ succeeded above, so this can only be "no such box"
+			// (or an ambiguous ref, which for a batch read is equally a miss).
+			missing = append(missing, ref)
+			continue
+		}
+		if seenID[id] {
+			continue
+		}
+		seenID[id] = true
+		d, err := a.EpicShow(id)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !withBody {
+			d.Body = ""
+		}
+		out = append(out, ShowEntry{Epic: d})
+	}
+	return out, missing, nil
+}
+
 // Backlinks returns the tasks whose body mentions id via the [[id]] wiki-link
 // notation, in canonical order. It is the pull-side twin of GitHub's "mentioned
 // in" panel — no server, no rate limit, just a scan of the local bodies (cheap
@@ -1980,15 +2071,34 @@ func (a *App) mutate(id string, fn func(*core.Task)) (*core.Task, error) {
 	return saved, nil
 }
 
-// EditPath ensures a task's body file exists (creating an empty one if needed)
-// and returns its absolute path for the CLI to hand to $EDITOR.
-func (a *App) EditPath(id string) (string, error) {
-	idx, err := a.load()
+// EditPath ensures the body file of the entity ref names exists (creating an
+// empty one if needed) and returns its absolute path for the CLI to hand to
+// $EDITOR.
+//
+// ref may name a TASK or an EPIC, routed by RefTargetsEpic — store membership,
+// never the id's prefix. There is nothing to specialize beyond the lookup: both
+// entities' prose lives in the one bodies/ directory (core.Epic.Body), so the
+// path this returns is the same kind of file either way. An unresolvable ref
+// fails as the entity its prefix suggests: NotFound (exit 1) for a task-shaped
+// one, the box resolver's exit 2 + candidates for an `e-` one.
+func (a *App) EditPath(ref string) (string, error) {
+	id := ref
+	epic, err := a.RefTargetsEpic(ref)
 	if err != nil {
 		return "", err
 	}
-	if !idx.Has(id) {
-		return "", core.NotFound(id)
+	if epic {
+		if id, err = a.ResolveEpic(ref); err != nil {
+			return "", err
+		}
+	} else {
+		idx, lerr := a.load()
+		if lerr != nil {
+			return "", lerr
+		}
+		if !idx.Has(id) {
+			return "", core.NotFound(id)
+		}
 	}
 	if !a.Store.BodyExists(id) {
 		if err := a.saveBody(id, ""); err != nil {
