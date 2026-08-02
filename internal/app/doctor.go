@@ -20,6 +20,47 @@ import (
 // vocabulary (core.SevError / core.SevWarn) untouched.
 const SevInfo = "info"
 
+// doctorCodes is the authoritative registry of every stable kebab-case finding
+// `code` that `furrow doctor` can emit — the same discipline as core's
+// lintCodes: this list, NOT the scattered emission sites in this file, is the
+// single source of truth, and `furrow vocab doctor-codes` prints it so the
+// docs drift guard can hold prose to it. Doctor's codes are a SEPARATE closed
+// vocabulary from lint's (they never flow through lint's --code filters —
+// see TestLintCodeRegistryCoversEmitted's carve-out), which is exactly why
+// they need their own registry: a vocabulary only lint's registry covered
+// would leave these unclaimable. EVERY new finding code MUST be registered
+// here; TestDoctorCodeRegistryCoversEmitted greps this file and fails if an
+// emitted code is missing.
+var doctorCodes = map[string]bool{
+	"board-ahead":              true,
+	"board-behind":             true,
+	"board-mid-operation":      true,
+	"board-missing":            true,
+	"board-unreadable":         true,
+	"dir-unresolved":           true,
+	"env-override":             true,
+	"env-override-broken":      true,
+	"global-config-clamp":      true,
+	"global-config-unreadable": true,
+	"no-boards":                true,
+	"no-body-union-merge":      true,
+	"schema-outdated":          true,
+	"schema-too-new":           true,
+	"scope-missing":            true,
+	"scope-shadowed":           true,
+}
+
+// DoctorCodeList returns the known doctor finding codes, sorted — the machine
+// source behind `furrow vocab doctor-codes`.
+func DoctorCodeList() []string {
+	out := make([]string, 0, len(doctorCodes))
+	for c := range doctorCodes {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // DoctorReport is what `furrow doctor` prints: the machine-wide board-setup
 // health check. Boards mirrors `furrow boards` (same probe) plus a git
 // freshness column; Resolutions simulates discovery at cwd and at every

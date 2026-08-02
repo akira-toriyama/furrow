@@ -561,9 +561,11 @@ until it does. On a real conflict sync **aborts the rebase automatically** (the
 board is never left with markers; your local sync commit survives) and exits 3
 with `"kind": "sync-conflict"` + `"details": {"paths": [...]}`. The progress object
 `{committed, pulled, pushed, conflict, complete, committed_bodies,
-pending_bodies, pending_stash}` prints to stdout on success and failure alike
-(empty lists omitted); **`complete`** — not `pushed` — is the "fully published"
-flag, `false` whenever a body or stash is left pending.
+pending_bodies, pending_stash, switches}` prints to stdout on success and
+failure alike (empty lists omitted); **`complete`** — not `pushed` — is the
+"fully published" flag, `false` whenever a body or stash is left pending, and
+`switches` names any `epic activate` records this sync published (the switch
+log's exit point).
 
 ### Sync failure modes
 

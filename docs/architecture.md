@@ -756,8 +756,8 @@ except where noted:
   co-writer's fetch can't race it), `push` (one retry on non-fast-forward), via
   the `internal/gitrepo` adapter. The progress object — stdout on success AND
   failure — carries `{committed, pulled, pushed, conflict, complete,
-  committed_bodies, pending_bodies, pending_stash}` (the lists omitted when
-  empty). `complete` is `false` whenever a body or stash is left pending (the
+  committed_bodies, pending_bodies, pending_stash, switches}` (the lists
+  omitted when empty; `switches` = the epic activations this sync published). `complete` is `false` whenever a body or stash is left pending (the
   stdout summary line names that count too), so a pushed-but-incomplete sync is
   never mistaken for a fully-published one. Failure modes, branch
   on the error `kind` (each also marked `retryable` or not in the envelope):
