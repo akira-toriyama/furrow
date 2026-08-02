@@ -257,7 +257,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `move <id>... <lane>` | Move tasks to a lane | — |
 | `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before` |
 | `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | — |
-| `set <id>...` | Apply several triage edits at once (lane, priority, value, effort, labels, type) | `--add-label`, `--after`, `--before`, `--clear-effort`, `--clear-value`, `--effort`, `-e/--epic`, `-p/--priority`, `--rm-label`, `-s/--status`, `--value` |
+| `set <id>...` | Apply several triage edits at once (lane, priority, value, effort, labels, epic) | `--add-label`, `--after`, `--before`, `--clear-effort`, `--clear-value`, `--effort`, `-e/--epic`, `-p/--priority`, `--rm-label`, `-s/--status`, `--value` |
 | `value <id> <1-5>` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear` |
 | `effort <id> <1-5>` | Set a task's effort estimate (coarse 1..5), or clear it with --clear | `--clear` |
 | `check <id> [item-index]` | Toggle, add, remove, or reword a checklist item | `--add`, `--off`, `--reword`, `--rm` |

@@ -54,27 +54,20 @@ the user-level config. When you work with any furrow store:
   command's one-liner or flags, edit `Short`/flag definitions in
   `internal/cli`, rerun the script, and commit both — never hand-edit between
   the READMEs' `commands:begin/end` markers.
-- **`ls --tree [<id>]` draws the parent hierarchy** — one tree per top-level task,
-  or just the subtree under `<id>`. It answers "what leads to this goal?", which was
-  otherwise a full-board dump and a script. Every filter still applies, and the
-  forest is built over what MATCHED: a task whose parent was filtered out becomes a
-  root, never disappears (so `--tree` can't show fewer tasks than the same flags
-  without it), and `-n` caps the number of TREES, not tasks. Each node carries the
-  two facts a flat list can't: **`actionable`** (exactly what `furrow next` would
-  hand you — in a next lane, every dep done; shown as ★) and **`blocked_by`** (the
-  deps that are NOT done — what is actually in the way). `--json` nests `children`;
-  `--ndjson` streams one whole tree per line.
-- **`parent <id> <parent-id>` moves a task in the HIERARCHY; `--rm` detaches it
-  (top-level); `--list` is its read-only both-directions view (`parent`, which is
-  `null` for a top-level task, and `children`, `[]` when none — same shape as `dep
-  --list`).** Before it, `parent` was write-once at `add --parent`, so re-filing a
-  task meant hand-editing a shard — the thing this file tells you never to do; if
-  you ever reached for `sed` on a `tasks/*.json`, this is the command you wanted.
-  Re-parenting is acyclic (missing parent / self / a loop = exit 2), and a **done**
-  parent is deliberately allowed — filing a leftover under the epic it came from is
-  a legitimate record. `lint` names the two states that follow: `parent-cycle`
-  (error, the git-merge backstop) and `parent-done` (warn — an open task under a
-  closed epic).
+- **`ls --tree [<epic>]` groups the rows by epic** — one group per box (plus the
+  unfiled group, `epic: null`), or just `<epic>`'s group. It answers "how does the
+  matched work distribute across the boxes?", which was otherwise a full-board
+  dump and a script. Every filter still applies, and the grouping is built over
+  what MATCHED (so `--tree` can't show fewer tasks than the same flags without
+  it); `-n` caps the number of GROUPS, not tasks. Each group carries the box's
+  `active` flag, its member roll-up `progress` (`{done,total}`), and `stuck`
+  (open members but none actionable — org-mode's stuck-project); each task row
+  still marks **actionable** (exactly what `furrow next` would hand you; shown as
+  ★). `--json` is an array of `{epic, active, progress, stuck, tasks}` groups;
+  `--ndjson` streams one whole group per line. A task's box is set at `add -e`,
+  or later with `set <id> -e <epic>` — membership is the `epic` field, 0..1 per
+  task, and `lint` errors `epic-required` on an open task filed under no box
+  once the board has any.
 - **An epic can WAIT ON other epics (schema v7): `furrow epic dep <id>
   <dep-id>...` / `--rm` / `--list`** — the task `dep` contract carried to boxes
   (variadic, all-or-nothing, acyclic on the write path, `--list` = both
@@ -102,28 +95,20 @@ the user-level config. When you work with any furrow store:
   active (it shows once, in the pinned band). furrow never binds NAMES to
   these flags — which boxes deserve them is the operator's convention
   (projects' reserved-epics.md).
-- **`type` is first-class; an epic is a container, declared not inferred (schema
-  v5).** A task carries a `type` from the closed `[types].order` vocabulary
-  (default `task`, `epic`; `default`/`containers` alongside it, same
-  clamp-don't-reject + exit-2-with-`candidates` discipline as lanes — and the
-  built-in default applies on a board with no `[types]` block, so an old board's
-  epics are containers the moment its binary is v5). A **container** type (default:
-  `epic`) is a box: `furrow next` SKIPS it (a box is not work — surface a ready one
-  with `next --containers`), `ls --tree` shows its rolled-up child `progress`
-  (`{done,total}`, direct children by default, whole subtree with
-  `--progress-recursive`) and a `stuck` flag (open work under it but no actionable
-  descendant, org-mode's stuck-project — always walks the subtree, through
-  sub-epics), and `revisit`/`sync` gain `children_done` (all children done —
-  consider closing) and `stuck_container`. Set with `add --type` / `set --type`,
-  filter with `ls --type` (by EFFECTIVE type, so `--type task` includes the
-  type-less majority), read the vocab with `furrow board`. **Not inferred from
-  structure**: an empty epic is a legitimate declaration (never nags
-  `children_done`), and a plain task that happens to have children is NOT a box.
-  furrow never auto-closes a container. `lint` warns `unknown-type` (a stray type)
-  and `dep-mirrors-children` (a task whose deps point at its own children — the
-  pre-v5 epic↔slice workaround; unwind with `dep <id> --rm`). The invariant
-  `[types].default ∉ [types].containers` is enforced (a container default is
-  clamped, else every type-less shard would vanish from `next`).
+- **An epic is its OWN entity, not a task type (schema v6 replaced the v5
+  `type`/`parent` world — `Task.Type`, `Task.Parent`, `[types]`, `furrow
+  parent`, `next --containers`, and the `parent-cycle`/`parent-done`/
+  `unknown-type`/`dep-mirrors-children` lint codes are all GONE).** A box lives
+  in `.furrow/epics/<e-id>.json` (id prefix `[ids].epic_prefix`, default `e-`)
+  with title / `goal` (the one-line closing condition, optional) / `active` /
+  labels / repos / `meta` (a flat string map furrow never interprets) /
+  open-closed state — no lanes, no value/effort/priority. Its prose shares the
+  task `bodies/` directory (see `note`/`edit` routing below). A box is not work:
+  `furrow next` hands out only tasks, an epic's "progress" is the member
+  roll-up, and furrow never auto-closes a box (`revisit`/`sync` raise
+  `epic_all_done` instead). Epic refs resolve as exact id, unique id prefix, or
+  unique title substring (a miss/ambiguity is exit 2 with `candidates` — kinds
+  `epic-not-found`/`epic-ambiguous`).
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
   issue-draft analogue). `-r` is the scope control on reads: a full
