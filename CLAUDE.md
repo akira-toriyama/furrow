@@ -326,6 +326,19 @@ the user-level config. When you work with any furrow store:
   `apply` annotation path it never dedupes and always advances `updated`, so the
   time-based lint stays honest. `--json` emits the `{before,after,changed}`
   envelope plus `appended` (the text), since `changed` tracks metadata only.
+  **`note` takes an EPIC id too** (`furrow note e-k3m9 "<text>"`): tasks and
+  boxes share one `bodies/` directory, so a box's progress record is the same
+  write to the same file and only the shard that stamps `updated` differs —
+  which is why there is no `epic note` verb. **MEMBERSHIP routes it, never the
+  id's prefix**: a ref naming a real task is the task, else a ref the epic store
+  resolves (exact id, unique prefix, unique title substring — the epic-ref
+  contract) is that box, else the prefix picks only whose ERROR you get (an
+  unknown BOX is exit 2 with `candidates`, an unknown task id exit 1). A prefix
+  guess is wrong here for the same reason `sync`'s activation scan refuses one:
+  `[ids].epic_prefix` may EXTEND `[ids].prefix`, and ids are prefix + random
+  base32, so on such a board ~1 task id in 32 is shaped like an epic id. The
+  envelope is the noted entity's own. `edit` and `show` are still task-only: an
+  epic body is read with `furrow epic show <id>` and written with `note`.
   Closing with a word — the reslice's "→ continued in t-xxx", the one-liner at
   close time — is that contract folded into the close: **`furrow done <id>...
   --note "<text>"`** appends the note to every closed task's body in the same

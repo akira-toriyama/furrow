@@ -1326,26 +1326,46 @@ func emitEpicMutation(mutate func() (*core.Epic, *core.Epic, error)) error {
 	return emitEpicMutationResult(before, after, nil)
 }
 
-// emitEpicMutationResult renders the epic {before,after,changed} envelope.
-// openDeps, when non-empty, rides beside it as `open_deps` — activate's
-// crossed-ordering warning made machine-readable (the same pattern as
-// reorder's `renumbered` and set's `clamped`: an envelope key for the fact the
-// stderr note narrates).
-func emitEpicMutationResult(before, after *core.Epic, openDeps []string) error {
+// emitEpicMutationResult renders the epic {before,after,changed} envelope, with
+// any extra top-level keys merged in — activate's `open_deps` (its
+// crossed-ordering warning made machine-readable), note's `appended`. Same
+// escape hatch, and same reason, as the task side's mutationEnvelope: an
+// envelope key for the fact a stderr note narrates.
+func emitEpicMutationResult(before, after *core.Epic, extra map[string]any) error {
 	if jsonMode() {
-		env := map[string]any{
-			"before":  before,
-			"after":   after,
-			"changed": changedEpicFields(before, after),
-		}
-		if len(openDeps) > 0 {
-			env["open_deps"] = openDeps
-		}
-		emitObject(env)
+		emitObject(epicMutationEnvelope(before, after, extra))
 		return nil
 	}
 	fmt.Fprintf(out, "%s  %s\n", after.ID, after.Title)
 	return nil
+}
+
+// printEpicMutation is printMutation's epic twin: the same verb-prefixed human
+// line, so a command that takes EITHER entity's id (`furrow note`) reads
+// identically whichever one it addressed. The epic subtree's own verbs keep
+// emitEpicMutationResult's bare `<id>  <title>` line — there the verb is
+// already in the command.
+func printEpicMutation(verb string, before, after *core.Epic, extra map[string]any) {
+	if jsonMode() {
+		emitObject(epicMutationEnvelope(before, after, extra))
+		return
+	}
+	fmt.Fprintf(out, "%s %s  %s\n", verb, after.ID, after.Title)
+}
+
+// epicMutationEnvelope builds the epic {before, after, changed} object — the
+// single assembly point for the shape, for the reason mutationEnvelope
+// documents on the task side: assembled twice, a new key gets added once.
+func epicMutationEnvelope(before, after *core.Epic, extra map[string]any) map[string]any {
+	m := map[string]any{
+		"before":  before,
+		"after":   after,
+		"changed": changedEpicFields(before, after),
+	}
+	for k, v := range extra {
+		m[k] = v
+	}
+	return m
 }
 
 // changedEpicFields names the epic fields a mutation actually altered — the

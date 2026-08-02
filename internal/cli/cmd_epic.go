@@ -241,7 +241,11 @@ func newEpicActivateCmd() *cobra.Command {
 				fmt.Fprintf(errOut, "note: %s still waits on open epic(s) %s — activating anyway; `furrow epic dep %s --list` shows the edges\n",
 					after.ID, strings.Join(openDeps, ", "), after.ID)
 			}
-			return emitEpicMutationResult(before, after, openDeps)
+			var extra map[string]any
+			if len(openDeps) > 0 {
+				extra = map[string]any{"open_deps": openDeps}
+			}
+			return emitEpicMutationResult(before, after, extra)
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "who asked for this switch and why (recorded in the epic's body)")

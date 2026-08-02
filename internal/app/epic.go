@@ -399,6 +399,89 @@ func (a *App) recordSwitch(id, reason string) error {
 	return a.appendBody(id, line)
 }
 
+// EpicNote appends text as a new paragraph to an EPIC's body AND stamps the
+// box's Updated — AddNote's box twin, and deliberately the SAME operation
+// rather than a second one wearing an epic's name: epic bodies live in the
+// task bodies/ directory (see core.Epic.Body), appendBody is shared, and the
+// only thing that differs is which shard's `updated` moves. That is why
+// `furrow note` routes to it (NoteTargetsEpic) instead of growing an `epic
+// note` verb — a box's progress record is not a different kind of writing.
+//
+// The write ORDER matches AddNote's for the same reason: the body lands inside
+// the mutate closure, i.e. before mutateEpic stamps Updated and saves the
+// shard, so a partial failure costs a timestamp, never content, and a re-run
+// re-appends and fixes Updated.
+//
+// ref resolves like every other epic reference (exact id, unique id prefix,
+// unique title substring) — so an unknown box is exit 2 with candidates, not
+// the task path's exit 1. An empty/whitespace-only note is exit 2, checked
+// BEFORE resolution exactly as AddNote checks it before the index load.
+func (a *App) EpicNote(ref, text string) (*core.Epic, *core.Epic, error) {
+	text, err := normalizeNote(ref, text)
+	if err != nil {
+		return nil, nil, err
+	}
+	return a.mutateEpic(ref, func(e *core.Epic) error { return a.appendBody(e.ID, text) })
+}
+
+// NoteTargetsEpic reports whether a body-keyed write for ref belongs to the
+// EPIC store rather than the task index — the routing decision behind `furrow
+// note <id>` taking either entity.
+//
+// MEMBERSHIP decides, never the id's prefix. sync.go's publishedSwitches
+// already states the rule and the reason ("Membership in the epic store — not
+// an id-prefix guess — decides ... so a custom [ids] prefix cannot fool the
+// scan"), and a prefix guess really does misroute here: config accepts an
+// [ids].epic_prefix that EXTENDS [ids].prefix (or, through a clamp that is a
+// no-op when the colliding value is the default, one equal to it), and ids are
+// prefix + random base32 — so under `prefix = "t-"` with `epic_prefix = "t-e"`,
+// roughly one TASK id in 32 is shaped like an epic id. A shape test hands those
+// to the box path, and `furrow note` on an ordinary task fails.
+//
+// So: a ref that names a real task is a task, always; else a ref the epic store
+// RESOLVES (exact id → unique id prefix → unique title substring, the contract
+// every other epic reference follows) is that box; else the shape decides — and
+// only to pick whose ERROR the caller gets (an unknown `e-` id deserves the
+// epic resolver's exit 2 + candidates, an unknown task id the task path's exit
+// 1), never where a write lands. It therefore returns an error only when the
+// store cannot be read: an unresolvable ref is a routing answer, not a failure,
+// which is what keeps the write paths' own validation order intact (an empty
+// note is still exit 2 before any lookup).
+func (a *App) NoteTargetsEpic(ref string) (bool, error) {
+	idx, err := a.load()
+	if err != nil {
+		return false, err
+	}
+	if idx.Has(ref) {
+		return false, nil
+	}
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return false, err
+	}
+	if _, err := a.resolveEpicIn(ref, epics); err == nil {
+		return true, nil
+	}
+	return a.isEpicIDShape(ref), nil
+}
+
+// isEpicIDShape reports whether ref LOOKS like an epic id ([ids].epic_prefix +
+// base32) — "an id names its entity kind on sight" (core.Epic.ID). It is a
+// guess, deliberately confined to choosing the error for a ref that resolved to
+// nothing at all: see NoteTargetsEpic for why it must never route a write.
+func (a *App) isEpicIDShape(ref string) bool {
+	if !a.Cfg.EpicIDPattern().MatchString(ref) {
+		return false
+	}
+	if a.Cfg.IDPattern().MatchString(ref) {
+		// Both shapes match — one prefix extends the other. The longer prefix is
+		// the more specific claim, so it picks the error. Nothing is written on
+		// this branch either way.
+		return len(a.Cfg.EpicIDPrefix) > len(a.Cfg.IDPrefix)
+	}
+	return true
+}
+
 // EpicDeactivate closes the box for work without closing the box.
 func (a *App) EpicDeactivate(ref string) (*core.Epic, *core.Epic, error) {
 	return a.mutateEpic(ref, func(e *core.Epic) error { e.Active = false; return nil })
