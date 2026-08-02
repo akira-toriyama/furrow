@@ -75,12 +75,14 @@ type Term struct {
 type Query []Term
 
 // ParseError is a positioned parse/type failure. The App maps it to an exit-2
-// envelope (id "query-parse"); Field names the offending qualifier when known so
-// a caller can attach did-you-mean candidates.
+// envelope (kind "query-parse"). It deliberately carries no Field: the faults
+// raised here (a missing value, a half-open range) are about a term's SHAPE,
+// so there is no vocabulary to offer as candidates — the unknown-field and
+// unknown-flag faults, which do have one, are classified in internal/app
+// where the vocabularies live (query-unknown-field / query-unknown-flag).
 type ParseError struct {
-	Msg   string
-	Term  string // the raw term that failed ("" for a whole-string fault)
-	Field string // the qualifier field, when the fault is field-specific
+	Msg  string
+	Term string // the raw term that failed ("" for a whole-string fault)
 }
 
 func (e *ParseError) Error() string {
@@ -214,7 +216,7 @@ func splitQualifier(raw string) (field, rest string, hasColon bool) {
 // parseQualifier turns the value part of field:value into Op + Values.
 func parseQualifier(field, rest string, not bool, raw string) (Term, error) {
 	if rest == "" {
-		return Term{}, &ParseError{Msg: "qualifier " + field + ": needs a value", Term: raw, Field: field}
+		return Term{}, &ParseError{Msg: "qualifier " + field + ": needs a value", Term: raw}
 	}
 	t := Term{Kind: Qualifier, Not: not, Field: field, Op: Eq}
 
@@ -226,7 +228,7 @@ func parseQualifier(field, rest string, not bool, raw string) (Term, error) {
 		if strings.HasPrefix(rest, c.pre) {
 			v := strings.TrimPrefix(rest, c.pre)
 			if v == "" {
-				return Term{}, &ParseError{Msg: "comparison " + c.pre + " needs a value", Term: raw, Field: field}
+				return Term{}, &ParseError{Msg: "comparison " + c.pre + " needs a value", Term: raw}
 			}
 			uv, err := scalar(v)
 			if err != nil {
@@ -242,7 +244,7 @@ func parseQualifier(field, rest string, not bool, raw string) (Term, error) {
 	// separator — one inside quotes (title:'a..b') is value content.
 	if lo, hi, ok := cutRange(rest); ok {
 		if lo == "" || hi == "" {
-			return Term{}, &ParseError{Msg: "range needs both bounds (lo..hi; use * for an open end)", Term: raw, Field: field}
+			return Term{}, &ParseError{Msg: "range needs both bounds (lo..hi; use * for an open end)", Term: raw}
 		}
 		ulo, err := scalar(lo)
 		if err != nil {
@@ -263,7 +265,7 @@ func parseQualifier(field, rest string, not bool, raw string) (Term, error) {
 		return Term{}, err
 	}
 	if len(vals) == 0 {
-		return Term{}, &ParseError{Msg: "qualifier " + field + ": needs a value", Term: raw, Field: field}
+		return Term{}, &ParseError{Msg: "qualifier " + field + ": needs a value", Term: raw}
 	}
 	t.Values = vals
 	return t, nil
