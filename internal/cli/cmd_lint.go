@@ -18,10 +18,11 @@ func newLintCmd() *cobra.Command {
 		Use:   "lint",
 		Short: "Check index<->body consistency, lanes, deps, links, assets, and config",
 		Long: "Validate the store: id shape and uniqueness, status lanes, body path, the\n" +
-			"index<->body 1:1 mapping, dep/parent references, dependency and hierarchy\n" +
-			"cycles — dep-cycle / parent-cycle (both error; a parent cycle has no root, so\n" +
-			"every task in it belongs to no tree), an open task still under a done parent\n" +
-			"— parent-done (warn: the epic closed with work left under it),\n" +
+			"index<->body 1:1 mapping, dep references and dependency cycles — dep-cycle\n" +
+			"(error), the epic linkage — an open task filed under no box once the board\n" +
+			"has any (epic-required, error), under a missing box (epic-missing, error),\n" +
+			"or under a closed one (epic-closed, warn: the box closed with work left\n" +
+			"under it), and cycles in the epic dep graph (epic-dep-cycle, error),\n" +
 			"git conflict markers left in a body — conflict-marker, a half-merged progress\n" +
 			"record (error; `furrow sync` refuses to commit one, this catches the ones\n" +
 			"already on the board), dangling [[id]] body links (warn), reconcile gaps — an open task whose done\n" +
@@ -45,7 +46,7 @@ func newLintCmd() *cobra.Command {
 			"exits 0 (errors, if any, are hidden by the filter).",
 		Example: "  furrow lint\n" +
 			"  furrow lint --severity error         # errors only (the CI gate)\n" +
-			"  furrow lint --exclude-code reconcile-gap,dep-mirrors-children\n" +
+			"  furrow lint --exclude-code reconcile-gap,epic-no-active\n" +
 			"  furrow lint --code dangling-link --json",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

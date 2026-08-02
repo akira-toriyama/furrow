@@ -520,7 +520,7 @@ func newDepCmd() *cobra.Command {
 
 // newSetCmd combines the routine triage edits (lane, position, value, effort,
 // labels, type) into one write, so triaging a task no longer means running move
-// + reorder + value + effort + label + set --type as separate commands.
+// + reorder + value + effort + label + epic as separate commands.
 func newSetCmd() *cobra.Command {
 	var (
 		status      string
@@ -537,14 +537,15 @@ func newSetCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "set <id>...",
-		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, type)",
+		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, epic)",
 		Long: "Combine the routine triage edits into a single write: move a lane (-s),\n" +
 			"position the task (--priority, or --before/--after a task in the destination\n" +
 			"lane — so a cross-lane drop is lane + position in ONE write), set or clear\n" +
-			"the 1..5 value/effort estimates, add/remove labels, and set the work-item\n" +
-			"type (--type) — instead of running move + reorder + value + effort + label\n" +
-			"as separate commands. At least one change is required; an unknown lane OR\n" +
-			"type is exit 2 with the configured vocabulary in candidates (like move/add),\n" +
+			"the 1..5 value/effort estimates, add/remove labels, and file the task under\n" +
+			"an epic (-e) — instead of running move + reorder + value + effort + label\n" +
+			"as separate commands. At least one change is required; an unknown lane is\n" +
+			"exit 2 with the configured lanes in candidates (like move/add) and an\n" +
+			"unresolvable -e epic exits 2 with the known boxes,\n" +
 			"a relative target outside the destination lane is exit 2, and under\n" +
 			"[labels].required a set that would strip the last label is refused. A\n" +
 			"relative placement that has to respace the lane does so in the same write\n" +
@@ -557,7 +558,7 @@ func newSetCmd() *cobra.Command {
 			"more ids.",
 		Example: "  furrow set t-k3m9p -s ready --value 4 --effort 2 --add-label bug\n" +
 			"  furrow set t-k3m9p -s ready --before t-x1y2z\n" +
-			"  furrow set t-k3m9p --type epic\n" +
+			"  furrow set t-k3m9p -e e-v0zd\n" +
 			"  furrow set t-k3m9p t-x1y2z t-9f2qr -s backlog --add-label triaged\n" +
 			"  furrow set t-k3m9p --clear-value --rm-label wip",
 		Args: cobra.MinimumNArgs(1),
