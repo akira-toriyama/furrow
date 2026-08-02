@@ -186,15 +186,24 @@ func newMoveCmd() *cobra.Command {
 func newNoteCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "note <id> <text>",
-		Short: "Append a paragraph to a task's body and advance its updated time",
-		Long: "Append <text> as a new paragraph to bodies/<id>.md AND stamp the task's\n" +
+		Short: "Append a paragraph to a task's or epic's body and advance its updated time",
+		Long: "Append <text> as a new paragraph to bodies/<id>.md AND stamp the entity's\n" +
 			"`updated` time, in one command — the in-band way to record progress, stop-points,\n" +
 			"and next steps across sessions. Unlike hand-editing the file (what `furrow\n" +
 			"edit` hands an agent), it keeps `updated` honest, so `furrow lint`'s\n" +
 			"reconcile-gap check does not misfire on a task whose progress lives only in\n" +
 			"its body. Pass `-` as <text> to read the note from stdin (for multi-line or\n" +
-			"long notes).",
+			"long notes).\n\n" +
+			"<id> may name a TASK or an EPIC — the two share the bodies/ directory, so a\n" +
+			"box's progress record is the same operation on the same file, and only the\n" +
+			"shard that stamps `updated` differs. MEMBERSHIP routes it, not the id's\n" +
+			"prefix: a ref naming a real task is always the task, else a ref the epic\n" +
+			"store resolves (exact id, unique id prefix, unique title substring — every\n" +
+			"other epic reference's contract) is that box. A ref that resolves to neither\n" +
+			"fails on the side its prefix suggests: an unknown `e-` id is exit 2 with\n" +
+			"candidates, an unknown task id exit 1.",
 		Example: "  furrow note t-k3m9p \"検証完了。次: アダプタ選定。\"\n" +
+			"  furrow note e-k3m9 \"方針: v7 の pinned に寄せる。\"\n" +
 			"  git log -1 --format=%B | furrow note t-k3m9p -",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -206,13 +215,25 @@ func newNoteCmd() *cobra.Command {
 			if terr != nil {
 				return terr
 			}
+			// `changed` tracks metadata fields only, so a note (body + updated)
+			// would show changed:[] — surface the effect instead. Both entities
+			// carry the same key, so a caller reads one shape either way.
+			appended := map[string]any{"appended": strings.TrimRight(text, "\n")}
+			epic, rerr := a.NoteTargetsEpic(args[0])
+			if rerr != nil {
+				return rerr
+			}
+			if epic {
+				before, after, nerr := a.EpicNote(args[0], text)
+				if nerr != nil {
+					return nerr
+				}
+				printEpicMutation("noted", before, after, appended)
+				return nil
+			}
 			return emitMutationWith(a, "noted", args[0],
 				func() (*core.Task, error) { return a.AddNote(args[0], text) },
-				func(after *core.Task) map[string]any {
-					// `changed` tracks metadata fields only, so a note (body +
-					// updated) would show changed:[] — surface the effect instead.
-					return map[string]any{"appended": strings.TrimRight(text, "\n")}
-				})
+				func(after *core.Task) map[string]any { return appended })
 		},
 	}
 }

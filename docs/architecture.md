@@ -706,7 +706,18 @@ except where noted:
   activated at all, or it would bypass the count) and records the switch in the
   epic's BODY (`recordSwitch`: a timestamped line, `--reason` appended) — furrow
   does not police WHO switches, it makes the switch visible: `furrow sync`
-  reports the activation records it publishes. Activating a box whose `deps`
+  reports the activation records it publishes. That body is also what
+  **`furrow note <epic-id>`** appends to (`App.EpicNote` → the shared
+  `appendBody`, then `mutateEpic`'s `updated` stamp — the task path's write
+  order, so a partial failure costs a timestamp and never content). There is no
+  `epic note` verb because the two entities share `bodies/` and only the shard
+  that stamps `updated` differs; the CLI routes on **`App.NoteTargetsEpic`**,
+  which decides by MEMBERSHIP (task index → epic store → for a ref that resolves
+  to neither, the id shape, and then only to choose which store's ERROR the
+  caller gets). The same rule `publishedSwitches` states — an id-prefix guess
+  must not decide whose body a file is — and for the same reason: `[ids]`
+  accepts an `epic_prefix` that extends `prefix`, and ids are prefix + random
+  base32, so a shape test captures ~1 id in 32 of the shorter-prefixed entity. Activating a box whose `deps`
   are not all closed likewise WARNS and proceeds (a stderr note + `open_deps`
   beside the envelope; `lint`'s `epic-dep-open` keeps it visible after). `done` stamps `closed` and
   clears `active` in the SAME write (a closed box holding its repos' slots
