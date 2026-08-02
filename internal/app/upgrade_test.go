@@ -162,7 +162,7 @@ func TestArchiveOnAnOutdatedBoardWritesNothing(t *testing.T) {
 
 	_, err = a.ArchiveIDs([]string{tk.ID}, false)
 	var fe *core.Error
-	if !errors.As(err, &fe) || fe.ID != "schema-upgrade-required" {
+	if !errors.As(err, &fe) || fe.Kind != core.KindSchemaUpgradeRequired {
 		t.Fatalf("archive onto an outdated board = %v, want schema-upgrade-required", err)
 	}
 
@@ -210,7 +210,7 @@ func TestUpgradeRefusesNewerBoard(t *testing.T) {
 	}
 	_, err = a.Upgrade(true)
 	var fe *core.Error
-	if !errors.As(err, &fe) || fe.ID != "schema-too-new" {
+	if !errors.As(err, &fe) || fe.Kind != core.KindSchemaTooNew {
 		t.Fatalf("Upgrade error = %v, want id schema-too-new", err)
 	}
 	if fe.Code != core.CodeInternal {

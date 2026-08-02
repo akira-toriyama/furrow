@@ -48,14 +48,20 @@ func resolveRepoIn(arg, id string, universe []string) (string, error) {
 	case len(m) > 1:
 		return "", &core.Error{
 			Code:       core.CodeValidation,
-			ID:         id,
+			Kind:       core.KindRepoAmbiguous,
+			Subject:    id,
 			Msg:        fmt.Sprintf("repo %q is ambiguous (matches %s); use the full owner/repo form", arg, strings.Join(m, ", ")),
 			Candidates: m,
 		}
 	case core.IsRepoShaped(arg):
 		return arg, nil
 	default:
-		return "", core.Validationf(id, "repo %q matches no known repo; use the full owner/repo form", arg)
+		return "", &core.Error{
+			Code:    core.CodeValidation,
+			Kind:    core.KindRepoUnknown,
+			Subject: id,
+			Msg:     fmt.Sprintf("repo %q matches no known repo; use the full owner/repo form", arg),
+		}
 	}
 }
 
@@ -184,6 +190,7 @@ func (a *App) DidYouMeanRepo(label string) error {
 	}
 	return &core.Error{
 		Code:       core.CodeValidation,
+		Kind:       core.KindValidation,
 		Msg:        fmt.Sprintf("label %q matches no tasks; repo %s has %d task(s) — use -r %s", label, m[0], n, label),
 		Candidates: []string{m[0]},
 	}

@@ -169,7 +169,7 @@ func TestShowSingleMissKeepsClassicErrorPlusDetails(t *testing.T) {
 	if fe == nil || fe.Code != core.CodeNotFound {
 		t.Fatalf("single miss should be CodeNotFound, got %+v", fe)
 	}
-	if fe.Msg != "task not found: t-zzzz1" || fe.ID != "t-zzzz1" {
+	if fe.Msg != "task not found: t-zzzz1" || fe.Subject != "t-zzzz1" {
 		t.Errorf("single-id miss must keep the classic error shape, got %+v", fe)
 	}
 	want := map[string][]string{"missing": {"t-zzzz1"}}

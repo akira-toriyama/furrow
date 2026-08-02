@@ -57,7 +57,7 @@ func TestSaveNeverRaisesBoardVersion(t *testing.T) {
 
 	err := s.Save(&core.Index{Tasks: []core.Task{{ID: "t-0001", Title: "x"}}})
 	var fe *core.Error
-	if !errors.As(err, &fe) || fe.ID != "schema-upgrade-required" {
+	if !errors.As(err, &fe) || fe.Kind != core.KindSchemaUpgradeRequired {
 		t.Fatalf("Save error = %v, want id schema-upgrade-required", err)
 	}
 	if fe.Code != core.CodeValidation {

@@ -32,8 +32,8 @@ func TestLsRefusesNewerBoard(t *testing.T) {
 	if fe == nil || fe.Code != core.CodeInternal {
 		t.Fatalf("ls on a v99 board: err = %v, want exit %d", fe, core.CodeInternal)
 	}
-	if fe.ID != "schema-too-new" {
-		t.Errorf("id = %q, want schema-too-new (agents branch on the id)", fe.ID)
+	if fe.Kind != core.KindSchemaTooNew {
+		t.Errorf("kind = %q, want schema-too-new (agents branch on the kind)", fe.Kind)
 	}
 
 	// Mutations are gated the same way (Load happens before any write).
@@ -67,8 +67,8 @@ func TestReadsSurviveAnOutdatedBoard(t *testing.T) {
 	if fe == nil {
 		t.Fatal("add on an outdated board must refuse — it used to silently migrate it")
 	}
-	if fe.ID != "schema-upgrade-required" || fe.Code != core.CodeValidation {
-		t.Errorf("err = {id:%q code:%d}, want {schema-upgrade-required 2}", fe.ID, fe.Code)
+	if fe.Kind != core.KindSchemaUpgradeRequired || fe.Code != core.CodeValidation {
+		t.Errorf("err = {kind:%q exit:%d}, want {schema-upgrade-required 2}", fe.Kind, fe.Code)
 	}
 	d, ok := fe.Details.(map[string]any)
 	if !ok || d["board_schema"] != 3 || d["binary_schema"] != core.SchemaVersion {
@@ -212,7 +212,7 @@ func TestSchemaBlockIsCIAgnostic(t *testing.T) {
 	setBoardSchema(t, "3")
 
 	fe, _ := runErr(t, "add", "nope")
-	if fe == nil || fe.ID != "schema-upgrade-required" {
+	if fe == nil || fe.Kind != core.KindSchemaUpgradeRequired {
 		t.Fatalf("want schema-upgrade-required, got %+v", fe)
 	}
 	if !strings.Contains(fe.Msg, "furrow upgrade") {

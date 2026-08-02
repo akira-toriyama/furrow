@@ -1192,6 +1192,7 @@ func validateSortField(field string) error {
 	}
 	return &core.Error{
 		Code:       core.CodeValidation,
+		Kind:       core.KindValidation,
 		Msg:        fmt.Sprintf("unknown sort field %q (valid: %s)", field, strings.Join(core.SortFields, ", ")),
 		Candidates: append([]string(nil), core.SortFields...),
 	}
@@ -1377,6 +1378,7 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, error) {
 	if len(missing) > 0 {
 		return nil, &core.Error{
 			Code:    core.CodeNotFound,
+			Kind:    core.KindNotFound,
 			Msg:     fmt.Sprintf("%d of %d ids not found — nothing was moved", len(missing), len(order)+len(missing)),
 			Details: map[string]any{"missing": missing},
 		}
@@ -1930,6 +1932,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 	if len(missing) > 0 {
 		return nil, &core.Error{
 			Code:    core.CodeNotFound,
+			Kind:    core.KindNotFound,
 			Msg:     fmt.Sprintf("%d of %d ids not found — nothing was set", len(missing), len(order)+len(missing)),
 			Details: map[string]any{"missing": missing},
 		}
@@ -2299,7 +2302,8 @@ func matchAnyLane(filter, lane string) bool {
 func (a *App) unknownLaneErr(id, lane string) *core.Error {
 	return &core.Error{
 		Code:       core.CodeValidation,
-		ID:         id,
+		Kind:       core.KindUnknownLane,
+		Subject:    id,
 		Msg:        fmt.Sprintf("unknown lane %q (configured: %s)", lane, strings.Join(a.Cfg.Lanes, ", ")),
 		Candidates: append([]string(nil), a.Cfg.Lanes...),
 	}

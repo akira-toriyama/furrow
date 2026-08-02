@@ -15,6 +15,7 @@ import (
 // here can never be a second copy that itself drifts:
 //
 //   - config-keys:          reflection over internal/config's decode struct
+//   - error-kinds:          core's error-kind registry (the envelope's `kind`)
 //   - lint-codes:           core's lint-code registry (the `--code` candidates)
 //   - revisit-codes:        core's revisit signal constants
 //   - revisit-summary-keys: reflection over RevisitSummary's json tags
@@ -27,6 +28,7 @@ import (
 func Vocabularies() map[string][]string {
 	return map[string][]string{
 		"config-keys":          config.TopLevelKeys(),
+		"error-kinds":          core.ErrorKindList(),
 		"lint-codes":           core.LintCodeList(),
 		"revisit-codes":        core.RevisitCodeList(),
 		"revisit-summary-keys": revisitSummaryKeys(),

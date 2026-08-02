@@ -87,7 +87,7 @@ func Execute() int {
 	// usage/parse problem, which is a validation error by contract.
 	fe := core.AsError(err)
 	if fe == nil {
-		fe = &core.Error{Code: core.CodeValidation, Msg: err.Error()}
+		fe = &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: err.Error()}
 	}
 	// Remap a signal-caused interruption to 128+signal, leaving the envelope's
 	// code field consistent with the process exit code.
@@ -136,7 +136,7 @@ func installSignalTrap(parent context.Context) (ctx context.Context, caught *ato
 // sync-conflict racing a signal, which is a definitive result, not a
 // cancellation (see app.interruptError). caughtSig is 0 when no signal arrived.
 func interruptedExitCode(fe *core.Error, caughtSig int64) core.Code {
-	if caughtSig != 0 && fe.ID == "sync-interrupted" {
+	if caughtSig != 0 && fe.Kind == core.KindSyncInterrupted {
 		return core.Code(128 + caughtSig)
 	}
 	return fe.Code
@@ -160,14 +160,17 @@ func newRootCmd() *cobra.Command {
 			"separate front-end that speaks this CLI's JSON. Both you and Claude Code can\n" +
 			"edit the store cleanly.\n\n" +
 			"Exit codes: 0 ok (an empty query result is still 0) · 1 a specifically requested\n" +
-			"id was not found (e.g. show <id>) or `furrow doctor` found problems (id\n" +
+			"id was not found (e.g. show <id>) or `furrow doctor` found problems (kind\n" +
 			"doctor-unhealthy) · 2 bad usage / validation (fix the args, do\n" +
 			"not retry) · 3+ internal / IO (130/143 when a SIGINT/SIGTERM interrupted the\n" +
 			"run — 128+signal by Unix convention). On a non-zero exit an\n" +
-			"{\"error\":{code,id,message[,details][,candidates]}} object is written to stderr;\n" +
-			"stdout stays pure data (JSON with --json), so piping stdout to jq is always clean.\n\n" +
+			"{\"error\":{kind,subject,retryable,exit,message[,details][,candidates]}} object is\n" +
+			"written to stderr; stdout stays pure data (JSON with --json), so piping stdout to\n" +
+			"jq is always clean. Branch on `kind` (a closed kebab-case vocabulary — `furrow\n" +
+			"vocab error-kinds` prints it) and on `retryable` (true = re-running the same\n" +
+			"command is the documented recovery), never on the message prose.\n\n" +
 			"The board's layout version gates writes, and it is an INPUT — an ordinary write\n" +
-			"never raises it (only `furrow upgrade` does). Two ids say which side is stale,\n" +
+			"never raises it (only `furrow upgrade` does). Two kinds say which side is stale,\n" +
 			"and the exit code alone tells them apart:\n" +
 			"  schema-upgrade-required (exit 2) the BOARD is behind this binary. It stays\n" +
 			"                                   fully READABLE but is read-only until\n" +
@@ -181,6 +184,25 @@ func newRootCmd() *cobra.Command {
 			"than provoking an error; `furrow lint` warns schema-outdated.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// An unknown TOP-LEVEL command gets the same structured error every
+		// child parent (`config`, `epic`, …) already returns — kind
+		// unknown-subcommand + the known names in candidates — instead of
+		// cobra's tab-formatted prose, which carried neither. ArbitraryArgs is
+		// what routes the unknown token here: with Args nil, cobra's
+		// root-only legacyArgs check (inside Find) intercepts it with that
+		// bare prose before any RunE. It MUST be this RunE, not a pre-flight
+		// Find before ExecuteContext: cobra registers `help`, `completion`,
+		// and the hidden `__complete`/`__completeNoDesc` inside ExecuteC, so
+		// an earlier Find would reject those five as unknown — killing every
+		// installed shell completion (the generated script calls
+		// `furrow __complete` on each TAB). Bare `furrow` keeps printing help.
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return cmd.Help()
+			}
+			return unknownSubcommandErr(cmd, args[0])
+		},
 		// After a SUCCESSFUL mutating command, autocommit the board when it opted
 		// in (user-config [[board]] autocommit=true). cobra runs only the nearest
 		// PersistentPostRunE up the tree and ONLY on RunE success; no subcommand
@@ -328,7 +350,7 @@ func aliasShadowProblems(aliases map[string]string) []core.Problem {
 // candidates, so an agent branches on the array instead of the exit-0 help
 // prose cobra prints by default (the root's own unknown-command path already
 // exits 2 — this gives a parent like `config` the same contract).
-func unknownSubcommandErr(cmd *cobra.Command, sub string) error {
+func unknownSubcommandErr(cmd *cobra.Command, sub string) *core.Error {
 	var names []string
 	for _, c := range cmd.Commands() {
 		if c.Hidden || c.Name() == "help" || c.Name() == "completion" {
@@ -339,6 +361,7 @@ func unknownSubcommandErr(cmd *cobra.Command, sub string) error {
 	sort.Strings(names)
 	return &core.Error{
 		Code:       core.CodeValidation,
+		Kind:       core.KindUnknownSubcommand,
 		Msg:        fmt.Sprintf("unknown subcommand %q for %q (known: %s)", sub, cmd.CommandPath(), strings.Join(names, ", ")),
 		Candidates: names,
 	}
@@ -367,8 +390,17 @@ func openApp() (*app.App, error) {
 // caller piping stdout to jq is unaffected).
 func renderError(fe *core.Error) {
 	type errBody struct {
-		Code    int    `json:"code"`
-		ID      string `json:"id,omitempty"`
+		// Kind is the closed-vocabulary failure class — the branch key.
+		Kind string `json:"kind"`
+		// Subject names the entity the failure is about (a task/epic id, an
+		// owner/repo, an asset, "config", …); omitted when there is none.
+		Subject string `json:"subject,omitempty"`
+		// Retryable is deliberately NOT omitempty: "retry?" is a question every
+		// consumer asks of every failure, so false must be visible, not absent.
+		Retryable bool `json:"retryable"`
+		// Exit mirrors the process exit code ("exit", not "code" — in furrow's
+		// vocabulary "code" is lint's kebab-case problem slug).
+		Exit    int    `json:"exit"`
 		Msg     string `json:"message"`
 		Details any    `json:"details,omitempty"`
 		// Candidates carries the concrete alternatives when an input almost
@@ -379,7 +411,7 @@ func renderError(fe *core.Error) {
 	type envelope struct {
 		Error errBody `json:"error"`
 	}
-	env := envelope{Error: errBody{Code: int(fe.Code), ID: fe.ID, Msg: fe.Msg, Details: fe.Details, Candidates: fe.Candidates}}
+	env := envelope{Error: errBody{Kind: fe.Kind, Subject: fe.Subject, Retryable: fe.Retryable, Exit: int(fe.Code), Msg: fe.Msg, Details: fe.Details, Candidates: fe.Candidates}}
 	// Errors are always JSON on stderr — machine-readable for Claude/scripts,
 	// still readable for humans.
 	b := mustJSON(env)

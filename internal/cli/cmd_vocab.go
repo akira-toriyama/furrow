@@ -49,6 +49,7 @@ func newVocabCmd() *cobra.Command {
 				if !ok {
 					return &core.Error{
 						Code:       core.CodeValidation,
+						Kind:       core.KindValidation,
 						Msg:        fmt.Sprintf("unknown vocabulary %q (known: %s)", name, strings.Join(names, ", ")),
 						Candidates: names,
 					}

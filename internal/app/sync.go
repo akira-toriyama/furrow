@@ -97,10 +97,14 @@ func pullWithRetry(pullOnce func() error, sleep func(time.Duration) error, pol r
 		backoff = pol.next(backoff)
 	}
 	if err != nil && errors.Is(err, gitrepo.ErrTransientFetchRace) {
-		return core.Internalf("sync", "furrow sync kept losing a git lock/fetch race in %s across "+
-			"several seconds of retries; if no other operator is syncing, a crashed git likely left a "+
-			"stale lock — remove a stray .git/*.lock (e.g. .git/index.lock) in that repo, then re-run "+
-			"(last error: %v)", top, err)
+		return &core.Error{
+			Code: core.CodeInternal,
+			Kind: core.KindSyncLockStale,
+			Msg: fmt.Sprintf("furrow sync kept losing a git lock/fetch race in %s across "+
+				"several seconds of retries; if no other operator is syncing, a crashed git likely left a "+
+				"stale lock — remove a stray .git/*.lock (e.g. .git/index.lock) in that repo, then re-run "+
+				"(last error: %v)", top, err),
+		}
 	}
 	return err
 }
@@ -351,7 +355,7 @@ func (a *App) guardBodyMarkers(ids []string) error {
 	}
 	return &core.Error{
 		Code: core.CodeValidation,
-		ID:   "body-conflict-marker",
+		Kind: core.KindBodyConflictMarker,
 		Msg: fmt.Sprintf("refusing to commit %d body file(s) still carrying git conflict markers: %s — "+
 			"a half-merged body is half a progress record, and a commit cannot be un-published. Resolve the "+
 			"markers (the other half is often still in `git stash`), then re-run furrow sync",
@@ -377,12 +381,13 @@ func interruptError(err error, ctxErr error) error {
 	// dropping the paths and claiming the board "may be left mid-operation" would
 	// both be false. Everything else under a cancelled ctx is a killed-subprocess
 	// artifact, so collapse it.
-	if fe := core.AsError(err); fe != nil && fe.ID == "sync-conflict" {
+	if fe := core.AsError(err); fe != nil && fe.Kind == core.KindSyncConflict {
 		return err
 	}
 	return &core.Error{
-		Code: core.CodeInternal,
-		ID:   "sync-interrupted",
+		Code:      core.CodeInternal,
+		Kind:      core.KindSyncInterrupted,
+		Retryable: true,
 		Msg: "furrow sync was interrupted; the board may be left mid-operation " +
 			"(re-run furrow sync — its pre-flight waits out or reports any in-progress rebase)",
 	}
@@ -450,8 +455,9 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 			// how to recover if it's actually a stuck rebase.
 			top := r.Toplevel()
 			return p, &core.Error{
-				Code: core.CodeInternal,
-				ID:   "sync-busy",
+				Code:      core.CodeInternal,
+				Kind:      core.KindSyncBusy,
+				Retryable: true,
 				Msg: fmt.Sprintf("a git rebase has stayed in progress in %s through several retries — "+
 					"this is usually a concurrent writer that clears within a second, so re-running "+
 					"'furrow sync' typically succeeds. If it persists a rebase here may be stuck: check "+
@@ -459,8 +465,11 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 			}
 		}
 		// Any other in-progress op (a merge you started) is your own to resolve.
-		return p, core.Validationf("sync",
-			"a git %s is in progress in %s — finish or abort it, then re-run furrow sync", op, r.Toplevel())
+		return p, &core.Error{
+			Code: core.CodeValidation,
+			Kind: core.KindSyncOpInProgress,
+			Msg:  fmt.Sprintf("a git %s is in progress in %s — finish or abort it, then re-run furrow sync", op, r.Toplevel()),
+		}
 	}
 	// Unmerged paths with NO operation in progress is the aftermath of a stash git
 	// could not re-apply: it merges what it can, leaves conflict markers in the
@@ -480,7 +489,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 		}
 		return p, &core.Error{
 			Code:    core.CodeValidation,
-			ID:      "sync-unmerged",
+			Kind:    core.KindSyncUnmerged,
 			Msg:     msg,
 			Details: map[string]any{"paths": unmerged, "pending_stash": p.PendingStash},
 		}
@@ -549,7 +558,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 				if aerr != nil {
 					return &core.Error{
 						Code: core.CodeInternal,
-						ID:   "sync-conflict",
+						Kind: core.KindSyncConflict,
 						Msg: fmt.Sprintf("pull --rebase hit conflicts AND the automatic abort failed (%v) — "+
 							"run 'git rebase --abort' in %s by hand, then re-run furrow sync", aerr, r.Toplevel()),
 						Details: details,
@@ -570,7 +579,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 				}
 				return &core.Error{
 					Code:    core.CodeInternal,
-					ID:      "sync-conflict",
+					Kind:    core.KindSyncConflict,
 					Msg:     msg,
 					Details: details,
 				}
@@ -598,7 +607,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 		if stranded {
 			return &core.Error{
 				Code: core.CodeInternal,
-				ID:   "sync-stash-stranded",
+				Kind: core.KindSyncStashStranded,
 				Msg: fmt.Sprintf("the pull rebased cleanly, but git could NOT put your stashed working-tree "+
 					"changes back — they are in the stash, NOT in your working tree: %s. Recover them with "+
 					"'git -C %s stash pop' (resolve any conflict it reports, then re-run furrow sync). The board's "+
@@ -656,8 +665,9 @@ func pushWithRetry(push, pull func() error) error {
 			return err
 		}
 		return &core.Error{
-			Code: core.CodeInternal,
-			ID:   "sync-push-rejected",
+			Code:      core.CodeInternal,
+			Kind:      core.KindSyncPushRejected,
+			Retryable: true,
 			Msg: fmt.Sprintf("a co-writer kept winning the push race, so the board is unchanged and "+
 				"your local sync commit is intact — re-run 'furrow sync' (last error: %v)", err),
 		}

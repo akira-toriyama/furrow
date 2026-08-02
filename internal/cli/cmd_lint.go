@@ -68,6 +68,7 @@ func newLintCmd() *cobra.Command {
 			if severity != "" && severity != core.SevError && severity != core.SevWarn {
 				return &core.Error{
 					Code:       core.CodeValidation,
+					Kind:       core.KindValidation,
 					Msg:        fmt.Sprintf("unknown severity %q (valid: %s, %s)", severity, core.SevError, core.SevWarn),
 					Candidates: []string{core.SevError, core.SevWarn},
 				}
@@ -113,7 +114,7 @@ func newLintCmd() *cobra.Command {
 			if core.HasErrors(ps) {
 				// Errors make lint fail (validation), but we already printed the
 				// findings, so return a quiet error that only sets the exit code.
-				return &core.Error{Code: core.CodeValidation, Msg: "lint found errors"}
+				return &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: "lint found errors"}
 			}
 			return nil
 		},
@@ -149,6 +150,7 @@ func validateLintCodes(codes []string) error {
 		if !core.IsLintCode(c) {
 			return &core.Error{
 				Code:       core.CodeValidation,
+				Kind:       core.KindValidation,
 				Msg:        fmt.Sprintf("unknown lint code %q (see `furrow lint` for the vocabulary)", c),
 				Candidates: core.LintCodeList(),
 			}

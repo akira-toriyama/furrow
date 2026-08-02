@@ -273,7 +273,7 @@ jobs:
           # is strictly better at it: it retries pull→push on a non-fast-forward
           # (the race this loop existed for), and on a real conflict it ABORTS the
           # rebase, restores the board, keeps the local commit, and exits 3 with the
-          # stable id `sync-conflict` plus `details.paths`. The race stays handled
+          # stable kind `sync-conflict` plus `details.paths`. The race stays handled
           # and the conflict becomes a typed, reportable outcome instead of raw git
           # text in a dead step. (That contract is pinned by
           # internal/app/sync_test.go's TestSyncConflictAbortsAndReportsPaths.)
@@ -282,28 +282,32 @@ jobs:
           # this workflow's own message; sync then sees a clean tree
           # (`committed:false`) and only fetch/rebase/pushes.
           #
-          # Branch on the error ID, never the exit code or the message — furrow's
-          # own contract — and retry ONLY the ids furrow calls retryable:
-          #
-          #   sync-push-rejected  a co-writer kept winning the push race. The board
-          #                       is untouched and the local commit intact, so this
-          #                       is the cross-repo race this step exists for.
-          #   sync-busy           a concurrent writer's rebase is still in flight.
+          # Branch on the envelope, never the exit code or the message — furrow's
+          # own contract. The envelope's `retryable` flag IS the retry decision
+          # (today it marks sync-push-rejected — a co-writer kept winning the push
+          # race, the cross-repo race this step exists for — sync-busy, a
+          # concurrent writer's rebase still in flight, and sync-interrupted):
+          # one key, no id table to keep in lockstep with the binary.
           #
           # Everything else is terminal by furrow's classification — sync-conflict,
           # sync-stash-stranded, sync-unmerged, a stale ref lock, a schema
           # mismatch — and retrying it only burns minutes to fail identically.
-          sync_id=unknown
+          # v2-envelope fallback: `furrow-version` above still defaults to a
+          # binary that emits {"error":{"code","id","message"}} — no `retryable`,
+          # no `kind`. Reading only the new keys would turn `// false` into
+          # "never retry", silently disabling this loop for the push race it
+          # exists for. So each read falls back to the old field, and the
+          # fallback (with this comment) dies when the default pin first moves
+          # to a v3 furrow.
+          sync_kind=unknown
           for i in 1 2 3; do
             furrow sync --json >/tmp/sync.json 2>/tmp/sync.err &&
               { echo "pushed"; cat /tmp/sync.json; exit 0; }
-            sync_id="$(jq -r '.error.id // "unknown"' /tmp/sync.err 2>/dev/null || echo unknown)"
-            echo "furrow sync failed (attempt $i, id=${sync_id})" >&2
+            sync_kind="$(jq -r '.error.kind // .error.id // "unknown"' /tmp/sync.err 2>/dev/null || echo unknown)"
+            retryable="$(jq -r 'if (.error.retryable | type) == "boolean" then .error.retryable else (.error.id == "sync-push-rejected" or .error.id == "sync-busy") end' /tmp/sync.err 2>/dev/null || echo false)"
+            echo "furrow sync failed (attempt $i, kind=${sync_kind}, retryable=${retryable})" >&2
             cat /tmp/sync.err >&2
-            case "$sync_id" in
-              sync-push-rejected | sync-busy) ;;
-              *) break ;;
-            esac
+            [ "$retryable" = "true" ] || break
             [ "$i" -ge 3 ] || sleep $((i * 5))
           done
 
@@ -314,7 +318,7 @@ jobs:
           # write came to be described as "silently dropped".
           {
             echo "outcome=lost"
-            echo "error_id=${sync_id}"
+            echo "error_kind=${sync_kind}"
             echo "paths=$(jq -r '(.error.details.paths // []) | join(" ")' /tmp/sync.err 2>/dev/null || true)"
           } >> "$GITHUB_OUTPUT"
           exit 1
@@ -342,12 +346,12 @@ jobs:
         if: failure() && steps.publish.outputs.outcome == 'lost'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          ERROR_ID: ${{ steps.publish.outputs.error_id }}
+          ERROR_KIND: ${{ steps.publish.outputs.error_kind }}
           PATHS: ${{ steps.publish.outputs.paths }}
           MODE: ${{ steps.gate.outputs.mode }}
         with:
           script: |
-            const id = process.env.ERROR_ID || 'unknown';
+            const id = process.env.ERROR_KIND || 'unknown';
             const paths = (process.env.PATHS || '').trim();
             const mode = process.env.MODE || '?';
             const body = [
@@ -371,10 +375,10 @@ jobs:
       - name: Surface a lost tracker write as an error annotation
         if: failure() && steps.publish.outputs.outcome == 'lost'
         env:
-          ERROR_ID: ${{ steps.publish.outputs.error_id }}
+          ERROR_KIND: ${{ steps.publish.outputs.error_kind }}
           PATHS: ${{ steps.publish.outputs.paths }}
         run: |
-          echo "::error title=furrow tracker write lost::the lane was applied but not published (${ERROR_ID}); the board is behind. Paths: ${PATHS:-none}. Re-run this job — furrow apply is idempotent."
+          echo "::error title=furrow tracker write lost::the lane was applied but not published (${ERROR_KIND}); the board is behind. Paths: ${PATHS:-none}. Re-run this job — furrow apply is idempotent."
 
       - name: Comment validation failures on the PR
         if: steps.gate.outputs.proceed == 'true' && steps.apply.outputs.code != '0'

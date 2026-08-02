@@ -31,7 +31,7 @@ func TestCheckSchemaVersion(t *testing.T) {
 		t.Errorf("core is pure and must not name a CI workflow: %q", err.Error())
 	}
 	fe := AsError(err)
-	if fe == nil || fe.ID != "schema-too-new" {
+	if fe == nil || fe.Kind != KindSchemaTooNew {
 		t.Fatalf("error id should be \"schema-too-new\", got %+v", fe)
 	}
 	d, ok := fe.Details.(map[string]any)
@@ -49,10 +49,10 @@ func TestCheckSchemaVersion(t *testing.T) {
 // read-only until `furrow upgrade` deliberately raises it.
 func TestCheckWritable(t *testing.T) {
 	tests := []struct {
-		name    string
-		board   int
-		wantID  string
-		wantExt Code
+		name     string
+		board    int
+		wantKind string
+		wantExt  Code
 	}{
 		{"current board writes", SchemaVersion, "", CodeOK},
 		{"older board is read-only", SchemaVersion - 1, "schema-upgrade-required", CodeValidation},
@@ -62,7 +62,7 @@ func TestCheckWritable(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := CheckWritable(tt.board)
-			if tt.wantID == "" {
+			if tt.wantKind == "" {
 				if err != nil {
 					t.Fatalf("CheckWritable(%d) = %v, want nil", tt.board, err)
 				}
@@ -72,8 +72,8 @@ func TestCheckWritable(t *testing.T) {
 			if fe == nil {
 				t.Fatalf("CheckWritable(%d) = %v, want a furrow error", tt.board, err)
 			}
-			if fe.ID != tt.wantID {
-				t.Errorf("id = %q, want %q", fe.ID, tt.wantID)
+			if fe.Kind != tt.wantKind {
+				t.Errorf("kind = %q, want %q", fe.Kind, tt.wantKind)
 			}
 			// The two refusals must be distinguishable by exit code alone: 2 = the
 			// BOARD is stale (an explicit command fixes it); 3 = the BINARY is stale.

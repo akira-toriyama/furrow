@@ -42,7 +42,7 @@ func newDoctorCmd() *cobra.Command {
 			"env var name, or `config`). Severity `info` is a fact worth seeing, not a\n" +
 			"problem to fix.\n\n" +
 			"Exit: 0 = healthy (info-only findings included) / 1 = problems found (any\n" +
-			"error or warn; id `doctor-unhealthy`) — so it can sit in shell init or CI.\n" +
+			"error or warn; kind `doctor-unhealthy`) — so it can sit in shell init or CI.\n" +
 			"--json emits one report object {config, env_furrow_dir, env_furrow_board,\n" +
 			"boards, resolutions, problems, healthy}; --ndjson emits it as one compact line.",
 		Example: "  furrow doctor                       # check the machine, simulate at cwd\n" +
@@ -85,7 +85,7 @@ func newDoctorCmd() *cobra.Command {
 				}
 				// The findings are already printed; this quiet error only sets
 				// the health-check exit code (1) and the stderr envelope.
-				return &core.Error{Code: core.CodeUnhealthy, ID: "doctor-unhealthy",
+				return &core.Error{Code: core.CodeUnhealthy, Kind: core.KindDoctorUnhealthy,
 					Msg: fmt.Sprintf("doctor found %d problem(s)", n)}
 			}
 			return nil
