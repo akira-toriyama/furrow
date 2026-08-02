@@ -1,7 +1,9 @@
 package app
 
 import (
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
@@ -109,5 +111,148 @@ func TestStatsUnknownLaneFilterFailsFast(t *testing.T) {
 	a.Add("t1", AddOpts{})
 	if _, err := a.Stats(QueryOpts{Status: "ghost"}); core.AsError(err) == nil || core.AsError(err).Code != core.CodeValidation {
 		t.Fatalf("an unknown -s lane should fail fast (exit 2), got %v", err)
+	}
+}
+
+// --- window flow (--since/--until) ------------------------------------------
+
+// seedTask injects a task with explicit timestamps straight through the store —
+// the window tests need created/closed/updated to differ, which Add/Done under
+// one fixed clock cannot produce.
+func seedTimedTask(t *testing.T, a *App, id string, created, updated time.Time, closed *time.Time, repos ...string) {
+	t.Helper()
+	idx, err := a.Store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := "ready"
+	if closed != nil {
+		status = "done"
+	}
+	idx.Add(core.Task{ID: id, Title: id, Status: status, Priority: 100,
+		Created: created, Updated: updated, Closed: closed,
+		Repos: repos, Body: core.BodyPath(id)})
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStatsWindowFlow(t *testing.T) {
+	a := newApp()
+	day := func(d int) time.Time { return time.Date(2026, 8, d, 12, 0, 0, 0, time.UTC) }
+	before, in1, in2, after := day(1), day(3), day(4), day(9)
+
+	seedTimedTask(t, a, "t-old01", before, before, nil)   // created before window
+	seedTimedTask(t, a, "t-new01", in2, in2, nil)         // created in window
+	seedTimedTask(t, a, "t-new02", in1, in1, nil)         // created in window (earlier)
+	seedTimedTask(t, a, "t-done1", before, in1, &in1)     // closed in window
+	seedTimedTask(t, a, "t-done2", before, after, &after) // closed after window
+	seedTimedTask(t, a, "t-both1", in1, in2, &in2)        // created AND closed in window
+	// closed in window, then touched after it: must still count as closed.
+	seedTimedTask(t, a, "t-late1", before, after, &in2)
+
+	since, until := day(2), day(5)
+	s, err := a.Stats(QueryOpts{Since: &since, Until: &until})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Window == nil {
+		t.Fatal("a --since/--until stats must carry a window section")
+	}
+	// Chronological, id tiebreak on equal stamps: t-both1/t-new02 (both day 3,
+	// id order) before t-new01 (day 4).
+	wantCreated := []string{"t-both1", "t-new02", "t-new01"}
+	if !reflect.DeepEqual(s.Window.Created, wantCreated) {
+		t.Errorf("created = %v, want %v", s.Window.Created, wantCreated)
+	}
+	wantClosed := []string{"t-done1", "t-both1", "t-late1"}
+	if !reflect.DeepEqual(s.Window.Closed, wantClosed) {
+		t.Errorf("closed = %v, want %v", s.Window.Closed, wantClosed)
+	}
+	// The distributions keep the UPDATED-window semantics `ls` has: t-late1
+	// (updated after the window) is out of Total but in the closed flow.
+	for _, tc := range []struct {
+		id string
+		in bool
+	}{{"t-late1", false}, {"t-new01", true}} {
+		found := false
+		list, _ := a.List(QueryOpts{Since: &since, Until: &until})
+		for _, x := range list {
+			if x.ID == tc.id {
+				found = true
+			}
+		}
+		if found != tc.in {
+			t.Errorf("updated-window membership of %s = %v, want %v", tc.id, found, tc.in)
+		}
+	}
+
+	// Open-ended window: --since only.
+	s2, err := a.Stats(QueryOpts{Since: &since})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s2.Window.Closed) != 4 { // t-done1, t-both1, t-late1, t-done2
+		t.Errorf("open-until closed = %v", s2.Window.Closed)
+	}
+	// No window flags -> no window section (the classic stats object).
+	s3, err := a.Stats(QueryOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s3.Window != nil {
+		t.Errorf("stats without a window must not carry one, got %+v", s3.Window)
+	}
+}
+
+// The window scan honors the same scope filters as the distributions: a repo
+// scope keeps foreign-repo flow out.
+func TestStatsWindowRespectsScope(t *testing.T) {
+	a := newApp()
+	day3 := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
+	seedTimedTask(t, a, "t-mine1", day3, day3, nil, "o/mine")
+	seedTimedTask(t, a, "t-other", day3, day3, nil, "o/other")
+
+	since := time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	s, err := a.Stats(QueryOpts{Repo: "o/mine", Since: &since})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(s.Window.Created, []string{"t-mine1"}) {
+		t.Errorf("scoped created = %v, want [t-mine1]", s.Window.Created)
+	}
+}
+
+// A task archived inside the window still counts as closed: the flow unions
+// the archive store, so an archive sweep cannot deflate the session's closed
+// count (the budget check would otherwise under-credit the session).
+func TestStatsWindowUnionsArchive(t *testing.T) {
+	dir := t.TempDir()
+	a, err := Init(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Clock = &fixedClock{t: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}
+
+	closed := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	seedTimedTask(t, a, "t-arch1", closed.Add(-time.Hour), closed, &closed)
+	if _, err := a.ArchiveIDs([]string{"t-arch1"}, false); err != nil {
+		t.Fatal(err)
+	}
+	// Gone from the hot store…
+	if _, _, err := a.Get("t-arch1"); core.AsError(err) == nil {
+		t.Fatal("t-arch1 should be archived out of the hot store")
+	}
+	// …but still in the window's closed flow.
+	since := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	s, err := a.Stats(QueryOpts{Since: &since})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(s.Window.Closed, []string{"t-arch1"}) {
+		t.Errorf("archived task must stay in the closed flow, got %v", s.Window.Closed)
+	}
+	if !reflect.DeepEqual(s.Window.Created, []string{"t-arch1"}) {
+		t.Errorf("archived task's creation is in-window too, got %v", s.Window.Created)
 	}
 }

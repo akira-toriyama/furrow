@@ -571,6 +571,8 @@ func newStatsCmd() *cobra.Command {
 		repo     string
 		epicRef  string
 		queryStr string
+		since    string
+		until    string
 	)
 	cmd := &cobra.Command{
 		Use:   "stats",
@@ -585,10 +587,20 @@ func newStatsCmd() *cobra.Command {
 			"-q ANDs a typed query onto the scope — the same language as `ls -q` — so\n" +
 			"the distributions describe the QUERIED slice: `stats -q is:stale` is the\n" +
 			"shape of the stale board, `stats -q 'no:effort'` where the unestimated\n" +
-			"work sits.",
+			"work sits.\n\n" +
+			"--since/--until window by the updated timestamp exactly like `ls` (a bare\n" +
+			"YYYY-MM-DD, or a full RFC3339 instant; a bare --until includes the whole\n" +
+			"day) AND add a `window` section reporting the FLOW inside those bounds:\n" +
+			"the ids created there and the ids closed there (counts are the lengths).\n" +
+			"Flow membership is decided by `created`/`closed` alone — a task closed in\n" +
+			"the window and touched after it still counts — and the scan unions the\n" +
+			"archive store, so an archive sweep cannot deflate `closed`. That section\n" +
+			"is the machine side of the session budget check (created ≤ closed − 1):\n" +
+			"declare counts in prose, verify them against `stats -r '' --since <t0>`.",
 		Example: "  furrow stats               # this repo's board at a glance\n" +
 			"  furrow stats -r '' --json  # whole-board counts + full label/repo vocab\n" +
 			"  furrow stats -q is:stale   # where the stale work sits\n" +
+			"  furrow stats -r '' --since 2026-08-02 --json   # today's created/closed flow\n" +
 			"  furrow stats -s inbox,backlog",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -602,6 +614,20 @@ func newStatsCmd() *cobra.Command {
 			}
 			o.Status = joinOrFilter(status)
 			o.Query = queryStr
+			if cmd.Flags().Changed("since") {
+				ts, err := parseDateBound(since, false)
+				if err != nil {
+					return err
+				}
+				o.Since = &ts
+			}
+			if cmd.Flags().Changed("until") {
+				ts, err := parseDateBound(until, true)
+				if err != nil {
+					return err
+				}
+				o.Until = &ts
+			}
 			s, err := a.Stats(o)
 			if err != nil {
 				return err
@@ -613,6 +639,8 @@ func newStatsCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "scope to a repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict)")
+	cmd.Flags().StringVar(&since, "since", "", "window on/after this date (YYYY-MM-DD or RFC3339): filters by updated like `ls` and adds the created/closed flow section")
+	cmd.Flags().StringVar(&until, "until", "", "window on/before this date (YYYY-MM-DD includes the whole day, or RFC3339)")
 	addQueryFlag(cmd, &queryStr)
 	return cmd
 }
