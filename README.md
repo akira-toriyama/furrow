@@ -641,7 +641,14 @@ moment it happens — and never reaches the remote.
 | `pre-push`     | before a push | `furrow lint` | **yes, on errors** |
 
 Only `pre-push` blocks, and only on lint **errors** (`furrow lint` exits 2);
-warnings flow through and are surfaced non-blockingly after a merge or rebase. A
+warnings flow through and are surfaced non-blockingly after a merge or rebase.
+One error is deliberately **excluded from the gate**: `due-overdue`. It is the
+only finding that appears with no edit — a promised instant passes and a push
+that has nothing to do with that task is refused, `furrow sync` included, so the
+board stops publishing at the moment a date lapses. A gate fails on what THIS
+push did; a date is state. It stays an error everywhere it is *reported* (`brief`
+leads with it, a bare `furrow lint` names it, a scheduled board-lint can file it
+as a task on the day) — reporting is where a date belongs. A
 `git pull --rebase` fires `post-rewrite` (not `post-merge`), so a board wants
 both — and since `furrow sync` pulls with `--rebase` internally, sync trips these
 hooks too (which is why sync carries no lint of its own).

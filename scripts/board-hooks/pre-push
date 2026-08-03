@@ -23,8 +23,16 @@
 command -v furrow >/dev/null 2>&1 || exit 0
 [ -d .furrow ] || exit 0
 
+# due-overdue is excluded from the GATE, and only from the gate. It is the one
+# lint error that appears on its own — nobody edits the board, a promised instant
+# passes, and a push that has nothing to do with that task is refused (including
+# the push inside `furrow sync`, so the board stops publishing). A gate must fail
+# on what THIS push did; a date is state, not an integrity breach. It is still an
+# error everywhere it is REPORTED — `furrow brief` leads with it, `furrow lint`
+# by hand names it, and a scheduled board-lint turns it into a task on the day.
+#
 # `report=$(...)` sets $? to furrow lint's exit status (POSIX); capture both.
-report="$(furrow lint 2>&1)"
+report="$(furrow lint --exclude-code due-overdue 2>&1)"
 rc=$?
 if [ "$rc" -eq 2 ]; then
 	printf '%s\n' "$report" >&2
