@@ -372,8 +372,11 @@ func shadowProblem(d, store, canonStore string) (core.Problem, bool) {
 	local := filepath.Join(d, DirName)
 	if fi, err := os.Stat(local); err == nil && fi.IsDir() {
 		if canonicalPath(local) == canonStore {
+			if boardScopesItself(store) {
+				return core.Problem{}, false // the board's own default_repo reproduces the scope
+			}
 			return core.Problem{Severity: SevInfo, Code: "scope-shadowed", ID: d,
-				Msg: fmt.Sprintf("%s holds the board's own .furrow — commands there run source=local, WITHOUT the board's repo scope (use -r to scope reads)", d)}, true
+				Msg: fmt.Sprintf("%s holds the board's own .furrow — commands there run source=local, WITHOUT the board's repo scope (use -r to scope reads, or give the board a default_repo)", d)}, true
 		}
 		return core.Problem{Severity: SevInfo, Code: "scope-shadowed", ID: d,
 			Msg: fmt.Sprintf("%s holds its own .furrow, which wins over the configured board there (nearest wins) — a deliberate opt-out, or a leftover", d)}, true
@@ -391,6 +394,22 @@ func shadowProblem(d, store, canonStore string) (core.Problem, bool) {
 		Msg: fmt.Sprintf("%s holds a %s redirecting elsewhere, which wins over the configured board there (nearest wins)", d, PointerName)}, true
 }
 
+// boardScopesItself reports whether the board at store declares a usable
+// `default_repo` in its own config.toml. When it does, reaching that board by
+// local discovery keeps the repo scope, so the shadow finding has nothing to
+// warn about — the same reasoning that already silences a pointer redirecting TO
+// this board. It routes through applyBoardScope so the two can never disagree
+// about what "usable" means (a bad shape, or "auto", scopes nothing).
+func boardScopesItself(store string) bool {
+	cfg, _, err := config.Load(filepath.Join(store, "config.toml"))
+	if err != nil {
+		return false
+	}
+	var res resolution
+	applyBoardScope(&res, cfg)
+	return res.DefaultRepo != ""
+}
+
 // doctorResolutions simulates discovery at cwd (informational — cwd may
 // legitimately be outside every scope) and at each asserted dir (an argument
 // is an assertion: failing to resolve IS the problem). An asserted dir that
@@ -401,6 +420,13 @@ func doctorResolutions(r *DoctorReport, cwd string, assertDirs []string) []core.
 		res, err := discover(dir)
 		dr := DoctorResolution{Dir: dir, Asserted: asserted}
 		if err == nil {
+			// discover() reads no config, so ask the board itself for the scope
+			// it declares — otherwise doctor reports a scope the real commands
+			// do not use. A config that fails to parse simply supplies nothing
+			// (openAt is where a broken config is an error, not this probe).
+			if cfg, _, cerr := config.Load(filepath.Join(res.Dir, "config.toml")); cerr == nil {
+				applyBoardScope(&res, cfg)
+			}
 			dr.Resolved = true
 			dr.Store, dr.Source, dr.ScopeRepo = res.Dir, res.Source, res.DefaultRepo
 		} else if asserted {

@@ -940,6 +940,7 @@ Sections and their defaults:
 | `[ui]` | `theme` | `auto` (one of `auto`/`dark`/`light`) — a front-end display preference (the CLI itself does not render a themed UI; an out-of-repo TUI/GUI reads it) |
 | `[alias]` | `<name> = "<command string>"` | none (a `name -> command` map) |
 | (top-level) | `standalone` | `false` (a local single-machine board: no remote / `furrow sync` / CI) |
+| (top-level) | `default_repo` | `""` (the repo the board is for — the FALLBACK scope, used only when discovery supplied none; a literal `owner/repo`, never `"auto"`) |
 
 That table, README's annotated example, and CLAUDE.md's section list all
 enumerate one closed vocabulary — `config.TopLevelKeys()`, reflection over the
@@ -1016,6 +1017,36 @@ explicit knob: a board's per-entry **`auto_filter`** (default true) threads onto
 regardless, so `auto_filter = false` means "attach writes, show the whole
 board". Because the switch is declared in config, the old scope banner is
 gone — filtering is silent (stdout stays pure data).
+
+**`default_repo` (the board's own fallback scope).** Picking the store and
+picking the scope are two questions, and only the first has four arms. Two of
+them — `FURROW_DIR` and a local `.furrow` — inject no scope at all, so a board
+reached that way answered `ls` differently from the same board reached through
+its `[[board]]` entry, and a bare `add` there wrote a repo-less draft. That is
+not hypothetical: a board living *inside* the tree its `[[board]]` entry scopes
+(the [standalone recipe](../README.md#standalone-a-local-board-with-no-remote)
+puts `.furrow` under `claude_workspace/`) is found by plain local discovery the
+moment cwd is inside it, which outranks the entry. A board's committed
+`config.toml` may therefore declare `default_repo = "owner/repo"`, and
+`app.applyBoardScope` applies it **only when discovery ran an arm that declares
+no scope at all** (`resolution.ScopeDeclared`) — a pointer or a `[[board]]`
+having answered the question ends it. The gate is the ARM, not an empty repo,
+and that distinction is load-bearing: `repo = ""` is documented as *no scope*,
+and a `repo = "auto"` that fails to derive has already warned on stderr that new
+tasks will be drafts. Filling either in from the board would let a committed,
+shared file override a nearer per-machine one — inverting nearest-wins — and in
+the second case would filter reads by a repo furrow had just said did not exist.
+Two restrictions make it safe to put in a *shared* file: `"auto"` is
+refused (a cwd-derived repo would differ per checkout, which is the very
+cwd-dependence the key removes — it clamps away with a `lint` warning), and there
+is no board-side `auto_filter`, so declaring the scope declares it for reads too
+(`-r ''` is the per-command escape). It sits in the board config for the exact
+reason `autocommit` below does *not*: which repo a board is *for* is a property
+of the board, identical on every clone and in CI, whereas autocommit is a
+property of one machine. `discover` reads no config file, so the fallback is
+applied in `App.Open` once `openAt` has loaded it — and `furrow doctor` runs the
+same function over its simulated resolutions, so its reported `scope_repo` and
+its `scope-shadowed` finding can never disagree with what the real commands do.
 
 **`autocommit` (per-board, per-machine).** A board's per-entry `autocommit`
 (default false) makes furrow git-commit the board's `.furrow/` after every

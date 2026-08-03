@@ -84,6 +84,41 @@ func TestStandaloneParsing(t *testing.T) {
 	}
 }
 
+// default_repo is the board's own scope declaration. This layer carries it
+// VERBATIM (minus surrounding space) and never judges the shape — config is
+// core-free, so "is this owner/repo?" is app.applyBoardScope's call, exactly as
+// [lint].ignore_codes defers the lint-code vocabulary. So: no warning here, ever.
+func TestDefaultRepoParsing(t *testing.T) {
+	if c, _, err := Load(writeTOML(t, "")); err != nil {
+		t.Fatal(err)
+	} else if c.DefaultRepo != "" {
+		t.Errorf("absent default_repo = %q, want empty (no scope declared)", c.DefaultRepo)
+	}
+
+	c, warn, err := Load(writeTOML(t, "default_repo = \"  me/app  \"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DefaultRepo != "me/app" {
+		t.Errorf("default_repo = %q, want the trimmed literal", c.DefaultRepo)
+	}
+	if len(warn) != 0 {
+		t.Errorf("config never warns about default_repo — the app layer clamps it: %v", warn)
+	}
+
+	// Even a value the app will refuse passes through untouched here.
+	if c, warn, _ := Load(writeTOML(t, "default_repo = \"auto\"\n")); c.DefaultRepo != "auto" || len(warn) != 0 {
+		t.Errorf("default_repo/warn = %q/%v, want %q carried verbatim with no warning", c.DefaultRepo, warn, "auto")
+	}
+
+	// A bare key AFTER a table belongs to that table — the TOML rule the template
+	// puts both top-level switches above [lanes] for. Pinned so the docs can
+	// promise it.
+	if c, _, _ := Load(writeTOML(t, "[ui]\ntheme = \"dark\"\ndefault_repo = \"me/app\"\n")); c.DefaultRepo != "" {
+		t.Errorf("default_repo = %q after [ui]; a bare key under a table is ui.default_repo, not top-level", c.DefaultRepo)
+	}
+}
+
 func TestLoadMissingIsDefault(t *testing.T) {
 	c, warn, err := Load(filepath.Join(t.TempDir(), "nope.toml"))
 	if err != nil {

@@ -55,14 +55,17 @@ type App struct {
 	// per board. It never filters reads — scoping is DefaultRepo's job.
 	DefaultLabel string
 
-	// DefaultRepo is the board-scope repo from a pointer or a central board
+	// DefaultRepo is the board-scope repo from a pointer, a central board, or —
+	// when neither supplied one — the board's own config.toml `default_repo`
 	// ("" = none): `add` unions it into the task's repos (suppressed by
-	// --draft) and reads filter by it when AutoFilter is on.
+	// --draft) and reads filter by it when AutoFilter is on. See applyBoardScope
+	// for the precedence.
 	DefaultRepo string
 
 	// AutoFilter reports whether read commands (ls/next/revisit) auto-filter by
-	// DefaultRepo. A pointer always scopes (true); a central board honors its
-	// per-board auto_filter (default true). Meaningless when DefaultRepo is "".
+	// DefaultRepo. A pointer always scopes (true), as does a board's own
+	// `default_repo`; a central board honors its per-board auto_filter (default
+	// true). Meaningless when DefaultRepo is "".
 	AutoFilter bool
 
 	// AutoCommit reports whether this board opted into post-mutation git commits
@@ -76,8 +79,9 @@ type App struct {
 	// auto repo from).
 	ScopeWarnings []string
 
-	// BoardRepos is the repo set derived from the enclosing checkout (the
-	// owner/repo parsed from the git origin URL — see deriveScopeRepo). Open
+	// BoardRepos is the repo set the board scopes to (derived from the enclosing
+	// checkout — the owner/repo parsed from the git origin URL, see
+	// deriveScopeRepo — or declared by the board itself). Open
 	// populates it from DefaultRepo; it participates in the short-name
 	// resolution universe (see repoUniverse), so a derived repo resolves short
 	// names even before its first task exists.
@@ -139,6 +143,10 @@ func Open(startDir string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	// discover() reads no config file, so the board's own scope declaration can
+	// only be applied here, once openAt has loaded it. It is a fallback: a
+	// pointer's / a [[board]]'s repo is nearer and already in res.
+	a.Warnings = append(a.Warnings, applyBoardScope(&res, a.Cfg)...)
 	a.DefaultLabel = res.DefaultLabel
 	a.DefaultRepo = res.DefaultRepo
 	a.AutoFilter = res.AutoFilter
@@ -187,11 +195,69 @@ func NewWithStore(st Store, cfg *config.Config, clk core.Clock) *App {
 type resolution struct {
 	Dir          string
 	DefaultLabel string // literal board tag (add-time union; never read-filters)
-	DefaultRepo  string // board-scope repo ("" = none)
+	DefaultRepo  string // board-scope repo ("" = none; a board's own default_repo is the fallback)
 	AutoFilter   bool   // scope reads by DefaultRepo (pointer: always; board: its auto_filter)
 	AutoCommit   bool   // git-commit .furrow/ after each mutating command (user-config [[board]] opt-in)
 	ScopeWarn    []string
 	Source       string // discovery mechanism: env|local|pointer|user-config
+	// ScopeDeclared marks an arm that CONSULTED an operator-authored scope
+	// declaration — a pointer's default_repo, a [[board]]'s repo — including
+	// when that declaration resolved to no repo. It gates the board's own
+	// default_repo fallback (see applyBoardScope), which is why it is a field
+	// and not a Source check: Source "env" covers both FURROW_DIR (declares
+	// nothing) and FURROW_BOARD (a synthetic [[board]] that declares "auto").
+	ScopeDeclared bool
+}
+
+// applyBoardScope lets a board's OWN committed config.toml supply the repo scope
+// for a resolution that discovery left unscoped, and returns the config-clamp
+// warnings for an unusable declaration.
+//
+// The rule is one sentence: the board's `default_repo` applies only when
+// discovery ran an arm that declares no scope at all, and when it applies it
+// always filters. So it bites exactly the two arms that inject nothing today —
+// a local `.furrow` (cwd inside the board's own tree) and FURROW_DIR — while a
+// pointer or a `[[board]]`, having ANSWERED the scope question, ends it. That is
+// the whole point: without it the same board answers `ls` differently depending
+// on which directory reached it, and a bare `add` from inside the board silently
+// produces repo-less drafts.
+//
+// The gate is the arm, not an empty repo, and the difference is load-bearing.
+// "No repo" is a real answer those files can give: `repo = ""` documents itself
+// as no scope, and a `repo = "auto"` that fails to derive has ALREADY told the
+// operator on stderr that new tasks will be drafts. Filling either in from the
+// board would invert furrow's nearest-wins rule with a committed, shared file,
+// and in the second case would filter reads while stderr says nothing is scoped.
+//
+// It is also deliberately narrower than the keys it falls back from:
+//
+//   - "auto" is REFUSED. config.toml is committed and shared, so a cwd-derived
+//     repo would differ per checkout and per machine — reintroducing the very
+//     cwd-dependence the key exists to remove. A pointer/[[board]] may say
+//     "auto" because those files are per-repo/per-machine; this one may not.
+//   - There is no companion board-side `auto_filter`. Declaring the scope is
+//     declaring it for reads too (a pointer behaves the same way); an explicit
+//     empty -r is the per-command escape, one flag away.
+//
+// A bad value is clamped away with a warning rather than rejected, like every
+// other config.toml value, and the warning is produced even when the key would
+// have been inert (a nearer arm answered) — otherwise whether a typo gets
+// reported would itself depend on the directory you ran from.
+func applyBoardScope(res *resolution, cfg *config.Config) []string {
+	repo := cfg.DefaultRepo
+	switch {
+	case repo == "":
+		return nil
+	case repo == "auto":
+		return []string{fmt.Sprintf("default_repo %q is not usable in a board config (it is committed and shared, so a derived repo would differ per checkout); ignored (use a literal owner/repo)", repo)}
+	case !core.IsRepoShaped(repo):
+		return []string{fmt.Sprintf("default_repo %q is not owner/repo-shaped; ignored", repo)}
+	}
+	if res.ScopeDeclared {
+		return nil // a nearer arm already answered the scope question
+	}
+	res.DefaultRepo, res.AutoFilter = repo, true
+	return nil
 }
 
 // discover finds the store: FURROW_DIR if set (no scope injection), else walk up
@@ -252,7 +318,7 @@ func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
 		return resolution{}, core.Validationf("", "%s: board %q is not an existing directory", pointerPath, board)
 	}
 	repo, rwarn := deriveScopeRepo(p.DefaultRepo, pointerDir)
-	return resolution{Dir: board, DefaultRepo: repo, AutoFilter: true, ScopeWarn: append(pwarn, rwarn...), Source: "pointer"}, nil
+	return resolution{Dir: board, DefaultRepo: repo, AutoFilter: true, ScopeDeclared: true, ScopeWarn: append(pwarn, rwarn...), Source: "pointer"}, nil
 }
 
 // resolvePathRelTo turns a path (bare ~ or ~/path, relative to baseDir, or
@@ -348,7 +414,7 @@ func resolveGlobalBoard(startDir string) (resolution, bool, error) {
 	if os.Getenv(EnvBoard) != "" {
 		source = "env"
 	}
-	return resolution{Dir: winBoard, DefaultLabel: winner.Label, DefaultRepo: repo, AutoFilter: winner.AutoFilter, AutoCommit: winner.AutoCommit, ScopeWarn: append(warn, rwarn...), Source: source}, true, nil
+	return resolution{Dir: winBoard, DefaultLabel: winner.Label, DefaultRepo: repo, AutoFilter: winner.AutoFilter, AutoCommit: winner.AutoCommit, ScopeDeclared: true, ScopeWarn: append(warn, rwarn...), Source: source}, true, nil
 }
 
 // boardScopes returns the scopes to match a board against. A board loaded from

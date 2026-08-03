@@ -58,6 +58,12 @@ type raw struct {
 	// distinguishable; any bool value is accepted (clamp-don't-reject — a bool
 	// has no out-of-range value).
 	Standalone *bool `toml:"standalone"`
+	// DefaultRepo is the board's OWN repo scope: the owner/repo that `add`
+	// attaches and reads filter by when discovery supplied none (a local
+	// `.furrow`, or FURROW_DIR). Stored verbatim — shape validation lives in the
+	// app layer, which owns core.IsRepoShaped, exactly like [lint].ignore_codes
+	// defers the code vocabulary. config stays core-free.
+	DefaultRepo string `toml:"default_repo"`
 }
 
 // Load reads config.toml at path and returns the effective config plus any
@@ -259,6 +265,12 @@ func fromRaw(r raw) (*Config, []string, error) {
 	if r.Standalone != nil {
 		c.Standalone = *r.Standalone
 	}
+
+	// default_repo: trimmed and stored verbatim. Whether it is owner/repo-shaped
+	// is the app layer's call (core.IsRepoShaped lives there, and config is
+	// core-free); an unusable value is clamped away with a warning THERE, on the
+	// same clamp-don't-reject terms as every value clamped here.
+	c.DefaultRepo = strings.TrimSpace(r.DefaultRepo)
 
 	c.compile()
 	return c, warn, nil
