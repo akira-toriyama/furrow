@@ -183,9 +183,9 @@ jobs:
           args: release --snapshot --clean --skip=publish,announce
         env:
           # --snapshot already skips the publishing pipes; the dummy keeps a
-          # config change that moves token resolution earlier from failing here
-          # for the wrong reason (a missing secret, not a real defect).
-          HOMEBREW_TAP_TOKEN: dry-run-not-a-real-token
+          # config change that moves credential resolution earlier from failing
+          # here for the wrong reason (a missing secret, not a real defect).
+          HOMEBREW_TAP_DEPLOY_KEY: dry-run-not-a-real-key
 
       - name: assert the artifacts match what release.yml attests
         run: sh scripts/check-release-artifacts.sh dist
