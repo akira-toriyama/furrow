@@ -401,7 +401,7 @@ permissions:
   pull-requests: write
 jobs:
   sync:
-    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v2.0.0
+    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v3.0.0
     secrets:
       PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
 ```
@@ -784,7 +784,7 @@ furrow's write path is byte-stable on purpose: every shard goes through one mars
 - **Released:** tags are cut with GoReleaser → the Homebrew tap (see the
   [Releases page](https://github.com/akira-toriyama/furrow/releases); the
   bundled task-status Action ships since `v0.5.0`, the first-class `repos` field
-  since `v0.6.0`, layout v4 since `v0.8.0`, layout v5 since `v0.10.0`, layout v6 — the epic pivot — since `v1.0.0`, layout v7 — epic-to-epic deps + standing/pinned — since `v2.0.0`). The nix `flake.nix` carries a
+  since `v0.6.0`, layout v4 since `v0.8.0`, layout v5 since `v0.10.0`, layout v6 — the epic pivot — since `v1.0.0`, layout v7 — epic-to-epic deps + standing/pinned — since `v2.0.0`, layout v8 — per-task due dates — since `v3.0.0`). The nix `flake.nix` carries a
   real, pinned `vendorHash` with a
   committed `flake.lock` (since `v0.4.0`).
 - **Future (low priority):** an interactive TUI/GUI as a **separate front-end**
