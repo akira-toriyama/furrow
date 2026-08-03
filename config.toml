@@ -4,6 +4,21 @@
 # furrow only READS this file; it never writes or regenerates it. Unknown keys
 # and out-of-range values are silently clamped to safe defaults (a typo can't
 # break the tool); `furrow lint` reports what it clamped.
+#
+# Two top-level switches (bare keys — TOML requires them ABOVE the [sections]):
+#
+# A local single-machine board with no remote, no `furrow sync`, and no CI.
+# Changes only wording (`furrow upgrade` drops the shared-board flag-day
+# checklist) — never behavior, the schema gate, or an on-disk byte.
+# standalone = false
+#
+# The repo this board is FOR. `furrow add` attaches it and reads filter by it
+# whenever discovery supplied no scope of its own — i.e. from inside the board's
+# own directory tree, or under FURROW_DIR. A pointer's default_repo and a
+# user-level [[board]]'s repo are nearer and still win. A literal "owner/repo"
+# only: this file is committed and shared, so "auto" is refused (a derived repo
+# would differ per checkout, which is the cwd-dependence this key removes).
+# default_repo = "owner/repo"
 
 [lanes]
 # The status enum AND the top->bottom sort rank. Mirrors GitHub Projects #5.

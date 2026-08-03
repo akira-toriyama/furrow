@@ -301,3 +301,109 @@ func TestSweepRepos_ExplicitEmptyRepoSweepsWholeBoard(t *testing.T) {
 		t.Errorf("sweep repos = %v, want none (-r '' = the whole board, explicitly asked for)", repos)
 	}
 }
+
+// localBoardLayout builds the standalone recipe that produced this key: a board
+// living INSIDE the tree its [[board]] entry scopes. From the code checkout the
+// entry resolves it; from inside the board's own directory a plain local
+// `.furrow` wins and carries none of the entry's repo/auto_filter. The board
+// declares `default_repo` so both routes agree. Returns the two cwds.
+func localBoardLayout(t *testing.T, boardConfig string) (checkout, inside string) {
+	t.Helper()
+	t.Setenv(app.EnvDir, "")
+	t.Setenv(app.EnvBoard, "")
+	root := t.TempDir()
+	checkout = filepath.Join(root, "code")
+	inside = filepath.Join(checkout, "workspace")
+	board, err := app.Init(inside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if boardConfig != "" {
+		p := filepath.Join(inside, ".furrow", "config.toml")
+		if err := os.WriteFile(p, []byte(boardConfig), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := board.Add("mine", app.AddOpts{Repos: []string{"me/demo"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := board.Add("someone else's", app.AddOpts{Repos: []string{"me/other"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	fdir := filepath.Join(cfgDir, "furrow")
+	if err := os.MkdirAll(fdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entry := "[[board]]\npath = \"" + filepath.Join(inside, ".furrow") + "\"\nscopes = [\"" + checkout + "\"]\nrepo = \"me/demo\"\n"
+	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(entry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+	return checkout, inside
+}
+
+// The acceptance criterion of the change, driven through real cobra commands:
+// the same board must not answer `ls` differently depending on which directory
+// you ran it from.
+func TestLs_BoardDefaultRepoMakesScopeCwdIndependent(t *testing.T) {
+	checkout, inside := localBoardLayout(t, "default_repo = \"me/demo\"\n")
+
+	if err := os.Chdir(checkout); err != nil {
+		t.Fatal(err)
+	}
+	fromCheckout, _ := runLs(t, "ls")
+	if err := os.Chdir(inside); err != nil {
+		t.Fatal(err)
+	}
+	fromInside, _ := runLs(t, "ls")
+
+	if fromCheckout != fromInside {
+		t.Errorf("the same board answered differently by cwd:\n--- from %s ---\n%s\n--- from %s ---\n%s", checkout, fromCheckout, inside, fromInside)
+	}
+	if !strings.Contains(fromInside, "mine") || strings.Contains(fromInside, "someone else") {
+		t.Errorf("reads from inside the board must be scoped to me/demo:\n%s", fromInside)
+	}
+}
+
+// The same layout WITHOUT the key is the bug being fixed — the two views differ.
+// This is what makes the test above measure the key rather than the layout.
+func TestLs_WithoutBoardDefaultRepoTheViewsDiverge(t *testing.T) {
+	checkout, inside := localBoardLayout(t, "")
+
+	if err := os.Chdir(checkout); err != nil {
+		t.Fatal(err)
+	}
+	fromCheckout, _ := runLs(t, "ls")
+	if err := os.Chdir(inside); err != nil {
+		t.Fatal(err)
+	}
+	fromInside, _ := runLs(t, "ls")
+
+	if fromCheckout == fromInside {
+		t.Fatal("expected the historical asymmetry with no default_repo declared")
+	}
+	if !strings.Contains(fromInside, "someone else") {
+		t.Errorf("unscoped local discovery shows the whole board:\n%s", fromInside)
+	}
+}
+
+// A board-config typo must not be silent forever: it clamps away (no scope) and
+// `furrow lint` reports it as config-clamp, the channel config.toml's own header
+// promises. Nothing is printed on stdout by the failing scope itself.
+func TestLint_ReportsBoardDefaultRepoClamp(t *testing.T) {
+	_, inside := localBoardLayout(t, "default_repo = \"auto\"\n")
+	if err := os.Chdir(inside); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _ := runLs(t, "lint")
+	if !strings.Contains(stdout, "default_repo") || !strings.Contains(stdout, "config-clamp") {
+		t.Errorf("lint must name the clamped default_repo:\n%s", stdout)
+	}
+}

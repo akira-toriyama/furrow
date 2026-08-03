@@ -112,6 +112,15 @@ type Config struct {
 	// needs no schema bump.
 	Standalone bool
 
+	// DefaultRepo is the board's own repo scope, declared in its committed
+	// config.toml: the owner/repo `add` attaches and reads filter by when
+	// DISCOVERY supplied none — a local `.furrow` (the board's own checkout) or
+	// FURROW_DIR. A pointer's or a user-config `[[board]]`'s repo is nearer and
+	// wins; this is the fallback that stops the same board from showing a
+	// different view depending on which directory reached it. Stored verbatim
+	// (empty = undeclared); app.applyBoardScope decides whether it is usable.
+	DefaultRepo string
+
 	idPattern     *regexp.Regexp  // compiled from IDPrefix, cached
 	epicIDPattern *regexp.Regexp  // compiled from EpicIDPrefix, cached
 	nextSet       map[string]bool // membership set built from NextLanes

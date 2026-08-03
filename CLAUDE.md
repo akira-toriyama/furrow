@@ -532,9 +532,9 @@ positional bookkeeping, not progress, so staleness signals stay honest).
 `.furrow/config.toml` is **read-only from the app** and **clamp-don't-reject**:
 unknown keys and out-of-range values fall back to defaults with a warning that
 `furrow lint` surfaces. Read it through `internal/config`. The shipped sections
-are `[lanes]`, `[next]`, `[types]`, `[priority]`, `[ids]`, `[labels]`,
+are `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`,
 `[archive]`, `[lint]`, `[revisit]`, `[review]`, `[ui]`, `[alias]`, and the
-top-level `standalone` — the repo-root `config.toml` (which `furrow init` writes
+top-level `standalone` and `default_repo` — the repo-root `config.toml` (which `furrow init` writes
 and check.sh diffs byte-for-byte) is the canonical annotated copy; read it rather
 than trusting a prose list here. Two switches are genuinely OFF by default:
 `[labels].required` (a label-less task errors on `add` and in `lint`) and
@@ -550,7 +550,15 @@ user-level central-board config
 checkout's git origin, worktree-aware, ghq-path fallback — `internal/app`'s
 job, file reads only, never a bare dir name); a board's `label` is only a
 literal add-time tag, and `label = "auto"` is a reserved tombstone (warned,
-ignored).
+ignored). **The board's own `default_repo` is the FALLBACK scope**, applied by
+`app.applyBoardScope` only when discovery supplied none — i.e. the two arms that
+inject no scope, `FURROW_DIR` and a local `.furrow` (cwd inside the board's own
+tree, which outranks the `[[board]]` entry that would have scoped it). A
+pointer's `default_repo` / a `[[board]]`'s `repo` are nearer and still win. It is
+a literal `owner/repo` only — `"auto"` is refused with a clamp warning, because
+`config.toml` is committed and shared, so a cwd-derived repo would differ per
+checkout — and it carries no board-side `auto_filter`: declaring the scope
+declares it for reads too (`-r ''` is the per-command escape).
 
 ### Schema
 `internal/schema.TaskV2` and `internal/schema.MetaV2` are the sources of the JSON

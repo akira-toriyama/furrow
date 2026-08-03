@@ -513,14 +513,25 @@ entries (when the cwd is under one of their `scopes`; most specific scope wins)
 → `furrow init`. So `FURROW_BOARD` only outranks the config-file boards, never a
 nearer `FURROW_DIR` / local `.furrow` / pointer.
 
-With a board in effect (pointer or user-level):
+That order picks the **store**. The **scope** is a second, independent question,
+and only two of those arms declare one at all. The other two — `FURROW_DIR` and
+a local `.furrow` — fall back to the board's own
+[`default_repo`](#configuration) when it declares one. A pointer or a `[[board]]`
+having *answered* the scope question ends it, **including when the answer is
+"none"**: `repo = ""` means the whole board, and a `repo = "auto"` that fails to
+derive has already said on stderr that nothing is scoped. The board's own key
+never contradicts either.
+
+With a scope in effect (from a pointer, a user-level board, or the board's own
+`default_repo`):
 
 - `furrow add "…"` unions the scope repo into the task's `repos` (an explicit
   `-r x` adds to it rather than replacing); `add --draft` suppresses exactly
   that union. The board's literal `label` (if any) still unions into labels.
 - `furrow ls|next|revisit` filter to the scope repo — **silently** (no banner).
   A user-level board can opt out with `auto_filter = false` to show the whole
-  board while `add` still attaches the repo; a pointer always filters. Scope
+  board while `add` still attaches the repo; a pointer and a board's own
+  `default_repo` always filter. Scope
   control is `-r`: pass `-r ''` to see the whole board for one command, or
   `-r <repo>` for another repo. An explicit `-l tag` filters *within* the scope
   (it ANDs; it does not clear it). When the scope hides drafts, one stderr hint
@@ -660,7 +671,7 @@ The common setup on a work machine, where you can't create a shared tracker repo
    ├── .git/info/exclude    →  claude_workspace/     # keep the board out of the code repo
    └── claude_workspace/            # its own `git init`, no remote, never pushed
        └── .furrow/
-           ├── config.toml          # standalone = true
+           ├── config.toml          # standalone = true, default_repo = "acme/app"
            └── meta.json, tasks/, bodies/
    ```
 
@@ -677,6 +688,8 @@ The common setup on a work machine, where you can't create a shared tracker repo
 
 Then set **`standalone = true`** in the board's `config.toml` (see [Configuration](#configuration)). It changes **only wording, never behavior**: `furrow upgrade` drops the shared-board flag-day checklist and the "run `furrow sync` to publish" line — a single-machine board has no pinned CI to coordinate and no remote to publish to. The write gate, schema, and on-disk format are byte-for-byte identical to a shared board.
 
+Set **`default_repo = "<owner>/<repo>"`** in that same `config.toml` too. The `[[board]]` entry above only scopes commands run from **under `scopes`** — but the board's `.furrow` sits *inside* that tree, so a command run from inside `claude_workspace/` finds it by plain local discovery, which outranks the `[[board]]` entry and carries none of its `repo`/`auto_filter`. The same board then shows a different `ls` depending on which directory you happened to be in, and a bare `add` there writes a repo-less draft. `default_repo` is what closes that hole: it travels with the board, so every way of reaching it agrees.
+
 On a standalone board with no remote, commits *are* your only undo/backup. Set **`autocommit = true`** in the `[[board]]` entry above (a per-machine user-config key, [detailed here](#user-level-config-no-per-repo-file)) so furrow commits the board after every mutating command instead of relying on you or an agent to remember — best-effort (it warns and carries on if git can't commit), never pushes, and never sweeps a co-located session's in-progress body.
 
 A fully separate directory (e.g. `~/furrow-boards/app/.furrow`, outside the code repo) works too — same two-config setup, just a different `path`/`scopes`.
@@ -690,6 +703,8 @@ A fully separate directory (e.g. `~/furrow-boards/app/.furrow`, outside the code
 ```toml
 # standalone = false              # a local single-machine board (no remote / `furrow sync` / CI);
                                   # when true, `furrow upgrade` drops the shared-board flag-day wording
+# default_repo = "me/app"         # the repo this board is FOR — `add` attaches it and reads filter by it
+                                  # whenever discovery supplied no scope (a literal owner/repo; "auto" is refused)
 [lanes]
 # The status enum AND the top->bottom sort rank.
 order   = ["inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"]
@@ -737,6 +752,8 @@ wip    = "ls -s in-progress"       #   the remaining args append, so all existin
 A board `[alias]` names a frequent command string; `furrow <name> <extra args>` expands it git-style (the alias tokens replace the name, the rest of the argv is appended), so every flag, board scope, and auto-filter composes for free. It lives in the **board** config (not the user-level one), so it syncs with the board and every machine/agent shares it. A real command always wins — an alias that shadows a builtin (`ls`, `next`, …) is inert and `furrow lint` flags it (`alias-shadow`); a blank alias value is dropped with a clamp warning. Put global flags *after* the alias (`furrow triage --json`), as with git.
 
 `standalone = true` marks a local single-machine board (no remote / `furrow sync` / CI). It changes **only wording** — never behavior, the schema gate, or the on-disk format: `furrow upgrade` drops the shared-board flag-day checklist and the `furrow sync` publish line, which would only misdirect a solo operator with no fleet to coordinate. Default `false` (shared board). See [Standalone](#standalone-a-local-board-with-no-remote).
+
+`default_repo = "owner/repo"` is the repo the board itself is **for**. It is the *fallback* scope: consulted only when discovery ran an arm that declares no scope at all, and when it applies it filters reads as well as attaching the repo on `add`. So the key bites exactly the two arms that declare nothing — cwd **inside the board's own directory tree** (`source=local`) and `FURROW_DIR` — while a pointer's `default_repo` and a user-level `[[board]]`'s `repo` keep the last word, *including when they resolve to no repo at all* (see [Discovery precedence](#discovery-precedence)). Without it, the same board answers `ls` differently depending on which directory you ran from, and a bare `add` from inside the board silently produces repo-less drafts. Unlike the pointer key of the same name it takes a **literal** `owner/repo` only — `config.toml` is committed and shared, so a derived `"auto"` would differ per checkout and per machine, reintroducing exactly the cwd-dependence the key removes (it is clamped away with a `furrow lint` warning). There is deliberately no board-side `auto_filter`: declaring the scope declares it for reads too, and `-r ''` remains the per-command escape hatch.
 
 `done` stamps `closed`; moving a task *out* of the done lane clears it. Other terminal lanes (e.g. `icebox` — parked, not finished; `waiting` — the GTD *Waiting-For* lane for work delegated or blocked on someone external) do **not** stamp `closed`, which is why parked tasks are never archived.
 
