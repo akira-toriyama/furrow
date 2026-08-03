@@ -520,7 +520,7 @@ A `.furrow/` store directory contains:
     t-k3m9p-shot.png     written ONLY via Store.SaveAsset (atomic, collision-free
                          basename); linked from the body by `furrow attach`; scanned
                          by `furrow lint` (dangling / orphan / oversized warnings)
-  meta.json            board-wide layout version {"schema_version": 7} — MarshalMeta,
+  meta.json            board-wide layout version {"schema_version": 8} — MarshalMeta,
                          stamped only on a fresh store (`init`) or by `furrow upgrade`;
                          an ordinary Save READS it (the write gate) and leaves it alone
   repos/               one review shard per repo (repos/<owner>__<repo>.json) — MarshalRepo
@@ -935,6 +935,7 @@ Sections and their defaults:
 | `[labels]` | `required` | `false` |
 | `[archive]` | `older_than_days` | `30` |
 | `[lint]` | `archive_done`, `ignore_codes` | `0` (the archive-backlog nudge is off), `[]` (an entry naming no real code only warns) |
+| `[due]` | `ignore_lanes` | `["icebox"]` (lanes where a due date raises no lint finding and no `brief` entry; the done lane is exempt on top of it, and terminal lanes are deliberately NOT exempt as a class — `waiting` is what dates are for) |
 | `[revisit]` | `stale_days` | `30` (`0` disables the stale signal) |
 | `[review]` | `stale_after_days` | `14` (`0` disables the unreviewed-repo nudge) |
 | `[ui]` | `theme` | `auto` (one of `auto`/`dark`/`light`) — a front-end display preference (the CLI itself does not render a themed UI; an out-of-repo TUI/GUI reads it) |

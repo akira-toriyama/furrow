@@ -50,6 +50,14 @@ type App struct {
 	Dir      string   // the .furrow directory
 	Warnings []string // config clamp warnings
 
+	// Loc is the OPERATOR's zone: the one furrow reads a wall-clock `--due`
+	// spelling in and draws the "today" boundary at. nil means time.Local, which
+	// is what every real invocation uses (it is also the zone the CLI already
+	// renders timestamps in). It is a field, not a call to time.Local, because the
+	// Clock is UTC by contract (core.SystemClock) and a test that pinned only the
+	// clock would silently assert UTC days — see App.loc().
+	Loc *time.Location
+
 	// DefaultLabel is a central board's LITERAL `label` tag ("" = none): `add`
 	// unions it into the task's labels, like a GitHub Issues label auto-applied
 	// per board. It never filters reads — scoping is DefaultRepo's job.
@@ -623,6 +631,11 @@ type AddOpts struct {
 	// suppresses exactly the board-scope repo union (see withBoardRepo) — the
 	// escape hatch for "note this on the board, attach it later".
 	Draft bool
+	// Due is the raw `--due` spelling (a date, a date+time, or a signed offset),
+	// bound to an instant by ParseDue at creation. A REFERENCE like Epic, not a
+	// stored value: resolution lives here so every front-end reads "+1d" the same
+	// way, against the app's clock. "" leaves the task dateless.
+	Due string
 }
 
 // requireNonBlankValues applies the blank rule to every list-valued creation
@@ -718,13 +731,23 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	if status == a.Cfg.DoneLane {
 		closed = &now
 	}
+	// The due spelling binds against the SAME now the stamps use, so `--due +1d`
+	// is exactly one day after this task's own `created`.
+	var due *time.Time
+	if o.Due != "" {
+		d, err := ParseDue(o.Due, now, a.loc())
+		if err != nil {
+			return nil, err
+		}
+		due = &d
+	}
 	t := core.Task{
 		ID: id, Title: title, Status: status, Priority: prio,
 		Value: cloneIntp(o.Value), Effort: cloneIntp(o.Effort),
 		Labels: o.Labels, Repos: repos, Deps: o.Deps, Refs: o.Refs,
 		Checklist: seedChecklist(o.Checklist),
 		Created:   now, Updated: now, Closed: closed, Body: core.BodyPath(id),
-		Epic: epicID,
+		Epic: epicID, Due: due,
 	}
 	idx.Add(t)
 
@@ -1889,6 +1912,11 @@ type SetOpts struct {
 	// unfiles it (the deliberate escape, still a lint error while the task is
 	// open); nil leaves membership untouched.
 	Epic *string
+	// Due is the raw `--due` spelling (see ParseDue) — a non-nil pointer sets or
+	// re-dates the promise, which is also the snooze (`--due +1d`). nil leaves it
+	// untouched; ClearDue removes it and wins, exactly like ClearValue over Value.
+	Due      *string
+	ClearDue bool
 }
 
 // empty reports whether o requests no change at all — Set rejects that rather
@@ -1897,7 +1925,7 @@ func (o SetOpts) empty() bool {
 	return o.Status == nil && o.Priority == nil && o.Before == "" && o.After == "" &&
 		o.Value == nil && !o.ClearValue &&
 		o.Effort == nil && !o.ClearEffort && len(o.AddLabels) == 0 && len(o.RmLabels) == 0 &&
-		o.Epic == nil
+		o.Epic == nil && o.Due == nil && !o.ClearDue
 }
 
 // Set applies several triage edits to one task in a single load/save: move a
@@ -1922,7 +1950,11 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, erro
 	if _, i := idx.Find(id); i < 0 {
 		return nil, nil, core.NotFound(id)
 	}
-	renumbered, err := a.applySet(idx, id, o)
+	due, err := a.resolveDue(o)
+	if err != nil {
+		return nil, nil, err
+	}
+	renumbered, err := a.applySet(idx, id, o, due)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1945,8 +1977,16 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 			return err
 		}
 	}
+	if o.Due != nil {
+		// Bind the spelling here, not only in applySet: a bulk SetMany must reject
+		// a malformed date before it writes ANY of its tasks (the all-or-nothing
+		// contract), and a single Set must fail before it loads.
+		if _, err := a.parseDue(*o.Due); err != nil {
+			return err
+		}
+	}
 	if o.empty() {
-		return core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / -e)")
+		return core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / -e / --due / --clear-due)")
 	}
 	if err := requireNonBlank(id, "--add-label", o.AddLabels); err != nil {
 		return err
@@ -1978,6 +2018,12 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 	if len(ids) > 1 && (o.Priority != nil || o.Before != "" || o.After != "") {
 		return nil, core.Validationf("", "--priority/--before/--after position ONE task; set them in a separate single-id call")
 	}
+	// One instant for the whole batch (see resolveDue): a bulk snooze promises
+	// every id for the same moment.
+	due, err := a.resolveDue(o)
+	if err != nil {
+		return nil, err
+	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, err
@@ -2004,7 +2050,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 		}
 	}
 	for _, id := range order {
-		if _, err := a.applySet(idx, id, o); err != nil {
+		if _, err := a.applySet(idx, id, o, due); err != nil {
 			return nil, err
 		}
 	}
@@ -2022,7 +2068,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 // applySet mutates one task in an ALREADY-LOADED index and returns any respace
 // the relative placement caused. It saves nothing: the caller owns the write, so
 // a batch is one Save. id must already resolve.
-func (a *App) applySet(idx *core.Index, id string, o SetOpts) ([]core.PriorityChange, error) {
+func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([]core.PriorityChange, error) {
 	relRef, relBefore := o.Before, true
 	if relRef == "" {
 		relRef, relBefore = o.After, false
@@ -2085,6 +2131,16 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts) ([]core.PriorityCh
 		t.Effort = nil
 	case o.Effort != nil:
 		t.Effort = cloneIntp(o.Effort)
+	}
+	switch {
+	case o.ClearDue:
+		t.Due = nil
+	case due != nil:
+		// The instant the CALLER resolved (resolveDue), not a fresh parse: a bulk
+		// set must stamp every task with the same promise, and `--due +1d` snoozes
+		// from now rather than from a stamp that may already be days in the past.
+		d := *due
+		t.Due = &d
 	}
 	if o.Epic != nil {
 		// Already validated in validateSetOpts; resolve again to store the ID, not

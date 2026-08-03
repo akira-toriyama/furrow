@@ -35,6 +35,7 @@
   "reviewed": "2026-07-10T00:00:00Z",
   "body": "bodies/t-frzn1.md",
   "epic": "e-frzn1",
+  "due": "2026-07-20T14:59:59Z",
   "blocked": true,
   "blocked_by": {
     "kind": "review",

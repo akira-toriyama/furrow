@@ -28,7 +28,12 @@ import (
 // release (the fleet's task-status CI). Order matters — release furrow, bump
 // every caller's pin, THEN `furrow upgrade --yes` the board. Bump only on a
 // read-breaking layout change, and update docs/schema/ + goldens in the same
-// change. v7 = epic-to-epic deps: the epic shard (epics/<id>.json) gains the
+// change. v8 = the per-task `due` stamp: the instant a task is promised for.
+// `lint` ERRORS on an overdue task and `brief` leads with the arrived ones, so a
+// binary that merely PRESERVED it would report a clean board and orient a whole
+// session past a missed date — the bump rule's central case. It is omitempty, so
+// a dateless task keeps its exact pre-v8 bytes and no board rewrites on upgrade.
+// v7 = epic-to-epic deps: the epic shard (epics/<id>.json) gains the
 // required `deps` set — the order boxes open in. The edge is informational
 // (activate warns, never refuses), but revisit's epic_dep_done and lint's
 // epic-dep-* rules read it, so a binary that merely PRESERVED it would report a
@@ -48,7 +53,7 @@ import (
 // write the loss back. v3 = shards whose tasks carry the required first-class
 // repos set (the repos pivot). v2 = per-task shards (tasks/<id>.json) +
 // meta.json (v1 was the monolithic index.json).
-const SchemaVersion = 7
+const SchemaVersion = 8
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into
@@ -210,6 +215,22 @@ type Task struct {
 	// a mid-struct field churns key order against an old binary's extras re-emit
 	// (see the extras note below).
 	Epic string `json:"epic,omitempty"`
+
+	// Due is when this task is promised for — the "look at this on that day"
+	// stamp the board had no place for, so the reminder lived in a body paragraph
+	// and in a human's memory. An INSTANT, not a day: the case that asked for it
+	// ("check the workflow after 10:30 on 8/4") is only answerable with a time, and
+	// reusing the created/updated/closed representation keeps one date vocabulary.
+	// A date-only input is bound to the END of that day by the write path, so the
+	// day itself never starts out overdue.
+	//
+	// A pointer, and omitempty rather than the explicit null Closed/Reviewed write:
+	// a due date is the rare exception, so a dateless task's shard keeps its exact
+	// pre-v8 bytes and no board rewrites on upgrade. lint reads it board-wide
+	// (due-overdue is an ERROR) and brief leads with it, which is why v8 is a bump
+	// and not a preserved-but-ignored field. It lives at the END of the struct per
+	// the shard-shape rule.
+	Due *time.Time `json:"due,omitempty"`
 
 	// extras holds keys this binary does not know — a field written by a NEWER
 	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,

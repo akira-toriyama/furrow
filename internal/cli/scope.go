@@ -118,3 +118,26 @@ func hintHiddenDrafts(o app.QueryOpts, count func(app.QueryOpts) ([]core.Task, e
 		fmt.Fprintf(errOut, "%d draft(s) hidden — furrow ls --drafts\n", len(hidden))
 	}
 }
+
+// hintDue notes on STDERR what has come due, so a `furrow next` — the command a
+// session runs when it is deciding what to do — cannot silently skip a promise
+// whose day has arrived. It is a note, never a row: `next` hands out what is
+// ACTIONABLE, and the tasks that carry dates are usually parked in a lane next
+// deliberately excludes, so folding them into the list would change what the
+// command means. stdout stays a clean array for `next --json`.
+//
+// Scope: the due read drops the caller's lane filter (App.Due's contract) but
+// keeps the repo scope, so the count matches `furrow brief`'s section.
+func hintDue(a *app.App, o app.QueryOpts) {
+	o.Query, o.Lanes, o.AllEpics = "", nil, false
+	o.Epic, o.Status = "", ""
+	sum, err := a.Due(o)
+	if err != nil || sum.Empty() {
+		return
+	}
+	if n := len(sum.Overdue); n > 0 {
+		fmt.Fprintf(errOut, "note: %d due (%d OVERDUE) — `furrow brief` lists them\n", sum.Total(), n)
+		return
+	}
+	fmt.Fprintf(errOut, "note: %d due today — `furrow brief` lists them\n", sum.Total())
+}

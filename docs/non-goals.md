@@ -70,11 +70,22 @@ whole premise is "plain files in your repo".* To run furrow **on a schedule**
 (periodic archive, a `next` digest), the trigger lives outside furrow in your OS
 scheduler — see [scheduling.md](scheduling.md) for launchd recipes.
 
+### No reminders, alarms, or recurrence
+A task can be **promised** for an instant (`due`), but nothing fires at it.
+furrow rings no bell, sends no notification, and has no repeat/recurrence rule:
+the date is state, surfaced by the reads you already run — `furrow brief` leads
+with what has come due, and `furrow lint` errors on `due-overdue` board-wide.
+— *A notifier needs an always-on process, which is the daemon non-goal above
+wearing a different hat; a recurrence rule needs furrow to WRITE tasks on its
+own, which is the automatic-migration non-goal below wearing a third.* Pushing
+the pull-read to a schedule is the OS's job — see
+[scheduling.md](scheduling.md), Recipe 5.
+
 ## Storage format
 
 The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
 (structured metadata, machine-written) + `.furrow/meta.json`
-(`{"schema_version": 7}`, the board-wide layout version) +
+(`{"schema_version": 8}`, the board-wide layout version) +
 `.furrow/bodies/<id>.md` (long-form prose, hand/agent
 editable) + `.furrow/bodies/assets/` (media copied in by `furrow attach` as
 collision-free `<id>-<name>` files, referenced from the body by a relative

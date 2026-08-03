@@ -534,16 +534,19 @@ func newSetCmd() *cobra.Command {
 		priority    int
 		before      string
 		after       string
+		due         string
+		clearDue    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "set <id>...",
-		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, epic)",
+		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, epic, due)",
 		Long: "Combine the routine triage edits into a single write: move a lane (-s),\n" +
 			"position the task (--priority, or --before/--after a task in the destination\n" +
 			"lane — so a cross-lane drop is lane + position in ONE write), set or clear\n" +
 			"the 1..5 value/effort estimates, add/remove labels, and file the task under\n" +
-			"an epic (-e) — instead of running move + reorder + value + effort + label\n" +
-			"as separate commands. At least one change is required; an unknown lane is\n" +
+			"an epic (-e), and set or clear the due date (--due/--clear-due, where\n" +
+			"--due +1d is the snooze) — instead of running move + reorder + value +\n" +
+			"effort + label as separate commands. At least one change is required; an unknown lane is\n" +
 			"exit 2 with the configured lanes in candidates (like move/add) and an\n" +
 			"unresolvable -e epic exits 2 with the known boxes,\n" +
 			"a relative target outside the destination lane is exit 2, and under\n" +
@@ -560,6 +563,8 @@ func newSetCmd() *cobra.Command {
 			"  furrow set t-k3m9p -s ready --before t-x1y2z\n" +
 			"  furrow set t-k3m9p -e e-v0zd\n" +
 			"  furrow set t-k3m9p t-x1y2z t-9f2qr -s backlog --add-label triaged\n" +
+			"  furrow set t-k3m9p --due 2026-08-04     # promise it for that whole day\n" +
+			"  furrow set t-k3m9p --due +1d            # snooze a day from now\n" +
 			"  furrow set t-k3m9p --clear-value --rm-label wip",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -574,6 +579,7 @@ func newSetCmd() *cobra.Command {
 				RmLabels:    rmLabels,
 				ClearValue:  clearValue,
 				ClearEffort: clearEffort,
+				ClearDue:    clearDue,
 			}
 			if cmd.Flags().Changed("status") {
 				o.Status = &status
@@ -592,6 +598,16 @@ func newSetCmd() *cobra.Command {
 			}
 			if cmd.Flags().Changed("epic") {
 				o.Epic = &epicRef
+			}
+			if cmd.Flags().Changed("due") {
+				o.Due = &due
+			}
+			// An empty --due is exit 2, never a silent clear: a caller building
+			// `--due "$WHEN"` with an unset $WHEN has a bug, and --clear-due already
+			// spells the clear. Checked before the generic guard so the message can
+			// name the flag that DOES mean "remove it".
+			if f := cmd.Flags().Lookup("due"); f != nil && f.Changed && strings.TrimSpace(due) == "" {
+				return core.Validationf(args[0], "--due was given an empty value; pass a date, or use --clear-due to remove it")
 			}
 			if err := emptyFlagErr(cmd, args[0], "before", "after", "add-label", "rm-label", "status"); err != nil {
 				return err
@@ -639,6 +655,8 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().IntVar(&effort, "effort", 0, "set the 1..5 effort estimate")
 	cmd.Flags().BoolVar(&clearValue, "clear-value", false, "clear the value estimate")
 	cmd.Flags().BoolVar(&clearEffort, "clear-effort", false, "clear the effort estimate")
+	cmd.Flags().StringVar(&due, "due", "", "set the due date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d (the snooze)")
+	cmd.Flags().BoolVar(&clearDue, "clear-due", false, "clear the due date")
 	// StringSlice, not StringArray: these edit the SAME field `label --add` does
 	// (cmd_mutate.go's newLabelCmd), and comma is how every label surface splits —
 	// `-l a,b` is OR on reads. As StringArray, `set --add-label "a,b"` stored the
@@ -648,6 +666,7 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&rmLabels, "rm-label", nil, "remove a label (repeatable; comma-separated)")
 	cmd.MarkFlagsMutuallyExclusive("value", "clear-value")
 	cmd.MarkFlagsMutuallyExclusive("effort", "clear-effort")
+	cmd.MarkFlagsMutuallyExclusive("due", "clear-due")
 	cmd.MarkFlagsMutuallyExclusive("priority", "before", "after")
 	return cmd
 }

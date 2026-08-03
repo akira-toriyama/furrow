@@ -12,8 +12,10 @@ import (
 // index golden does, but for a single shard: CJK + HTML-ish title (must survive
 // SetEscapeHTML(false)), a set value/effort, labels that are unsorted AND
 // duplicated (must sort+dedupe), populated deps/refs/checklist, an open task
-// (closed == null), and a set reviewed timestamp (the non-null pointer path,
-// while closed exercises the null one).
+// (closed == null), a set reviewed timestamp (the non-null pointer path, while
+// closed exercises the null one), and a set due stamp — which pins BOTH that
+// `due` is written last among the known keys and that it is omitted entirely
+// when nil (the shard of t-0002 in the index golden).
 func sampleTask() *Task {
 	mk := func(y int, mo time.Month, d int) time.Time {
 		return time.Date(y, mo, d, 1, 2, 3, 0, time.UTC)
@@ -31,6 +33,7 @@ func sampleTask() *Task {
 		Created:   mk(2026, 6, 2), Updated: mk(2026, 6, 21), Closed: nil,
 		Reviewed: tp(mk(2026, 6, 20)),
 		Body:     BodyPath("t-0001"),
+		Due:      tp(time.Date(2026, 7, 1, 14, 59, 59, 0, time.UTC)),
 	}
 }
 

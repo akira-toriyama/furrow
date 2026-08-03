@@ -1,6 +1,8 @@
 package app
 
 import (
+	"time"
+
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
@@ -35,6 +37,12 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 	// validate every lane/title (and resolve every repo) before writing
 	// anything, so a bad spec fails before the first body hits disk.
 	universe := repoUniverse(idx, a.BoardRepos)
+	// One `now` for the whole batch — it stamps created/updated below AND binds
+	// every `--due` offset, so a bulk `--due +1d` is the same instant for every
+	// task in the write. Parsed here, in the pre-flight, so a malformed spelling
+	// fails before the first body hits disk (single Add's contract).
+	now := a.Clock.Now()
+	dues := make([]*time.Time, len(specs))
 	for i, s := range specs {
 		// Fold the title exactly as single Add does. A bulk title is ordinary user
 		// input (`furrow add --stdin`, a migrate import), not a hand-edited shard,
@@ -103,11 +111,20 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 			}
 			specs[i].Epic = resolved
 		}
+		// Mirror single Add's due binding, for the same reason the epic ref is
+		// resolved here: the bulk path must not be the one door a raw spelling —
+		// or a malformed one — reaches a shard through.
+		if s.Due != "" {
+			d, err := ParseDue(s.Due, now, a.loc())
+			if err != nil {
+				return nil, specf(err)
+			}
+			dues[i] = &d
+		}
 	}
 
-	now := a.Clock.Now()
 	ids := make([]string, 0, len(specs))
-	for _, s := range specs {
+	for i, s := range specs {
 		lane := s.Status
 		if lane == "" {
 			lane = a.Cfg.DefaultLane
@@ -128,7 +145,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 			Labels: s.Labels, Repos: s.Repos, Deps: s.Deps, Refs: s.Refs,
 			Checklist: seedChecklist(s.Checklist),
 			Created:   now, Updated: now, Body: core.BodyPath(id),
-			Epic: s.Epic,
+			Epic: s.Epic, Due: dues[i],
 		}
 		// Mirror Add: a task born in the done lane is closed at birth, so bulk
 		// `add --stdin -s done` doesn't leak the same closed:null zombie. A

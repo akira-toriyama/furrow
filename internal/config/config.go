@@ -50,6 +50,13 @@ type raw struct {
 		ArchiveDone *int     `toml:"archive_done"`
 		IgnoreCodes []string `toml:"ignore_codes"`
 	} `toml:"lint"`
+	// Due is the [due] section: which lanes a due date says nothing in. A slice
+	// (not a *bool) because the answer is board vocabulary, not a switch — the
+	// done lane is skipped structurally, and this names the PARKED lanes on top of
+	// it (default: icebox).
+	Due struct {
+		IgnoreLanes []string `toml:"ignore_lanes"`
+	} `toml:"due"`
 	// Alias is the board-level [alias] table: name -> a command string that
 	// `furrow <name> …` expands to, git-style. A map decodes any [alias] key.
 	Alias map[string]string `toml:"alias"`
@@ -135,6 +142,30 @@ func fromRaw(r raw) (*Config, []string, error) {
 			}
 		}
 		c.Terminal = setOf(keep)
+	}
+
+	// [due].ignore_lanes: the lanes where a due date raises no signal, kept to
+	// real lanes exactly like terminal. An EXPLICIT empty list is honored (it
+	// means "nag everywhere"), which is why the nil check is on the raw slice —
+	// absent falls back to the default parked lane.
+	if r.Due.IgnoreLanes != nil {
+		var keep []string
+		for _, l := range r.Due.IgnoreLanes {
+			if contains(c.Lanes, l) {
+				keep = append(keep, l)
+			} else {
+				warn = append(warn, fmt.Sprintf("due.ignore_lanes entry %q is not a lane; ignored", l))
+			}
+		}
+		c.DueIgnoreLanes = setOf(keep)
+	} else {
+		var keep []string
+		for _, l := range DefaultDueIgnoreLanes {
+			if contains(c.Lanes, l) {
+				keep = append(keep, l)
+			}
+		}
+		c.DueIgnoreLanes = setOf(keep)
 	}
 
 	// next lanes: keep only real lanes; empty/absent -> sensible default.

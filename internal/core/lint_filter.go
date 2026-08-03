@@ -31,6 +31,8 @@ var lintCodes = map[string]bool{
 	"dep-cycle":         true,
 	"dep-missing":       true,
 	"done-unclosed":     true,
+	"due-overdue":       true,
+	"due-today":         true,
 	"duplicate-id":      true,
 	"effort-range":      true,
 	"empty-id":          true,

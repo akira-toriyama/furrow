@@ -161,7 +161,7 @@ func newLsCmd() *cobra.Command {
 func addQueryFlag(cmd *cobra.Command, p *string) {
 	cmd.Flags().StringVarP(p, "query", "q", "",
 		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
-			"is:actionable|blocked|stale|open|closed|draft|unfiled, "+
+			"is:actionable|blocked|stale|open|closed|draft|unfiled|overdue, "+
 			"ordinals+dates with >=,<,.. (updated:>=-2w), graph child-of:/depends-on:/blocks:, "+
 			"free text over title+body; ANDs with the other filters")
 }
@@ -421,9 +421,10 @@ func newNextCmd() *cobra.Command {
 			}
 			hintHiddenDrafts(o, a.Next)
 			hintEpicScope(a, o, tasks)
+			hintDue(a, o)
 			// "nothing actionable" is a healthy empty result -> exit 0 (same as
 			// ls/revisit). --json/--ndjson attach a reason per task.
-			return emitActionable(tasks)
+			return emitActionable(a, tasks)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
@@ -552,7 +553,7 @@ func newRevisitCmd() *cobra.Command {
 				return err
 			}
 			// "nothing to revisit" is a valid clean result (exit 0), not a miss.
-			return emitRevisit(items)
+			return emitRevisit(a, items)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")

@@ -18,7 +18,11 @@ the user-level config. When you work with any furrow store:
   of the hybrid store. One body file per task id, 1:1 with its shard.
 - Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
   **`furrow brief [--json]` is the session-start read**: the sync → `next -r` →
-  `show <id>` ritual in ONE process — the epic header (`active`, the open+active
+  `show <id>` ritual in ONE process — the **due** band FIRST (`due`,
+  `{overdue, today}`, longest-overdue first, omitted when nothing has arrived: a
+  date is the only thing on the board that EXPIRES, everything else waits for
+  you; board-wide as to epics, since promised work is usually parked outside the
+  focus, and lane-filter-free, though it obeys the repo scope), the epic header (`active`, the open+active
   epic(s) `next` scopes to; `pinned`, the open pinned channel(s) whose tasks
   lead `next` regardless of the active scope; and `epics_declared`, which tells
   a non-participating board apart from "nothing active, so `next` is
@@ -30,7 +34,7 @@ the user-level config. When you work with any furrow store:
   the `drafts` count, and sync's `lint` error-count ride-along (omitted when
   clean). Read-only, never touches git — orient a shared board
   with `furrow sync && furrow brief`.
-  `set <id>` combines lane/**priority**/value/effort/labels/**type** in one
+  `set <id>` combines lane/**priority**/value/effort/labels/**epic**/**due** in one
   write (the triage shortcut for move+reorder+value+effort+label): `--priority`
   is absolute, `--before/--after <ref>` relative in the DESTINATION lane — a
   cross-column drop (`-s <lane> --before <ref>`) is lane + position in ONE
@@ -38,7 +42,9 @@ the user-level config. When you work with any furrow store:
   position flags are mutually exclusive), and it takes SEVERAL ids — `set <id>...`
   applies the same edits to all of them in one all-or-nothing write (bulk
   triage), refusing the three position flags for ≥2 ids since a position places
-  one task; `dep <id> <dep-id>...` is variadic
+  one task; **`--due` is also the snooze** (`set <id> --due +1d`, measured from
+  NOW so pushing an overdue task always lands ahead) and `--clear-due` drops the
+  date — an empty `--due ''` is exit 2, never a silent clear; `dep <id> <dep-id>...` is variadic
   (add/remove several in one write), and `dep <id> --list` is the read-only
   reverse-deps view — both directions (`depends_on` / `blocks`) resolved to
   id+title+lane, one `--json` object — so "what waits on this?" is a command,
@@ -109,6 +115,26 @@ the user-level config. When you work with any furrow store:
   `epic_all_done` instead). Epic refs resolve as exact id, unique id prefix, or
   unique title substring (a miss/ambiguity is exit 2 with `candidates` — kinds
   `epic-not-found`/`epic-ambiguous`).
+- **A task can be PROMISED for an instant: the `due` stamp (schema v8).**
+  `add --due` / `set --due` bind it; `set --clear-due` drops it. Four spellings —
+  `2026-08-04` (the WHOLE day: it binds 23:59:59 in the operator's zone, so the
+  promised day never starts out overdue), `2026-08-04T10:30` (that wall clock),
+  an RFC3339 instant, and a signed offset `+1d`/`+2h` (the SNOOZE, measured from
+  now, so pushing an overdue task always lands ahead). Stored UTC whole-second
+  like every other timestamp; omitted from the shard when unset, so a dateless
+  board rewrites nothing on upgrade.
+  **Where it surfaces is the point**: `brief` LEADS with `{overdue, today}`
+  (the session-start read is the one place a date cannot be missed) and `lint`
+  is the twin — **`due-overdue` is an ERROR**, `due-today` a warn — evaluated
+  BOARD-WIDE, with no epic scope and no `next` lane filter, because the work
+  that carries dates is usually parked outside the active focus. `next` only
+  notes the count on stderr (its rows stay what is actionable). The lanes that
+  go quiet are the done lane (always) plus `[due].ignore_lanes` (default
+  `["icebox"]`); terminal lanes are deliberately NOT exempt as a class — a
+  `waiting` task whose last step is "look at this tomorrow" is the case the
+  field exists for. Queryable as `-q due:<cmp>` / `has:`/`no:due` /
+  `is:overdue`; a bare day in `-q` is a UTC day while `--due` is a wall-clock
+  promise, which is up to 9h apart on a +09:00 machine.
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
   issue-draft analogue). `-r` is the scope control on reads: a full
@@ -143,7 +169,7 @@ the user-level config. When you work with any furrow store:
   ordinal and date comparisons/ranges, and direct graph edges. It ANDs with
   the other filters and never widens a scoped board. So you rarely need jq. Each `lint` problem carries
   a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `epic-required`,
-  `epic-no-active`, `orphan-asset`,
+  `epic-no-active`, `orphan-asset`, `due-overdue`, `due-today`,
   `conflict-marker`, `unknown-shard-key`, …) — branch on it, not the message, since the `id` field
   is contextual (a task id, an asset name, an `owner/repo`, `meta`, or `config`).
   Mutations (`done|move|note|set|reorder|retitle|value|effort|check|dep|epic|label|repo`)
@@ -368,7 +394,7 @@ their repositories in the first-class `repos` field) or a store can live
 repo-local. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
-(`{"schema_version": 7}`); long-form prose lives in
+(`{"schema_version": 8}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI drives it (CLI-only — any TUI/GUI is a
 separate out-of-repo front-end that speaks the CLI/JSON contract). Go,
@@ -533,7 +559,7 @@ positional bookkeeping, not progress, so staleness signals stay honest).
 unknown keys and out-of-range values fall back to defaults with a warning that
 `furrow lint` surfaces. Read it through `internal/config`. The shipped sections
 are `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`,
-`[archive]`, `[lint]`, `[revisit]`, `[review]`, `[ui]`, `[alias]`, and the
+`[archive]`, `[lint]`, `[due]`, `[revisit]`, `[review]`, `[ui]`, `[alias]`, and the
 top-level `standalone` and `default_repo` — the repo-root `config.toml` (which `furrow init` writes
 and check.sh diffs byte-for-byte) is the canonical annotated copy; read it rather
 than trusting a prose list here. Two switches are genuinely OFF by default:

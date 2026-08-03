@@ -122,6 +122,15 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// signal, so an epic whose slice shipped never silently keeps a stale body.
 	ps = append(ps, core.StaleDepProblems(idx, a.Cfg.Terminal, doneIDs)...)
 
+	// Due dates (due-overdue = ERROR, due-today = warn). Board-wide on purpose:
+	// no epic scope and no `next` lane filter, because the work that carries a
+	// date is usually parked outside the focus — the case this exists for sat in
+	// `waiting`, under a box nobody had activated, where `next` could never have
+	// surfaced it. `brief` leads with the same set (App.Due), and both go through
+	// core.DueStateOf, so the session-start read and the checker cannot disagree
+	// about the day boundary or the skipped lanes.
+	ps = append(ps, core.DueProblems(idx, a.Clock.Now(), a.loc(), a.dueSkipLanes())...)
+
 	rps, err := a.lintRecordKeys()
 	if err != nil {
 		return nil, err

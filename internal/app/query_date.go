@@ -9,19 +9,25 @@ import (
 	"github.com/akira-toriyama/furrow/internal/query"
 )
 
-// The date qualifiers (created/updated/closed/reviewed) — the -q generalization
-// of ls --since/--until. Every scalar is bound to an inclusive INTERVAL of
-// instants at compile time, which is what makes a bare day and a comparison
-// compose without a special case:
+// The date qualifiers (created/updated/closed/reviewed/due) — the -q
+// generalization of ls --since/--until. Every scalar is bound to an inclusive
+// INTERVAL of instants at compile time, which is what makes a bare day and a
+// comparison compose without a special case:
 //
 //	created:2026-07-01        — inside that whole (UTC) day
 //	created:>2026-07-01       — strictly AFTER the day (not later the same day)
 //	updated:>=-2w             — within the last two weeks (a relative offset)
 //	closed:2026-07-01..-1d    — range, ends inclusive; * = an open end
 //
-// A nil closed/reviewed satisfies NO comparison (existence is has:/no:'s job),
-// and a negated term therefore INCLUDES the unset — `-closed:<2026-01-01` keeps
-// the still-open tasks, matching how negation treats unset estimates.
+// A nil closed/reviewed/due satisfies NO comparison (existence is has:/no:'s
+// job), and a negated term therefore INCLUDES the unset — `-closed:<2026-01-01`
+// keeps the still-open tasks, matching how negation treats unset estimates.
+//
+// A bare day is a UTC day for the four machine stamps and the OPERATOR's local
+// day for `due` — see parseDateScalar. That is not an inconsistency to tidy
+// away: `due` is the one date a human types (`--due 2026-08-04` binds the end of
+// that day where they are), so a UTC day would make `-q due:2026-08-04` unable
+// to find what `--due 2026-08-04` had just written.
 
 // dateBound is one date scalar as an inclusive [lo, hi] instant interval: a
 // bare YYYY-MM-DD covers its whole UTC day (hi = 23:59:59, the last whole
@@ -34,7 +40,8 @@ type dateBound struct {
 }
 
 // parseDateScalar binds one date scalar at compile time. Three spellings:
-// YYYY-MM-DD (a whole UTC day), RFC3339 (an exact instant), and a signed
+// YYYY-MM-DD (a whole day — UTC for the machine stamps, the operator's local day
+// for `due`, see below), RFC3339 (an exact instant), and a signed
 // relative offset ±N{m,h,d,w} from now — JQL's units, where m is MINUTES, not
 // months ("-2w" = two weeks ago). Anything else is exit 2 (query-type).
 func (c *queryCompiler) parseDateScalar(field, s string) (dateBound, error) {
@@ -43,6 +50,20 @@ func (c *queryCompiler) parseDateScalar(field, s string) (dateBound, error) {
 		return dateBound{lo: i, hi: i, rel: true}, nil
 	}
 	if d, err := time.Parse("2006-01-02", s); err == nil {
+		// `due` is the one date a HUMAN authors, in wall clock, through this same
+		// CLI (`--due 2026-08-04` = the end of that day where they are). A UTC day
+		// here would mean `-q due:2026-08-04` could not find what `--due 2026-08-04`
+		// had just written — the tool disagreeing with itself — so a bare day for
+		// this field is the operator's local day. The machine stamps
+		// (created/updated/closed/reviewed) stay UTC days: nobody types those.
+		if field == "due" {
+			loc := c.app.loc()
+			y, mo, dd := d.Date()
+			return dateBound{
+				lo: time.Date(y, mo, dd, 0, 0, 0, 0, loc),
+				hi: time.Date(y, mo, dd, 23, 59, 59, 0, loc),
+			}, nil
+		}
 		return dateBound{lo: d, hi: d.Add(24*time.Hour - time.Second)}, nil
 	}
 	if ts, err := time.Parse(time.RFC3339, s); err == nil {
@@ -92,7 +113,7 @@ func parseRelativeOffset(s string) (time.Duration, bool) {
 	return d, true
 }
 
-// compileDate binds a date qualifier (created/updated/closed/reviewed) with an
+// compileDate binds a date qualifier (created/updated/closed/reviewed/due) with an
 // equality (day/instant membership, comma = OR), comparison, or range. All
 // values are parsed at compile time, so a malformed date fails the read before
 // a single task is matched.
@@ -114,6 +135,11 @@ func (c *queryCompiler) compileDate(term query.Term, neg func(func(*core.Task) b
 				return time.Time{}, false
 			}
 			return *t.Reviewed, true
+		case "due":
+			if t.Due == nil {
+				return time.Time{}, false
+			}
+			return *t.Due, true
 		}
 		return time.Time{}, false
 	}
