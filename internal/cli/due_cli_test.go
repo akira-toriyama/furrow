@@ -322,3 +322,84 @@ func TestCLILintDueCodeFiltering(t *testing.T) {
 		t.Error("a typo'd code must still be exit 2 with candidates")
 	}
 }
+
+// `add --due ""` is exit 2, exactly like `set --due ""`: silently creating a
+// DATELESS task would drop the promise where nothing could report it again.
+func TestCLIAddRejectsEmptyDue(t *testing.T) {
+	initStore(t)
+	fe, out := runErr(t, "add", "no date", "--due", "")
+	if fe == nil || fe.Code != 2 {
+		t.Fatalf("add --due '' should be exit 2, got %v:\n%s", fe, out)
+	}
+	if listing, _ := run(t, "ls", "--json"); strings.Contains(listing, "no date") {
+		t.Errorf("the rejected add still created a task:\n%s", listing)
+	}
+}
+
+// What `ls`/`show` may CALL overdue must match what lint and brief report: a
+// task in an exempt lane still shows its date, but never an alarm. The
+// finished-early case is the sharp one — the promise was kept.
+func TestCLIExemptLanesAreNeverRenderedOverdue(t *testing.T) {
+	initStore(t)
+	open := addTask(t, "still open", "-s", "ready", "-r", "o/r", "--due", dayOffset(-1))
+	parked := addTask(t, "parked", "-s", "icebox", "-r", "o/r", "--due", dayOffset(-1))
+	shipped := addTask(t, "shipped early", "-s", "ready", "-r", "o/r", "--due", dayOffset(-1))
+	if out, code := run(t, "done", shipped); code != 0 {
+		t.Fatalf("done exit = %d:\n%s", code, out)
+	}
+
+	out, code := run(t, "ls", "-r", "o/r", "-s", "ready,icebox,done")
+	if code != 0 {
+		t.Fatalf("ls exit = %d:\n%s", code, out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.Contains(line, open):
+			if !strings.Contains(line, "overdue ") {
+				t.Errorf("the open overdue row lost its marker:\n%s", line)
+			}
+		case strings.Contains(line, parked), strings.Contains(line, shipped):
+			if strings.Contains(line, "overdue") {
+				t.Errorf("an exempt lane must not read as overdue (lint is silent about it):\n%s", line)
+			}
+			if !strings.Contains(line, "due ") {
+				t.Errorf("an exempt row should still show its date:\n%s", line)
+			}
+		}
+	}
+	// `show` renders the same judgement.
+	if detail, _ := run(t, "show", shipped); strings.Contains(detail, "(overdue)") {
+		t.Errorf("show marked a task finished before its date overdue:\n%s", detail)
+	}
+	// …and lint agrees, which is the point of routing both through one policy.
+	if lint, code := run(t, "lint"); code == 0 || !strings.Contains(lint, open) || strings.Contains(lint, parked) || strings.Contains(lint, shipped) {
+		t.Errorf("lint should name only the open one (exit %d):\n%s", code, lint)
+	}
+}
+
+// `--tree` is the same matched rows regrouped, so it must not be the one view
+// where a promise disappears.
+func TestCLITreeShowsDue(t *testing.T) {
+	initStore(t)
+	epic, code := run(t, "--json", "epic", "add", "ops", "-r", "o/r")
+	if code != 0 {
+		t.Fatalf("epic add exit = %d:\n%s", code, epic)
+	}
+	var e struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(epic), &e); err != nil {
+		t.Fatalf("parse epic add: %v\n%s", err, epic)
+	}
+	id := addTask(t, "promised", "-s", "waiting", "-r", "o/r", "-e", e.ID, "--due", dayOffset(-1))
+
+	out, code := run(t, "ls", "-r", "o/r", "--tree")
+	if code != 0 {
+		t.Fatalf("ls --tree exit = %d:\n%s", code, out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, id) && !strings.Contains(line, "overdue ") {
+			t.Errorf("the tree row dropped the due tag the flat row carries:\n%s", line)
+		}
+	}
+}

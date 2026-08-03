@@ -70,16 +70,21 @@ func ParseDue(s string, now time.Time, loc *time.Location) (time.Time, error) {
 	if d, ok := parseRelativeOffset(s); ok {
 		return normDue(now.Add(d)), nil
 	}
-	if t, err := time.ParseInLocation(dueDateLayout, s, loc); err == nil {
+	if t, err := time.Parse(dueDateLayout, s); err == nil {
 		// The END of the day, not its start (see the doc comment). 23:59:59 is the
 		// last whole second furrow ever stamps — the same convention `ls --until`
 		// and the `-q` date bounds already use for a bare day.
 		//
 		// Built as a WALL-CLOCK 23:59:59, not midnight + 24h - 1s: a DST day is 23
 		// or 25 hours long, so the arithmetic form lands at 00:59:59 the next day
-		// (spring forward) or 22:59:59 the same day (fall back). The `-q` bounds can
-		// use the arithmetic form because their day is UTC, which has no DST; this
-		// one is read in the operator's zone, which does.
+		// (spring forward) or 22:59:59 the same day (fall back).
+		//
+		// And the y/m/d come from parsing in UTC — the LITERAL the operator typed —
+		// never from a ParseInLocation of the same string: where local midnight does
+		// not exist (Santiago springs forward AT 00:00 on 2026-09-06, as does Havana
+		// each March), ParseInLocation normalizes BACKWARD to 23:00 the previous day,
+		// so reading Date() off it silently promises the day before and the task is
+		// overdue for every hour of the day it was promised for.
 		y, mo, d := t.Date()
 		return normDue(time.Date(y, mo, d, 23, 59, 59, 0, loc)), nil
 	}
@@ -142,6 +147,23 @@ func (a *App) dueSkipLanes() map[string]bool {
 	return skip
 }
 
+// DueDisplayState is the classification a RENDERER may show: core.DueStateOf,
+// except that a task in a lane where due dates raise nothing (the done lane, the
+// configured parked lanes) never reads as overdue or due-today — it still shows
+// its date, just without an alarm. Otherwise one binary would make two
+// statements about the same task: `ls` calling a task finished a week EARLY
+// "overdue" (its lane is done, so lint and brief are silent), and every archived
+// task — all of them done-lane — mislabelled the same way.
+func (a *App) DueDisplayState(t *core.Task) string {
+	if t.Due == nil {
+		return core.DueNone
+	}
+	if a.dueSkipLanes()[t.Status] {
+		return core.DueLater
+	}
+	return core.DueStateOf(t, a.Clock.Now(), a.loc())
+}
+
 // DueSummary is what `furrow brief` leads with: the tasks whose promised instant
 // has PASSED and the ones whose day is TODAY, most-overdue first. Board-wide as
 // to epics — the focus scope must never hide a date — but scoped by repo like
@@ -163,24 +185,37 @@ func (d DueSummary) Total() int { return len(d.Overdue) + len(d.Today) }
 // core.DueProblems, so the session-start read and the checker can disagree about
 // neither the day boundary nor the skipped lanes.
 //
+// Scoping matches `revisit`, not `ls`: a repo filter applies to tasks that HAVE
+// repos, and an open DRAFT passes it (matchRevisit). Without that carve-out a
+// dated draft — "note it on the board, attach it later", the very shape this
+// field was asked for — would be invisible in brief on every repo-scoped board
+// while lint (which is board-wide) errored on it, i.e. one `furrow brief` would
+// print a due section of 1 above a lint ride-along counting 2.
+//
 // Ordering is by due instant ascending, so the longest-overdue task leads.
 func (a *App) Due(o QueryOpts) (DueSummary, error) {
-	o.Limit = 0
-	items, err := a.ListItems(o)
+	idx, err := a.load()
 	if err != nil {
 		return DueSummary{}, err
 	}
+	doneIDs := a.doneSet(idx)
 	now, loc := a.Clock.Now(), a.loc()
 	skip := a.dueSkipLanes()
 	var sum DueSummary
-	for _, it := range items {
-		if it.Task.Due == nil || skip[it.Task.Status] {
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if t.Due == nil || skip[t.Status] || !o.matchRevisit(t) {
 			continue
 		}
-		switch core.DueStateOf(&it.Task, now, loc) {
-		case core.DueOverdue:
+		state := core.DueStateOf(t, now, loc)
+		if state != core.DueOverdue && state != core.DueToday {
+			continue
+		}
+		actionable, blockedBy := a.factsFor(idx, t, doneIDs)
+		it := ListItem{Task: *t, Actionable: actionable, BlockedBy: blockedBy}
+		if state == core.DueOverdue {
 			sum.Overdue = append(sum.Overdue, it)
-		case core.DueToday:
+		} else {
 			sum.Today = append(sum.Today, it)
 		}
 	}

@@ -424,7 +424,7 @@ func newNextCmd() *cobra.Command {
 			hintDue(a, o)
 			// "nothing actionable" is a healthy empty result -> exit 0 (same as
 			// ls/revisit). --json/--ndjson attach a reason per task.
-			return emitActionable(tasks)
+			return emitActionable(a, tasks)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
@@ -553,7 +553,7 @@ func newRevisitCmd() *cobra.Command {
 				return err
 			}
 			// "nothing to revisit" is a valid clean result (exit 0), not a miss.
-			return emitRevisit(items)
+			return emitRevisit(a, items)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")

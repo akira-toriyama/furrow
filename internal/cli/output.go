@@ -86,7 +86,7 @@ func isTTY() bool {
 
 // printTaskTable renders tasks as an aligned text table (human output). It is
 // deliberately plain (no box drawing) so it greps and copies cleanly.
-func printTaskTable(tasks []core.Task) {
+func printTaskTable(a *app.App, tasks []core.Task) {
 	if len(tasks) == 0 {
 		fmt.Fprintln(out, "(no tasks)")
 		return
@@ -112,7 +112,7 @@ func printTaskTable(tasks []core.Task) {
 			title += "  (" + strings.Join(t.Repos, ",") + ")"
 		}
 		// The due tag rides in the title cell too — see printListItemTable.
-		if tag := dueTag(&t); tag != "" {
+		if tag := dueTag(a, &t); tag != "" {
 			title += "  " + tag
 		}
 		fmt.Fprintf(out, "%-*s  %-*s  %5d  %s\n", wID, t.ID, wStatus, t.Status, t.Priority, title)
@@ -123,7 +123,7 @@ func printTaskTable(tasks []core.Task) {
 // human table). An empty list is a healthy result (exit 0), never a miss — a
 // query that matched nothing still succeeded. exit 1 is reserved for a
 // specifically requested id that does not exist (e.g. `show <id>`).
-func emitTasks(tasks []core.Task) error {
+func emitTasks(a *app.App, tasks []core.Task) error {
 	switch {
 	case flagNDJSON:
 		printNDJSON(tasks)
@@ -133,7 +133,7 @@ func emitTasks(tasks []core.Task) error {
 		}
 		printJSON(tasks)
 	default:
-		printTaskTable(tasks)
+		printTaskTable(a, tasks)
 	}
 	return nil
 }
@@ -171,7 +171,7 @@ func reasonFor(t core.Task) actionReason {
 // and exits 0 — the same contract as `ls`/`revisit` (exit 1 is reserved for a
 // specifically requested id that is missing, e.g. `show`). An agent pipeline
 // under `set -e` must not treat "no work to pick up" as a failure.
-func emitActionable(tasks []core.Task) error {
+func emitActionable(a *app.App, tasks []core.Task) error {
 	switch {
 	case flagNDJSON:
 		for _, t := range tasks {
@@ -188,7 +188,7 @@ func emitActionable(tasks []core.Task) error {
 			fmt.Fprintln(out, "(nothing actionable)")
 			return nil
 		}
-		printTaskTable(tasks)
+		printTaskTable(a, tasks)
 	}
 	return nil
 }
@@ -204,7 +204,7 @@ type revisitView struct {
 // reasons to each task so an agent sees exactly what to fix; the human table is
 // the shared one. Unlike `next`, an empty result is the healthy "nothing to
 // revisit" state and exits 0 — an agent pipeline must not treat it as an error.
-func emitRevisit(items []app.RevisitItem) error {
+func emitRevisit(a *app.App, items []app.RevisitItem) error {
 	switch {
 	case flagNDJSON:
 		for _, it := range items {
@@ -221,7 +221,7 @@ func emitRevisit(items []app.RevisitItem) error {
 		for _, it := range items {
 			tasks = append(tasks, it.Task)
 		}
-		printTaskTable(tasks)
+		printTaskTable(a, tasks)
 	}
 	return nil
 }
@@ -402,6 +402,11 @@ func printTreeGroup(a *app.App, g app.TreeGroup) {
 // is what greps.
 func printTreeNode(a *app.App, n app.TreeNode) {
 	line := "    " + stateGlyph(a, n.Actionable, n.Task.Status) + " " + n.Task.ID + "  [" + n.Task.Status + "]  " + n.Task.Title
+	// The same tag the flat row carries: --tree is the same matched rows
+	// regrouped, so it must not be the one view where a promise disappears.
+	if tag := dueTag(a, &n.Task); tag != "" {
+		line += "  " + tag
+	}
 	if len(n.BlockedBy) > 0 {
 		line += "  ← blocked by: " + strings.Join(n.BlockedBy, ", ")
 	}
@@ -504,7 +509,7 @@ func printListItemTable(a *app.App, items []app.ListItem) {
 		// The due tag rides in the title cell like labels and repos, rather than as
 		// a column: a column would widen every row on every board for a field only a
 		// few tasks carry.
-		if tag := dueTag(&t); tag != "" {
+		if tag := dueTag(a, &t); tag != "" {
 			title += "  " + tag
 		}
 		g := stateGlyph(a, it.Actionable, t.Status)
@@ -839,9 +844,9 @@ func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, singl
 				continue
 			}
 			if backlinks {
-				printTaskDetailWithBacklinks(&entries[i].Task.Task, entries[i].Task.Body, mentionsAt(i))
+				printTaskDetailWithBacklinks(a, &entries[i].Task.Task, entries[i].Task.Body, mentionsAt(i))
 			} else {
-				printTaskDetail(&entries[i].Task.Task, entries[i].Task.Body)
+				printTaskDetail(a, &entries[i].Task.Task, entries[i].Task.Body)
 			}
 		}
 	}
@@ -864,12 +869,12 @@ func humanTime(t time.Time) string {
 // same pair humanTime already renders every other timestamp with. The app layer
 // is where an injected clock matters (lint/brief must be reproducible); a
 // rendered marker is read by a human, now, on this machine.
-func dueDetail(t *core.Task) string {
+func dueDetail(a *app.App, t *core.Task) string {
 	if t.Due == nil {
 		return ""
 	}
 	s := humanTime(*t.Due)
-	switch core.DueStateOf(t, time.Now(), time.Local) {
+	switch a.DueDisplayState(t) {
 	case core.DueOverdue:
 		s += "  (overdue)"
 	case core.DueToday:
@@ -883,12 +888,12 @@ func dueDetail(t *core.Task) string {
 // already wide, and `show` carries the exact stamp); the two spellings share the
 // substring "due", so one grep finds every dated row and a longer one finds only
 // the late ones.
-func dueTag(t *core.Task) string {
+func dueTag(a *app.App, t *core.Task) string {
 	if t.Due == nil {
 		return ""
 	}
 	word := "due"
-	if core.DueStateOf(t, time.Now(), time.Local) == core.DueOverdue {
+	if a.DueDisplayState(t) == core.DueOverdue {
 		word = "overdue"
 	}
 	return word + " " + t.Due.Local().Format("2006-01-02 15:04")
@@ -897,7 +902,7 @@ func dueTag(t *core.Task) string {
 // printTaskDetail renders a single task's human detail block for `show`. JSON
 // and NDJSON are handled one layer up in emitShow/showView (which is where the
 // --no-body / --backlinks shape lives), so this is the human path only.
-func printTaskDetail(t *core.Task, body string) {
+func printTaskDetail(a *app.App, t *core.Task, body string) {
 	fmt.Fprintf(out, "%s  %s\n", t.ID, t.Title)
 	fmt.Fprintf(out, "status:   %s\n", t.Status)
 	if t.Epic != "" {
@@ -932,7 +937,7 @@ func printTaskDetail(t *core.Task, body string) {
 		}
 		fmt.Fprintf(out, "  %s %s\n", box, c.Text)
 	}
-	if d := dueDetail(t); d != "" {
+	if d := dueDetail(a, t); d != "" {
 		fmt.Fprintf(out, "due:      %s\n", d)
 	}
 	fmt.Fprintf(out, "created:  %s\n", humanTime(t.Created))
@@ -976,8 +981,8 @@ func toMentionRefs(mentions []core.Task) []mentionRef {
 // printTaskDetailWithBacklinks renders `show --backlinks`'s human block: the
 // usual detail plus a "Mentioned in" section. JSON/NDJSON go through
 // emitShow/showView (backlinkView), so this is the human path only.
-func printTaskDetailWithBacklinks(t *core.Task, body string, mentions []core.Task) {
-	printTaskDetail(t, body)
+func printTaskDetailWithBacklinks(a *app.App, t *core.Task, body string, mentions []core.Task) {
+	printTaskDetail(a, t, body)
 	fmt.Fprintf(out, "\nMentioned in:\n")
 	refs := toMentionRefs(mentions)
 	if len(refs) == 0 {

@@ -287,3 +287,111 @@ func TestParseDueEndOfDayAcrossDST(t *testing.T) {
 		}
 	}
 }
+
+// A zone whose local MIDNIGHT does not exist is the case the DST test above
+// cannot see: Santiago springs forward AT 00:00 (2026-09-06), so
+// ParseInLocation of that date normalizes BACKWARD to 23:00 on the 5th. Deriving
+// the calendar day from that result promised the task for the day BEFORE — i.e.
+// it was overdue for every hour of the day it was promised for, the exact
+// failure the end-of-day rule exists to prevent.
+func TestParseDueMidnightGapZones(t *testing.T) {
+	cases := []struct{ zone, day string }{
+		{"America/Santiago", "2026-09-06"},
+		{"America/Havana", "2026-03-08"},
+	}
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, c := range cases {
+		loc, err := time.LoadLocation(c.zone)
+		if err != nil {
+			t.Skipf("no tzdata for %s", c.zone)
+		}
+		got, err := ParseDue(c.day, now, loc)
+		if err != nil {
+			t.Fatalf("ParseDue(%q) in %s: %v", c.day, c.zone, err)
+		}
+		if day := got.In(loc).Format("2006-01-02"); day != c.day {
+			t.Errorf("%s --due %s landed on %s (%s) — a day early", c.zone, c.day, day, got.In(loc))
+		}
+	}
+}
+
+// A dated DRAFT must reach the due read on a repo-scoped board. It is the
+// "note it on the board, attach it later" shape, and lint (board-wide) errors on
+// it — so if the scope hid it here, one `furrow brief` would print a due section
+// of 1 above a lint ride-along counting 2.
+func TestDueIncludesDraftsUnderARepoScope(t *testing.T) {
+	a := newDueApp(time.Date(2026, 8, 4, 3, 0, 0, 0, time.UTC))
+	scoped, err := a.Add("scoped", AddOpts{Status: "waiting", Repos: []string{"me/app"}, Due: "2026-08-01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := a.Add("drafted", AddOpts{Status: "waiting", Draft: true, Due: "2026-08-01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, err := a.Due(QueryOpts{ScopeRepo: "me/app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, it := range sum.Overdue {
+		got[it.Task.ID] = true
+	}
+	if !got[scoped.ID] || !got[draft.ID] || len(sum.Overdue) != 2 {
+		t.Errorf("scoped due = %v, want both %s (scoped) and %s (draft)", got, scoped.ID, draft.ID)
+	}
+	// A repo filter still applies to a task that HAS repos.
+	other, err := a.Add("elsewhere", AddOpts{Status: "waiting", Repos: []string{"me/other"}, Due: "2026-08-01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, _ = a.Due(QueryOpts{ScopeRepo: "me/app"})
+	for _, it := range sum.Overdue {
+		if it.Task.ID == other.ID {
+			t.Errorf("a task in another repo leaked into the scoped due read: %s", other.ID)
+		}
+	}
+}
+
+// What a RENDERER may say must match what lint and brief say: a task whose lane
+// is exempt never reads as overdue, or `ls` would call a task finished a week
+// EARLY late while lint stayed silent about it.
+func TestDueDisplayStateNeverContradictsTheLintPolicy(t *testing.T) {
+	a := newDueApp(time.Date(2026, 8, 4, 3, 0, 0, 0, time.UTC))
+	late, _ := a.Add("late", AddOpts{Status: "ready", Due: "2026-08-01"})
+	parked, _ := a.Add("parked", AddOpts{Status: "icebox", Due: "2026-08-01"})
+	shipped, _ := a.Add("shipped early", AddOpts{Status: "done", Due: "2026-08-01"})
+
+	if got := a.DueDisplayState(late); got != core.DueOverdue {
+		t.Errorf("an open overdue task = %q, want %q", got, core.DueOverdue)
+	}
+	for _, tk := range []*core.Task{parked, shipped} {
+		if got := a.DueDisplayState(tk); got == core.DueOverdue || got == core.DueToday {
+			t.Errorf("%s (lane %q) = %q; an exempt lane must not read as an alarm", tk.ID, tk.Status, got)
+		}
+	}
+	if got := a.DueDisplayState(&core.Task{ID: "t-nodue", Status: "ready"}); got != core.DueNone {
+		t.Errorf("a dateless task = %q, want %q", got, core.DueNone)
+	}
+}
+
+// `-q due:<bare day>` must denote the same day `--due <bare day>` wrote, or the
+// tool cannot find what it just stored. (The machine stamps stay UTC days.)
+func TestQueryDueBareDayIsTheOperatorsDay(t *testing.T) {
+	// 2026-08-04 12:00 JST; the task is promised for the 4th, stored 14:59:59Z.
+	a := newDueApp(time.Date(2026, 8, 4, 3, 0, 0, 0, time.UTC))
+	tk, err := a.Add("promised", AddOpts{Status: "ready", Due: "2026-08-04"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.List(QueryOpts{Query: "due:2026-08-04"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != tk.ID {
+		t.Errorf("-q due:2026-08-04 = %v, want the task written by --due 2026-08-04", got)
+	}
+	if out, _ := a.List(QueryOpts{Query: "due:<=2026-08-04"}); len(out) != 1 {
+		t.Errorf("-q due:<=2026-08-04 = %d rows, want 1", len(out))
+	}
+}

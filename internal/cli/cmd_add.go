@@ -53,6 +53,13 @@ func newAddCmd() *cobra.Command {
 			if body == "-" && stdin {
 				return core.Validationf("", "cannot combine --stdin with --body - (stdin has a single stream)")
 			}
+			// An empty --due is exit 2 here for the same reason it is on `set`: a
+			// caller interpolating an unset variable (`--due "$WHEN"`) means a bug,
+			// and silently creating a DATELESS task would drop the promise where
+			// nothing — not brief, not lint — could ever report it again.
+			if cmd.Flags().Changed("due") && strings.TrimSpace(due) == "" {
+				return core.Validationf("", "--due was given an empty value; pass a date, or drop the flag to create the task without one")
+			}
 			opts := app.AddOpts{
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
 				Deps: deps, Refs: refs, Body: body, Checklist: checks,
@@ -148,7 +155,7 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 	if err != nil {
 		return err
 	}
-	return emitTasks(created)
+	return emitTasks(a, created)
 }
 
 func newEditCmd() *cobra.Command {

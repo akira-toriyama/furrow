@@ -134,15 +134,19 @@ you start is where it lands), and `furrow lint` finds it board-wide
 pull-reads into a push, with the same launchd pattern as Recipe 2:
 
 ```sh
+set -o pipefail   # or the pipe swallows lint's exit code (see below)
+
 # what has come due, as a digest (empty output = nothing due)
 /opt/homebrew/bin/furrow lint --code due-overdue --code due-today --json |
   jq -r '.[] | "\(.severity)\t\(.id)\t\(.message)"'
 ```
 
-Note the exit code: `lint` exits non-zero while anything is overdue, so a
-launchd script that runs it under `set -e` will "fail" every day until the
-promise is kept or pushed (`furrow set <id> --due +1d`). That is the intended
-pressure, but wrap it (`|| true`) if the job does something else afterwards.
+Note the exit code: `lint` exits non-zero while anything is overdue, so under
+`set -e` the job "fails" every day until the promise is kept or pushed (`furrow
+set <id> --due +1d`). That is the intended pressure — but a POSIX pipeline
+reports only its LAST command's status, so without the `set -o pipefail` above
+the `jq` succeeds and the failure never surfaces. Add `|| true` instead if the
+job does something else afterwards.
 
 ## Not this
 
