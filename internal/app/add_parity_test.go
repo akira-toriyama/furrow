@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // `add` and `add --stdin` are the same command with a different input shape, so
@@ -26,6 +27,14 @@ func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 			name:  "estimates and type",
 			title: "estimated epic",
 			opts:  AddOpts{Value: intp(4), Effort: intp(2)},
+		},
+		{
+			// A due spelling is a REFERENCE the app binds (like an epic ref), so the
+			// bulk path storing the raw string — or not binding it at all — is the
+			// same divergence class this file exists for.
+			name:  "due date",
+			title: "dated",
+			opts:  AddOpts{Due: "2026-08-04"},
 		},
 		{
 			name:  "labels, refs, lane",
@@ -71,6 +80,9 @@ func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 			}
 			if b.Epic != single.Epic {
 				t.Errorf("epic: bulk %q != single %q", b.Epic, single.Epic)
+			}
+			if !sameTime(b.Due, single.Due) {
+				t.Errorf("due: bulk %v != single %v", b.Due, single.Due)
 			}
 			if !samePtr(b.Value, single.Value) {
 				t.Errorf("value: bulk %v != single %v", b.Value, single.Value)
@@ -129,4 +141,12 @@ func samePtr(a, b *int) bool {
 		return a == b
 	}
 	return *a == *b
+}
+
+// sameTime compares two optional timestamps: both nil is equal, one nil is not.
+func sameTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
 }

@@ -111,6 +111,10 @@ func printTaskTable(tasks []core.Task) {
 		if len(t.Repos) > 0 {
 			title += "  (" + strings.Join(t.Repos, ",") + ")"
 		}
+		// The due tag rides in the title cell too — see printListItemTable.
+		if tag := dueTag(&t); tag != "" {
+			title += "  " + tag
+		}
 		fmt.Fprintf(out, "%-*s  %-*s  %5d  %s\n", wID, t.ID, wStatus, t.Status, t.Priority, title)
 	}
 }
@@ -497,6 +501,12 @@ func printListItemTable(a *app.App, items []app.ListItem) {
 		if len(t.Repos) > 0 {
 			title += "  (" + strings.Join(t.Repos, ",") + ")"
 		}
+		// The due tag rides in the title cell like labels and repos, rather than as
+		// a column: a column would widen every row on every board for a field only a
+		// few tasks carry.
+		if tag := dueTag(&t); tag != "" {
+			title += "  " + tag
+		}
 		g := stateGlyph(a, it.Actionable, t.Status)
 		fmt.Fprintf(out, "%s  %-*s  %-*s  %5d  %s\n", g, wID, t.ID, wStatus, t.Status, t.Priority, title)
 	}
@@ -843,7 +853,45 @@ func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, singl
 // and the --json/--ndjson views stay UTC RFC3339 (mustJSON) — this is
 // presentation only, applied inline so the caller's *core.Task is never mutated.
 func humanTime(t time.Time) string {
-	return t.Local().Format("2006-01-02 15:04 -07:00")
+	return t.Local().Format(core.TimeLayout)
+}
+
+// dueDetail renders a due stamp for the `show` block: the local timestamp plus
+// the state, so "when" and "is that a problem?" are one line instead of a date
+// the reader has to compare against today by hand. Empty when there is no date.
+//
+// The zone and the clock are the process's own (time.Local / time.Now) — the
+// same pair humanTime already renders every other timestamp with. The app layer
+// is where an injected clock matters (lint/brief must be reproducible); a
+// rendered marker is read by a human, now, on this machine.
+func dueDetail(t *core.Task) string {
+	if t.Due == nil {
+		return ""
+	}
+	s := humanTime(*t.Due)
+	switch core.DueStateOf(t, time.Now(), time.Local) {
+	case core.DueOverdue:
+		s += "  (overdue)"
+	case core.DueToday:
+		s += "  (today)"
+	}
+	return s
+}
+
+// dueTag is dueDetail's one-cell form for a table row: "due 2026-08-04 10:30",
+// or "overdue …" once the instant has passed. The offset is dropped (the row is
+// already wide, and `show` carries the exact stamp); the two spellings share the
+// substring "due", so one grep finds every dated row and a longer one finds only
+// the late ones.
+func dueTag(t *core.Task) string {
+	if t.Due == nil {
+		return ""
+	}
+	word := "due"
+	if core.DueStateOf(t, time.Now(), time.Local) == core.DueOverdue {
+		word = "overdue"
+	}
+	return word + " " + t.Due.Local().Format("2006-01-02 15:04")
 }
 
 // printTaskDetail renders a single task's human detail block for `show`. JSON
@@ -883,6 +931,9 @@ func printTaskDetail(t *core.Task, body string) {
 			box = "[x]"
 		}
 		fmt.Fprintf(out, "  %s %s\n", box, c.Text)
+	}
+	if d := dueDetail(t); d != "" {
+		fmt.Fprintf(out, "due:      %s\n", d)
 	}
 	fmt.Fprintf(out, "created:  %s\n", humanTime(t.Created))
 	fmt.Fprintf(out, "updated:  %s\n", humanTime(t.Updated))
@@ -1056,6 +1107,9 @@ func changedFields(before, after *core.Task) []string {
 	if !timeEq(before.Reviewed, after.Reviewed) {
 		ch = append(ch, "reviewed")
 	}
+	if !timeEq(before.Due, after.Due) {
+		ch = append(ch, "due")
+	}
 	return ch
 }
 
@@ -1126,7 +1180,12 @@ type briefView struct {
 	// pinned is the open pinned box(es) not already in active — the always-
 	// visible channels whose tasks lead next (omitted when none, so the
 	// pre-v7 shape is unchanged on a board that uses no pins).
-	Pinned    []epicView         `json:"pinned,omitempty"`
+	Pinned []epicView `json:"pinned,omitempty"`
+	// due is what has come due — {overdue, today}, each an ls row (task +
+	// actionable/blocked_by). It leads the object because it leads the printed
+	// dashboard, and struct order IS key order; omitted entirely when nothing is
+	// due, so the pre-v8 shape is unchanged on a board that dates nothing.
+	Due       *briefDueView      `json:"due,omitempty"`
 	Next      []taskView         `json:"next"`
 	NextTotal int                `json:"next_total"`
 	Blocked   []briefBlockedView `json:"blocked"`
@@ -1135,6 +1194,30 @@ type briefView struct {
 	// lint mirrors sync's ride-along: omitted when clean, error counts by code
 	// otherwise.
 	Lint *app.LintErrorSummary `json:"lint,omitempty"`
+}
+
+// briefDueView is brief's due section: the promises that have arrived. Both
+// arrays are always present ([] never null) whenever the section is emitted at
+// all, so a reader can index them without a nil check.
+type briefDueView struct {
+	Overdue []listItemView `json:"overdue"`
+	Today   []listItemView `json:"today"`
+}
+
+// toBriefDueView converts the app summary, or returns nil when nothing is due —
+// which is what keeps the `due` key off a dateless board's brief.
+func toBriefDueView(d app.DueSummary) *briefDueView {
+	if d.Empty() {
+		return nil
+	}
+	v := &briefDueView{Overdue: []listItemView{}, Today: []listItemView{}}
+	for _, it := range d.Overdue {
+		v.Overdue = append(v.Overdue, toListItemView(it))
+	}
+	for _, it := range d.Today {
+		v.Today = append(v.Today, toListItemView(it))
+	}
+	return v
 }
 
 // briefBlockedView is a brief blocked entry: the task plus what is in the way.
@@ -1156,6 +1239,7 @@ func printBrief(b *app.BriefData, scope string) {
 			EpicsDeclared: b.EpicsDeclared,
 			Next:          make([]taskView, 0, len(b.Next)),
 			NextTotal:     b.NextTotal,
+			Due:           toBriefDueView(b.Due),
 			Blocked:       make([]briefBlockedView, 0, len(b.Blocked)),
 			Revisit:       b.Revisit,
 			Drafts:        b.Drafts,
@@ -1191,6 +1275,18 @@ func printBrief(b *app.BriefData, scope string) {
 	}
 	if scope != "" {
 		fmt.Fprintf(out, "repo: %s\n", scope)
+	}
+	// What has come DUE leads the dashboard: it is the only section that expires.
+	// Printed only when there is something to say — an empty band every session
+	// would train the eye to skip the place the dates land.
+	if !b.Due.Empty() {
+		fmt.Fprintf(out, "due (%d):\n", b.Due.Total())
+		for _, it := range b.Due.Overdue {
+			fmt.Fprintf(out, "  ! %s  %-12s %s  (overdue %s)\n", it.Task.ID, it.Task.Status, it.Task.Title, humanTime(*it.Task.Due))
+		}
+		for _, it := range b.Due.Today {
+			fmt.Fprintf(out, "  · %s  %-12s %s  (today %s)\n", it.Task.ID, it.Task.Status, it.Task.Title, humanTime(*it.Task.Due))
+		}
 	}
 	// The focus header, only on a participating board: which box `next` is
 	// scoped to — or the fact that none is, which is WHY next is empty.

@@ -10,7 +10,7 @@ func TestMarshalMetaCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"schema_version\": 7\n}\n"
+	want := "{\n  \"schema_version\": 8\n}\n"
 	if string(b) != want {
 		t.Errorf("MarshalMeta bytes = %q, want %q", b, want)
 	}
@@ -31,18 +31,18 @@ func TestUnmarshalMetaRejectsGarbage(t *testing.T) {
 	}
 }
 
-// SchemaVersion is 7: epic-to-epic deps — the epic shard gained the required
-// `deps` set (the order boxes open in). revisit's epic_dep_done and lint's
-// epic-dep-* rules read it, so a v6 binary that merely PRESERVED the field
-// would report a clean board while ignoring the ordering it encodes; and being
-// a non-omitempty set, every epic shard rewrites on its next save — the gate
-// must refuse the layout, not ignore it.
+// SchemaVersion is 8: the per-task `due` stamp — the instant a task is promised
+// for. `lint` ERRORS on an overdue task (due-overdue) and `brief` leads with the
+// arrived ones, so a v7 binary that merely PRESERVED the field would report a
+// clean board and orient a whole session past a missed date. The field is
+// omitempty, so no dateless shard rewrites — the gate exists for the reading,
+// not for the bytes.
 //
 // The literal is deliberate (not `!= SchemaVersion`): this test's whole job is to
 // make a bump impossible to do by accident, so it has to fail when the const moves
 // and force the author to confirm the flag day.
-func TestSchemaVersionIsSeven(t *testing.T) {
-	if SchemaVersion != 7 {
-		t.Errorf("SchemaVersion = %d, want 7 (epic-to-epic deps)", SchemaVersion)
+func TestSchemaVersionIsEight(t *testing.T) {
+	if SchemaVersion != 8 {
+		t.Errorf("SchemaVersion = %d, want 8 (the per-task due stamp)", SchemaVersion)
 	}
 }

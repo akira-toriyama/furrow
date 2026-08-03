@@ -313,6 +313,10 @@ func canonicalizeTask(t *Task) {
 		r := normTime(*t.Reviewed)
 		t.Reviewed = &r
 	}
+	if t.Due != nil {
+		d := normTime(*t.Due)
+		t.Due = &d
+	}
 
 	// value/effort are clamp-don't-reject: an out-of-range estimate (from a
 	// hand-edit) is rounded into 1..5 so furrow never writes a stray. lint

@@ -27,6 +27,7 @@ func newAddCmd() *cobra.Command {
 		checks   []string
 		stdin    bool
 		epicRef  string
+		due      string
 	)
 	cmd := &cobra.Command{
 		Use:   "add <title>...",
@@ -38,6 +39,7 @@ func newAddCmd() *cobra.Command {
 		Example: "  furrow add \"Wire up the config loader\"\n" +
 			"  furrow add \"Fix flaky sync test\" -s ready -l bug --value 4 --effort 2\n" +
 			"  furrow add \"Cross-repo epic\" -r akira-toriyama/furrow -r akira-toriyama/cifail\n" +
+			"  furrow add \"Check the nightly run landed\" -s waiting --due 2026-08-04T10:30\n" +
 			"  git grep -l TODO | furrow add --stdin -l chore   # one task per line",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -54,7 +56,7 @@ func newAddCmd() *cobra.Command {
 			opts := app.AddOpts{
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
 				Deps: deps, Refs: refs, Body: body, Checklist: checks,
-				Epic: epicRef,
+				Epic: epicRef, Due: due,
 			}
 			if cmd.Flags().Changed("priority") {
 				p := priority
@@ -105,6 +107,7 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "repo to attach (owner/repo, or a unique short name; repeatable)")
 	cmd.Flags().BoolVar(&draft, "draft", false, "create as a draft (no repo attached; suppresses the board repo); conflicts with -r")
 	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "epic to file this task under (id, unique id prefix, or unique title substring)")
+	cmd.Flags().StringVar(&due, "due", "", "promise this for a date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d")
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
 	cmd.Flags().StringSliceVar(&refs, "ref", nil, "reference (file:line or URL, repeatable)")
 	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (`-` reads stdin; default: a heading from the title)")

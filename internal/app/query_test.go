@@ -323,7 +323,7 @@ func TestQueryErrors(t *testing.T) {
 		{"closed:>nope", "query-type"},
 		{"title:>x", "query-type"}, // text fields take no operator
 		{"descendant-of:t-1", "query-unknown-field"},
-		{"is:overdue", "query-unknown-flag"},
+		{"is:snoozed", "query-unknown-flag"},
 		{"has:children", "query-unknown-field"},
 	}
 	for _, c := range cases {
@@ -339,7 +339,7 @@ func TestQueryErrors(t *testing.T) {
 	// The unknown-field candidates name the full v1 vocabulary, including the
 	// part-2 fields — the did-you-mean surface a front-end completes from.
 	ce := qErr(t, a, "descendant-of:t-1")
-	for _, want := range []string{"epic", "depends-on", "blocks", "created", "updated", "closed", "reviewed", "body"} {
+	for _, want := range []string{"epic", "depends-on", "blocks", "created", "updated", "closed", "reviewed", "due", "body"} {
 		if !slices.Contains(ce.Candidates, want) {
 			t.Errorf("unknown-field candidates missing %q: %v", want, ce.Candidates)
 		}

@@ -23,7 +23,15 @@ type BriefData struct {
 	// scope (v7). Board-wide like NextScope's pinned band (pinning is not
 	// repo-slotted; the tasks repo-filter themselves), and deduped against
 	// Active so a box both active and pinned appears once, as the focus.
-	Pinned    []EpicItem
+	Pinned []EpicItem
+	// Due is what has come DUE — overdue first, then today. It LEADS the read
+	// because a date is the one thing on this board that expires: everything else
+	// brief reports waits for you, a date passes without you. Deliberately not
+	// epic-scoped (promised work is usually parked outside the active focus),
+	// though it obeys the repo scope like every other section. `lint`'s
+	// due-overdue/due-today are its twin — this is the surface a session cannot
+	// miss, that one is the check a sweep goes looking for.
+	Due       DueSummary
 	Next      []ShowItem
 	NextTotal int // actionable count BEFORE the display cap — a cap must never hide the size of the queue
 	Blocked   []ListItem
@@ -80,6 +88,17 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		return nil, err
 	}
 
+	// The due section under this read's scope, minus any lane filter: a promised
+	// task is typically parked in `waiting` or still in an intake lane, so
+	// inheriting a caller's -s would hide precisely the rows this section exists
+	// to show. The epic scope was never applied here to begin with.
+	dueOpts := o
+	dueOpts.Status = ""
+	due, err := a.Due(dueOpts)
+	if err != nil {
+		return nil, err
+	}
+
 	// The epic header: EpicsDeclared is board-wide (participation is a board
 	// property), Active is scoped like Next's own scope (o.Repo, else the
 	// board's ScopeRepo) so the line names the focus THIS session's next obeys.
@@ -125,6 +144,7 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		Active:        active,
 		EpicsDeclared: len(all) > 0,
 		Pinned:        pinned,
+		Due:           due,
 		Next:          picks,
 		NextTotal:     total,
 		Blocked:       blocked,

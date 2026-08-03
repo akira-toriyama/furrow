@@ -124,9 +124,31 @@ a weekly `StartCalendarInterval` — schedules the nudge; point the script at
 repo clock is a board-level tally, so it rides on the summary that `sync` and
 `brief` return, not on `revisit`.
 
+## Recipe 5 — a due-date digest
+
+A task can carry a **due** stamp (`furrow add --due` / `furrow set --due`), but
+furrow never pushes: nothing fires at the promised instant. The date is surfaced
+by the two reads that already exist — `furrow brief` LEADS with it (the session
+you start is where it lands), and `furrow lint` finds it board-wide
+(`due-overdue` is an error, `due-today` a warning). Scheduling only turns those
+pull-reads into a push, with the same launchd pattern as Recipe 2:
+
+```sh
+# what has come due, as a digest (empty output = nothing due)
+/opt/homebrew/bin/furrow lint --code due-overdue --code due-today --json |
+  jq -r '.[] | "\(.severity)\t\(.id)\t\(.message)"'
+```
+
+Note the exit code: `lint` exits non-zero while anything is overdue, so a
+launchd script that runs it under `set -e` will "fail" every day until the
+promise is kept or pushed (`furrow set <id> --due +1d`). That is the intended
+pressure, but wrap it (`|| true`) if the job does something else afterwards.
+
 ## Not this
 
 furrow will not grow a `--daemon`, a `furrow schedule` subcommand, or a built-in
 notifier — that would put an always-on process behind a tool whose whole premise
 is "plain files in your repo" (see [non-goals.md](non-goals.md)). The scheduler
-is the OS's job; furrow stays a one-shot command.
+is the OS's job; furrow stays a one-shot command. A **due date is not a
+reminder** in that sense either: it is state a read reports when you run one,
+never an alarm furrow rings.

@@ -9,19 +9,26 @@ import (
 	"github.com/akira-toriyama/furrow/internal/query"
 )
 
-// The date qualifiers (created/updated/closed/reviewed) — the -q generalization
-// of ls --since/--until. Every scalar is bound to an inclusive INTERVAL of
-// instants at compile time, which is what makes a bare day and a comparison
-// compose without a special case:
+// The date qualifiers (created/updated/closed/reviewed/due) — the -q
+// generalization of ls --since/--until. Every scalar is bound to an inclusive
+// INTERVAL of instants at compile time, which is what makes a bare day and a
+// comparison compose without a special case:
 //
 //	created:2026-07-01        — inside that whole (UTC) day
 //	created:>2026-07-01       — strictly AFTER the day (not later the same day)
 //	updated:>=-2w             — within the last two weeks (a relative offset)
 //	closed:2026-07-01..-1d    — range, ends inclusive; * = an open end
 //
-// A nil closed/reviewed satisfies NO comparison (existence is has:/no:'s job),
-// and a negated term therefore INCLUDES the unset — `-closed:<2026-01-01` keeps
-// the still-open tasks, matching how negation treats unset estimates.
+// A nil closed/reviewed/due satisfies NO comparison (existence is has:/no:'s
+// job), and a negated term therefore INCLUDES the unset — `-closed:<2026-01-01`
+// keeps the still-open tasks, matching how negation treats unset estimates.
+//
+// One divergence worth knowing, and it is deliberate: a bare day HERE is a UTC
+// day (what a stamp is compared against), while `--due 2026-08-04` binds the END
+// of that day in the OPERATOR's zone (app.ParseDue) — a promise is made in wall
+// clock, a comparison is made against stored instants. On a +09:00 machine the
+// two therefore denote instants up to 9h apart; write `due:<=2026-08-04T23:59:59+09:00`
+// when the distinction matters.
 
 // dateBound is one date scalar as an inclusive [lo, hi] instant interval: a
 // bare YYYY-MM-DD covers its whole UTC day (hi = 23:59:59, the last whole
@@ -92,7 +99,7 @@ func parseRelativeOffset(s string) (time.Duration, bool) {
 	return d, true
 }
 
-// compileDate binds a date qualifier (created/updated/closed/reviewed) with an
+// compileDate binds a date qualifier (created/updated/closed/reviewed/due) with an
 // equality (day/instant membership, comma = OR), comparison, or range. All
 // values are parsed at compile time, so a malformed date fails the read before
 // a single task is matched.
@@ -114,6 +121,11 @@ func (c *queryCompiler) compileDate(term query.Term, neg func(func(*core.Task) b
 				return time.Time{}, false
 			}
 			return *t.Reviewed, true
+		case "due":
+			if t.Due == nil {
+				return time.Time{}, false
+			}
+			return *t.Due, true
 		}
 		return time.Time{}, false
 	}

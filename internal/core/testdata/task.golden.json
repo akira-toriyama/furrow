@@ -34,5 +34,6 @@
   "updated": "2026-06-21T01:02:03Z",
   "closed": null,
   "reviewed": "2026-06-20T01:02:03Z",
-  "body": "bodies/t-0001.md"
+  "body": "bodies/t-0001.md",
+  "due": "2026-07-01T14:59:59Z"
 }

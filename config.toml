@@ -76,6 +76,14 @@ older_than_days = 30
 # `--exclude-code` / `--severity error` (those reject an unknown code with exit 2).
 # ignore_codes = ["reconcile-gap", "epic-no-active"]
 
+[due]
+# Lanes where a due date raises NOTHING — no lint finding, no `furrow brief`
+# section entry. The done lane is always exempt on top of this (a closed task's
+# promise is settled). Terminal lanes are deliberately NOT exempt as a class:
+# "waiting" is terminal here, and a waiting task whose only remaining step is
+# "look at this on that day" is exactly what a due date is for.
+# ignore_lanes = ["icebox"]
+
 [revisit]
 # Days a task may go without an update before `furrow revisit` flags it
 # stale. 0 disables the stale signal (the other revisit signals still fire).

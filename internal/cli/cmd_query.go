@@ -161,7 +161,7 @@ func newLsCmd() *cobra.Command {
 func addQueryFlag(cmd *cobra.Command, p *string) {
 	cmd.Flags().StringVarP(p, "query", "q", "",
 		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
-			"is:actionable|blocked|stale|open|closed|draft|unfiled, "+
+			"is:actionable|blocked|stale|open|closed|draft|unfiled|overdue, "+
 			"ordinals+dates with >=,<,.. (updated:>=-2w), graph child-of:/depends-on:/blocks:, "+
 			"free text over title+body; ANDs with the other filters")
 }
@@ -421,6 +421,7 @@ func newNextCmd() *cobra.Command {
 			}
 			hintHiddenDrafts(o, a.Next)
 			hintEpicScope(a, o, tasks)
+			hintDue(a, o)
 			// "nothing actionable" is a healthy empty result -> exit 0 (same as
 			// ls/revisit). --json/--ndjson attach a reason per task.
 			return emitActionable(tasks)

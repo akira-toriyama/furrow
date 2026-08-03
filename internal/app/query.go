@@ -12,29 +12,30 @@ import (
 
 // qualifierVocab is the set of field qualifiers `-q` understands (the
 // candidates offered on an unknown field): the enum/text fields, the ordinals,
-// the four system timestamps, and the direct-edge graph qualifiers. The
+// the five dates (four system stamps + the promised `due`), and the direct-edge
+// graph qualifiers. The
 // transitive graph qualifiers (descendant-of/ancestor-of) and wildcards are the
 // tracked v2 remainder and are NOT listed, so writing one yields a clear
 // unknown-field error rather than a silent no-match.
 var qualifierVocab = []string{
 	"status", "lane", "epic", "label", "repo", "id", "title", "body",
 	"value", "effort", "priority", "roi",
-	"created", "updated", "closed", "reviewed",
+	"created", "updated", "closed", "reviewed", "due",
 	"depends-on", "blocks",
 }
 
 // presenceVocab is the field set has:/no: accept.
 var presenceVocab = []string{
-	"label", "repo", "epic", "value", "effort", "deps", "refs", "checklist", "closed", "reviewed", "body",
+	"label", "repo", "epic", "value", "effort", "deps", "refs", "checklist", "closed", "reviewed", "body", "due",
 }
 
 // stateVocab is the is: flag set.
-var stateVocab = []string{"actionable", "blocked", "stale", "open", "closed", "draft", "unfiled"}
+var stateVocab = []string{"actionable", "blocked", "stale", "open", "closed", "draft", "unfiled", "overdue"}
 
-// isDateField reports whether f is one of the four system timestamps the date
-// qualifiers read.
+// isDateField reports whether f is one of the date qualifiers — the four system
+// timestamps plus `due`, the one date a human sets rather than furrow stamping.
 func isDateField(f string) bool {
-	return f == "created" || f == "updated" || f == "closed" || f == "reviewed"
+	return f == "created" || f == "updated" || f == "closed" || f == "reviewed" || f == "due"
 }
 
 // taskPred is a compiled `-q` predicate over one task. Evaluation may load a
@@ -197,6 +198,13 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 				// No box. The lint-error state, queryable so a backfill sweep is one
 				// read rather than a diff of two lists.
 				return t.Epic == ""
+			case "overdue":
+				// The promised instant has passed — lint's due-overdue as a filter,
+				// through the same predicate, so a query can never disagree with the
+				// error. Lane exclusions are deliberately NOT applied: `-q` filters what
+				// the caller asked for (`is:overdue -s icebox` is a legitimate audit),
+				// and the lint rule is where the "which lanes nag" policy lives.
+				return core.DueStateOf(t, c.now, a.loc()) == core.DueOverdue
 			}
 			return false
 		}), nil
@@ -228,6 +236,8 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 				return t.Closed != nil
 			case "reviewed":
 				return t.Reviewed != nil
+			case "due":
+				return t.Due != nil
 			case "body":
 				// Non-whitespace body content. Note `add` seeds every body with
 				// a heading, so no:body means a body someone deliberately
@@ -259,7 +269,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	// comparisons/ranges; everything else is equality only.
 	ordinal := f == "value" || f == "effort" || f == "priority" || f == "roi"
 	if term.Op != query.Eq && !ordinal && !isDateField(f) {
-		return nil, unknownQueryErr(core.KindQueryType, "field "+strconv.Quote(f)+" takes an equality value, not a comparison/range (only value/effort/priority/roi and created/updated/closed/reviewed are ordered)", nil)
+		return nil, unknownQueryErr(core.KindQueryType, "field "+strconv.Quote(f)+" takes an equality value, not a comparison/range (only value/effort/priority/roi and created/updated/closed/reviewed/due are ordered)", nil)
 	}
 
 	switch f {
@@ -348,7 +358,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 		vals := term.Values
 		return neg(func(t *core.Task) bool { return anyTextMatch(c.body(t), vals, false) }), nil
 
-	case "created", "updated", "closed", "reviewed":
+	case "created", "updated", "closed", "reviewed", "due":
 		return c.compileDate(term, neg)
 
 	case "value", "effort", "priority", "roi":

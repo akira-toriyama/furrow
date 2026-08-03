@@ -20,6 +20,14 @@ var (
 	// not finished — so it never stamps `closed` and is never archived.
 	DefaultTerminal = []string{"done", "icebox", "waiting"}
 
+	// DefaultDueIgnoreLanes are the lanes where a due date raises no due-today /
+	// due-overdue finding, ON TOP of the done lane (which is skipped structurally
+	// — a closed task's promise is settled). Only the parked-forever lane by
+	// default: `waiting` is terminal too, but a waiting task is the archetype of
+	// one whose whole remaining step is "look at this on that day", so skipping the
+	// terminal class as a whole would silence the very case due dates exist for.
+	DefaultDueIgnoreLanes = []string{"icebox"}
+
 	// DefaultNextLanes is the "actionable now" set `furrow next` considers (in
 	// addition to the deps-satisfied check). Intake/planning lanes are excluded
 	// so next stays focused on what's ready to work. Falls back to all
@@ -66,6 +74,10 @@ type Config struct {
 	DoneLane    string
 	Terminal    map[string]bool // membership set built from the terminal lane list
 	NextLanes   []string        // lanes `furrow next` considers (besides deps-done)
+	// DueIgnoreLanes are the [due].ignore_lanes: lanes where a due date raises no
+	// lint finding and no brief section entry (the done lane is skipped on top of
+	// these, structurally). Empty = signal in every lane but done.
+	DueIgnoreLanes map[string]bool
 
 	PriorityStep    int
 	PriorityDefault int
@@ -143,6 +155,7 @@ func Default() *Config {
 		UITheme:              DefaultUITheme,
 		RevisitStaleDays:     DefaultRevisitStaleDays,
 		ReviewStaleAfterDays: DefaultReviewStaleAfterDays,
+		DueIgnoreLanes:       setOf(DefaultDueIgnoreLanes),
 	}
 	c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)
 	c.compile()
