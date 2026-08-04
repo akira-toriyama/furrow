@@ -153,9 +153,22 @@ func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Pr
 		}
 	}
 	sort.Strings(idle)
-	for _, repo := range idle {
-		out = append(out, Problem{SevWarn, "epic-no-active", repo,
-			"no active epic for " + repo + " — pick one with `furrow epic ls -r " + repo + "` + `furrow epic activate <id>`"})
+	// One idle repo keeps the targeted per-repo line (id = the repo, the fix
+	// spelled for it). Several fold into ONE problem: on a board with many
+	// dormant repos this warn used to print one line per repo (22 measured,
+	// on every lint/sync/hook run), and a wall the reader scrolls past is a
+	// warn that no longer warns. The fold keeps every repo NAME in the
+	// message — information intact, only the line count collapses — with the
+	// synthetic id "board" (the archive-backlog precedent: a finding about no
+	// single entity gets a synthetic id). The code stays `epic-no-active`
+	// either way, so --code / --exclude-code / ignore_codes are unaffected.
+	if len(idle) == 1 {
+		out = append(out, Problem{SevWarn, "epic-no-active", idle[0],
+			"no active epic for " + idle[0] + " — pick one with `furrow epic ls -r " + idle[0] + "` + `furrow epic activate <id>`"})
+	} else if len(idle) > 1 {
+		out = append(out, Problem{SevWarn, "epic-no-active", "board", fmt.Sprintf(
+			"no active epic for %d repos with open work (%s) — pick one per repo you are working in: `furrow epic ls -r <repo>` + `furrow epic activate <id>`",
+			len(idle), strings.Join(idle, ", "))})
 	}
 	return out
 }
