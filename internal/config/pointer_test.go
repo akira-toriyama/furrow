@@ -82,3 +82,21 @@ func TestLoadPointer_MalformedErrors(t *testing.T) {
 		t.Fatal("expected error for malformed TOML, got nil")
 	}
 }
+
+// An unknown key in a pointer warns with its line (strict decode, the Load
+// contract) instead of vanishing — a typo'd default_repo would otherwise
+// silently un-scope the board.
+func TestLoadPointer_UnknownKeyWarnsWithLine(t *testing.T) {
+	path := writePointer(t, "board = \"/central/.furrow\"\ndefalt_repo = \"me/app\"\n")
+	p, warn, err := LoadPointer(path)
+	if err != nil {
+		t.Fatalf("LoadPointer: %v", err)
+	}
+	if p.Board != "/central/.furrow" || p.DefaultRepo != "" {
+		t.Errorf("pointer = %+v, want the known keys decoded and the typo ignored", p)
+	}
+	joined := strings.Join(warn, "\n")
+	if !strings.Contains(joined, `"defalt_repo"`) || !strings.Contains(joined, path+":2:") {
+		t.Errorf("want an unknown-key warning with file:line, got %v", warn)
+	}
+}

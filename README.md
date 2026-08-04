@@ -762,9 +762,6 @@ stale_days = 30                   # `furrow revisit` flags a task with no update
 [review]
 stale_after_days = 14             # days before `furrow sync`/`brief` nudge a repo as unreviewed (0 disables)
 
-[ui]
-theme = "auto"                    # front-end display preference: auto | dark | light (NO_COLOR is always respected)
-
 [alias]                           # name your frequent filters; `furrow <name> …` expands git-style
 triage = "ls -s inbox,backlog"    #   `furrow triage -r app` -> `furrow ls -s inbox,backlog -r app`
 wip    = "ls -s in-progress"       #   the remaining args append, so all existing flags/scope compose

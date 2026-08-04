@@ -1,9 +1,10 @@
 // Package config loads .furrow/config.toml — the one human-edited file in the
 // store. It is read-only from furrow's side (the app never writes it) and
 // follows a clamp-don't-reject policy: unknown keys are ignored and
-// out-of-range values fall back to a safe default with a warning, so a typo can
-// never break the tool. `furrow lint` surfaces the warnings (there is no
-// `furrow validate` command — the name this comment used to claim).
+// out-of-range values fall back to a safe default — each WITH a warning, so a
+// typo can never break the tool and never hides either. `furrow lint` surfaces
+// the warnings (there is no `furrow validate` command — the name this comment
+// used to claim).
 package config
 
 import "regexp"
@@ -47,7 +48,6 @@ var (
 	DefaultEpicIDPrefix = "e-"
 
 	DefaultArchiveOlderThanDays = 30
-	DefaultUITheme              = "auto"
 
 	// DefaultRevisitStaleDays is how long a task may go without an update before
 	// `furrow revisit` flags it stale. A config stale_days of 0 disables the
@@ -61,9 +61,6 @@ var (
 	// motivates the 14-day default (two missed weeks).
 	DefaultReviewStaleAfterDays = 14
 )
-
-// validThemes is the closed set for [ui].theme.
-var validThemes = map[string]bool{"auto": true, "dark": true, "light": true}
 
 // Config is the effective, validated configuration the rest of furrow reads.
 // Construct it only via Load (or Default); never hand-build one, so the
@@ -87,7 +84,6 @@ type Config struct {
 	IDWidth      int
 
 	ArchiveOlderThanDays int
-	UITheme              string
 
 	RevisitStaleDays int // days without update before `revisit` flags stale; 0 disables
 
@@ -160,7 +156,6 @@ func Default() *Config {
 		EpicIDPrefix:         DefaultEpicIDPrefix,
 		IDWidth:              DefaultIDWidth,
 		ArchiveOlderThanDays: DefaultArchiveOlderThanDays,
-		UITheme:              DefaultUITheme,
 		RevisitStaleDays:     DefaultRevisitStaleDays,
 		ReviewStaleAfterDays: DefaultReviewStaleAfterDays,
 		DueIgnoreLanes:       setOf(DefaultDueIgnoreLanes),

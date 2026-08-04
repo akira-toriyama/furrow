@@ -61,15 +61,25 @@ type rawBoard struct {
 // Load: it is ambient and affects every repo, so a half-written file must never
 // break furrow in an unrelated directory. Specifically:
 //   - a missing/empty file (no [[board]]) yields (nil, nil, nil) — no board.
-//   - malformed TOML is an error.
-//   - each [[board]] is clamped on its own: an entry with no path, or no scopes
-//     once blank strings are pruned, is dropped with a warning.
+//   - TOML that does not PARSE (a syntax error) is an error — nothing can be
+//     salvaged from a file with no readable structure.
+//   - an unknown key is ignored with a warning naming the file, line, and key
+//     (strict decode, same as Load).
+//   - a TYPE error is NOT a file-wide error: the file is re-read leniently and
+//     only the [[board]] entries whose keys hold the wrong type are dropped,
+//     each with a warning naming the file, entry, and key. A wrong-typed value
+//     in one board must not take furrow down for every repo on the machine —
+//     that is the policy the paragraph above declares, applied to the failure
+//     mode it used to miss.
+//   - each surviving [[board]] is clamped on its own: an entry with no path, or
+//     no scopes once blank strings are pruned, is dropped with a warning.
 //   - if every entry is dropped the result is (nil, warn, nil) — "no board".
 //
 // A legacy single [board] table decodes (via go-toml/v2) into a one-element
-// slice whose old `scope` key is silently ignored; with no `scopes` it clamps
-// away here — the accepted rollout-window degradation (a v2 binary on a v1
-// config simply runs without a central board until the config is migrated).
+// slice; its old `scope` key now WARNS as unknown, and with no `scopes` the
+// entry clamps away here — the accepted rollout-window degradation (a v2 binary
+// on a v1 config simply runs without a central board until the config is
+// migrated).
 //
 // Resolving each board path, selecting the most specific scope, and checking
 // that the chosen board exists are the caller's job (only the app layer knows
@@ -85,12 +95,135 @@ func LoadGlobalBoards(path string) ([]GlobalBoard, []string, error) {
 		return nil, nil, err
 	}
 	var r rawGlobal
-	if err := toml.Unmarshal(data, &r); err != nil {
-		return nil, nil, fmt.Errorf("furrow config.toml: %w", err)
+	unknown, err := decodeStrict(data, &r, path)
+	if err != nil {
+		// A type error somewhere in the file. Salvage what still reads: the
+		// lenient pass below drops only the broken entries. A syntax error
+		// falls through it unchanged (nothing decodes at all).
+		entries, warn, salvageErr := salvageGlobalBoards(data, path)
+		if salvageErr != nil {
+			return nil, nil, fmt.Errorf("furrow config.toml: %w", err)
+		}
+		boards, clampWarn := clampGlobalBoards(entries, path)
+		return boards, append(warn, clampWarn...), nil
 	}
+	boards, warn := clampGlobalBoards(r.Boards, path)
+	return boards, append(unknown, warn...), nil
+}
+
+// salvageGlobalBoards is the lenient second pass behind LoadGlobalBoards: it
+// re-reads the file as untyped TOML and coerces each [[board]] entry field by
+// field, dropping ONLY the entries that hold a wrong-typed value (with a
+// warning naming the file, entry, and key) so the healthy boards survive.
+// Positions are gone on this path — go-toml reports them only while decoding
+// into the typed struct, which is what just failed — so the warnings name the
+// entry by index instead of by line.
+func salvageGlobalBoards(data []byte, path string) ([]rawBoard, []string, error) {
+	var doc map[string]any
+	if err := toml.Unmarshal(data, &doc); err != nil {
+		return nil, nil, err
+	}
+	var items []any
+	switch v := doc["board"].(type) {
+	case nil:
+		return nil, nil, nil
+	case []any: // [[board]] array of tables
+		items = v
+	case []map[string]any: // go-toml may type a homogeneous array this way
+		for _, m := range v {
+			items = append(items, m)
+		}
+	case map[string]any: // legacy single [board] table
+		items = []any{v}
+	default:
+		return nil, []string{fmt.Sprintf("%s: `board` is not a [[board]] table; ignoring it", path)}, nil
+	}
+	var entries []rawBoard
+	var warn []string
+	for i, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			warn = append(warn, fmt.Sprintf("%s: [[board]] #%d is not a table; ignoring this board", path, i+1))
+			continue
+		}
+		b, w := coerceBoard(m, path, i+1)
+		warn = append(warn, w...)
+		if b != nil {
+			entries = append(entries, *b)
+		}
+	}
+	return entries, warn, nil
+}
+
+// coerceBoard converts one untyped [[board]] table into a rawBoard. A key
+// holding the wrong type poisons the ENTRY, not the file (nil + a warning
+// naming file, entry number, and key); an unknown key only warns, exactly like
+// the strict path — just without a line number.
+func coerceBoard(m map[string]any, path string, n int) (*rawBoard, []string) {
+	var b rawBoard
+	var warn []string
+	bad := func(key string) (*rawBoard, []string) {
+		return nil, append(warn, fmt.Sprintf("%s: [[board]] #%d: key %q has the wrong type; ignoring this board", path, n, key))
+	}
+	for key, v := range m {
+		switch key {
+		case "path":
+			s, ok := v.(string)
+			if !ok {
+				return bad(key)
+			}
+			b.Path = s
+		case "scopes":
+			items, ok := v.([]any)
+			if !ok {
+				return bad(key)
+			}
+			for _, it := range items {
+				s, ok := it.(string)
+				if !ok {
+					return bad(key)
+				}
+				b.Scopes = append(b.Scopes, s)
+			}
+		case "repo":
+			s, ok := v.(string)
+			if !ok {
+				return bad(key)
+			}
+			b.Repo = s
+		case "label":
+			s, ok := v.(string)
+			if !ok {
+				return bad(key)
+			}
+			b.Label = s
+		case "auto_filter":
+			f, ok := v.(bool)
+			if !ok {
+				return bad(key)
+			}
+			b.AutoFilter = &f
+		case "autocommit":
+			c, ok := v.(bool)
+			if !ok {
+				return bad(key)
+			}
+			b.AutoCommit = c
+		default:
+			warn = append(warn, fmt.Sprintf("%s: [[board]] #%d: unknown key %q; ignored", path, n, key))
+		}
+	}
+	return &b, warn
+}
+
+// clampGlobalBoards applies the per-entry clamp rules shared by the strict and
+// salvage decode paths: no path or no scopes drops the entry with a warning,
+// the retired label="auto" tombstone warns and clears, and an omitted
+// auto_filter defaults to true.
+func clampGlobalBoards(entries []rawBoard, path string) ([]GlobalBoard, []string) {
 	var boards []GlobalBoard
 	var warn []string
-	for i, b := range r.Boards {
+	for i, b := range entries {
 		if b.Path == "" {
 			warn = append(warn, fmt.Sprintf("%s: [[board]] #%d has no path; ignoring it", path, i+1))
 			continue
@@ -112,10 +245,7 @@ func LoadGlobalBoards(path string) ([]GlobalBoard, []string, error) {
 		autoFilter := b.AutoFilter == nil || *b.AutoFilter // omitted -> true
 		boards = append(boards, GlobalBoard{Path: b.Path, Scopes: scopes, Repo: b.Repo, Label: label, AutoFilter: autoFilter, AutoCommit: b.AutoCommit})
 	}
-	if len(boards) == 0 {
-		return nil, warn, nil
-	}
-	return boards, warn, nil
+	return boards, warn
 }
 
 // nonBlank returns the non-empty elements of ss, or nil when none remain. The

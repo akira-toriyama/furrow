@@ -10,8 +10,8 @@ const Template = `# furrow — repo-local configuration (.furrow/config.toml).
 # https://github.com/akira-toriyama/furrow
 #
 # furrow only READS this file; it never writes or regenerates it. Unknown keys
-# and out-of-range values are silently clamped to safe defaults (a typo can't
-# break the tool); ` + "`furrow lint`" + ` reports what it clamped.
+# and out-of-range values are clamped to safe defaults (a typo can't break the
+# tool); ` + "`furrow lint`" + ` reports what it clamped, unknown keys with their line.
 #
 # Two top-level switches (bare keys — TOML requires them ABOVE the [sections]):
 #
@@ -108,8 +108,10 @@ stale_days = 30
 # ` + "`furrow sync`" + ` nudges it as unreviewed (on the revisit line). 0 disables.
 stale_after_days = 14
 
-[ui]
-# Display-theme preference for a furrow front-end (furrow itself is CLI-only; a
-# TUI/GUI lives in a separate repo). NO_COLOR is always respected regardless.
-theme = "auto" # auto | dark | light
+[alias]
+# Board-level command aliases, git-style: ` + "`furrow <name> …`" + ` expands to the
+# command string with the rest of argv appended. A builtin always wins (a
+# shadowing alias is inert; ` + "`furrow lint`" + ` warns ` + "`alias-shadow`" + `). Lives in this
+# committed file so the whole board shares one vocabulary.
+# triage = "set --status backlog"
 `

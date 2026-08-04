@@ -580,7 +580,7 @@ positional bookkeeping, not progress, so staleness signals stay honest).
 unknown keys and out-of-range values fall back to defaults with a warning that
 `furrow lint` surfaces. Read it through `internal/config`. The shipped sections
 are `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`,
-`[archive]`, `[lint]`, `[due]`, `[revisit]`, `[review]`, `[ui]`, `[alias]`, and the
+`[archive]`, `[lint]`, `[due]`, `[revisit]`, `[review]`, `[alias]`, and the
 top-level `standalone` and `default_repo` — the repo-root `config.toml` (which `furrow init` writes
 and check.sh diffs byte-for-byte) is the canonical annotated copy; read it rather
 than trusting a prose list here. Two switches are genuinely OFF by default:

@@ -3,8 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-
-	"github.com/pelletier/go-toml/v2"
 )
 
 // Pointer is a repo-local .furrow-pointer.toml: it redirects furrow at a central
@@ -28,9 +26,11 @@ type rawPointer struct {
 }
 
 // LoadPointer parses a .furrow-pointer.toml. Unlike config.Load it does NOT
-// clamp: a pointer with no board is useless and a malformed pointer must fail
-// loudly rather than silently send writes to the wrong store. The warnings are
-// stderr-bound notes (currently only the retired default_label tombstone).
+// clamp the essentials: a pointer with no board is useless and a malformed
+// pointer must fail loudly rather than silently send writes to the wrong
+// store. The warnings are stderr-bound notes — the retired default_label
+// tombstone, and any unknown key (strict decode, named with its line, same as
+// Load — a typo'd optional key must not vanish silently even here).
 // Resolving the board path (relative/~/abs) and checking it exists is the
 // caller's job — only the caller knows the pointer file's directory.
 func LoadPointer(path string) (*Pointer, []string, error) {
@@ -41,13 +41,13 @@ func LoadPointer(path string) (*Pointer, []string, error) {
 		return nil, nil, err
 	}
 	var r rawPointer
-	if err := toml.Unmarshal(data, &r); err != nil {
+	warn, err := decodeStrict(data, &r, path)
+	if err != nil {
 		return nil, nil, fmt.Errorf("malformed pointer TOML: %w", err)
 	}
 	if r.Board == "" {
 		return nil, nil, fmt.Errorf("pointer is missing required key `board`")
 	}
-	var warn []string
 	if r.DefaultLabel != "" {
 		warn = append(warn, fmt.Sprintf("%s: default_label was replaced by default_repo; update the pointer (key ignored)", path))
 	}

@@ -12,7 +12,7 @@ import (
 // means a partial file is legal — every absent value falls back to Default() — so
 // a test can declare one key and nothing else. Bare keys go FIRST on purpose:
 // TOML binds a bare key to the table above it, so `default_repo` written after
-// `[ui]` would decode as `ui.default_repo` and vanish.
+// `[lanes]` would decode as `lanes.default_repo` and vanish (with a warning).
 func writeBoardConfig(t *testing.T, board, body string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(board, "config.toml"), []byte(body), 0o644); err != nil {
