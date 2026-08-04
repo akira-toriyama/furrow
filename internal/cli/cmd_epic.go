@@ -86,35 +86,73 @@ func newEpicAddCmd() *cobra.Command {
 func newEpicLsCmd() *cobra.Command {
 	var (
 		all   bool
-		label string
+		label []string
 		repo  string
 		limit int
 	)
 	cmd := &cobra.Command{
 		Use:   "ls",
 		Short: "List epics (open only by default), active first",
-		Args:  cobra.NoArgs,
+		Long: "List the boxes: the active one first, then pinned open, then open by id,\n" +
+			"then closed (with --all). The board's repo scope applies exactly as on the\n" +
+			"task reads: inside a scoped checkout a bare `epic ls` lists this repo's\n" +
+			"boxes (the population `furrow brief`'s epic header draws from), an explicit\n" +
+			"-r overrides it, and -r '' is the whole-board escape — with a stderr note\n" +
+			"whenever the scope hid boxes. -l is the task reads' tag filter (comma = OR,\n" +
+			"repeatable unions).",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
+			// The task reads' scope rule (scopedQuery), applied to boxes: the
+			// board's auto scope engages unless an explicit -r replaces it ('' =
+			// whole board). `epic ls` used to read the raw flag alone, so it was
+			// the ONE read whose population ignored the board scope — same
+			// board, same cwd, and brief's epic header disagreed with it.
 			resolved := ""
-			if repo != "" {
-				if resolved, err = a.ResolveRepo(repo); err != nil {
-					return err
+			if a.DefaultRepo != "" && a.AutoFilter {
+				resolved = a.DefaultRepo
+			}
+			if cmd.Flags().Changed("repo") {
+				resolved = ""
+				if repo != "" {
+					if resolved, err = a.ResolveRepo(repo); err != nil {
+						return err
+					}
 				}
 			}
-			items, err := a.EpicList(app.EpicQueryOpts{All: all, Label: label, Repo: resolved, Limit: limit})
+			o := app.EpicQueryOpts{All: all, Label: joinOrFilter(label), Repo: resolved, Limit: limit}
+			items, err := a.EpicList(o)
 			if err != nil {
 				return err
 			}
+			// Disclose what the repo scope hid (the drafts-hint rule for boxes):
+			// count the same query unscoped and name the escape hatch.
+			if resolved != "" {
+				u := o
+				u.Repo, u.Limit = "", 0
+				if board, err := a.EpicList(u); err == nil {
+					s := o
+					s.Limit = 0
+					if scoped, err := a.EpicList(s); err == nil && len(board) > len(scoped) {
+						fmt.Fprintf(errOut, "%d box(es) outside %s hidden — furrow epic ls -r ''\n", len(board)-len(scoped), resolved)
+					}
+				}
+			}
+			hintCapped(len(items), limit, "", func() (int, error) {
+				u := o
+				u.Limit = 0
+				all, err := a.EpicList(u)
+				return len(all), err
+			})
 			return emitEpicList(items)
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "include closed epics")
-	cmd.Flags().StringVarP(&label, "label", "l", "", "filter by label")
-	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by owner/repo")
+	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l)")
+	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by owner/repo (a unique short name works; '' = whole board)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
 	return cmd
 }

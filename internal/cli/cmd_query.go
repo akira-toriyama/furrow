@@ -118,6 +118,12 @@ func newLsCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				hintCapped(len(groups), limit, "groups", func() (int, error) {
+					u := o
+					u.Limit = 0
+					all, err := a.Tree(u, root)
+					return len(all), err
+				})
 				return emitTree(a, groups)
 			}
 			items, err := a.ListItems(o)
@@ -127,7 +133,13 @@ func newLsCmd() *cobra.Command {
 			if err := labelDidYouMean(cmd, a, o, len(items)); err != nil {
 				return err
 			}
-			hintHiddenDrafts(o, a.List)
+			hintHiddenDrafts(o, a.List, "furrow ls --drafts")
+			hintCapped(len(items), limit, "", func() (int, error) {
+				u := o
+				u.Limit = 0
+				all, err := a.List(u)
+				return len(all), err
+			})
 			// An empty listing is a valid result (exit 0), not a miss.
 			return emitListItems(a, items)
 		},
@@ -419,7 +431,13 @@ func newNextCmd() *cobra.Command {
 			if err := labelDidYouMean(cmd, a, o, len(tasks)); err != nil {
 				return err
 			}
-			hintHiddenDrafts(o, a.Next)
+			hintHiddenDrafts(o, a.Next, "furrow ls --drafts")
+			hintCapped(len(tasks), limit, "", func() (int, error) {
+				u := o
+				u.Limit = 0
+				all, err := a.Next(u)
+				return len(all), err
+			})
 			hintEpicScope(a, o, tasks)
 			hintDue(a, o)
 			// "nothing actionable" is a healthy empty result -> exit 0 (same as
@@ -552,6 +570,12 @@ func newRevisitCmd() *cobra.Command {
 			if err := labelDidYouMean(cmd, a, o, len(items)); err != nil {
 				return err
 			}
+			hintCapped(len(items), limit, "", func() (int, error) {
+				u := o
+				u.Limit = 0
+				all, err := a.Revisit(u, days)
+				return len(all), err
+			})
 			// "nothing to revisit" is a valid clean result (exit 0), not a miss.
 			return emitRevisit(a, items)
 		},
@@ -633,6 +657,13 @@ func newStatsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The same -l did-you-mean guard as ls/next/revisit: an explicit tag
+			// filter that zeroed EVERYTHING (drafts included — they honor -l too)
+			// while uniquely naming a repo is exit 2 + candidates, never a
+			// confident all-zero histogram.
+			if err := labelDidYouMean(cmd, a, o, s.Total+s.Drafts); err != nil {
+				return err
+			}
 			return emitStats(s)
 		},
 	}
@@ -695,10 +726,34 @@ func newSearchCmd() *cobra.Command {
 			o.Status, o.Limit = joinOrFilter(status), limit
 			o.Query = queryStr
 			o.Archived = archived
-			hits, err := a.Search(o, strings.Join(args, " "))
+			term := strings.Join(args, " ")
+			hits, err := a.Search(o, term)
 			if err != nil {
 				return err
 			}
+			if err := labelDidYouMean(cmd, a, o, len(hits)); err != nil {
+				return err
+			}
+			// The same hidden-drafts disclosure as ls/next. Search has no --drafts
+			// flag, so the adapter re-runs the search drafts-only and the remedy
+			// names the escape hatch search does have (-r '').
+			hintHiddenDrafts(o, func(q app.QueryOpts) ([]core.Task, error) {
+				hs, err := a.Search(q, term)
+				if err != nil {
+					return nil, err
+				}
+				ts := make([]core.Task, len(hs))
+				for i := range hs {
+					ts[i] = hs[i].Task
+				}
+				return ts, nil
+			}, "furrow search ... -r '' includes them")
+			hintCapped(len(hits), limit, "", func() (int, error) {
+				u := o
+				u.Limit = 0
+				all, err := a.Search(u, term)
+				return len(all), err
+			})
 			// A zero-match search is a valid clean result (exit 0), not a miss.
 			return emitSearch(hits)
 		},

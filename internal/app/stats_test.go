@@ -256,3 +256,60 @@ func TestStatsWindowUnionsArchive(t *testing.T) {
 		t.Errorf("archived task's creation is in-window too, got %v", s.Window.Created)
 	}
 }
+
+// Drafts spans the repo dimension: a repo scope (auto or -r) must not zero it
+// — the old order ran the full match first, so a scoped stats structurally
+// reported drafts: 0 while brief said otherwise (t-sv35 (c)).
+func TestStatsDraftsCountedUnderRepoScope(t *testing.T) {
+	a := newApp()
+	a.Add("scoped", AddOpts{Repos: []string{"me/demo"}})
+	a.Add("draft plain", AddOpts{})
+	a.Add("draft tagged", AddOpts{Labels: []string{"bug"}})
+
+	s, err := a.Stats(QueryOpts{ScopeRepo: "me/demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Total != 1 {
+		t.Errorf("total = %d, want 1 (the scoped task only)", s.Total)
+	}
+	if s.Drafts != 2 {
+		t.Errorf("drafts = %d, want 2 (the repo dimension must not zero drafts)", s.Drafts)
+	}
+
+	// Board-wide, drafts equals brief's count and total includes them.
+	s, err = a.Stats(QueryOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Total != 3 || s.Drafts != 2 {
+		t.Errorf("board-wide total/drafts = %d/%d, want 3/2", s.Total, s.Drafts)
+	}
+}
+
+// The non-repo filters still bind the draft count: -s and -l apply (brief has
+// no -s/-l, which is the only reason its fresh QueryOpts is correct there).
+func TestStatsDraftsHonorStatusAndLabel(t *testing.T) {
+	a := newApp()
+	a.Add("scoped", AddOpts{Repos: []string{"me/demo"}})
+	a.Add("draft bug", AddOpts{Labels: []string{"bug"}})
+	a.Add("draft chore", AddOpts{Status: "backlog", Labels: []string{"chore"}})
+
+	s, err := a.Stats(QueryOpts{ScopeRepo: "me/demo", Label: "bug"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Drafts != 1 {
+		t.Errorf("drafts = %d, want 1 (-l must bind the draft count)", s.Drafts)
+	}
+	s, err = a.Stats(QueryOpts{ScopeRepo: "me/demo", Status: "backlog"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Drafts != 1 {
+		t.Errorf("drafts = %d, want 1 (-s must bind the draft count)", s.Drafts)
+	}
+	if s.Total != 0 {
+		t.Errorf("total = %d, want 0 (the scoped task is not in backlog)", s.Total)
+	}
+}

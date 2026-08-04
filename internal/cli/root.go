@@ -169,6 +169,11 @@ func newRootCmd() *cobra.Command {
 			"jq is always clean. Branch on `kind` (a closed kebab-case vocabulary — `furrow\n" +
 			"vocab error-kinds` prints it) and on `retryable` (true = re-running the same\n" +
 			"command is the documented recovery), never on the message prose.\n\n" +
+			"A read never narrows or truncates silently: when a scope or default filter\n" +
+			"hides rows, or a -n cap bites, one stderr note says so (\"N draft(s) hidden\",\n" +
+			"\"showing N of M\"), and an explicit filter that matched nothing while almost\n" +
+			"resolving — an unknown lane, an unknown repo short name, a label uniquely\n" +
+			"naming a repo — is exit 2 with candidates, never a confident empty result.\n\n" +
 			"The board's layout version gates writes, and it is an INPUT — an ordinary write\n" +
 			"never raises it (only `furrow upgrade` does). Two kinds say which side is stale,\n" +
 			"and the exit code alone tells them apart:\n" +

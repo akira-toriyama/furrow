@@ -56,11 +56,15 @@ func resolveRepoIn(arg, id string, universe []string) (string, error) {
 	case core.IsRepoShaped(arg):
 		return arg, nil
 	default:
+		// The known universe rides along as candidates — the same machine-
+		// readable did-you-mean an unknown -s lane gets (the configured lanes),
+		// so a consumer picks from the envelope instead of regexing the prose.
 		return "", &core.Error{
-			Code:    core.CodeValidation,
-			Kind:    core.KindRepoUnknown,
-			Subject: id,
-			Msg:     fmt.Sprintf("repo %q matches no known repo; use the full owner/repo form", arg),
+			Code:       core.CodeValidation,
+			Kind:       core.KindRepoUnknown,
+			Subject:    id,
+			Msg:        fmt.Sprintf("repo %q matches no known repo; use the full owner/repo form", arg),
+			Candidates: append([]string(nil), universe...),
 		}
 	}
 }

@@ -107,16 +107,42 @@ func hintEpicScope(a *app.App, o app.QueryOpts, tasks []core.Task) {
 // hid drafts (a draft has no repo, so any repo filter excludes it) — whether
 // the filter came from an explicit -r or from the board's auto scope. count
 // re-runs the same query with the repo filters swapped for drafts-only;
-// stdout stays pure data.
-func hintHiddenDrafts(o app.QueryOpts, count func(app.QueryOpts) ([]core.Task, error)) {
+// stdout stays pure data. remedy names the command-appropriate escape hatch
+// (`furrow ls --drafts` where the flag exists, `-r ”` where it does not), so
+// the hint never advertises a flag the command would reject.
+func hintHiddenDrafts(o app.QueryOpts, count func(app.QueryOpts) ([]core.Task, error), remedy string) {
 	if o.Drafts || (o.Repo == "" && o.ScopeRepo == "") {
 		return // a drafts listing hides nothing; nor does an unscoped read
 	}
 	d := o
 	d.Repo, d.ScopeRepo, d.Drafts, d.Limit = "", "", true, 0
 	if hidden, err := count(d); err == nil && len(hidden) > 0 {
-		fmt.Fprintf(errOut, "%d draft(s) hidden — furrow ls --drafts\n", len(hidden))
+		fmt.Fprintf(errOut, "%d draft(s) hidden — %s\n", len(hidden), remedy)
 	}
+}
+
+// hintCapped discloses a -n truncation on stderr: when the cap bit (the read
+// returned exactly the limit), re-count the same query uncapped and say
+// "showing N of M". total runs only in that case, and the hint stays silent
+// when the totals agree — so an uncapped read, or a -n larger than the result,
+// is byte-identical to before. This is the one place the "a cap never hides
+// the queue" rule (brief's next_total) reaches every listing read; the JSON
+// shape deliberately does NOT change (a bare array is the frozen contract —
+// the count is a stderr note, never a payload key).
+// noun names what was counted when it is not "tasks" (e.g. "groups" for
+// `ls --tree`, where -n caps groups); empty keeps the plain wording.
+func hintCapped(shown, limit int, noun string, total func() (int, error)) {
+	if limit <= 0 || shown < limit {
+		return
+	}
+	n, err := total()
+	if err != nil || n <= shown {
+		return
+	}
+	if noun != "" {
+		noun = " " + noun
+	}
+	fmt.Fprintf(errOut, "note: showing %d of %d%s (-n)\n", shown, n, noun)
 }
 
 // hintDue notes on STDERR what has come due, so a `furrow next` — the command a

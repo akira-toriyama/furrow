@@ -128,7 +128,7 @@ func (a *App) EpicAdd(title string, o EpicAddOpts) (*core.Epic, error) {
 // EpicQueryOpts filters `epic ls`.
 type EpicQueryOpts struct {
 	All   bool   // include closed epics (default: open only)
-	Label string // tag filter
+	Label string // tag filter — the task reads' -l semantics (comma = OR, exact match)
 	Repo  string // owner/repo filter, already resolved
 	Limit int
 }
@@ -153,7 +153,10 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 		if !o.All && !e.IsOpen() {
 			continue
 		}
-		if o.Label != "" && !containsFold(e.Labels, o.Label) {
+		// matchAnyLabel is the task reads' -l matcher (comma = OR, exact), so a
+		// box filter can never mean something different from `ls -l` — the old
+		// single-token containsFold silently dropped every value after a comma.
+		if !matchAnyLabel(o.Label, e.Labels) {
 			continue
 		}
 		if o.Repo != "" && !anyRepoMatch(e.Repos, []string{o.Repo}) {
@@ -719,14 +722,4 @@ func (a *App) resolveEpicRepos(repos []string) ([]string, error) {
 		return nil, err
 	}
 	return resolveRepoArgs(repos, "", repoUniverse(idx, a.BoardRepos))
-}
-
-// containsFold is a case-insensitive membership test for label filters.
-func containsFold(ss []string, v string) bool {
-	for _, s := range ss {
-		if strings.EqualFold(s, v) {
-			return true
-		}
-	}
-	return false
 }

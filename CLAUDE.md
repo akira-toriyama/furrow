@@ -148,12 +148,26 @@ the user-level config. When you work with any furrow store:
   on an unknown token: a lane is a closed vocabulary, so an unknown `-s` lane is
   **exit 2 with the configured lanes in `candidates`** (symmetric with move/add — a
   typo never returns a silent `[]`), while an unknown `-l` tag just matches
-  nothing. `furrow board [--json]` prints the store path, discovery source, repo
+  nothing — unless it uniquely names a repo with tasks, which is exit 2 +
+  `candidates` steering you to `-r` (the did-you-mean guard, on EVERY filtering
+  read: ls/next/revisit/search/stats). An unknown `-r` short name is exit 2
+  with the board's repo universe in `candidates` (symmetric with `-s`).
+  **A read never narrows or truncates silently**: a repo scope that hides
+  drafts (ls/next/search) or boxes (`epic ls`) says so in one stderr hint
+  line, and a `-n` cap that bites prints `note: showing N of M (-n)` on
+  stderr (ls flat + `--tree` groups, next, revisit, search, epic ls) — the
+  JSON stays a bare array (`brief`'s `next_total` remains the machine-readable
+  uncapped count). `stats.drafts` spans the repo dimension exactly like
+  `brief`'s (no scope can own a draft; `-s`/`-l`/`-q` still bind it), so the
+  two counts agree on a bare read. `furrow board [--json]` prints the store
+  path, discovery source, repo
   scope, and lane vocabulary (lanes/next/default/done/terminal) — read it to
   learn the lanes and active scope without provoking an error. On a board, `add`
   unions the scope repo into `repos` (`--draft` suppresses exactly that); `ls
   --drafts` lists the repo-less tasks; `furrow repo <id> --add|--rm`
-  attaches/detaches later.
+  attaches/detaches later. `epic ls` obeys the same board scope (its
+  population is what `brief`'s epic header draws from; `-r ''` escapes,
+  `-l` is the same comma-OR tag filter).
 - `--json` and `--ndjson` are honored **wherever furrow emits JSON** — reads,
   mutations, and reports alike (not just the list commands); **JSON goes to
   stdout only** (logs and errors go to stderr). `--ndjson` is the same payload
