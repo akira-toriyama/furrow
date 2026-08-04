@@ -2,6 +2,7 @@ package query
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -172,10 +173,72 @@ func TestParseTable(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Parse(%q) error: %v", tc.in, err)
 			}
+			// Raw/Offset are positional bookkeeping asserted by
+			// TestParseRecordsPositions; blank them so this table stays about
+			// CLASSIFICATION.
+			for i := range got {
+				got[i].Raw, got[i].Offset = "", 0
+			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("Parse(%q)\n got  %#v\n want %#v", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestParseRecordsPositions pins the position contract leg 1 of t-7th1 adds:
+// every term carries its source text and byte offset, and a parse fault names
+// the offending term with its offset — what a front-end needs to underline the
+// token without re-lexing the query.
+func TestParseRecordsPositions(t *testing.T) {
+	q, err := Parse("status:ready  -label:ui 'quoted phrase'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wants := []struct {
+		raw string
+		off int
+	}{{"status:ready", 0}, {"-label:ui", 14}, {"'quoted phrase'", 24}}
+	if len(q) != len(wants) {
+		t.Fatalf("terms = %d, want %d", len(q), len(wants))
+	}
+	for i, w := range wants {
+		if q[i].Raw != w.raw || q[i].Offset != w.off {
+			t.Errorf("term %d = %q@%d, want %q@%d", i, q[i].Raw, q[i].Offset, w.raw, w.off)
+		}
+	}
+
+	for _, tc := range []struct {
+		in   string
+		term string
+		off  int
+	}{
+		{"status:ready value:..", "value:..", 13},
+		{"a :foo", ":foo", 2},
+		{"x 'unterminated", "'unterminated", 2},
+	} {
+		_, err := Parse(tc.in)
+		pe, ok := err.(*ParseError)
+		if !ok {
+			t.Fatalf("Parse(%q) err = %v, want *ParseError", tc.in, err)
+		}
+		if pe.Term != tc.term || pe.Offset != tc.off {
+			t.Errorf("Parse(%q) fault at %q@%d, want %q@%d", tc.in, pe.Term, pe.Offset, tc.term, tc.off)
+		}
+	}
+}
+
+// TestParseEmptyFieldIsParseFault pins leg 3: `:foo` is a SHAPE fault (the
+// colon promises a qualifier but names no field), classified with its parse
+// siblings — not an unknown-field error offering candidates for "".
+func TestParseEmptyFieldIsParseFault(t *testing.T) {
+	_, err := Parse(":foo")
+	pe, ok := err.(*ParseError)
+	if !ok {
+		t.Fatalf("err = %v, want *ParseError", err)
+	}
+	if !strings.Contains(pe.Msg, "field name") {
+		t.Errorf("msg = %q, want it to explain the missing field name", pe.Msg)
 	}
 }
 

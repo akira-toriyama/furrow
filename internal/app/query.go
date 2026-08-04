@@ -12,16 +12,15 @@ import (
 
 // qualifierVocab is the set of field qualifiers `-q` understands (the
 // candidates offered on an unknown field): the enum/text fields, the ordinals,
-// the five dates (four system stamps + the promised `due`), and the direct-edge
-// graph qualifiers. The
-// transitive graph qualifiers (descendant-of/ancestor-of) and wildcards are the
-// tracked v2 remainder and are NOT listed, so writing one yields a clear
-// unknown-field error rather than a silent no-match.
+// the five dates (four system stamps + the promised `due`), the direct-edge
+// graph qualifiers, and their transitive twins (descendant-of/ancestor-of —
+// the deps DAG walked to a fixpoint; the v5 parent hierarchy they were first
+// sketched against is gone, and epic membership is the epic: qualifier).
 var qualifierVocab = []string{
 	"status", "lane", "epic", "label", "repo", "id", "title", "body",
 	"value", "effort", "priority", "roi",
 	"created", "updated", "closed", "reviewed", "due",
-	"depends-on", "blocks",
+	"depends-on", "blocks", "descendant-of", "ancestor-of",
 }
 
 // presenceVocab is the field set has:/no: accept.
@@ -55,8 +54,19 @@ type taskPred func(*core.Task) (bool, error)
 // index (ls --archived) must pass that store's loader, or `body:` terms would
 // silently search the wrong bodies.
 func (a *App) queryPred(raw string, idx *core.Index, staleDays int, loadBody func(string) (string, error)) (taskPred, error) {
+	p, _, err := a.queryPredShared(raw, idx, staleDays, loadBody)
+	return p, err
+}
+
+// queryPredShared is queryPred plus the compiler's own cached body reader —
+// for a caller that reads bodies ITSELF after filtering (Search's snippet
+// scan): reading through the shared per-run cache keeps each body at ONE load
+// even when the query also carried a body term (`search -q body:x term` used
+// to pay two). The reader is nil when there is no query — with no compiler
+// there is no cache to share, and the caller's own loader is already single-read.
+func (a *App) queryPredShared(raw string, idx *core.Index, staleDays int, loadBody func(string) (string, error)) (taskPred, func(*core.Task) (string, error), error) {
 	if raw == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	return a.compileQuery(raw, idx, staleDays, loadBody)
 }
@@ -104,16 +114,19 @@ func (c *queryCompiler) body(t *core.Task) string {
 // non-ordered field, an unknown lane/type value, a malformed date) are exit-2
 // errors carrying a stable kebab id and, where the input almost resolved,
 // candidates. A nil predicate is returned only with a non-nil error; an empty
-// query compiles to a match-everything predicate.
-func (a *App) compileQuery(raw string, idx *core.Index, staleDays int, loadBody func(string) (string, error)) (taskPred, error) {
+// query compiles to a match-everything predicate. The second return is the
+// compiler's cached body reader (see queryPredShared).
+func (a *App) compileQuery(raw string, idx *core.Index, staleDays int, loadBody func(string) (string, error)) (taskPred, func(*core.Task) (string, error), error) {
 	q, err := query.Parse(raw)
 	if err != nil {
+		e := &core.Error{Code: core.CodeValidation, Kind: core.KindQueryParse, Msg: "invalid query: " + err.Error()}
 		var pe *query.ParseError
 		if errors.As(err, &pe) {
-			e := &core.Error{Code: core.CodeValidation, Kind: core.KindQueryParse, Msg: "invalid query: " + pe.Error()}
-			return nil, e
+			// term + offset: enough for a front-end (vista's filter bar) to
+			// underline the offending token without re-lexing the query.
+			e.Details = map[string]any{"term": pe.Term, "offset": pe.Offset}
 		}
-		return nil, &core.Error{Code: core.CodeValidation, Kind: core.KindQueryParse, Msg: "invalid query: " + err.Error()}
+		return nil, nil, e
 	}
 
 	if loadBody == nil {
@@ -136,11 +149,11 @@ func (a *App) compileQuery(raw string, idx *core.Index, staleDays int, loadBody 
 	for _, term := range q {
 		p, err := c.compileTerm(term)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		preds = append(preds, p)
 	}
-	return func(t *core.Task) (bool, error) {
+	pred := func(t *core.Task) (bool, error) {
 		for _, p := range preds {
 			ok := p(t)
 			if c.bodyErr != nil {
@@ -151,7 +164,19 @@ func (a *App) compileQuery(raw string, idx *core.Index, staleDays int, loadBody 
 			}
 		}
 		return true, nil
-	}, nil
+	}
+	return pred, c.Body, nil
+}
+
+// Body is the compiler's cached body reader in error-returning form — the
+// per-run cache exposed to a caller that reads bodies after filtering, so a
+// body is loaded once whether the query, the caller, or both need it.
+func (c *queryCompiler) Body(t *core.Task) (string, error) {
+	b := c.body(t)
+	if c.bodyErr != nil {
+		return "", c.bodyErr
+	}
+	return b, nil
 }
 
 // compileTerm builds one term's matcher, with Not already folded in.
@@ -177,7 +202,7 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 
 	case query.State:
 		if !contains(stateVocab, term.Field) {
-			return nil, unknownQueryErr(core.KindQueryUnknownFlag, "unknown is: flag "+strconv.Quote(term.Field), stateVocab)
+			return nil, termErr(unknownQueryErr(core.KindQueryUnknownFlag, "unknown is: flag "+strconv.Quote(term.Field), stateVocab), term, nil)
 		}
 		f := term.Field
 		return neg(func(t *core.Task) bool {
@@ -211,7 +236,7 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 
 	case query.Presence:
 		if !contains(presenceVocab, term.Field) {
-			return nil, unknownQueryErr(core.KindQueryUnknownField, "has:/no: unknown field "+strconv.Quote(term.Field), presenceVocab)
+			return nil, termErr(unknownQueryErr(core.KindQueryUnknownField, "has:/no: unknown field "+strconv.Quote(term.Field), presenceVocab), term, nil)
 		}
 		f := term.Field
 		return neg(func(t *core.Task) bool {
@@ -263,13 +288,18 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	// fell into the ordered-field gate and was answered with `query-type` and
 	// NO candidates, in a message asserting the field exists.
 	if !contains(qualifierVocab, f) {
-		return nil, unknownQueryErr(core.KindQueryUnknownField, "unknown qualifier "+strconv.Quote(f), qualifierVocab)
+		return nil, termErr(unknownQueryErr(core.KindQueryUnknownField, "unknown qualifier "+strconv.Quote(f), qualifierVocab), term, nil)
 	}
 	// Ordered fields — the ordinals and the date timestamps — take
-	// comparisons/ranges; everything else is equality only.
+	// comparisons/ranges; everything else is equality only. The type fault
+	// carries the field's allowed operators in details (t-ehk7's unmet v1
+	// acceptance line), so a front-end can offer the legal ones instead of
+	// parsing them out of the message.
 	ordinal := f == "value" || f == "effort" || f == "priority" || f == "roi"
 	if term.Op != query.Eq && !ordinal && !isDateField(f) {
-		return nil, unknownQueryErr(core.KindQueryType, "field "+strconv.Quote(f)+" takes an equality value, not a comparison/range (only value/effort/priority/roi and created/updated/closed/reviewed/due are ordered)", nil)
+		return nil, termErr(
+			unknownQueryErr(core.KindQueryType, "field "+strconv.Quote(f)+" takes an equality value, not a comparison/range (only value/effort/priority/roi and created/updated/closed/reviewed/due are ordered)", nil),
+			term, map[string]any{"allowed_operators": []string{"="}})
 	}
 
 	switch f {
@@ -291,8 +321,22 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 		return neg(func(t *core.Task) bool { return contains(vals, t.Epic) }), nil
 
 	case "label":
+		// A value containing `*` is a wildcard (the v2 token reserved since v1):
+		// `label:*ui*` matches any label with "ui" inside, `label:area/*` any
+		// label under the prefix. `*` spans any run (including empty); matching
+		// stays exact-per-label and case-sensitive, like the plain form — the
+		// wildcard widens WHERE a value can match, never how letters compare.
 		vals := valTexts(term.Values)
-		return neg(func(t *core.Task) bool { return anyContains(t.Labels, vals) }), nil
+		return neg(func(t *core.Task) bool {
+			for _, v := range vals {
+				for _, l := range t.Labels {
+					if matchWildcard(v, l) {
+						return true
+					}
+				}
+			}
+			return false
+		}), nil
 
 	case "repo":
 		// Resolve through the SAME strict path -r uses (resolveRepoIn over the
@@ -343,6 +387,21 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 			}
 		}
 		return neg(func(t *core.Task) bool { return blocked[t.ID] }), nil
+
+	case "descendant-of":
+		// depends-on's transitive twin: t (transitively) waits on any named id —
+		// X's descendants are everything DOWNSTREAM of it in the deps DAG. The
+		// closure is computed once at compile (O(edges)); an unknown id has no
+		// descendants (lenient, like blocks:); the named task itself is not its
+		// own descendant, mirroring how depends-on:X never matches X.
+		set := c.reach(valTexts(term.Values), false)
+		return neg(func(t *core.Task) bool { return set[t.ID] }), nil
+
+	case "ancestor-of":
+		// blocks' transitive twin: t is anything any named id (transitively)
+		// waits on — X's ancestors are UPSTREAM, the work that must land first.
+		set := c.reach(valTexts(term.Values), true)
+		return neg(func(t *core.Task) bool { return set[t.ID] }), nil
 
 	case "title":
 		vals := term.Values
@@ -493,6 +552,18 @@ func unknownQueryErr(kind, msg string, candidates []string) *core.Error {
 	return e
 }
 
+// termErr stamps the failing term's source position (and any extra keys) onto
+// a query error's details — the binder-side half of the ParseError contract,
+// so an unknown field or a type fault underlines exactly like a parse fault.
+func termErr(e *core.Error, term query.Term, extra map[string]any) *core.Error {
+	d := map[string]any{"term": term.Raw, "offset": term.Offset}
+	for k, v := range extra {
+		d[k] = v
+	}
+	e.Details = d
+	return e
+}
+
 // valTexts projects an OR-set's texts (for the equality fields, where
 // quoted-ness carries no extra meaning — quotes only protected separators).
 func valTexts(vals []query.Value) []string {
@@ -550,4 +621,79 @@ func anyRepoMatch(repos, vals []string) bool {
 		}
 	}
 	return false
+}
+
+// reach computes the transitive closure of the deps DAG from the named start
+// ids — upstream (what they wait on, following Deps) when up, downstream (what
+// waits on them, following the reversed edges) otherwise. Start ids are not in
+// their own closure. A visited set makes a cycle (possible on disk; lint's
+// dep-cycle owns reporting it) terminate instead of hanging the read.
+func (c *queryCompiler) reach(starts []string, up bool) map[string]bool {
+	adj := map[string][]string{}
+	for i := range c.idx.Tasks {
+		t := &c.idx.Tasks[i]
+		for _, d := range t.Deps {
+			if up {
+				adj[t.ID] = append(adj[t.ID], d)
+			} else {
+				adj[d] = append(adj[d], t.ID)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	var frontier []string
+	for _, s := range starts {
+		if x, _ := c.idx.Find(s); x != nil {
+			frontier = append(frontier, x.ID)
+		}
+	}
+	starting := map[string]bool{}
+	for _, s := range frontier {
+		starting[s] = true
+	}
+	for len(frontier) > 0 {
+		id := frontier[len(frontier)-1]
+		frontier = frontier[:len(frontier)-1]
+		for _, next := range adj[id] {
+			if !seen[next] {
+				seen[next] = true
+				frontier = append(frontier, next)
+			}
+		}
+	}
+	for s := range starting {
+		delete(seen, s)
+	}
+	return seen
+}
+
+// matchWildcard matches s against a `*`-pattern: `*` spans any run (including
+// empty), everything else is literal. A pattern with no `*` is plain equality,
+// so the label qualifier's exact semantics are unchanged for v1 spellings.
+func matchWildcard(pattern, s string) bool {
+	if !strings.Contains(pattern, "*") {
+		return pattern == s
+	}
+	parts := strings.Split(pattern, "*")
+	// Anchors: the first/last segment must sit at the string's edges.
+	if !strings.HasPrefix(s, parts[0]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+	last := parts[len(parts)-1]
+	if !strings.HasSuffix(s, last) {
+		return false
+	}
+	s = s[:len(s)-len(last)]
+	for _, mid := range parts[1 : len(parts)-1] {
+		if mid == "" {
+			continue
+		}
+		i := strings.Index(s, mid)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(mid):]
+	}
+	return true
 }

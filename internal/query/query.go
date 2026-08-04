@@ -61,7 +61,11 @@ type Value struct {
 	Quoted bool
 }
 
-// Term is one AND-ed clause of a query.
+// Term is one AND-ed clause of a query. Raw and Offset locate it in the query
+// source, so the app-layer faults raised while BINDING a term (unknown field,
+// operator on an unordered field, a bad date) can point at the token exactly
+// like a ParseError does — position is recorded once, at the only layer that
+// sees the source string.
 type Term struct {
 	Kind   Kind
 	Not    bool    // a leading '-' (for Presence, folds has/no: see parseTerm)
@@ -69,20 +73,25 @@ type Term struct {
 	Op     Op      // Qualifier only
 	Values []Value // Qualifier: the OR-set, comparison scalar, or {lo,hi} range
 	Text   string  // FreeText only (unquoted)
+	Raw    string  // the term as typed (including any leading '-')
+	Offset int     // byte offset of Raw's start in the query string
 }
 
 // Query is a flat list of terms, all AND-ed together.
 type Query []Term
 
 // ParseError is a positioned parse/type failure. The App maps it to an exit-2
-// envelope (kind "query-parse"). It deliberately carries no Field: the faults
-// raised here (a missing value, a half-open range) are about a term's SHAPE,
-// so there is no vocabulary to offer as candidates — the unknown-field and
+// envelope (kind "query-parse") carrying Term and Offset in details, so a
+// front-end (vista's filter bar) can underline the offending token instead of
+// re-lexing the query. It deliberately carries no Field: the faults raised
+// here (a missing value, a half-open range) are about a term's SHAPE, so
+// there is no vocabulary to offer as candidates — the unknown-field and
 // unknown-flag faults, which do have one, are classified in internal/app
 // where the vocabularies live (query-unknown-field / query-unknown-flag).
 type ParseError struct {
-	Msg  string
-	Term string // the raw term that failed ("" for a whole-string fault)
+	Msg    string
+	Term   string // the raw term that failed ("" for a whole-string fault)
+	Offset int    // byte offset of Term's start in the query string (0 for a whole-string fault)
 }
 
 func (e *ParseError) Error() string {
@@ -102,32 +111,41 @@ func Parse(s string) (Query, error) {
 	}
 	q := make(Query, 0, len(raws))
 	for _, raw := range raws {
-		t, err := parseTerm(raw)
+		t, err := parseTerm(raw.text, raw.off)
 		if err != nil {
 			return nil, err
 		}
+		t.Raw, t.Offset = raw.text, raw.off
 		q = append(q, t)
 	}
 	return q, nil
+}
+
+// rawTerm is one lexed term with its byte offset in the source string — the
+// position every downstream fault reports.
+type rawTerm struct {
+	text string
+	off  int
 }
 
 // lex splits s into raw term strings on unquoted whitespace. A single- or
 // double-quoted run may contain spaces (and the other quote char); the quotes
 // are kept in the raw term so parseTerm can tell a quoted value from a bare one.
 // An unterminated quote is a parse error.
-func lex(s string) ([]string, error) {
-	var terms []string
+func lex(s string) ([]rawTerm, error) {
+	var terms []rawTerm
 	var b strings.Builder
 	inTerm := false
+	start := 0     // byte offset of the current term's first rune
 	var quote rune // 0 = not in quotes, else the opening quote rune
 	flush := func() {
 		if inTerm {
-			terms = append(terms, b.String())
+			terms = append(terms, rawTerm{text: b.String(), off: start})
 			b.Reset()
 			inTerm = false
 		}
 	}
-	for _, r := range s {
+	for i, r := range s {
 		switch {
 		case quote != 0:
 			b.WriteRune(r)
@@ -135,25 +153,33 @@ func lex(s string) ([]string, error) {
 				quote = 0
 			}
 		case r == '\'' || r == '"':
+			if !inTerm {
+				start = i
+			}
 			inTerm = true
 			quote = r
 			b.WriteRune(r)
 		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
 			flush()
 		default:
+			if !inTerm {
+				start = i
+			}
 			inTerm = true
 			b.WriteRune(r)
 		}
 	}
 	if quote != 0 {
-		return nil, &ParseError{Msg: "unterminated quote", Term: s}
+		return nil, &ParseError{Msg: "unterminated quote", Term: b.String(), Offset: start}
 	}
 	flush()
 	return terms, nil
 }
 
-// parseTerm classifies one raw term.
-func parseTerm(raw string) (Term, error) {
+// parseTerm classifies one raw term; off is its byte offset in the query
+// string, stamped on every fault so the caller can point at the token.
+func parseTerm(raw string, off int) (Term, error) {
+	orig := raw
 	not := false
 	if strings.HasPrefix(raw, "-") && len(raw) > 1 {
 		not = true
@@ -167,12 +193,19 @@ func parseTerm(raw string) (Term, error) {
 		// match either way; the quotes only admit whitespace).
 		v, err := scalar(raw)
 		if err != nil {
-			return Term{}, err
+			return Term{}, at(err, orig, off)
 		}
 		if v.Text == "" {
-			return Term{}, &ParseError{Msg: "empty term", Term: raw}
+			return Term{}, &ParseError{Msg: "empty term", Term: orig, Offset: off}
 		}
 		return Term{Kind: FreeText, Not: not, Text: v.Text}, nil
+	}
+	if field == "" {
+		// `:foo` — the colon promises a qualifier but names no field. A SHAPE
+		// fault like its siblings (unterminated quote, `value:..`), NOT an
+		// unknown-field one: offering the whole field vocabulary as candidates
+		// for the empty string helps nobody.
+		return Term{}, &ParseError{Msg: "a qualifier needs a field name before ':'", Term: orig, Offset: off}
 	}
 
 	lf := strings.ToLower(field)
@@ -180,17 +213,31 @@ func parseTerm(raw string) (Term, error) {
 	case "has", "no":
 		// no:X == has:X negated; a leading '-' toggles it, so `-no:X` == has:X.
 		if rest == "" {
-			return Term{}, &ParseError{Msg: lf + ": needs a field name", Term: raw}
+			return Term{}, &ParseError{Msg: lf + ": needs a field name", Term: orig, Offset: off}
 		}
 		return Term{Kind: Presence, Not: not != (lf == "no"), Field: strings.ToLower(rest)}, nil
 	case "is":
 		if rest == "" {
-			return Term{}, &ParseError{Msg: "is: needs a flag", Term: raw}
+			return Term{}, &ParseError{Msg: "is: needs a flag", Term: orig, Offset: off}
 		}
 		return Term{Kind: State, Not: not, Field: strings.ToLower(rest)}, nil
 	default:
-		return parseQualifier(lf, rest, not, raw)
+		t, err := parseQualifier(lf, rest, not, orig)
+		return t, at(err, orig, off)
 	}
+}
+
+// at stamps a term's position onto a ParseError raised below the term level
+// (scalar, splitOrList, parseQualifier build errors from VALUE fragments, so
+// their Term/Offset would otherwise name the fragment, not the source token).
+func at(err error, term string, off int) error {
+	if err == nil {
+		return nil
+	}
+	if pe, ok := err.(*ParseError); ok {
+		pe.Term, pe.Offset = term, off
+	}
+	return err
 }
 
 // splitQualifier splits a raw term on its FIRST top-level (unquoted) colon into

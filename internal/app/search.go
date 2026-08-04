@@ -45,10 +45,18 @@ func (a *App) Search(o QueryOpts, term string) ([]SearchHit, error) {
 	}
 	// Compile -q once; it ANDs with the term like every other filter, and is
 	// evaluated before the term so a query-excluded task never pays for a body
-	// read the text match would otherwise do.
-	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, loadBody)
+	// read the text match would otherwise do. The compiler's cached body
+	// reader replaces the raw loader below, so a body the query already read
+	// (body:/free-text terms) is never loaded a second time for the snippet
+	// scan — `ls` pins one-load-per-body (TestQueryBodyLoadIsLazy) and search
+	// holds the same invariant through the same cache.
+	qpred, qbody, err := a.queryPredShared(o.Query, idx, a.Cfg.RevisitStaleDays, loadBody)
 	if err != nil {
 		return nil, err
+	}
+	readBody := func(t *core.Task) (string, error) { return loadBody(t.ID) }
+	if qbody != nil {
+		readBody = qbody
 	}
 	var out []SearchHit
 	for i := range idx.Tasks {
@@ -69,7 +77,7 @@ func (a *App) Search(o QueryOpts, term string) ([]SearchHit, error) {
 		case core.ContainsFold(t.Title, term):
 			out = append(out, SearchHit{Task: *t, MatchedField: "title", Snippet: t.Title})
 		default:
-			body, err := loadBody(t.ID)
+			body, err := readBody(t)
 			if err != nil {
 				return nil, err
 			}
