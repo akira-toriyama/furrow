@@ -23,7 +23,9 @@ func newEpicCmd() *cobra.Command {
 			"cheapest task on the whole board every time.\n\n" +
 			"furrow never chooses which box to open: `epic done` clears the active flag\n" +
 			"but picks no successor, and `furrow lint` warns (epic-no-active) until a\n" +
-			"human does.",
+			"human does. It does SUGGEST — done/deactivate name the previous active box\n" +
+			"(computed from the activation log, `unknown` when no record decides it) —\n" +
+			"but activating it stays your call.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
@@ -293,14 +295,22 @@ func newEpicActivateCmd() *cobra.Command {
 func newEpicDeactivateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "deactivate <epic>",
-		Short: "Clear the active flag without closing the epic",
-		Args:  cobra.ExactArgs(1),
+		Short: "Clear the active flag without closing the epic (suggests where to return)",
+		Long: "Step away from a box without closing it. The output carries the\n" +
+			"previous-active SUGGESTION (see `epic done --help` — same mechanism, same\n" +
+			"contract: computed from the activation log, never auto-activated,\n" +
+			"`unknown` when no record decides it).",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicDeactivate(args[0]) })
+			before, after, err := a.EpicDeactivate(args[0])
+			if err != nil {
+				return err
+			}
+			return emitWithPreviousSuggest(a, before, after)
 		},
 	}
 }
@@ -308,19 +318,53 @@ func newEpicDeactivateCmd() *cobra.Command {
 func newEpicDoneCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "done <epic>",
-		Short: "Close an epic (clears active; never picks the next one)",
+		Short: "Close an epic (clears active; suggests the previous active, never picks it)",
 		Long: "Close the box and free its repos' slots. furrow does NOT choose a\n" +
 			"successor — that judgement is the human's — so the repo is left with no\n" +
-			"active epic and `furrow lint` warns epic-no-active until someone picks one.",
+			"active epic and `furrow lint` warns epic-no-active until someone picks one.\n\n" +
+			"It does SUGGEST where to return: the output names the open, currently\n" +
+			"inactive box with the newest activation record (`previous: <id> … —\n" +
+			"furrow epic activate <id>`; a `previous` key in --json, null = unknown).\n" +
+			"The answer is COMPUTED fresh from the activation log `epic activate`\n" +
+			"already writes into each box's body — furrow stores no \"previous\"\n" +
+			"pointer that could go stale, and when no record decides it, it says\n" +
+			"`unknown` and leaves the judgement to you. The suggestion is never\n" +
+			"executed: activating remains your call.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicDone(args[0]) })
+			before, after, err := a.EpicDone(args[0])
+			if err != nil {
+				return err
+			}
+			return emitWithPreviousSuggest(a, before, after)
 		},
 	}
+}
+
+// emitWithPreviousSuggest is done/deactivate's shared tail: the usual epic
+// mutation envelope plus the previous-active suggestion — a `previous` key in
+// JSON (always present on these two verbs; null = unknown, so a consumer can
+// tell "computed, no answer" apart from an older binary that lacks the key)
+// and one human line after the mutation line. The suggestion is display data:
+// it is computed AFTER the mutation succeeded and can never affect it.
+func emitWithPreviousSuggest(a *app.App, before, after *core.Epic) error {
+	prev := a.PreviousActiveSuggest(after.ID)
+	if err := emitEpicMutationResult(before, after, map[string]any{"previous": prev}); err != nil {
+		return err
+	}
+	if jsonMode() {
+		return nil
+	}
+	if prev == nil {
+		fmt.Fprintln(out, "previous: unknown (no activation record on any open inactive box — pick one with `furrow epic ls`)")
+		return nil
+	}
+	fmt.Fprintf(out, "previous: %s %q (activated %s) — return with `furrow epic activate %s`\n", prev.ID, prev.Title, prev.At, prev.ID)
+	return nil
 }
 
 // newEpicDepCmd is `furrow dep`'s epic twin (v7): the same variadic add/rm and
