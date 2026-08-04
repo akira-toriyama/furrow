@@ -174,7 +174,7 @@ func addQueryFlag(cmd *cobra.Command, p *string) {
 	cmd.Flags().StringVarP(p, "query", "q", "",
 		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
 			"is:actionable|blocked|stale|open|closed|draft|unfiled|overdue, "+
-			"ordinals+dates with >=,<,.. (updated:>=-2w), graph child-of:/depends-on:/blocks:, "+
+			"ordinals+dates with >=,<,.. (updated:>=-2w), graph epic:/depends-on:/blocks:, "+
 			"free text over title+body; ANDs with the other filters")
 }
 
