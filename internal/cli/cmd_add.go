@@ -101,6 +101,7 @@ func newAddCmd() *cobra.Command {
 			// the created task.
 			warnClamp("value", opts.Value, t.Value)
 			warnClamp("effort", opts.Effort, t.Effort)
+			warnShadowedDraft(a, opts.Draft, len(t.Repos) == 0)
 			// printOK renders JSON (--json / --ndjson) or the human line.
 			printOK("added", t)
 			return nil
@@ -155,7 +156,23 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 	if err != nil {
 		return err
 	}
+	drafted := len(created) > 0 && len(created[0].Repos) == 0
+	warnShadowedDraft(a, opts.Draft, drafted)
 	return emitTasks(a, created)
+}
+
+// warnShadowedDraft raises doctor's scope-shadowed finding at the moment it
+// bites: a task (or batch — the shared flags make them uniform) that landed
+// repo-less, NOT because --draft asked for it, from inside a configured
+// board's own tree. One stderr line, exit unchanged — local work is never
+// blocked, it just stops being silent.
+func warnShadowedDraft(a *app.App, draftFlag, drafted bool) {
+	if draftFlag || !drafted {
+		return
+	}
+	if w := a.ShadowedDraftWarning("."); w != "" {
+		fmt.Fprintln(errOut, w)
+	}
 }
 
 func newEditCmd() *cobra.Command {
