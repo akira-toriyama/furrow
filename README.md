@@ -38,7 +38,7 @@ A from-source build reports its version as `dev`, with the build commit/date fil
 
 ---
 
-## Two ways to run it
+## Three ways to run it
 
 - **A central board** — one clonable tracker repo backs *all* your repos: each
   task carries the repos it relates to (the first-class `repos` field,
@@ -703,6 +703,13 @@ Set **`default_repo = "<owner>/<repo>"`** in that same `config.toml` too. The `[
 On a standalone board with no remote, commits *are* your only undo/backup. Set **`autocommit = true`** in the `[[board]]` entry above (a per-machine user-config key, [detailed here](#user-level-config-no-per-repo-file)) so furrow commits the board after every mutating command instead of relying on you or an agent to remember — best-effort (it warns and carries on if git can't commit), never pushes, and never sweeps a co-located session's in-progress body.
 
 A fully separate directory (e.g. `~/furrow-boards/app/.furrow`, outside the code repo) works too — same two-config setup, just a different `path`/`scopes`.
+
+### What a standalone board can't use
+
+Everything hosted-board-shaped is N/A here, and knowing the failure shapes saves a debugging detour:
+
+- **`furrow sync`** assumes an upstream. Run on a no-remote board it still prints its progress object first (which can say `"complete": true` — nothing was pending), then fails with **exit 3, kind `git-failed`**, relaying git's own wording about the missing upstream for your branch. The exact prose is git's and varies by version — branch on the kind, not the message. Nothing is broken afterwards; there was simply nothing to pull from or push to. Backup on a standalone board is `autocommit` (above), not sync.
+- **PR→status automation** — `furrow apply`, the `SetStatus-task:` PR footer, and the reusable `sync-task-status.yml` workflow — is hosted-board-only: the footer points CI at the board's body file **URL** (`https://…/blob/main/.furrow/bodies/<id>.md`), and a board that is never pushed has no such URL to point at. Status transitions on a standalone board are manual: `furrow move` / `furrow done`.
 
 ---
 

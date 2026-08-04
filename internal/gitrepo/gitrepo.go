@@ -378,7 +378,8 @@ func (r *Repo) StashedPaths(ctx context.Context, commit string) []string {
 // read-only and network-free), so the counts are as fresh as the last fetch.
 // hasUpstream is false (with zero counts and a nil error) when there is no
 // tracking ref to compare against — an un-tracked branch or a detached HEAD —
-// because a standalone board is a state to report, not a failure.
+// because a board without an upstream (every standalone board — git, no
+// remote — and any un-tracked branch) is a state to report, not a failure.
 // Commit describes HEAD: its short sha, its committer time, and its subject
 // (the first line of the message). It answers "when did this board last change,
 // and to what?" — on a board with no upstream, which is every standalone one,
