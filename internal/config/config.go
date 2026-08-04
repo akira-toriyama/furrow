@@ -47,8 +47,9 @@ type raw struct {
 		StaleAfterDays *int `toml:"stale_after_days"`
 	} `toml:"review"`
 	Lint struct {
-		ArchiveDone *int     `toml:"archive_done"`
-		IgnoreCodes []string `toml:"ignore_codes"`
+		ArchiveDone       *int     `toml:"archive_done"`
+		IgnoreCodes       []string `toml:"ignore_codes"`
+		ProvenanceMarkers []string `toml:"provenance_markers"`
 	} `toml:"lint"`
 	// Due is the [due] section: which lanes a due date says nothing in. A slice
 	// (not a *bool) because the answer is board vocabulary, not a switch — the
@@ -269,6 +270,19 @@ func fromRaw(r raw) (*Config, []string, error) {
 			}
 		}
 		c.LintIgnoreCodes = dedupeNonEmpty(codes)
+	}
+
+	// [lint].provenance_markers: the board's own provenance vocabulary. Trimmed +
+	// deduped like ignore_codes; empty (the default) keeps the check off, so a
+	// board that never opts in sees no new warning.
+	if len(r.Lint.ProvenanceMarkers) > 0 {
+		var markers []string
+		for _, m := range r.Lint.ProvenanceMarkers {
+			if t := strings.TrimSpace(m); t != "" {
+				markers = append(markers, t)
+			}
+		}
+		c.LintProvenanceMarkers = dedupeNonEmpty(markers)
 	}
 
 	// [alias]: keep only entries with a non-blank name AND a non-blank command

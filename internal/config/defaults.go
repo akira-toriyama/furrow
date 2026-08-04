@@ -102,6 +102,14 @@ type Config struct {
 	// and ready to archive. 0 (default) disables the nudge.
 	LintArchiveDone int
 
+	// LintProvenanceMarkers are the [lint].provenance_markers: when non-empty,
+	// `furrow lint` warns `provenance-missing` on every OPEN, non-terminal task
+	// whose body contains none of these substrings (case-insensitive). The list
+	// is the operator's own vocabulary for "where this came from / how it was
+	// verified" — furrow ships no default wording (empty = the check is off),
+	// because the words are a board convention, not the tool's.
+	LintProvenanceMarkers []string
+
 	// LintIgnoreCodes are the [lint].ignore_codes: lint codes suppressed on every
 	// `furrow lint`. Trimmed + deduped, stored verbatim (config is core-free and
 	// cannot know the code vocabulary); an entry naming no real code is a no-op the
