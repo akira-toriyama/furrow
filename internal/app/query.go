@@ -278,7 +278,6 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 	return nil, core.Validationf("query-parse", "unhandled query term")
 }
 
-// compileQualifier binds a field:value qualifier.
 func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Task) bool) func(*core.Task) bool) (func(*core.Task) bool, error) {
 	a := c.app
 	f := term.Field
@@ -594,7 +593,6 @@ func anyTextMatch(field string, vals []query.Value, exactOnQuote bool) bool {
 	return false
 }
 
-// anyContains reports whether set contains any of vals.
 func anyContains(set, vals []string) bool {
 	for _, v := range vals {
 		if contains(set, v) {

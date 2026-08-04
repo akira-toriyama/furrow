@@ -47,7 +47,6 @@ func run(t *testing.T, args ...string) (string, int) {
 	return out, exitOf(fe)
 }
 
-// runIn is run() with stdin wired from s (for commands that read stdin).
 func runIn(t *testing.T, s string, args ...string) (string, int) {
 	t.Helper()
 	fe, out := runCLI(t, s, args...)
@@ -61,7 +60,6 @@ func runErr(t *testing.T, args ...string) (*core.Error, string) {
 	return runCLI(t, "", args...)
 }
 
-// runErrIn is runErr() with stdin wired from s.
 func runErrIn(t *testing.T, s string, args ...string) (*core.Error, string) {
 	t.Helper()
 	return runCLI(t, s, args...)

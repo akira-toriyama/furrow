@@ -8,7 +8,6 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// searchHits parses a JSON search-result array.
 func searchHits(t *testing.T, s string) []struct {
 	ID           string `json:"id"`
 	MatchedField string `json:"matched_field"`

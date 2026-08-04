@@ -37,7 +37,6 @@ func mustJSON(v any) []byte {
 	return bytes.TrimRight(b.Bytes(), "\n")
 }
 
-// printJSON writes a value as indented JSON to stdout.
 func printJSON(v any) {
 	fmt.Fprintln(out, string(mustJSON(v)))
 }
@@ -51,7 +50,6 @@ func printNDJSONValue(v any) {
 	fmt.Fprint(out, b.String())
 }
 
-// printNDJSON writes one compact JSON object per line.
 func printNDJSON(tasks []core.Task) {
 	for _, t := range tasks {
 		printNDJSONValue(t)
@@ -91,7 +89,6 @@ func printTaskTable(a *app.App, tasks []core.Task) {
 		fmt.Fprintln(out, "(no tasks)")
 		return
 	}
-	// column widths
 	wID, wStatus := len("ID"), len("STATUS")
 	for _, t := range tasks {
 		if len(t.ID) > wID {
@@ -361,7 +358,6 @@ func emitTree(a *app.App, groups []app.TreeGroup) error {
 	return nil
 }
 
-// printTreeGroup draws one epic header and its member tasks.
 func printTreeGroup(a *app.App, g app.TreeGroup) {
 	if g.Epic == nil {
 		fmt.Fprintln(out, "(no epic)")
@@ -1358,7 +1354,6 @@ func toEpicView(it app.EpicItem) epicView {
 	return epicView{Epic: it.Epic, Progress: it.Progress, Stuck: it.Stuck, OpenDeps: it.OpenDeps}
 }
 
-// emitEpicList renders `furrow epic ls`.
 func emitEpicList(items []app.EpicItem) error {
 	views := make([]epicView, 0, len(items))
 	for _, it := range items {
@@ -1427,7 +1422,6 @@ type epicMetaView struct {
 	Tasks    []listItemView `json:"tasks"`
 }
 
-// emitEpicDetail renders `furrow epic show`.
 func emitEpicDetail(a *app.App, d *app.EpicDetail) error {
 	if jsonMode() {
 		emitObject(toEpicDetailView(d))

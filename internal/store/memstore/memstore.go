@@ -393,7 +393,6 @@ func (s *Store) ListBodyIDs() ([]string, error) { return sortedKeys(s.bodies), n
 // it always matches the task's id).
 func (s *Store) ListTaskIDs() ([]string, error) { return sortedKeys(s.tasks), nil }
 
-// sortedKeys returns the sorted keys of a string-keyed map (any value type).
 func sortedKeys[V any](m map[string]V) []string {
 	ids := make([]string, 0, len(m))
 	for id := range m {
