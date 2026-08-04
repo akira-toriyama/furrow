@@ -137,8 +137,11 @@ the user-level config. When you work with any furrow store:
   `["icebox"]`); terminal lanes are deliberately NOT exempt as a class — a
   `waiting` task whose last step is "look at this tomorrow" is the case the
   field exists for. Queryable as `-q due:<cmp>` / `has:`/`no:due` /
-  `is:overdue`; a bare day in `-q` is a UTC day while `--due` is a wall-clock
-  promise, which is up to 9h apart on a +09:00 machine.
+  `is:overdue`; a bare day in `-q` is a UTC day for the machine stamps
+  (created/updated/closed/reviewed) but the operator's LOCAL day for `due` —
+  the one date a human authors in wall clock, so `-q due:2026-08-04` finds
+  exactly what `--due 2026-08-04` wrote (a UTC day there would put the two up
+  to 9h apart on a +09:00 machine).
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
   issue-draft analogue). `-r` is the scope control on reads: a full
