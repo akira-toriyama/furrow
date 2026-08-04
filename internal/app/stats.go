@@ -16,7 +16,9 @@ type StatCount struct {
 
 // Stats is the board's shape within a query scope: the total task count, how
 // many are drafts (repo-less), and the distribution across lanes, repos, and
-// labels. ByLane is in configured lane order (every lane, 0 included, so it is a
+// labels. Drafts spans the repo dimension (a draft has no repo, so no repo
+// scope can own one — brief's rule) while still honoring the non-repo filters
+// (-s/-l/-e/-q and the date window); on a bare read it equals brief's Drafts. ByLane is in configured lane order (every lane, 0 included, so it is a
 // complete histogram); ByRepo and ByLabel are the used vocabulary with counts,
 // most-used first. It answers "what lanes/labels/repos exist and how big" before
 // an agent guesses a -s/-l/-r value.
@@ -74,7 +76,16 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 	total, drafts := 0, 0
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if !o.match(t) {
+		// Drafts are counted through matchRevisit — o.match with ONLY the repo
+		// dimension stripped (a draft has no repo, so any repo scope excludes
+		// it), while -s/-l/-e/--since/--until/-q still apply. Counting inside
+		// o.match made Drafts structurally 0 on every scoped read, so the same
+		// key meant "the board's repo-less count" in brief and "the empty set"
+		// here; counting before the -s/-l filters instead would silently ignore
+		// them (brief gets away with that only because it has no -s/-l).
+		inScope := o.match(t)
+		countsDraft := len(t.Repos) == 0 && o.matchRevisit(t)
+		if !inScope && !countsDraft {
 			continue
 		}
 		if qpred != nil {
@@ -86,10 +97,13 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 				continue
 			}
 		}
-		total++
-		if len(t.Repos) == 0 {
+		if countsDraft {
 			drafts++
 		}
+		if !inScope {
+			continue
+		}
+		total++
 		laneCounts[t.Status]++
 		for _, r := range t.Repos {
 			repoCounts[r]++
