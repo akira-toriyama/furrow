@@ -28,7 +28,7 @@ func TestBlankValuesAreRejectedEverywhere(t *testing.T) {
 			return err
 		}},
 		{"label --add", func(a *App, id string) error { _, err := a.Relabel(id, []string{"bug", ""}, nil); return err }},
-		{"label --remove", func(a *App, id string) error { _, err := a.Relabel(id, nil, []string{""}); return err }},
+		{"label --rm", func(a *App, id string) error { _, err := a.Relabel(id, nil, []string{""}); return err }},
 		{"ref --add", func(a *App, id string) error { _, err := a.Reref(id, []string{""}, nil); return err }},
 		{"ref --rm", func(a *App, id string) error { _, err := a.Reref(id, nil, []string{"  "}); return err }},
 		{"repo --add", func(a *App, id string) error { _, err := a.Rerepo(id, []string{""}, nil); return err }},

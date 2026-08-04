@@ -69,8 +69,8 @@ func TestShowGenuineMissHasNoArchivedKey(t *testing.T) {
 	if _, hasArchived := d["archived"]; hasArchived {
 		t.Errorf("a genuine miss must NOT carry an archived key, got %+v", d)
 	}
-	if fe.Msg != "task not found: t-zzzz9" {
-		t.Errorf("a genuine miss keeps the classic message, got %q", fe.Msg)
+	if fe.Msg != "1 of 1 ids not found" {
+		t.Errorf("a genuine miss reports the batch count shape, got %q", fe.Msg)
 	}
 }
 

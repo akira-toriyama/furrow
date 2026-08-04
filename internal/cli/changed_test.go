@@ -44,7 +44,7 @@ func TestEmptyFlagValueNamesTheFlag(t *testing.T) {
 
 	for _, tc := range []struct{ cmd, flag string }{
 		{"label", "--add"},
-		{"label", "--remove"},
+		{"label", "--rm"},
 		{"ref", "--add"},
 		{"ref", "--rm"},
 		{"repo", "--add"},

@@ -45,12 +45,13 @@ func TestShowJSONTimeStaysUTC(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("show --json exit = %d:\n%s", code, out)
 	}
-	var task struct {
+	var tasks []struct {
 		Created string `json:"created"`
 	}
-	if err := json.Unmarshal([]byte(out), &task); err != nil {
-		t.Fatalf("parse show --json: %v\n%s", err, out)
+	if err := json.Unmarshal([]byte(out), &tasks); err != nil || len(tasks) != 1 {
+		t.Fatalf("parse show --json (always-array): %v\n%s", err, out)
 	}
+	task := tasks[0]
 	if !strings.HasSuffix(task.Created, "Z") {
 		t.Errorf("--json created must stay UTC (RFC3339 Z), got %q", task.Created)
 	}

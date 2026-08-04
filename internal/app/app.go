@@ -1805,18 +1805,18 @@ func (a *App) RemoveDeps(id string, deps []string) (*core.Task, error) {
 
 // Relabel adds and/or removes labels on a task. Adding a label already present,
 // and removing one already absent, are both no-ops (idempotent) so re-runs don't
-// churn the diff. A call with neither --add nor --remove is a bad-usage error
+// churn the diff. A call with neither --add nor --rm is a bad-usage error
 // rather than a silent no-op. When [labels].required is set, a relabel that would
 // leave the task with zero labels is rejected. The marshaller keeps the stored
 // label set sorted and de-duplicated, so the in-memory order here doesn't matter.
 func (a *App) Relabel(id string, add, remove []string) (*core.Task, error) {
 	if len(add) == 0 && len(remove) == 0 {
-		return nil, core.Validationf(id, "provide at least one --add or --remove label")
+		return nil, core.Validationf(id, "provide at least one --add or --rm label")
 	}
 	if err := requireNonBlank(id, "--add", add); err != nil {
 		return nil, err
 	}
-	if err := requireNonBlank(id, "--remove", remove); err != nil {
+	if err := requireNonBlank(id, "--rm", remove); err != nil {
 		return nil, err
 	}
 	idx, err := a.load()

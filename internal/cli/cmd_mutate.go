@@ -42,21 +42,23 @@ func emitMutationWith(a *app.App, verb, id string, mutate func() (*core.Task, er
 	return nil
 }
 
-// emitMutationMany is emitMutation for a multi-id batch: one {before,after,
-// changed} envelope per task, in the batch's (deduped) input order — --json an
-// array (a single id keeps the classic object via each command's len==1 path,
-// the show arity convention), --ndjson one envelope per line, human mode one
-// verb line per task. Befores come from one batch read; a miss there is
-// harmless because the mutate closure is the authority and fails the whole
-// batch before anything is printed.
+// emitMutationMany is emitMutation for a batch mutator: one {before,after,
+// changed} envelope per task, in the batch's (deduped) input order — --json
+// ALWAYS an array (a single id is a one-element array: a command whose Use
+// says `<id>...` has array cardinality by SIGNATURE, and the runtime argv
+// length must not fork the shape — the always-array rule), --ndjson one
+// envelope per line, human mode one verb line per task. Befores come from one
+// batch read; a miss there is harmless because the mutate closure is the
+// authority and fails the whole batch before anything is printed.
 func emitMutationMany(a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error)) error {
 	return emitMutationManyWith(a, verb, ids, mutate, nil)
 }
 
-// emitMutationManyWith is emitMutationMany plus optional extra top-level
-// fields merged into EVERY task's envelope — the batch twin of
-// emitMutationWith's annotate (done --note surfaces `appended` on each).
-func emitMutationManyWith(a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error), extra map[string]any) error {
+// emitMutationManyWith is emitMutationMany plus an optional per-task annotate:
+// given a resulting task it returns extra top-level fields merged into THAT
+// task's envelope — the batch twin of emitMutationWith's annotate (done --note
+// surfaces `appended` on each, a single-id set its `clamped`/`renumbered`).
+func emitMutationManyWith(a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error), annotate func(after *core.Task) map[string]any) error {
 	befores := map[string]*core.Task{}
 	if jsonMode() {
 		if items, _, err := a.GetBatch(ids, false); err == nil {
@@ -73,6 +75,10 @@ func emitMutationManyWith(a *app.App, verb string, ids []string, mutate func() (
 	if jsonMode() {
 		envs := make([]any, 0, len(after))
 		for _, t := range after {
+			var extra map[string]any
+			if annotate != nil {
+				extra = annotate(t)
+			}
 			envs = append(envs, mutationEnvelope(befores[t.ID], t, extra))
 		}
 		if flagNDJSON {
@@ -113,9 +119,9 @@ func newDoneCmd() *cobra.Command {
 		Short: "Move tasks into the done lane (stamps closed)",
 		Long: "Close one or more tasks in a single index write, all-or-nothing: a batch\n" +
 			"with an unknown id closes NOTHING and exits 1 with every miss in\n" +
-			"details.missing (the show batch shape). With --json, one id keeps the\n" +
-			"classic {before,after,changed} object and ≥2 ids emit an array of them;\n" +
-			"--ndjson streams one envelope per line at any arity.\n\n" +
+			"details.missing (the show batch shape). --json is ALWAYS an array of\n" +
+			"{before,after,changed} envelopes, one per id (a single id is a one-element\n" +
+			"array); --ndjson streams one envelope per line.\n\n" +
 			"--note \"<text>\" records the closing word in the same command: the text is\n" +
 			"appended to EVERY closed task's body as a new paragraph (the note command's\n" +
 			"contract — updated advances, nothing is deduped) and the envelope gains the\n" +
@@ -131,9 +137,6 @@ func newDoneCmd() *cobra.Command {
 				return err
 			}
 			if !cmd.Flags().Changed("note") {
-				if len(args) == 1 {
-					return emitMutation(a, "done", args[0], func() (*core.Task, error) { return a.Done(args[0]) })
-				}
 				return emitMutationMany(a, "done", args, func() ([]*core.Task, error) { return a.DoneMany(args) })
 			}
 			text, terr := readTextArg(cmd, note)
@@ -143,13 +146,9 @@ func newDoneCmd() *cobra.Command {
 			// `changed` tracks metadata only, so surface the note's effect the
 			// way the note command does.
 			appended := map[string]any{"appended": strings.TrimRight(text, "\n")}
-			if len(args) == 1 {
-				return emitMutationWith(a, "done", args[0],
-					func() (*core.Task, error) { return a.DoneNote(args[0], text) },
-					func(after *core.Task) map[string]any { return appended })
-			}
 			return emitMutationManyWith(a, "done", args,
-				func() ([]*core.Task, error) { return a.DoneManyNote(args, text) }, appended)
+				func() ([]*core.Task, error) { return a.DoneManyNote(args, text) },
+				func(*core.Task) map[string]any { return appended })
 		},
 	}
 	cmd.Flags().StringVar(&note, "note", "", "append this closing note to each task's body (`-` reads stdin)")
@@ -163,9 +162,9 @@ func newMoveCmd() *cobra.Command {
 		Long: "Move one or more tasks to <lane> (the LAST argument) in a single index\n" +
 			"write, all-or-nothing: a batch with an unknown id moves NOTHING and exits 1\n" +
 			"with every miss in details.missing; an unknown lane is exit 2 with the\n" +
-			"configured lanes in candidates. With --json, one id keeps the classic\n" +
-			"{before,after,changed} object and ≥2 ids emit an array of them; --ndjson\n" +
-			"streams one envelope per line at any arity.",
+			"configured lanes in candidates. --json is ALWAYS an array of\n" +
+			"{before,after,changed} envelopes, one per id (a single id is a one-element\n" +
+			"array); --ndjson streams one envelope per line.",
 		Example: "  furrow move t-k3m9p in-progress\n" +
 			"  furrow move t-k3m9p t-x7q2 backlog   # triage sweep, one write",
 		Args: cobra.MinimumNArgs(2),
@@ -175,9 +174,6 @@ func newMoveCmd() *cobra.Command {
 				return err
 			}
 			ids, lane := args[:len(args)-1], args[len(args)-1]
-			if len(ids) == 1 {
-				return emitMutation(a, "moved", ids[0], func() (*core.Task, error) { return a.Move(ids[0], lane) })
-			}
 			return emitMutationMany(a, "moved", ids, func() ([]*core.Task, error) { return a.MoveMany(ids, lane) })
 		},
 	}
@@ -555,8 +551,8 @@ func newSetCmd() *cobra.Command {
 			"and reports the neighbors in `renumbered`, exactly like reorder.\n\n" +
 			"Several ids apply the SAME edits to all of them in ONE all-or-nothing\n" +
 			"write (bulk triage): a miss sets NOTHING and exits 1 with every miss in\n" +
-			"details.missing, and --json emits an array of envelopes for two or more\n" +
-			"ids (the classic object for one). The position flags\n" +
+			"details.missing, and --json is ALWAYS an array of envelopes, one per id\n" +
+			"(a single id is a one-element array). The position flags\n" +
 			"(--priority/--before/--after) apply to ONE task and are exit 2 for two or\n" +
 			"more ids.",
 		Example: "  furrow set t-k3m9p -s ready --value 4 --effort 2 --add-label bug\n" +
@@ -615,12 +611,18 @@ func newSetCmd() *cobra.Command {
 			if len(args) > 1 {
 				return emitMutationMany(a, "set", args, func() ([]*core.Task, error) { return a.SetMany(args, o) })
 			}
+			// One id still emits a one-element ARRAY (the always-array rule —
+			// `set <id>...` has array cardinality by signature); only the
+			// single-task extras (clamped, renumbered) need this separate path.
 			var renumbered []core.PriorityChange
-			return emitMutationWith(a, "set", args[0],
-				func() (*core.Task, error) {
+			return emitMutationManyWith(a, "set", args,
+				func() ([]*core.Task, error) {
 					t, ch, err := a.Set(args[0], o)
 					renumbered = ch
-					return t, err
+					if err != nil {
+						return nil, err
+					}
+					return []*core.Task{t}, nil
 				},
 				func(after *core.Task) map[string]any {
 					extra := map[string]any{}
@@ -703,16 +705,16 @@ func newLabelCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "label <id>",
 		Short: "Add and/or remove labels on a task",
-		Long: "Add labels with --add and remove them with --remove (both repeatable and\n" +
+		Long: "Add labels with --add and remove them with --rm (both repeatable and\n" +
 			"combinable in one call). Adding a label already present, or removing one\n" +
-			"already absent, is a no-op. Provide at least one --add or --remove.",
+			"already absent, is a no-op. Provide at least one --add or --rm.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			if err := emptyFlagErr(cmd, args[0], "add", "remove"); err != nil {
+			if err := emptyFlagErr(cmd, args[0], "add", "rm"); err != nil {
 				return err
 			}
 			return emitMutation(a, "labeled", args[0], func() (*core.Task, error) {
@@ -720,8 +722,8 @@ func newLabelCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringSliceVar(&add, "add", nil, "label to add (repeatable)")
-	cmd.Flags().StringSliceVar(&remove, "remove", nil, "label to remove (repeatable)")
+	cmd.Flags().StringSliceVar(&add, "add", nil, "label to add (repeatable; comma-separated)")
+	cmd.Flags().StringSliceVar(&remove, "rm", nil, "label to remove (repeatable; comma-separated)")
 	return cmd
 }
 
