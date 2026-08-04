@@ -116,6 +116,24 @@ func (a *App) Lint() ([]core.Problem, error) {
 			}
 		}
 	}
+	// A label that NAMES a repo (a full owner/repo, or a short name the board's
+	// repo universe resolves) is the repos-pivot leak resurfacing: a repo is a
+	// first-class field, not a tag. The read-side -l did-you-mean guard
+	// deliberately never second-guesses a label that EXISTS — so the moment one
+	// such label lands on one task, that guard goes quiet for the whole board
+	// (13 leaked instances rode that silence, 2026-07-26). This warn is where
+	// the "no repo-named labels" invariant actually lives; `add`/`set` stay
+	// permissive because a colliding tag can be legitimate and a hard refusal
+	// on the write path would ban it outright.
+	universe := repoUniverse(idx, a.BoardRepos)
+	for _, t := range idx.Tasks {
+		for _, l := range t.Labels {
+			if len(core.RepoMatches(l, universe)) > 0 {
+				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "repo-as-label", ID: t.ID,
+					Msg: fmt.Sprintf("label %q names a repo — repos are first-class, not tags (`furrow repo %s --add %s` then `furrow label %s --remove %s`)", l, t.ID, l, t.ID, l)})
+			}
+		}
+	}
 	// Reconcile gaps (warn): a non-terminal task whose done dependency closed
 	// after the task was last touched. This is the structural backstop for
 	// reconcile-on-close — the always-on (hook/CI) twin of the `dep_done` revisit
