@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
@@ -84,8 +85,12 @@ func (s *Store) gateWrite() error { return s.Writable() }
 
 // Load folds the per-id task entries into one Index, in id order (deterministic;
 // the app canonicalizes into display order afterward), mirroring fsstore's
-// glob-and-fold. The tasks are copied out so callers mutating the result do not
-// alter the store until they Save.
+// glob-and-fold. The tasks are DEEP-copied out so callers mutating the result do
+// not alter the store until they Save — including through the slice and pointer
+// fields. A struct copy alone left every slice sharing its backing array with
+// the store, so the routine Load -> Canonicalize (whose sortDedup sorts labels
+// IN PLACE) rewrote the store without any Save: the test double was making a
+// weaker isolation promise than fsstore, whose Load parses fresh bytes.
 func (s *Store) Load() (*core.Index, error) {
 	if err := core.CheckSchemaVersion(s.schemaVersion); err != nil {
 		return nil, err
@@ -97,9 +102,68 @@ func (s *Store) Load() (*core.Index, error) {
 	sort.Strings(ids)
 	tasks := make([]core.Task, 0, len(ids))
 	for _, id := range ids {
-		tasks = append(tasks, s.tasks[id])
+		tasks = append(tasks, cloneTask(s.tasks[id]))
 	}
 	return &core.Index{SchemaVersion: s.schemaVersion, Tasks: tasks}, nil
+}
+
+// cloneTask deep-copies a task's slice and pointer fields (the struct copy
+// covers the scalars). Nil-ness is preserved — a clone that turned [] into nil
+// would change what tests observe. The unexported extras carrier is shared by
+// the struct copy, which is fine: nothing outside core can reach into it.
+func cloneTask(t core.Task) core.Task {
+	t.Labels = cloneStrings(t.Labels)
+	t.Repos = cloneStrings(t.Repos)
+	t.Deps = cloneStrings(t.Deps)
+	t.Refs = cloneStrings(t.Refs)
+	if t.Checklist != nil {
+		t.Checklist = append(make([]core.ChecklistItem, 0, len(t.Checklist)), t.Checklist...)
+	}
+	t.Value = cloneInt(t.Value)
+	t.Effort = cloneInt(t.Effort)
+	t.Closed = cloneTime(t.Closed)
+	t.Reviewed = cloneTime(t.Reviewed)
+	t.Due = cloneTime(t.Due)
+	return t
+}
+
+// cloneEpic is cloneTask's box twin (slices + the Meta map).
+func cloneEpic(e core.Epic) core.Epic {
+	e.Labels = cloneStrings(e.Labels)
+	e.Repos = cloneStrings(e.Repos)
+	e.Deps = cloneStrings(e.Deps)
+	if e.Meta != nil {
+		m := make(map[string]string, len(e.Meta))
+		for k, v := range e.Meta {
+			m[k] = v
+		}
+		e.Meta = m
+	}
+	e.Closed = cloneTime(e.Closed)
+	return e
+}
+
+func cloneStrings(ss []string) []string {
+	if ss == nil {
+		return nil
+	}
+	return append(make([]string, 0, len(ss)), ss...)
+}
+
+func cloneInt(p *int) *int {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func cloneTime(p *time.Time) *time.Time {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
 
 // Save replaces the task set from idx: every task becomes its own entry and any
@@ -113,7 +177,10 @@ func (s *Store) Save(idx *core.Index) error {
 	}
 	next := make(map[string]core.Task, len(idx.Tasks))
 	for _, t := range idx.Tasks {
-		next[t.ID] = t
+		// Deep-copy INTO the store too (fsstore serializes, so it is isolated in
+		// both directions): a caller that keeps mutating idx after Save must not
+		// reach the stored tasks through shared backing arrays.
+		next[t.ID] = cloneTask(t)
 	}
 	s.tasks = next
 	return nil
@@ -126,6 +193,8 @@ func (s *Store) LoadRepo(repo string) (*core.RepoRecord, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
+	rec.LastReviewed = cloneTime(rec.LastReviewed)
+	rec.LastAgentReviewed = cloneTime(rec.LastAgentReviewed)
 	return &rec, true, nil
 }
 
@@ -170,6 +239,7 @@ func (s *Store) LoadEpic(id string) (*core.Epic, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
+	e = cloneEpic(e)
 	return &e, true, nil
 }
 
@@ -181,7 +251,7 @@ func (s *Store) LoadEpics() ([]core.Epic, error) {
 	}
 	epics := make([]core.Epic, 0, len(s.epics))
 	for _, e := range s.epics {
-		epics = append(epics, e)
+		epics = append(epics, cloneEpic(e))
 	}
 	sort.Slice(epics, func(i, j int) bool { return epics[i].ID < epics[j].ID })
 	return epics, nil
