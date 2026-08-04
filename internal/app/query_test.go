@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func qErr(t *testing.T, a *App, q string) *core.Error {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = a.compileQuery(q, idx, a.Cfg.RevisitStaleDays, nil)
+	_, _, err = a.compileQuery(q, idx, a.Cfg.RevisitStaleDays, nil)
 	if err == nil {
 		t.Fatalf("compileQuery(%q) should have failed", q)
 	}
@@ -164,7 +165,7 @@ func TestQueryIsStale(t *testing.T) {
 		days int
 		want int
 	}{{0, 0}, {7, 3}, {35, 1}} {
-		p, err := a.compileQuery("is:stale", idx, tc.days, nil)
+		p, _, err := a.compileQuery("is:stale", idx, tc.days, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -322,7 +323,6 @@ func TestQueryErrors(t *testing.T) {
 		{"updated:2026-13-45", "query-type"},
 		{"closed:>nope", "query-type"},
 		{"title:>x", "query-type"}, // text fields take no operator
-		{"descendant-of:t-1", "query-unknown-field"},
 		{"is:snoozed", "query-unknown-flag"},
 		{"has:children", "query-unknown-field"},
 	}
@@ -336,10 +336,10 @@ func TestQueryErrors(t *testing.T) {
 		}
 	}
 
-	// The unknown-field candidates name the full v1 vocabulary, including the
-	// part-2 fields — the did-you-mean surface a front-end completes from.
-	ce := qErr(t, a, "descendant-of:t-1")
-	for _, want := range []string{"epic", "depends-on", "blocks", "created", "updated", "closed", "reviewed", "due", "body"} {
+	// The unknown-field candidates name the full vocabulary, including the v2
+	// graph pair — the did-you-mean surface a front-end completes from.
+	ce := qErr(t, a, "descendantof:t-1")
+	for _, want := range []string{"epic", "depends-on", "blocks", "descendant-of", "ancestor-of", "created", "updated", "closed", "reviewed", "due", "body"} {
 		if !slices.Contains(ce.Candidates, want) {
 			t.Errorf("unknown-field candidates missing %q: %v", want, ce.Candidates)
 		}
@@ -369,7 +369,7 @@ func FuzzCompileQuery(f *testing.F) {
 		if err != nil {
 			t.Skip()
 		}
-		p, err := a.compileQuery(s, idx, 30, nil)
+		p, _, err := a.compileQuery(s, idx, 30, nil)
 		if err != nil || p == nil {
 			return
 		}
@@ -377,4 +377,149 @@ func FuzzCompileQuery(f *testing.F) {
 			_, _ = p(&idx.Tasks[i]) // must not panic
 		}
 	})
+}
+
+// TestQueryTransitiveGraph pins the v2 graph pair (t-7th1 leg 4): a chain
+// a <- b <- c (b waits on a, c waits on b) plus a bystander.
+// descendant-of:X = everything transitively WAITING ON X (downstream);
+// ancestor-of:X = everything X transitively WAITS ON (upstream). Start ids are
+// not in their own closure, mirroring the direct pair; an unknown id has an
+// empty closure (lenient, exit 0), like blocks:.
+func TestQueryTransitiveGraph(t *testing.T) {
+	a := newApp()
+	ta := mustAdd(t, a, "base", AddOpts{})
+	tb := mustAdd(t, a, "mid", AddOpts{Deps: []string{ta.ID}})
+	tc := mustAdd(t, a, "top", AddOpts{Deps: []string{tb.ID}})
+	mustAdd(t, a, "bystander", AddOpts{})
+
+	ids := func(q string) []string {
+		t.Helper()
+		items, err := a.List(QueryOpts{Query: q})
+		if err != nil {
+			t.Fatalf("List(%q): %v", q, err)
+		}
+		var out []string
+		for _, it := range items {
+			out = append(out, it.ID)
+		}
+		return out
+	}
+
+	if got := ids("descendant-of:" + ta.ID); !reflect.DeepEqual(got, []string{tb.ID, tc.ID}) {
+		t.Errorf("descendant-of base = %v, want [%s %s]", got, tb.ID, tc.ID)
+	}
+	if got := ids("ancestor-of:" + tc.ID); !reflect.DeepEqual(got, []string{ta.ID, tb.ID}) {
+		t.Errorf("ancestor-of top = %v, want [%s %s]", got, ta.ID, tb.ID)
+	}
+	// direct pair unchanged: depends-on: is one hop only.
+	if got := ids("depends-on:" + ta.ID); !reflect.DeepEqual(got, []string{tb.ID}) {
+		t.Errorf("depends-on base = %v, want [%s]", got, tb.ID)
+	}
+	if got := ids("descendant-of:t-nope1"); len(got) != 0 {
+		t.Errorf("unknown id should have an empty closure, got %v", got)
+	}
+	// negation composes like every other term.
+	if got := ids("-descendant-of:" + ta.ID + " is:open"); len(got) != 2 {
+		t.Errorf("-descendant-of = %v, want the base + bystander", got)
+	}
+}
+
+// TestQueryLabelWildcard pins the reserved `*` token (t-7th1 leg 4): a value
+// containing `*` widens to a wildcard over each label; a plain value stays
+// exact, so no v1 query changes meaning.
+func TestQueryLabelWildcard(t *testing.T) {
+	a := newApp()
+	ui := mustAdd(t, a, "one", AddOpts{Labels: []string{"area/ui"}})
+	dx := mustAdd(t, a, "two", AddOpts{Labels: []string{"area/dx"}})
+	mustAdd(t, a, "three", AddOpts{Labels: []string{"uxarea"}})
+
+	ids := func(q string) []string {
+		t.Helper()
+		items, err := a.List(QueryOpts{Query: q})
+		if err != nil {
+			t.Fatalf("List(%q): %v", q, err)
+		}
+		var out []string
+		for _, it := range items {
+			out = append(out, it.ID)
+		}
+		return out
+	}
+
+	if got := ids("label:area/*"); !reflect.DeepEqual(got, []string{ui.ID, dx.ID}) {
+		t.Errorf("label:area/* = %v, want [%s %s]", got, ui.ID, dx.ID)
+	}
+	if got := ids("label:*ui*"); !reflect.DeepEqual(got, []string{ui.ID}) {
+		t.Errorf("label:*ui* = %v, want [%s] (exact per-label, case-sensitive)", got, ui.ID)
+	}
+	// plain values stay exact: "area" matches no label in full.
+	if got := ids("label:area"); len(got) != 0 {
+		t.Errorf("plain label:area must stay exact, got %v", got)
+	}
+	// comma-OR mixes wildcard and exact values.
+	if got := ids("label:uxarea,area/dx"); len(got) != 2 {
+		t.Errorf("mixed OR-set = %v, want 2 tasks", got)
+	}
+}
+
+// TestQueryErrorDetailsCarryPosition pins t-7th1 leg 1: every query fault —
+// parse-stage or bind-stage — carries the offending term and its byte offset
+// in details, and the operator-type fault names the allowed operators. This is
+// the contract a filter-bar front-end underlines tokens with.
+func TestQueryErrorDetailsCarryPosition(t *testing.T) {
+	a := newApp()
+	mustAdd(t, a, "x", AddOpts{})
+
+	cases := []struct {
+		q    string
+		term string
+		off  int
+	}{
+		{"status:ready value:..", "value:..", 13}, // parse fault
+		{"status:ready :foo", ":foo", 13},         // empty field = parse fault
+		{"is:open updatd:>=4", "updatd:>=4", 8},   // unknown field (bind)
+		{"is:opeen", "is:opeen", 0},               // unknown flag (bind)
+		{"is:open -title:>x", "-title:>x", 8},     // type fault (bind)
+	}
+	for _, tc := range cases {
+		ce := qErr(t, a, tc.q)
+		d, ok := ce.Details.(map[string]any)
+		if !ok {
+			t.Errorf("%q: details = %#v, want a map with term/offset", tc.q, ce.Details)
+			continue
+		}
+		if d["term"] != tc.term || d["offset"] != tc.off {
+			t.Errorf("%q: details term/offset = %v/%v, want %q/%d", tc.q, d["term"], d["offset"], tc.term, tc.off)
+		}
+	}
+
+	ce := qErr(t, a, "title:>x")
+	d, _ := ce.Details.(map[string]any)
+	if d == nil || d["allowed_operators"] == nil {
+		t.Errorf("a type fault should name allowed_operators, got %#v", ce.Details)
+	}
+}
+
+// TestSearchQuerySharesBodyCache pins t-7th1 leg 2: `search -q <body term>`
+// reads each body ONCE — the query predicate and the snippet scan share the
+// compiler's per-run cache. It used to pay two loads per body (the search-side
+// read bypassed the cache), breaking the one-load invariant
+// TestQueryBodyLoadIsLazy pins for ls.
+func TestSearchQuerySharesBodyCache(t *testing.T) {
+	a := newApp()
+	mustAdd(t, a, "alpha", AddOpts{Body: "the needle paragraph"})
+	mustAdd(t, a, "beta", AddOpts{Body: "nothing here"})
+	cs := &countingStore{Store: a.Store}
+	a.Store = cs
+
+	hits, err := a.Search(QueryOpts{Query: "body:needle"}, "needle")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].MatchedField != "body" {
+		t.Fatalf("hits = %+v, want the one body match", hits)
+	}
+	if cs.loads != 2 {
+		t.Errorf("each body loads once (2 tasks -> 2 loads), got %d", cs.loads)
+	}
 }
