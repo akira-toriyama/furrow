@@ -149,6 +149,34 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// about the day boundary or the skipped lanes.
 	ps = append(ps, core.DueProblems(idx, a.Clock.Now(), a.loc(), a.dueSkipLanes())...)
 
+	// Provenance ([lint].provenance_markers, OFF by default): warn on an open,
+	// non-terminal task whose body carries none of the board's provenance
+	// markers. The rule exists because a tracker entry is read as FACT by every
+	// later session — a 2026-07-26 sweep task-ified 7 single-source observations
+	// unrefuted, and a later refutation pass killed 6 of 11 — and prose rules
+	// alone demonstrably do not stop it. The check only pressures the writer to
+	// state "where this came from / how it was verified"; it cannot judge
+	// correctness. The marker VOCABULARY is the operator's (a board convention,
+	// set in the board's own config so it syncs), never furrow's: shipping
+	// default wording would bless one language and one house style.
+	if len(a.Cfg.LintProvenanceMarkers) > 0 {
+		for i := range idx.Tasks {
+			t := &idx.Tasks[i]
+			if a.Cfg.IsTerminal(t.Status) {
+				continue
+			}
+			body, err := a.Store.LoadBody(t.ID)
+			if err != nil {
+				return nil, err
+			}
+			if !containsAnyFold(body, a.Cfg.LintProvenanceMarkers) {
+				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "provenance-missing", ID: t.ID,
+					Msg: fmt.Sprintf("body records no provenance (none of the [lint].provenance_markers: %s) — say where this came from and how it was verified, e.g. `furrow note %s \"...\"`",
+						strings.Join(a.Cfg.LintProvenanceMarkers, ", "), t.ID)})
+			}
+		}
+	}
+
 	rps, err := a.lintRecordKeys()
 	if err != nil {
 		return nil, err
@@ -533,6 +561,18 @@ func humanBytes(n int64) string {
 func hasBlank(vals []string) bool {
 	for _, v := range vals {
 		if strings.TrimSpace(v) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// containsAnyFold reports whether s contains any of the needles as a
+// case-insensitive substring (core.ContainsFold — search's matcher, so a
+// marker matches exactly the way a `furrow search` for it would).
+func containsAnyFold(s string, needles []string) bool {
+	for _, n := range needles {
+		if core.ContainsFold(s, n) {
 			return true
 		}
 	}
