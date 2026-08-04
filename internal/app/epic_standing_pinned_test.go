@@ -163,8 +163,6 @@ func TestBriefListsPinnedChannels(t *testing.T) {
 	}
 }
 
-// --- helpers ---
-
 func mustAddReady(t *testing.T, a *App, title, epic string) string {
 	t.Helper()
 	task := mustAdd(t, a, title, AddOpts{Epic: epic})

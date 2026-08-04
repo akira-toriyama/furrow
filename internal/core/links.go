@@ -99,7 +99,6 @@ func stripInlineCode(line string) string {
 	return b.String()
 }
 
-// backtickRun returns the length of the run of backticks in s starting at i.
 func backtickRun(s string, i int) int {
 	n := 0
 	for i+n < len(s) && s[i+n] == '`' {

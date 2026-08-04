@@ -227,8 +227,6 @@ func TestAddAndRetitleFlattenTitle(t *testing.T) {
 	}
 }
 
-// --- t-hgxw: write-path silent divergences ---
-
 // (a) A task born directly in the done lane must stamp Closed, so it isn't a
 // zombie that `done` no-ops on and `archive` skips forever.
 func TestAddStampsClosedWhenBornInDoneLane(t *testing.T) {

@@ -114,8 +114,6 @@ func TestStatsUnknownLaneFilterFailsFast(t *testing.T) {
 	}
 }
 
-// --- window flow (--since/--until) ------------------------------------------
-
 // seedTask injects a task with explicit timestamps straight through the store —
 // the window tests need created/closed/updated to differ, which Add/Done under
 // one fixed clock cannot produce.

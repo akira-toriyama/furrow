@@ -34,7 +34,6 @@ func Archivable(idx *core.Index, doneLane string, cutoff time.Time, repos ...str
 	return ids
 }
 
-// containsAny reports whether have and want share at least one element.
 func containsAny(have, want []string) bool {
 	for _, w := range want {
 		if contains(have, w) {
