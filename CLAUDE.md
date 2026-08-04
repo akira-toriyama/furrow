@@ -112,7 +112,11 @@ the user-level config. When you work with any furrow store:
   task `bodies/` directory (see `note`/`edit` routing below). A box is not work:
   `furrow next` hands out only tasks, an epic's "progress" is the member
   roll-up, and furrow never auto-closes a box (`revisit`/`sync` raise
-  `epic_all_done` instead). Epic refs resolve as exact id, unique id prefix, or
+  `epic_all_done` instead). `epic done`/`deactivate` SUGGEST the previous
+  active box (open, currently inactive, newest activation record — computed
+  fresh from the body's activation log, no stored pointer; one `previous:`
+  stdout line + a `previous` key in `--json`, null = unknown) and never
+  activate it — choosing stays the human's. Epic refs resolve as exact id, unique id prefix, or
   unique title substring (a miss/ambiguity is exit 2 with `candidates` — kinds
   `epic-not-found`/`epic-ambiguous`).
 - **A task can be PROMISED for an instant: the `due` stamp (schema v8).**

@@ -733,7 +733,11 @@ except where noted:
   clears `active` in the SAME write (a closed box holding its repos' slots
   forever could never be replaced) and deliberately never picks the next box —
   that judgment is the human's; `lint`'s `epic-no-active` nags until someone
-  decides. A task's own membership is a plain field edit (`add -e` / `set -e`,
+  decides. `done`/`deactivate` do SUGGEST the previous active box
+  (`PreviousActiveSuggest`): a stateless, best-effort read of the activation
+  log `recordSwitch` writes and sync's `switchLineRe` already parses — the
+  open, currently-inactive box with the newest stamp, `unknown` when no record
+  decides it, and never executed. A task's own membership is a plain field edit (`add -e` / `set -e`,
   resolved through `ResolveEpic`: exact id → unique id prefix → unique title
   substring, ambiguity = exit 2 + candidates).
 - **`repo`** attaches/detaches `owner/repo` values on a task (`--add`/`--rm`,
