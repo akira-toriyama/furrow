@@ -69,6 +69,17 @@ on:
         description: Name of the furrow tracker repo to update.
         type: string
         default: projects
+      tracker-ref:
+        description: >-
+          Branch of the tracker repo to check out and push to. Explicit because
+          actions/checkout's DEFAULT ref flips meaning on a self-referential
+          caller: when the calling repo IS the tracker, the default is the PR's
+          detached merge ref, and `furrow sync`'s rebase dies with "HEAD does
+          not point to a branch" (measured: projects#15 / projects#16). Every
+          other caller silently got the tracker's default branch. Pinning the
+          ref makes both cases the same case.
+        type: string
+        default: main
       open-lane:
         description: Lane a task is nudged to when a PR opens.
         type: string
@@ -125,6 +136,11 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: ${{ inputs.tracker-owner }}/${{ inputs.tracker-repo }}
+          # Never rely on checkout's default ref: on a self-referential caller
+          # (the tracker's own PRs carry footers too) the default is the PR's
+          # detached merge ref, not a branch, and the publish step's
+          # `furrow sync` cannot rebase a detached HEAD. See tracker-ref.
+          ref: ${{ inputs.tracker-ref }}
           token: ${{ secrets.PROJECTS_WRITE_PAT }}
           path: tracker
           fetch-depth: 0
