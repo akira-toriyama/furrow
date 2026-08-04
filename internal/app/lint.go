@@ -96,7 +96,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 		// (requireNonBlank), so a new one cannot be created — but an older binary
 		// wrote them freely (`set --add-label ""`, and any CSV trailing comma), and
 		// a blank sorts FIRST, so it leads every rendered label list. This is the
-		// backstop for what is already on disk; `furrow label <id> --remove ""`
+		// backstop for what is already on disk; `furrow label <id> --rm ""`
 		// cannot clear it (that is now exit 2), so the message names the fix.
 		for _, f := range []struct {
 			field string
@@ -130,7 +130,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 		for _, l := range t.Labels {
 			if len(core.RepoMatches(l, universe)) > 0 {
 				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "repo-as-label", ID: t.ID,
-					Msg: fmt.Sprintf("label %q names a repo — repos are first-class, not tags (`furrow repo %s --add %s` then `furrow label %s --remove %s`)", l, t.ID, l, t.ID, l)})
+					Msg: fmt.Sprintf("label %q names a repo — repos are first-class, not tags (`furrow repo %s --add %s` then `furrow label %s --rm %s`)", l, t.ID, l, t.ID, l)})
 			}
 		}
 	}

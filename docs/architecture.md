@@ -808,7 +808,7 @@ except where noted:
   `revisit` reason array in `--json` so an agent fixes them via the setters
   (`value`/`effort`/`dep`/`repo --add`). An empty result exits 0 (nothing to revisit is healthy).
 - **`migrate`** parses a hand-maintained `Task.md` into furrow tasks (dry-run by
-  default; `--write` to apply; `--label` to stamp imported tasks).
+  default; `--yes` to apply; `--label` to stamp imported tasks).
 
 ### Output, errors, and exit codes
 
@@ -818,7 +818,10 @@ except where noted:
   commands: `jsonMode()` (`internal/cli/output.go`) is the single predicate every
   command gates on, and `emitObject` prints one value either indented (`--json`)
   or compact-one-line (`--ndjson`). A list command streams one record per line
-  under `--ndjson`; a single-object command (a mutation's
+  under `--ndjson` — and the batch mutators (`done`/`move`/`set`) and `show`
+  are list-shaped: `--json` is ALWAYS an array, one envelope/entity per id,
+  whatever the argv length (the always-array rule; a single-target mutation
+  keeps its object); a single-object command (such a mutation's
   `{before,after,changed}`, `board`, `attach`, `init`, `version`, the `apply`
   report) prints one compact line; `lint` streams one problem per line. This
   closes the old gap where a non-read command silently degraded to human prose at
@@ -847,6 +850,11 @@ except where noted:
   unknown `-l` tag just matches nothing (clamp-don't-reject, an open vocabulary).
   Comma is the reserved separator, so a lane/label whose name contains one can't
   be selected this way (lane/label names with commas are not a supported shape).
+  The same meaning governs every REPEATABLE flag: one holding identifiers
+  (labels, repos, refs, deps, lanes) splits on comma, one holding free text or
+  a path (`check --add`, `--meta`, `config init --scope`) takes each value
+  verbatim — `TestRepeatableFlagNotationFrozen` freezes the classification, so
+  a new flag fails the build until it picks a side.
   `ls --drafts` lists only the repo-less tasks. When an input *almost* resolved —
   an ambiguous repo short name, a label that uniquely names a repo (the
   did-you-mean guard), or an unknown lane — the error envelope carries a

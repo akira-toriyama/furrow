@@ -216,8 +216,8 @@ func newShowCmd() *cobra.Command {
 		Use:   "show <id>...",
 		Short: "Show tasks or epics with metadata and markdown body (batch-friendly)",
 		Long: "Show one or more tasks' metadata and Markdown body in a single read, in\n" +
-			"input order. --json emits an array for several ids (a single id keeps the\n" +
-			"historical single object); --ndjson emits one task per line at any arity;\n" +
+			"input order. --json is ALWAYS an array, one element per found id (a single\n" +
+			"id is a one-element array); --ndjson emits one task per line at any arity;\n" +
 			"the human output separates tasks with a --- line. --no-body omits the body\n" +
 			"(the body_text key in JSON) — the lean metadata-only read for agents. When\n" +
 			"some ids are missing, the found tasks are still emitted and the not-found\n" +
@@ -266,32 +266,6 @@ func newShowCmd() *cobra.Command {
 			if !archived && len(missing) > 0 {
 				inArchive = a.ArchivedContains(missing)
 			}
-			// Single-id compat: the classic not-found error, nothing on stdout —
-			// details.missing rides along so agents branch the same at any arity.
-			if len(args) == 1 && len(missing) > 0 {
-				fe := core.NotFound(missing[0])
-				// A miss whose ref reads as a box says so: "task not found" for
-				// an `e-` id would send the reader looking in the wrong store.
-				// Under --archived the box may well EXIST — the archive simply
-				// holds tasks — so that reading gets its own sentence rather
-				// than a "not found" that is false about the board.
-				if epic, rerr := a.RefTargetsEpic(missing[0]); rerr == nil && epic {
-					if archived {
-						// The box EXISTS — the flag is what is wrong, so the kind
-						// must not say not-found (a consumer branching on the kind
-						// would conclude the box is gone). Bad usage: exit 2.
-						fe.Kind = core.KindValidation
-						fe.Code = core.CodeValidation
-						fe.Msg = fmt.Sprintf("%s is an epic — --archived reads the task archive, and boxes are never archived (drop the flag to read it)", missing[0])
-					} else {
-						fe.Kind = core.KindEpicNotFound
-						fe.Msg = fmt.Sprintf("epic not found: %s", missing[0])
-					}
-				}
-				fe.Msg += archivedSuffix(inArchive)
-				fe.Details = missDetails(missing, inArchive)
-				return fe
-			}
 			var mentions [][]core.Task
 			if backlinks {
 				// Boxes are skipped: [[id]] links name tasks (core.LinkPattern is
@@ -314,14 +288,41 @@ func newShowCmd() *cobra.Command {
 					}
 				}
 			}
-			emitShow(a, entries, mentions, len(args) == 1, noBody, backlinks)
+			// The found entries are ALWAYS emitted first — a total miss prints []
+			// under --json — so the success shape never depends on how many ids
+			// resolved; only the error report below varies with the misses. (The
+			// single-id read used to error before emission with a classic bare
+			// object as its success shape — the arity fork the always-array rule
+			// removed.)
+			emitShow(a, entries, mentions, noBody, backlinks)
 			if len(missing) > 0 {
-				return &core.Error{
-					Code:    core.CodeNotFound,
-					Kind:    core.KindNotFound,
-					Msg:     fmt.Sprintf("%d of %d ids not found", len(missing), len(entries)+len(missing)) + archivedSuffix(inArchive),
-					Details: missDetails(missing, inArchive),
+				fe := &core.Error{
+					Code: core.CodeNotFound,
+					Kind: core.KindNotFound,
+					Msg:  fmt.Sprintf("%d of %d ids not found", len(missing), len(entries)+len(missing)),
 				}
+				// A lone miss whose ref reads as a box says so: "ids not found"
+				// for an `e-` id would send the reader looking in the wrong
+				// store. Under --archived the box may well EXIST — the archive
+				// simply holds tasks — so that reading gets its own sentence
+				// (and a bad-usage kind: a consumer branching on not-found would
+				// conclude the box is gone).
+				if len(missing) == 1 {
+					fe.Subject = missing[0]
+					if epic, rerr := a.RefTargetsEpic(missing[0]); rerr == nil && epic {
+						if archived {
+							fe.Kind = core.KindValidation
+							fe.Code = core.CodeValidation
+							fe.Msg = fmt.Sprintf("%s is an epic — --archived reads the task archive, and boxes are never archived (drop the flag to read it)", missing[0])
+						} else {
+							fe.Kind = core.KindEpicNotFound
+							fe.Msg = fmt.Sprintf("epic not found: %s", missing[0])
+						}
+					}
+				}
+				fe.Msg += archivedSuffix(inArchive)
+				fe.Details = missDetails(missing, inArchive)
+				return fe
 			}
 			return nil
 		},

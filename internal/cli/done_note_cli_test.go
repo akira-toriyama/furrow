@@ -14,7 +14,7 @@ func TestCLIDoneNoteClosesAndReportsAppended(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("done --note exit = %d:\n%s", code, out)
 	}
-	var env struct {
+	var envs []struct {
 		Changed  []string `json:"changed"`
 		Appended string   `json:"appended"`
 		After    struct {
@@ -22,9 +22,10 @@ func TestCLIDoneNoteClosesAndReportsAppended(t *testing.T) {
 			Closed *string `json:"closed"`
 		} `json:"after"`
 	}
-	if err := json.Unmarshal([]byte(out), &env); err != nil {
-		t.Fatalf("parse done --note --json: %v\n%s", err, out)
+	if err := json.Unmarshal([]byte(out), &envs); err != nil || len(envs) != 1 {
+		t.Fatalf("parse done --note --json (always-array): %v\n%s", err, out)
 	}
+	env := envs[0]
 	if env.Appended != "→ continued in t-xxxxx" {
 		t.Errorf("appended = %q", env.Appended)
 	}

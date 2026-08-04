@@ -49,7 +49,7 @@ func TestCLIShowEpicMatchesEpicShow(t *testing.T) {
 		BodyText string           `json:"body_text"`
 		Status   string           `json:"status"` // a box has no lane
 	}
-	if err := json.Unmarshal([]byte(out), &box); err != nil {
+	if err := json.Unmarshal(showOne(t, out), &box); err != nil {
 		t.Fatalf("parse show --json: %v\n%s", err, out)
 	}
 	if box.ID != epic || box.Goal != "curry is served" || box.Progress.Total != 1 || len(box.Tasks) != 1 {
@@ -63,7 +63,7 @@ func TestCLIShowEpicMatchesEpicShow(t *testing.T) {
 	// is indistinguishable from a box whose body really is empty.
 	out, _ = run(t, "--json", "show", epic, "--no-body")
 	var raw map[string]any
-	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+	if err := json.Unmarshal(showOne(t, out), &raw); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := raw["body_text"]; ok {

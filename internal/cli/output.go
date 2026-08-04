@@ -790,15 +790,16 @@ func showView(it app.ShowItem, mentions []core.Task, noBody, backlinks bool) any
 
 // emitShow renders `show` results in input order, each entry as the entity it
 // IS: a task's dashboard or a box's goal + roll-up (the very object `epic show`
-// prints). --ndjson is one entry per line at any arity; --json keeps the
-// historical single object for one id and emits an array for a batch (so a
-// batch of misses still prints []) — a mixed batch's array is therefore
-// heterogeneous, which is what an id naming its own entity kind implies;
-// the human output separates detail blocks with a --- line. mentions is
-// non-nil only when --backlinks ran, aligned index-for-index with entries;
-// a box has no entry there, since [[id]] links name tasks
-// (core.LinkPattern is built from [ids].prefix).
-func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, single, noBody, backlinks bool) {
+// prints). --ndjson is one entry per line at any arity; --json is ALWAYS an
+// array, one element per found id (a single id is a one-element array, an
+// all-miss batch prints []) — the always-array rule: `show <id>...` has array
+// cardinality by SIGNATURE, and the runtime argv length must not fork the
+// shape. A mixed batch's array is heterogeneous, which is what an id naming
+// its own entity kind implies; the human output separates detail blocks with a
+// --- line. mentions is non-nil only when --backlinks ran, aligned
+// index-for-index with entries; a box has no entry there, since [[id]] links
+// name tasks (core.LinkPattern is built from [ids].prefix).
+func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, noBody, backlinks bool) {
 	mentionsAt := func(i int) []core.Task {
 		if mentions == nil {
 			return nil
@@ -824,11 +825,6 @@ func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, singl
 			printNDJSONValue(view(i))
 		}
 	case flagJSON:
-		if single {
-			// exactly one entry: a single-id miss error-returns before emission
-			printJSON(view(0))
-			return
-		}
 		views := make([]any, 0, len(entries))
 		for i := range entries {
 			views = append(views, view(i))

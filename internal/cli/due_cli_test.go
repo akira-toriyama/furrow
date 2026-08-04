@@ -49,7 +49,7 @@ func TestCLIDueRoundTrip(t *testing.T) {
 	var task struct {
 		Due string `json:"due"`
 	}
-	if err := json.Unmarshal([]byte(out), &task); err != nil {
+	if err := json.Unmarshal(showOne(t, out), &task); err != nil {
 		t.Fatalf("parse show --json: %v\n%s", err, out)
 	}
 	// The wire form is the same UTC RFC3339 every other timestamp uses.
@@ -131,7 +131,7 @@ func TestCLISetDueEnvelope(t *testing.T) {
 			After   map[string]any `json:"after"`
 			Changed []string       `json:"changed"`
 		}{}
-		if err := json.Unmarshal([]byte(out), &env); err != nil {
+		if err := json.Unmarshal(showOne(t, out), &env); err != nil {
 			t.Fatalf("parse set --json: %v\n%s", err, out)
 		}
 	}

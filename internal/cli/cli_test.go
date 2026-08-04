@@ -665,7 +665,7 @@ func TestCLISetVerb(t *testing.T) {
 		} `json:"after"`
 		Changed []string `json:"changed"`
 	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
+	if err := json.Unmarshal(showOne(t, out), &res); err != nil {
 		t.Fatalf("parse set --json: %v\n%s", err, out)
 	}
 	if res.After.Status != "ready" || res.After.Value != 4 || res.After.Effort != 2 {
@@ -782,7 +782,7 @@ func TestCLIChecklistModes(t *testing.T) {
 			Text string `json:"text"`
 		} `json:"checklist"`
 	}
-	if err := json.Unmarshal([]byte(out), &task); err != nil {
+	if err := json.Unmarshal(showOne(t, out), &task); err != nil {
 		t.Fatalf("parse show --json: %v\n%s", err, out)
 	}
 	if len(task.Checklist) != 1 || task.Checklist[0].Text != "ONE" {
@@ -916,7 +916,7 @@ func TestCLICheckAddEmptyIsExit2NotToggle(t *testing.T) {
 			Done bool   `json:"done"`
 		} `json:"checklist"`
 	}
-	if err := json.Unmarshal([]byte(out), &task); err != nil {
+	if err := json.Unmarshal(showOne(t, out), &task); err != nil {
 		t.Fatalf("parse show: %v\n%s", err, out)
 	}
 	if len(task.Checklist) != 1 {
@@ -985,7 +985,7 @@ func TestCLILabelAddRemove(t *testing.T) {
 	initStore(t)
 	id := addTask(t, "task", "-s", "ready", "-l", "chord", "-l", "shared")
 
-	out, code := run(t, "--json", "label", id, "--add", "sill", "--remove", "chord")
+	out, code := run(t, "--json", "label", id, "--add", "sill", "--rm", "chord")
 	if code != 0 {
 		t.Fatalf("label --json exit = %d:\n%s", code, out)
 	}
@@ -1013,7 +1013,7 @@ func TestCLILabelAddRemove(t *testing.T) {
 		t.Errorf("changed should include \"labels\": %v", res.Changed)
 	}
 
-	// no --add/--remove is a bad-usage error (exit 2).
+	// no --add/--rm is a bad-usage error (exit 2).
 	if _, code := run(t, "label", id); code != int(core.CodeValidation) {
 		t.Errorf("label with no flags should exit 2, got %d", code)
 	}
@@ -1059,14 +1059,15 @@ func TestCLIMutationJSONDiff(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("done --json exit = %d:\n%s", code, out)
 	}
-	var res struct {
+	var envs []struct {
 		Before  *core.Task `json:"before"`
 		After   *core.Task `json:"after"`
 		Changed []string   `json:"changed"`
 	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		t.Fatalf("mutation --json should be an object, got error %v:\n%s", err, out)
+	if err := json.Unmarshal([]byte(out), &envs); err != nil || len(envs) != 1 {
+		t.Fatalf("done --json is a one-element envelope array (always-array), got error %v:\n%s", err, out)
 	}
+	res := envs[0]
 	if res.Before == nil || res.After == nil {
 		t.Fatalf("mutation --json must carry before+after:\n%s", out)
 	}
@@ -1138,8 +1139,8 @@ func TestCLIMigrateAppliesLabel(t *testing.T) {
 	if err := os.WriteFile(src, []byte(md), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, code := run(t, "migrate", src, "--label", "facet", "--write"); code != 0 {
-		t.Fatalf("migrate --write exit = %d", code)
+	if _, code := run(t, "migrate", src, "--label", "facet", "--yes"); code != 0 {
+		t.Fatalf("migrate --yes exit = %d", code)
 	}
 	// Filtering by the applied label returns every imported task.
 	out, code := run(t, "ls", "-l", "facet", "--json")

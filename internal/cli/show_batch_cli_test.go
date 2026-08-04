@@ -9,6 +9,22 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
+// showOne unwraps an always-array --json output (show, and the batch mutators
+// done/move/set): it asserts the output is a one-element array and returns
+// that element's raw JSON for the caller's own struct (the always-array rule
+// made every single-id parse go through here).
+func showOne(t *testing.T, out string) []byte {
+	t.Helper()
+	var arr []json.RawMessage
+	if err := json.Unmarshal([]byte(out), &arr); err != nil {
+		t.Fatalf("--json must be an array (always-array rule): %v\n%s", err, out)
+	}
+	if len(arr) != 1 {
+		t.Fatalf("want a one-element array, got %d elements:\n%s", len(arr), out)
+	}
+	return arr[0]
+}
+
 // jsonIDs parses a JSON task array and returns the ids in order.
 func jsonIDs(t *testing.T, s string) []string {
 	t.Helper()
@@ -43,17 +59,23 @@ func TestShowBatchJSONArrayInputOrderDedupe(t *testing.T) {
 	}
 }
 
-func TestShowSingleJSONStaysAnObject(t *testing.T) {
+func TestShowSingleJSONIsAOneElementArray(t *testing.T) {
 	initStore(t)
 	a := addTask(t, "task a")
 
-	// 1 id keeps the historical single-object shape (backward compat).
+	// The always-array rule: `show <id>...` has array cardinality by signature,
+	// so one id is a one-element array — never the pre-v1 bare object, which
+	// forked the shape on runtime argv length.
 	out, code := run(t, "--json", "show", a)
 	if code != 0 {
 		t.Fatalf("show exit=%d:\n%s", code, out)
 	}
-	if !strings.HasPrefix(strings.TrimSpace(out), "{") {
-		t.Errorf("single-id --json must stay an object:\n%s", out)
+	var items []map[string]any
+	if err := json.Unmarshal([]byte(out), &items); err != nil {
+		t.Fatalf("single-id --json must be an array: %v\n%s", err, out)
+	}
+	if len(items) != 1 || items[0]["id"] != a {
+		t.Errorf("want a one-element array carrying %s, got:\n%s", a, out)
 	}
 }
 
@@ -161,23 +183,26 @@ func TestShowBatchAllMissEmitsEmptyArray(t *testing.T) {
 	}
 }
 
-func TestShowSingleMissKeepsClassicErrorPlusDetails(t *testing.T) {
+func TestShowSingleMissEmitsEmptyArrayPlusBatchError(t *testing.T) {
 	initStore(t)
 	addTask(t, "task a")
 
+	// The always-array rule's error half: a total miss still emits the found
+	// entries ([]) on stdout, and the error is the batch shape at any arity —
+	// success and error forms both follow the SIGNATURE, never the argv length.
 	fe, out := runErr(t, "--json", "show", "t-zzzz1")
 	if fe == nil || fe.Code != core.CodeNotFound {
 		t.Fatalf("single miss should be CodeNotFound, got %+v", fe)
 	}
-	if fe.Msg != "task not found: t-zzzz1" || fe.Subject != "t-zzzz1" {
-		t.Errorf("single-id miss must keep the classic error shape, got %+v", fe)
+	if fe.Msg != "1 of 1 ids not found" || fe.Subject != "t-zzzz1" {
+		t.Errorf("single-id miss reports the batch count shape (subject still names the id), got %+v", fe)
 	}
 	want := map[string][]string{"missing": {"t-zzzz1"}}
 	if !reflect.DeepEqual(fe.Details, want) {
 		t.Errorf("details = %#v, want %#v", fe.Details, want)
 	}
-	if strings.TrimSpace(out) != "" {
-		t.Errorf("single-id miss prints nothing on stdout (compat), got:\n%s", out)
+	if strings.TrimSpace(out) != "[]" {
+		t.Errorf("single-id miss prints the empty found-array on stdout, got:\n%s", out)
 	}
 }
 

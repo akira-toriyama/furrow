@@ -31,16 +31,20 @@ func TestShowBacklinks(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("show --backlinks --json exit=%d:\n%s", code, out)
 	}
-	var v struct {
+	var arr []struct {
 		MentionedBy []struct {
 			ID     string `json:"id"`
 			Title  string `json:"title"`
 			Status string `json:"status"`
 		} `json:"mentioned_by"`
 	}
-	if err := json.Unmarshal([]byte(out), &v); err != nil {
+	if err := json.Unmarshal([]byte(out), &arr); err != nil {
 		t.Fatalf("parse show --backlinks --json: %v\n%s", err, out)
 	}
+	if len(arr) != 1 {
+		t.Fatalf("want a one-element array (always-array rule), got:\n%s", out)
+	}
+	v := arr[0]
 	if len(v.MentionedBy) != 1 || v.MentionedBy[0].ID != mentioner || v.MentionedBy[0].Title != "the mentioner" {
 		t.Errorf("mentioned_by should list %s (the mentioner), got %+v", mentioner, v.MentionedBy)
 	}

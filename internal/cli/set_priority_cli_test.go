@@ -31,7 +31,7 @@ func TestSetLanePlusPositionCLI(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, got)
 	}
 	var env setEnv
-	if err := json.Unmarshal([]byte(got), &env); err != nil {
+	if err := json.Unmarshal(showOne(t, got), &env); err != nil {
 		t.Fatal(err)
 	}
 	if env.After.Status != "ready" || env.After.Priority != 105 {
@@ -68,7 +68,7 @@ func TestSetRelativeRespaceCLI(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, got)
 	}
 	var env setEnv
-	if err := json.Unmarshal([]byte(got), &env); err != nil {
+	if err := json.Unmarshal(showOne(t, got), &env); err != nil {
 		t.Fatal(err)
 	}
 	if env.After.Priority != 110 {
@@ -102,7 +102,7 @@ func TestSetPriorityCLIValidation(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, got)
 	}
 	var env setEnv
-	if err := json.Unmarshal([]byte(got), &env); err != nil {
+	if err := json.Unmarshal(showOne(t, got), &env); err != nil {
 		t.Fatal(err)
 	}
 	if env.After.Priority != 7 {

@@ -79,8 +79,8 @@ func newEpicAddCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&goal, "goal", "", "the closing condition, in one line (optional)")
 	cmd.Flags().StringArrayVar(&meta, "meta", nil, "free-form key=value furrow never interprets (repeatable)")
-	cmd.Flags().StringArrayVarP(&labels, "label", "l", nil, "label (repeatable)")
-	cmd.Flags().StringArrayVarP(&repos, "repo", "r", nil, "owner/repo this box spans (repeatable)")
+	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable; comma-separated)")
+	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "owner/repo this box spans (repeatable; comma-separated)")
 	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (default: a heading from the title)")
 	return cmd
 }
@@ -238,10 +238,10 @@ func newEpicSetCmd() *cobra.Command {
 	cmd.Flags().StringVar(&goal, "goal", "", "set the closing condition (\"\" clears it)")
 	cmd.Flags().StringArrayVar(&meta, "meta", nil, "set a free-form key=value (repeatable)")
 	cmd.Flags().StringArrayVar(&rmMeta, "rm-meta", nil, "remove a meta key (repeatable)")
-	cmd.Flags().StringArrayVar(&addLabels, "add-label", nil, "add a label (repeatable)")
-	cmd.Flags().StringArrayVar(&rmLabels, "rm-label", nil, "remove a label (repeatable)")
-	cmd.Flags().StringArrayVar(&addRepos, "add-repo", nil, "attach an owner/repo (repeatable)")
-	cmd.Flags().StringArrayVar(&rmRepos, "rm-repo", nil, "detach an owner/repo (repeatable)")
+	cmd.Flags().StringSliceVar(&addLabels, "add-label", nil, "add a label (repeatable; comma-separated)")
+	cmd.Flags().StringSliceVar(&rmLabels, "rm-label", nil, "remove a label (repeatable; comma-separated)")
+	cmd.Flags().StringSliceVar(&addRepos, "add-repo", nil, "attach an owner/repo (repeatable; comma-separated)")
+	cmd.Flags().StringSliceVar(&rmRepos, "rm-repo", nil, "detach an owner/repo (repeatable; comma-separated)")
 	cmd.Flags().BoolVar(&standing, "standing", false, "declare a permanent box (exempt from epic_all_done/epic_dep_done; --standing=false clears)")
 	cmd.Flags().BoolVar(&pinned, "pinned", false, "surface this box's actionable tasks in next/brief regardless of the active scope (--pinned=false clears)")
 	return cmd

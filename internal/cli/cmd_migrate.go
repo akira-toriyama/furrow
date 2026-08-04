@@ -16,10 +16,10 @@ func newMigrateCmd() *cobra.Command {
 	var labels []string
 	cmd := &cobra.Command{
 		Use:   "migrate <task-file.md>",
-		Short: "Import a Task.md-style tracker into furrow (preview unless --write)",
+		Short: "Import a Task.md-style tracker into furrow (preview unless --yes)",
 		Long: "Parse a hand-maintained Task.md (## emoji lanes, ### / bold-bullet items,\n" +
 			"a Done <details> archive, file:line + URL refs) into furrow tasks. Defaults\n" +
-			"to a dry-run preview; pass --write to actually create the tasks. Unmapped\n" +
+			"to a dry-run preview; pass --yes to actually create the tasks. Unmapped\n" +
 			"headings and unresolved [[wikilinks]] are reported, never silently dropped.\n" +
 			"Use --label to stamp every imported task with one or more labels (required\n" +
 			"when the store sets [labels].required, e.g. a central cross-repo tracker).",
@@ -41,7 +41,7 @@ func newMigrateCmd() *cobra.Command {
 			return applyMigrate(a, res, labels)
 		},
 	}
-	cmd.Flags().BoolVar(&write, "write", false, "actually create the tasks (default: dry-run preview)")
+	cmd.Flags().BoolVar(&write, "yes", false, "actually create the tasks (default: dry-run preview)")
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label applied to every imported task (repeatable)")
 	return cmd
 }
@@ -82,7 +82,7 @@ func previewMigrate(path string, res migrate.Result, labels []string) error {
 		}
 	}
 	if len(res.Tasks) > 0 {
-		fmt.Fprintln(out, "\nre-run with --write to create these tasks")
+		fmt.Fprintln(out, "\nre-run with --yes to create these tasks")
 	}
 	return nil
 }

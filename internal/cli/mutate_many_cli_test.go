@@ -9,9 +9,10 @@ import (
 )
 
 // done/move accept several ids (the write-side twin of `show <id>...`): one
-// index write for the whole batch, all-or-nothing on a miss. The --json arity
-// convention mirrors show — one id keeps the classic single envelope, ≥2 ids
-// emit an array of envelopes, --ndjson streams one envelope per line.
+// index write for the whole batch, all-or-nothing on a miss. --json is ALWAYS
+// an array of envelopes, one per id (the always-array rule: `<id>...` has
+// array cardinality by signature, and a single id is a one-element array);
+// --ndjson streams one envelope per line.
 func TestCLIDoneAndMoveAcceptMultipleIds(t *testing.T) {
 	initStore(t)
 	a := addTask(t, "alpha")
@@ -42,14 +43,14 @@ func TestCLIDoneAndMoveAcceptMultipleIds(t *testing.T) {
 		}
 	}
 
-	// A single id keeps the classic single-object shape (compat).
+	// A single id is a ONE-ELEMENT array — the shape follows the signature.
 	out, code = run(t, "--json", "move", c, "ready")
 	if code != 0 {
 		t.Fatalf("move single exit = %d:\n%s", code, out)
 	}
-	var one env
-	if err := json.Unmarshal([]byte(out), &one); err != nil {
-		t.Fatalf("single-id move --json must stay one object: %v\n%s", err, out)
+	var single []env
+	if err := json.Unmarshal([]byte(out), &single); err != nil || len(single) != 1 {
+		t.Fatalf("single-id move --json is a one-element envelope array: %v\n%s", err, out)
 	}
 
 	// done <id>...: closes the batch, stamping closed on each.
@@ -88,7 +89,7 @@ func TestCLIDoneAndMoveAcceptMultipleIds(t *testing.T) {
 	}
 	out, _ = run(t, "--json", "show", c, "--no-body")
 	var shown core.Task
-	if err := json.Unmarshal([]byte(out), &shown); err != nil {
+	if err := json.Unmarshal(showOne(t, out), &shown); err != nil {
 		t.Fatalf("show: %v\n%s", err, out)
 	}
 	if shown.Status != "ready" {
@@ -101,10 +102,9 @@ func TestCLIDoneAndMoveAcceptMultipleIds(t *testing.T) {
 	}
 }
 
-// `set <id>...` is the bulk-triage arity: --json emits an ARRAY of envelopes for
-// two or more ids and keeps the classic object for one (the show arity
-// convention), --ndjson is one envelope per line at any arity, and the position
-// flags are refused for a batch.
+// `set <id>...` is the bulk-triage arity: --json is ALWAYS an array of
+// envelopes, one per id (the always-array rule), --ndjson is one envelope per
+// line at any arity, and the position flags are refused for a batch.
 func TestCLISetManyArityAndPositionGuard(t *testing.T) {
 	initStore(t)
 	a := addTask(t, "a")
@@ -133,17 +133,17 @@ func TestCLISetManyArityAndPositionGuard(t *testing.T) {
 		}
 	}
 
-	// One id keeps the classic object.
+	// One id is a one-element array (always-array: `set <id>...`).
 	out, code = run(t, "--json", "set", a, "--effort", "2")
 	if code != 0 {
 		t.Fatalf("single set exit = %d:\n%s", code, out)
 	}
 	var single map[string]any
-	if err := json.Unmarshal([]byte(out), &single); err != nil {
-		t.Fatalf("one id must keep the classic object: %v\n%s", err, out)
+	if err := json.Unmarshal(showOne(t, out), &single); err != nil {
+		t.Fatalf("one id must be a one-element envelope array: %v\n%s", err, out)
 	}
 	if _, ok := single["changed"]; !ok {
-		t.Errorf("single-id set should emit {before,after,changed}, got %v", single)
+		t.Errorf("single-id set should emit [{before,after,changed}], got %v", single)
 	}
 
 	// --ndjson is one envelope per line at any arity.

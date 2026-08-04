@@ -51,8 +51,16 @@ the user-level config. When you work with any furrow store:
   not a full-board dump; `done <id>...` / `move <id>... <lane>` accept several
   ids in ONE all-or-nothing index write (the write-side twin of `show <id>...`:
   a miss closes/moves NOTHING, exit 1 with every miss in `details.missing`;
-  `--json` keeps the classic envelope for one id and emits an array of
-  envelopes for ≥2, `--ndjson` one envelope per line at any arity);
+  `--json` is ALWAYS an array of `{before,after,changed}` envelopes, one per
+  id — a single id is a one-element array — and `--ndjson` one envelope per
+  line. **Always-array is a design invariant, not an accident**: a command
+  whose `Use` says `<id>...` has array cardinality by SIGNATURE (`show`,
+  `done`, `move`, `set`), a command operating on exactly one id emits an
+  object (`note`, `retitle`, …) — readable statically from `--help`, never
+  from the runtime argv length. It deliberately overturned the 2026-07-16
+  "one id keeps the classic object" arity convention, which made
+  `... --json | jq '.[].id'` silently walk an object's VALUES whenever a
+  caller's id list happened to resolve to one);
   `archive <id>...` retires specific done
   tasks by id (vs the age sweep). The READMEs' command table is **generated**
   from this very cobra tree (hidden `furrow commands`, spliced by
@@ -179,8 +187,9 @@ the user-level config. When you work with any furrow store:
   mutations, and reports alike (not just the list commands); **JSON goes to
   stdout only** (logs and errors go to stderr). `--ndjson` is the same payload
   compact, one value per line: a list command streams one record per line, a
-  single-object command (a mutation's `{before,after,changed}`, `board`,
-  `attach`, `init`, `version`, the `apply` report) prints one compact line, and
+  single-object command (a single-target mutation's `{before,after,changed}`,
+  `board`, `attach`, `init`, `version`, the `apply` report) prints one compact
+  line — the batch mutators (`done`/`move`/`set`) are list-shaped — and
   `lint` streams one problem per line — so a line-oriented reader never gets a
   silent human-prose degrade. Filter reads with `--status/-s`, `--label/-l`,
   `--repo/-r`, `--limit/-n`, and the typed query `--query/-q` on every
@@ -209,9 +218,9 @@ the user-level config. When you work with any furrow store:
   (`epic_all_done` / `epic_stuck` / `epic_stale` / `epic_dep_done` — the last
   says every epic this box waited on is closed, its turn to open) alongside.
 - **Batch reads by id: `show <id>... --no-body`** — any id set in one process,
-  metadata only (no `body_text`), input order. `--json` = array for ≥2 ids (a
-  single id keeps the classic object), `--ndjson` = one line per task at any
-  arity. A partial miss still emits the found tasks and exits 1 with
+  metadata only (no `body_text`), input order. `--json` = ALWAYS an array, one
+  element per found id (a single id is a one-element array, a total miss
+  prints `[]`), `--ndjson` = one line per task at any arity. A partial miss still emits the found tasks and exits 1 with
   `details.missing` — branch on that array. If a missing id is **archived**, the
   error also carries `details.archived` (the subset retrievable with
   `--archived`) and hints it in the message; `show <id> --archived` /
