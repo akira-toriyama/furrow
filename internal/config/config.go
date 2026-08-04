@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -9,9 +11,13 @@ import (
 )
 
 // raw mirrors config.toml's structure for decoding. Every field is optional;
-// an absent or invalid value clamps to the package default. go-toml/v2 ignores
-// unknown top-level keys by default, which is exactly the clamp-don't-reject
-// behavior we want — a stray key never errors.
+// an absent or invalid value clamps to the package default. Decoding is STRICT
+// (DisallowUnknownFields) so a key the parser does not know — a typo'd
+// `[lanse]`, a retired section — surfaces as a clamp warning WITH its line
+// number instead of being silently ignored: go-toml/v2's default lenient mode
+// made `furrow lint` blind to exactly the mistake the template promised it
+// would report. The key is still ignored (clamp-don't-reject — a stray key
+// never errors); strictness only buys the warning.
 type raw struct {
 	Lanes struct {
 		Order    []string `toml:"order"`
@@ -31,9 +37,6 @@ type raw struct {
 	Archive struct {
 		OlderThanDays *int `toml:"older_than_days"`
 	} `toml:"archive"`
-	UI struct {
-		Theme string `toml:"theme"`
-	} `toml:"ui"`
 	Next struct {
 		Lanes []string `toml:"lanes"`
 	} `toml:"next"`
@@ -77,7 +80,8 @@ type raw struct {
 // Load reads config.toml at path and returns the effective config plus any
 // clamp warnings (each a human-readable string). A missing file is not an
 // error: it returns Default() with no warnings. A malformed file IS an error
-// (the user wrote broken TOML — that is worth stopping for).
+// (the user wrote broken TOML — that is worth stopping for). An UNKNOWN key is
+// neither: it is ignored with a warning naming the file, line, and key.
 func Load(path string) (*Config, []string, error) {
 	// #nosec G304 -- path is furrow's own config location, resolved by the
 	// app layer from the store dir / XDG (never attacker-supplied).
@@ -89,10 +93,41 @@ func Load(path string) (*Config, []string, error) {
 		return nil, nil, err
 	}
 	var r raw
-	if err := toml.Unmarshal(data, &r); err != nil {
+	unknown, err := decodeStrict(data, &r, path)
+	if err != nil {
 		return nil, nil, fmt.Errorf("config.toml: %w", err)
 	}
-	return fromRaw(r)
+	c, warn, err := fromRaw(r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, append(unknown, warn...), nil
+}
+
+// decodeStrict decodes data into v with unknown keys DISALLOWED, then converts
+// the unknown-key hits back into clamp warnings ("path:line: unknown key ...")
+// and reports every other decode failure as the error it is. On a pure
+// unknown-key miss v is still fully populated — go-toml collects the misses and
+// finishes the decode — so the caller can proceed exactly as if the keys were
+// absent, which is what clamp-don't-reject promises.
+func decodeStrict(data []byte, v any, path string) ([]string, error) {
+	dec := toml.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	err := dec.Decode(v)
+	if err == nil {
+		return nil, nil
+	}
+	var missing *toml.StrictMissingError
+	if !errors.As(err, &missing) {
+		return nil, err
+	}
+	warn := make([]string, 0, len(missing.Errors))
+	for i := range missing.Errors {
+		e := &missing.Errors[i]
+		row, _ := e.Position()
+		warn = append(warn, fmt.Sprintf("%s:%d: unknown key %q; ignored", path, row, strings.Join(e.Key(), ".")))
+	}
+	return warn, nil
 }
 
 // fromRaw applies the clamp-don't-reject policy, collecting a warning for every
@@ -237,14 +272,6 @@ func fromRaw(r raw) (*Config, []string, error) {
 			warn = append(warn, fmt.Sprintf("review.stale_after_days %d < 0; using %d", *r.Review.StaleAfterDays, DefaultReviewStaleAfterDays))
 		} else {
 			c.ReviewStaleAfterDays = *r.Review.StaleAfterDays
-		}
-	}
-
-	if r.UI.Theme != "" {
-		if validThemes[r.UI.Theme] {
-			c.UITheme = r.UI.Theme
-		} else {
-			warn = append(warn, fmt.Sprintf("ui.theme %q is not auto|dark|light; using %q", r.UI.Theme, DefaultUITheme))
 		}
 	}
 

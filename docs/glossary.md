@@ -108,9 +108,7 @@ Every term above is backed by shipped code (`internal/core`, `internal/app`,
 presentation layer is `internal/cli`. Any interactive TUI/GUI is a separate
 front-end repo that drives furrow through its CLI/JSON contract (planned:
 **ridge**, a charm-v2 TUI). Shipped here: `furrow sync`, drafts/`-r` scoping,
-and `furrow migrate` (importing a legacy `Task.md`). `[ui].theme` in
-`config.toml` is a front-end display preference (`auto`/`dark`/`light`, with
-`NO_COLOR` always honoured).
+and `furrow migrate` (importing a legacy `Task.md`).
 
 ---
 

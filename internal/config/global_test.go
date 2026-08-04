@@ -270,3 +270,82 @@ func TestLoadGlobalBoards_AutoCommitExplicitTrue(t *testing.T) {
 		t.Errorf("boards = %+v, want one with AutoCommit true", boards)
 	}
 }
+
+// A wrong-typed value in ONE [[board]] must not take furrow down for every
+// repo on the machine: the file is ambient. The broken entry is dropped with a
+// warning naming the file, the entry, and the key; the healthy entries load.
+func TestLoadGlobalBoards_TypeErrorDropsOnlyThatEntry(t *testing.T) {
+	path := writeGlobal(t, `[[board]]
+path = "/a/.furrow"
+scopes = ["/a"]
+
+[[board]]
+path = "/b/.furrow"
+scopes = "not-an-array"
+`)
+	boards, warn, err := LoadGlobalBoards(path)
+	if err != nil {
+		t.Fatalf("a type error in one entry must not error the file: %v", err)
+	}
+	if len(boards) != 1 || boards[0].Path != "/a/.furrow" {
+		t.Fatalf("boards = %+v, want only the healthy /a entry", boards)
+	}
+	joined := strings.Join(warn, "\n")
+	if !strings.Contains(joined, "#2") || !strings.Contains(joined, `"scopes"`) {
+		t.Errorf("warning should name the entry and the key, got %v", warn)
+	}
+	if !strings.Contains(joined, path) {
+		t.Errorf("warning should name the file, got %v", warn)
+	}
+}
+
+// The same survival when the broken entry comes FIRST — order must not decide
+// which boards live.
+func TestLoadGlobalBoards_TypeErrorInFirstEntry(t *testing.T) {
+	boards, warn, err := LoadGlobalBoards(writeGlobal(t, `[[board]]
+path = 42
+scopes = ["/a"]
+
+[[board]]
+path = "/b/.furrow"
+scopes = ["/b"]
+`))
+	if err != nil {
+		t.Fatalf("a type error in one entry must not error the file: %v", err)
+	}
+	if len(boards) != 1 || boards[0].Path != "/b/.furrow" {
+		t.Fatalf("boards = %+v, want only the healthy /b entry", boards)
+	}
+	if len(warn) == 0 {
+		t.Error("want a warning for the dropped entry")
+	}
+}
+
+// An unknown key in the user config warns with its line (strict decode, same
+// contract as the board config) and never drops the entry.
+func TestLoadGlobalBoards_UnknownKeyWarnsAndEntrySurvives(t *testing.T) {
+	path := writeGlobal(t, `[[board]]
+path = "/a/.furrow"
+scopes = ["/a"]
+scope = "/a"
+`)
+	boards, warn, err := LoadGlobalBoards(path)
+	if err != nil {
+		t.Fatalf("LoadGlobalBoards: %v", err)
+	}
+	if len(boards) != 1 {
+		t.Fatalf("boards = %+v, want the entry to survive its unknown key", boards)
+	}
+	joined := strings.Join(warn, "\n")
+	if !strings.Contains(joined, `"board.scope"`) || !strings.Contains(joined, path+":4:") {
+		t.Errorf("want an unknown-key warning naming board.scope with file:line, got %v", warn)
+	}
+}
+
+// A pure syntax error still fails: nothing can be salvaged from a file with no
+// readable structure (and pretending otherwise would hide real breakage).
+func TestLoadGlobalBoards_SyntaxErrorStillErrors(t *testing.T) {
+	if _, _, err := LoadGlobalBoards(writeGlobal(t, "[[board]\npath=\n")); err == nil {
+		t.Fatal("expected error for a syntax error, got nil")
+	}
+}

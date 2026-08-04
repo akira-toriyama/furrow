@@ -942,7 +942,6 @@ Sections and their defaults:
 | `[due]` | `ignore_lanes` | `["icebox"]` (lanes where a due date raises no lint finding and no `brief` entry; the done lane is exempt on top of it, and terminal lanes are deliberately NOT exempt as a class — `waiting` is what dates are for) |
 | `[revisit]` | `stale_days` | `30` (`0` disables the stale signal) |
 | `[review]` | `stale_after_days` | `14` (`0` disables the unreviewed-repo nudge) |
-| `[ui]` | `theme` | `auto` (one of `auto`/`dark`/`light`) — a front-end display preference (the CLI itself does not render a themed UI; an out-of-repo TUI/GUI reads it) |
 | `[alias]` | `<name> = "<command string>"` | none (a `name -> command` map) |
 | (top-level) | `standalone` | `false` (a local single-machine board: no remote / `furrow sync` / CI) |
 | (top-level) | `default_repo` | `""` (the repo the board is for — the FALLBACK scope, used only when discovery supplied none; a literal `owner/repo`, never `"auto"`) |

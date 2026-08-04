@@ -835,13 +835,16 @@ func TestCLIClampSignal(t *testing.T) {
 // dispatch, a builtin is never shadowed, and lint warns about a shadowing alias.
 func TestCLIAliasExpansion(t *testing.T) {
 	initStore(t)
-	// The board config is user-owned — hand-append an [alias] table.
+	// The board config is user-owned — hand-append alias entries. The scaffolded
+	// template already ENDS with the (commented) [alias] section, so bare keys
+	// appended at EOF bind to that table; repeating the header would be the
+	// duplicate-table TOML error.
 	cfgPath := filepath.Join(os.Getenv(app.EnvDir), "config.toml")
 	f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.WriteString("\n[alias]\ntriage = \"ls -s inbox,backlog\"\nls = \"ls -s ready\"\n")
+	f.WriteString("\ntriage = \"ls -s inbox,backlog\"\nls = \"ls -s ready\"\n")
 	f.Close()
 
 	root := newRootCmd()

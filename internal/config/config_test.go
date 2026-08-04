@@ -113,9 +113,15 @@ func TestDefaultRepoParsing(t *testing.T) {
 
 	// A bare key AFTER a table belongs to that table — the TOML rule the template
 	// puts both top-level switches above [lanes] for. Pinned so the docs can
-	// promise it.
-	if c, _, _ := Load(writeTOML(t, "[ui]\ntheme = \"dark\"\ndefault_repo = \"me/app\"\n")); c.DefaultRepo != "" {
-		t.Errorf("default_repo = %q after [ui]; a bare key under a table is ui.default_repo, not top-level", c.DefaultRepo)
+	// promise it. Strict decode turns the swallowed key into a WARNING (it is
+	// lanes.default_repo, which the parser does not know) — the silent vanish
+	// this used to pin is exactly what the warning now prevents.
+	c2, warn2, _ := Load(writeTOML(t, "[lanes]\ndefault = \"inbox\"\ndefault_repo = \"me/app\"\n"))
+	if c2.DefaultRepo != "" {
+		t.Errorf("default_repo = %q after [lanes]; a bare key under a table is lanes.default_repo, not top-level", c2.DefaultRepo)
+	}
+	if len(warn2) != 1 || !strings.Contains(warn2[0], "lanes.default_repo") {
+		t.Errorf("the swallowed key should warn as unknown lanes.default_repo, got %v", warn2)
 	}
 }
 
@@ -147,9 +153,6 @@ default = 50
 [ids]
 prefix = "F-"
 width = 3
-
-[ui]
-theme = "dark"
 `)
 	c, warn, err := Load(p)
 	if err != nil {
@@ -167,8 +170,8 @@ theme = "dark"
 	if c.PriorityStep != 5 || c.PriorityDefault != 50 {
 		t.Errorf("priority wrong: %+v", c)
 	}
-	if c.IDPrefix != "F-" || c.IDWidth != 3 || c.UITheme != "dark" {
-		t.Errorf("ids/ui wrong: %+v", c)
+	if c.IDPrefix != "F-" || c.IDWidth != 3 {
+		t.Errorf("ids wrong: %+v", c)
 	}
 	if !c.IDPattern().MatchString("F-007") || c.IDPattern().MatchString("t-007") {
 		t.Errorf("id pattern wrong for prefix %q", c.IDPrefix)
@@ -289,11 +292,7 @@ step = 0                   # invalid -> default + warn
 
 [ids]
 width = -2                 # invalid -> default + warn
-
-[ui]
-theme = "neon"             # invalid -> auto + warn
-
-unknown_key = 42           # ignored, no error
+unknown_key = 42           # unknown -> ignored + warn, no error
 `)
 	c, warn, err := Load(p)
 	if err != nil {
@@ -308,11 +307,50 @@ unknown_key = 42           # ignored, no error
 	if c.PriorityStep != DefaultPriorityStep || c.IDWidth != DefaultIDWidth {
 		t.Errorf("invalid numerics should clamp: step=%d width=%d", c.PriorityStep, c.IDWidth)
 	}
-	if c.UITheme != "auto" {
-		t.Errorf("invalid theme should clamp to auto, got %q", c.UITheme)
-	}
 	if len(warn) < 4 {
 		t.Errorf("expected >=4 clamp warnings, got %d: %v", len(warn), warn)
+	}
+}
+
+// TestUnknownKeyWarnsWithLine pins the strict-decode half of clamp-don't-reject:
+// a key the parser does not know — a typo'd section, a retired key, a stray
+// top-level name — is IGNORED (never an error) and WARNED about, naming the
+// file, the line, and the full dotted key. This is what makes the template's
+// "`furrow lint` reports what it clamped" true: lenient decode made an ignored
+// key invisible, so a `[lanse]` typo silently reset the whole lane vocabulary.
+func TestUnknownKeyWarnsWithLine(t *testing.T) {
+	p := writeTOML(t, `[lanse]
+order = ["a"]
+
+[ids]
+prefix = "t-"
+
+[ui]
+theme = "auto"
+`)
+	c, warn, err := Load(p)
+	if err != nil {
+		t.Fatalf("unknown keys must not error: %v", err)
+	}
+	// The typo'd section fell back to defaults; the known section still decoded.
+	if len(c.Lanes) != len(DefaultLanes) {
+		t.Errorf("lanes should be the defaults (the [lanse] typo is ignored), got %v", c.Lanes)
+	}
+	if c.IDPrefix != "t-" {
+		t.Errorf("known keys must survive alongside unknown ones, got prefix %q", c.IDPrefix)
+	}
+	joined := strings.Join(warn, "\n")
+	// An unknown TABLE is reported once by its name ([ui] -> "ui", the retired
+	// section this rework deleted); an unknown key inside a KNOWN table is
+	// reported with its dotted path (see TestClampDontReject's ids.unknown_key).
+	for _, want := range []string{`"lanse"`, `"ui"`} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("warnings should name unknown key %s, got %v", want, warn)
+		}
+	}
+	// Line numbers: the file path and a line make the warning actionable.
+	if !strings.Contains(joined, p+":1:") {
+		t.Errorf("warnings should carry file:line (want %s:1: for [lanse]), got %v", p, warn)
 	}
 }
 
