@@ -86,9 +86,10 @@ type DoctorBoard struct {
 
 // DoctorGit is a board's git freshness from LOCAL knowledge only — doctor
 // never fetches, so ahead/behind are as current as the last fetch. State is a
-// closed vocabulary: "ok" (upstream compared), "not-a-repo" (a standalone
-// board — legitimate, never a problem), "no-upstream" (a repo with no tracking
-// ref), "unavailable" (the probe itself failed — no git binary, or rev-list
+// closed vocabulary: "ok" (upstream compared), "not-a-repo" (a board in a
+// plain, un-git-ed directory — legitimate, never a problem), "no-upstream" (a
+// repo with no tracking ref — what a STANDALONE board reports: `standalone`
+// means git-with-no-remote, not git-less), "unavailable" (the probe itself failed — no git binary, or rev-list
 // errored), and "unprobed" (the board is not on disk, so there was nothing to
 // ask).
 type DoctorGit struct {
@@ -265,15 +266,15 @@ func doctorBoardProblems(ctx context.Context, db *DoctorBoard, cfgPath string) [
 }
 
 // doctorGitProblems probes the board's enclosing git repo and fills db.Git.
-// A standalone (non-git) board and a repo with no upstream are states, never
-// problems; being behind (a stale read is coming) or ahead (unpushed writes)
+// A git-less board (not-a-repo) and a repo with no upstream (every standalone
+// board — git, no remote) are states, never problems; being behind (a stale read is coming) or ahead (unpushed writes)
 // warns toward `furrow sync`, and an in-progress rebase/merge warns because
 // sync's pre-flight will refuse to run on top of it.
 func doctorGitProblems(ctx context.Context, db *DoctorBoard) []core.Problem {
 	repo, err := gitrepo.Open(ctx, db.Store)
 	if err != nil {
 		if fe := core.AsError(err); fe != nil && fe.Code == core.CodeValidation {
-			db.Git.State = GitNotARepo // a standalone board — legitimate
+			db.Git.State = GitNotARepo // a plain-directory board — legitimate
 		} else {
 			db.Git.State = GitUnavailable // no git binary; the probe, not the board
 		}
@@ -312,7 +313,7 @@ func doctorGitProblems(ctx context.Context, db *DoctorBoard) []core.Problem {
 // commonest write collision on a shared board — textually conflict on every
 // pull --rebase, and sync hands a human a conflict that has no meaning. Only
 // the hot bodies/ rule is checked (the archive line matters less: archived
-// bodies stop being appended to); a standalone board never reaches this (the
+// bodies stop being appended to); a git-less board never reaches this (the
 // caller returns before it for a non-repo).
 func unionAttrProblems(store string) []core.Problem {
 	// #nosec G304 -- store is the operator's own [[board]] path from the
