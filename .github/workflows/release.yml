@@ -2,7 +2,7 @@ name: release
 
 # Tag-driven release: pushing a vX.Y.Z tag runs glyph notes + GoReleaser (binaries,
 # checksums, Homebrew cask). Deliberately NOT on every main push — that would run
-# GoReleaser with no tag (and before HOMEBREW_TAP_TOKEN exists) and fail. Use
+# GoReleaser with no tag (and before HOMEBREW_TAP_DEPLOY_KEY exists) and fail. Use
 # workflow_dispatch for a manual dry run.
 on:
   push:
@@ -92,8 +92,9 @@ jobs:
           args: release --clean --release-notes ${{ runner.temp }}/CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # PAT with write access to akira-toriyama/homebrew-tap (and nur-packages).
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # Private half of homebrew-tap's write deploy key (fleet-sync fans it
+          # out); GoReleaser pushes the cask over SSH with it. t-6bhz
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
 
       # Build provenance: a free, keyless GitHub attestation binding each release
       # artifact's digest to THIS workflow run (audit F10). sync-task-status.yml
