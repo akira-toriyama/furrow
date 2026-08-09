@@ -127,8 +127,11 @@ func TestBriefCarriesTheEpicHeaderAndLintRideAlong(t *testing.T) {
 	if b.EpicsDeclared || len(b.Active) != 0 {
 		t.Fatalf("a board with no epics must report EpicsDeclared=false and no Active, got %v/%d", b.EpicsDeclared, len(b.Active))
 	}
-	if b.Lint.Errors != 0 {
-		t.Fatalf("the fixture board lints clean pre-epic, got %+v", b.Lint)
+	// The fixture deliberately parks one dep-blocked task in ready (brief's
+	// blocked band feeds on it) — the exact state lint errors as ready-blocked,
+	// so the ride-along carries exactly that one error pre-epic.
+	if b.Lint.Errors != 1 || b.Lint.Codes["ready-blocked"] != 1 {
+		t.Fatalf("the fixture's dep-blocked ready task must ride along as ready-blocked, got %+v", b.Lint)
 	}
 
 	// Declare a box and activate it: the header flips on, and epic-required now
