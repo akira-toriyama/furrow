@@ -252,17 +252,17 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `boards` | List the configured boards (user-level config), independent of cwd | — |
 | `doctor [dir...]` | Diagnose this machine's board setup: config, boards, scopes, git freshness | — |
 | `edit <id>` | Edit a task's or epic's markdown body in $EDITOR | — |
-| `note <id> <text>` | Append a paragraph to a task's or epic's body and advance its updated time | — |
+| `note <id> <text>` | Append a paragraph to a task's or epic's body and advance its updated time | `--expect-updated` |
 | `attach <id> <file>` | Attach a media file to a task (copies into bodies/assets/, links it from the body) | — |
-| `done <id>...` | Move tasks into the done lane (stamps closed) | `--note` |
-| `move <id>... <lane>` | Move tasks to a lane | — |
-| `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before` |
-| `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | — |
-| `set <id>...` | Apply several triage edits at once (lane, priority, value, effort, labels, epic, due) | `--add-label`, `--after`, `--before`, `--clear-due`, `--clear-effort`, `--clear-value`, `--due`, `--effort`, `-e/--epic`, `-p/--priority`, `--rm-label`, `-s/--status`, `--value` |
-| `value <id> <1-5>` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear` |
-| `effort <id> <1-5>` | Set a task's effort estimate (coarse 1..5), or clear it with --clear | `--clear` |
-| `check <id> [item-index]` | Toggle, add, remove, or reword a checklist item | `--add`, `--off`, `--reword`, `--rm` |
-| `dep <id> [<dep-id>...]` | Add/remove a task's dependencies, or list them both ways with --list | `--list`, `--rm` |
+| `done <id>...` | Move tasks into the done lane (stamps closed) | `--expect-updated`, `--note` |
+| `move <id>... <lane>` | Move tasks to a lane | `--expect-updated` |
+| `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before`, `--expect-updated` |
+| `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | `--expect-updated` |
+| `set <id>...` | Apply several triage edits at once (lane, priority, value, effort, labels, epic, due) | `--add-label`, `--after`, `--before`, `--clear-due`, `--clear-effort`, `--clear-value`, `--due`, `--effort`, `-e/--epic`, `--expect-updated`, `-p/--priority`, `--rm-label`, `-s/--status`, `--value` |
+| `value <id> <1-5>` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear`, `--expect-updated` |
+| `effort <id> <1-5>` | Set a task's effort estimate (coarse 1..5), or clear it with --clear | `--clear`, `--expect-updated` |
+| `check <id> [item-index]` | Toggle, add, remove, or reword a checklist item | `--add`, `--expect-updated`, `--off`, `--reword`, `--rm` |
+| `dep <id> [<dep-id>...]` | Add/remove a task's dependencies, or list them both ways with --list | `--expect-updated`, `--list`, `--rm` |
 | `epic add <title>` | Create an epic (never active — open it with `epic activate`) | `--body`, `--goal`, `-l/--label`, `--meta`, `-r/--repo` |
 | `epic ls` | List epics (open only by default), active first | `--all`, `-l/--label`, `-n/--limit`, `-r/--repo` |
 | `epic show <epic>` | Show one epic: goal, meta, progress, member tasks, and its body | — |
@@ -271,9 +271,9 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `epic deactivate <epic>` | Clear the active flag without closing the epic (suggests where to return) | — |
 | `epic done <epic>` | Close an epic (clears active; suggests the previous active, never picks it) | — |
 | `epic dep <epic> [<dep-epic>...]` | Add/remove an epic's deps (open after those close), or list them both ways with --list | `--list`, `--rm` |
-| `label <id>` | Add and/or remove labels on a task | `--add`, `--rm` |
-| `repo <id>` | Attach and/or detach repos (owner/repo) on a task | `--add`, `--rm` |
-| `ref <id>` | Add and/or remove refs (file:line or URL) on a task | `--add`, `--rm` |
+| `label <id>` | Add and/or remove labels on a task | `--add`, `--expect-updated`, `--rm` |
+| `repo <id>` | Attach and/or detach repos (owner/repo) on a task | `--add`, `--expect-updated`, `--rm` |
+| `ref <id>` | Add and/or remove refs (file:line or URL) on a task | `--add`, `--expect-updated`, `--rm` |
 | `review <repo\|id>` | Record a review: stamp a task's reviewed time, or a repo's last-reviewed clock | `--by` |
 | `apply --on <open\|merge> [--ref <src>] [--body-file <path>]` | Apply SetStatus-task directives parsed from PR/commit text | `--body-file`, `--on`, `--open-lane`, `--ref` |
 | `sync` | Commit the board, pull --rebase, push (thin git wrapper) | `--all-bodies`, `-b/--body`, `-m/--message` |
@@ -309,6 +309,7 @@ The generated table is the machine-guaranteed surface; these are the behavior co
 - **`edit`** — opens `bodies/<id>.md` in the editor; with no TTY it prints the path instead. `<id>` may name a **task or an epic** (same membership routing as `note` — both entities' prose is one file in one directory). Prefer `note` for progress records: a direct file edit does not advance `updated`.
 - **`note`** — appends the text as a new paragraph **and** advances `updated` in one write, so `lint`'s `reconcile-gap` stays honest for progress recorded in prose; `-` as the text reads the note from stdin (multi-line). `--json` adds `appended` beside the envelope (`changed` tracks metadata only, so it is `[]` when just the body moved). `<id>` may name a **task or an epic**: the two entities share the `bodies/` directory, so a box's progress record is the same write to the same file — only the shard that stamps `updated` differs, and the envelope is that entity's own. **Membership routes it, never the id's prefix** (a prefix guess misroutes: `[ids].epic_prefix` may extend `[ids].prefix`, and ids are prefix + random base32, so some ordinary task ids are shaped like epic ids). A ref naming a real task is the task; otherwise a ref the epic store resolves — exact id, unique id prefix, unique title substring, every other epic reference's contract — is that box. A ref that resolves to neither fails on the side its prefix suggests: an unknown `e-` id is exit 2 with `candidates`, an unknown task id exit 1.
 - **`done`** — `--note "<text>"` folds the closing word ("→ continued in t-xxx") into the close itself: the text lands on **every** closed task's body under the note command's contract (a new paragraph, `updated` advances, `appended` beside each `--json` envelope, `-` reads stdin), and an empty note is exit 2 — never a silent plain close.
+- **`--expect-updated <rfc3339>`** (every task mutator, and `note`'s epic side) — the **stale-read guard** for a board several sessions write at once: the store has no locks, so the later write silently wins and the earlier session keeps reasoning about a task that moved under it. Pass the `updated` stamp your last read emitted; when someone else wrote in between, the mutation **still goes through** but says so — a stderr note plus a `stale_read` `{expected, actual}` key in the envelope. A warning by design, not an optimistic-lock refusal: the co-writer being caught usually acted on newer knowledge, so the fix is to re-read and reconcile, not to lose the second edit too. Instants are compared (a `+09:00` spelling of the same moment matches), a malformed stamp is exit 2, and one stamp describes one read of ONE task — the batch mutators refuse it beside several ids, the position-flag precedent.
 - **`move`** — clears `closed` when a task leaves the done lane (and `done` stamps it).
 - **`reorder`** — the absolute form sets the sparse integer directly; `--before`/`--after <id>` compute it instead, slotting the task immediately next to a lane-mate (both tasks must share a lane — relative order across lanes is meaningless, so a cross-lane target is exit 2). When the sparse gap next to the target is exhausted, the whole lane is respaced **in the same single write** (all-or-nothing): `--json` adds a `renumbered` array of the neighbors' `{id, from, to}` moves and a stderr note names the count. The respaced neighbors' `updated` stamps deliberately do **not** advance — a respace is positional bookkeeping, not progress, so staleness signals stay honest.
 - **`value` / `effort`** — an out-of-range score clamps to 1..5 **and is signaled**: a `clamped` key nested by field (`clamped.value.{requested, stored}` / `clamped.effort.{…}`) in the `--json` envelope plus a stderr note, so an explicit arg is never silently rounded. Via `add`, the clamp is stderr-only (`add --json` prints the created task, no envelope). `--clear` unsets.

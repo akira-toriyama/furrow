@@ -4,28 +4,106 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
 )
 
+// The stale-read guard (--expect-updated): furrow's store has no locks, so when
+// two sessions work one board, the later write silently wins and the earlier
+// session keeps reasoning about a task that has moved under it. The guard is
+// the caller declaring "my picture of this task is its updated=<ts>": pass the
+// stamp your last read emitted, and when someone else wrote in between, the
+// mutation still goes through but says so — a stderr note plus a `stale_read`
+// {expected, actual} envelope key. A WARNING by design, not an optimistic-lock
+// refusal: the co-writer being caught is usually right too (they acted on newer
+// knowledge), so the fix is to re-read and reconcile, not to lose the second
+// edit as well. One timestamp describes one read of ONE entity, so the batch
+// mutators refuse it alongside several ids (the position-flag precedent).
+const expectUpdatedFlag = "expect-updated"
+
+// addExpectUpdatedFlag registers --expect-updated on a mutating command. The
+// funnels look the flag up by name, so a command without the registration
+// simply has no guard (never a silent ignore of a set flag: cobra rejects an
+// unregistered flag at parse time).
+func addExpectUpdatedFlag(cmd *cobra.Command) {
+	cmd.Flags().String(expectUpdatedFlag, "",
+		"`updated` stamp from your last read (RFC3339); warns via stale_read when the entity changed since")
+}
+
+// expectUpdatedArg reads --expect-updated off cmd: ok=false when the command
+// never registered it or the caller didn't pass it. A malformed timestamp is
+// exit 2 — an explicit argument is never quietly dropped.
+func expectUpdatedArg(cmd *cobra.Command, subject string) (time.Time, bool, error) {
+	if cmd == nil {
+		return time.Time{}, false, nil
+	}
+	f := cmd.Flags().Lookup(expectUpdatedFlag)
+	if f == nil || f.Value.String() == "" {
+		return time.Time{}, false, nil
+	}
+	ts, err := time.Parse(time.RFC3339, f.Value.String())
+	if err != nil {
+		return time.Time{}, false, core.Validationf(subject,
+			"--expect-updated %q is not an RFC3339 timestamp (pass `updated` exactly as a read emitted it, e.g. 2026-08-09T12:00:00Z)", f.Value.String())
+	}
+	return ts, true, nil
+}
+
+// staleReadExtra compares the pre-mutation `updated` against the caller's
+// declared read. Instants are compared (time.Equal), so a +09:00 spelling of
+// the same moment matches the stored UTC. On a mismatch it warns on stderr and
+// returns the `stale_read` envelope entry; nil when current (the key must not
+// appear on a clean write). A nil pre-fetch yields nil too: the mutate closure
+// owns not-found errors, and a guard that cannot see the before has nothing
+// truthful to say.
+func staleReadExtra(id string, actual *time.Time, expected time.Time) map[string]any {
+	if actual == nil || actual.Equal(expected) {
+		return nil
+	}
+	a, e := actual.UTC().Format(time.RFC3339), expected.UTC().Format(time.RFC3339)
+	fmt.Fprintf(errOut, "note: %s changed since your read (updated %s, you read %s) — the write went through; re-read before editing further\n", id, a, e)
+	return map[string]any{"stale_read": map[string]any{"expected": e, "actual": a}}
+}
+
+// mergeExtra folds add into extra, allocating only when there is something to
+// merge — so the envelope stays key-free on the common clean path.
+func mergeExtra(extra, add map[string]any) map[string]any {
+	if len(add) == 0 {
+		return extra
+	}
+	if extra == nil {
+		extra = map[string]any{}
+	}
+	for k, v := range add {
+		extra[k] = v
+	}
+	return extra
+}
+
 // emitMutation runs a single-task edit on id and reports it. In machine mode
 // (--json or --ndjson) it snapshots the task before the change and prints
 // {before, after, changed}, so an agent sees the effect inline without a
-// follow-up `show`. The pre-fetch is skipped (and harmless) in human mode; the
-// mutate closure is the authoritative source of any not-found / validation error.
-func emitMutation(a *app.App, verb, id string, mutate func() (*core.Task, error)) error {
-	return emitMutationWith(a, verb, id, mutate, nil)
+// follow-up `show`. The pre-fetch is skipped (and harmless) in human mode
+// unless the stale-read guard needs it; the mutate closure is the
+// authoritative source of any not-found / validation error.
+func emitMutation(cmd *cobra.Command, a *app.App, verb, id string, mutate func() (*core.Task, error)) error {
+	return emitMutationWith(cmd, a, verb, id, mutate, nil)
 }
 
 // emitMutationWith is emitMutation plus an optional `annotate`: given the
 // resulting task it returns extra top-level fields to merge into the --json
 // {before,after,changed} envelope (and may write a human note to stderr). Used
 // by value/effort/set to surface a `clamped` estimate.
-func emitMutationWith(a *app.App, verb, id string, mutate func() (*core.Task, error), annotate func(after *core.Task) map[string]any) error {
+func emitMutationWith(cmd *cobra.Command, a *app.App, verb, id string, mutate func() (*core.Task, error), annotate func(after *core.Task) map[string]any) error {
+	expected, guard, gerr := expectUpdatedArg(cmd, id)
+	if gerr != nil {
+		return gerr
+	}
 	var before *core.Task
-	if jsonMode() {
+	if guard || jsonMode() {
 		if b, _, err := a.Get(id); err == nil {
 			before = b
 		}
@@ -37,6 +115,9 @@ func emitMutationWith(a *app.App, verb, id string, mutate func() (*core.Task, er
 	var extra map[string]any
 	if annotate != nil {
 		extra = annotate(after)
+	}
+	if guard && before != nil {
+		extra = mergeExtra(extra, staleReadExtra(before.ID, &before.Updated, expected))
 	}
 	printMutation(verb, before, after, extra)
 	return nil
@@ -50,17 +131,26 @@ func emitMutationWith(a *app.App, verb, id string, mutate func() (*core.Task, er
 // envelope per line, human mode one verb line per task. Befores come from one
 // batch read; a miss there is harmless because the mutate closure is the
 // authority and fails the whole batch before anything is printed.
-func emitMutationMany(a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error)) error {
-	return emitMutationManyWith(a, verb, ids, mutate, nil)
+func emitMutationMany(cmd *cobra.Command, a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error)) error {
+	return emitMutationManyWith(cmd, a, verb, ids, mutate, nil)
 }
 
 // emitMutationManyWith is emitMutationMany plus an optional per-task annotate:
 // given a resulting task it returns extra top-level fields merged into THAT
 // task's envelope — the batch twin of emitMutationWith's annotate (done --note
 // surfaces `appended` on each, a single-id set its `clamped`/`renumbered`).
-func emitMutationManyWith(a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error), annotate func(after *core.Task) map[string]any) error {
+func emitMutationManyWith(cmd *cobra.Command, a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error), annotate func(after *core.Task) map[string]any) error {
+	expected, guard, gerr := expectUpdatedArg(cmd, strings.Join(ids, ","))
+	if gerr != nil {
+		return gerr
+	}
+	if guard && len(ids) > 1 {
+		// Same rule as set's position flags: one --expect-updated describes one
+		// read of one task, so it cannot ride a several-id batch.
+		return core.Validationf("", "--expect-updated describes one read of one task; it cannot apply to %d ids", len(ids))
+	}
 	befores := map[string]*core.Task{}
-	if jsonMode() {
+	if guard || jsonMode() {
 		if items, _, err := a.GetBatch(ids, false); err == nil {
 			for i := range items {
 				t := items[i].Task
@@ -72,12 +162,21 @@ func emitMutationManyWith(a *app.App, verb string, ids []string, mutate func() (
 	if err != nil {
 		return err
 	}
+	var stale map[string]any
+	if guard {
+		if b := befores[ids[0]]; b != nil {
+			stale = staleReadExtra(b.ID, &b.Updated, expected)
+		}
+	}
 	if jsonMode() {
 		envs := make([]any, 0, len(after))
 		for _, t := range after {
 			var extra map[string]any
 			if annotate != nil {
 				extra = annotate(t)
+			}
+			if t.ID == ids[0] {
+				extra = mergeExtra(extra, stale)
 			}
 			envs = append(envs, mutationEnvelope(befores[t.ID], t, extra))
 		}
@@ -137,7 +236,7 @@ func newDoneCmd() *cobra.Command {
 				return err
 			}
 			if !cmd.Flags().Changed("note") {
-				return emitMutationMany(a, "done", args, func() ([]*core.Task, error) { return a.DoneMany(args) })
+				return emitMutationMany(cmd, a, "done", args, func() ([]*core.Task, error) { return a.DoneMany(args) })
 			}
 			text, terr := readTextArg(cmd, note)
 			if terr != nil {
@@ -146,17 +245,18 @@ func newDoneCmd() *cobra.Command {
 			// `changed` tracks metadata only, so surface the note's effect the
 			// way the note command does.
 			appended := map[string]any{"appended": strings.TrimRight(text, "\n")}
-			return emitMutationManyWith(a, "done", args,
+			return emitMutationManyWith(cmd, a, "done", args,
 				func() ([]*core.Task, error) { return a.DoneManyNote(args, text) },
 				func(*core.Task) map[string]any { return appended })
 		},
 	}
 	cmd.Flags().StringVar(&note, "note", "", "append this closing note to each task's body (`-` reads stdin)")
+	addExpectUpdatedFlag(cmd)
 	return cmd
 }
 
 func newMoveCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "move <id>... <lane>",
 		Short: "Move tasks to a lane",
 		Long: "Move one or more tasks to <lane> (the LAST argument) in a single index\n" +
@@ -174,13 +274,15 @@ func newMoveCmd() *cobra.Command {
 				return err
 			}
 			ids, lane := args[:len(args)-1], args[len(args)-1]
-			return emitMutationMany(a, "moved", ids, func() ([]*core.Task, error) { return a.MoveMany(ids, lane) })
+			return emitMutationMany(cmd, a, "moved", ids, func() ([]*core.Task, error) { return a.MoveMany(ids, lane) })
 		},
 	}
+	addExpectUpdatedFlag(cmd)
+	return cmd
 }
 
 func newNoteCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "note <id> <text>",
 		Short: "Append a paragraph to a task's or epic's body and advance its updated time",
 		Long: "Append <text> as a new paragraph to bodies/<id>.md AND stamp the entity's\n" +
@@ -220,18 +322,30 @@ func newNoteCmd() *cobra.Command {
 				return rerr
 			}
 			if epic {
+				// The stale-read guard covers the box side of note's dual contract
+				// too: an epic's progress record races between sessions exactly
+				// like a task's, and both entities carry `updated`.
+				expected, guard, gerr := expectUpdatedArg(cmd, args[0])
+				if gerr != nil {
+					return gerr
+				}
 				before, after, nerr := a.EpicNote(args[0], text)
 				if nerr != nil {
 					return nerr
 				}
+				if guard && before != nil {
+					appended = mergeExtra(appended, staleReadExtra(before.ID, &before.Updated, expected))
+				}
 				printEpicMutation("noted", before, after, appended)
 				return nil
 			}
-			return emitMutationWith(a, "noted", args[0],
+			return emitMutationWith(cmd, a, "noted", args[0],
 				func() (*core.Task, error) { return a.AddNote(args[0], text) },
 				func(after *core.Task) map[string]any { return appended })
 		},
 	}
+	addExpectUpdatedFlag(cmd)
+	return cmd
 }
 
 func newReorderCmd() *cobra.Command {
@@ -267,7 +381,7 @@ func newReorderCmd() *cobra.Command {
 				return core.Validationf(id, "provide a <priority>, or --before/--after <id>")
 			case ref != "":
 				var changes []core.PriorityChange
-				return emitMutationWith(a, "reordered", id,
+				return emitMutationWith(cmd, a, "reordered", id,
 					func() (*core.Task, error) {
 						t, ch, err := a.ReorderRelative(id, ref, isBefore)
 						changes = ch
@@ -279,13 +393,14 @@ func newReorderCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return emitMutation(a, "reordered", id, func() (*core.Task, error) { return a.Reorder(id, prio) })
+				return emitMutation(cmd, a, "reordered", id, func() (*core.Task, error) { return a.Reorder(id, prio) })
 			}
 		},
 	}
 	cmd.Flags().StringVar(&before, "before", "", "place immediately before this task (same lane)")
 	cmd.Flags().StringVar(&after, "after", "", "place immediately after this task (same lane)")
 	cmd.MarkFlagsMutuallyExclusive("before", "after")
+	addExpectUpdatedFlag(cmd)
 	return cmd
 }
 
@@ -337,7 +452,7 @@ func newEstimateCmd(name string, set func(*app.App, string, *int) (*core.Task, e
 				}
 				v = &n
 			}
-			return emitMutationWith(a, name, id,
+			return emitMutationWith(cmd, a, name, id,
 				func() (*core.Task, error) { return set(a, id, v) },
 				func(after *core.Task) map[string]any {
 					// An out-of-range score is silently clamped to 1..5 on write;
@@ -353,6 +468,7 @@ func newEstimateCmd(name string, set func(*app.App, string, *int) (*core.Task, e
 		},
 	}
 	cmd.Flags().BoolVar(&clear, "clear", false, "remove the estimate (back to unset)")
+	addExpectUpdatedFlag(cmd)
 	return cmd
 }
 
@@ -451,7 +567,7 @@ func newCheckCmd() *cobra.Command {
 					return a.Check(args[0], i, !off)
 				}
 			}
-			return emitMutation(a, verb, args[0], mutate)
+			return emitMutation(cmd, a, verb, args[0], mutate)
 		},
 	}
 	cmd.Flags().StringArrayVar(&adds, "add", nil, "append a checklist item with this text (repeatable)")
@@ -459,6 +575,7 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&rm, "rm", false, "delete the checklist item at the index")
 	cmd.Flags().StringVar(&reword, "reword", "", "replace the text of the item at the index")
 	cmd.MarkFlagsMutuallyExclusive("add", "rm", "reword", "off")
+	addExpectUpdatedFlag(cmd)
 	return cmd
 }
 
@@ -505,12 +622,13 @@ func newDepCmd() *cobra.Command {
 				verb = "dep-"
 				mutate = func() (*core.Task, error) { return a.RemoveDeps(id, deps) }
 			}
-			return emitMutation(a, verb, id, mutate)
+			return emitMutation(cmd, a, verb, id, mutate)
 		},
 	}
 	cmd.Flags().BoolVar(&rm, "rm", false, "remove the dependencies instead of adding them")
 	cmd.Flags().BoolVar(&list, "list", false, "read-only: list what <id> depends on and what depends on it (both directions)")
 	cmd.MarkFlagsMutuallyExclusive("list", "rm")
+	addExpectUpdatedFlag(cmd)
 	return cmd
 }
 
@@ -609,13 +727,13 @@ func newSetCmd() *cobra.Command {
 				return err
 			}
 			if len(args) > 1 {
-				return emitMutationMany(a, "set", args, func() ([]*core.Task, error) { return a.SetMany(args, o) })
+				return emitMutationMany(cmd, a, "set", args, func() ([]*core.Task, error) { return a.SetMany(args, o) })
 			}
 			// One id still emits a one-element ARRAY (the always-array rule —
 			// `set <id>...` has array cardinality by signature); only the
 			// single-task extras (clamped, renumbered) need this separate path.
 			var renumbered []core.PriorityChange
-			return emitMutationManyWith(a, "set", args,
+			return emitMutationManyWith(cmd, a, "set", args,
 				func() ([]*core.Task, error) {
 					t, ch, err := a.Set(args[0], o)
 					renumbered = ch
@@ -670,6 +788,7 @@ func newSetCmd() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("effort", "clear-effort")
 	cmd.MarkFlagsMutuallyExclusive("due", "clear-due")
 	cmd.MarkFlagsMutuallyExclusive("priority", "before", "after")
+	addExpectUpdatedFlag(cmd)
 	return cmd
 }
 
@@ -717,13 +836,14 @@ func newLabelCmd() *cobra.Command {
 			if err := emptyFlagErr(cmd, args[0], "add", "rm"); err != nil {
 				return err
 			}
-			return emitMutation(a, "labeled", args[0], func() (*core.Task, error) {
+			return emitMutation(cmd, a, "labeled", args[0], func() (*core.Task, error) {
 				return a.Relabel(args[0], add, remove)
 			})
 		},
 	}
 	cmd.Flags().StringSliceVar(&add, "add", nil, "label to add (repeatable; comma-separated)")
 	cmd.Flags().StringSliceVar(&remove, "rm", nil, "label to remove (repeatable; comma-separated)")
+	addExpectUpdatedFlag(cmd)
 	return cmd
 }
 
@@ -748,18 +868,19 @@ func newRefCmd() *cobra.Command {
 			if err := emptyFlagErr(cmd, args[0], "add", "rm"); err != nil {
 				return err
 			}
-			return emitMutation(a, "ref", args[0], func() (*core.Task, error) {
+			return emitMutation(cmd, a, "ref", args[0], func() (*core.Task, error) {
 				return a.Reref(args[0], add, rm)
 			})
 		},
 	}
 	cmd.Flags().StringSliceVar(&add, "add", nil, "ref to add (file:line or URL; repeatable)")
 	cmd.Flags().StringSliceVar(&rm, "rm", nil, "ref to remove (exact match; repeatable)")
+	addExpectUpdatedFlag(cmd)
 	return cmd
 }
 
 func newRetitleCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "retitle <id> <title...>",
 		Short: "Rename a task (updates the shard title and the body heading)",
 		Long: "Set a task's one-line title. The title lives in two places — the task\n" +
@@ -775,9 +896,11 @@ func newRetitleCmd() *cobra.Command {
 				return err
 			}
 			id, title := args[0], strings.Join(args[1:], " ")
-			return emitMutation(a, "retitled", id, func() (*core.Task, error) { return a.Retitle(id, title) })
+			return emitMutation(cmd, a, "retitled", id, func() (*core.Task, error) { return a.Retitle(id, title) })
 		},
 	}
+	addExpectUpdatedFlag(cmd)
+	return cmd
 }
 
 func newRepoCmd() *cobra.Command {
@@ -803,12 +926,13 @@ func newRepoCmd() *cobra.Command {
 			if err := emptyFlagErr(cmd, args[0], "add", "rm"); err != nil {
 				return err
 			}
-			return emitMutation(a, "repo", args[0], func() (*core.Task, error) {
+			return emitMutation(cmd, a, "repo", args[0], func() (*core.Task, error) {
 				return a.Rerepo(args[0], add, rm)
 			})
 		},
 	}
 	cmd.Flags().StringSliceVar(&add, "add", nil, "repo to attach (owner/repo, or a unique short name; repeatable)")
 	cmd.Flags().StringSliceVar(&rm, "rm", nil, "repo to detach (same forms; repeatable)")
+	addExpectUpdatedFlag(cmd)
 	return cmd
 }

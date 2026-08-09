@@ -56,7 +56,7 @@ func newReviewCmd() *cobra.Command {
 			// error (task not found, since it looked like an id).
 			if a.Cfg.IDPattern().MatchString(arg) {
 				if _, _, err := a.Get(arg); err == nil {
-					return emitMutation(a, "reviewed", arg, func() (*core.Task, error) { return a.ReviewTask(arg) })
+					return emitMutation(cmd, a, "reviewed", arg, func() (*core.Task, error) { return a.ReviewTask(arg) })
 				}
 				if _, rerr := a.ResolveRepo(arg); rerr != nil {
 					return core.NotFound(arg)
