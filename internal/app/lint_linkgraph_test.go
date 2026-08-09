@@ -58,9 +58,11 @@ func TestLintReportsDepCycle(t *testing.T) {
 
 func TestLintSelfDepReportedOnce(t *testing.T) {
 	// A self-dep is a degenerate cycle; it must be reported exactly once and not
-	// also duplicated by any other rule.
+	// also duplicated by any other rule. Parked in backlog on purpose: in a next
+	// lane the SAME task would legitimately earn a second, distinct error
+	// (ready-blocked — the lane contradiction, not the cycle again).
 	a := newApp()
-	seedTask(t, a, core.Task{ID: "t-xx", Status: "ready", Deps: []string{"t-xx"}}, "# x\n")
+	seedTask(t, a, core.Task{ID: "t-xx", Status: "backlog", Deps: []string{"t-xx"}}, "# x\n")
 	ps, _ := a.Lint()
 	errs := 0
 	for _, p := range ps {

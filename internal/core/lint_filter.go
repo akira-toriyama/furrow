@@ -53,6 +53,7 @@ var lintCodes = map[string]bool{
 	"orphan-body":        true,
 	"oversized-asset":    true,
 	"provenance-missing": true,
+	"ready-blocked":      true,
 	"reconcile-gap":      true,
 	"repo-as-label":      true,
 	"repo-shape":         true,

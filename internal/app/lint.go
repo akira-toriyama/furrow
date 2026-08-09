@@ -140,6 +140,17 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// signal, so an epic whose slice shipped never silently keeps a stale body.
 	ps = append(ps, core.StaleDepProblems(idx, a.Cfg.Terminal, doneIDs)...)
 
+	// ready-blocked (ERROR): a task sitting in an actionable ([next].lanes) lane
+	// with an unsatisfied dep — `furrow next` will never hand it out, so its lane
+	// is lying. `brief` shows the same set as `blocked` for whoever runs brief;
+	// this is the always-on twin. The lane vocabulary is the board config's, so
+	// the rule follows a [next].lanes override automatically.
+	nextLanes := make(map[string]bool, len(a.Cfg.NextLanes))
+	for _, l := range a.Cfg.NextLanes {
+		nextLanes[l] = true
+	}
+	ps = append(ps, core.ReadyBlockedProblems(idx, nextLanes, doneIDs)...)
+
 	// Due dates (due-overdue = ERROR, due-today = warn). Board-wide on purpose:
 	// no epic scope and no `next` lane filter, because the work that carries a
 	// date is usually parked outside the focus — the case this exists for sat in
