@@ -1322,7 +1322,7 @@ func printBrief(b *app.BriefData, scope string) {
 	for _, c := range []struct {
 		label string
 		ids   []string
-	}{{"epic_all_done", b.Revisit.EpicAllDone}, {"epic_stuck", b.Revisit.EpicStuck}, {"epic_stale", b.Revisit.EpicStale}, {"epic_dep_done", b.Revisit.EpicDepDone}} {
+	}{{"epic_all_done", b.Revisit.EpicAllDone}, {"epic_stuck", b.Revisit.EpicStuck}, {"epic_stale", b.Revisit.EpicStale}, {"epic_dep_done", b.Revisit.EpicDepDone}, {"epic_review_due", b.Revisit.EpicReviewDue}} {
 		if n := len(c.ids); n > 0 {
 			fmt.Fprintf(out, ", %d %s", n, c.label)
 		}

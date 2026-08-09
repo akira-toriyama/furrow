@@ -43,8 +43,9 @@ func (a *App) ReviewEpic(ref string) (*core.Epic, *core.Epic, error) {
 	}
 	if !ok {
 		// Resolution just answered with this id, so only a concurrent delete
-		// lands here; report it as the epic miss it is.
-		return nil, nil, &core.Error{Code: core.CodeValidation, Kind: core.KindEpicNotFound, Subject: id, Msg: "epic not found: " + id}
+		// lands here; mutateEpic reports the same race as core.NotFound, and
+		// two exit codes for one condition would be a trap.
+		return nil, nil, core.NotFound(id)
 	}
 	before := *e
 	now := a.Clock.Now()

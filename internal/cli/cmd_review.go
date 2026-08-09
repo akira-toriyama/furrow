@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -91,8 +92,17 @@ func newReviewCmd() *cobra.Command {
 			}
 			rec, err := a.ReviewRepo(arg, by == "agent")
 			if err != nil {
-				if ok, eerr := a.RefTargetsEpic(arg); eerr == nil && ok {
-					return reviewEpic()
+				// Only an UNRESOLVABLE repo may fall through to the epic
+				// contract. An ambiguous short name keeps its exit 2 +
+				// candidates (the incumbent did-you-mean guard), and a
+				// resolved repo's write failure IS the result — treating any
+				// failure as a routing signal would stamp a different entity
+				// and swallow the error.
+				var ce *core.Error
+				if errors.As(err, &ce) && ce.Kind == core.KindRepoUnknown {
+					if ok, eerr := a.RefTargetsEpic(arg); eerr == nil && ok {
+						return reviewEpic()
+					}
 				}
 				return err
 			}

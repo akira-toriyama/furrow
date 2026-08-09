@@ -120,9 +120,13 @@ a weekly `StartCalendarInterval` — schedules the nudge; point the script at
 `furrow review <repo>` after the review to reset the clock.
 
 `furrow revisit` is the per-TASK view (`no_repo`, `value_unset`, `effort_unset`,
-`stale`, `dep_done`, and a box's `epic_all_done` / `epic_stuck` / `epic_stale` / `epic_dep_done`); the
-repo clock is a board-level tally, so it rides on the summary that `sync` and
-`brief` return, not on `revisit`.
+`stale`, `dep_done`); a box's signals (`epic_all_done` / `epic_stuck` /
+`epic_stale` / `epic_dep_done` / `epic_review_due`) and the repo clock are
+board-level tallies, so they ride on the summary that `sync` and `brief`
+return, not on `revisit`. Since board layout v9 the same `stale_after_days`
+clock also drives a STANDING box's review cadence: `furrow review <epic-ref>`
+stamps the box, and `epic_review_due` fires when that review lapses — fold the
+boxes into the same weekly ritual as the repos.
 
 ## Recipe 5 — a due-date digest
 
