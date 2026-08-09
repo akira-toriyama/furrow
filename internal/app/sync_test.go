@@ -411,11 +411,11 @@ func TestSyncMessageOverride(t *testing.T) {
 	if _, err := a.Add("x", AddOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Sync(context.Background(), SyncOpts{Message: ":card_file_box: chore(board): custom words"}); err != nil {
+	if _, err := a.Sync(context.Background(), SyncOpts{Message: ":card_file_box:(board) custom words"}); err != nil {
 		t.Fatal(err)
 	}
 	subject := strings.TrimSpace(runGitT(t, git, cloneA, "log", "-1", "--format=%s"))
-	if subject != ":card_file_box: chore(board): custom words" {
+	if subject != ":card_file_box:(board) custom words" {
 		t.Errorf("subject = %q", subject)
 	}
 }
