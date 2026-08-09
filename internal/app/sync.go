@@ -110,9 +110,10 @@ func pullWithRetry(pullOnce func() error, sleep func(time.Duration) error, pol r
 }
 
 // DefaultSyncMessage is the auto-commit message `furrow sync` uses when
-// --message is not given: gitmoji + Conventional, and chore = no version bump,
-// which is exactly right for board data.
-const DefaultSyncMessage = ":card_file_box: chore(board): sync via furrow"
+// --message is not given: the gitmoji-driven grammar `<:gitmoji:>(<scope>)
+// <subject>`, and :card_file_box: = no version bump, which is exactly right for
+// board data.
+const DefaultSyncMessage = ":card_file_box:(board) sync via furrow"
 
 // SyncOpts controls one Sync. Message overrides the auto-commit subject. Bodies
 // names task ids whose hand-edited bodies/<id>.md this sync should commit — on a

@@ -103,8 +103,12 @@ func TestAutoCommitAddOneCommit(t *testing.T) {
 			t.Errorf("commit files = %v, want it to contain %s", files, want)
 		}
 	}
-	if subj := strings.TrimSpace(runGitT(t, git, dir, "log", "-1", "--format=%s")); !strings.Contains(subj, "furrow add "+task.ID) {
-		t.Errorf("subject = %q, want it to name `furrow add %s`", subj, task.ID)
+	// The full subject is pinned, not just the command echo: the prefix is the
+	// gitmoji grammar `:card_file_box:(board)` — the retired Conventional
+	// `chore(board):` token is glyph-rejected the moment a commit-msg hook lands
+	// on a board repo.
+	if subj := strings.TrimSpace(runGitT(t, git, dir, "log", "-1", "--format=%s")); subj != ":card_file_box:(board) furrow add "+task.ID {
+		t.Errorf("subject = %q, want %q", subj, ":card_file_box:(board) furrow add "+task.ID)
 	}
 }
 

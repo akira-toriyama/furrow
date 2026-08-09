@@ -557,7 +557,7 @@ non-interactive command — a thin git wrapper, not a sync daemon or server
    so a shared checkout never commits a co-located operator's in-progress prose
    under the wrong author. `--all-bodies` restores the old sweep for a checkout
    you know is yours alone. Default message
-   `:card_file_box: chore(board): sync via furrow`; override with `-m`.
+   `:card_file_box:(board) sync via furrow`; override with `-m`.
 2. `git fetch`, then `git rebase --autostash @{u}` — rebasing onto the upstream
    **tracking ref**, never `FETCH_HEAD`, so a co-writer's concurrent fetch in a
    shared checkout can't make it `fatal: Cannot rebase onto multiple branches`
