@@ -200,6 +200,10 @@ func canonicalizeEpic(e *Epic) {
 		c := normTime(*e.Closed)
 		e.Closed = &c
 	}
+	if e.Reviewed != nil {
+		r := normTime(*e.Reviewed)
+		e.Reviewed = &r
+	}
 }
 
 // UnmarshalEpic parses one epic shard's bytes into an Epic, the per-epic twin of

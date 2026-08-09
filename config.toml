@@ -97,7 +97,10 @@ stale_days = 30
 
 [review]
 # Days a repo may go without a human `furrow review <repo>` before
-# `furrow sync` nudges it as unreviewed (on the revisit line). 0 disables.
+# `furrow sync` nudges it as unreviewed (on the revisit line), AND days a
+# STANDING epic may go past its last `furrow review <epic-ref>` before
+# revisit raises epic_review_due — one review clock for the whole board.
+# 0 disables both. A never-reviewed repo or box stays quiet either way.
 stale_after_days = 14
 
 [alias]

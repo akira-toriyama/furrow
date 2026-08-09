@@ -85,7 +85,7 @@ the pull-read to a schedule is the OS's job — see
 
 The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
 (structured metadata, machine-written) + `.furrow/meta.json`
-(`{"schema_version": 8}`, the board-wide layout version) +
+(`{"schema_version": 9}`, the board-wide layout version) +
 `.furrow/bodies/<id>.md` (long-form prose, hand/agent
 editable) + `.furrow/bodies/assets/` (media copied in by `furrow attach` as
 collision-free `<id>-<name>` files, referenced from the body by a relative

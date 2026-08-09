@@ -101,7 +101,11 @@ the user-level config. When you work with any furrow store:
   STANDING box is one whose goal is to sit there (a mandate inbox, a parking
   lot): it is exempt from the finish-shaped revisit nags — `epic_all_done`
   (open 0 is its healthy state) and `epic_dep_done` (an always-on box has no
-  "turn to open") — while `epic_stuck` still fires. A PINNED box's actionable
+  "turn to open") — while `epic_stuck` still fires, and it is the box the
+  REVIEW CADENCE exists for (v9): `furrow review <epic-ref>` stamps its
+  `reviewed`, and `epic_review_due` fires when that review outlives the
+  `[review]` staleness threshold — the same clock as the repo nudge, quiet
+  until the first review opts the box in. A PINNED box's actionable
   tasks LEAD `next`/`brief` regardless of the active scope (shown even when
   nothing is active), without holding a repo slot — the read's own repo filter
   scopes the tasks. Orthogonal to each other and to activate: mandate =
@@ -221,9 +225,13 @@ the user-level config. When you work with any furrow store:
   `add --stdin` bulk-creates one task per stdin line;
   `next --json` attaches a `reason` (`in_next_lane`, `deps_satisfied`) and
   `revisit --json` a `revisit` array (`no_repo`, `value_unset`, `effort_unset`,
-  `stale`, `dep_done`) per task, and the four box-level ones
-  (`epic_all_done` / `epic_stuck` / `epic_stale` / `epic_dep_done` — the last
-  says every epic this box waited on is closed, its turn to open) alongside.
+  `stale`, `dep_done`) per task; the five box-level ones
+  (`epic_all_done` / `epic_stuck` / `epic_stale` / `epic_dep_done` — that one
+  says every epic this box waited on is closed, its turn to open — and
+  `epic_review_due`, a STANDING box whose last `furrow review <epic-ref>` is
+  past the board's `[review]` staleness threshold; never-reviewed boxes stay
+  quiet) are about epics, not tasks, and ride `sync`/`brief`'s revisit
+  summary keyed by epic id instead.
 - **Batch reads by id: `show <id>... --no-body`** — any id set in one process,
   metadata only (no `body_text`), input order. `--json` = ALWAYS an array, one
   element per found id (a single id is a one-element array, a total miss
@@ -302,7 +310,8 @@ the user-level config. When you work with any furrow store:
   and is not flagged.
   A successful sync also gains a `revisit` key
   (`{dep_done:[ids], stale:[ids], epic_all_done:[ids], epic_stuck:[ids],
-  epic_stale:[ids], epic_dep_done:[ids], unreviewed:[{repo,days}]}` — each sub-key omitted when empty, repo-scoped, the
+  epic_stale:[ids], epic_dep_done:[ids], epic_review_due:[ids],
+  unreviewed:[{repo,days}]}` — each sub-key omitted when empty, repo-scoped, the
   whole key omitted when the board is clean) — the loop-visible staleness nudge;
   run `furrow revisit` for task detail, `furrow review <repo>` to reset a repo's
   `unreviewed` clock.
@@ -431,7 +440,7 @@ their repositories in the first-class `repos` field) or a store can live
 repo-local. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
-(`{"schema_version": 8}`); long-form prose lives in
+(`{"schema_version": 9}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI drives it (CLI-only — any TUI/GUI is a
 separate out-of-repo front-end that speaks the CLI/JSON contract). Go,

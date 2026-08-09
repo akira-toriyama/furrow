@@ -51,11 +51,13 @@ func revisitLine(sum app.RevisitSummary, scope string) string {
 	}
 	line := fmt.Sprintf("revisit: %d dep_done, %d stale", len(sum.DepDone), len(sum.Stale))
 	// Epic counts ride the same line, but only when non-zero — so a board with no
-	// boxes prints a short nudge.
+	// boxes prints a short nudge. EVERY epic key the summary counts must appear
+	// here: Empty() gates this line, so a key counted but not rendered would
+	// print a nudge that names nothing (measured with epic_review_due pre-fix).
 	for _, c := range []struct {
 		label string
 		ids   []string
-	}{{"epic_all_done", sum.EpicAllDone}, {"epic_stuck", sum.EpicStuck}, {"epic_stale", sum.EpicStale}} {
+	}{{"epic_all_done", sum.EpicAllDone}, {"epic_stuck", sum.EpicStuck}, {"epic_stale", sum.EpicStale}, {"epic_dep_done", sum.EpicDepDone}, {"epic_review_due", sum.EpicReviewDue}} {
 		if len(c.ids) > 0 {
 			line += fmt.Sprintf(", %d %s", len(c.ids), c.label)
 		}
