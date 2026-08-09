@@ -223,7 +223,10 @@ the user-level config. When you work with any furrow store:
   `revisit --json` a `revisit` array (`no_repo`, `value_unset`, `effort_unset`,
   `stale`, `dep_done`) per task, and the four box-level ones
   (`epic_all_done` / `epic_stuck` / `epic_stale` / `epic_dep_done` — the last
-  says every epic this box waited on is closed, its turn to open) alongside.
+  says every epic this box waited on is closed, its turn to open — and
+  `epic_review_due`, a STANDING box whose last `furrow review <epic-ref>` is
+  past the board's `[review]` staleness threshold; never-reviewed boxes stay
+  quiet) alongside.
 - **Batch reads by id: `show <id>... --no-body`** — any id set in one process,
   metadata only (no `body_text`), input order. `--json` = ALWAYS an array, one
   element per found id (a single id is a one-element array, a total miss
@@ -302,7 +305,8 @@ the user-level config. When you work with any furrow store:
   and is not flagged.
   A successful sync also gains a `revisit` key
   (`{dep_done:[ids], stale:[ids], epic_all_done:[ids], epic_stuck:[ids],
-  epic_stale:[ids], epic_dep_done:[ids], unreviewed:[{repo,days}]}` — each sub-key omitted when empty, repo-scoped, the
+  epic_stale:[ids], epic_dep_done:[ids], epic_review_due:[ids],
+  unreviewed:[{repo,days}]}` — each sub-key omitted when empty, repo-scoped, the
   whole key omitted when the board is clean) — the loop-visible staleness nudge;
   run `furrow revisit` for task detail, `furrow review <repo>` to reset a repo's
   `unreviewed` clock.
@@ -431,7 +435,7 @@ their repositories in the first-class `repos` field) or a store can live
 repo-local. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
-(`{"schema_version": 8}`); long-form prose lives in
+(`{"schema_version": 9}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI drives it (CLI-only — any TUI/GUI is a
 separate out-of-repo front-end that speaks the CLI/JSON contract). Go,

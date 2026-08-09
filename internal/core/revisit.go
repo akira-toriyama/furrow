@@ -31,6 +31,15 @@ const (
 	// stays quiet while any dep is open or dangling: a broken edge is lint's
 	// epic-dep-missing, and "time to open" must not be said on a broken graph.
 	RevisitEpicDepDone = "epic_dep_done"
+	// RevisitEpicReviewDue is the STANDING box's review cadence (v9): its last
+	// `furrow review <epic-ref>` is older than [review].stale_after_days — the
+	// same clock the per-repo review nudge reads, so one board keeps one review
+	// rhythm. It is the nag a standing box trades the finish-shaped ones for:
+	// exempt from epic_all_done/epic_dep_done, such a box is where a member's
+	// premise quietly rots, and nothing else asks "is what's inside still
+	// true?". A never-reviewed box stays quiet (the cadence is opted into by
+	// the first review, exactly like a repo's clock).
+	RevisitEpicReviewDue = "epic_review_due"
 )
 
 // RevisitCodeList returns every revisit signal code — the complete `furrow
@@ -52,6 +61,7 @@ func RevisitCodeList() []string {
 		RevisitEpicStuck,
 		RevisitEpicStale,
 		RevisitEpicDepDone,
+		RevisitEpicReviewDue,
 	}
 }
 

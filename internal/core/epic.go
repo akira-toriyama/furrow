@@ -114,6 +114,19 @@ type Epic struct {
 	// work, and which box is "the focus" stays the human's declaration.
 	Pinned bool `json:"pinned"`
 
+	// Reviewed is when a human last re-assessed this box's CONTENTS (schema v9)
+	// — Task.Reviewed's box-level twin, stamped by `furrow review <epic-ref>`
+	// and deliberately separate from Updated (a review changes no content, so
+	// bumping Updated would wrongly reset staleness). It exists for the STANDING
+	// box: exempted from the finish-shaped nags, such a box is where a task's
+	// premise quietly rots (a ready task whose tool was removed weeks ago), so
+	// revisit's epic_review_due fires when a standing box's last review is older
+	// than [review].stale_after_days — the same single clock the per-repo review
+	// nudge reads, never a second one. Like that nudge, nil (never reviewed)
+	// stays QUIET: the cadence is opted into by the first review. omitempty, so
+	// a board that reviews no boxes rewrites no shards.
+	Reviewed *time.Time `json:"reviewed,omitempty"`
+
 	// extras holds keys this binary does not know — a field written by a NEWER
 	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,
 	// one ordinary write would silently destroy that field (see passthrough.go).

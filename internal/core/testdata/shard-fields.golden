@@ -1,6 +1,6 @@
 # The on-disk shape of every furrow shard. See TestShardFieldsGolden.
 # Changing this file means changing what other furrows read.
-schema_version 8
+schema_version 9
 
 Task
   id string
@@ -45,6 +45,7 @@ Epic
   deps []string
   standing bool
   pinned bool
+  reviewed *time.Time (omitempty)
 
 ChecklistItem
   text string

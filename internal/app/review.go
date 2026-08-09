@@ -26,6 +26,35 @@ func (a *App) ReviewTask(id string) (*core.Task, error) {
 	return saved, nil
 }
 
+// ReviewEpic stamps a box's `reviewed` timestamp — Task.Reviewed's box-level
+// twin, and the reset for revisit's epic_review_due cadence on a standing box.
+// The ref resolves under the epic-ref contract (exact id, unique id prefix,
+// unique title substring). Like ReviewTask it deliberately does NOT touch
+// `updated`: a review changes no content. Returns before and after for the
+// epic mutation envelope.
+func (a *App) ReviewEpic(ref string) (*core.Epic, *core.Epic, error) {
+	id, err := a.ResolveEpic(ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	e, ok, err := a.Store.LoadEpic(id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ok {
+		// Resolution just answered with this id, so only a concurrent delete
+		// lands here; report it as the epic miss it is.
+		return nil, nil, &core.Error{Code: core.CodeValidation, Kind: core.KindEpicNotFound, Subject: id, Msg: "epic not found: " + id}
+	}
+	before := *e
+	now := a.Clock.Now()
+	e.Reviewed = &now
+	if err := a.Store.SaveEpic(e); err != nil {
+		return nil, nil, err
+	}
+	return &before, e, nil
+}
+
 // ReviewRepo records a per-repo review: it resolves repo against the board's
 // universe, loads (or creates) its review shard, and stamps a timestamp. A human
 // review (byAgent == false) advances LastReviewed — the clock the sync staleness

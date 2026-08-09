@@ -1588,6 +1588,9 @@ func changedEpicFields(before, after *core.Epic) []string {
 	if (before.Closed == nil) != (after.Closed == nil) {
 		ch = append(ch, "closed")
 	}
+	if !timeEq(before.Reviewed, after.Reviewed) {
+		ch = append(ch, "reviewed")
+	}
 	return ch
 }
 

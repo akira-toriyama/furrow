@@ -28,7 +28,14 @@ import (
 // release (the fleet's task-status CI). Order matters — release furrow, bump
 // every caller's pin, THEN `furrow upgrade --yes` the board. Bump only on a
 // read-breaking layout change, and update docs/schema/ + goldens in the same
-// change. v8 = the per-task `due` stamp: the instant a task is promised for.
+// change. v9 = the per-epic `reviewed` timestamp (omitempty): `furrow review
+// <epic-ref>` stamps it and revisit's epic_review_due reads it — the STANDING
+// box's review cadence on the [review].stale_after_days clock. An older binary
+// would PRESERVE the stamp but silently never nag, and a `furrow review` run
+// through it would stamp nothing — the review record a human believes they
+// wrote, lost — so the bump gates it. Being omitempty, an unreviewed box keeps
+// its exact pre-v9 bytes and no board rewrites on upgrade.
+// v8 = the per-task `due` stamp: the instant a task is promised for.
 // `lint` ERRORS on an overdue task and `brief` leads with the arrived ones, so a
 // binary that merely PRESERVED it would report a clean board and orient a whole
 // session past a missed date — the bump rule's central case. It is omitempty, so
@@ -53,7 +60,7 @@ import (
 // write the loss back. v3 = shards whose tasks carry the required first-class
 // repos set (the repos pivot). v2 = per-task shards (tasks/<id>.json) +
 // meta.json (v1 was the monolithic index.json).
-const SchemaVersion = 8
+const SchemaVersion = 9
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into

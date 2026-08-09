@@ -107,6 +107,18 @@ func (a *App) epicReasons(e *core.Epic, idx *core.Index, epics []core.Epic, done
 				Detail: fmt.Sprintf("active but not updated for %d days", days)})
 		}
 	}
+
+	// The STANDING box's review cadence (v9): the nag it trades the
+	// finish-shaped ones for. [review].stale_after_days is the SAME clock the
+	// per-repo review nudge reads (one board, one review rhythm; 0 disables
+	// both), and like that nudge a never-reviewed box stays quiet — the first
+	// `furrow review <epic-ref>` opts it in.
+	if e.Standing && a.Cfg.ReviewStaleAfterDays > 0 && e.Reviewed != nil {
+		if days := int(now.Sub(*e.Reviewed).Hours() / 24); days >= a.Cfg.ReviewStaleAfterDays {
+			out = append(out, core.RevisitReason{Code: core.RevisitEpicReviewDue,
+				Detail: fmt.Sprintf("standing box last reviewed %d days ago (threshold %dd) — re-check its contents", days, a.Cfg.ReviewStaleAfterDays)})
+		}
+	}
 	return out
 }
 
@@ -156,9 +168,9 @@ type RevisitItem struct {
 
 // Revisit lists open tasks that may need a fresh judgment, in canonical order.
 // It is purely read-only. A task surfaces when it has at least one signal —
-// no_repo, value_unset, effort_unset, stale, or dep_done. The four EPIC signals
-// (epic_all_done, epic_stuck, epic_stale, epic_dep_done) are about a box rather
-// than a task and are reported separately by RevisitEpics. Terminal-lane tasks
+// no_repo, value_unset, effort_unset, stale, or dep_done. The five EPIC signals
+// (epic_all_done, epic_stuck, epic_stale, epic_dep_done, epic_review_due) are
+// about a box rather than a task and are reported separately by RevisitEpics. Terminal-lane tasks
 // (done/icebox/waiting) are skipped — there is nothing to re-evaluate about
 // parked or finished work. The query's filters restrict the result like
 // List/Next, with one carve-out: a draft (repos == []) bypasses the board
@@ -227,22 +239,23 @@ type RevisitSummary struct {
 	// The epic keys carry EPIC ids, not task ids — the entities are distinct
 	// and so are their id spaces. omitempty so a board with no boxes keeps a
 	// minimal JSON shape.
-	EpicAllDone []string `json:"epic_all_done,omitempty"` // open epic ids whose members are all done
-	EpicStuck   []string `json:"epic_stuck,omitempty"`    // open epic ids with open members but none actionable
-	EpicStale   []string `json:"epic_stale,omitempty"`    // ACTIVE epic ids untouched for [revisit].stale_days
-	EpicDepDone []string `json:"epic_dep_done,omitempty"` // parked epic ids whose deps are all closed — their turn to open
+	EpicAllDone   []string `json:"epic_all_done,omitempty"`   // open epic ids whose members are all done
+	EpicStuck     []string `json:"epic_stuck,omitempty"`      // open epic ids with open members but none actionable
+	EpicStale     []string `json:"epic_stale,omitempty"`      // ACTIVE epic ids untouched for [revisit].stale_days
+	EpicDepDone   []string `json:"epic_dep_done,omitempty"`   // parked epic ids whose deps are all closed — their turn to open
+	EpicReviewDue []string `json:"epic_review_due,omitempty"` // standing epic ids whose last review is past [review].stale_after_days
 }
 
 // Empty reports whether nothing is worth surfacing (a clean board).
 func (s RevisitSummary) Empty() bool {
 	return len(s.DepDone) == 0 && len(s.Stale) == 0 && len(s.Unreviewed) == 0 &&
 		len(s.EpicAllDone) == 0 && len(s.EpicStuck) == 0 && len(s.EpicStale) == 0 &&
-		len(s.EpicDepDone) == 0
+		len(s.EpicDepDone) == 0 && len(s.EpicReviewDue) == 0
 }
 
 // RevisitSummary tallies the loop-visible signals over the open (non-terminal)
-// tasks passing o.match — dep_done and stale — plus the four epic signals
-// (epic_all_done, epic_stuck, epic_stale, epic_dep_done),
+// tasks passing o.match — dep_done and stale — plus the five epic signals
+// (epic_all_done, epic_stuck, epic_stale, epic_dep_done, epic_review_due),
 // plus the repo-level unreviewed clock (unreviewedRepos, which is not a task
 // signal at all). With a scope set (ScopeRepo/Repo),
 // repo-less drafts are excluded — the difference from Revisit, which always
@@ -296,6 +309,8 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 				sum.EpicStale = append(sum.EpicStale, it.Epic.ID)
 			case core.RevisitEpicDepDone:
 				sum.EpicDepDone = append(sum.EpicDepDone, it.Epic.ID)
+			case core.RevisitEpicReviewDue:
+				sum.EpicReviewDue = append(sum.EpicReviewDue, it.Epic.ID)
 			}
 		}
 	}

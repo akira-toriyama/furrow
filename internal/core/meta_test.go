@@ -10,7 +10,7 @@ func TestMarshalMetaCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"schema_version\": 8\n}\n"
+	want := "{\n  \"schema_version\": 9\n}\n"
 	if string(b) != want {
 		t.Errorf("MarshalMeta bytes = %q, want %q", b, want)
 	}
@@ -31,18 +31,19 @@ func TestUnmarshalMetaRejectsGarbage(t *testing.T) {
 	}
 }
 
-// SchemaVersion is 8: the per-task `due` stamp — the instant a task is promised
-// for. `lint` ERRORS on an overdue task (due-overdue) and `brief` leads with the
-// arrived ones, so a v7 binary that merely PRESERVED the field would report a
-// clean board and orient a whole session past a missed date. The field is
-// omitempty, so no dateless shard rewrites — the gate exists for the reading,
-// not for the bytes.
+// SchemaVersion is 9: the per-epic `reviewed` timestamp — `furrow review
+// <epic-ref>` stamps it and revisit's epic_review_due reads it (the STANDING
+// box's review cadence). A v8 binary that merely PRESERVED the field would
+// silently never nag, and its `furrow review` would stamp nothing — a review
+// record a human believes they wrote, lost. The field is omitempty, so no
+// unreviewed epic shard rewrites — the gate exists for the reading, not for
+// the bytes.
 //
 // The literal is deliberate (not `!= SchemaVersion`): this test's whole job is to
 // make a bump impossible to do by accident, so it has to fail when the const moves
 // and force the author to confirm the flag day.
-func TestSchemaVersionIsEight(t *testing.T) {
-	if SchemaVersion != 8 {
-		t.Errorf("SchemaVersion = %d, want 8 (the per-task due stamp)", SchemaVersion)
+func TestSchemaVersionIsNine(t *testing.T) {
+	if SchemaVersion != 9 {
+		t.Errorf("SchemaVersion = %d, want 9 (the per-epic reviewed stamp)", SchemaVersion)
 	}
 }
