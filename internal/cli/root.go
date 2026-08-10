@@ -154,11 +154,17 @@ func newRootCmd() *cobra.Command {
 		Long: "furrow — a clonable, git-native plain-text task tracker: an alternative to\n" +
 			"GitHub Projects/Issues that lives in a git repo (a shared central board or the\n" +
 			"code repo itself).\n\n" +
-			"Structured metadata lives in one .furrow/tasks/<id>.json shard per task\n" +
-			"(deterministic, machine-written); long-form prose lives in .furrow/bodies/<id>.md\n" +
-			"(hand-editable). Drive it from the CLI — furrow is CLI-only; any TUI/GUI is a\n" +
-			"separate front-end that speaks this CLI's JSON. Both you and Claude Code can\n" +
-			"edit the store cleanly.\n\n" +
+			"Structured metadata lives in one .furrow/tasks/<id>.json shard per task;\n" +
+			"long-form prose lives in .furrow/bodies/<id>.md. The bodies are YOURS — edit\n" +
+			"them by hand freely. Every other file furrow writes — tasks/*.json,\n" +
+			"repos/*.json, meta.json — is furrow-OWNED: NEVER hand-edit those. One\n" +
+			"deterministic marshaller writes them, so a manual edit fights the next write\n" +
+			"and churns git; mutate through commands instead. Drive it from the CLI —\n" +
+			"furrow is CLI-only; any TUI/GUI is a separate front-end that speaks this\n" +
+			"CLI's JSON.\n\n" +
+			"Session start on a shared (multi-machine) board: `furrow sync && furrow\n" +
+			"brief` — converge the board, then orient (due band, active epic, top\n" +
+			"actionable picks with bodies, blocked, revisit) in one read.\n\n" +
 			"Exit codes: 0 ok (an empty query result is still 0) · 1 a specifically requested\n" +
 			"id was not found (e.g. show <id>) or `furrow doctor` found problems (kind\n" +
 			"doctor-unhealthy) · 2 bad usage / validation (fix the args, do\n" +

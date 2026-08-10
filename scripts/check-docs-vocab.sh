@@ -492,7 +492,7 @@ complete|config-keys||README.md|^## Configuration|^A board `\[alias\]` names
 both|revisit-codes|^[a-z]+(_[a-z]+)+$|CLAUDE.md|`revisit --json` a `revisit` array|^- \*\*Batch reads by id
 both|revisit-codes|^[a-z]+(_[a-z]+)+$|README.md|^- \*\*`revisit`\*\* — read-only|^- \*\*`search`\*\*
 complete|revisit-codes||internal/app/revisit.go|^// Revisit lists open tasks that may need a fresh judgment|^func \(a \*App\) Revisit\(
-both|revisit-summary-keys|^[a-z]+(_[a-z]+)+$|CLAUDE.md|A successful sync also gains a `revisit` key|^- \*\*The board.s layout version gates writes
+both|revisit-summary-keys|^[a-z]+(_[a-z]+)+$|CLAUDE.md|A successful sync also gains a `revisit` key|^- \*\*A shard key this binary
 complete|revisit-summary-keys||internal/app/revisit.go|^// RevisitSummary tallies the loop-visible signals|^func \(a \*App\) RevisitSummary\(
 complete|query-qualifiers||README.md|^- \*\*qualifiers\*\*|^- \*\*presence\*\*
 complete|query-presence||README.md|^- \*\*presence\*\*|^- \*\*computed flags\*\*
