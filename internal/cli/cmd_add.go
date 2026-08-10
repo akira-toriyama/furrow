@@ -176,21 +176,40 @@ func warnShadowedDraft(a *app.App, draftFlag, drafted bool) {
 }
 
 func newEditCmd() *cobra.Command {
-	return &cobra.Command{
+	var body string
+	cmd := &cobra.Command{
 		Use:   "edit <id>",
-		Short: "Edit a task's or epic's markdown body in $EDITOR",
+		Short: "Edit a task's or epic's markdown body in $EDITOR, or replace it with --body",
 		Long: "Open bodies/<id>.md in $EDITOR. In a non-interactive context (no TTY) it\n" +
 			"prints the absolute body path instead of launching an editor, so an agent\n" +
 			"can edit the file directly.\n\n" +
+			"--body \"<markdown>\" skips the editor entirely: it REPLACES the whole body\n" +
+			"AND stamps the entity's `updated`, in one command — the non-interactive\n" +
+			"edit. Pass `-` to read the new body from stdin (the shared `-`=stdin\n" +
+			"convention; `add --body`, `note`, and `done --note` honor it too). An\n" +
+			"empty replacement is exit 2, never a silent clear. Unlike a direct file\n" +
+			"edit, which leaves `updated` stale, --body keeps the staleness signals\n" +
+			"(revisit, lint's reconcile-gap) honest — prefer `furrow note <id>` when\n" +
+			"you mean to APPEND a progress paragraph rather than rewrite.\n\n" +
 			"<id> may name a TASK or an EPIC — both entities' prose lives in the one\n" +
 			"bodies/ directory, so this is the same file either way; store membership\n" +
-			"routes it, never the id's prefix. Prefer `furrow note <id>` for a progress\n" +
-			"record: a direct file edit does not advance the shard's `updated`.",
+			"routes it, never the id's prefix.",
+		Example: "  furrow edit t-k3m9p\n" +
+			"  furrow edit t-k3m9p --body \"# rewritten\\n\\nnew plan\"\n" +
+			"  ridge-editor-save | furrow edit t-k3m9p --body -   # replace from stdin",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
+			}
+			if cmd.Flags().Changed("body") {
+				return editSetBody(cmd, a, args[0], body)
+			}
+			// The guard describes a write; the editor path never writes the
+			// shard, so a set flag there would be silently meaningless.
+			if f := cmd.Flags().Lookup(expectUpdatedFlag); f != nil && f.Value.String() != "" {
+				return core.Validationf(args[0], "--expect-updated only applies to the --body replacement write")
 			}
 			path, err := a.EditPath(args[0])
 			if err != nil {
@@ -218,6 +237,46 @@ func newEditCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&body, "body", "", "replace the WHOLE body with this markdown and advance `updated` (`-` reads stdin); empty is exit 2")
+	addExpectUpdatedFlag(cmd)
+	return cmd
+}
+
+// editSetBody is the `edit --body` arm: resolve `-`=stdin, route task/epic by
+// store membership (note's contract), replace, and report. `changed` tracks
+// metadata only, so the envelope surfaces the effect as `replaced_bytes` — the
+// byte count written, not the text echoed back: unlike a note, a body is
+// unbounded and the caller just supplied it.
+func editSetBody(cmd *cobra.Command, a *app.App, ref, body string) error {
+	text, err := readTextArg(cmd, body)
+	if err != nil {
+		return err
+	}
+	// The count must match the file: the write appends the trailing newline
+	// the normalizer guarantees (a test pins this against the disk).
+	extra := map[string]any{"replaced_bytes": len(strings.TrimRight(text, "\n")) + 1}
+	epic, err := a.RefTargetsEpic(ref)
+	if err != nil {
+		return err
+	}
+	if epic {
+		expected, guard, gerr := expectUpdatedArg(cmd, ref)
+		if gerr != nil {
+			return gerr
+		}
+		before, after, serr := a.EpicSetBody(ref, text)
+		if serr != nil {
+			return serr
+		}
+		if guard && before != nil {
+			extra = mergeExtra(extra, staleReadExtra(before.ID, &before.Updated, expected))
+		}
+		printEpicMutation("edited", before, after, extra)
+		return nil
+	}
+	return emitMutationWith(cmd, a, "edited", ref,
+		func() (*core.Task, error) { return a.SetBody(ref, text) },
+		func(after *core.Task) map[string]any { return extra })
 }
 
 func firstNonEmpty(ss ...string) string {

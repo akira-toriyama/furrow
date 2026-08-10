@@ -428,6 +428,20 @@ func (a *App) EpicNote(ref, text string) (*core.Epic, *core.Epic, error) {
 	return a.mutateEpic(ref, func(e *core.Epic) error { return a.appendBody(e.ID, text) })
 }
 
+// EpicSetBody replaces an EPIC's entire body AND stamps the box's Updated —
+// SetBody's box twin, routed to by `furrow edit --body` exactly as EpicNote is
+// by `furrow note` (membership decides, never the id's prefix), and the same
+// operation rather than a second one wearing an epic's name: the bodies/
+// directory is shared and only the shard whose `updated` moves differs. The
+// empty-replacement check runs BEFORE resolution, matching EpicNote's order.
+func (a *App) EpicSetBody(ref, text string) (*core.Epic, *core.Epic, error) {
+	text, err := normalizeBody(ref, text)
+	if err != nil {
+		return nil, nil, err
+	}
+	return a.mutateEpic(ref, func(e *core.Epic) error { return a.saveBody(e.ID, text) })
+}
+
 // RefTargetsEpic reports whether an id-keyed command's ref belongs to the EPIC
 // store rather than the task index — the one routing decision behind `furrow
 // note` / `edit` / `show` taking either entity.
