@@ -512,9 +512,14 @@ to}]`) — the neighbors' `updated` deliberately does NOT advance (a respace is
 positional bookkeeping, not progress, so staleness signals stay honest).
 
 ### Configuration
-`.furrow/config.toml` is **read-only from the app** and **clamp-don't-reject**:
-unknown keys and out-of-range values fall back to defaults with a warning that
-`furrow lint` surfaces. Read it through `internal/config`. The shipped sections
+`.furrow/config.toml` reads are **clamp-don't-reject**: unknown keys and
+out-of-range values fall back to defaults with a warning that
+`furrow lint` surfaces. Read it through `internal/config`. **The one writer is
+`furrow config set`** (`--user` for a `[[board]]` entry of the user config): a surgical,
+git-config-style edit — comments and every untouched byte survive — that is
+STRICT where reads are lenient (an unknown key is exit 2 with the vocabulary in
+candidates; a value the reader would clamp is refused before the write). Every
+other command still only reads. The shipped sections
 are `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`,
 `[archive]`, `[lint]`, `[due]`, `[revisit]`, `[review]`, `[alias]`, and the
 top-level `standalone` and `default_repo` — the repo-root `config.toml` (which `furrow init` writes

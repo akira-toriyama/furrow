@@ -1,9 +1,10 @@
 # furrow — repo-local configuration (.furrow/config.toml).
 # https://github.com/akira-toriyama/furrow
 #
-# furrow only READS this file; it never writes or regenerates it. Unknown keys
-# and out-of-range values are clamped to safe defaults (a typo can't break the
-# tool); `furrow lint` reports what it clamped, unknown keys with their line.
+# Ordinary furrow commands only READ this file; the one writer is
+# `furrow config set <key> <value>`, which edits a single key surgically and
+# preserves comments. Unknown keys and out-of-range values are clamped to safe
+# defaults on read (a typo can't break the tool); `furrow lint` reports what it clamped, unknown keys with their line.
 #
 # Two top-level switches (bare keys — TOML requires them ABOVE the [sections]):
 #

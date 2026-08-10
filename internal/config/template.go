@@ -1,17 +1,20 @@
 package config
 
 // Template is the canonical .furrow/config.toml shipped by `furrow init` and
-// mirrored at the repo root as config.toml. furrow only ever READS this file;
-// unknown keys and out-of-range values are clamped to the defaults above with a
-// warning, so a typo can never break the tool.
+// mirrored at the repo root as config.toml. Reads clamp: unknown keys and
+// out-of-range values fall back to the defaults with a warning, so a typo can
+// never break the tool. The ONE writer is `furrow config set` — a surgical,
+// git-config-style edit that preserves every other byte and refuses what a
+// read would clamp.
 //
 // Keep this in sync with the repo-root config.toml (a from-source reference).
 const Template = `# furrow — repo-local configuration (.furrow/config.toml).
 # https://github.com/akira-toriyama/furrow
 #
-# furrow only READS this file; it never writes or regenerates it. Unknown keys
-# and out-of-range values are clamped to safe defaults (a typo can't break the
-# tool); ` + "`furrow lint`" + ` reports what it clamped, unknown keys with their line.
+# Ordinary furrow commands only READ this file; the one writer is
+# ` + "`furrow config set <key> <value>`" + `, which edits a single key surgically and
+# preserves comments. Unknown keys and out-of-range values are clamped to safe
+# defaults on read (a typo can't break the tool); ` + "`furrow lint`" + ` reports what it clamped, unknown keys with their line.
 #
 # Two top-level switches (bare keys — TOML requires them ABOVE the [sections]):
 #
