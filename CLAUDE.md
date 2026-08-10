@@ -9,13 +9,6 @@ furrow's own tasks live on the **central board** (the private
 `.furrow/`**, so `furrow` commands run here resolve to the central board via
 the user-level config. When you work with any furrow store:
 
-- furrow **OWNS the `.furrow/tasks/*.json` shards** (one per task), the
-  `.furrow/repos/*.json` review shards (one per repo — `furrow review`), **and
-  `.furrow/meta.json`**. **Never hand-edit them.** They are written by a
-  single deterministic marshaller; manual edits will fight the next `furrow`
-  write and churn git. Mutate tasks via commands, not the files.
-- `.furrow/bodies/*.md` **ARE** safe to edit by hand or by you — that is the point
-  of the hybrid store. One body file per task id, 1:1 with its shard.
 - Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
   **`furrow brief [--json]` is the session-start read**: the sync → `next -r` →
   `show <id>` ritual in ONE process — the **due** band FIRST (`due`,
@@ -121,7 +114,7 @@ the user-level config. When you work with any furrow store:
   with title / `goal` (the one-line closing condition, optional) / `active` /
   labels / repos / `meta` (a flat string map furrow never interprets) /
   open-closed state — no lanes, no value/effort/priority. Its prose shares the
-  task `bodies/` directory (see `note`/`edit` routing below). A box is not work:
+  task `bodies/` directory (`note`/`edit --help` explain the routing). A box is not work:
   `furrow next` hands out only tasks, an epic's "progress" is the member
   roll-up, and furrow never auto-closes a box (`revisit`/`sync` raise
   `epic_all_done` instead). `epic done`/`deactivate` SUGGEST the previous
@@ -315,41 +308,8 @@ the user-level config. When you work with any furrow store:
   whole key omitted when the board is clean) — the loop-visible staleness nudge;
   run `furrow revisit` for task detail, `furrow review <repo>` to reset a repo's
   `unreviewed` clock.
-- **The board's layout version gates writes, and it is an INPUT — never an
-  output.** A binary writes only a board whose `meta.json` already declares
-  exactly its own `schema_version`; an ordinary write NEVER raises it (that is
-  what `furrow upgrade` is for). Two stable kinds, told apart by exit code alone:
-  **`schema-upgrade-required`** (exit 2 — the BOARD is behind this binary; it
-  stays fully readable but is read-only until `furrow upgrade` runs) and
-  **`schema-too-new`** (exit 3 — the BINARY is behind the board; update furrow /
-  bump the pin). Both carry `details {board_schema, binary_schema}` — branch on
-  the kind, not the message. **`furrow board [--json]` reports the state without
-  failing**: `schema_version` (what the board declares; 0 = absent/unreadable),
-  `binary_schema_version`, `schema_state` (`current`|`outdated`|`too-new`|
-  `unreadable`) and `writable` — it is the last command that still works when
-  board and binary disagree, so read it as a pre-flight instead of watching every
-  task read fail with "task not found". `furrow lint` warns `schema-outdated`
-  (never errors) meanwhile. Its machine-wide sibling **`furrow boards [--json]`
-  lists every CONFIGURED `[[board]]` without resolving against cwd** — exit 0
-  (a listing, possibly empty) even where every other command exits 2 because no
-  board is in scope, each entry carrying the same vocabulary/schema keys as
-  `board` plus resolved `store`/`scopes`, the declared `repo`/`label`, and
-  `exists` — the diagnosis call for "this machine has no scopes configured" and
-  the bootstrap for a front-end running outside every scope (FURROW_BOARD, a
-  per-invocation override, is not listed). **`furrow doctor [dir...]` is the
-  OPINIONATED version of that diagnosis** — the machine-wide health check
-  (read-only, no fetch): config parses / a usable `[[board]]` exists
-  (`no-boards`) / every board on disk + readable + on this binary's schema /
-  scopes exist / git freshness vs upstream as of the last fetch
-  (`board-behind`/`board-ahead` → `furrow sync`) / where a nearer
-  `.furrow`/pointer shadows the board inside its own scopes (severity `info`,
-  never unhealthy). It simulates discovery at cwd (informational) and at each
-  argument dir (an assertion — `dir-unresolved` is an error with the fix).
-  Exit 0 = healthy, exit 1 = problems (kind `doctor-unhealthy`; branch on each
-  finding's kebab-case `code`) — so `furrow doctor --json | jq -e '.healthy'`
-  is the setup pre-flight on a new machine.
-- **A shard key this binary does not know is PRESERVED, not dropped.** The gate
-  above only fires when someone BUMPS the version; a field added without a bump
+- **A shard key this binary does not know is PRESERVED, not dropped.** The
+  version gate only fires when someone BUMPS the version; a field added without a bump
   would be silently destroyed by the next ordinary write (`encoding/json`'s
   lenient unmarshal drops it, the marshaller writes the loss back — one `retitle`,
   one dead field, no error). So `core.Unmarshal*` now parks every unknown
@@ -374,57 +334,6 @@ the user-level config. When you work with any furrow store:
   `additionalProperties: true`: the flip made the schema stop rejecting a typo, so
   `lint` is the only detector left. One more reason
   the shards are furrow's to write, not yours.
-- `furrow edit <id>` with no TTY **prints the body file path** instead of opening
-  an editor — read/edit that file directly. But a direct file edit does NOT touch
-  the shard's `updated`, so it goes stale and `lint`'s `reconcile-gap` (a done
-  dep's `closed` vs. `updated`) misfires on a task reconciled only in prose. To
-  record progress/stop-points/next-steps across sessions, prefer **`furrow note
-  <id> "<text>"`**: it appends the text as a new paragraph to the body AND stamps
-  `updated`, in one write (`-` reads the note from stdin for multi-line). Unlike the
-  `apply` annotation path it never dedupes and always advances `updated`, so the
-  time-based lint stays honest. `--json` emits the `{before,after,changed}`
-  envelope plus `appended` (the text), since `changed` tracks metadata only.
-  **`note` takes an EPIC id too** (`furrow note e-k3m9 "<text>"`): tasks and
-  boxes share one `bodies/` directory, so a box's progress record is the same
-  write to the same file and only the shard that stamps `updated` differs —
-  which is why there is no `epic note` verb. **MEMBERSHIP routes it, never the
-  id's prefix**: a ref naming a real task is the task, else a ref the epic store
-  resolves (exact id, unique prefix, unique title substring — the epic-ref
-  contract) is that box, else the prefix picks only whose ERROR you get (an
-  unknown BOX is exit 2 with `candidates`, an unknown task id exit 1). A prefix
-  guess is wrong here for the same reason `sync`'s activation scan refuses one:
-  `[ids].epic_prefix` may EXTEND `[ids].prefix`, and ids are prefix + random
-  base32, so on such a board ~1 task id in 32 is shaped like an epic id. The
-  envelope is the noted entity's own. **`edit` and `show` route the same way**:
-  `furrow edit <epic-id>` hands back the box's `bodies/<id>.md` (the same file,
-  created on demand), and `furrow show <epic-id>` renders the box view `epic
-  show` prints — so a mixed `show t-… e-…` batch's `--json` array carries one
-  shape per entity, and an epic-shaped miss reads `epic not found`. Two
-  deliberate task-only edges there: `--archived` (boxes are never archived) and
-  `--backlinks` (`[[id]]` links carry the TASK prefix, so a box has none).
-  Closing with a word — the reslice's "→ continued in t-xxx", the one-liner at
-  close time — is that contract folded into the close: **`furrow done <id>...
-  --note "<text>"`** appends the note to every closed task's body in the same
-  single all-or-nothing write (an empty note is exit 2, never a silent plain
-  close).
-- Exit codes: `0` ok — **including an empty query result** (`ls`/`next`/`revisit`
-  matching nothing still succeeded, so `set -e` never trips on "no work") / `1` a
-  **specifically requested id** was not found (e.g. `show <id>`), never an empty
-  list / `2` bad-usage|validation / `3+` internal|IO (a signal-interrupted run is
-  `130`/`143` = 128+signal, not `3` — see `sync-interrupted` above). The contract
-  is also in the binary's own `--help`. On non-zero, an
-  `{"error":{"kind","subject","retryable","exit","message"}}` object is on stderr
-  — `kind` is the stable kebab-case failure class (closed vocabulary: `furrow
-  vocab error-kinds`; generic trio `not-found`/`validation`/`internal`, named
-  kinds where the remedy is more specific), `subject` the entity at fault (task/
-  epic id, `owner/repo`, `config`, `meta`, …; omitted when none), `retryable`
-  the one-key retry decision, `exit` the process exit code — plus an optional
-  machine-actionable `details` (see `sync`
-  above) and an optional `candidates` array when an input almost resolved (an
-  ambiguous repo short name, an unknown lane, a top-level or parent command's unknown
-  subcommand like `config show`, or `-l <x>` matching nothing while `x` uniquely
-  names a repo — the did-you-mean guard). Branch on the array, never regex the
-  message.
 - furrow is **CLI-only and non-interactive**; there is no in-repo TUI. A TUI/GUI
   is a **separate front-end** that drives furrow through its CLI/JSON contract —
   planned: **ridge** (github.com/akira-toriyama/ridge, a charm-v2 TUI, a CLI/JSON
