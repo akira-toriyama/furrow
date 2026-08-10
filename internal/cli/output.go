@@ -1176,8 +1176,12 @@ type briefView struct {
 	EpicsDeclared bool       `json:"epics_declared"`
 	// pinned is the open pinned box(es) not already in active — the always-
 	// visible channels whose tasks lead next (omitted when none, so the
-	// pre-v7 shape is unchanged on a board that uses no pins).
-	Pinned []epicView `json:"pinned,omitempty"`
+	// pre-v7 shape is unchanged on a board that uses no pins). Only channels
+	// with an open member are listed; pinned_quiet counts the ones hidden
+	// because everything inside is closed (the next_total pattern — a filter
+	// never hides its size silently).
+	Pinned      []epicView `json:"pinned,omitempty"`
+	PinnedQuiet int        `json:"pinned_quiet,omitempty"`
 	// due is what has come due — {overdue, today}, each an ls row (task +
 	// actionable/blocked_by). It leads the object because it leads the printed
 	// dashboard, and struct order IS key order; omitted entirely when nothing is
@@ -1248,6 +1252,7 @@ func printBrief(b *app.BriefData, scope string) {
 		for _, it := range b.Pinned {
 			v.Pinned = append(v.Pinned, toEpicView(it))
 		}
+		v.PinnedQuiet = b.PinnedQuiet
 		// sync hides an empty summary behind omitempty; brief always shows it,
 		// so the two non-omitempty id arrays must come out [] never null (an
 		// agent indexes them unconditionally — the house nil-slice rule).
@@ -1302,6 +1307,9 @@ func printBrief(b *app.BriefData, scope string) {
 		// so the header must say which boxes injected them.
 		for _, it := range b.Pinned {
 			fmt.Fprintf(out, "epic: 📌 %s  %d/%d  %s\n", it.Epic.ID, it.Progress.Done, it.Progress.Total, it.Epic.Title)
+		}
+		if b.PinnedQuiet > 0 {
+			fmt.Fprintf(out, "epic: 📌 +%d quiet pinned (no open members)\n", b.PinnedQuiet)
 		}
 	}
 	fmt.Fprintf(out, "next (%d/%d):\n", len(b.Next), b.NextTotal)

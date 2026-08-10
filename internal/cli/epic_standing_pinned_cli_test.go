@@ -107,3 +107,49 @@ func TestNextAndBriefSurfacePinnedChannel(t *testing.T) {
 		t.Errorf("with nothing active only the pinned band may show:\n%s", out)
 	}
 }
+
+// TestBriefCollapsesQuietPinned: an empty pinned box (a mandate inbox's healthy
+// state) is a count line — human and JSON (`pinned_quiet`) — not a header row.
+func TestBriefCollapsesQuietPinned(t *testing.T) {
+	initStore(t)
+	mandate := addEpic(t, "quiet mandate")
+	if _, code := run(t, "epic", "set", mandate, "--standing", "--pinned"); code != 0 {
+		t.Fatal("set")
+	}
+
+	out, code := run(t, "brief")
+	if code != 0 {
+		t.Fatal(out)
+	}
+	if strings.Contains(out, "📌 "+mandate) {
+		t.Errorf("an empty pinned box must not get a header row:\n%s", out)
+	}
+	if !strings.Contains(out, "+1 quiet pinned") {
+		t.Errorf("the hidden channel must surface as a count:\n%s", out)
+	}
+
+	out, code = run(t, "--json", "brief")
+	if code != 0 {
+		t.Fatal(out)
+	}
+	var v struct {
+		Pinned      []any `json:"pinned"`
+		PinnedQuiet int   `json:"pinned_quiet"`
+	}
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		t.Fatalf("parse brief --json: %v\n%s", err, out)
+	}
+	if len(v.Pinned) != 0 || v.PinnedQuiet != 1 {
+		t.Errorf("want pinned omitted and pinned_quiet 1, got %+v", v)
+	}
+
+	// One open member flips the channel back into the band, and the count off.
+	addTask(t, "an instruction", "-e", mandate, "-s", "ready")
+	out, code = run(t, "brief")
+	if code != 0 {
+		t.Fatal(out)
+	}
+	if !strings.Contains(out, "📌 "+mandate) || strings.Contains(out, "quiet pinned") {
+		t.Errorf("a channel with an open member must be listed, not counted:\n%s", out)
+	}
+}

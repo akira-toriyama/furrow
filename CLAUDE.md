@@ -17,7 +17,8 @@ the user-level config. When you work with any furrow store:
   you; board-wide as to epics, since promised work is usually parked outside the
   focus, and lane-filter-free, though it obeys the repo scope), the epic header (`active`, the open+active
   epic(s) `next` scopes to; `pinned`, the open pinned channel(s) whose tasks
-  lead `next` regardless of the active scope; and `epics_declared`, which tells
+  lead `next` regardless of the active scope — only channels with an open
+  member are listed, the quiet rest collapsing to a `pinned_quiet` count; and `epics_declared`, which tells
   a non-participating board apart from "nothing active, so `next` is
   deliberately empty — except the pinned band"), the top
   `-n` (default 3) actionable tasks
