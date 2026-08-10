@@ -2293,6 +2293,55 @@ func normalizeNote(id, text string) (string, error) {
 	return text, nil
 }
 
+// SetBody replaces a task's ENTIRE body AND stamps Updated, in one call — the
+// non-interactive replacement path (`furrow edit <id> --body`). AddNote covers
+// the append case; this is the substitute for hand-editing the file EditPath
+// hands out, which leaves `updated` stale and makes the staleness signals
+// (revisit/lint reconcile-gap) blind to real progress. The write order matches
+// AddNote's for the same reason: body first, shard second, so a partial
+// failure costs a timestamp, never content, and a re-run replaces again and
+// fixes Updated.
+//
+// An empty/whitespace-only body is a validation error (exit 2) — a caller
+// piping an unset variable or a closed stream means a bug, and a body is
+// never cleared by accident. NotFound (exit 1) when id names no task.
+func (a *App) SetBody(id, text string) (*core.Task, error) {
+	text, err := normalizeBody(id, text)
+	if err != nil {
+		return nil, err
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, core.NotFound(id)
+	}
+	if err := a.saveBody(id, text); err != nil {
+		return nil, err
+	}
+	t.Updated = a.Clock.Now()
+	if err := a.Store.Save(idx); err != nil {
+		return nil, err
+	}
+	saved, _ := idx.Find(id)
+	return saved, nil
+}
+
+// normalizeBody normalizes a REPLACEMENT body: trailing newlines collapse to
+// exactly one (the marshaller's trailing-newline discipline, applied to
+// prose), and an empty/whitespace-only body is bad usage — replacing is never
+// clearing. Shared by SetBody and EpicSetBody so the two entities can never
+// diverge on what counts as a body.
+func normalizeBody(id, text string) (string, error) {
+	text = strings.TrimRight(text, "\n")
+	if strings.TrimSpace(text) == "" {
+		return "", core.Validationf(id, "replacement body is empty; a body is never cleared this way (append progress with `furrow note` instead)")
+	}
+	return text + "\n", nil
+}
+
 // appendBody appends text to a task's body as a new paragraph, separated from
 // existing content by exactly one blank line, whatever the body's current
 // trailing whitespace.

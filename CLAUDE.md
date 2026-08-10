@@ -209,7 +209,8 @@ the user-level config. When you work with any furrow store:
   `reorder --before/--after` that had to respace its lane adds a `renumbered`
   array (`[{id, from, to}]`) beside the envelope.
   **`--expect-updated <rfc3339>` is the stale-read guard on every task mutator**
-  (and `note`'s epic side): pass the `updated` stamp your read emitted, and if a
+  (and the epic side of the body writers, `note` / `edit --body`): pass the
+  `updated` stamp your read emitted, and if a
   co-writer got in between, the write still lands but the envelope gains
   `stale_read {expected, actual}` plus a stderr note — a warning, never a
   refusal (re-read and reconcile; don't lose the second edit too). One stamp =
