@@ -165,3 +165,54 @@ func TestBriefCarriesTheEpicHeaderAndLintRideAlong(t *testing.T) {
 		t.Errorf("lint ride-along must count the unfiled open tasks as epic-required, got %+v", b.Lint)
 	}
 }
+
+// TestBriefCollapsesQuietPinnedChannels: the pinned band lists only channels
+// with an OPEN member; the empty ones — a mandate inbox's healthy state —
+// collapse to PinnedQuiet, so a fleet of standing boxes is one count line, not
+// a band of inert headers, and nothing is hidden silently.
+func TestBriefCollapsesQuietPinnedChannels(t *testing.T) {
+	a, ids := briefBoard(t)
+	tr := func(b bool) *bool { return &b }
+
+	quiet, err := a.EpicAdd("quiet mandate", EpicAddOpts{Repos: []string{"o/r"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := a.EpicAdd("live mandate", EpicAddOpts{Repos: []string{"o/r"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{quiet.ID, live.ID} {
+		if _, _, err := a.EpicSet(id, EpicSetOpts{Standing: tr(true), Pinned: tr(true)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One open member makes `live` a speaking channel; `quiet` stays empty.
+	eid := live.ID
+	if _, _, err := a.Set(ids["ready-a"], SetOpts{Epic: &eid}); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := a.Brief(QueryOpts{}, 3, 0)
+	if err != nil {
+		t.Fatalf("Brief: %v", err)
+	}
+	if len(b.Pinned) != 1 || b.Pinned[0].Epic.ID != live.ID {
+		t.Fatalf("Pinned = %+v, want only the channel with an open member", b.Pinned)
+	}
+	if b.PinnedQuiet != 1 {
+		t.Errorf("PinnedQuiet = %d, want 1 (the empty box, counted not listed)", b.PinnedQuiet)
+	}
+
+	// Closing the live member turns that channel quiet too.
+	if _, err := a.Done(ids["ready-a"]); err != nil {
+		t.Fatal(err)
+	}
+	b, err = a.Brief(QueryOpts{}, 3, 0)
+	if err != nil {
+		t.Fatalf("Brief: %v", err)
+	}
+	if len(b.Pinned) != 0 || b.PinnedQuiet != 2 {
+		t.Errorf("after closing the member: Pinned = %+v, PinnedQuiet = %d, want 0 listed / 2 quiet", b.Pinned, b.PinnedQuiet)
+	}
+}

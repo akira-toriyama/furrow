@@ -23,7 +23,15 @@ type BriefData struct {
 	// scope (v7). Board-wide like NextScope's pinned band (pinning is not
 	// repo-slotted; the tasks repo-filter themselves), and deduped against
 	// Active so a box both active and pinned appears once, as the focus.
+	// Only channels with an OPEN member appear: an empty standing box is its
+	// healthy state (a mandate inbox sits empty most sessions), so a fleet of
+	// them would put a band of inert header lines on every brief. The rest
+	// collapse to PinnedQuiet — hidden, never silently.
 	Pinned []EpicItem
+	// PinnedQuiet counts the open pinned boxes Pinned omitted because every
+	// member is closed (or none exist) — the next_total pattern: a filter must
+	// keep the size of what it hid readable.
+	PinnedQuiet int
 	// Due is what has come DUE — overdue first, then today. It LEADS the read
 	// because a date is the one thing on this board that expires: everything else
 	// brief reports waits for you, a date passes without you. Deliberately not
@@ -127,10 +135,16 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		return nil, err
 	}
 	var pinned []EpicItem
+	quiet := 0
 	for _, it := range allItems {
-		if it.Epic.Pinned && !it.Epic.Active {
-			pinned = append(pinned, it)
+		if !it.Epic.Pinned || it.Epic.Active {
+			continue
 		}
+		if it.Progress.Total-it.Progress.Done == 0 {
+			quiet++
+			continue
+		}
+		pinned = append(pinned, it)
 	}
 
 	// Best-effort, exactly like sync's ride-along: orientation must not fail
@@ -144,6 +158,7 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		Active:        active,
 		EpicsDeclared: len(all) > 0,
 		Pinned:        pinned,
+		PinnedQuiet:   quiet,
 		Due:           due,
 		Next:          picks,
 		NextTotal:     total,
