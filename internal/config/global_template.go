@@ -29,7 +29,8 @@ const GlobalTemplate = `# furrow — user-level configuration (~/.config/furrow/
 # the repos under your tree. A central board is one .furrow that many repos use
 # WITHOUT each carrying its own .furrow or a .furrow-pointer.toml.
 #
-# furrow only READS this file; a half-written [[board]] is clamped away with a
+# Ordinary furrow commands only READ this file (` + "`furrow config set --user`" + `
+# edits one key of one [[board]] entry surgically); a half-written [[board]] is clamped away with a
 # warning (` + "`furrow lint`" + ` and ` + "`furrow config path`" + ` report it), never an error, so a
 # typo here can't break furrow in an unrelated directory.
 #

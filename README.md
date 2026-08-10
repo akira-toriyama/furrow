@@ -283,6 +283,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `lint` | Check index<->body consistency, lanes, deps, links, assets, and config | `--code`, `--exclude-code`, `--severity` |
 | `config init` | Write the user-level furrow config (central-board template) | `--path`, `--scope` |
 | `config path` | Print the resolved path to the user-level furrow config | — |
+| `config set <key> <value>` | Set one config key — the board's config.toml, or --user for a [[board]] entry | `--board`, `--user` |
 | `schema [task\|meta\|repo]` | Print the JSON Schema for a task shard, meta.json, or a repo review shard | — |
 | `version` | Print the furrow version (with build commit/date when stamped) | — |
 <!-- commands:end -->
@@ -716,7 +717,7 @@ Everything hosted-board-shaped is N/A here, and knowing the failure shapes saves
 
 ## Configuration
 
-`.furrow/config.toml` is the one human-edited file in the store. furrow only **reads** it (it never rewrites it) and applies a **clamp-don't-reject** policy: unknown keys are ignored and out-of-range values fall back to a safe default with a warning surfaced by `furrow lint` — so a typo can never break the tool.
+`.furrow/config.toml` is the one human-edited file in the store. Reads apply a **clamp-don't-reject** policy: unknown keys are ignored and out-of-range values fall back to a safe default with a warning surfaced by `furrow lint` — so a typo can never break the tool. The one command that WRITES it is **`furrow config set <key> <value>`** — a surgical, git-config-style edit (comments and every untouched byte survive; a multi-line value collapses to the new one-line value) that is strict where reads are lenient: an unknown key is exit 2 with the key vocabulary in `candidates`, and a value the reader would clamp away is refused *before* the write, so what you set is exactly what a read will honor. Dotted keys (`lanes.default`, `next.lanes`, `alias.<name>`; bare `standalone`); a list value is comma-split. `--user [--board <ref>]` targets a `[[board]]` entry of the user-level config instead (ref = path or scope, exact else unique substring, `candidates` on a miss). A board write rides the next `furrow sync` like every machine-written file.
 
 ```toml
 # standalone = false              # a local single-machine board (no remote / `furrow sync` / CI);

@@ -92,6 +92,12 @@ func Load(path string) (*Config, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	return LoadBytes(data, path)
+}
+
+// LoadBytes is Load over in-memory content — the validation half of `config
+// set`, which must know what a document WOULD mean before writing it.
+func LoadBytes(data []byte, path string) (*Config, []string, error) {
 	var r raw
 	unknown, err := decodeStrict(data, &r, path)
 	if err != nil {

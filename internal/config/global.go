@@ -94,6 +94,12 @@ func LoadGlobalBoards(path string) ([]GlobalBoard, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	return LoadGlobalBoardsBytes(data, path)
+}
+
+// LoadGlobalBoardsBytes is LoadGlobalBoards over in-memory content — the
+// validation half of `config set --user`.
+func LoadGlobalBoardsBytes(data []byte, path string) ([]GlobalBoard, []string, error) {
 	var r rawGlobal
 	unknown, err := decodeStrict(data, &r, path)
 	if err != nil {
@@ -258,4 +264,31 @@ func nonBlank(ss []string) []string {
 		}
 	}
 	return out
+}
+
+// UserBoardEntry is a [[board]] entry in FILE ORDER, unclamped — what `config
+// set --user` resolves a --board ref against and what maps a ref to the entry
+// index the surgical editor targets. Clamping would shift indices off the
+// file's own order, so this projection deliberately skips it; a file that does
+// not decode STRICTLY (type errors included) is an error here — the writer
+// refuses to edit a document it cannot fully read, where the reader would
+// salvage.
+type UserBoardEntry struct {
+	Path   string
+	Scopes []string
+}
+
+// UserBoardEntries parses the user config's [[board]] entries for the writer:
+// strict, file-ordered, unclamped. A missing file is (nil, nil) — nothing to
+// edit is the caller's message to give.
+func UserBoardEntries(data []byte, path string) ([]UserBoardEntry, error) {
+	var r rawGlobal
+	if _, err := decodeStrict(data, &r, path); err != nil {
+		return nil, fmt.Errorf("furrow config.toml: %w", err)
+	}
+	out := make([]UserBoardEntry, 0, len(r.Boards))
+	for _, b := range r.Boards {
+		out = append(out, UserBoardEntry{Path: b.Path, Scopes: b.Scopes})
+	}
+	return out, nil
 }

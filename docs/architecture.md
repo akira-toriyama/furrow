@@ -81,7 +81,7 @@ contract an agent does.
 | `cmd/furrow/main.go` | Entry point. Just `os.Exit(cli.Execute())` — no logic. |
 | `internal/cli` | cobra adapter and the **only** in-repo presentation layer: parse flags, call `app`, render (human table or `--json`/`--ndjson`), map errors to exit codes. Holds no task logic. A TUI/GUI is an out-of-repo front-end (ridge / loom) driving this same CLI/JSON contract. |
 | `internal/app` | Coordinator. Wires a `Store` + `Config` + `Clock`; exposes every mutation/query as a method. The **only** place that mutates state. |
-| `internal/config` | Loads `.furrow/config.toml` (read-only, clamp-don't-reject). Produces an effective `Config`. |
+| `internal/config` | Loads `.furrow/config.toml` (clamp-don't-reject). Produces an effective `Config`. Also owns the surgical single-key editor behind `furrow config set`, the one config writer. |
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
 | `internal/store/memstore` | In-memory `core.Store` for tests and `migrate --dry-run`. A normal non-test package. |
 | `internal/gitrepo` | git subprocess adapter behind `furrow sync`, `furrow doctor`'s freshness probe, and post-mutation autocommit (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
@@ -524,7 +524,7 @@ A `.furrow/` store directory contains:
                          stamped only on a fresh store (`init`) or by `furrow upgrade`;
                          an ordinary Save READS it (the write gate) and leaves it alone
   repos/               one review shard per repo (repos/<owner>__<repo>.json) — MarshalRepo
-  config.toml          human config (read-only from furrow's side)
+  config.toml          human config (written only by `furrow config set`)
   archive/             a sibling sharded store: aged done tasks moved out of the hot store
 ```
 
@@ -999,7 +999,7 @@ for the file's shape; what follows here is the *resolution mechanism* behind it.
 
 Resolution is split across two layers, honouring the purity rule:
 
-- **`internal/config` (pure, read-only)** parses the `[[board]]` array and
+- **`internal/config` (pure; reads everywhere, writes only for `config set`)** parses the `[[board]]` array and
   **clamps per entry**: an entry with no `path`, or no `scopes` after blank
   strings are pruned, is dropped with a warning; if every entry is dropped the
   result is "no central board" (`nil`). It never touches cwd, the filesystem, or
@@ -1125,9 +1125,10 @@ The retired `label = "auto"` mode is a reserved tombstone: ignored with a
 warning pointing at `repo = "auto"` (a board's `label` is only a literal
 add-time tag now).
 
-**Writing and validating it.** `furrow config init` scaffolds this file — the
-single exception to "config is read-only", exactly like `furrow init` writing a
-board's `config.toml` (both write through `internal/app`, not a new fs path). Run
+**Writing and validating it.** `furrow config init` scaffolds this file and
+`furrow config set --user` edits one key of one `[[board]]` entry surgically —
+the two exceptions to "config is read-only", exactly like `furrow init` writing
+a board's `config.toml` (all write through `internal/app`, not a new fs path). Run
 inside a board it derives the `path` (nearest enclosing `.furrow`) and `scopes`
 (that board repo's parent) from context; `--path`/`--scope` override; elsewhere it
 writes the commented placeholder — the `config.GlobalTemplate` const, mirrored at
