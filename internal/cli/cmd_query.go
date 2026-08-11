@@ -465,13 +465,20 @@ func newBriefCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "brief",
-		Short: "One-shot session-orient read: active epic, next picks with bodies, blocked, revisit, drafts",
+		Short: "One-shot session-orient read: due band, active/pinned epics, next picks with bodies, blocked, revisit, drafts",
 		Long: "Answer \"where am I?\" in ONE process at session start — the sync → next →\n" +
 			"show ritual folded into a single read. Each section keeps the\n" +
-			"contract of the command it summarizes: `active` = the open+active epic(s)\n" +
+			"contract of the command it summarizes: `due` LEADS the read —\n" +
+			"{overdue, today}, longest-overdue first, board-wide as to epics and\n" +
+			"lane-filter-free (dated work is usually parked outside the focus; a date\n" +
+			"is the one thing on the board that EXPIRES), omitted when nothing has\n" +
+			"arrived; `active` = the open+active epic(s)\n" +
 			"next scopes to, with their member roll-up (epics_declared tells a\n" +
 			"non-participating board apart from \"nothing active, so next is\n" +
-			"deliberately empty\"); `next` = the top -n actionable tasks\n" +
+			"deliberately empty\"); `pinned` = the open pinned channel(s) whose\n" +
+			"actionable tasks lead next regardless of the active scope (shown even\n" +
+			"with nothing active; pinned_quiet counts the ones with no open work);\n" +
+			"`next` = the top -n actionable tasks\n" +
 			"(next's predicate) WITH their bodies (show's body_text — the follow-up read\n" +
 			"folded in), plus next_total, the uncapped count, so the cap never hides the\n" +
 			"queue size; `blocked` = next-lane tasks with an unsatisfied dep and their\n" +

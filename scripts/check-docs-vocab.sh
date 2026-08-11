@@ -51,6 +51,10 @@
 # deliberately OUT of the guard's scope: the docs point at the canonical
 # config.toml instead of copying subkeys, and the init-template byte-diff in
 # check-live.sh guards that file.
+# Cobra help strings (Use/Short/Long) are also NOT guarded: they live in the
+# same .go files as the registries they describe, so review sees them move —
+# and the two rots found anyway (schema epic, brief's due/pinned) were fixed
+# by hand rather than by growing a help-scanning guard.
 #
 # A vocabulary can still be legitimately unclaimed, but no longer for being
 # partial — that is what `subset` is for. What genuinely cannot be claimed is a

@@ -57,7 +57,7 @@ library.
                   imports: stdlib only
 
    leaves (imported where needed, depend on nothing internal of note):
-     internal/schema   JSON Schema source ( `furrow schema [task|meta|repo]` )
+     internal/schema   JSON Schema source ( `furrow schema [task|meta|repo|epic]` )
      internal/version  build version string (ldflags-injected)
      internal/migrate  pure Task.md parser behind `furrow migrate`
      internal/query    pure `-q` typed-query parser (lexer+parser -> AST);
@@ -86,7 +86,7 @@ contract an agent does.
 | `internal/store/memstore` | In-memory `core.Store` for tests and `migrate --dry-run`. A normal non-test package. |
 | `internal/gitrepo` | git subprocess adapter behind `furrow sync`, `furrow doctor`'s freshness probe, and post-mutation autocommit (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough), the in-memory `Marshal`, the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
-| `internal/schema` | The JSON Schemas for a task shard, `meta.json`, and a repo review shard as Go constants; emitted by `furrow schema [task|meta|repo]`. |
+| `internal/schema` | The JSON Schemas for a task shard, `meta.json`, a repo review shard, and an epic shard as Go constants; emitted by `furrow schema [task|meta|repo|epic]`. |
 | `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |
 | `internal/query` | Pure parser (stdlib only) for the `-q` typed-query DSL: a flat AND-list of `field:value` terms (comma=OR, `-`=NOT, `has:`/`no:`, `is:`) → an AST. It knows the GRAMMAR, not furrow's fields; `internal/app`'s `compileQuery` binds each term to a task predicate (validating fields/lanes, exit 2 + candidates on a miss) against the index, the `Clock` (relative dates, `is:stale`), and the store's bodies (loaded on demand, only by terms that read them). One compiled predicate serves every filtering read — `ls`/`next`/`revisit`/`stats`/`search`. |
 | `internal/gittest` | Test-only helper: `Isolate()` neutralizes global/system git config at the process-env level (called from `TestMain`) so real-git tests — especially `App.Sync`'s subprocess — don't flake on a developer's `commit.gpgsign`/`core.hooksPath`. Imported only by `_test.go` files. |
@@ -322,10 +322,11 @@ change from the other direction, and the same flag day.)
 - **Golden round-trip test.** `internal/core/core_test.go` asserts that marshalling
   the fixture index produces `testdata/index.golden.json` byte-for-byte (write →
   read → write stays identical).
-- **Schema drift test.** `furrow schema [task|meta|repo]` prints
-  `internal/schema.TaskV2` / `internal/schema.MetaV2` (JSON Schema draft 2020-12);
-  `docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v2.json` are
-  committed copies of the same bytes, and CI diffs both so they cannot drift.
+- **Schema drift test.** `furrow schema [task|meta|repo|epic]` prints
+  `internal/schema.TaskV2` / `MetaV2` / `RepoV1` / `EpicV2` (JSON Schema draft
+  2020-12); `docs/schema/furrow.task.v2.json`, `furrow.meta.v2.json`,
+  `furrow.repo.v1.json`, and `furrow.epic.v2.json` are
+  committed copies of the same bytes, and CI diffs all four so they cannot drift.
 - **Struct-fingerprint golden.** `TestShardFieldsGolden`
   (`internal/core/schema_fields_test.go`, frozen in
   `testdata/shard-fields.golden`) records every persisted type's json keys **in
