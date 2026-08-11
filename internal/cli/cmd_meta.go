@@ -32,8 +32,8 @@ func newVersionCmd() *cobra.Command {
 
 func newSchemaCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "schema [task|meta|repo]",
-		Short: "Print the JSON Schema for a task shard, meta.json, or a repo review shard",
+		Use:   "schema [task|meta|repo|epic]",
+		Short: "Print the JSON Schema for a task shard, meta.json, a repo review shard, or an epic shard",
 		Long: "Print the JSON Schema (draft 2020-12) for the store's files. With no\n" +
 			"argument (or \"task\") it prints the schema for one .furrow/tasks/<id>.json\n" +
 			"shard; \"meta\" prints the schema for .furrow/meta.json; \"repo\" prints the\n" +

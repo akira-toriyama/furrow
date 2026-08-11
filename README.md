@@ -245,7 +245,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `ls [<epic>]` (alias `list`) | List tasks (canonical lane->priority->id order), or group them by epic with --tree | `--actionable`, `--archived`, `--blocked`, `--drafts`, `-e/--epic`, `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `--reverse`, `--since`, `--sort`, `-s/--status`, `--tree`, `--until` |
 | `show <id>...` | Show tasks or epics with metadata and markdown body (batch-friendly) | `--archived`, `--backlinks`, `--no-body` |
 | `next` | Show actionable tasks (in the next-lanes, all deps done, in the active epic) | `--all-epics`, `-e/--epic`, `-l/--label`, `--lanes`, `-n/--limit`, `-q/--query`, `-r/--repo` |
-| `brief` | One-shot session-orient read: active epic, next picks with bodies, blocked, revisit, drafts | `-l/--label`, `-n/--limit`, `-r/--repo`, `--stale-days` |
+| `brief` | One-shot session-orient read: due band, active/pinned epics, next picks with bodies, blocked, revisit, drafts | `-l/--label`, `-n/--limit`, `-r/--repo`, `--stale-days` |
 | `revisit` | List open tasks needing re-evaluation (agent re-weighing signal) | `-e/--epic`, `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `--stale-days` |
 | `search <term>` | Full-text search over task titles and bodies | `--archived`, `-e/--epic`, `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `-s/--status` |
 | `stats` | Summarize the board: counts by lane, repo, and label | `-e/--epic`, `-l/--label`, `-q/--query`, `-r/--repo`, `--since`, `-s/--status`, `--until` |
@@ -286,7 +286,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `config init` | Write the user-level furrow config (central-board template) | `--path`, `--scope` |
 | `config path` | Print the resolved path to the user-level furrow config | — |
 | `config set <key> <value>` | Set one config key — the board's config.toml, or --user for a [[board]] entry | `--board`, `--user` |
-| `schema [task\|meta\|repo]` | Print the JSON Schema for a task shard, meta.json, or a repo review shard | — |
+| `schema [task\|meta\|repo\|epic]` | Print the JSON Schema for a task shard, meta.json, a repo review shard, or an epic shard | — |
 | `version` | Print the furrow version (with build commit/date when stamped) | — |
 <!-- commands:end -->
 

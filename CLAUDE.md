@@ -559,10 +559,12 @@ checkout — and it carries no board-side `auto_filter`: declaring the scope
 declares it for reads too (`-r ''` is the per-command escape).
 
 ### Schema
-`internal/schema.TaskV2` and `internal/schema.MetaV2` are the sources of the JSON
-Schemas; `furrow schema [task|meta|repo]` prints them (no arg or `task` = the shard
-schema; `meta` = the `meta.json` schema) and CI diffs them against
-`docs/schema/furrow.task.v2.json` and `docs/schema/furrow.meta.v2.json`. Change a
+`internal/schema.TaskV2` / `MetaV2` / `RepoV1` / `EpicV2` are the sources of the
+JSON Schemas; `furrow schema [task|meta|repo|epic]` prints them (no arg or
+`task` = the shard schema; `meta` = the `meta.json` schema; `repo` = a repos/
+review shard; `epic` = an epics/ shard) and CI diffs all four against
+`docs/schema/furrow.task.v2.json`, `furrow.meta.v2.json`, `furrow.repo.v1.json`,
+and `furrow.epic.v2.json`. Change a
 struct → update the schema const, the committed file, and the golden together.
 A task carries a first-class `repos` set (owner/repo identifiers, same
 sorted+deduped/[]-not-null semantics as labels; `[]` = draft). Labels are pure
