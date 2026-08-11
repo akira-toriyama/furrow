@@ -653,3 +653,103 @@ func TestAutoCommitSkipsMidOperation(t *testing.T) {
 		t.Errorf("autocommit staged board files during a foreign operation:\n%s", staged)
 	}
 }
+
+// The touched-bodies journal carries "furrow itself wrote this body" across
+// processes: `furrow note` in one process, plain `furrow sync` in the next
+// (t-dw9v — the progress record CLAUDE.md tells agents to keep in the body was
+// exactly what a plain sync left unpublished). A co-located operator's hand
+// edit must still stay pending in the same sync.
+func TestSyncPublishesJournaledBodiesButNotHandEdits(t *testing.T) {
+	git, cloneA, cloneB := setupClones(t)
+
+	a := openBoard(t, cloneA)
+	t1, err := a.Add("mine", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t2, err := a.Add("theirs", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+
+	// Process 1: furrow's own write (note → body + shard), then the process
+	// ends — the CLI's post-run journals what autocommit did not commit.
+	if _, err := a.AddNote(t1.ID, "progress: step 3 done, resume at parser"); err != nil {
+		t.Fatal(err)
+	}
+	a.JournalTouchedBodies(context.Background())
+
+	// Meanwhile a co-located operator hand-edits t2's body (no furrow write).
+	handEdit := filepath.Join(cloneA, ".furrow", "bodies", t2.ID+".md")
+	if err := os.WriteFile(handEdit, []byte("# theirs\n\nWIP prose, not furrow's to publish\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Process 2: a PLAIN sync — no -b, no --all-bodies.
+	b := openBoard(t, cloneA)
+	p, err := b.Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatalf("plain sync: %v", err)
+	}
+	if !slices.Contains(p.CommittedBodies, t1.ID) {
+		t.Errorf("furrow's own note must be committed by a plain sync: %+v", p)
+	}
+	if !slices.Contains(p.PendingBodies, t2.ID) || slices.Contains(p.CommittedBodies, t2.ID) {
+		t.Errorf("the hand edit must stay pending: committed=%v pending=%v", p.CommittedBodies, p.PendingBodies)
+	}
+
+	// The other machine reads the note's prose.
+	runGitT(t, git, cloneB, "pull", "-q")
+	remote, err := os.ReadFile(filepath.Join(cloneB, ".furrow", "bodies", t1.ID+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(remote), "resume at parser") {
+		t.Errorf("clone B must read the note, got:\n%s", remote)
+	}
+
+	// The journal is consumed: a THIRD sync must not re-name t1 (nothing dirty),
+	// and the hand edit is still the only pending body.
+	c := openBoard(t, cloneA)
+	p2, err := c.Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatalf("third sync: %v", err)
+	}
+	if len(p2.CommittedBodies) != 0 {
+		t.Errorf("nothing furrow-written is dirty anymore: %+v", p2)
+	}
+	if !slices.Contains(p2.PendingBodies, t2.ID) {
+		t.Errorf("the hand edit still pends: %+v", p2)
+	}
+}
+
+// A journaled body later published by other means (here: an explicit -b sync)
+// must fall out of the journal instead of being re-committed forever; a clean
+// tree clears the journal outright.
+func TestSyncJournalDrainsOnCleanTree(t *testing.T) {
+	_, cloneA, _ := setupClones(t)
+	a := openBoard(t, cloneA)
+	t1, err := a.Add("one", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.AddNote(t1.ID, "note rides the same sync as the add"); err != nil {
+		t.Fatal(err)
+	}
+	a.JournalTouchedBodies(context.Background())
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	// Everything published; the next sync sees a clean tree and an empty (or
+	// absent) journal — committing nothing.
+	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Committed || len(p.CommittedBodies) != 0 || len(p.PendingBodies) != 0 {
+		t.Errorf("clean tree must sync clean: %+v", p)
+	}
+}

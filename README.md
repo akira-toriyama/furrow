@@ -560,7 +560,11 @@ non-interactive command — a thin git wrapper, not a sync daemon or server
    `bodies/<id>.md` is committed **only when it is new or named with `-b/--body`**
    — a merely-modified body is left for its author (surfaced in `pending_bodies`)
    so a shared checkout never commits a co-located operator's in-progress prose
-   under the wrong author. A file furrow does not own — an editor swap file, a
+   under the wrong author. A body **furrow itself wrote** (`note`,
+   `edit --body`, `done --note`, an `apply` annotation) is not someone's WIP:
+   the writing command records the id in a per-checkout journal (inside
+   `.git/`, never synced), and a plain sync commits those bodies as if named
+   with `-b` — recorded fact, never a guess from content or mtime. A file furrow does not own — an editor swap file, a
    backup `~`, a stray `.tmp-*` — is **never** committed (a push cannot be
    un-published) and is disclosed in `foreign_files` plus a stderr note.
    `--all-bodies` restores the old sweep for a checkout

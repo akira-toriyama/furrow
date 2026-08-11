@@ -514,6 +514,18 @@ func isNonFastForward(stderr string) bool {
 		strings.Contains(s, "[rejected]")
 }
 
+// GitPath resolves name to its absolute location inside this repo's git
+// directory (`git rev-parse --git-path`) — worktree-aware, so per-checkout
+// local state (e.g. app's touched-bodies journal) lands beside the checkout
+// that owns it, invisible to `git status` and to sync.
+func (r *Repo) GitPath(ctx context.Context, name string) (string, error) {
+	out, stderr, err := runGit(ctx, r.git, r.top, "rev-parse", "--git-path", name)
+	if err != nil {
+		return "", gitFailed("git rev-parse --git-path: %s", firstLine(stderr))
+	}
+	return r.absGitPath(out), nil
+}
+
 // absGitPath resolves `git rev-parse --git-path` output (relative to the
 // toplevel for a normal repo) to an absolute path.
 func (r *Repo) absGitPath(out string) string {

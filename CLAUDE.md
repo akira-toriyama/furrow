@@ -245,13 +245,18 @@ the user-level config. When you work with any furrow store:
   always commit — a file furrow does not own (an editor swap, a backup `~`, a
   stray `.tmp-*`) is NEVER committed and is disclosed in `foreign_files` plus a
   stderr note — but a **merely-modified `bodies/<id>.md` is committed only when
-  named with `-b/--body <id>` or swept with `--all-bodies`** — on a shared
+  named with `-b/--body <id>`, swept with `--all-bodies`, or written by furrow
+  ITSELF** — `note` / `edit --body` / `done --note` / `apply` journal the id
+  per-checkout (inside `.git/`, never synced) and a plain sync publishes those
+  bodies unnamed, so the progress record `furrow note` keeps now travels
+  without `-b`. On a shared
   checkout a plain sync must not commit a co-located operator's in-progress
   prose under the wrong author. A skipped body is listed in the JSON
   `pending_bodies` field (its twin `committed_bodies` lists what was committed)
   and in a stderr note, while sync still exits 0 and pushes everything else —
   so after hand-editing a body, run `furrow sync -b <id>` (or check
-  `pending_bodies`); a plain `furrow sync` would leave that edit local. Because
+  `pending_bodies`); a plain `furrow sync` would leave that HAND edit local
+  (furrow-written bodies ride unnamed via the journal — see above). Because
   `pushed: true` at exit 0 can still hide such a leftover, the progress object
   also carries **`complete`** (false whenever `pending_bodies` **or**
   `pending_stash` is non-empty) and the stdout summary line names the count —

@@ -756,7 +756,10 @@ except where noted:
   `bodies/assets/`, the board git dotfiles, and the `archive/` store's copies)
   and brand-new (untracked) bodies always commit,
   while a merely-modified `bodies/<id>.md` commits only when named with
-  `-b/--body <id>` or under `--all-bodies`, and is otherwise left for its
+  `-b/--body <id>`, under `--all-bodies`, or recorded in the per-checkout
+  touched-bodies journal (a body furrow itself wrote via `note` /
+  `edit --body` / `done --note` / `apply` — the writing command journals the
+  id inside `.git/`, and sync consumes it), and is otherwise left for its
   author and reported in `pending_bodies` plus a stderr note; a file furrow
   does not own (an editor swap, a backup `~`, a stray `.tmp-*`) is never
   committed and is disclosed in `foreign_files` plus a stderr note — then `fetch` +

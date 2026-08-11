@@ -128,7 +128,10 @@ func newSyncCmd() *cobra.Command {
 			"     (tasks/, meta.json) are always committed; a hand-edited bodies/<id>.md\n" +
 			"     is committed only when it is new or named with -b/--body — a merely\n" +
 			"     modified body is left for its author (listed in pending_bodies) so a\n" +
-			"     shared checkout never commits a co-located operator's WIP. --all-bodies\n" +
+			"     shared checkout never commits a co-located operator's WIP — except a\n" +
+			"     body furrow ITSELF wrote (note / edit --body / done --note / apply):\n" +
+			"     the writing command journals the id per-checkout and a plain sync\n" +
+			"     publishes it as if named with -b. --all-bodies\n" +
 			"     restores the old sweep for a checkout you know is yours alone. A file\n" +
 			"     furrow does not own (an editor swap, a backup ~, a stray .tmp-*) is\n" +
 			"     never committed and is disclosed in foreign_files + a stderr note.\n" +
