@@ -21,9 +21,13 @@ module="$(awk '/^module /{print $2; exit}' go.mod)"
 verpkg="$module/internal/version"
 
 # (1a) the version-package path is named in every build config (build.sh names it
-# once as PKG=… then uses ${PKG}; the others inline it).
+# once as PKG=… then uses ${PKG}; the others inline it). The path must end
+# THERE — followed by a non-path character (the `.Var=` dot, a quote) or the
+# end of the line — because a substring grep also accepts `internal/versionXX`,
+# which -X stamps into nothing while the guard stays green (measured).
+verpkg_re="$(printf '%s' "$verpkg" | sed 's/[.[\*^$()+?{}|]/\\&/g')"
 for f in .goreleaser.yaml build.sh flake.nix; do
-	grep -q "$verpkg" "$f" || note "$f no longer names the ldflags target path $verpkg (package moved?)"
+	grep -Eq "${verpkg_re}($|[^A-Za-z0-9_/-])" "$f" || note "$f no longer names the ldflags target path $verpkg as a whole path (package moved or path extended?)"
 done
 
 # (1b) that path resolves to a real package declaring the stamped vars, so a
