@@ -153,6 +153,13 @@ type SyncProgress struct {
 	// back (see strandedStash). The stash twin of PendingBodies: a leftover is
 	// always reported machine-readably, never left to be noticed. Omitted when empty.
 	PendingStash []StashEntry `json:"pending_stash,omitempty"`
+	// ForeignFiles lists dirty paths inside .furrow/ that furrow does not own —
+	// an editor swap file, a backup ~, a crashed write's .tmp-* — deliberately
+	// NEVER committed (a commit cannot be un-published; the pre-allowlist sync
+	// pushed exactly these). Disclosed here and in a stderr note rather than
+	// silently skipped; delete them or move them out to quiet the report. They
+	// are not board content, so they do not affect Complete. Omitted when empty.
+	ForeignFiles []string `json:"foreign_files,omitempty"`
 	// Switches lists the `furrow epic activate` records this sync is publishing —
 	// the switch log's EXIT point. EpicActivate appends each switch to the epic's
 	// body (recordSwitch); sync reads the unpushed commits for those lines, so a
@@ -226,23 +233,30 @@ type StashEntry struct {
 }
 
 // partitionSync splits the dirty .furrow paths into what the auto-commit should
-// stage. Machine-written files (tasks/, meta.json, config.toml — everything that
-// is not a body) are always committed: they are deterministic and complete by
-// construction. A hand-edited bodies/<id>.md is committed only when it is
-// brand-new (an add/retitle seed, still untracked) or explicitly opted in
+// stage. Machine-written files — an ALLOWLIST of the shapes furrow itself
+// writes: tasks/epics/repos shards, meta.json, config.toml, the board-level git
+// dotfiles, bodies/assets/ blobs, and the archive/ store's copies of the same
+// (see machineSyncPath) — are always committed: they are deterministic and
+// complete by construction. A hand-edited bodies/<id>.md is committed only when
+// it is brand-new (an add/retitle seed, still untracked) or explicitly opted in
 // (opts.Bodies or opts.AllBodies); an otherwise-modified body is left
 // uncommitted and returned in pendingBodies, so a shared checkout never sweeps a
-// co-located operator's in-progress prose under the wrong author. commitPaths
-// are the pathspecs to stage; committedBodies/pendingBodies are affected ids,
-// sorted (nil when empty, so SyncProgress omits them).
-func partitionSync(spec string, changes []gitrepo.Change, opts SyncOpts) (commitPaths, committedBodies, pendingBodies []string) {
+// co-located operator's in-progress prose under the wrong author. Everything
+// else — an editor swap file, a backup ~, a crashed atomicWrite's .tmp-* — is
+// FOREIGN: never committed (a push cannot be un-published), returned in foreign
+// so the caller can disclose the skip instead of silently publishing junk (the
+// old rule was "everything that is not a body", which pushed vim swaps).
+// commitPaths are the pathspecs to stage; committedBodies/pendingBodies are
+// affected ids and foreign is repo-relative paths, all sorted (nil when empty,
+// so SyncProgress omits them).
+func partitionSync(spec string, changes []gitrepo.Change, opts SyncOpts) (commitPaths, committedBodies, pendingBodies, foreign []string) {
 	bodiesPrefix := spec + "/bodies/"
 	named := make(map[string]bool, len(opts.Bodies))
 	for _, id := range opts.Bodies {
 		named[id] = true
 	}
 	for _, ch := range changes {
-		if body, isBody := strings.CutPrefix(ch.Path, bodiesPrefix); isBody && strings.HasSuffix(body, ".md") {
+		if body, isBody := strings.CutPrefix(ch.Path, bodiesPrefix); isBody && strings.HasSuffix(body, ".md") && !strings.Contains(body, "/") {
 			id := strings.TrimSuffix(body, ".md")
 			if ch.Untracked || opts.AllBodies || named[id] {
 				commitPaths = append(commitPaths, ch.Path)
@@ -252,11 +266,62 @@ func partitionSync(spec string, changes []gitrepo.Change, opts SyncOpts) (commit
 			}
 			continue
 		}
-		commitPaths = append(commitPaths, ch.Path) // machine-written: always safe
+		if machineSyncPath(spec, ch.Path) {
+			commitPaths = append(commitPaths, ch.Path)
+			continue
+		}
+		foreign = append(foreign, ch.Path)
 	}
 	sort.Strings(committedBodies)
 	sort.Strings(pendingBodies)
-	return commitPaths, committedBodies, pendingBodies
+	sort.Strings(foreign)
+	return commitPaths, committedBodies, pendingBodies, foreign
+}
+
+// machineSyncPath says whether a dirty repo-relative path under the board dir
+// (spec) is a file furrow itself writes, and so is always safe to auto-commit.
+// The shapes are exactly what fsstore owns: the three shard kinds
+// (tasks|epics|repos/*.json), meta.json, config.toml, the board-level git
+// dotfiles (.gitattributes is scaffolded by init; a hand-added .gitignore is
+// the same board-level class), and attach's bodies/assets/ blobs. The archive/
+// store nests the same shapes one level down — plus its bodies/*.md, which only
+// `furrow archive` moves, so they are machine-written there. Top-level
+// bodies/*.md is deliberately NOT here: that is the hand-editable class
+// partitionSync routes through the body opt-in rules.
+func machineSyncPath(spec, path string) bool {
+	rel, ok := strings.CutPrefix(path, spec+"/")
+	if !ok {
+		return false
+	}
+	if arel, isArchive := strings.CutPrefix(rel, "archive/"); isArchive {
+		if body, isBody := strings.CutPrefix(arel, "bodies/"); isBody && strings.HasSuffix(body, ".md") && !strings.Contains(body, "/") {
+			return true // an archived body moves only by `furrow archive`
+		}
+		return machineSyncRel(arel)
+	}
+	return machineSyncRel(rel)
+}
+
+// machineSyncRel is machineSyncPath's per-store rule, on a path relative to one
+// store root (the board dir or its archive/).
+func machineSyncRel(rel string) bool {
+	switch rel {
+	case "meta.json", "config.toml", ".gitattributes", ".gitignore":
+		return true
+	}
+	dir, file, found := strings.Cut(rel, "/")
+	if !found {
+		return false
+	}
+	switch dir {
+	case "tasks", "epics", "repos":
+		return strings.HasSuffix(file, ".json") && !strings.Contains(file, "/")
+	case "bodies":
+		// attach's blobs; bodies/*.md is the caller's hand-editable class.
+		asset, isAsset := strings.CutPrefix(file, "assets/")
+		return isAsset && !strings.Contains(asset, "/")
+	}
+	return false
 }
 
 // autostashCommits is the cheap BEFORE probe: the oids of the autostash entries
@@ -506,8 +571,9 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 		return p, err
 	}
 	if len(changes) > 0 {
-		commitPaths, committedBodies, pendingBodies := partitionSync(spec, changes, opts)
+		commitPaths, committedBodies, pendingBodies, foreign := partitionSync(spec, changes, opts)
 		p.PendingBodies = pendingBodies // reported even when there is nothing else to commit
+		p.ForeignFiles = foreign
 		if len(commitPaths) > 0 {
 			// Never publish a half-merged body (see guardBodyMarkers). This runs
 			// BEFORE the commit, so a refused sync has changed nothing at all.
@@ -689,6 +755,9 @@ func (p *SyncProgress) SyncSummary() string {
 	}
 	if n := len(p.PendingStash); n > 0 {
 		s += fmt.Sprintf(" pending_stash=%d", n)
+	}
+	if n := len(p.ForeignFiles); n > 0 {
+		s += fmt.Sprintf(" foreign_files=%d", n)
 	}
 	return s
 }

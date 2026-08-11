@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -464,5 +465,76 @@ func TestSyncInterruptedByCancelledContext(t *testing.T) {
 	}
 	if p.Pushed {
 		t.Errorf("progress must not report pushed on an interrupted sync: %+v", p)
+	}
+}
+
+// The pre-allowlist partition rule was "everything that is not a body is
+// machine-written", which happily published an editor's swap file, a backup ~,
+// and a crashed atomicWrite's .tmp-* — and a commit cannot be un-published.
+// The allowlist leaves them in the working tree and disclosures ride in
+// foreign_files + the summary line (t-4dgc pinned all three shapes).
+func TestSyncSkipsForeignFilesInStore(t *testing.T) {
+	git, cloneA, _ := setupClones(t)
+	a := openBoard(t, cloneA)
+	t1, err := a.Add("task one", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+
+	junk := []string{
+		".furrow/bodies/." + t1.ID + ".md.swp",
+		".furrow/bodies/" + t1.ID + ".md~",
+		".furrow/tasks/.tmp-999999",
+	}
+	for _, f := range junk {
+		if err := os.WriteFile(filepath.Join(cloneA, f), []byte("junk"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A real mutation alongside, so the sync has something legitimate to commit.
+	t2, err := a.Add("task two", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := a.Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if !p.Committed || !p.Pushed {
+		t.Fatalf("the legitimate shard must still commit and push: %+v", p)
+	}
+	if !slices.Contains(p.CommittedBodies, t2.ID) {
+		t.Errorf("t2's new body must ride along: %v", p.CommittedBodies)
+	}
+	// The junk is disclosed, sorted, and NOT in the commit or the index.
+	want := append([]string(nil), junk...)
+	sort.Strings(want)
+	if !slices.Equal(p.ForeignFiles, want) {
+		t.Errorf("ForeignFiles = %v; want %v", p.ForeignFiles, want)
+	}
+	committed := runGitT(t, git, cloneA, "show", "--name-only", "--format=", "HEAD")
+	tracked := runGitT(t, git, cloneA, "ls-files")
+	for _, f := range junk {
+		if strings.Contains(committed, filepath.Base(f)) {
+			t.Errorf("%s must not be in the sync commit:\n%s", f, committed)
+		}
+		if strings.Contains(tracked, filepath.Base(f)) {
+			t.Errorf("%s must not be tracked at all:\n%s", f, tracked)
+		}
+		if strings.TrimSpace(runGitT(t, git, cloneA, "status", "--porcelain", "--", f)) == "" {
+			t.Errorf("%s must remain dirty in the working tree (not swept, not deleted)", f)
+		}
+	}
+	// Foreign junk is not board content: the sync is still complete, but the
+	// summary line names the skip on the same line that claims success.
+	if !p.Complete {
+		t.Errorf("Complete must stay true — foreign files are not board content: %+v", p)
+	}
+	if !strings.Contains(p.SyncSummary(), "foreign_files=3") {
+		t.Errorf("summary must name the skip, got %q", p.SyncSummary())
 	}
 }

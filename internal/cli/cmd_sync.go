@@ -129,7 +129,9 @@ func newSyncCmd() *cobra.Command {
 			"     is committed only when it is new or named with -b/--body — a merely\n" +
 			"     modified body is left for its author (listed in pending_bodies) so a\n" +
 			"     shared checkout never commits a co-located operator's WIP. --all-bodies\n" +
-			"     restores the old sweep for a checkout you know is yours alone.\n" +
+			"     restores the old sweep for a checkout you know is yours alone. A file\n" +
+			"     furrow does not own (an editor swap, a backup ~, a stray .tmp-*) is\n" +
+			"     never committed and is disclosed in foreign_files + a stderr note.\n" +
 			"  2. git fetch, then git rebase --autostash @{u} (onto the tracking ref, not\n" +
 			"     FETCH_HEAD, so a co-writer's concurrent fetch can't race it)\n" +
 			"  3. git push (one pull→push retry on non-fast-forward)\n\n" +
@@ -216,6 +218,10 @@ func newSyncCmd() *cobra.Command {
 				}
 				if len(prog.PendingBodies) > 0 {
 					fmt.Fprintln(errOut, pendingBodiesNote(prog.PendingBodies))
+				}
+				if len(prog.ForeignFiles) > 0 {
+					fmt.Fprintf(errOut, "note: %d foreign file(s) in .furrow/ left uncommitted (%s) — not furrow's to publish; delete them or move them out\n",
+						len(prog.ForeignFiles), strings.Join(prog.ForeignFiles, ", "))
 				}
 				// A stranded autostash is reported on EVERY sync, not just the one that
 				// stranded it: the entry sits there silently until someone pops it, and

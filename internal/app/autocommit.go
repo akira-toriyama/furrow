@@ -94,8 +94,12 @@ func (a *App) AutoCommitFlush(ctx context.Context, cmd string, args []string) *A
 		return res // a mutation that changed no bytes (e.g. `set` to the same value) — silent
 	}
 
-	commitPaths, committedBodies, pendingBodies := partitionSync(spec, changes, SyncOpts{Bodies: a.touchedBodyIDs()})
+	commitPaths, committedBodies, pendingBodies, foreign := partitionSync(spec, changes, SyncOpts{Bodies: a.touchedBodyIDs()})
 	res.PendingBodies = pendingBodies
+	if len(foreign) > 0 {
+		warn("%d foreign file(s) in .furrow/ left uncommitted (%s) — not furrow's to publish; delete them or move them out",
+			len(foreign), strings.Join(foreign, ", "))
+	}
 	// Never publish a body still carrying conflict markers — a commit cannot be
 	// un-published, and autocommit runs unattended. Unlike sync's guard (exit 2,
 	// PRE-write), this is best-effort: warn, drop that one body from the commit,
