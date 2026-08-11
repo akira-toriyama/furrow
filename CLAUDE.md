@@ -215,6 +215,15 @@ the user-level config. When you work with any furrow store:
   task, no envelope) — so an explicit arg is never silently rounded. A relative
   `reorder --before/--after` that had to respace its lane adds a `renumbered`
   array (`[{id, from, to}]`) beside the envelope.
+  **A mutation that changes nothing leaves `updated` alone** — re-adding a label
+  the task already carries, moving it into the lane it is already in, re-setting
+  a score to the value it holds, `done` on an already-closed task: `changed` is
+  `[]`, the shard is not rewritten, and the staleness clocks (`is:stale`,
+  `revisit`'s stale, `lint`'s `reconcile-gap`, `ls --since`) keep their reading,
+  so an idempotent retry costs the shared board nothing. The write paths that
+  touch PROSE (`note`, `done --note`, `edit --body`) always advance it — the body
+  is the entity's content but lives outside the shard, so the comparison cannot
+  see it. Boxes obey the same rule.
   **`--expect-updated <rfc3339>` is the stale-read guard on every task mutator**
   (and the epic side of the body writers, `note` / `edit --body`): pass the
   `updated` stamp your read emitted, and if a

@@ -6,6 +6,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -1524,14 +1525,32 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, error) {
 	}
 	now := a.Clock.Now()
 	for _, id := range order {
+		t, _ := idx.Find(id)
+		before, err := core.MarshalTask(t)
+		if err != nil {
+			return nil, err
+		}
 		if note != "" {
 			if err := a.appendBody(id, note); err != nil {
 				return nil, err
 			}
 		}
-		t, _ := idx.Find(id)
 		a.applyLane(t, lane)
-		t.Updated = now
+		// A note is prose: it changed the task's content without touching the
+		// shard, so a close that carries one always stamps (stampIfChanged's
+		// comparison structurally cannot see a body). Without one, a move to the
+		// lane the task is already in must leave the clock alone.
+		if note != "" {
+			t.Updated = now
+			continue
+		}
+		changed, err := shardChanged(t, before)
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			t.Updated = now
+		}
 	}
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
@@ -1613,8 +1632,14 @@ func (a *App) ReorderRelative(id, ref string, before bool) (*core.Task, []core.P
 		return nil, nil, err
 	}
 	t, _ := idx.Find(id)
+	snap, err := core.MarshalTask(t)
+	if err != nil {
+		return nil, nil, err
+	}
 	t.Priority = target
-	t.Updated = a.Clock.Now()
+	if err := a.stampIfChanged(t, snap); err != nil {
+		return nil, nil, err
+	}
 	for _, c := range changes {
 		ct, _ := idx.Find(c.ID)
 		ct.Priority = c.To
@@ -1789,6 +1814,10 @@ func (a *App) AddDeps(id string, deps []string) (*core.Task, error) {
 	if i < 0 {
 		return nil, core.NotFound(id)
 	}
+	before, err := core.MarshalTask(t)
+	if err != nil {
+		return nil, err
+	}
 	for _, dep := range deps {
 		if id == dep {
 			return nil, core.Validationf(id, "a task cannot depend on itself")
@@ -1803,7 +1832,9 @@ func (a *App) AddDeps(id string, deps []string) (*core.Task, error) {
 			t.Deps = append(t.Deps, dep)
 		}
 	}
-	t.Updated = a.Clock.Now()
+	if err := a.stampIfChanged(t, before); err != nil {
+		return nil, err
+	}
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
 	}
@@ -1831,6 +1862,10 @@ func (a *App) RemoveDeps(id string, deps []string) (*core.Task, error) {
 	if i < 0 {
 		return nil, core.NotFound(id)
 	}
+	before, err := core.MarshalTask(t)
+	if err != nil {
+		return nil, err
+	}
 	rm := make(map[string]bool, len(deps))
 	for _, dep := range deps {
 		if !contains(t.Deps, dep) {
@@ -1845,7 +1880,9 @@ func (a *App) RemoveDeps(id string, deps []string) (*core.Task, error) {
 		}
 	}
 	t.Deps = kept
-	t.Updated = a.Clock.Now()
+	if err := a.stampIfChanged(t, before); err != nil {
+		return nil, err
+	}
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
 	}
@@ -2124,6 +2161,10 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 		relRef, relBefore = o.After, false
 	}
 	t, _ := idx.Find(id)
+	before, err := core.MarshalTask(t)
+	if err != nil {
+		return nil, err
+	}
 	// Pre-flight the relative placement against the DESTINATION lane before any
 	// mutation, so a bad target aborts with nothing half-applied (the plan
 	// itself re-checks after the lane move, when id and ref must already
@@ -2206,7 +2247,9 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 		}
 	}
 	t.Labels = nextLabels
-	t.Updated = a.Clock.Now()
+	if err := a.stampIfChanged(t, before); err != nil {
+		return renumbered, err
+	}
 	return renumbered, nil
 }
 
@@ -2226,8 +2269,9 @@ func (a *App) AddChecks(id string, items []string) (*core.Task, error) {
 	})
 }
 
-// mutate loads, finds, applies fn, stamps Updated, and saves — the common shape
-// of every single-task edit. Returns the updated task.
+// mutate loads, finds, applies fn, stamps Updated when fn actually changed
+// something, and saves — the common shape of every single-task edit. Returns the
+// updated task.
 func (a *App) mutate(id string, fn func(*core.Task)) (*core.Task, error) {
 	idx, err := a.load()
 	if err != nil {
@@ -2237,13 +2281,78 @@ func (a *App) mutate(id string, fn func(*core.Task)) (*core.Task, error) {
 	if i < 0 {
 		return nil, core.NotFound(id)
 	}
+	before, err := core.MarshalTask(t)
+	if err != nil {
+		return nil, err
+	}
 	fn(t)
-	t.Updated = a.Clock.Now()
+	if err := a.stampIfChanged(t, before); err != nil {
+		return nil, err
+	}
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
 	}
 	saved, _ := idx.Find(id)
 	return saved, nil
+}
+
+// stampIfChanged advances t.Updated only when the edit actually changed what
+// gets PERSISTED. before is the shard bytes as they stood before the edit — the
+// very bytes Store.Save would have written — so the question asked is exactly
+// "will this task's shard differ?", canonicalization included: adding a label
+// the task already carries, re-setting a value to its current score, moving to
+// the lane it is already in, or renaming to the same title all compare equal,
+// and any unknown key the passthrough carries is compared along with the rest.
+//
+// Why the STAMP and not the Save: Store.Save already writes only the shards
+// whose bytes changed, so a no-op mutation churned git for exactly one reason —
+// the unconditional Updated stamp made the bytes differ. Skip the stamp and the
+// Save becomes a genuine no-op by itself, which is why every caller keeps
+// calling it unconditionally: a path that also moved a NEIGHBOR (reorder's
+// respace) must still persist that even when the target itself did not move.
+//
+// This is what the idempotence three write paths already promise in prose
+// ("re-runs don't churn the diff" — Relabel, Reref, Rerepo) actually costs.
+// Updated is the clock `is:stale`, revisit's stale signal, lint's reconcile-gap
+// and `ls --since` all read, so an agent's idempotent retry must not reset it —
+// and on a shared board each retry was one more commit for everyone to sync.
+//
+// The paths that write PROSE (note, done --note, a body replacement) stamp
+// unconditionally and deliberately: the body is the task's content but lives
+// outside the shard, so its bytes can never show up in this comparison.
+func (a *App) stampIfChanged(t *core.Task, before []byte) error {
+	changed, err := shardChanged(t, before)
+	if err != nil {
+		return err
+	}
+	if changed {
+		t.Updated = a.Clock.Now()
+	}
+	return nil
+}
+
+// shardChanged is the comparison itself, for the batch paths: they stamp every
+// task they touched with ONE instant, so they decide the stamp themselves rather
+// than letting each task read the clock a second apart.
+func shardChanged(t *core.Task, before []byte) (bool, error) {
+	after, err := core.MarshalTask(t)
+	if err != nil {
+		return false, err
+	}
+	return !bytes.Equal(before, after), nil
+}
+
+// stampEpicIfChanged is stampIfChanged's box twin, over an epic's shard bytes.
+func (a *App) stampEpicIfChanged(e *core.Epic, before []byte) error {
+	after, err := core.MarshalEpic(e)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(before, after) {
+		return nil
+	}
+	e.Updated = a.Clock.Now()
+	return nil
 }
 
 // EditPath ensures the body file of the entity ref names exists (creating an

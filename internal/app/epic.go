@@ -436,7 +436,7 @@ func (a *App) EpicNote(ref, text string) (*core.Epic, *core.Epic, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return a.mutateEpic(ref, func(e *core.Epic) error { return a.appendBody(e.ID, text) })
+	return a.mutateEpicProse(ref, func(e *core.Epic) error { return a.appendBody(e.ID, text) })
 }
 
 // EpicSetBody replaces an EPIC's entire body AND stamps the box's Updated —
@@ -450,7 +450,7 @@ func (a *App) EpicSetBody(ref, text string) (*core.Epic, *core.Epic, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return a.mutateEpic(ref, func(e *core.Epic) error { return a.saveBody(e.ID, text) })
+	return a.mutateEpicProse(ref, func(e *core.Epic) error { return a.saveBody(e.ID, text) })
 }
 
 // RefTargetsEpic reports whether an id-keyed command's ref belongs to the EPIC
@@ -710,8 +710,22 @@ func (a *App) resolveEpicIn(ref string, epics []core.Epic) (string, error) {
 	}
 }
 
-// mutateEpic is the single write funnel: load, apply, stamp `updated`, save.
+// mutateEpic is the single write funnel: load, apply, stamp `updated` when the
+// edit changed the box's shard, save.
 func (a *App) mutateEpic(ref string, fn func(*core.Epic) error) (*core.Epic, *core.Epic, error) {
+	return a.mutateEpicStamping(ref, false, fn)
+}
+
+// mutateEpicProse is mutateEpic for the paths that write a box's PROSE (a note,
+// a body replacement). The body is the box's content but lives outside the
+// shard, so the shard comparison structurally cannot see it and the stamp must
+// be unconditional — the task side draws exactly the same line (see
+// App.stampIfChanged).
+func (a *App) mutateEpicProse(ref string, fn func(*core.Epic) error) (*core.Epic, *core.Epic, error) {
+	return a.mutateEpicStamping(ref, true, fn)
+}
+
+func (a *App) mutateEpicStamping(ref string, alwaysStamp bool, fn func(*core.Epic) error) (*core.Epic, *core.Epic, error) {
 	id, err := a.ResolveEpic(ref)
 	if err != nil {
 		return nil, nil, err
@@ -724,10 +738,21 @@ func (a *App) mutateEpic(ref string, fn func(*core.Epic) error) (*core.Epic, *co
 		return nil, nil, core.NotFound(id)
 	}
 	before := *e
+	snap, err := core.MarshalEpic(e)
+	if err != nil {
+		return nil, nil, err
+	}
 	if err := fn(e); err != nil {
 		return nil, nil, err
 	}
-	e.Updated = a.Clock.Now()
+	// Same rule as tasks (App.stampIfChanged): a box whose edit changed nothing
+	// keeps its clock, so `epic set` re-run with the values it already has is a
+	// true no-op instead of a fresh shard and a fresh commit.
+	if alwaysStamp {
+		e.Updated = a.Clock.Now()
+	} else if err := a.stampEpicIfChanged(e, snap); err != nil {
+		return nil, nil, err
+	}
 	if err := a.Store.SaveEpic(e); err != nil {
 		return nil, nil, err
 	}

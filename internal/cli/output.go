@@ -1058,7 +1058,10 @@ func clampEntry(requested, stored *int) map[string]any {
 
 // changedFields lists the task fields that differ between before and after
 // (json field names), so an agent need not diff the two objects itself. The
-// always-bumped `updated` stamp and the immutable `created`/`body` are omitted.
+// `updated` stamp and the immutable `created`/`body` are omitted — `updated`
+// because it is derived: it moves exactly when this list is non-empty (or when
+// the write was prose, which `changed` deliberately does not track), so
+// reporting it would only ever restate the answer.
 // An empty result is [] (never null), and a nil before yields [].
 func changedFields(before, after *core.Task) []string {
 	ch := []string{}
