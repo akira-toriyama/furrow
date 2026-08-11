@@ -293,3 +293,39 @@ func TestAddInheritsSingleActiveEpic(t *testing.T) {
 		t.Errorf("two actives must inherit nothing, got %q", t4.Epic)
 	}
 }
+
+// t-2z4t: `epic add` falls back to the board-scope repo when no -r is given
+// — without it, a box created on a scoped board carried no repo
+// and was invisible to the scoped `epic ls` (and brief's epic header) from
+// birth: the state a task reaches only by asking for --draft.
+func TestEpicAddFallsBackToBoardScopeRepo(t *testing.T) {
+	a := newApp()
+	a.DefaultRepo = "o/scope"
+
+	find := func(id string) core.Epic {
+		t.Helper()
+		epics, err := a.Store.LoadEpics()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range epics {
+			if e.ID == id {
+				return e
+			}
+		}
+		t.Fatalf("epic %s not found", id)
+		return core.Epic{}
+	}
+
+	plain := mustEpic(t, a, "scoped box", EpicAddOpts{})
+	if got := find(plain).Repos; len(got) != 1 || got[0] != "o/scope" {
+		t.Errorf("plain epic add must union the scope repo, got %v", got)
+	}
+	// Deliberately weaker than the task-side union: an explicit -r names the
+	// box's realm on purpose (a cross-repo requests box), so the scope repo is
+	// NOT glued on top.
+	explicit := mustEpic(t, a, "explicit box", EpicAddOpts{Repos: []string{"o/other"}})
+	if got := find(explicit).Repos; len(got) != 1 || got[0] != "o/other" {
+		t.Errorf("an explicit -r must stand alone: got %v", got)
+	}
+}

@@ -98,6 +98,17 @@ func (a *App) EpicAdd(title string, o EpicAddOpts) (*core.Epic, error) {
 	if err != nil {
 		return nil, err
 	}
+	// FALLBACK to the board-scope repo when no -r was given: a repo-less box
+	// on a scoped board was invisible to the scoped `epic ls` (and to brief's
+	// epic header) the moment it was made — the state a task only reaches by
+	// asking for --draft. Deliberately WEAKER than task Add's withBoardRepo
+	// union: an explicit `epic add -r other/repo` names the box's realm on
+	// purpose (a requests/cross-repo box is a normal shape), so the scope repo
+	// is not glued on top the way it is for a task. Shed a wrong fallback with
+	// `epic set --rm-repo`.
+	if len(repos) == 0 && a.DefaultRepo != "" {
+		repos = []string{a.DefaultRepo}
+	}
 
 	id, err := a.uniqueEpicID(epics)
 	if err != nil {
