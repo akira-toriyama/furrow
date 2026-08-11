@@ -726,12 +726,39 @@ func newSetCmd() *cobra.Command {
 			if err := emptyFlagErr(cmd, args[0], "before", "after", "add-label", "rm-label", "status"); err != nil {
 				return err
 			}
+			// The clamped disclosure is per ENVELOPE, whatever the arity: the
+			// batch arm used to route through the annotation-free
+			// emitMutationMany, so `set <id> <id> --value 9` wrote 5 twice with
+			// no stderr note and no clamped key — breaking the README's "an
+			// explicit arg is never silently rounded". The note prints once
+			// (the clamp is the same for every id); the envelopes each carry it.
+			warnedClamp := false
+			clampExtra := func(after *core.Task) map[string]any {
+				if !warnedClamp {
+					warnClamp("value", o.Value, after.Value)
+					warnClamp("effort", o.Effort, after.Effort)
+					warnedClamp = true
+				}
+				clamped := map[string]any{}
+				if e := clampEntry(o.Value, after.Value); e != nil {
+					clamped["value"] = e
+				}
+				if e := clampEntry(o.Effort, after.Effort); e != nil {
+					clamped["effort"] = e
+				}
+				if len(clamped) == 0 {
+					return nil
+				}
+				return map[string]any{"clamped": clamped}
+			}
 			if len(args) > 1 {
-				return emitMutationMany(cmd, a, "set", args, func() ([]*core.Task, error) { return a.SetMany(args, o) })
+				return emitMutationManyWith(cmd, a, "set", args,
+					func() ([]*core.Task, error) { return a.SetMany(args, o) },
+					clampExtra)
 			}
 			// One id still emits a one-element ARRAY (the always-array rule —
 			// `set <id>...` has array cardinality by signature); only the
-			// single-task extras (clamped, renumbered) need this separate path.
+			// single-task renumbered extra needs this separate path.
 			var renumbered []core.PriorityChange
 			return emitMutationManyWith(cmd, a, "set", args,
 				func() ([]*core.Task, error) {
@@ -744,17 +771,8 @@ func newSetCmd() *cobra.Command {
 				},
 				func(after *core.Task) map[string]any {
 					extra := map[string]any{}
-					clamped := map[string]any{}
-					warnClamp("value", o.Value, after.Value)
-					warnClamp("effort", o.Effort, after.Effort)
-					if e := clampEntry(o.Value, after.Value); e != nil {
-						clamped["value"] = e
-					}
-					if e := clampEntry(o.Effort, after.Effort); e != nil {
-						clamped["effort"] = e
-					}
-					if len(clamped) > 0 {
-						extra["clamped"] = clamped
+					for k, v := range clampExtra(after) {
+						extra[k] = v
 					}
 					for k, v := range respaceExtra(renumbered, after.Status) {
 						extra[k] = v

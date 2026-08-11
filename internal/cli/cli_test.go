@@ -1334,3 +1334,51 @@ func TestCLIEditNoTTYPrintsBodyPath(t *testing.T) {
 		t.Errorf("edit on an unknown id should exit 1, got %d:\n%s", code, out)
 	}
 }
+
+// TestCLIClampSignalBatch pins t-4tm9: the batch arm of `set <id>... --value 9`
+// used to route through the annotation-free emitter, silently writing 5 to
+// every task with no stderr note and no clamped key — while a single id
+// disclosed both. The disclosure is per envelope, whatever the arity.
+func TestCLIClampSignalBatch(t *testing.T) {
+	initStore(t)
+	a := addTask(t, "one")
+	b := addTask(t, "two")
+
+	out, code := run(t, "--json", "set", a, b, "--value", "9", "--effort", "0")
+	if code != 0 {
+		t.Fatalf("batch set exit %d:\n%s", code, out)
+	}
+	var res []struct {
+		After struct {
+			Value  int `json:"value"`
+			Effort int `json:"effort"`
+		} `json:"after"`
+		Clamped map[string]struct {
+			Requested int `json:"requested"`
+			Stored    int `json:"stored"`
+		} `json:"clamped"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("parse set --json: %v\n%s", err, out)
+	}
+	if len(res) != 2 {
+		t.Fatalf("want 2 envelopes, got %d:\n%s", len(res), out)
+	}
+	for i, env := range res {
+		if env.After.Value != 5 || env.After.Effort != 1 {
+			t.Errorf("envelope %d: value/effort should clamp to 5/1, got %d/%d", i, env.After.Value, env.After.Effort)
+		}
+		if env.Clamped["value"].Requested != 9 || env.Clamped["value"].Stored != 5 {
+			t.Errorf("envelope %d: value clamp signal missing/wrong: %+v", i, env.Clamped)
+		}
+		if env.Clamped["effort"].Requested != 0 || env.Clamped["effort"].Stored != 1 {
+			t.Errorf("envelope %d: effort clamp signal missing/wrong: %+v", i, env.Clamped)
+		}
+	}
+
+	// In-range batch writes carry no clamped key.
+	out, _ = run(t, "--json", "set", a, b, "--value", "3")
+	if strings.Contains(out, "clamped") {
+		t.Errorf("in-range batch set must not emit a clamped key:\n%s", out)
+	}
+}
