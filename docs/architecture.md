@@ -631,6 +631,15 @@ reaches the same funnel through the CLI/JSON contract rather than the Go API.
 every read, so reads see the same lane→priority→id order regardless of any
 hand-edit.
 
+**A single-task edit reads the board once.** `App.mutate` loads, applies, stamps
+and saves; a verb that must VALIDATE against the task first (a checklist index in
+range, a relabel that must not empty a required label set, a repo arg resolved
+against the board's repo universe) applies through **`App.mutateIn`** — the same
+write against the index it already holds. Doing that with a second load was not
+just a doubled read: `check`/`check --rm` range-checked `item` on one snapshot
+and then indexed with it on another, which a co-writer shortening the list turns
+into an out-of-range panic rather than an error, and the store has no lock.
+
 **A write that changes nothing leaves `updated` alone.** Every write path takes
 the task's shard bytes before the edit and re-marshals after
 (`App.stampIfChanged`, and `shardChanged` for the batch paths, which stamp

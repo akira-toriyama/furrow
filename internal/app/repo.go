@@ -144,22 +144,11 @@ func (a *App) Rerepo(id string, add, remove []string) (*core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	rm := make(map[string]bool, len(rmR))
-	for _, r := range rmR {
-		rm[r] = true
-	}
-	next := make([]string, 0, len(t.Repos)+len(addR))
-	for _, r := range t.Repos {
-		if !rm[r] {
-			next = append(next, r)
-		}
-	}
-	for _, r := range addR {
-		if !contains(next, r) {
-			next = append(next, r)
-		}
-	}
-	return a.mutate(id, func(t *core.Task) { t.Repos = next })
+	// Same set algebra labels and refs use — remove first, then append the adds
+	// not already present — so the three cannot drift apart. It was written out
+	// by hand here, a second implementation of one rule.
+	next := labelDelta(t.Repos, addR, rmR)
+	return a.mutateIn(idx, id, func(t *core.Task) { t.Repos = next })
 }
 
 // DidYouMeanRepo is the -l did-you-mean guard: when an explicit label filter
