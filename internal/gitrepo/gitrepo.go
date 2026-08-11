@@ -383,16 +383,9 @@ func (r *Repo) StashedPaths(ctx context.Context, commit string) []string {
 	return paths
 }
 
-// AheadBehind reports how the checked-out branch relates to its upstream
-// tracking ref — ahead = local commits not upstream, behind = upstream commits
-// not local — from LOCAL knowledge only: it never fetches (`furrow doctor` is
-// read-only and network-free), so the counts are as fresh as the last fetch.
-// hasUpstream is false (with zero counts and a nil error) when there is no
-// tracking ref to compare against — an un-tracked branch or a detached HEAD —
-// because a board without an upstream (every standalone board — git, no
-// remote — and any un-tracked branch) is a state to report, not a failure.
-// Commit describes HEAD: its short sha, its committer time, and its subject
-// (the first line of the message). It answers "when did this board last change,
+// Commit describes HEAD: its full sha (%H — what app/board.go publishes as
+// `commit`), its committer time, and its subject (the first line of the
+// message). It answers "when did this board last change,
 // and to what?" — on a board with no upstream, which is every standalone one,
 // that is the ONLY collision signal there is, since ahead/behind has nothing to
 // compare against.
@@ -439,6 +432,14 @@ func isNoCommits(stderr string) bool {
 		strings.Contains(l, "unknown revision")
 }
 
+// AheadBehind reports how the checked-out branch relates to its upstream
+// tracking ref — ahead = local commits not upstream, behind = upstream commits
+// not local — from LOCAL knowledge only: it never fetches (`furrow doctor` is
+// read-only and network-free), so the counts are as fresh as the last fetch.
+// hasUpstream is false (with zero counts and a nil error) when there is no
+// tracking ref to compare against — an un-tracked branch or a detached HEAD —
+// because a board without an upstream (every standalone board — git, no
+// remote — and any un-tracked branch) is a state to report, not a failure.
 func (r *Repo) AheadBehind(ctx context.Context) (ahead, behind int, hasUpstream bool, err error) {
 	// Left-right count over the symmetric difference: the left column is @{u}'s
 	// own commits (behind), the right is HEAD's (ahead).
