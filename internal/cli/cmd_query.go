@@ -118,6 +118,19 @@ func newLsCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				// The tree is still `ls`: the did-you-mean guard and the
+				// hidden-drafts hint fire under the SAME conditions as the flat
+				// listing — this branch used to early-return past both, so
+				// `--tree -l <repo-name>` printed an empty tree at exit 0 where
+				// the flat read was exit 2 with candidates.
+				matched := 0
+				for _, g := range groups {
+					matched += len(g.Tasks)
+				}
+				if err := labelDidYouMean(cmd, a, o, matched); err != nil {
+					return err
+				}
+				hintHiddenDrafts(o, a.List, "furrow ls --drafts")
 				hintCapped(len(groups), limit, "groups", func() (int, error) {
 					u := o
 					u.Limit = 0
