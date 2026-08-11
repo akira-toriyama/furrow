@@ -157,7 +157,14 @@ func TestResolveEpicSpellingsAndAmbiguity(t *testing.T) {
 	if got, err := a.ResolveEpic(travel); err != nil || got != travel {
 		t.Errorf("exact id: got %q, %v", got, err)
 	}
-	if got, err := a.ResolveEpic(travel[:4]); err != nil || got != travel {
+	// Ids are random, so a fixed travel[:4] keeps only 2 suffix chars (1024
+	// draws) and curry collides with it about once in a thousand runs — extend
+	// the prefix until it is unique by construction, never by luck.
+	prefix := travel[:4]
+	for strings.HasPrefix(curry, prefix) {
+		prefix = travel[:len(prefix)+1]
+	}
+	if got, err := a.ResolveEpic(prefix); err != nil || got != travel {
 		t.Errorf("id prefix: got %q, %v", got, err)
 	}
 	if got, err := a.ResolveEpic("curry"); err != nil || got != curry {
