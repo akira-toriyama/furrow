@@ -360,3 +360,57 @@ func TestMalformedIsError(t *testing.T) {
 		t.Error("malformed TOML should error")
 	}
 }
+
+// t-z36a: a wrong-typed VALUE follows clamp-don't-reject exactly like an
+// unknown key — the key falls back to its default with a file:line warning,
+// everything else keeps its written value, and go-toml's struct-tag prose
+// never reaches the user. Only malformed TOML stays fatal.
+func TestLoadBytesSalvagesWrongTypedKeys(t *testing.T) {
+	doc := []byte("[priority]\nstep = \"10\"\ndefault = 300\n\n[ids]\nwidth = 7\n")
+	c, warn, err := LoadBytes(doc, "config.toml")
+	if err != nil {
+		t.Fatalf("a wrong-typed value must not be fatal: %v", err)
+	}
+	if c.PriorityStep != Default().PriorityStep {
+		t.Errorf("the bad key must fall back to its default, got %d", c.PriorityStep)
+	}
+	if c.PriorityDefault != 300 || c.IDWidth != 7 {
+		t.Errorf("healthy keys must keep their written values, got default=%d width=%d", c.PriorityDefault, c.IDWidth)
+	}
+	found := false
+	for _, w := range warn {
+		if strings.Contains(w, "config.toml:2:") && strings.Contains(w, `"priority.step"`) {
+			found = true
+			if strings.Contains(w, "toml:\"") || strings.Contains(w, "struct field") {
+				t.Errorf("struct internals must not leak into the warning: %q", w)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("want a file:line warning naming priority.step, got %v", warn)
+	}
+
+	// Two bad keys: both salvaged, both warned with their ORIGINAL lines.
+	doc = []byte("[priority]\nstep = \"10\"\n\n[ids]\nwidth = \"seven\"\n")
+	_, warn, err = LoadBytes(doc, "config.toml")
+	if err != nil {
+		t.Fatalf("two wrong-typed values must not be fatal: %v", err)
+	}
+	var hits int
+	for _, w := range warn {
+		if strings.Contains(w, ":2:") && strings.Contains(w, "priority.step") {
+			hits++
+		}
+		if strings.Contains(w, ":5:") && strings.Contains(w, "ids.width") {
+			hits++
+		}
+	}
+	if hits != 2 {
+		t.Errorf("both keys must warn on their original lines, got %v", warn)
+	}
+
+	// Malformed TOML is not a type error: still fatal.
+	if _, _, err := LoadBytes([]byte("[priority\nstep = 10\n"), "config.toml"); err == nil {
+		t.Error("malformed TOML must stay a hard error")
+	}
+}

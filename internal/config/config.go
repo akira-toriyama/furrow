@@ -99,7 +99,7 @@ func Load(path string) (*Config, []string, error) {
 // set`, which must know what a document WOULD mean before writing it.
 func LoadBytes(data []byte, path string) (*Config, []string, error) {
 	var r raw
-	unknown, err := decodeStrict(data, &r, path)
+	unknown, err := decodeSalvaging(data, &r, path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("config.toml: %w", err)
 	}
@@ -108,6 +108,51 @@ func LoadBytes(data []byte, path string) (*Config, []string, error) {
 		return nil, nil, err
 	}
 	return c, append(unknown, warn...), nil
+}
+
+// decodeSalvaging is decodeStrict with the clamp-don't-reject policy applied to
+// WRONG-TYPED values too: one `step = "10"` used to make every board command —
+// including `furrow board` (the diagnosis) and `furrow config set` (the repair)
+// — exit 2, relaying go-toml's struct-tag prose, while the user-level loader
+// salvaged the same class of damage. A wrong-typed KEY now falls back to its
+// default with a warning naming file:line and the dotted key (symmetric with
+// the unknown-key path), and everything else keeps its written value.
+//
+// Mechanics: on a type error, blank out exactly the offending LINE (keeping the
+// newline, so every later warning still carries the ORIGINAL line number) and
+// decode again. A document whose damage cannot be isolated that way — a type
+// error without a position, or one inside a multi-line value whose blanked
+// first line breaks the TOML syntax — falls back to the original hard error:
+// salvage must never guess. Malformed TOML stays fatal as before.
+func decodeSalvaging(data []byte, v any, path string) ([]string, error) {
+	work := append([]byte(nil), data...)
+	var typeWarn []string
+	// One iteration per bad key; the bound only stops a pathological document.
+	for range 128 {
+		unknown, err := decodeStrict(work, v, path)
+		if err == nil {
+			return append(typeWarn, unknown...), nil
+		}
+		var de *toml.DecodeError
+		if !errors.As(err, &de) {
+			return nil, err // malformed TOML, not a value of the wrong type
+		}
+		row, _ := de.Position()
+		key := strings.Join(de.Key(), ".")
+		lines := bytes.Split(work, []byte("\n"))
+		if key == "" || row < 1 || row > len(lines) {
+			return nil, err // cannot isolate the damage — fail honestly
+		}
+		blanked := append([]byte(nil), lines[row-1]...)
+		lines[row-1] = nil
+		next := bytes.Join(lines, []byte("\n"))
+		if bytes.Equal(next, work) {
+			return nil, err // no progress (already-blank line) — fail, don't loop
+		}
+		work = next
+		typeWarn = append(typeWarn, fmt.Sprintf("%s:%d: key %q has the wrong type (%s); using the default", path, row, key, strings.TrimSpace(string(blanked))))
+	}
+	return nil, fmt.Errorf("%s: too many wrong-typed values to salvage", path)
 }
 
 // decodeStrict decodes data into v with unknown keys DISALLOWED, then converts
