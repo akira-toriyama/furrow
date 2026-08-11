@@ -304,10 +304,39 @@ func discover(startDir string) (resolution, error) {
 			} else if ok {
 				return res, nil
 			}
-			return resolution{}, core.Validationf("", "no %s or %s found in %q or any parent; run `furrow init`", DirName, PointerName, startDir)
+			return resolution{}, discoveryUnresolvedErr(startDir)
 		}
 		dir = parent
 	}
+}
+
+// discoveryUnresolvedErr is the walk's give-up error, and its remedy depends on
+// the machine. With configured [[board]] entries, "run `furrow init`" is
+// exactly the WRONG advice — following it grows a stray local board that
+// shadows the central one from then on (this repo's .gitignore memorializes
+// that incident), and it contradicts doctor's own dir-unresolved wording for
+// the same state. So a machine with boards gets doctor's remedy — cd into a
+// scope, add the directory to a board's scopes, or use FURROW_BOARD — with the
+// configured board paths in candidates; only a board-less machine is steered to
+// init. The extra config read happens on this error path only.
+func discoveryUnresolvedErr(startDir string) error {
+	if boards, cfgDir, _, err := loadGlobalBoards(); err == nil && len(boards) > 0 {
+		var cands []string
+		for _, b := range boards {
+			if p, rerr := resolvePathRelTo(cfgDir, b.Path); rerr == nil {
+				cands = append(cands, p)
+			}
+		}
+		cfgPath, _ := globalConfigPath()
+		return &core.Error{
+			Code: core.CodeValidation,
+			Kind: core.KindValidation,
+			Msg: fmt.Sprintf("no %s or %s found in %q or any parent, and no [[board]] scope encloses it — cd into a configured scope, add this directory to a board's scopes in %s, or point FURROW_BOARD at a board (never `furrow init` here: a stray local board would shadow the central one)",
+				DirName, PointerName, startDir, cfgPath),
+			Candidates: cands,
+		}
+	}
+	return core.Validationf("", "no %s or %s found in %q or any parent; run `furrow init`", DirName, PointerName, startDir)
 }
 
 // resolvePointer reads a .furrow-pointer.toml, resolves its board path against
