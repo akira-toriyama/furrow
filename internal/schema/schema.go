@@ -9,9 +9,10 @@
 // shards (epics/<id>.json, described by EpicV2), plus one
 // board-wide meta.json (described by MetaV2). Versioning: the version here
 // numbers each schema document; the board LAYOUT version lives in meta.json's
-// schema_version (currently 8 — 7 was epic-to-epic deps, 6 the epic pivot,
-// 5 the per-task type field, 4 the review shards + per-task reviewed, 3 the
-// repos pivot, 2 pre-repos shards, 1 the monolithic index.json).
+// schema_version (currently 9 — 8 was the per-task due stamp, 7 epic-to-epic
+// deps, 6 the epic pivot, 5 the per-task type field, 4 the review shards +
+// per-task reviewed, 3 the repos pivot, 2 pre-repos shards, 1 the monolithic
+// index.json).
 package schema
 
 // TaskV2 is the JSON Schema (draft 2020-12) for one task shard: the object in a
@@ -82,7 +83,7 @@ const MetaV2 = `{
   "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a meta.json furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (blamed on the id \"meta\", since meta.json belongs to no task) — nothing else can, since nothing ever deletes an extra. This document has no nested objects, so the top-level-only limit of the passthrough has nothing to qualify here; the task shard's schema explains it.",
   "required": ["schema_version"],
   "properties": {
-    "schema_version": { "const": 8 }
+    "schema_version": { "const": 9 }
   }
 }
 `
