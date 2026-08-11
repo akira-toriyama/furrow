@@ -1402,12 +1402,44 @@ func TestEstimateClampedOnRead(t *testing.T) {
 	}
 }
 
+// A stray estimate cannot be WRITTEN: canonicalizeTask clamps it on the way to a
+// shard, so SetValue(id, 9) stores 5 — what the CLI surfaces as `clamped`. The
+// only way a 9 exists on a board is a HAND-EDITED shard, which is precisely what
+// this warn is for (Lint deliberately reads the raw, pre-clamp index) and why the
+// test edits the file. Seeding it through SetValue alone used to "work" only
+// because memstore skipped the canonicalization fsstore performs — the assertion
+// held against a shape no real board can hold.
 func TestLintWarnsOutOfRangeEstimate(t *testing.T) {
-	a := newApp()
-	tk, _ := a.Add("x", AddOpts{})
-	if _, err := a.SetValue(tk.ID, intptr(9)); err != nil {
+	dir := t.TempDir()
+	a, err := Init(dir)
+	if err != nil {
 		t.Fatal(err)
 	}
+	tk, err := a.Add("x", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := a.SetValue(tk.ID, intptr(9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Value == nil || *stored.Value != core.EstimateMax {
+		t.Fatalf("a write must clamp 9 into 1..%d, got %v", core.EstimateMax, stored.Value)
+	}
+
+	shard := filepath.Join(dir, DirName, core.TaskPath(tk.ID))
+	b, err := os.ReadFile(shard) // #nosec G304 -- a test-owned temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(b), `"value": 5`, `"value": 9`, 1)
+	if edited == string(b) {
+		t.Fatalf("shard carries no clamped value to hand-edit:\n%s", b)
+	}
+	if err := os.WriteFile(shard, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	probs, err := a.Lint()
 	if err != nil {
 		t.Fatal(err)
