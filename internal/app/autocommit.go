@@ -85,6 +85,16 @@ func (a *App) AutoCommitFlush(ctx context.Context, cmd string, args []string) *A
 		return res
 	}
 
+	// The unattended twin of sync's pre-flight: committing on top of an
+	// in-progress operation would stage the board into the operator's
+	// half-finished rebase/merge/cherry-pick — and autocommit's best-effort
+	// contract makes the damage silent. The mutation is safely on disk; the
+	// next mutation or `furrow sync` picks it up once the operation is done.
+	if op, busy := r.MidOperation(ctx); busy {
+		warn("a git %s is in progress in %s — nothing committed; %s", op, r.Toplevel(), opRemedy(op))
+		return res
+	}
+
 	changes, err := r.DirtyChanges(ctx, spec)
 	if err != nil {
 		warn("could not read the board's git status (%v) — nothing committed", err)

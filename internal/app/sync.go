@@ -232,6 +232,21 @@ type StashEntry struct {
 	Paths  []string `json:"paths"`
 }
 
+// opRemedy names the exact way out of an in-progress git operation. The generic
+// "finish or abort it" misled a conflicted cherry-pick into `git add` +
+// partial-commit failures; the remedy must be the recipe git itself expects.
+func opRemedy(op string) string {
+	switch op {
+	case "merge":
+		return "finish it with `git commit` or back out with `git merge --abort`"
+	case "cherry-pick", "revert":
+		return fmt.Sprintf("resolve any conflicts and run `git %s --continue`, or back out with `git %s --abort`", op, op)
+	case "bisect":
+		return "finish it and run `git bisect reset`"
+	}
+	return "finish or abort it"
+}
+
 // partitionSync splits the dirty .furrow paths into what the auto-commit should
 // stage. Machine-written files — an ALLOWLIST of the shapes furrow itself
 // writes: tasks/epics/repos shards, meta.json, config.toml, the board-level git
@@ -530,11 +545,13 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 					"'git -C %s status' and finish or abort it, then re-run", top, top),
 			}
 		}
-		// Any other in-progress op (a merge you started) is your own to resolve.
+		// Any other in-progress op (a merge/cherry-pick/revert/bisect the
+		// operator started) is theirs to resolve — name the exact way out, so
+		// the error is a recipe rather than a shrug.
 		return p, &core.Error{
 			Code: core.CodeValidation,
 			Kind: core.KindSyncOpInProgress,
-			Msg:  fmt.Sprintf("a git %s is in progress in %s — finish or abort it, then re-run furrow sync", op, r.Toplevel()),
+			Msg:  fmt.Sprintf("a git %s is in progress in %s — %s, then re-run furrow sync", op, r.Toplevel(), opRemedy(op)),
 		}
 	}
 	// Unmerged paths with NO operation in progress is the aftermath of a stash git

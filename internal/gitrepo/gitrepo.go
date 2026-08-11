@@ -105,15 +105,26 @@ func (r *Repo) RelPath(p string) (string, error) {
 	return filepath.ToSlash(rel), nil
 }
 
-// MidOperation reports a rebase or merge already in progress — sync must
-// refuse to start on top of one (pre-flight), never try to be clever.
+// MidOperation reports a git operation already in progress — a rebase, merge,
+// cherry-pick, revert, or bisect. sync must refuse to start on top of one
+// (pre-flight), never try to be clever: its auto-commit would `git add` the
+// board into the operator's half-finished operation, and the eventual
+// `--continue` would absorb the shards into the foreign commit (measured with a
+// conflicted cherry-pick before cherry-pick/revert were probed here).
 func (r *Repo) MidOperation(ctx context.Context) (string, bool) {
 	if r.RebaseInProgress(ctx) {
 		return "rebase", true
 	}
-	if p, _, err := runGit(ctx, r.git, r.top, "rev-parse", "--git-path", "MERGE_HEAD"); err == nil {
-		if _, statErr := os.Stat(r.absGitPath(p)); statErr == nil {
-			return "merge", true
+	for _, probe := range []struct{ marker, op string }{
+		{"MERGE_HEAD", "merge"},
+		{"CHERRY_PICK_HEAD", "cherry-pick"},
+		{"REVERT_HEAD", "revert"},
+		{"BISECT_LOG", "bisect"},
+	} {
+		if p, _, err := runGit(ctx, r.git, r.top, "rev-parse", "--git-path", probe.marker); err == nil {
+			if _, statErr := os.Stat(r.absGitPath(p)); statErr == nil {
+				return probe.op, true
+			}
 		}
 	}
 	return "", false
