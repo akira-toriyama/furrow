@@ -329,3 +329,36 @@ func TestEpicAddFallsBackToBoardScopeRepo(t *testing.T) {
 		t.Errorf("an explicit -r must stand alone: got %v", got)
 	}
 }
+
+// t-3z2k: `epic reopen` is the CLI way back for a mis-closed box — before it,
+// two furrow messages instructed "reopen" while no such verb existed and the
+// only recovery was a forbidden hand-edit or a git revert.
+func TestEpicReopen(t *testing.T) {
+	a := newApp()
+	box := mustEpic(t, a, "oops box", EpicAddOpts{Repos: []string{"o/r"}})
+	mustActivate(t, a, box)
+	if _, _, err := a.EpicDone(box); err != nil {
+		t.Fatal(err)
+	}
+
+	before, after, err := a.EpicReopen(box)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Closed == nil || after.Closed != nil {
+		t.Errorf("reopen must clear closed: before=%v after=%v", before.Closed, after.Closed)
+	}
+	if after.Active {
+		t.Error("reopen must NOT re-activate — choosing again is the human's own activate")
+	}
+	// And the box is activatable again (the message that used to dead-end).
+	if _, _, _, err := a.EpicActivate(box, ""); err != nil {
+		t.Errorf("a reopened box must be activatable: %v", err)
+	}
+
+	// Reopening an open box is exit 2, mirroring done's already-closed.
+	_, _, err = a.EpicReopen(box)
+	if err == nil || core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("reopen on an open box must be exit 2, got %v", err)
+	}
+}
