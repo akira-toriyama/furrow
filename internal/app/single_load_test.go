@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -118,7 +119,11 @@ func TestChecklistVerbsUseTheSnapshotTheyValidated(t *testing.T) {
 					tk.Checklist = tk.Checklist[:1]
 				}
 			}
-			if err := c.edit(a, id); err != nil {
+			// RECOVER rather than letting it crash: against an implementation that
+			// reads twice this panics, and a panic takes the whole test binary
+			// down with it — every later test in the package goes unjudged, which
+			// is exactly what the bite gate reports as "could not judge".
+			if err := recovering(func() error { return c.edit(a, id) }); err != nil {
 				t.Fatal(err)
 			}
 			edits := st.loads
@@ -145,10 +150,26 @@ func TestChecklistVerbsUseTheSnapshotTheyValidated(t *testing.T) {
 	}
 }
 
+// recovering runs fn and turns a panic into an error naming it. The checklist
+// verbs' failure mode IS a panic, and a test for it has to be able to report
+// that as a failure rather than abort the run.
+func recovering(fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("the edit panicked — validation and application were on different snapshots: %v", r)
+		}
+	}()
+	return fn()
+}
+
 // Repos take the same add/rm algebra as labels and refs, down to how it settles
 // a value named in BOTH --add and --rm: remove first, then append the adds not
 // already present, so the add wins and lands exactly once. Rerepo wrote that out
 // by hand — a second implementation of one rule — so pin that the three agree.
+//
+// bite-exempt: pins current behaviour, not a fix — the hand-written composition
+// this replaces was already semantically identical (verified before folding it),
+// so this is the characterisation test that makes a future divergence visible.
 func TestRepoDeltaMatchesLabelAndRefDelta(t *testing.T) {
 	a, _ := spyApp(t)
 	id := seedForEdit(t, a)
