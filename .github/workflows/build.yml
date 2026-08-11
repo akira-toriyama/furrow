@@ -85,57 +85,15 @@ jobs:
       - name: build the binary (for drift + smoke checks)
         run: go build -o /tmp/furrow ./cmd/furrow
 
-      - name: schema drift guard
-        run: |
-          /tmp/furrow schema task | diff -u docs/schema/furrow.task.v2.json -
-          /tmp/furrow schema meta | diff -u docs/schema/furrow.meta.v2.json -
-          /tmp/furrow schema repo | diff -u docs/schema/furrow.repo.v1.json -
-
-      - name: config template drift guard
-        run: |
-          tmp="$(mktemp -d)"
-          ( cd "$tmp" && /tmp/furrow init >/dev/null )
-          diff -u config.toml "$tmp/.furrow/config.toml"
-
-      - name: global config template drift guard
-        run: |
-          gtmp="$(mktemp -d)"
-          ( cd "$gtmp" && XDG_CONFIG_HOME="$gtmp/xdg" /tmp/furrow config init >/dev/null )
-          diff -u config.global.toml "$gtmp/xdg/furrow/config.toml"
-
-      - name: README pin + schema-version guard
-        run: sh scripts/check-readme-parity.sh
-
-      # The README's command table is generated from the cobra tree; a fresh
-      # `furrow commands` must equal the spliced block byte-for-byte. Regen:
-      # scripts/gen-command-table.sh.
-      - name: README command-table drift guard
-        run: |
-          /tmp/furrow commands > /tmp/commands.want.md
-          awk '/<!-- commands:begin/{f=1;next} /<!-- commands:end/{f=0} f' README.md > /tmp/commands.got.md
-          diff -u /tmp/commands.want.md /tmp/commands.got.md
-
-      # docs/architecture.md keeps its own hand-written command list (not the
-      # generated table); this guards it against silently losing commands.
-      - name: docs command-list drift guard
-        run: FURROW_BIN=/tmp/furrow sh scripts/check-docs-commands.sh
-
-      # The generalization of the step above: every prose region that enumerates
-      # a closed vocabulary (commands, config sections, revisit signals, -q
-      # qualifiers, lint codes) must name every member the registry owns — or,
-      # where it lists examples only, must name none that no longer exists. The
-      # 2026-07 audit found five such lists rotted, all in files no guard read.
-      - name: docs vocabulary drift guard
-        run: FURROW_BIN=/tmp/furrow sh scripts/check-docs-vocab.sh
-
-      - name: smoke test
-        run: |
-          /tmp/furrow version
-          sb="$(mktemp -d)"; cd "$sb"
-          /tmp/furrow init
-          /tmp/furrow add "smoke task" -s ready
-          /tmp/furrow ls --json | grep -q '"smoke task"'
-          /tmp/furrow lint
+      # Every guard that interrogates the built binary — the four schema drift
+      # diffs, both config-template diffs, README parity, the generated command
+      # table, the docs command-list/vocabulary guards, and the full CLI smoke —
+      # lives in ONE shared script that scripts/check.sh runs verbatim. The two
+      # lists were hand-copied twins before, and the copies had drifted: this
+      # job diffed only 3 of the 4 schemas (an epic-schema drift shipped green)
+      # and its smoke had lost next/done and the two 2026-07-13 invariants.
+      - name: drift guards + smoke (shared with scripts/check.sh)
+        run: FURROW_BIN=/tmp/furrow sh scripts/check-live.sh
 
   # Exercise the RELEASE pipeline on every PR.
   #
