@@ -631,6 +631,25 @@ reaches the same funnel through the CLI/JSON contract rather than the Go API.
 every read, so reads see the same lane→priority→id order regardless of any
 hand-edit.
 
+**A write that changes nothing leaves `updated` alone.** Every write path takes
+the task's shard bytes before the edit and re-marshals after
+(`App.stampIfChanged`, and `shardChanged` for the batch paths, which stamp
+everything they moved with one instant); equal bytes mean no stamp. The question
+asked is exactly "will this shard differ?", so canonicalization is included —
+re-adding a label the task already carries, moving into the lane it is already
+in, re-setting a score to its current value. The stamp is what is skipped, not
+the `Save`: `Store.Save` already writes only the shards whose bytes changed, so
+an unconditional stamp was the whole reason a no-op churned git, and leaving the
+call in place keeps a path that also moved a NEIGHBOR (reorder's respace)
+persisting it. `updated` is the clock `is:stale`, `revisit`'s stale signal,
+`lint`'s reconcile-gap and `ls --since` read, so an idempotent retry must not
+reset it — which is also what the idempotence `Relabel`/`Reref`/`Rerepo` promise
+in prose actually costs. Boxes obey the same rule through `mutateEpic`. The
+exception is PROSE: `note`, `done --note` and a body replacement stamp
+unconditionally (`mutateEpicProse` on the box side), because the body is the
+entity's content but lives outside the shard, where the comparison cannot see
+it.
+
 A few app-level rules worth stating, all verified against the code:
 
 - **`Add`** assigns the next frozen id, picks a sparse priority (explicit

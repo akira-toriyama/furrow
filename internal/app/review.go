@@ -4,9 +4,9 @@ import "github.com/akira-toriyama/furrow/internal/core"
 
 // ReviewTask stamps a task's `reviewed` timestamp — the record that a human
 // looked at and re-assessed this task. Unlike every other single-task edit it
-// does NOT go through mutate (which stamps `updated`): a review changes no
-// content, so bumping `updated` would wrongly disturb staleness and
-// `--sort updated`. It loads, finds, sets `reviewed = now`, and saves; the
+// does NOT go through mutate (which stamps `updated` on any real edit): a
+// review changes no content, so bumping `updated` would wrongly disturb
+// staleness and `--sort updated`. It loads, finds, sets `reviewed = now`, and saves; the
 // shard is rewritten only because `reviewed` changed (zero churn otherwise).
 func (a *App) ReviewTask(id string) (*core.Task, error) {
 	idx, err := a.load()
