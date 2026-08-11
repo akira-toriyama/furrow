@@ -64,6 +64,9 @@ func newAddCmd() *cobra.Command {
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
 				Deps: deps, Refs: refs, Body: body, Checklist: checks,
 				Epic: epicRef, Due: due,
+				// An explicit `-e ''` means "unfiled, on purpose" — suppress the
+				// active-epic inheritance a bare add gets.
+				NoEpic: cmd.Flags().Changed("epic") && epicRef == "",
 			}
 			if cmd.Flags().Changed("priority") {
 				p := priority
@@ -102,6 +105,7 @@ func newAddCmd() *cobra.Command {
 			warnClamp("value", opts.Value, t.Value)
 			warnClamp("effort", opts.Effort, t.Effort)
 			warnShadowedDraft(a, opts.Draft, len(t.Repos) == 0)
+			noteInheritedEpic(cmd, []core.Task{*t})
 			// printOK renders JSON (--json / --ndjson) or the human line.
 			printOK("added", t)
 			return nil
@@ -114,7 +118,7 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable)")
 	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "repo to attach (owner/repo, or a unique short name; repeatable)")
 	cmd.Flags().BoolVar(&draft, "draft", false, "create as a draft (no repo attached; suppresses the board repo); conflicts with -r")
-	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "epic to file this task under (id, unique id prefix, or unique title substring)")
+	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "epic to file this task under (id, unique id prefix, or unique title substring; default: the scope's single active epic, '' stays unfiled)")
 	cmd.Flags().StringVar(&due, "due", "", "promise this for a date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d")
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
 	cmd.Flags().StringSliceVar(&refs, "ref", nil, "reference (file:line or URL, repeatable)")
@@ -158,7 +162,29 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 	}
 	drafted := len(created) > 0 && len(created[0].Repos) == 0
 	warnShadowedDraft(a, opts.Draft, drafted)
+	noteInheritedEpic(cmd, created)
 	return emitTasks(a, created)
+}
+
+// noteInheritedEpic discloses on stderr that a bare add (no -e) filed the
+// created task(s) under the scope's single active epic — the inheritance must
+// never be silent, and the escape (`-e ”` now, `set <id> -e ”` after) rides
+// in the same line. One note per command, whatever the arity.
+func noteInheritedEpic(cmd *cobra.Command, created []core.Task) {
+	if cmd.Flags().Changed("epic") {
+		return // explicit -e: nothing was inherited
+	}
+	n, epic := 0, ""
+	for _, t := range created {
+		if t.Epic != "" {
+			n++
+			epic = t.Epic
+		}
+	}
+	if n == 0 {
+		return
+	}
+	fmt.Fprintf(errOut, "note: filed under active epic %s (inherited; -e '' creates unfiled, `furrow set <id> -e ''` unfiles)\n", epic)
 }
 
 // warnShadowedDraft raises doctor's scope-shadowed finding at the moment it

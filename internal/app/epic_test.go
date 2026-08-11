@@ -231,3 +231,65 @@ func TestEpicAddNeverActivates(t *testing.T) {
 		t.Error("a freshly created box must not be active")
 	}
 }
+
+// A bare Add on a board with exactly ONE active epic files the task under it —
+// the epic mirror of withBoardRepo's union (t-mzek: plain captures used to land
+// unfiled, each one a fresh epic-required lint error the pre-push gate then
+// rejects). Zero or two actives, an explicit -e, and an explicit "unfiled"
+// (NoEpic, the CLI's `-e ”`) all inherit nothing.
+func TestAddInheritsSingleActiveEpic(t *testing.T) {
+	a := newApp()
+	box := mustEpic(t, a, "focus box", EpicAddOpts{Repos: []string{"o/r"}})
+
+	// No active epic yet: nothing to inherit.
+	t0, err := a.Add("before activate", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if t0.Epic != "" {
+		t.Errorf("no active epic, task must stay unfiled, got %q", t0.Epic)
+	}
+
+	if _, _, _, err := a.EpicActivate(box, ""); err != nil {
+		t.Fatal(err)
+	}
+	t1, err := a.Add("during focus", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if t1.Epic != box {
+		t.Errorf("bare add must inherit the single active epic %s, got %q", box, t1.Epic)
+	}
+
+	// Explicit unfiled (-e '') wins over inheritance.
+	t2, err := a.Add("deliberately unfiled", AddOpts{NoEpic: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if t2.Epic != "" {
+		t.Errorf("NoEpic must suppress inheritance, got %q", t2.Epic)
+	}
+
+	// An explicit -e wins over inheritance.
+	other := mustEpic(t, a, "other box", EpicAddOpts{})
+	t3, err := a.Add("explicitly filed", AddOpts{Epic: other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if t3.Epic != other {
+		t.Errorf("explicit epic must win, got %q", t3.Epic)
+	}
+
+	// Two active epics: furrow never guesses between focuses.
+	box2 := mustEpic(t, a, "second focus", EpicAddOpts{Repos: []string{"o/r2"}})
+	if _, _, _, err := a.EpicActivate(box2, ""); err != nil {
+		t.Fatal(err)
+	}
+	t4, err := a.Add("ambiguous focus", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if t4.Epic != "" {
+		t.Errorf("two actives must inherit nothing, got %q", t4.Epic)
+	}
+}

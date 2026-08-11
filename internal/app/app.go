@@ -614,12 +614,18 @@ type AddOpts struct {
 	// prefix, or unique title substring), resolved by Add through ResolveEpic so a
 	// typo is exit 2 with candidates rather than a task filed under nothing.
 	// Resolution lives here, not in the CLI, so every front-end gets the same
-	// spelling rules. "" leaves the task unfiled — legal at add time, an error in
-	// `furrow lint` while the task is open.
+	// spelling rules. "" INHERITS the board scope's single active epic when there
+	// is exactly one (see inheritableEpic) — the epic mirror of the withBoardRepo
+	// union — and otherwise leaves the task unfiled (legal at add time, an error
+	// in `furrow lint` while the task is open once the board has boxes).
 	Epic string
-	Deps []string
-	Refs []string
-	Body string // initial body markdown; "" seeds a heading from the title
+	// NoEpic suppresses the active-epic inheritance (the CLI's explicit
+	// `-e ''`): the task is created unfiled even when the scope has exactly one
+	// active box.
+	NoEpic bool
+	Deps   []string
+	Refs   []string
+	Body   string // initial body markdown; "" seeds a heading from the title
 	// Checklist seeds unchecked checklist items at creation (repeatable --check).
 	// A plain `add --body '- [ ] x'` does NOT populate the shard's checklist —
 	// the body is prose — so this makes a seed-time checklist first-class. Blank
@@ -705,11 +711,17 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 		}
 	}
 	epicID := ""
-	if o.Epic != "" {
+	switch {
+	case o.Epic != "":
 		epicID, err = a.ResolveEpic(o.Epic)
 		if err != nil {
 			return nil, err
 		}
+	case !o.NoEpic:
+		// No -e given: file under the scope's single active epic, if there is
+		// exactly one. Best-effort — a capture must not fail because the epic
+		// store hiccupped; an unfiled task is what lint's epic-required is for.
+		epicID = a.inheritableEpic()
 	}
 	id, err := a.uniqueID(idx)
 	if err != nil {
@@ -2419,6 +2431,38 @@ func (a *App) withDefaultLabel(labels []string) []string {
 		return labels
 	}
 	return append(append([]string(nil), labels...), a.DefaultLabel)
+}
+
+// inheritableEpic returns the id of the ONE active epic visible in the board
+// scope, or "" — the box a plain `add` files new work under (the epic mirror of
+// withBoardRepo's repo union: on a board with boxes, every open task must name
+// one — lint's epic-required — so a capture during a declared focus defaults to
+// that focus, disclosed by the CLI and reversed with `set -e ”`). Exactly-one
+// is the rule: zero actives means no focus to inherit, and two or more (a
+// multi-repo board) would make furrow GUESS which focus the capture belongs to,
+// which it never does. Pinned-but-inactive channels do not count — pinned is a
+// visibility declaration, not a focus. Errors resolve to "" (capture must not
+// fail on a broken epic shard; the task just lands unfiled).
+func (a *App) inheritableEpic() string {
+	scope := ""
+	if a.AutoFilter {
+		scope = a.DefaultRepo
+	}
+	items, err := a.EpicList(EpicQueryOpts{Repo: scope})
+	if err != nil {
+		return ""
+	}
+	found := ""
+	for _, it := range items {
+		if !it.Epic.Active {
+			continue
+		}
+		if found != "" {
+			return "" // two actives — never guess between focuses
+		}
+		found = it.Epic.ID
+	}
+	return found
 }
 
 // withBoardRepo unions the board-scope repo (a pointer's / central board's
