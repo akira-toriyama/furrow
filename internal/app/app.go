@@ -1745,7 +1745,7 @@ func (a *App) Check(id string, item int, done bool) (*core.Task, error) {
 	if item < 0 || item >= len(t.Checklist) {
 		return nil, core.Validationf(id, "checklist index %d out of range (have %d item(s))", item, len(t.Checklist))
 	}
-	return a.mutate(id, func(t *core.Task) { t.Checklist[item].Done = done })
+	return a.mutateIn(idx, id, func(t *core.Task) { t.Checklist[item].Done = done })
 }
 
 // RemoveCheck deletes the checklist item at the zero-based index. An
@@ -1763,7 +1763,7 @@ func (a *App) RemoveCheck(id string, item int) (*core.Task, error) {
 	if item < 0 || item >= len(t.Checklist) {
 		return nil, core.Validationf(id, "checklist index %d out of range (have %d item(s))", item, len(t.Checklist))
 	}
-	return a.mutate(id, func(t *core.Task) {
+	return a.mutateIn(idx, id, func(t *core.Task) {
 		t.Checklist = append(t.Checklist[:item], t.Checklist[item+1:]...)
 	})
 }
@@ -1787,7 +1787,7 @@ func (a *App) RewordCheck(id string, item int, text string) (*core.Task, error) 
 	if item < 0 || item >= len(t.Checklist) {
 		return nil, core.Validationf(id, "checklist index %d out of range (have %d item(s))", item, len(t.Checklist))
 	}
-	return a.mutate(id, func(t *core.Task) { t.Checklist[item].Text = text })
+	return a.mutateIn(idx, id, func(t *core.Task) { t.Checklist[item].Text = text })
 }
 
 // AddDep makes `id` depend on `dep` (id waits on dep). Both ids must exist, a
@@ -1918,7 +1918,7 @@ func (a *App) Relabel(id string, add, remove []string) (*core.Task, error) {
 	if a.Cfg.LabelsRequired && len(next) == 0 {
 		return nil, core.Validationf(id, "a label is required ([labels].required); this relabel would remove the last one")
 	}
-	return a.mutate(id, func(t *core.Task) { t.Labels = next })
+	return a.mutateIn(idx, id, func(t *core.Task) { t.Labels = next })
 }
 
 // Reref adds and/or removes refs (file:line or URL pointers) on a task, the
@@ -1947,7 +1947,7 @@ func (a *App) Reref(id string, add, remove []string) (*core.Task, error) {
 		return nil, core.NotFound(id)
 	}
 	next := labelDelta(t.Refs, add, remove)
-	return a.mutate(id, func(t *core.Task) { t.Refs = next })
+	return a.mutateIn(idx, id, func(t *core.Task) { t.Refs = next })
 }
 
 // labelDelta returns cur with every entry in remove dropped and every entry in
@@ -2277,6 +2277,22 @@ func (a *App) mutate(id string, fn func(*core.Task)) (*core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	return a.mutateIn(idx, id, fn)
+}
+
+// mutateIn is mutate minus the load: it applies fn to a task in an index the
+// caller ALREADY holds, then stamps and saves on the same terms.
+//
+// It exists because a verb that must VALIDATE against the task before editing it
+// (a checklist index in range, a relabel that must not empty a required label
+// set, a repo arg resolved against the board's repo universe) used to check
+// against one snapshot and then call mutate, which loaded a SECOND one. Two
+// loads, two snapshots, no lock between them — so `check`/`check --rm` wrote
+// `t.Checklist[item]` and sliced `t.Checklist[:item]` against a list that a
+// concurrent writer may have shortened in between, which is an out-of-range
+// panic rather than an error. Validating and applying against one snapshot is
+// what closes that, and halving the read is the free part.
+func (a *App) mutateIn(idx *core.Index, id string, fn func(*core.Task)) (*core.Task, error) {
 	t, i := idx.Find(id)
 	if i < 0 {
 		return nil, core.NotFound(id)
