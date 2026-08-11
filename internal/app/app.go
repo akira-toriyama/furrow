@@ -553,7 +553,16 @@ archive/bodies/*.md merge=union
 // is an error if one already exists. The tasks/ dir and meta.json are
 // provisioned by the first Store.Save.
 func Init(dir string) (*App, error) {
-	fdir := filepath.Join(dir, DirName)
+	return InitAt(filepath.Join(dir, DirName))
+}
+
+// InitAt creates the store at EXACTLY storeDir — the .furrow directory itself,
+// not its parent. It exists for the env overrides: FURROW_DIR/FURROW_BOARD name
+// the store directory verbatim (it need not be called ".furrow"), and `furrow
+// init` under either must create the store the very next command will discover,
+// never a stray board in the cwd (which is how this repo once got a committed
+// .furrow/ — see .gitignore).
+func InitAt(fdir string) (*App, error) {
 	if fi, err := os.Stat(fdir); err == nil && fi.IsDir() {
 		return nil, core.Validationf("", "%s already exists at %q", DirName, fdir)
 	}
