@@ -751,17 +751,23 @@ except where noted:
   `.gitattributes` rule makes git-lfs take the blob transparently. `--json`
   emits `{id, asset, ref, line}`.
 - **`sync`** runs the multi-machine ritual against the git repo enclosing the
-  board: auto-commit scoped to `.furrow/` — machine-written paths (`tasks/`,
-  `meta.json`, `config.toml`) and brand-new (untracked) bodies always commit,
+  board: auto-commit scoped to `.furrow/` — machine-written paths (an allowlist:
+  the `tasks/`/`epics/`/`repos/` shards, `meta.json`, `config.toml`,
+  `bodies/assets/`, the board git dotfiles, and the `archive/` store's copies)
+  and brand-new (untracked) bodies always commit,
   while a merely-modified `bodies/<id>.md` commits only when named with
   `-b/--body <id>` or under `--all-bodies`, and is otherwise left for its
-  author and reported in `pending_bodies` plus a stderr note — then `fetch` +
+  author and reported in `pending_bodies` plus a stderr note; a file furrow
+  does not own (an editor swap, a backup `~`, a stray `.tmp-*`) is never
+  committed and is disclosed in `foreign_files` plus a stderr note — then `fetch` +
   autostash `rebase @{u}` (onto the tracking ref, not `FETCH_HEAD`, so a
   co-writer's fetch can't race it), `push` (one retry on non-fast-forward), via
   the `internal/gitrepo` adapter. The progress object — stdout on success AND
   failure — carries `{committed, pulled, pushed, conflict, complete,
-  committed_bodies, pending_bodies, pending_stash, switches}` (the lists
-  omitted when empty; `switches` = the epic activations this sync published). `complete` is `false` whenever a body or stash is left pending (the
+  committed_bodies, pending_bodies, pending_stash, foreign_files, switches}`
+  (the lists
+  omitted when empty; `foreign_files` = non-furrow junk left uncommitted;
+  `switches` = the epic activations this sync published). `complete` is `false` whenever a body or stash is left pending (the
   stdout summary line names that count too), so a pushed-but-incomplete sync is
   never mistaken for a fully-published one. Failure modes, branch
   on the error `kind` (each also marked `retryable` or not in the envelope):
@@ -911,7 +917,8 @@ expert; bundle the ceremony for everyone else.*
 
 `furrow sync` is exemplar #1. It bundles the exact dance a git
 expert runs by hand — **auto-commit (pathspec-limited to `.furrow/`, and within
-it gated to machine-written files plus new/opted-in bodies) →
+it gated to an allowlist of machine-written files plus new/opted-in bodies —
+foreign junk like editor swap files is skipped and disclosed) →
 `fetch` + `rebase --autostash @{u}` → `push`** — behind one command, adding a
 machine-readable progress object and conflict classification on top. The sugar
 is a convenience, not a cage: the underlying store is still just files in a git

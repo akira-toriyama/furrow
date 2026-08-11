@@ -552,12 +552,17 @@ non-interactive command — a thin git wrapper, not a sync daemon or server
 (see [docs/non-goals.md](docs/non-goals.md)):
 
 1. auto-commit, **scoped to `.furrow/`** — other dirty files in the board repo
-   (notes, drafts) are never swept in. Within `.furrow/`, machine-written shards
-   (`tasks/`, `meta.json`) are always committed, but a hand-edited
+   (notes, drafts) are never swept in. Within `.furrow/`, machine-written files
+   (an allowlist of what furrow itself writes: the `tasks/`/`epics/`/`repos/`
+   shards, `meta.json`, `config.toml`, `bodies/assets/`, the board git dotfiles,
+   and the `archive/` store's copies) are always committed, but a hand-edited
    `bodies/<id>.md` is committed **only when it is new or named with `-b/--body`**
    — a merely-modified body is left for its author (surfaced in `pending_bodies`)
    so a shared checkout never commits a co-located operator's in-progress prose
-   under the wrong author. `--all-bodies` restores the old sweep for a checkout
+   under the wrong author. A file furrow does not own — an editor swap file, a
+   backup `~`, a stray `.tmp-*` — is **never** committed (a push cannot be
+   un-published) and is disclosed in `foreign_files` plus a stderr note.
+   `--all-bodies` restores the old sweep for a checkout
    you know is yours alone. Default message
    `:card_file_box:(board) sync via furrow`; override with `-m`.
 2. `git fetch`, then `git rebase --autostash @{u}` — rebasing onto the upstream
@@ -577,9 +582,11 @@ until it does. On a real conflict sync **aborts the rebase automatically** (the
 board is never left with markers; your local sync commit survives) and exits 3
 with `"kind": "sync-conflict"` + `"details": {"paths": [...]}`. The progress object
 `{committed, pulled, pushed, conflict, complete, committed_bodies,
-pending_bodies, pending_stash, switches}` prints to stdout on success and
+pending_bodies, pending_stash, foreign_files, switches}` prints to stdout on
+success and
 failure alike (empty lists omitted); **`complete`** — not `pushed` — is the
-"fully published" flag, `false` whenever a body or stash is left pending, and
+"fully published" flag, `false` whenever a body or stash is left pending,
+`foreign_files` names the non-furrow junk deliberately left uncommitted, and
 `switches` names any `epic activate` records this sync published (the switch
 log's exit point).
 

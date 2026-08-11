@@ -239,8 +239,12 @@ the user-level config. When you work with any furrow store:
 - **A multi-machine board converges with `furrow sync`** (auto-commit scoped
   to `.furrow/` → `fetch` + `rebase --autostash @{u}` → `push`): run it before
   reading and after writing a shared board. Within `.furrow/`, machine-written
-  files (`tasks/`, `meta.json`, `config.toml`) and brand-new (untracked) bodies
-  always commit, but a **merely-modified `bodies/<id>.md` is committed only when
+  files (an allowlist of what furrow itself writes: the `tasks/`/`epics/`/
+  `repos/` shards, `meta.json`, `config.toml`, `bodies/assets/`, the board git
+  dotfiles, and the `archive/` store's copies) and brand-new (untracked) bodies
+  always commit — a file furrow does not own (an editor swap, a backup `~`, a
+  stray `.tmp-*`) is NEVER committed and is disclosed in `foreign_files` plus a
+  stderr note — but a **merely-modified `bodies/<id>.md` is committed only when
   named with `-b/--body <id>` or swept with `--all-bodies`** — on a shared
   checkout a plain sync must not commit a co-located operator's in-progress
   prose under the wrong author. A skipped body is listed in the JSON
