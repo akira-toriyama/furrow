@@ -159,11 +159,14 @@ func TestLintCodeRegistryCoversEmitted(t *testing.T) {
 	// Patterns that spell a lint code at an emission site:
 	//   Code: "x-y"            (keyed Problem literal)
 	//   Problem{SevX, "x-y"    (positional Problem literal)
-	//   cycleProblems(idx, "x-y"  (the one code passed as an argument)
+	//   cycleProblems(…, "x-y" / cycleProblemsGraph(…, "x-y"  (the code is the
+	//   first string argument — matched by helper NAME, not by argument
+	//   spelling, since anchoring on `idx,` silently skipped the Graph variant
+	//   and epic-dep-cycle went unwatched)
 	pats := []*regexp.Regexp{
 		regexp.MustCompile(`Code:\s*"([a-z][a-z-]*)"`),
 		regexp.MustCompile(`Problem\{Sev\w+,\s*"([a-z][a-z-]*)"`),
-		regexp.MustCompile(`cycleProblems\(idx,\s*"([a-z][a-z-]*)"`),
+		regexp.MustCompile(`cycleProblems\w*\([^"]*"([a-z][a-z-]*)"`),
 	}
 	seen := map[string]string{} // code -> file where found
 	root := filepath.Join("..") // internal/
@@ -200,12 +203,19 @@ func TestLintCodeRegistryCoversEmitted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walk internal/: %v", err)
 	}
-	if len(seen) < 20 {
-		t.Fatalf("grep found only %d codes — the patterns likely broke, not the registry", len(seen))
-	}
 	for code, file := range seen {
 		if !core.IsLintCode(code) {
 			t.Errorf("lint code %q emitted in %s is NOT in core's lintCodes registry — add it (else `lint --code %s` rejects a real code)", code, file, code)
+		}
+	}
+	// The reverse direction replaces the old `len(seen) < 20` tripwire, which a
+	// single rotten pattern could never trip (three patterns, 40+ codes): every
+	// REGISTERED code must also be seen at an emission site. A miss here means
+	// either a dead registry entry (the code is never emitted — remove it) or an
+	// emission form these patterns cannot read (add a pattern above).
+	for _, code := range core.LintCodeList() {
+		if _, ok := seen[code]; !ok {
+			t.Errorf("registered lint code %q was not found at any emission site — dead registry entry, or an emission form the patterns above cannot see", code)
 		}
 	}
 }
