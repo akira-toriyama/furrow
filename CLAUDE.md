@@ -676,7 +676,10 @@ back into place — see the marshaller-path section.
 - Commits: gitmoji-driven — `<:gitmoji:>[(<scope>)][!] <subject>` (the leading
   `:code:` is the type and drives release semver; legacy `<type>(scope):` tokens
   are accepted and ignored).
-  Enable the hook once: `git config core.hooksPath scripts/hooks`. Spec:
+  Enable the hook once: `git config core.hooksPath scripts/hooks`. The hook does
+  not hold a copy of the grammar — it runs `glyph lint --stdin`, the same checker
+  CI runs over the range, and skips cleanly (with a note) when `glyph` is not on
+  PATH. Spec:
   [CONTRIBUTING.md](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md).
 - `go build ./...` and `go test ./...` must pass before finishing a turn.
 - English is the only committed language — **there is no `README.ja.md`;

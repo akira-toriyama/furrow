@@ -1,41 +1,27 @@
 #!/bin/sh
-# commit-msg hook: validate gitmoji + Conventional Commits form.
+# commit-msg hook: check the message against the gitmoji convention.
 # Enable:     git config core.hooksPath scripts/hooks
 # Convention: https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md
 #
-# Form: <:gitmoji:> <type>(<scope>)<!>: <subject>
-#   e.g. :sparkles: feat(core): add deterministic index marshaller
+# The grammar is NOT written here. `glyph` is the fleet's machine-readable canon
+# for it (`glyph rules`), and `glyph lint --stdin` is its documented
+# authoring-time entry point — the same checker CI runs over the range, so a
+# message this hook accepts is one CI accepts.
 #
-# Low-dependency (POSIX sh + grep). The gitmoji must be the :code: text form.
+# A second copy of the pattern is exactly what went wrong: this hook hard-coded
+# the retired `<:gitmoji:> <type>(<scope>): <subject>` form and stayed that way
+# after the convention moved to `<:gitmoji:>[(<scope>)][!] <subject>`, so
+# enabling it — which CLAUDE.md tells contributors to do — rejected every commit
+# on this repo's own main branch. Delegation is the fix: there is no longer a
+# copy that can drift.
+#
+# glyph also owns the cases a hand-rolled pattern gets wrong: merge, revert,
+# fixup!/squash!, and `:construction:` (legal while authoring, a violation on the
+# way into main).
 
-msg_file="$1"
-subject="$(grep -vE '^[[:space:]]*#' "$msg_file" | sed '/^[[:space:]]*$/d' | head -n1)"
-
-case "$subject" in
-  "Merge "*|"Revert "*|"fixup! "*|"squash! "*) exit 0 ;;
-esac
-
-types='feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert'
-pattern="^:[a-z0-9][a-z0-9_+-]*: ($types)(\([^()]+\))?!?: .+"
-
-if printf '%s' "$subject" | grep -qE "$pattern"; then
-  exit 0
+if ! command -v glyph >/dev/null 2>&1; then
+	echo "commit-msg: glyph is not on PATH — convention check SKIPPED (CI still lints the range)." >&2
+	exit 0
 fi
 
-cat >&2 <<EOF
-✖ Commit message violates the convention.
-
-  got: $subject
-
-  form: <:gitmoji:> <type>(<scope>)<!>: <subject>
-        ^^^^^^^^^^^ :code: text form required (emoji glyph rejected)
-
-  type: $types
-  scope: core|store|config|cli|app|index|body|migrate|nix|release|ci|docs
-  e.g.: :sparkles: feat(core): add deterministic index marshaller
-        :bug: fix(store): atomic-rename the index, never partial-write
-        :boom: feat(cli)!: rename --status to --lane
-
-  details: https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md
-EOF
-exit 1
+exec glyph lint --stdin <"$1"
