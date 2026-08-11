@@ -125,6 +125,12 @@ func (a *App) AutoCommitFlush(ctx context.Context, cmd string, args []string) *A
 	}
 	res.Committed = true
 	res.CommittedBodies = committedBodies
+	// Consume what this flush just committed, so the subsequent
+	// JournalTouchedBodies (the CLI calls it after the flush) journals only
+	// what is still unpublished — normally nothing.
+	for _, id := range committedBodies {
+		delete(a.bodiesTouched, id)
+	}
 	return res
 }
 

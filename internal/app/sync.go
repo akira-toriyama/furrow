@@ -587,6 +587,19 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 	if err != nil {
 		return p, err
 	}
+	// The touched-bodies journal is the cross-process half of bodiesTouched:
+	// ids whose bodies furrow ITSELF wrote (note / edit --body / done --note /
+	// apply) in an earlier process of this checkout. They ride as if named with
+	// -b — furrow's own writes are machine-mediated prose, not a co-located
+	// operator's WIP — and the journal is rewritten below to only what is
+	// still dirty and uncommitted, so a stale id never lingers.
+	journal := readBodyJournal(ctx, r)
+	if len(journal) > 0 {
+		opts.Bodies = append(append([]string(nil), opts.Bodies...), journal...)
+	}
+	if len(changes) == 0 && len(journal) > 0 {
+		writeBodyJournal(ctx, r, nil) // clean tree: every journaled body is already published
+	}
 	if len(changes) > 0 {
 		commitPaths, committedBodies, pendingBodies, foreign := partitionSync(spec, changes, opts)
 		p.PendingBodies = pendingBodies // reported even when there is nothing else to commit
@@ -606,6 +619,28 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 			}
 			p.Committed = true
 			p.CommittedBodies = committedBodies
+			// Consume what this sync just committed (autocommit's twin), so a
+			// later JournalTouchedBodies in the same process journals only
+			// what is still unpublished.
+			for _, id := range committedBodies {
+				delete(a.bodiesTouched, id)
+			}
+		}
+		if len(journal) > 0 {
+			// Keep only what is STILL pending (dirty and uncommitted): a
+			// journaled id that was just committed — or was already clean —
+			// leaves the journal.
+			pending := make(map[string]bool, len(pendingBodies))
+			for _, id := range pendingBodies {
+				pending[id] = true
+			}
+			var keep []string
+			for _, id := range journal {
+				if pending[id] {
+					keep = append(keep, id)
+				}
+			}
+			writeBodyJournal(ctx, r, keep)
 		}
 	}
 

@@ -224,12 +224,18 @@ func newRootCmd() *cobra.Command {
 		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
 			a := autoCommitApp
 			autoCommitApp = nil // consume: the next command re-populates via openApp
-			if a == nil || !a.AutoCommit || !mutatingCommands[cmd.Name()] {
+			if a == nil || !mutatingCommands[cmd.Name()] {
 				return nil
 			}
-			for _, w := range a.AutoCommitFlush(cmd.Context(), cmd.Name(), args).Warnings {
-				fmt.Fprintln(errOut, w)
+			if a.AutoCommit {
+				for _, w := range a.AutoCommitFlush(cmd.Context(), cmd.Name(), args).Warnings {
+					fmt.Fprintln(errOut, w)
+				}
 			}
+			// Whatever this command's own body writes the flush did NOT commit
+			// (autocommit off, or a skipped/failed flush) is journaled so a later
+			// plain `furrow sync` — any process, this checkout — publishes them.
+			a.JournalTouchedBodies(cmd.Context())
 			return nil
 		},
 		// Version holds the full human line (e.g. "furrow v1.2.3 (abc1234, ...)")
