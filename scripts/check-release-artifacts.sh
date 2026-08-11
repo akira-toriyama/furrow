@@ -83,6 +83,36 @@ else
   done
 fi
 
+# ---------------------------------------------------------------------------
+# 3. The runner-native binary must actually CARRY the stamped version. Go's -X
+#    silently no-ops on an unknown symbol path, so a moved or renamed version
+#    package ships every artifact reporting "furrow dev" while this whole file
+#    stays green — the filenames keep the version, the contents lose it.
+#    Executing the binary is the only pre-tag check that can see that.
+# ---------------------------------------------------------------------------
+os="$(uname | tr '[:upper:]' '[:lower:]')"
+case "$(uname -m)" in
+  x86_64) arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) arch="" ;;
+esac
+native="$dist/furrow_${v}_${os}_${arch}.tar.gz"
+if [ -n "$arch" ] && [ -f "$native" ]; then
+  tmp="$(mktemp -d)"
+  if tar -xzf "$native" -C "$tmp" furrow 2>/dev/null; then
+    got="$("$tmp/furrow" --version 2>/dev/null || true)"
+    case "$got" in
+      *"$v"*) : ;;
+      *) note "the ${os}_${arch} binary reports "${got:-<no output>}", not version $v — ldflags -X no-op'd (version package moved/renamed?)" ;;
+    esac
+  else
+    note "$native does not contain a top-level 'furrow' binary"
+  fi
+  rm -rf "$tmp"
+else
+  echo "note: no runner-native archive (${os}_${arch}) in $dist/ — binary version check skipped" >&2
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo >&2
   echo "The release config produced artifacts that release.yml's next step cannot use." >&2
@@ -97,4 +127,4 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
   echo "version=$v" >> "$GITHUB_OUTPUT"
 fi
 
-echo "ok — 4 archives + 4 SPDX-2.3 SBOMs, every attest path concrete, checksums.txt exact-field unique"
+echo "ok — 4 archives + 4 SPDX-2.3 SBOMs, every attest path concrete, checksums.txt exact-field unique, native binary carries $v"
