@@ -85,7 +85,7 @@ furrow show "$id"
 furrow done "$id"
 ```
 
-`add` defaults the lane to `lanes.default` (`inbox`) and appends within the lane using the sparse priority step. Pass `--status/-s`, `--priority/-p`, `--label/-l`, `--epic/-e`, `--dep`, `--ref`, or `--body` to set fields up front.
+`add` defaults the lane to `lanes.default` (`inbox`) and appends within the lane using the sparse priority step. Pass `--status/-s`, `--priority/-p`, `--label/-l`, `--epic/-e`, `--dep`, `--ref`, or `--body` to set fields up front. On a board whose scope has exactly **one active epic**, a bare `add` (and `add --stdin`) files the capture under it — disclosed in a stderr note, reversed with `set <id> -e ''` — the epic mirror of the board-repo union; zero or several actives inherit nothing (furrow never guesses between focuses), and an explicit `-e ''` stays unfiled on purpose.
 
 ### Typed query — `-q`
 

@@ -46,7 +46,9 @@ func TestNextEpicScopeTable(t *testing.T) {
 		eA = mustEpic(t, a, "box a", EpicAddOpts{Repos: []string{"o/r"}})
 		eB = mustEpic(t, a, "box b", EpicAddOpts{Repos: []string{"o/r"}})
 		mustActivate(t, a, eA)
-		tu, err := a.Add("unfiled ready", AddOpts{Status: "ready"})
+		// NoEpic: this fixture MEANS "unfiled" — without it the new active-epic
+		// inheritance would file the task under eA and dissolve the partition.
+		tu, err := a.Add("unfiled ready", AddOpts{Status: "ready", NoEpic: true})
 		if err != nil {
 			t.Fatal(err)
 		}

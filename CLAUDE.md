@@ -72,8 +72,11 @@ the user-level config. When you work with any furrow store:
   (open members but none actionable — org-mode's stuck-project); each task row
   still marks **actionable** (exactly what `furrow next` would hand you; shown as
   ★). `--json` is an array of `{epic, active, progress, stuck, tasks}` groups;
-  `--ndjson` streams one whole group per line. A task's box is set at `add -e`,
-  or later with `set <id> -e <epic>` — membership is the `epic` field, 0..1 per
+  `--ndjson` streams one whole group per line. A task's box is set at `add -e`
+  (a bare `add` INHERITS the scope's single active epic when there is exactly
+  one — disclosed on stderr; `-e ''` stays unfiled on purpose, and zero or
+  several actives inherit nothing), or later with `set <id> -e <epic>` —
+  membership is the `epic` field, 0..1 per
   task, and `lint` errors `epic-required` on an open task filed under no box
   once the board has any.
 - **An epic can WAIT ON other epics (schema v7): `furrow epic dep <id>

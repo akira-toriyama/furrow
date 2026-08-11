@@ -53,7 +53,7 @@ func TestTreeGroupsAndOrder(t *testing.T) {
 	mustAdd(t, a, "in active", AddOpts{Epic: active})
 	mustAdd(t, a, "in other", AddOpts{Epic: other})
 	mustAdd(t, a, "in closed", AddOpts{Epic: closed})
-	mustAdd(t, a, "unfiled", AddOpts{})
+	mustAdd(t, a, "unfiled", AddOpts{NoEpic: true}) // meant unfiled; inheritance would file it under the active box
 
 	groups, err := a.Tree(QueryOpts{}, "")
 	if err != nil {

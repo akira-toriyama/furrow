@@ -42,6 +42,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 	// task in the write. Parsed here, in the pre-flight, so a malformed spelling
 	// fails before the first body hits disk (single Add's contract).
 	now := a.Clock.Now()
+	inheritedEpic, inheritComputed := "", false
 	dues := make([]*time.Time, len(specs))
 	for i, s := range specs {
 		// Fold the title exactly as single Add does. A bulk title is ordinary user
@@ -104,12 +105,21 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		// epic id — a task filed under a box that does not exist, reported only by
 		// lint. This is the exact bulk-vs-single divergence add_parity_test.go
 		// exists to catch, and --type had it before this field did.
-		if s.Epic != "" {
+		switch {
+		case s.Epic != "":
 			resolved, err := a.ResolveEpic(s.Epic)
 			if err != nil {
 				return nil, specf(err)
 			}
 			specs[i].Epic = resolved
+		case !s.NoEpic:
+			// Mirror single Add's active-epic inheritance (computed once — the
+			// scope's single active box is the same for the whole batch).
+			if !inheritComputed {
+				inheritedEpic = a.inheritableEpic()
+				inheritComputed = true
+			}
+			specs[i].Epic = inheritedEpic
 		}
 		// Mirror single Add's due binding, for the same reason the epic ref is
 		// resolved here: the bulk path must not be the one door a raw spelling —
