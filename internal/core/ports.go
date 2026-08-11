@@ -23,6 +23,16 @@ type Store interface {
 	// changed. It does NOT raise the board's layout version: it refuses a board
 	// that does not already declare this binary's SchemaVersion (CheckWritable),
 	// and stamps meta.json only for a genuinely fresh store.
+	//
+	// Save CANONICALIZES, in both directions, and callers rely on it: the stored
+	// task takes the on-disk shape, and idx's own tasks are normalized IN PLACE
+	// (that is what MarshalTask does to each &idx.Tasks[i]). So the app returns
+	// the just-saved task straight out of idx — sorted+deduped sets, [] not null,
+	// UTC whole-second stamps, value/effort clamped — with no re-read. An
+	// implementation that skips it does not merely normalize later; it hands its
+	// callers a shape no board can hold. The in-memory twin did exactly that, and
+	// the app grew point-fixes for it until memstore.Save started round-tripping
+	// through the same marshaller.
 	Save(idx *Index) error
 
 	// BoardVersion is the layout version the board DECLARES (meta.json), read

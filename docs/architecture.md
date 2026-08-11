@@ -83,7 +83,7 @@ contract an agent does.
 | `internal/app` | Coordinator. Wires a `Store` + `Config` + `Clock`; exposes every mutation/query as a method. The **only** place that mutates state. |
 | `internal/config` | Loads `.furrow/config.toml` (clamp-don't-reject). Produces an effective `Config`. Also owns the surgical single-key editor behind `furrow config set`, the one config writer. |
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
-| `internal/store/memstore` | In-memory `core.Store` for tests and `migrate --dry-run`. A normal non-test package. |
+| `internal/store/memstore` | In-memory `core.Store` for tests. A normal non-test package, so runtime code that must not touch disk could use it too (nothing does today). |
 | `internal/gitrepo` | git subprocess adapter behind `furrow sync`, `furrow doctor`'s freshness probe, and post-mutation autocommit (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough), the in-memory `Marshal`, the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard, `meta.json`, a repo review shard, and an epic shard as Go constants; emitted by `furrow schema [task|meta|repo|epic]`. |
@@ -138,6 +138,10 @@ The seams between the pure core and the outside world are interfaces declared in
   `furrow upgrade` and nothing else; it **reads** the existing `meta.json` and
   raises its number rather than writing a fresh `core.Meta`, so the upgrade cannot
   eat the forward-compatible keys the passthrough exists to carry.
+  **`Save` canonicalizes in both directions**, and callers rely on it: the stored
+  task takes the on-disk shape *and* the caller's `*core.Index` is normalized **in
+  place** (each `&idx.Tasks[i]` goes through `core.MarshalTask`) — which is why the
+  app hands back a just-saved task straight out of the index, with no re-read.
   The two asset methods are the store half of `furrow attach` /
   `furrow lint`'s asset checks: `SaveAsset` copies media into the task's asset
   area `bodies/assets/<id>-<name>` (sanitized, collision-free, atomic) and
@@ -595,6 +599,20 @@ is a **normal package, not a test helper**, so both unit tests and runtime
 dry-run code can use it. Its `BodyFile` returns `""` because an in-memory store is
 not file-backed — so `$EDITOR` shell-out is unsupported against it, which the
 `app` layer detects and reports.
+
+**It may never promise LESS than fsstore.** fsstore serializes on write and parses
+fresh bytes on read, so canonicalization and isolation come for free; the twin has
+to do both explicitly, and every divergence lands as a test that is green against
+a shape no real board can hold. `Save`/`SaveRepo`/`SaveEpic` therefore round-trip
+through the single `core.Marshal*`/`Unmarshal*` path rather than storing a struct
+copy, and every read deep-copies out (including `RepoRecord`'s two `*time.Time`).
+Two divergences shipped before that rule was enforced: an un-canonicalizing `Save`
+(which grew paper-over normalization in `internal/app`, and left a lint test
+asserting an out-of-range estimate that a real write always clamps) and a
+`ListRepos` that handed out the store's own clock pointers.
+`internal/store/memstore/parity_test.go` pins both against a real `fsstore` — the
+two behaviors with a demonstrated failure, deliberately not a port-wide contract
+suite.
 
 ---
 

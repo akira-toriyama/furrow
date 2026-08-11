@@ -59,6 +59,14 @@ func (a *App) loc() *time.Location {
 // drift apart. It is measured from NOW, not from the task's existing due stamp:
 // snoozing an already-overdue task by +1d must land in the future, which a
 // due-relative offset would not.
+//
+// The instant comes back in whatever zone the spelling implies; putting it into
+// the on-disk shape (UTC, whole seconds) is Store.Save's job, exactly as it is
+// for created/updated — which no write path pre-normalizes either. A normDue
+// here used to do it a second time, because the memstore twin did not
+// canonicalize on save and a memstore-backed caller would read back the
+// zone-carrying stamp it had just written. It does now, so the boundary is one
+// place again.
 func ParseDue(s string, now time.Time, loc *time.Location) (time.Time, error) {
 	if loc == nil {
 		loc = time.UTC
@@ -68,7 +76,7 @@ func ParseDue(s string, now time.Time, loc *time.Location) (time.Time, error) {
 		return time.Time{}, core.Validationf("", "--due needs a date (2026-08-04, 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d); to remove one use --clear-due")
 	}
 	if d, ok := parseRelativeOffset(s); ok {
-		return normDue(now.Add(d)), nil
+		return now.Add(d), nil
 	}
 	if t, err := time.Parse(dueDateLayout, s); err == nil {
 		// The END of the day, not its start (see the doc comment). 23:59:59 is the
@@ -86,29 +94,21 @@ func ParseDue(s string, now time.Time, loc *time.Location) (time.Time, error) {
 		// so reading Date() off it silently promises the day before and the task is
 		// overdue for every hour of the day it was promised for.
 		y, mo, d := t.Date()
-		return normDue(time.Date(y, mo, d, 23, 59, 59, 0, loc)), nil
+		return time.Date(y, mo, d, 23, 59, 59, 0, loc), nil
 	}
 	for _, l := range dueLayouts {
 		if l.zoned {
 			if t, err := time.Parse(l.layout, s); err == nil {
-				return normDue(t), nil
+				return t, nil
 			}
 			continue
 		}
 		if t, err := time.ParseInLocation(l.layout, s, loc); err == nil {
-			return normDue(t), nil
+			return t, nil
 		}
 	}
 	return time.Time{}, core.Validationf("", "--due %s is not a date: use YYYY-MM-DD (the whole day), YYYY-MM-DDTHH:MM, an RFC3339 instant, or a signed offset like +1d/+2h", strconv.Quote(s))
 }
-
-// normDue puts a parsed instant into the on-disk shape — UTC, whole seconds —
-// at the ONE boundary every write path crosses. core.Canonicalize enforces the
-// same thing on the way to a shard, but only fsstore canonicalizes on save; a
-// memstore-backed caller (every app test, and any future front-end) would
-// otherwise read back the zone-carrying stamp it just wrote and the two stores
-// would disagree about a field's value.
-func normDue(t time.Time) time.Time { return t.UTC().Truncate(time.Second) }
 
 // parseDue is ParseDue bound to this app's clock and zone — the form every
 // write path uses, so a spelling can never mean one thing on `add` and another

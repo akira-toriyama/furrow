@@ -177,13 +177,13 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
 	}
-	// Return the tasks as a subsequent read emits them. Save canonicalizes the
-	// index only as a side effect of fsstore marshalling each shard in place;
-	// the memstore twin doesn't, so canonicalize here explicitly ([]-not-null
-	// slices, sorted+deduped sets) and return those. This keeps bulk-add's JSON
-	// deep-equal to a following `ls` for any Store — without the pre-Save
-	// structs' `null` slices leaking out, and without a redundant store reload.
-	core.Canonicalize(idx, a.Cfg.Lanes)
+	// Return the tasks as a subsequent read emits them: Save normalized each of
+	// them in place ([]-not-null slices, sorted+deduped sets, UTC whole-second
+	// stamps — see Store.Save's contract), so bulk-add's JSON is deep-equal to a
+	// following `ls` with no re-canonicalize and no redundant store reload. This
+	// used to call core.Canonicalize explicitly because the memstore twin skipped
+	// the normalization fsstore performs, i.e. the tasks were canonical in
+	// production and `null`-slice-shaped in every test.
 	created := make([]core.Task, 0, len(ids))
 	for _, id := range ids {
 		t, _ := idx.Find(id)

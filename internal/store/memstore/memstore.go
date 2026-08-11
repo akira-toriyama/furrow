@@ -1,6 +1,6 @@
 // Package memstore is an in-memory core.Store. It is a normal (non-test)
-// package so both tests and runtime code (e.g. `migrate --dry-run`, which must
-// not touch disk) can use it. Mirrors chord's AdapterTest-as-a-real-target
+// package so runtime code that must not touch disk could use it as well; today
+// every caller is a test. Mirrors chord's AdapterTest-as-a-real-target
 // convention.
 package memstore
 
@@ -169,6 +169,26 @@ func cloneTime(p *time.Time) *time.Time {
 // Save replaces the task set from idx: every task becomes its own entry and any
 // id no longer present is dropped — the in-memory twin of writing one shard per
 // task and deleting the shards of removed ids.
+//
+// Each task round-trips through the single core.MarshalTask/UnmarshalTask path
+// (as SaveRepo and SaveEpic do), which buys the two things a struct copy did
+// not:
+//
+//   - the STORED task is canonicalized (labels/repos/deps sorted+deduped,
+//     nil slices -> [], timestamps UTC whole-second, value/effort clamped), so a
+//     test that saves a messy task reads back the same shape fsstore would have
+//     persisted instead of the messy one;
+//   - the CALLER's index is canonicalized IN PLACE, because canonicalizeTask
+//     mutates through the pointer — exactly fsstore.Save's side effect, which
+//     comes from marshalling each &idx.Tasks[i] on its way to a shard. Hence the
+//     index-based loop: `for _, t := range` would normalize a copy and leave the
+//     caller holding the pre-Save shape.
+//
+// Without it the double promised LESS than fsstore delivers, and app code grew
+// point-fixes to paper over the gap. Re-parsing also isolates the stored task in
+// both directions (fsstore serializes, so it is isolated too): a caller that
+// keeps mutating idx after Save cannot reach the store through a shared backing
+// array. The bytes are the same ones fsstore would write, extras included.
 func (s *Store) Save(idx *core.Index) error {
 	// The write gate, same as fsstore: write only a board that already declares
 	// this binary's layout — never raise it as a side effect.
@@ -176,11 +196,17 @@ func (s *Store) Save(idx *core.Index) error {
 		return err
 	}
 	next := make(map[string]core.Task, len(idx.Tasks))
-	for _, t := range idx.Tasks {
-		// Deep-copy INTO the store too (fsstore serializes, so it is isolated in
-		// both directions): a caller that keeps mutating idx after Save must not
-		// reach the stored tasks through shared backing arrays.
-		next[t.ID] = cloneTask(t)
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		data, err := core.MarshalTask(t)
+		if err != nil {
+			return err
+		}
+		norm, err := core.UnmarshalTask(data)
+		if err != nil {
+			return err
+		}
+		next[norm.ID] = *norm
 	}
 	s.tasks = next
 	return nil
@@ -193,9 +219,18 @@ func (s *Store) LoadRepo(repo string) (*core.RepoRecord, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
+	rec = cloneRepo(rec)
+	return &rec, true, nil
+}
+
+// cloneRepo is cloneTask's review-record twin: the struct copy covers Repo, so
+// only the two clocks need deep-copying. Every read path returns one — a caller
+// that advances a returned *time.Time must not reach the stored record, which is
+// exactly what fsstore's parse-fresh-bytes read gives for free.
+func cloneRepo(rec core.RepoRecord) core.RepoRecord {
 	rec.LastReviewed = cloneTime(rec.LastReviewed)
 	rec.LastAgentReviewed = cloneTime(rec.LastAgentReviewed)
-	return &rec, true, nil
+	return rec
 }
 
 // SaveRepo stores one repo review record — the in-memory twin of writing a
@@ -219,14 +254,17 @@ func (s *Store) SaveRepo(rec *core.RepoRecord) error {
 }
 
 // ListRepos returns every repo review record, sorted by Repo — the in-memory
-// twin of listing repos/. An empty store yields nil (never reviewed).
+// twin of listing repos/. An empty store yields nil (never reviewed). Each
+// record is DEEP-copied out (cloneRepo), like LoadRepo's: a plain struct copy
+// carries the two *time.Time fields, so a caller advancing a returned clock
+// rewrote the store with no SaveRepo.
 func (s *Store) ListRepos() ([]core.RepoRecord, error) {
 	if len(s.repos) == 0 {
 		return nil, nil
 	}
 	recs := make([]core.RepoRecord, 0, len(s.repos))
 	for _, rec := range s.repos {
-		recs = append(recs, rec)
+		recs = append(recs, cloneRepo(rec))
 	}
 	sort.Slice(recs, func(i, j int) bool { return recs[i].Repo < recs[j].Repo })
 	return recs, nil

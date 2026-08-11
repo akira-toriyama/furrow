@@ -33,7 +33,14 @@ func TestLoadIsDeeplyIsolated(t *testing.T) {
 		t.Fatal(err)
 	}
 	tk := &got.Tasks[0]
-	sort.Strings(tk.Labels) // the in-place canonicalize mutation
+	// The original probe was an in-place SORT (Load -> Canonicalize is the routine
+	// that regressed). That is vacuous now that Save canonicalizes: the store
+	// already holds ["a","b"], so sorting the loaded copy writes nothing back even
+	// through a shared array. Keep the call — it asserts the loaded set really is
+	// canonical — and write an ELEMENT for the leak probe: same class, still
+	// detectable.
+	sort.Strings(tk.Labels)
+	tk.Labels[0] = "evil"
 	tk.Repos[0] = "evil/overwrite"
 	tk.Deps = append(tk.Deps[:0], "t-99999")
 	tk.Checklist[0].Done = true
@@ -45,8 +52,10 @@ func TestLoadIsDeeplyIsolated(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := again.Tasks[0]
-	if !reflect.DeepEqual(fresh.Labels, []string{"b", "a"}) {
-		t.Errorf("labels leaked a caller's in-place sort: %v", fresh.Labels)
+	// ["b","a"] went IN; Save canonicalized it, so the store holds ["a","b"] and
+	// the caller's element write must not have reached it.
+	if !reflect.DeepEqual(fresh.Labels, []string{"a", "b"}) {
+		t.Errorf("labels leaked a caller's in-place write: %v", fresh.Labels)
 	}
 	if fresh.Repos[0] != "me/x" || fresh.Deps[0] != "t-00002" || fresh.Checklist[0].Done {
 		t.Errorf("slice mutation leaked into the store: %+v", fresh)
