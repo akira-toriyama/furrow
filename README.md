@@ -330,7 +330,7 @@ The generated table is the machine-guaranteed surface; these are the behavior co
 
 ## Claude Code / agent integration
 
-furrow needs no MCP server and no plugin — the plain CLI **is** the agent interface: `--json`/`--ndjson` on every read, machine-actionable error envelopes, and a clonable plain-text store the agent can read (and, for bodies, write) directly. A daemon or a second protocol would add operational surface without adding a capability (see [docs/non-goals.md](docs/non-goals.md)). The integration is just a small `CLAUDE.md` block plus the `--json` flag. The rules:
+furrow needs no MCP server and no plugin — the plain CLI **is** the agent interface: `--json`/`--ndjson` on every read, machine-actionable error envelopes, and a clonable plain-text store the agent can read (and, for bodies, write) directly. A daemon or a second protocol would add operational surface without adding a capability (see [docs/non-goals.md](docs/non-goals.md)). The integration is a `CLAUDE.md` contract plus the `--json` flag. The rules:
 
 - **Never hand-edit `tasks/<id>.json` (or `meta.json`).** A single deterministic marshaller owns those files; a manual edit will churn the diff (and likely lose the canonical ordering). Mutate tasks through the commands above. `meta.json`'s `schema_version` is raised by **`furrow upgrade` alone** — no other command touches it.
 - **Pre-flight a board you are about to write with `furrow board --json`.** It never fails on a version mismatch, it reports one: branch on `writable` / `schema_state` (`current`/`outdated`/`too-new`/`unreadable`) rather than discovering the problem as a failed write. A write to a board behind the binary is `schema-upgrade-required` (exit 2 — run `furrow upgrade`); a board ahead of it is `schema-too-new` (exit 3 — update furrow). Both carry `details {board_schema, binary_schema}`.
@@ -780,7 +780,9 @@ furrow's write path is byte-stable on purpose: every shard goes through one mars
   Go packages), and a read-only web viewer over the task shards.
 
 Design notes: architecture in [`docs/architecture.md`](docs/architecture.md),
-terms in [`docs/glossary.md`](docs/glossary.md), and what furrow deliberately
+terms in [`docs/glossary.md`](docs/glossary.md), due dates and launchd
+recipes in [`docs/scheduling.md`](docs/scheduling.md), and what furrow
+deliberately
 doesn't do (with rationale) in [`docs/non-goals.md`](docs/non-goals.md).
 
 ---

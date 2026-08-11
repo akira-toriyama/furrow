@@ -30,8 +30,8 @@ operator at once. A plugin would move that contract into a per-machine install
 that can go stale against the board it drives, and (as with MCP) it would add
 no capability the CLI does not already expose.*
 
-The actual integration layer is small and deliberate: a `~15`-line `CLAUDE.md`
-block plus `--json` on the read commands. The rules that block encodes:
+The actual integration layer is deliberate and CLI-shaped: a `CLAUDE.md`
+contract plus `--json` on the read commands. The rules that block encodes:
 never hand-edit `.furrow/tasks/<id>.json` (a single deterministic marshaller in
 `internal/core` owns it, so manual edits churn git and can break the
 determinism contract); `.furrow/bodies/<id>.md` files **are** meant to be
