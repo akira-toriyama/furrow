@@ -30,7 +30,7 @@ const expectUpdatedFlag = "expect-updated"
 // unregistered flag at parse time).
 func addExpectUpdatedFlag(cmd *cobra.Command) {
 	cmd.Flags().String(expectUpdatedFlag, "",
-		"`updated` stamp from your last read (RFC3339); warns via stale_read when the entity changed since")
+		"the updated stamp from your last read (RFC3339); warns via stale_read when the entity changed since")
 }
 
 // expectUpdatedArg reads --expect-updated off cmd: ok=false when the command
@@ -250,7 +250,7 @@ func newDoneCmd() *cobra.Command {
 				func(*core.Task) map[string]any { return appended })
 		},
 	}
-	cmd.Flags().StringVar(&note, "note", "", "append this closing note to each task's body (`-` reads stdin)")
+	cmd.Flags().StringVar(&note, "note", "", "append this closing note to each task's body ('-' reads stdin)")
 	addExpectUpdatedFlag(cmd)
 	return cmd
 }

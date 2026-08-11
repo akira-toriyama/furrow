@@ -118,7 +118,7 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&due, "due", "", "promise this for a date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d")
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
 	cmd.Flags().StringSliceVar(&refs, "ref", nil, "reference (file:line or URL, repeatable)")
-	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (`-` reads stdin; default: a heading from the title)")
+	cmd.Flags().StringVar(&body, "body", "", "initial body markdown ('-' reads stdin; default: a heading from the title)")
 	cmd.Flags().StringArrayVar(&checks, "check", nil, "seed an unchecked checklist item (repeatable; text verbatim)")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "read one task title per line from stdin; create all in one write")
 	// A title that begins with '-' (e.g. `add --ndjson-ish title`) is parsed as a
@@ -237,7 +237,7 @@ func newEditCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&body, "body", "", "replace the WHOLE body with this markdown and advance `updated` (`-` reads stdin); empty is exit 2")
+	cmd.Flags().StringVar(&body, "body", "", "replace the WHOLE body with this markdown and advance updated ('-' reads stdin); empty is exit 2")
 	addExpectUpdatedFlag(cmd)
 	return cmd
 }

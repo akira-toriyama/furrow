@@ -156,7 +156,7 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&archived, "archived", false, "list from the archive store (.furrow/archive/) instead of the hot board")
 	cmd.Flags().BoolVar(&tree, "tree", false, "group the rows by epic (★ = actionable now); with an <epic> argument, just that box's group")
 	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict — no unfiled carve-out)")
-	cmd.Flags().BoolVar(&actionable, "actionable", false, "only tasks `furrow next` would hand you now (★: a next lane, every dep done); ANDs with -s/-l/-r")
+	cmd.Flags().BoolVar(&actionable, "actionable", false, "only tasks 'furrow next' would hand you now (★: a next lane, every dep done); ANDs with -s/-l/-r")
 	cmd.Flags().BoolVar(&blocked, "blocked", false, "only tasks with an unsatisfied dependency (a non-empty blocked_by); ANDs with -s/-l/-r")
 	addQueryFlag(cmd, &queryStr)
 	// A task cannot be both actionable (all deps done) and blocked (a dep undone),
@@ -672,7 +672,7 @@ func newStatsCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
 	cmd.Flags().StringVarP(&repo, "repo", "r", "", "scope to a repo (owner/repo or a unique short name; '' = whole board)")
 	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict)")
-	cmd.Flags().StringVar(&since, "since", "", "window on/after this date (YYYY-MM-DD or RFC3339): filters by updated like `ls` and adds the created/closed flow section")
+	cmd.Flags().StringVar(&since, "since", "", "window on/after this date (YYYY-MM-DD or RFC3339): filters by updated like 'ls' and adds the created/closed flow section")
 	cmd.Flags().StringVar(&until, "until", "", "window on/before this date (YYYY-MM-DD includes the whole day, or RFC3339)")
 	addQueryFlag(cmd, &queryStr)
 	return cmd
