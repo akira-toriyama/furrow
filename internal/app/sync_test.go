@@ -538,3 +538,118 @@ func TestSyncSkipsForeignFilesInStore(t *testing.T) {
 		t.Errorf("summary must name the skip, got %q", p.SyncSummary())
 	}
 }
+
+// startConflictedCherryPick leaves dir mid-cherry-pick on a conflicted plain
+// file: CHERRY_PICK_HEAD exists and f.txt carries markers. The three-stage
+// failure this pins (t-e381): MidOperation used to probe only rebase/merge, so
+// sync (1) misdiagnosed the state as sync-unmerged with a misleading stash
+// remedy, (2) after a `git add` fell through to a raw exit-3
+// "cannot do a partial commit during a cherry-pick" — having staged the BOARD
+// files, which (3) `git cherry-pick --continue` then absorbed into the
+// operator's foreign commit.
+func startConflictedCherryPick(t *testing.T, git, dir string) {
+	t.Helper()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitT(t, git, dir, "checkout", "-q", "-b", "side")
+	write("f.txt", "side\n")
+	runGitT(t, git, dir, "add", "-A")
+	runGitT(t, git, dir, "commit", "-qm", "side")
+	runGitT(t, git, dir, "checkout", "-q", "main")
+	write("f.txt", "main\n")
+	runGitT(t, git, dir, "add", "-A")
+	runGitT(t, git, dir, "commit", "-qm", "main")
+	cmd := exec.Command(git, "cherry-pick", "side")
+	cmd.Dir = dir
+	_ = cmd.Run() // conflicts; CHERRY_PICK_HEAD left behind
+}
+
+func TestSyncRefusesMidCherryPickAndStagesNothing(t *testing.T) {
+	git, cloneA, _ := setupClones(t)
+	startConflictedCherryPick(t, git, cloneA)
+	// A board mutation the sync would want to commit (new, untracked files —
+	// created mid-operation, exactly the agent-walks-in scenario).
+	a := openBoard(t, cloneA)
+	if _, err := a.Add("task one", AddOpts{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stage 1: conflicted cherry-pick. Refused as the classified op-in-progress
+	// (exit 2), naming the operation and its exact way out — never the
+	// stash-shaped sync-unmerged wording, never a raw git relay.
+	_, err := a.Sync(context.Background(), SyncOpts{})
+	if err == nil {
+		t.Fatal("sync mid-cherry-pick must be refused")
+	}
+	fe := core.AsError(err)
+	if fe == nil || fe.Kind != core.KindSyncOpInProgress {
+		t.Fatalf("kind = %v, want %s (err: %v)", fe, core.KindSyncOpInProgress, err)
+	}
+	if got := core.ExitCode(err); got != int(core.CodeValidation) {
+		t.Errorf("exit = %d, want %d", got, core.CodeValidation)
+	}
+	for _, want := range []string{"cherry-pick", "--continue", "--abort"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error must name %q, got: %v", want, err)
+		}
+	}
+
+	// Stage 2: the operator resolves and `git add`s the conflicted file — index
+	// clean, CHERRY_PICK_HEAD still present. Still the same classified refusal
+	// (this exact state used to reach `git commit` and stage the board).
+	if err := os.WriteFile(filepath.Join(cloneA, "f.txt"), []byte("resolved\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitT(t, git, cloneA, "add", "f.txt")
+	_, err = a.Sync(context.Background(), SyncOpts{})
+	fe = core.AsError(err)
+	if fe == nil || fe.Kind != core.KindSyncOpInProgress {
+		t.Fatalf("post-add kind = %v, want %s (err: %v)", fe, core.KindSyncOpInProgress, err)
+	}
+	// The refusal must have staged NOTHING: only the operator's own f.txt.
+	if staged := strings.TrimSpace(runGitT(t, git, cloneA, "diff", "--cached", "--name-only")); staged != "f.txt" {
+		t.Errorf("staged = %q, want only f.txt — board files must never enter the foreign operation", staged)
+	}
+
+	// Stage 3: the operator backs out; sync now proceeds and commits the board.
+	runGitT(t, git, cloneA, "cherry-pick", "--abort")
+	p, err := a.Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatalf("sync after abort: %v", err)
+	}
+	if !p.Committed || !p.Pushed {
+		t.Errorf("board must commit and push once the operation is gone: %+v", p)
+	}
+	// And the board commit is furrow's own, not a cherry-pick absorption.
+	if sub := strings.TrimSpace(runGitT(t, git, cloneA, "log", "-1", "--format=%s")); sub != DefaultSyncMessage {
+		t.Errorf("HEAD subject = %q, want the sync default %q", sub, DefaultSyncMessage)
+	}
+}
+
+// The unattended path has the same pre-flight: a mutation during someone's
+// cherry-pick must not stage the board into it — autocommit warns and skips.
+func TestAutoCommitSkipsMidOperation(t *testing.T) {
+	git, cloneA, _ := setupClones(t)
+	startConflictedCherryPick(t, git, cloneA)
+
+	a := openBoard(t, cloneA)
+	a.AutoCommit = true
+	if _, err := a.Add("task one", AddOpts{}); err != nil {
+		t.Fatal(err) // the mutation itself must survive
+	}
+	res := a.AutoCommitFlush(context.Background(), "add", nil)
+	if !res.Attempted || res.Committed {
+		t.Fatalf("flush must attempt and skip: %+v", res)
+	}
+	if len(res.Warnings) == 0 || !strings.Contains(strings.Join(res.Warnings, "\n"), "cherry-pick") {
+		t.Errorf("the skip must be disclosed naming the operation: %v", res.Warnings)
+	}
+	// f.txt legitimately sits in the index (the conflict's unmerged entries);
+	// what must NOT be there is anything of the board's.
+	if staged := runGitT(t, git, cloneA, "diff", "--cached", "--name-only"); strings.Contains(staged, ".furrow") {
+		t.Errorf("autocommit staged board files during a foreign operation:\n%s", staged)
+	}
+}
