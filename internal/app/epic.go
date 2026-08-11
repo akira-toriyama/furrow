@@ -343,7 +343,7 @@ func (a *App) EpicActivate(ref, reason string) (before, after *core.Epic, openDe
 		return nil, nil, nil, core.NotFound(id)
 	}
 	if !target.IsOpen() {
-		return nil, nil, nil, core.Validationf(id, "epic %s is closed — reopen it before activating", id)
+		return nil, nil, nil, core.Validationf(id, "epic %s is closed — run `furrow epic reopen %s` first", id, id)
 	}
 	if len(target.Repos) == 0 {
 		return nil, nil, nil, core.Validationf(id, "epic %s names no repo — attach one first (`furrow epic set %s --add-repo <owner/repo>`); a repo-less box would bypass the one-active-per-repo rule", id, id)
@@ -531,6 +531,23 @@ func (a *App) EpicDone(ref string) (*core.Epic, *core.Epic, error) {
 		now := a.Clock.Now()
 		e.Closed = &now
 		e.Active = false
+		return nil
+	})
+}
+
+// EpicReopen clears a closed box's Closed stamp — the inverse of EpicDone, for
+// the box closed by mistake (recovery used to be a hand-edit of the shard,
+// which the store contract forbids, or a git revert on the board repo). It
+// never re-activates: the box comes back OPEN and INACTIVE, and choosing it
+// again stays the human's own `epic activate` — reopening is a deliberate act,
+// activating is another. An already-open box is exit 2, mirroring done's
+// already-closed refusal.
+func (a *App) EpicReopen(ref string) (*core.Epic, *core.Epic, error) {
+	return a.mutateEpic(ref, func(e *core.Epic) error {
+		if e.IsOpen() {
+			return core.Validationf(e.ID, "epic %s is already open", e.ID)
+		}
+		e.Closed = nil
 		return nil
 	})
 }

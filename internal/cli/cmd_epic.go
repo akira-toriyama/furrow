@@ -30,7 +30,7 @@ func newEpicCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
 	cmd.AddCommand(newEpicAddCmd(), newEpicLsCmd(), newEpicShowCmd(), newEpicSetCmd(),
-		newEpicActivateCmd(), newEpicDeactivateCmd(), newEpicDoneCmd(), newEpicDepCmd())
+		newEpicActivateCmd(), newEpicDeactivateCmd(), newEpicDoneCmd(), newEpicReopenCmd(), newEpicDepCmd())
 	return cmd
 }
 
@@ -368,6 +368,32 @@ func emitWithPreviousSuggest(a *app.App, before, after *core.Epic) error {
 	}
 	fmt.Fprintf(out, "previous: %s %q (activated %s) — return with `furrow epic activate %s`\n", prev.ID, prev.Title, prev.At, prev.ID)
 	return nil
+}
+
+func newEpicReopenCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reopen <epic>",
+		Short: "Reopen a closed epic (clears closed; never re-activates)",
+		Long: "Clear the box's closed stamp — the CLI way back for a box closed by\n" +
+			"mistake (before this verb, recovery meant hand-editing the shard, which\n" +
+			"the store contract forbids, or a git revert on the board repo). The box\n" +
+			"comes back OPEN and INACTIVE: reopening is one deliberate act, choosing\n" +
+			"it again (`furrow epic activate`) is another, and furrow never chains\n" +
+			"them. Reopening an already-open box is exit 2 (mirroring `epic done`'s\n" +
+			"already-closed refusal).",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := openApp()
+			if err != nil {
+				return err
+			}
+			before, after, err := a.EpicReopen(args[0])
+			if err != nil {
+				return err
+			}
+			return emitEpicMutationResult(before, after, nil)
+		},
+	}
 }
 
 // newEpicDepCmd is `furrow dep`'s epic twin (v7): the same variadic add/rm and

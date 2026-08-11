@@ -86,7 +86,7 @@ func epicMembershipProblems(idx *Index, byID map[string]*Epic, terminal map[stri
 			// and the data is intact. It clears when the task closes, moves to a
 			// terminal lane, is re-filed, or the epic is reopened.
 			out = append(out, Problem{SevWarn, "epic-closed", t.ID, fmt.Sprintf(
-				"epic %s is closed but this task is still open — re-file it (`furrow set %s -e <epic>`) or reopen %s",
+				"epic %s is closed but this task is still open — re-file it (`furrow set %s -e <epic>`) or run `furrow epic reopen %s`",
 				t.Epic, t.ID, t.Epic)})
 		}
 	}
