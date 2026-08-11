@@ -62,26 +62,27 @@ A from-source build reports its version as `dev`, with the build commit/date fil
 # create a .furrow store in the current repo
 furrow init
 
-# add a task (id is assigned automatically, frozen, never reused)
-furrow add "Wire up the config loader" --label core --label config
+# add a task (id is assigned automatically, frozen, never reused — and random,
+# like t-k3m9p, so capture it instead of retyping it; --json prints the created task)
+id=$(furrow add "Wire up the config loader" --label core --label config --json | jq -r .id)
 
 # list tasks in canonical lane -> priority -> id order
 furrow ls
 
 # move it out of intake once it's ready to pick up (add defaults to inbox)
-furrow move t-0001 ready
+furrow move "$id" ready
 
 # show what's ready to work (lane in [next].lanes — default ready + in-progress — and all deps done)
 furrow next
 
 # open the task's Markdown body in $EDITOR (prints the path when non-interactive)
-furrow edit t-0001
+furrow edit "$id"
 
 # inspect a single task with its body
-furrow show t-0001
+furrow show "$id"
 
 # mark it done (stamps the closed timestamp)
-furrow done t-0001
+furrow done "$id"
 ```
 
 `add` defaults the lane to `lanes.default` (`inbox`) and appends within the lane using the sparse priority step. Pass `--status/-s`, `--priority/-p`, `--label/-l`, `--epic/-e`, `--dep`, `--ref`, or `--body` to set fields up front.
