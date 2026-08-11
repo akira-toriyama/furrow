@@ -179,7 +179,10 @@ the user-level config. When you work with any furrow store:
   path, discovery source, repo
   scope, and lane vocabulary (lanes/next/default/done/terminal) — read it to
   learn the lanes and active scope without provoking an error. On a board, `add`
-  unions the scope repo into `repos` (`--draft` suppresses exactly that); `ls
+  unions the scope repo into `repos` (`--draft` suppresses exactly that), and
+  `epic add` FALLS BACK to it when no -r is given (an explicit -r stands
+  alone — a cross-repo box is a normal shape; shed a wrong fallback with
+  `epic set --rm-repo`); `ls
   --drafts` lists the repo-less tasks; `furrow repo <id> --add|--rm`
   attaches/detaches later. `epic ls` obeys the same board scope (its
   population is what `brief`'s epic header draws from; `-r ''` escapes,

@@ -532,6 +532,12 @@ With a scope in effect (from a pointer, a user-level board, or the board's own
 - `furrow add "…"` unions the scope repo into the task's `repos` (an explicit
   `-r x` adds to it rather than replacing); `add --draft` suppresses exactly
   that union. The board's literal `label` (if any) still unions into labels.
+  `furrow epic add` falls back to the same scope repo when no `-r` is given
+  (else the new box would be invisible to the scoped `epic ls` from birth) —
+  deliberately weaker than the task union: an explicit `epic add -r other`
+  names the box's realm on purpose (a cross-repo box is a normal shape), so
+  the scope repo is not glued on top. Shed a wrong fallback with
+  `epic set --rm-repo`.
 - The filtering reads (`ls`/`next`/`revisit`/`search`/`stats`/`brief`, and
   `epic ls` for boxes) filter to the scope repo — with no banner, but never
   silently *hiding*: when the scope hides drafts (`ls`/`next`/`search`) or
