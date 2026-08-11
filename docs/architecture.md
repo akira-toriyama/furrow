@@ -601,10 +601,10 @@ not file-backed — so `$EDITOR` shell-out is unsupported against it, which the
 ## The coordinator and the CLI contract
 
 `internal/app` is the **only mutation funnel**. The CLI (and any out-of-repo
-front-end, through the same CLI/JSON contract) calls `App` methods — `Add`, `Move`, `Done`, `Reorder`, `SetTitle`, `SetValue`,
-`SetEffort`, `Check`, `AddCheck`, `AddDep`/`RemoveDep`, `Relabel`, `Rerepo`,
-`Attach`, `ApplyDirectives`, `Sync`, `Archive`, `Upgrade`, `Lint`, `EditPath`, plus the read methods
-`Get`, `List`, `Next`, `Revisit`, `Board`. Keeping every edit in one place is what keeps
+front-end, through the same CLI/JSON contract) calls `App` methods — one per
+verb, mutations and reads alike; the authoritative list is the exported method
+set of [`internal/app`](../internal/app) itself (a hand copy here had rotted to
+25 of 88 methods, which is why this is a pointer). Keeping every edit in one place is what keeps
 the invariants (frozen
 ids, canonical order, closed-timestamp rules, body↔index pairing) from being
 re-implemented — and from being reinvented by an out-of-repo front-end, which
