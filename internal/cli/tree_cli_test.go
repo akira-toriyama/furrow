@@ -185,3 +185,37 @@ func TestCLITreeRootErrors(t *testing.T) {
 		t.Errorf("a positional id without --tree must be exit 2, got %+v", fe)
 	}
 }
+
+// t-n7x4: `ls --tree` is still `ls` — the -l did-you-mean guard (exit 2 +
+// candidates when a label matches nothing but names a repo) and the
+// hidden-drafts hint must fire under the same conditions, with the same exit
+// code and stderr, as the flat listing. The tree branch used to early-return
+// past both.
+func TestTreeMatchesFlatLsGuards(t *testing.T) {
+	initStore(t)
+	addTask(t, "in repo", "-r", "akira-toriyama/foo")
+	addTask(t, "a draft", "--draft")
+
+	// -l naming a repo: flat and tree agree — exit 2, same candidates.
+	feFlat, _ := runErr(t, "ls", "-l", "foo")
+	feTree, _ := runErr(t, "ls", "--tree", "-l", "foo")
+	if feFlat == nil || feTree == nil {
+		t.Fatalf("both reads must refuse -l foo: flat=%v tree=%v", feFlat, feTree)
+	}
+	if feTree.Code != feFlat.Code || len(feTree.Candidates) != len(feFlat.Candidates) {
+		t.Errorf("tree must fail exactly like flat: flat=%+v tree=%+v", feFlat, feTree)
+	}
+	if len(feTree.Candidates) != 1 || feTree.Candidates[0] != "akira-toriyama/foo" {
+		t.Errorf("tree candidates = %v, want the repo steer", feTree.Candidates)
+	}
+
+	// A repo scope that hides the draft: both say so on stderr.
+	_, seFlat, codeFlat := runSplit(t, "ls", "-r", "akira-toriyama/foo")
+	_, seTree, codeTree := runSplit(t, "ls", "--tree", "-r", "akira-toriyama/foo")
+	if codeFlat != 0 || codeTree != 0 {
+		t.Fatalf("scoped reads must succeed: flat=%d tree=%d", codeFlat, codeTree)
+	}
+	if !strings.Contains(seFlat, "draft") || !strings.Contains(seTree, "draft") {
+		t.Errorf("both must hint the hidden draft:\nflat: %q\ntree: %q", seFlat, seTree)
+	}
+}
