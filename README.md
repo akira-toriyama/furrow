@@ -727,55 +727,14 @@ Everything hosted-board-shaped is N/A here, and knowing the failure shapes saves
 
 `.furrow/config.toml` is the one human-edited file in the store. Reads apply a **clamp-don't-reject** policy: unknown keys are ignored and out-of-range values fall back to a safe default with a warning surfaced by `furrow lint` — so a typo can never break the tool. The one command that WRITES it is **`furrow config set <key> <value>`** — a surgical, git-config-style edit (comments and every untouched byte survive; a multi-line value collapses to the new one-line value) that is strict where reads are lenient: an unknown key is exit 2 with the key vocabulary in `candidates`, and a value the reader would clamp away is refused *before* the write, so what you set is exactly what a read will honor. Dotted keys (`lanes.default`, `next.lanes`, `alias.<name>`; bare `standalone`); a list value is comma-split. `--user [--board <ref>]` targets a `[[board]]` entry of the user-level config instead (ref = path or scope, exact else unique substring, `candidates` on a miss). A board write rides the next `furrow sync` like every machine-written file.
 
-```toml
-# standalone = false              # a local single-machine board (no remote / `furrow sync` / CI);
-                                  # when true, `furrow upgrade` drops the shared-board flag-day wording
-# default_repo = "me/app"         # the repo this board is FOR — `add` attaches it and reads filter by it
-                                  # whenever discovery supplied no scope (a literal owner/repo; "auto" is refused)
-[lanes]
-# The status enum AND the top->bottom sort rank.
-order   = ["inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"]
-default = "inbox"                 # lane `furrow add` uses when --status is omitted
-done    = "done"                  # lane `furrow done` moves into (where `closed` is stamped)
-terminal = ["done", "icebox", "waiting"]  # lanes never actionable (done/parked); what `next` shows is [next].lanes below
-
-[next]
-lanes = ["ready", "in-progress"]  # lanes `furrow next` considers "ready to work" (besides the deps-done check);
-                                  # intake/planning lanes are excluded — set to all non-terminal lanes to show everything actionable
-
-[priority]
-step    = 10                      # sparse step so reordering edits one field
-default = 100
-
-[ids]
-prefix = "t-"                     # frozen id: prefix + random base32 suffix (collision-free)
-epic_prefix = "e-"                # epics get their own prefix, so an id names its entity kind on sight
-width  = 5                        # number of random suffix chars, e.g. t-k3m9p
-
-[labels]
-# required = false                # when true, a label-less task is exit 2 on `add` and an error in `lint`
-
-[archive]
-older_than_days = 30              # default window for `furrow archive --older-than`
-
-[lint]
-# archive_done = 0                # `furrow lint` warns once this many done tasks are old enough to archive (0 = off)
-# ignore_codes = ["reconcile-gap"] # codes to suppress everywhere lint runs (an unknown code only warns)
-
-[due]
-# ignore_lanes = ["icebox"]       # lanes where a due date raises nothing (the done lane is always exempt);
-                                  # terminal lanes are NOT exempt as a class — a `waiting` task is what dates are for
-
-[revisit]
-stale_days = 30                   # `furrow revisit` flags a task with no update in this many days (0 disables)
-
-[review]
-stale_after_days = 14             # days before `furrow sync`/`brief` nudge a repo as unreviewed (0 disables)
-
-[alias]                           # name your frequent filters; `furrow <name> …` expands git-style
-triage = "ls -s inbox,backlog"    #   `furrow triage -r app` -> `furrow ls -s inbox,backlog -r app`
-wip    = "ls -s in-progress"       #   the remaining args append, so all existing flags/scope compose
-```
+The full annotated reference is the repo-root [`config.toml`](config.toml) —
+the **canonical copy**: it is byte-for-byte the file `furrow init` writes
+(check.sh and CI diff the two), so unlike a prose copy it cannot rot. The
+sections: `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`, `[archive]`,
+`[lint]`, `[due]`, `[revisit]`, `[review]`, `[alias]`, plus the top-level
+`standalone` and `default_repo`. (The annotated copy that used to sit here had
+already drifted — it lost `[lint].provenance_markers` and `[review]`'s epic
+review clock — which is exactly why it is now a pointer.)
 
 A board `[alias]` names a frequent command string; `furrow <name> <extra args>` expands it git-style (the alias tokens replace the name, the rest of the argv is appended), so every flag, board scope, and auto-filter composes for free. It lives in the **board** config (not the user-level one), so it syncs with the board and every machine/agent shares it. A real command always wins — an alias that shadows a builtin (`ls`, `next`, …) is inert and `furrow lint` flags it (`alias-shadow`); a blank alias value is dropped with a clamp warning. Put global flags *after* the alias (`furrow triage --json`), as with git.
 

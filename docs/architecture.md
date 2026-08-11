@@ -672,7 +672,7 @@ except where noted:
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`,
 `board`, `boards`, `doctor`, `edit`, `note`, `attach`, `done`, `move`, `set`, `reorder`,
 `retitle`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`, `review`,
-`apply`, `sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`), `schema`, `version`,
+`apply`, `sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`/`set`), `schema`, `version`,
 `migrate`.
 
 - **`set`** applies the routine triage edits — lane, POSITION (`--priority`, or
@@ -944,28 +944,23 @@ collected as a warning that `furrow lint` surfaces. A *missing* file yields the
 built-in defaults with no warnings; only *malformed TOML* is an error.
 
 Sections and their defaults:
+`[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`, `[archive]`, `[lint]`,
+`[due]`, `[revisit]`, `[review]`, `[alias]`, and the top-level `standalone` and
+`default_repo`. The keys, defaults, and per-key reasoning live in the repo-root
+[`config.toml`](../config.toml) — the **canonical annotated copy**: it is the
+exact file `furrow init` writes, and check.sh/CI diff the two byte-for-byte, so
+unlike a prose table it cannot rot. (The table that used to sit here was the
+proof: it had silently lost `[lint].provenance_markers` and `[review]`'s epic
+review clock, because no guard reads key names below the section level.)
 
-| Section | Keys | Default |
-|---|---|---|
-| `[lanes]` | `order`, `default`, `done`, `terminal` | `inbox, backlog, ready, in-progress, waiting, done, icebox`; default `inbox`; done `done`; terminal `done, icebox, waiting` |
-| `[next]` | `lanes` | `ready, in-progress` (falls back to all non-terminal lanes when neither exists) |
-| `[priority]` | `step`, `default` | `10`, `100` |
-| `[ids]` | `prefix`, `epic_prefix`, `width` | `t-`, `e-`, `5` (`epic_prefix` must differ from `prefix`, else it clamps back to `e-`) |
-| `[labels]` | `required` | `false` |
-| `[archive]` | `older_than_days` | `30` |
-| `[lint]` | `archive_done`, `ignore_codes` | `0` (the archive-backlog nudge is off), `[]` (an entry naming no real code only warns) |
-| `[due]` | `ignore_lanes` | `["icebox"]` (lanes where a due date raises no lint finding and no `brief` entry; the done lane is exempt on top of it, and terminal lanes are deliberately NOT exempt as a class — `waiting` is what dates are for) |
-| `[revisit]` | `stale_days` | `30` (`0` disables the stale signal) |
-| `[review]` | `stale_after_days` | `14` (`0` disables the unreviewed-repo nudge) |
-| `[alias]` | `<name> = "<command string>"` | none (a `name -> command` map) |
-| (top-level) | `standalone` | `false` (a local single-machine board: no remote / `furrow sync` / CI) |
-| (top-level) | `default_repo` | `""` (the repo the board is for — the FALLBACK scope, used only when discovery supplied none; a literal `owner/repo`, never `"auto"`) |
-
-That table, README's annotated example, and CLAUDE.md's section list all
+That list, README's section list, and CLAUDE.md's section list all
 enumerate one closed vocabulary — `config.TopLevelKeys()`, reflection over the
 decode struct — and all three had silently lost sections before anything checked
-them. `scripts/check-docs-vocab.sh` (in `check.sh` and CI) now requires each to
-name every key, so a new `[section]` cannot reach only the parser. It anchors on
+them. `scripts/check-docs-vocab.sh` (in `check.sh` and CI) requires each to
+name every section, so a new `[section]` cannot reach only the parser (keys
+BELOW the section level are deliberately out of the guard's scope — the
+canonical `config.toml` carries those, and the init-template byte-diff keeps it
+honest). It anchors on
 the `Sections and their defaults:` line above; restructure the region and it
 names the claim to update.
 

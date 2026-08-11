@@ -47,6 +47,10 @@
 # doc's enumeration cannot be checked this way, the better fix is usually to stop
 # enumerating: replace the list with a pointer at the registry, the way
 # core.Problem's doc now does. An unlisted enumeration is a future finding.
+# Keys BELOW a config section ([lint].provenance_markers and friends) are
+# deliberately OUT of the guard's scope: the docs point at the canonical
+# config.toml instead of copying subkeys, and the init-template byte-diff in
+# check-live.sh guards that file.
 #
 # A vocabulary can still be legitimately unclaimed, but no longer for being
 # partial — that is what `subset` is for. What genuinely cannot be claimed is a
