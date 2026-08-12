@@ -133,8 +133,12 @@ boxes into the same weekly ritual as the repos.
 A task can carry a **due** stamp (`furrow add --due` / `furrow set --due`), but
 furrow never pushes: nothing fires at the promised instant. The date is surfaced
 by the two reads that already exist — `furrow brief` LEADS with it (the session
-you start is where it lands), and `furrow lint` finds it board-wide
-(`due-overdue` is an error, `due-today` a warning). Scheduling only turns those
+you start is where it lands), and `furrow lint` finds it (`due-overdue` is an
+error, `due-today` a warning). **Both are board-wide**: `lint` has no repo filter
+at all, and brief's band drops every AUTOMATIC narrowing (the epic focus, the
+lane filter, the cwd-derived board repo scope), so the two count the same set and
+a digest built on either sees the whole promise whichever repo you are sitting
+in. Only an explicitly typed `-r`/`-l` narrows brief's band. Scheduling only turns those
 pull-reads into a push, with the same launchd pattern as Recipe 2:
 
 ```sh

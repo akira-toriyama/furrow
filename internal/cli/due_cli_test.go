@@ -249,6 +249,77 @@ func TestCLIBriefDueSection(t *testing.T) {
 	}
 }
 
+// The board's repo scope must not hide a promise from the session-start read.
+// Driven through real cobra from a scoped checkout: brief's due band and next's
+// stderr hint both name a dated task belonging to ANOTHER repo, while `ls` — an
+// ordinary scoped read — still hides it. That asymmetry IS the contract: the
+// scope is derived from the cwd, nobody typed it, and `lint` (which has no repo
+// filter at all) errors on the task regardless, so a scope that filtered the due
+// band made brief print a section of 1 above a lint ride-along counting 2.
+func TestCLIBriefDueIgnoresTheBoardRepoScope(t *testing.T) {
+	checkout, _ := localBoardLayout(t, "default_repo = \"me/demo\"\n")
+	if err := os.Chdir(checkout); err != nil {
+		t.Fatal(err)
+	}
+
+	mine := addTask(t, "promised here", "-s", "waiting", "-r", "me/demo", "--due", dayOffset(-1))
+	theirs := addTask(t, "promised elsewhere", "-s", "waiting", "-r", "me/other", "--due", dayOffset(-2))
+	// `add` unions the board scope into repos, so strip it: this task must
+	// belong to me/other ALONE, which is the case under test.
+	if out, code := run(t, "repo", theirs, "--rm", "me/demo"); code != 0 {
+		t.Fatalf("repo --rm exit %d:\n%s", code, out)
+	}
+
+	out, code := run(t, "--json", "brief")
+	if code != 0 {
+		t.Fatalf("brief exit = %d:\n%s", code, out)
+	}
+	var b struct {
+		Due *struct {
+			Overdue []struct {
+				ID string `json:"id"`
+			} `json:"overdue"`
+		} `json:"due"`
+	}
+	if err := json.Unmarshal([]byte(out), &b); err != nil {
+		t.Fatalf("parse brief --json: %v\n%s", err, out)
+	}
+	if b.Due == nil || len(b.Due.Overdue) != 2 {
+		t.Fatalf("brief due.overdue = %+v, want both %s (scoped) and %s (other repo)", b.Due, mine, theirs)
+	}
+	// Longest-overdue leads, across the repo boundary.
+	if b.Due.Overdue[0].ID != theirs {
+		t.Errorf("due band leader = %s, want the longest-overdue %s", b.Due.Overdue[0].ID, theirs)
+	}
+
+	// `next`'s hint counts the same set (its doc promises the two agree).
+	_, stderr, code := runSplit(t, "--json", "next")
+	if code != 0 {
+		t.Fatalf("next exit = %d", code)
+	}
+	if !strings.Contains(stderr, "2 due (2 OVERDUE)") {
+		t.Errorf("next's hint must count both, got: %q", stderr)
+	}
+
+	// An ordinary scoped read is UNCHANGED — only the due surfaces widen.
+	out, code = run(t, "--json", "ls")
+	if code != 0 {
+		t.Fatalf("ls exit = %d:\n%s", code, out)
+	}
+	if strings.Contains(out, theirs) {
+		t.Errorf("ls must still obey the board scope:\n%s", out)
+	}
+	// …and an EXPLICITLY typed -r still narrows the due band: the reader chose
+	// that one, unlike the scope.
+	out, code = run(t, "--json", "brief", "-r", "me/demo")
+	if code != 0 {
+		t.Fatalf("brief -r exit = %d:\n%s", code, out)
+	}
+	if strings.Contains(out, theirs) {
+		t.Errorf("an explicit -r must still narrow the due band:\n%s", out)
+	}
+}
+
 // `next` notes the arrived dates on STDERR: the promised work usually sits in a
 // lane next excludes, so it must be visible without polluting the array stdout.
 func TestCLINextDueHintIsStderrOnly(t *testing.T) {

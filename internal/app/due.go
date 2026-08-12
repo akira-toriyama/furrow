@@ -165,9 +165,12 @@ func (a *App) DueDisplayState(t *core.Task) string {
 }
 
 // DueSummary is what `furrow brief` leads with: the tasks whose promised instant
-// has PASSED and the ones whose day is TODAY, most-overdue first. Board-wide as
-// to epics — the focus scope must never hide a date — but scoped by repo like
-// every other brief section.
+// has PASSED and the ones whose day is TODAY, most-overdue first. NO AUTOMATIC
+// SCOPE NARROWS IT — not the active epic, not the board's repo scope — because
+// every one of those is applied without the reader asking for it, and a date is
+// the one thing on the board that expires whether or not you are sitting in its
+// repo today. An explicitly TYPED filter (-r, -l) still applies: that one the
+// reader chose, and can drop.
 type DueSummary struct {
 	Overdue []ListItem `json:"overdue"`
 	Today   []ListItem `json:"today"`
@@ -192,8 +195,25 @@ func (d DueSummary) Total() int { return len(d.Overdue) + len(d.Today) }
 // while lint (which is board-wide) errored on it, i.e. one `furrow brief` would
 // print a due section of 1 above a lint ride-along counting 2.
 //
+// It DROPS o.ScopeRepo outright, for the same reason one dimension out: the
+// drafts carve-out fixed the case where a dated task has NO repo, and the board
+// scope kept hiding every dated task whose repo is simply a DIFFERENT one. Both
+// produce the identical symptom — brief silent, lint red — and it is not
+// hypothetical: on 2026-08-12 a task promised for 15:00 was visible at session
+// start only because it happened to name the repo the session was scoped to.
+// The rule this settles on is about WHO CHOSE the filter, not which field it is:
+// an AUTOMATIC narrowing (the epic focus, the cwd-derived board scope) may never
+// hide a date, while an explicitly typed one (o.Repo from -r, o.Label from -l)
+// still applies — the reader asked for that, and can drop it.
+//
+// The drop lives HERE rather than in brief and hintDue because those are the two
+// callers today and a third would have to remember; a read whose whole point is
+// "nothing you did not ask for may hide this" must not depend on its callers
+// opting in.
+//
 // Ordering is by due instant ascending, so the longest-overdue task leads.
 func (a *App) Due(o QueryOpts) (DueSummary, error) {
+	o.ScopeRepo = ""
 	idx, err := a.load()
 	if err != nil {
 		return DueSummary{}, err

@@ -340,16 +340,67 @@ func TestDueIncludesDraftsUnderARepoScope(t *testing.T) {
 	if !got[scoped.ID] || !got[draft.ID] || len(sum.Overdue) != 2 {
 		t.Errorf("scoped due = %v, want both %s (scoped) and %s (draft)", got, scoped.ID, draft.ID)
 	}
-	// A repo filter still applies to a task that HAS repos.
+	// An EXPLICIT -r still applies to a task that HAS repos: the reader typed
+	// that one. The BOARD scope no longer does — see TestDueIgnoresTheBoardRepoScope.
 	other, err := a.Add("elsewhere", AddOpts{Status: "waiting", Repos: []string{"me/other"}, Due: "2026-08-01"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum, _ = a.Due(QueryOpts{ScopeRepo: "me/app"})
+	sum, _ = a.Due(QueryOpts{Repo: "me/app"})
 	for _, it := range sum.Overdue {
 		if it.Task.ID == other.ID {
-			t.Errorf("a task in another repo leaked into the scoped due read: %s", other.ID)
+			t.Errorf("a task in another repo leaked past an explicit -r: %s", other.ID)
 		}
+	}
+}
+
+// The board's repo scope must NOT hide a date. It is derived from the cwd —
+// nobody typed it — and `lint` has no repo filter at all, so a scope that
+// filtered here made `furrow brief` print a due section of 1 above a lint
+// ride-along counting 2 (measured 2026-08-12: a task promised for 15:00 reached
+// the session-start read only because it happened to name the scoped repo).
+// The rule is about WHO CHOSE the filter: an automatic narrowing never hides a
+// promise, an explicitly typed one still may.
+func TestDueIgnoresTheBoardRepoScope(t *testing.T) {
+	a := newDueApp(time.Date(2026, 8, 4, 3, 0, 0, 0, time.UTC))
+	here, err := a.Add("in the scoped repo", AddOpts{Status: "waiting", Repos: []string{"me/app"}, Due: "2026-08-01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere, err := a.Add("in another repo entirely", AddOpts{Status: "waiting", Repos: []string{"me/other"}, Due: "2026-07-30"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sum, err := a.Due(QueryOpts{ScopeRepo: "me/app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, it := range sum.Overdue {
+		got[it.Task.ID] = true
+	}
+	if !got[here.ID] || !got[elsewhere.ID] {
+		t.Errorf("board-scoped due = %v, want BOTH %s (scoped) and %s (other repo)", got, here.ID, elsewhere.ID)
+	}
+	// Longest-overdue-first survives the widening.
+	if len(sum.Overdue) > 0 && sum.Overdue[0].Task.ID != elsewhere.ID {
+		t.Errorf("ordering broke: leader = %s, want the longest-overdue %s", sum.Overdue[0].Task.ID, elsewhere.ID)
+	}
+	// The agreement that is the whole point: lint is board-wide, so the count
+	// the due read quotes must equal the number of due-overdue problems.
+	probs, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	overdue := 0
+	for _, p := range probs {
+		if p.Code == "due-overdue" {
+			overdue++
+		}
+	}
+	if overdue != len(sum.Overdue) {
+		t.Errorf("lint reports %d due-overdue but the board-scoped due read found %d — the two surfaces disagree", overdue, len(sum.Overdue))
 	}
 }
 

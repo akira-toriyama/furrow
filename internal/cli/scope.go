@@ -152,8 +152,9 @@ func hintCapped(shown, limit int, noun string, total func() (int, error)) {
 // deliberately excludes, so folding them into the list would change what the
 // command means. stdout stays a clean array for `next --json`.
 //
-// Scope: the due read drops the caller's lane filter (App.Due's contract) but
-// keeps the repo scope, so the count matches `furrow brief`'s section.
+// Scope: the due read drops the caller's lane filter here and the board's repo
+// scope inside App.Due (no AUTOMATIC narrowing may hide a date), so the count
+// still matches `furrow brief`'s section. An explicit -r/-l applies to both.
 func hintDue(a *app.App, o app.QueryOpts) {
 	o.Query, o.Lanes, o.AllEpics = "", nil, false
 	o.Epic, o.Status = "", ""
