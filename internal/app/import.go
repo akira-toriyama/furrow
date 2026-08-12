@@ -1,10 +1,81 @@
 package app
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
+
+// ImportPlan is what an import's ONE shared epic resolves to, computed against
+// the board before anything is written. It exists so a dry-run preview states
+// the same outcome `--yes` produces: the ref is resolved (an unresolvable `-e`
+// fails at preview, not after N bodies have hit disk), and the active-box
+// inheritance AddMany would apply is run here instead, so the caller can feed
+// the RESOLVED id back into every AddSpec and the two paths cannot diverge.
+type ImportPlan struct {
+	// Epic is the epic id every imported task is filed under; "" = unfiled.
+	Epic string
+	// Inherited reports that Epic came from the scope's single active box
+	// rather than an explicit ref — the disclosure `add` owes a bare capture.
+	Inherited bool
+	// Declared reports that the board has at least one box, which is exactly
+	// the gate lint's epic-required uses: on a board that never declared one,
+	// an unfiled task is not a defect.
+	Declared bool
+}
+
+// PlanImport resolves the shared epic for an import. noEpic is the explicit
+// "unfiled, on purpose" (`-e ”`), which suppresses the inheritance a bare
+// import gets — `add`'s NoEpic contract, applied to the whole batch.
+func (a *App) PlanImport(epicRef string, noEpic bool) (ImportPlan, error) {
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return ImportPlan{}, err
+	}
+	p := ImportPlan{Declared: len(epics) > 0}
+	switch {
+	case epicRef != "":
+		id, rerr := a.ResolveEpic(epicRef)
+		if rerr != nil {
+			return ImportPlan{}, rerr
+		}
+		p.Epic = id
+	case !noEpic:
+		p.Epic = a.inheritableEpic()
+		p.Inherited = p.Epic != ""
+	}
+	return p, nil
+}
+
+// UnfiledImportWarning is lint's epic-required, said BEFORE the write instead of
+// after it: an import that lands open tasks under no box on a board that has
+// boxes exits 0 and turns `furrow lint` red, and nothing in migrate's own
+// warnings used to mention it. statuses are the lanes the parsed tasks carry
+// ("" = the default lane). Terminal lanes are excluded for the same reason
+// epic-required exempts them — a Done archive predating the box is not a defect
+// — so the count is what lint will actually report, not the import size.
+// Returns "" when there is nothing to say.
+func (a *App) UnfiledImportWarning(p ImportPlan, statuses []string) string {
+	if !p.Declared || p.Epic != "" {
+		return ""
+	}
+	open := 0
+	for _, s := range statuses {
+		if s == "" {
+			s = a.Cfg.DefaultLane
+		}
+		if !a.Cfg.IsTerminal(s) {
+			open++
+		}
+	}
+	if open == 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"%d of %d imported task(s) land in an open lane with no epic — furrow lint will report epic-required for each; re-run with -e <epic>, or file them after the fact with `furrow set <id>... -e <epic>`",
+		open, len(statuses))
+}
 
 // AddSpec is one task to bulk-create via AddMany (e.g. from migrate). Like Add,
 // a nil Priority means "append in lane". Body follows Add's policy exactly —

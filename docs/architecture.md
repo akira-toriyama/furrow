@@ -864,7 +864,13 @@ except where noted:
   `revisit` reason array in `--json` so an agent fixes them via the setters
   (`value`/`effort`/`dep`/`repo --add`). An empty result exits 0 (nothing to revisit is healthy).
 - **`migrate`** parses a hand-maintained `Task.md` into furrow tasks (dry-run by
-  default; `--yes` to apply; `--label` to stamp imported tasks).
+  default; `--yes` to apply; `--label` and `--epic` to stamp imported tasks).
+  The epic is resolved into an `app.ImportPlan` *before* either arm runs, so the
+  preview states the outcome `--yes` produces and the CLI feeds the resolved id
+  back into every `AddSpec` — dry-run and write cannot diverge. Landing open
+  tasks under no box on a board that has boxes is a migrate **warning**
+  (`app.UnfiledImportWarning`): lint's `epic-required` said before the write
+  instead of after it, counted over non-terminal lanes so the two agree.
 
 ### Output, errors, and exit codes
 
