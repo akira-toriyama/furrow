@@ -14,8 +14,13 @@ the user-level config. When you work with any furrow store:
   `show <id>` ritual in ONE process — the **due** band FIRST (`due`,
   `{overdue, today}`, longest-overdue first, omitted when nothing has arrived: a
   date is the only thing on the board that EXPIRES, everything else waits for
-  you; board-wide as to epics, since promised work is usually parked outside the
-  focus, and lane-filter-free, though it obeys the repo scope), the epic header (`active`, the open+active
+  you; **NO AUTOMATIC SCOPE NARROWS IT** — not the epic focus, since promised
+  work is usually parked outside it, not the lane filter, and not the board's
+  cwd-derived repo scope, which nobody typed and which used to make `brief`
+  print a due section of 1 above a `lint` ride-along counting 2. An explicitly
+  typed `-r`/`-l` still applies: that one the reader chose, and can drop. This
+  makes the band and `lint`'s `due-overdue`/`due-today` — which have no repo
+  filter at all — count the same set), the epic header (`active`, the open+active
   epic(s) `next` scopes to; `pinned`, the open pinned channel(s) whose tasks
   lead `next` regardless of the active scope — only channels with an open
   member are listed, the quiet rest collapsing to a `pinned_quiet` count; and `epics_declared`, which tells

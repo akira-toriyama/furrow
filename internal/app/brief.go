@@ -99,7 +99,10 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 	// The due section under this read's scope, minus any lane filter: a promised
 	// task is typically parked in `waiting` or still in an intake lane, so
 	// inheriting a caller's -s would hide precisely the rows this section exists
-	// to show. The epic scope was never applied here to begin with.
+	// to show. The board's repo scope is dropped by App.Due itself (no AUTOMATIC
+	// narrowing may hide a date — a promise does not stop expiring because this
+	// session happens to sit in another repo), and the epic scope was never
+	// applied here to begin with. An explicit -r/-l survives all three.
 	dueOpts := o
 	dueOpts.Status = ""
 	due, err := a.Due(dueOpts)
