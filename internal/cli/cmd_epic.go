@@ -87,10 +87,8 @@ func newEpicAddCmd() *cobra.Command {
 
 func newEpicLsCmd() *cobra.Command {
 	var (
-		all   bool
-		label []string
-		repo  string
-		limit int
+		all bool
+		f   filterFlags
 	)
 	cmd := &cobra.Command{
 		Use:   "ls",
@@ -119,13 +117,13 @@ func newEpicLsCmd() *cobra.Command {
 			}
 			if cmd.Flags().Changed("repo") {
 				resolved = ""
-				if repo != "" {
-					if resolved, err = a.ResolveRepo(repo); err != nil {
+				if f.repo != "" {
+					if resolved, err = a.ResolveRepo(f.repo); err != nil {
 						return err
 					}
 				}
 			}
-			o := app.EpicQueryOpts{All: all, Label: joinOrFilter(label), Repo: resolved, Limit: limit}
+			o := app.EpicQueryOpts{All: all, Label: joinOrFilter(f.label), Repo: resolved, Limit: f.limit}
 			items, err := a.EpicList(o)
 			if err != nil {
 				return err
@@ -143,7 +141,7 @@ func newEpicLsCmd() *cobra.Command {
 					}
 				}
 			}
-			hintCapped(len(items), limit, "", func() (int, error) {
+			hintCapped(len(items), f.limit, "", func() (int, error) {
 				u := o
 				u.Limit = 0
 				all, err := a.EpicList(u)
@@ -153,9 +151,7 @@ func newEpicLsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "include closed epics")
-	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l)")
-	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by owner/repo (a unique short name works; '' = whole board)")
-	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
+	addFilterFlags(cmd, &f, want("label"), want("repo"), want("limit"))
 	return cmd
 }
 
