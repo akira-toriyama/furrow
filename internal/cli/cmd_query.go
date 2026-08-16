@@ -13,16 +13,10 @@ import (
 func newLsCmd() *cobra.Command {
 	var (
 		status     []string
-		label      []string
-		repo       string
-		epicRef    string
-		limit      int
+		f          filterFlags
 		drafts     bool
-		since      string
-		until      string
 		sortBy     string
 		reverse    bool
-		archived   bool
 		tree       bool
 		actionable bool
 		blocked    bool
@@ -88,27 +82,16 @@ func newLsCmd() *cobra.Command {
 			if drafts && cmd.Flags().Changed("repo") {
 				return core.Validationf("", "--drafts cannot be combined with -r/--repo (a draft has no repo)")
 			}
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, f.epic)
 			if err != nil {
 				return err
 			}
-			o.Status, o.Limit, o.Drafts = joinOrFilter(status), limit, drafts
-			o.Sort, o.Reverse, o.Archived = sortBy, reverse, archived
+			o.Status, o.Limit, o.Drafts = joinOrFilter(status), f.limit, drafts
+			o.Sort, o.Reverse, o.Archived = sortBy, reverse, f.archived
 			o.Actionable, o.Blocked = actionable, blocked
 			o.Query = queryStr
-			if cmd.Flags().Changed("since") {
-				ts, err := parseDateBound(since, false)
-				if err != nil {
-					return err
-				}
-				o.Since = &ts
-			}
-			if cmd.Flags().Changed("until") {
-				ts, err := parseDateBound(until, true)
-				if err != nil {
-					return err
-				}
-				o.Until = &ts
+			if err := f.window(cmd, &o); err != nil {
+				return err
 			}
 			if tree {
 				root := ""
@@ -132,7 +115,7 @@ func newLsCmd() *cobra.Command {
 					return err
 				}
 				hintHiddenDrafts(o, a.List, "furrow ls --drafts")
-				hintCapped(len(groups), limit, "groups", func() (int, error) {
+				hintCapped(len(groups), f.limit, "groups", func() (int, error) {
 					u := o
 					u.Limit = 0
 					all, err := a.Tree(u, root)
@@ -148,7 +131,7 @@ func newLsCmd() *cobra.Command {
 				return err
 			}
 			hintHiddenDrafts(o, a.List, "furrow ls --drafts")
-			hintCapped(len(items), limit, "", func() (int, error) {
+			hintCapped(len(items), f.limit, "", func() (int, error) {
 				u := o
 				u.Limit = 0
 				all, err := a.List(u)
@@ -159,17 +142,16 @@ func newLsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
-	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
-	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
-	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; with --sort, the top N)")
+	addFilterFlags(cmd, &f,
+		want("label"), want("repo"),
+		// -n interacts with --sort here (the top N OF THE SORTED SET), a real
+		// behavioral difference the canonical line does not carry.
+		wantUsage("limit", "max rows (0 = all; with --sort, the top N)"),
+		want("epic"), want("archived"), want("since"), want("until"))
 	cmd.Flags().BoolVar(&drafts, "drafts", false, "list only drafts (tasks with no repo); bypasses the board scope")
-	cmd.Flags().StringVar(&since, "since", "", "only tasks updated on/after this date (YYYY-MM-DD or RFC3339)")
-	cmd.Flags().StringVar(&until, "until", "", "only tasks updated on/before this date (YYYY-MM-DD includes the whole day, or RFC3339)")
 	cmd.Flags().StringVar(&sortBy, "sort", "", "reorder by updated|created|value|effort (default: canonical lane->priority->id)")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "reverse the --sort direction (oldest/lowest first; unset value/effort stay last)")
-	cmd.Flags().BoolVar(&archived, "archived", false, "list from the archive store (.furrow/archive/) instead of the hot board")
 	cmd.Flags().BoolVar(&tree, "tree", false, "group the rows by epic (★ = actionable now); with an <epic> argument, just that box's group")
-	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict — no unfiled carve-out)")
 	cmd.Flags().BoolVar(&actionable, "actionable", false, "only tasks 'furrow next' would hand you now (★: a next lane, every dep done); ANDs with -s/-l/-r")
 	cmd.Flags().BoolVar(&blocked, "blocked", false, "only tasks with an unsatisfied dependency (a non-empty blocked_by); ANDs with -s/-l/-r")
 	addQueryFlag(cmd, &queryStr)
@@ -225,7 +207,8 @@ func joinOrFilter(vals []string) string {
 }
 
 func newShowCmd() *cobra.Command {
-	var backlinks, noBody, archived bool
+	var backlinks, noBody bool
+	var f filterFlags
 	cmd := &cobra.Command{
 		Use:   "show <id>...",
 		Short: "Show tasks or epics with metadata and markdown body (batch-friendly)",
@@ -239,8 +222,8 @@ func newShowCmd() *cobra.Command {
 			"An id may name an EPIC: store membership routes each one (never the id's\n" +
 			"prefix), and a box is rendered as the box view `furrow epic show` prints —\n" +
 			"goal, member roll-up, body — so a mixed batch's --json array carries one\n" +
-			"shape per entity. --archived reads the task archive only (boxes are never\n" +
-			"archived), and --backlinks names the tasks whose [[id]] links point at a\n" +
+			"shape per entity. --f.archived reads the task archive only (boxes are never\n" +
+			"f.archived), and --backlinks names the tasks whose [[id]] links point at a\n" +
 			"TASK, so a box carries no mentioned_by.\n" +
 			"With --backlinks, also list the tasks whose body mentions each one via the\n" +
 			"[[id]] notation (the local, rate-limit-free twin of GitHub's \"mentioned\n" +
@@ -249,7 +232,7 @@ func newShowCmd() *cobra.Command {
 		Example: "  furrow show t-4fq1\n" +
 			"  furrow show t-4fq1 t-x2x9 --no-body --ndjson   # lean batch read\n" +
 			"  furrow show t-4fq1 --backlinks\n" +
-			"  furrow show t-4fq1 --archived                  # read a retired task",
+			"  furrow show t-4fq1 --f.archived                  # read a retired task",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -261,7 +244,7 @@ func newShowCmd() *cobra.Command {
 				entries []app.ShowEntry
 				missing []string
 			)
-			if archived {
+			if f.archived {
 				// The archive holds tasks only, so this read never routes to a box.
 				var items []app.ShowItem
 				items, missing, err = a.GetBatchArchived(args, !noBody)
@@ -274,11 +257,11 @@ func newShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// A hot-store miss might be an archived task: name that subset so the
-			// agent knows to retry with --archived (the archive read already
+			// A hot-store miss might be an f.archived task: name that subset so the
+			// agent knows to retry with --f.archived (the archive read already
 			// looked there, so it never re-hints itself).
 			var inArchive []string
-			if !archived && len(missing) > 0 {
+			if !f.archived && len(missing) > 0 {
 				inArchive = a.ArchivedContains(missing)
 			}
 			var mentions [][]core.Task
@@ -318,17 +301,17 @@ func newShowCmd() *cobra.Command {
 				}
 				// A lone miss whose ref reads as a box says so: "ids not found"
 				// for an `e-` id would send the reader looking in the wrong
-				// store. Under --archived the box may well EXIST — the archive
+				// store. Under --f.archived the box may well EXIST — the archive
 				// simply holds tasks — so that reading gets its own sentence
 				// (and a bad-usage kind: a consumer branching on not-found would
 				// conclude the box is gone).
 				if len(missing) == 1 {
 					fe.Subject = missing[0]
 					if epic, rerr := a.RefTargetsEpic(missing[0]); rerr == nil && epic {
-						if archived {
+						if f.archived {
 							fe.Kind = core.KindValidation
 							fe.Code = core.CodeValidation
-							fe.Msg = fmt.Sprintf("%s is an epic — --archived reads the task archive, and boxes are never archived (drop the flag to read it)", missing[0])
+							fe.Msg = fmt.Sprintf("%s is an epic — --f.archived reads the task archive, and boxes are never f.archived (drop the flag to read it)", missing[0])
 						} else {
 							fe.Kind = core.KindEpicNotFound
 							fe.Msg = fmt.Sprintf("epic not found: %s", missing[0])
@@ -344,13 +327,13 @@ func newShowCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&backlinks, "backlinks", false, "also list tasks whose body mentions this one via [[id]]")
 	cmd.Flags().BoolVar(&noBody, "no-body", false, "omit the body (body_text in JSON): the lean metadata-only read")
-	cmd.Flags().BoolVar(&archived, "archived", false, "read from the archive store (.furrow/archive/) instead of the hot board")
+	addFilterFlags(cmd, &f, want("archived"))
 	cmd.MarkFlagsMutuallyExclusive("archived", "backlinks")
 	return cmd
 }
 
 // missDetails builds a show/not-found error's details: always the missing ids,
-// plus the subset found in the archive (so an agent can retry with --archived).
+// plus the subset found in the archive (so an agent can retry with --f.archived).
 // Kept as map[string][]string so a plain miss stays the historical
 // {"missing":[...]} shape and only gains an "archived" key when relevant.
 func missDetails(missing, inArchive []string) map[string][]string {
@@ -373,10 +356,7 @@ func archivedSuffix(inArchive []string) string {
 
 func newNextCmd() *cobra.Command {
 	var (
-		label    []string
-		repo     string
-		epicRef  string
-		limit    int
+		f        filterFlags
 		allEpics bool
 		lanes    []string
 		queryStr string
@@ -421,11 +401,11 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 			warnReadOnly(a)
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, f.epic)
 			if err != nil {
 				return err
 			}
-			o.Limit = limit
+			o.Limit = f.limit
 			o.AllEpics = allEpics
 			o.Query = queryStr
 			// --lanes is a one-shot override of [next].lanes: the same comma-OR /
@@ -449,7 +429,7 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 			hintHiddenDrafts(o, a.Next, "furrow ls --drafts")
-			hintCapped(len(tasks), limit, "", func() (int, error) {
+			hintCapped(len(tasks), f.limit, "", func() (int, error) {
 				u := o
 				u.Limit = 0
 				all, err := a.Next(u)
@@ -462,10 +442,13 @@ func newNextCmd() *cobra.Command {
 			return emitActionable(a, tasks)
 		},
 	}
-	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
-	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
-	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "read one box explicitly, active or not (id, unique id prefix, or unique title substring; strict — no unfiled carve-out)")
-	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all; use -n1 for just the top)")
+	addFilterFlags(cmd, &f,
+		want("label"), want("repo"),
+		// next's -e MEANS something different: it does not filter the listing,
+		// it swaps the active-epic scope for the named box (active or not) —
+		// so the canonical "only that epic's members" line would understate it.
+		wantUsage("epic", "read one box explicitly, active or not (id, unique id prefix, or unique title substring; strict — no unfiled carve-out)"),
+		want("limit"))
 	cmd.Flags().BoolVar(&allEpics, "all-epics", false, "ignore the active-epic scope and consider the whole board")
 	cmd.Flags().StringArrayVar(&lanes, "lanes", nil, "override [next].lanes for THIS call (OR; comma-separated or repeated; unknown lane = exit 2 + candidates); config untouched")
 	addQueryFlag(cmd, &queryStr)
@@ -474,11 +457,10 @@ func newNextCmd() *cobra.Command {
 
 func newBriefCmd() *cobra.Command {
 	var (
-		label     []string
-		repo      string
-		limit     int
+		f         filterFlags
 		staleDays int
 	)
+	f.limit = 3 // the registrar takes the field's current value as the default
 	cmd := &cobra.Command{
 		Use:   "brief",
 		Short: "One-shot session-orient read: due band, active/pinned epics, next picks with bodies, blocked, revisit, drafts",
@@ -516,7 +498,7 @@ func newBriefCmd() *cobra.Command {
 				return err
 			}
 			warnReadOnly(a)
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, "")
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, "")
 			if err != nil {
 				return err
 			}
@@ -524,7 +506,7 @@ func newBriefCmd() *cobra.Command {
 			if cmd.Flags().Changed("stale-days") {
 				days = staleDays
 			}
-			b, err := a.Brief(o, limit, days)
+			b, err := a.Brief(o, f.limit, days)
 			if err != nil {
 				return err
 			}
@@ -536,19 +518,18 @@ func newBriefCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
-	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
-	cmd.Flags().IntVarP(&limit, "limit", "n", 3, "how many next picks to include, bodies attached (0 = all; next_total is never capped)")
+	addFilterFlags(cmd, &f,
+		want("label"), want("repo"),
+		// brief's -n MEANS something different: it caps the body-attached next
+		// PICKS, and next_total stays uncapped — not a row limit.
+		wantUsage("limit", "how many next picks to include, bodies attached (0 = all; next_total is never capped)"))
 	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
 	return cmd
 }
 
 func newRevisitCmd() *cobra.Command {
 	var (
-		label     []string
-		repo      string
-		epicRef   string
-		limit     int
+		f         filterFlags
 		staleDays int
 		queryStr  string
 	)
@@ -583,11 +564,11 @@ func newRevisitCmd() *cobra.Command {
 			if cmd.Flags().Changed("stale-days") {
 				days = staleDays
 			}
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, f.epic)
 			if err != nil {
 				return err
 			}
-			o.Limit = limit
+			o.Limit = f.limit
 			o.Query = queryStr
 			items, err := a.Revisit(o, days)
 			if err != nil {
@@ -596,7 +577,7 @@ func newRevisitCmd() *cobra.Command {
 			if err := labelDidYouMean(cmd, a, o, len(items)); err != nil {
 				return err
 			}
-			hintCapped(len(items), limit, "", func() (int, error) {
+			hintCapped(len(items), f.limit, "", func() (int, error) {
 				u := o
 				u.Limit = 0
 				all, err := a.Revisit(u, days)
@@ -606,10 +587,7 @@ func newRevisitCmd() *cobra.Command {
 			return emitRevisit(a, items)
 		},
 	}
-	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
-	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
-	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
-	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict)")
+	addFilterFlags(cmd, &f, want("label"), want("repo"), want("limit"), want("epic"))
 	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
 	addQueryFlag(cmd, &queryStr)
 	return cmd
@@ -618,12 +596,8 @@ func newRevisitCmd() *cobra.Command {
 func newStatsCmd() *cobra.Command {
 	var (
 		status   []string
-		label    []string
-		repo     string
-		epicRef  string
+		f        filterFlags
 		queryStr string
-		since    string
-		until    string
 	)
 	cmd := &cobra.Command{
 		Use:   "stats",
@@ -660,25 +634,14 @@ func newStatsCmd() *cobra.Command {
 				return err
 			}
 			warnReadOnly(a)
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, f.epic)
 			if err != nil {
 				return err
 			}
 			o.Status = joinOrFilter(status)
 			o.Query = queryStr
-			if cmd.Flags().Changed("since") {
-				ts, err := parseDateBound(since, false)
-				if err != nil {
-					return err
-				}
-				o.Since = &ts
-			}
-			if cmd.Flags().Changed("until") {
-				ts, err := parseDateBound(until, true)
-				if err != nil {
-					return err
-				}
-				o.Until = &ts
+			if err := f.window(cmd, &o); err != nil {
+				return err
 			}
 			s, err := a.Stats(o)
 			if err != nil {
@@ -695,11 +658,13 @@ func newStatsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
-	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
-	cmd.Flags().StringVarP(&repo, "repo", "r", "", "scope to a repo (owner/repo or a unique short name; '' = whole board)")
-	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict)")
-	cmd.Flags().StringVar(&since, "since", "", "window on/after this date (YYYY-MM-DD or RFC3339): filters by updated like 'ls' and adds the created/closed flow section")
-	cmd.Flags().StringVar(&until, "until", "", "window on/before this date (YYYY-MM-DD includes the whole day, or RFC3339)")
+	addFilterFlags(cmd, &f,
+		want("label"), want("repo"), want("epic"),
+		// stats' window MEANS more than ls's: besides filtering by updated it
+		// adds the created/closed flow section, which the canonical line
+		// cannot claim.
+		wantUsage("since", "window on/after this date (YYYY-MM-DD or RFC3339): filters by updated like 'ls' and adds the created/closed flow section"),
+		wantUsage("until", "window on/before this date (YYYY-MM-DD includes the whole day, or RFC3339): the flow window's other bound"))
 	addQueryFlag(cmd, &queryStr)
 	return cmd
 }
@@ -707,12 +672,8 @@ func newStatsCmd() *cobra.Command {
 func newSearchCmd() *cobra.Command {
 	var (
 		status   []string
-		label    []string
-		repo     string
-		epicRef  string
-		limit    int
+		f        filterFlags
 		queryStr string
-		archived bool
 	)
 	cmd := &cobra.Command{
 		Use:   "search <term>",
@@ -747,13 +708,13 @@ func newSearchCmd() *cobra.Command {
 				return err
 			}
 			warnReadOnly(a)
-			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, f.epic)
 			if err != nil {
 				return err
 			}
-			o.Status, o.Limit = joinOrFilter(status), limit
+			o.Status, o.Limit = joinOrFilter(status), f.limit
 			o.Query = queryStr
-			o.Archived = archived
+			o.Archived = f.archived
 			term := strings.Join(args, " ")
 			hits, err := a.Search(o, term)
 			if err != nil {
@@ -776,7 +737,7 @@ func newSearchCmd() *cobra.Command {
 				}
 				return ts, nil
 			}, "furrow search ... -r '' includes them")
-			hintCapped(len(hits), limit, "", func() (int, error) {
+			hintCapped(len(hits), f.limit, "", func() (int, error) {
 				u := o
 				u.Limit = 0
 				all, err := a.Search(u, term)
@@ -787,11 +748,7 @@ func newSearchCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
-	cmd.Flags().StringArrayVarP(&label, "label", "l", nil, "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope")
-	cmd.Flags().StringVarP(&repo, "repo", "r", "", "filter by repo (owner/repo or a unique short name; '' = whole board)")
-	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "max rows (0 = all)")
-	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "only that epic's members (id, unique id prefix, or unique title substring; strict)")
-	cmd.Flags().BoolVar(&archived, "archived", false, "search the archive store instead of the hot board (same meaning as on ls/show)")
+	addFilterFlags(cmd, &f, want("label"), want("repo"), want("limit"), want("epic"), want("archived"))
 	addQueryFlag(cmd, &queryStr)
 	return cmd
 }
