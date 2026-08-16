@@ -55,7 +55,9 @@ func TestRepeatableFlagNotationFrozen(t *testing.T) {
 		"repo --add":           "stringSlice",
 		"repo --rm":            "stringSlice",
 		"set --add-label":      "stringSlice",
+		"set --add-repo":       "stringSlice",
 		"set --rm-label":       "stringSlice",
+		"set --rm-repo":        "stringSlice",
 		"sync --body":          "stringSlice",
 
 		// free text / path-like: verbatim (stringArray)
