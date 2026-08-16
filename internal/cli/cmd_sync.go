@@ -188,6 +188,7 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnReadOnly(a)
 			prog, syncErr := a.Sync(cmd.Context(), app.SyncOpts{Message: message, Bodies: bodies, AllBodies: allBodies})
 
 			// Compute the revisit + lint summaries only on a fully-successful sync

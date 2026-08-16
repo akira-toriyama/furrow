@@ -685,7 +685,11 @@ and is an **input** to every write:
   but no `meta.json` at all — is fully READABLE but READ-ONLY (kind
   **`schema-upgrade-required`**, exit 2: the BOARD is stale and an explicit
   command fixes it). Both kinds carry `details {board_schema, binary_schema}`; the
-  exit code alone says which side is stale.
+  exit code alone says which side is stale. Read-only is DISCLOSED on the read
+  side too: the orient/listing reads (`brief`/`sync`/`ls`/`show`/`next`/
+  `revisit`/`stats`/`search`) print one stderr "READ-ONLY for this binary"
+  note, so a session learns at `furrow brief`, not at its first failed write
+  (`board`/`doctor` stay quiet — reporting the mismatch is their output).
 - Consequently **an ordinary write never touches `meta.json`'s
   `schema_version`.** `fsstore.Save` stamps it in exactly one case: a genuinely
   fresh, empty store (what `furrow init` hits). A garbled `meta.json` is an error
