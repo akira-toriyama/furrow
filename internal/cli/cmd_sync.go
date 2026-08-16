@@ -157,10 +157,16 @@ func newSyncCmd() *cobra.Command {
 			"markers is never auto-committed (kind \"body-conflict-marker\", exit 2): a commit\n" +
 			"cannot be un-published, and `furrow lint` flags any that got in already.\n\n" +
 			"The progress object {committed, pulled, pushed, conflict, complete,\n" +
-			"committed_bodies, pending_bodies, pending_stash} goes to stdout even on\n" +
+			"committed_bodies, pending_bodies, pending_stash, incoming} goes to stdout\n" +
+			"even on\n" +
 			"failure; `complete` is false whenever a body or stash is left pending (and\n" +
 			"the stdout summary line names that count), so a pushed-but-incomplete sync\n" +
-			"never reads as fully published. After a successful sync it also reports a\n" +
+			"never reads as fully published. `incoming` classifies the task changes the\n" +
+			"pull brought IN — the other machines' and CI's writes, from the pre-pull vs\n" +
+			"post-pull shard diff: created / closed / reopened / moved / refiled /\n" +
+			"archived / updated, with the old and new lane or epic on the moves — and\n" +
+			"prints as one \"incoming:\" line, so the CI that closed your in-progress\n" +
+			"task surfaces in the sync that pulled it, not on a later re-read. After a successful sync it also reports a\n" +
 			"revisit summary (repo-scoped counts of tasks with a done dependency or gone\n" +
 			"stale, plus any repos whose human review is older than [review].stale_after_days\n" +
 			"— a human runs `furrow review <repo>`, an agent sweep uses --by agent) so\n" +
@@ -208,6 +214,12 @@ func newSyncCmd() *cobra.Command {
 				emitObject(syncOutput{prog, summaryPtr(sum), lintPtr(lint)})
 			} else {
 				fmt.Fprintln(out, prog.SyncSummary())
+				// What the pull brought in, before the board-state ride-alongs:
+				// revisit/lint describe where the board IS, incoming says what
+				// just MOVED it — the order a reader reconstructs events in.
+				if line := incomingLine(prog.Incoming); line != "" {
+					fmt.Fprintln(out, line)
+				}
 				if line := revisitLine(sum, revisitScopeLabel(a)); line != "" {
 					fmt.Fprintln(out, line)
 				}
@@ -243,6 +255,60 @@ func newSyncCmd() *cobra.Command {
 	c.Flags().StringSliceVarP(&bodies, "body", "b", nil, "also commit these task ids' hand-edited bodies/<id>.md (repeatable)")
 	c.Flags().BoolVar(&allBodies, "all-bodies", false, "commit every dirty body (the pre-scoping sweep; only on a checkout that is yours alone)")
 	return c
+}
+
+// incomingKinds is the render order of the incoming line's groups — the
+// classifier's own priority order (see app.IncomingChange), so the line reads
+// most-consequential first.
+var incomingKinds = []string{"created", "closed", "reopened", "moved", "refiled", "archived", "updated"}
+
+// incomingLine renders what the pull brought in as one line, grouped by kind:
+// "incoming: 2 created (t-a, t-b), 1 moved (t-c ready→in-progress)". At most
+// three ids are named per kind (+N more, same cap as unreviewedLine) so a
+// CI-heavy pull stays one legible line; the counts are exact and the full list
+// is the JSON `incoming` key. Empty -> "" (quiet when nothing came in).
+func incomingLine(changes []app.IncomingChange) string {
+	if len(changes) == 0 {
+		return ""
+	}
+	byKind := map[string][]app.IncomingChange{}
+	for _, c := range changes {
+		byKind[c.Kind] = append(byKind[c.Kind], c)
+	}
+	var parts []string
+	for _, kind := range incomingKinds {
+		group := byKind[kind]
+		if len(group) == 0 {
+			continue
+		}
+		const maxNamed = 3
+		named := group
+		if len(named) > maxNamed {
+			named = named[:maxNamed]
+		}
+		ids := make([]string, len(named))
+		for i, c := range named {
+			ids[i] = c.ID
+			if c.From != "" || c.To != "" {
+				from, to := c.From, c.To
+				if kind == "refiled" { // "" is a real epic value: unfiled
+					if from == "" {
+						from = "unfiled"
+					}
+					if to == "" {
+						to = "unfiled"
+					}
+				}
+				ids[i] += " " + from + "→" + to
+			}
+		}
+		part := fmt.Sprintf("%d %s (%s", len(group), kind, strings.Join(ids, ", "))
+		if len(group) > len(named) {
+			part += fmt.Sprintf(", +%d more", len(group)-len(named))
+		}
+		parts = append(parts, part+")")
+	}
+	return "incoming: " + strings.Join(parts, ", ")
 }
 
 // stashNote renders the stranded autostash entries for the human warning:

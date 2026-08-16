@@ -596,13 +596,19 @@ until it does. On a real conflict sync **aborts the rebase automatically** (the
 board is never left with markers; your local sync commit survives) and exits 3
 with `"kind": "sync-conflict"` + `"details": {"paths": [...]}`. The progress object
 `{committed, pulled, pushed, conflict, complete, committed_bodies,
-pending_bodies, pending_stash, foreign_files, switches}` prints to stdout on
+pending_bodies, pending_stash, foreign_files, switches, incoming}` prints to
+stdout on
 success and
 failure alike (empty lists omitted); **`complete`** — not `pushed` — is the
 "fully published" flag, `false` whenever a body or stash is left pending,
 `foreign_files` names the non-furrow junk deliberately left uncommitted, and
 `switches` names any `epic activate` records this sync published (the switch
-log's exit point).
+log's exit point), and `incoming` classifies the task changes the pull brought
+IN — the other machines' and CI's writes, read off the pre-pull..post-pull
+shard diff: `created` / `closed` / `reopened` / `moved` / `refiled` /
+`archived` / `updated`, with the old and new lane or epic on the moves — also
+rendered as one `incoming:` human line, so the CI that closed your in-progress
+task surfaces in the sync that pulled it, not on a later re-read.
 
 ### Sync failure modes
 

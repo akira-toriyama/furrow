@@ -168,6 +168,110 @@ type SyncProgress struct {
 	// agent switched on purpose" but "the agent read an instruction AS a switch".
 	// Omitted when empty.
 	Switches []EpicSwitch `json:"switches,omitempty"`
+	// Incoming lists the task changes this sync PULLED in — the other machines'
+	// and CI's board writes, classified from the shard tree-diff between the
+	// pre-pull HEAD and the post-pull HEAD (see incomingChanges). Switches is the
+	// board's OUTGOING summary (what this sync publishes); this is its INBOUND
+	// twin: without it a sync only ever says pulled=true, and the CI that closed
+	// your in-progress task stays invisible until you happen to re-read it.
+	// Omitted when empty.
+	Incoming []IncomingChange `json:"incoming,omitempty"`
+}
+
+// IncomingChange is one pulled-in task change: the task, its title (resolved
+// from the shard so the summary is readable without a second command), and a
+// kind — created | closed | reopened | moved | refiled | archived | updated.
+// A shard edit can change several fields at once, so a modification is
+// classified by the FIRST match in that order (a `done` both closes and moves;
+// "closed" is the half the operator cares about). From/To carry the old and
+// new lane for moved and the old and new epic for refiled ("" = unfiled);
+// archived is a shard deletion (`furrow archive` is the only flow that
+// deletes one) and updated is any other metadata edit.
+type IncomingChange struct {
+	ID    string `json:"id"`
+	Title string `json:"title,omitempty"`
+	Kind  string `json:"kind"`
+	From  string `json:"from,omitempty"`
+	To    string `json:"to,omitempty"`
+}
+
+// classifyIncomingEdit is the modification arm of the incoming classifier,
+// pure so the kind priority is table-testable without git.
+func classifyIncomingEdit(before, after *core.Task) (kind, from, to string) {
+	switch {
+	case before.Closed == nil && after.Closed != nil:
+		return "closed", "", ""
+	case before.Closed != nil && after.Closed == nil:
+		return "reopened", "", ""
+	case before.Status != after.Status:
+		return "moved", before.Status, after.Status
+	case before.Epic != after.Epic:
+		return "refiled", before.Epic, after.Epic
+	}
+	return "updated", "", ""
+}
+
+// incomingChanges classifies what the pull brought in. base is HEAD as captured
+// AFTER the auto-commit and before the pull: the rebase replays our own commits
+// on top of what it pulls, so base's tree already holds everything local and
+// the TREE diff base..HEAD is exactly the others' changes — never our own
+// auto-commit. Best-effort display data by the publishedSwitches contract: any
+// git or parse failure drops the entry (or the whole list) rather than failing
+// the sync. Task shards only: an epic's inbound activation already surfaces as
+// brief's epic header, and the body prose has no machine-classifiable diff.
+func (a *App) incomingChanges(ctx context.Context, r *gitrepo.Repo, spec, base string) []IncomingChange {
+	if base == "" {
+		return nil
+	}
+	head := r.Head(ctx)
+	if head == "" || head == base {
+		return nil
+	}
+	prefix := spec + "/tasks/"
+	taskAt := func(rev, path string) *core.Task {
+		data := r.FileAt(ctx, rev, path)
+		if data == nil {
+			return nil
+		}
+		t, err := core.UnmarshalTask(data)
+		if err != nil {
+			return nil
+		}
+		return t
+	}
+	var out []IncomingChange
+	for _, fc := range r.ChangedFiles(ctx, base, head, prefix) {
+		name, ok := strings.CutPrefix(fc.Path, prefix)
+		if !ok || !strings.HasSuffix(name, ".json") || strings.Contains(name, "/") {
+			continue
+		}
+		ch := IncomingChange{ID: strings.TrimSuffix(name, ".json")}
+		switch fc.Status {
+		case 'A':
+			t := taskAt(head, fc.Path)
+			if t == nil {
+				continue
+			}
+			ch.Kind, ch.Title = "created", t.Title
+		case 'D':
+			t := taskAt(base, fc.Path)
+			if t == nil {
+				continue
+			}
+			ch.Kind, ch.Title = "archived", t.Title
+		case 'M':
+			before, after := taskAt(base, fc.Path), taskAt(head, fc.Path)
+			if before == nil || after == nil {
+				continue
+			}
+			ch.Title = after.Title
+			ch.Kind, ch.From, ch.To = classifyIncomingEdit(before, after)
+		default:
+			continue
+		}
+		out = append(out, ch)
+	}
+	return out
 }
 
 // EpicSwitch is one published activation record: the box, its title (resolved
@@ -643,6 +747,18 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 			writeBodyJournal(ctx, r, keep)
 		}
 	}
+
+	// baseHead anchors the incoming report: HEAD after the auto-commit, before
+	// any pull. The report is computed in a defer over the FINAL HEAD — the
+	// push-race retry can pull a second batch, and it must count — on success
+	// and failure alike; an aborted rebase restores HEAD, so a conflicted sync
+	// honestly reports nothing incoming.
+	baseHead := r.Head(ctx)
+	defer func() {
+		if p.Pulled {
+			p.Incoming = a.incomingChanges(ctx, r, spec, baseHead)
+		}
+	}()
 
 	// stranded records that THIS sync's pull left the autostash in the stash rather
 	// than back in the working tree (see strandedStash). It is reset per pull()

@@ -190,6 +190,61 @@ func (r *Repo) DirtyChanges(ctx context.Context, pathspec string) ([]Change, err
 	return changes, nil
 }
 
+// Head returns HEAD's full sha, or "" when it cannot be resolved (no commits
+// yet, or a cancelled ctx). Best-effort by the same contract as AddedLines: its
+// only callers are display reads that must never fail a sync.
+func (r *Repo) Head(ctx context.Context) string {
+	out, _, err := runGit(ctx, r.git, r.top, "rev-parse", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// FileChange is one path a commit range touched: git's one-letter status
+// ('A'dded, 'M'odified, 'D'eleted) and the slash-form path relative to the
+// work-tree toplevel. The parse stays here, in the adapter, so app never sees
+// diff wire format.
+type FileChange struct {
+	Status byte
+	Path   string
+}
+
+// ChangedFiles returns the paths whose content differs between the two
+// commits, restricted to pathspec — a TREE diff (two-dot), so it answers "what
+// is different" even when from is no longer an ancestor of to (a rebase moved
+// it aside). --no-renames keeps every change a plain A/M/D: furrow's shards
+// are keyed by frozen ids, so a "rename" here could only be git's similarity
+// heuristic pairing two unrelated shards. Best-effort display read: any
+// failure returns nil.
+func (r *Repo) ChangedFiles(ctx context.Context, from, to, pathspec string) []FileChange {
+	out, _, err := runGit(ctx, r.git, r.top, "-c", "core.quotepath=false",
+		"diff", "--name-status", "--no-renames", from+".."+to, "--", pathspec)
+	if err != nil {
+		return nil
+	}
+	var changes []FileChange
+	for _, l := range strings.Split(out, "\n") {
+		status, path, found := strings.Cut(l, "\t")
+		if !found || status == "" {
+			continue
+		}
+		changes = append(changes, FileChange{Status: status[0], Path: filepath.ToSlash(path)})
+	}
+	return changes
+}
+
+// FileAt returns the file's bytes as of rev (`git show rev:path`; path is
+// relative to the work-tree toplevel), or nil when the rev or path does not
+// resolve. Same best-effort contract as ChangedFiles.
+func (r *Repo) FileAt(ctx context.Context, rev, path string) []byte {
+	out, _, err := runGit(ctx, r.git, r.top, "show", rev+":"+path)
+	if err != nil {
+		return nil
+	}
+	return []byte(out)
+}
+
 // AddedLine is one line the unpushed commits add to a file: its slash-form path
 // relative to the work-tree toplevel, and the line's text without the leading
 // "+". The parse stays here, in the adapter, so app never sees diff wire format.
