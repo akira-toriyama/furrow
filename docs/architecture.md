@@ -179,12 +179,12 @@ paths that serialize task metadata to bytes. Persistence goes per shard:
 `core.MarshalMeta(...) ([]byte, error)` writes `meta.json` — the latter only from
 `Store.SetBoardVersion` (i.e. `furrow upgrade`) and the fresh-store stamp, never
 on the ordinary write path (see the version gate). Every writer —
-`fsstore.Save`, and `migrate` — goes through them. `core.Marshal(*Index, laneOrder
-[]string) ([]byte, error)` still exists, but it is now the **in-memory canonical
-form** (used by the determinism golden and by inspection), *not* a persistence
-path: the store never writes those bytes to disk, because doing so would resurrect
-the abolished `index.json`. No other code calls `json.Marshal` on a `Task`,
-`Index`, or the meta object.
+`fsstore.Save`, and `migrate` — goes through them. (An Index-level
+`core.Marshal` once existed beside these as the in-memory canonical form;
+nothing in production ever called it, so it was deleted — the index has no
+serialized form, only per-entity shards, and its normal form is what
+`core.Canonicalize` enforces in memory.) No other code calls `json.Marshal` on
+a `Task`, `Index`, or the meta object.
 
 Why one path per file: the byte layout of each shard is a contract, not an
 implementation detail. If two code paths could serialize a task, they could drift,
@@ -194,19 +194,19 @@ produces zero git churn.
 
 ### The determinism contract
 
-Each serializer calls `Canonicalize` and then encodes — the recipe is identical
-for `MarshalTask`, `MarshalMeta`, and the in-memory `Marshal`. The contract
-(documented in the `Marshal` doc comment and exercised by
-[`internal/core/testdata/index.golden.json`](../internal/core/testdata/index.golden.json)):
+Each serializer normalizes (`canonicalizeTask` and friends) and then encodes
+via the one encoder, `encodeCanonicalWithExtras` — the recipe is identical for
+`MarshalTask`, `MarshalEpic`, `MarshalRepo`, and `MarshalMeta`. The contract
+(documented in the `MarshalTask` doc comment and exercised by the per-shard
+goldens under [`internal/core/testdata/`](../internal/core/testdata/)):
 
 - **Key order = struct field order.** `encoding/json` emits struct fields in
   declaration order, so the field order of `core.Index` / `core.Task` *is* the
   JSON key order. Reordering fields changes every diff — do not reorder without a
   schema bump and a golden update.
 - **2-space indent** (`SetIndent("", "  ")`).
-- **`SetEscapeHTML(false)`** so CJK and `< > &` survive verbatim. The golden file
-  proves it: `"畝を一本進める"` and `"done item <b>&amp;</b> 完了"` round-trip
-  unescaped.
+- **`SetEscapeHTML(false)`** so CJK and `< > &` survive verbatim. The task
+  golden proves it: `"畝を一本進める <b>&amp;</b> 完了"` round-trips unescaped.
 - **`[]`, never `null`.** `Canonicalize` replaces nil slices (`Labels`, `Deps`,
   `Refs`, `Checklist`) with empty ones.
 - **Stable sort: lane-rank → priority → id.** Lane rank comes from the configured
@@ -324,9 +324,10 @@ change from the other direction, and the same flag day.)
 
 ### How the invariant is guarded
 
-- **Golden round-trip test.** `internal/core/core_test.go` asserts that marshalling
-  the fixture index produces `testdata/index.golden.json` byte-for-byte (write →
-  read → write stays identical).
+- **Golden round-trip tests.** `internal/core`'s shard goldens (`task.golden.json`,
+  `epic.golden.json`, `repo.golden.json`, via one shared `goldenBytes` helper)
+  assert each marshaller's bytes are frozen, and the deterministic tests assert
+  write → read → write stays byte-identical.
 - **Schema drift test.** `furrow schema [task|meta|repo|epic]` prints
   `internal/schema.TaskV2` / `MetaV2` / `RepoV1` / `EpicV2` (JSON Schema draft
   2020-12); `docs/schema/furrow.task.v2.json`, `furrow.meta.v2.json`,

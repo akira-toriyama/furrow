@@ -55,12 +55,13 @@ func sampleIndex() *Index {
 	}
 }
 
-func TestMarshalGolden(t *testing.T) {
-	got, err := Marshal(sampleIndex(), testLanes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	golden := filepath.Join("testdata", "index.golden.json")
+// goldenBytes compares got against testdata/<name>, regenerating the file
+// under -update — the ONE home of the golden ritual, shared by the task, epic,
+// and repo shard goldens (they used to carry three identical copies of this
+// block, t-eb6a).
+func goldenBytes(t *testing.T, name string, got []byte) {
+	t.Helper()
+	golden := filepath.Join("testdata", name)
 	if *update {
 		if err := os.WriteFile(golden, got, 0o644); err != nil {
 			t.Fatal(err)
@@ -71,92 +72,51 @@ func TestMarshalGolden(t *testing.T) {
 		t.Fatalf("read golden (run with -update first): %v", err)
 	}
 	if !bytes.Equal(got, want) {
-		t.Errorf("marshal output != golden\n--- got ---\n%s\n--- want ---\n%s", got, want)
+		t.Errorf("output != %s\n--- got ---\n%s\n--- want ---\n%s", name, got, want)
 	}
 }
 
-// TestMarshalDeterministic: the canonical contract — re-marshalling an index
-// parsed from canonical bytes yields byte-identical output (no churn), AND the
-// sort is stable regardless of input task order.
-func TestMarshalDeterministic(t *testing.T) {
-	first, err := Marshal(sampleIndex(), testLanes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	parsed, err := Unmarshal(first)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := Marshal(parsed, testLanes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(first, second) {
-		t.Errorf("re-marshal not byte-stable\nfirst:\n%s\nsecond:\n%s", first, second)
+// TestCanonicalizeSortsTasks pins the in-memory index's normal form: the
+// stable lane-rank -> priority -> id order every list read renders in.
+// (The index has no serialized form of its own — the on-disk byte recipe is
+// pinned per shard by the golden tests and the frozen board.)
+func TestCanonicalizeSortsTasks(t *testing.T) {
+	idx := sampleIndex()
+	Canonicalize(idx, testLanes)
+	// in-progress ranks before done. Within in-progress, priority 100 (t-0002)
+	// before 110 (t-0001). done is last (t-0003).
+	want := []string{"t-0002", "t-0001", "t-0003"}
+	for i, id := range want {
+		if idx.Tasks[i].ID != id {
+			t.Fatalf("task order[%d] = %s, want %s (full: %v)", i, idx.Tasks[i].ID, id, want)
+		}
 	}
 }
 
-func TestMarshalDetails(t *testing.T) {
-	got, err := Marshal(sampleIndex(), testLanes)
+// TestMarshalTaskEmptySets pins the shard shape of a MINIMAL task — the cases
+// the noisy task_test golden cannot: nil collections emit [] (never null), an
+// open task emits "closed": null, and unset estimates omit their keys
+// entirely, so absent stays distinct from any score.
+func TestMarshalTaskEmptySets(t *testing.T) {
+	got, err := MarshalTask(&Task{
+		ID: "t-0002", Title: "bare task", Status: "in-progress", Priority: 100,
+		Created: time.Date(2026, 6, 3, 1, 2, 3, 0, time.UTC),
+		Updated: time.Date(2026, 6, 3, 1, 2, 3, 0, time.UTC),
+		Body:    BodyPath("t-0002"),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(got)
-
-	if !bytes.HasSuffix(got, []byte("\n")) {
-		t.Error("output must end with a trailing newline")
-	}
-	// SetEscapeHTML(false): CJK and < > & survive literally.
-	for _, lit := range []string{"畝を一本進める", "<b>&amp;</b>", "完了"} {
-		if !bytes.Contains(got, []byte(lit)) {
-			t.Errorf("expected literal %q to survive un-escaped, output:\n%s", lit, s)
+	for _, needle := range []string{`"labels": []`, `"repos": []`, `"deps": []`, `"closed": null`} {
+		if !bytes.Contains(got, []byte(needle)) {
+			t.Errorf("shard must contain %s:\n%s", needle, s)
 		}
 	}
-	// [] not null: a task with no labels still emits "labels": [].
-	if !bytes.Contains(got, []byte(`"labels": []`)) {
-		t.Errorf("nil slices must marshal as [], not null:\n%s", s)
-	}
-	// repos follows the same []-not-null set contract as labels.
-	if !bytes.Contains(got, []byte(`"repos": []`)) {
-		t.Errorf("a task with no repos must emit \"repos\": []:\n%s", s)
-	}
-	// open task -> "closed": null
-	if !bytes.Contains(got, []byte(`"closed": null`)) {
-		t.Errorf("open task must serialize closed as null:\n%s", s)
-	}
-	// a set estimate serializes its key; an unset one is omitted entirely
-	// (omitempty on the *int), so absent stays distinct from any score.
-	if !bytes.Contains(got, []byte(`"value": 4`)) || !bytes.Contains(got, []byte(`"effort": 2`)) {
-		t.Errorf("a task with value/effort must serialize them:\n%s", s)
-	}
-	// t-0002 has no estimate; "value"/"effort" must not appear for it. The whole
-	// index has exactly one estimate-bearing task, so a single occurrence each.
-	if n := bytes.Count(got, []byte(`"value":`)); n != 1 {
-		t.Errorf("unset value must be omitted: want 1 \"value\" key, got %d:\n%s", n, s)
-	}
-	if n := bytes.Count(got, []byte(`"effort":`)); n != 1 {
-		t.Errorf("unset effort must be omitted: want 1 \"effort\" key, got %d:\n%s", n, s)
-	}
-}
-
-func TestCanonicalSort(t *testing.T) {
-	got, err := Marshal(sampleIndex(), testLanes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// in-progress (rank 3) sorts before done (rank 4). Within in-progress,
-	// priority 100 (t-0002) before 110 (t-0001). done is last (t-0003).
-	order := []string{`"id": "t-0002"`, `"id": "t-0001"`, `"id": "t-0003"`}
-	last := -1
-	for _, needle := range order {
-		i := bytes.Index(got, []byte(needle))
-		if i < 0 {
-			t.Fatalf("missing %s", needle)
+	for _, absent := range []string{`"value":`, `"effort":`, `"due":`} {
+		if bytes.Contains(got, []byte(absent)) {
+			t.Errorf("unset %s must be omitted from the shard:\n%s", absent, s)
 		}
-		if i < last {
-			t.Errorf("task order wrong: %s appeared before the previous id\n%s", needle, got)
-		}
-		last = i
 	}
 }
 

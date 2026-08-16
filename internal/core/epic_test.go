@@ -3,8 +3,6 @@ package core
 import (
 	"bytes"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -56,19 +54,7 @@ func TestMarshalEpicGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden := filepath.Join("testdata", "epic.golden.json")
-	if *update {
-		if err := os.WriteFile(golden, got, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	want, err := os.ReadFile(golden)
-	if err != nil {
-		t.Fatalf("read golden (run with -update first): %v", err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("MarshalEpic output != golden\n--- got ---\n%s\n--- want ---\n%s", got, want)
-	}
+	goldenBytes(t, "epic.golden.json", got)
 }
 
 // TestMarshalEpicDeterministic: re-marshalling an epic parsed from canonical
