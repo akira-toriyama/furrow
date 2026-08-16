@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -52,6 +53,35 @@ func (a *App) GetBatchArchived(ids []string, withBody bool) ([]ShowItem, []strin
 		return nil, nil, err
 	}
 	return getBatchFrom(idx, arc.LoadBody, ids, withBody)
+}
+
+// notFoundTask builds the single-id task not-found error, enriched when the id
+// is actually ARCHIVED: a retired task is a different situation from a typo,
+// and until t-yszb every mutator returned the bare miss while only `show` knew
+// to mention the archive. Best-effort probe (ArchivedContains' contract): no
+// archive, no enrichment — never a different error.
+func (a *App) notFoundTask(id string) *core.Error {
+	e := core.NotFound(id)
+	if arch := a.ArchivedContains([]string{id}); len(arch) > 0 {
+		e.Msg += fmt.Sprintf(" (it is archived — restore it with `furrow unarchive %s`, or read it with `furrow show %s --archived`)", id, id)
+		e.Details = map[string]any{"archived": arch}
+	}
+	return e
+}
+
+// batchMissingErr is the batch mutators' all-or-nothing not-found shape
+// (details.missing, the show batch contract) with the same archived
+// enrichment: the archived subset of the misses rides in details.archived and
+// the message counts it. total is the whole (deduped) batch size; verb is the
+// past participle the message reports ("moved", "set").
+func (a *App) batchMissingErr(missing []string, total int, verb string) *core.Error {
+	details := map[string]any{"missing": missing}
+	msg := fmt.Sprintf("%d of %d ids not found — nothing was %s", len(missing), total, verb)
+	if arch := a.ArchivedContains(missing); len(arch) > 0 {
+		details["archived"] = arch
+		msg += fmt.Sprintf(" (%d archived — restore with `furrow unarchive`, or read with `furrow show --archived`)", len(arch))
+	}
+	return &core.Error{Code: core.CodeNotFound, Kind: core.KindNotFound, Msg: msg, Details: details}
 }
 
 // ArchivedContains returns the subset of ids present in the archive store, in

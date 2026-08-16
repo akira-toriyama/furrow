@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -92,7 +93,7 @@ func (a *App) ArchiveIDs(ids []string, dryRun bool) ([]core.Task, error) {
 		seen[id] = true
 		t, i := idx.Find(id)
 		if i < 0 {
-			return nil, core.NotFound(id)
+			return nil, a.notFoundTask(id)
 		}
 		if t.Status != a.Cfg.DoneLane {
 			return nil, core.Validationf(id, "only done-lane tasks can be archived by id; %s is in %q (move it to %s first)", id, t.Status, a.Cfg.DoneLane)
@@ -180,16 +181,131 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 	return moved, nil
 }
 
+// Unarchive moves the named tasks BACK from .furrow/archive/ to the hot board —
+// the inverse of ArchiveIDs, making archive a round trip instead of a one-way
+// door (t-yszb: recovery used to mean hand-moving furrow-owned shards between
+// stores, exactly what the docs forbid). All-or-nothing: every id must be in
+// the archive store, or nothing moves — a miss is the batch not-found shape
+// (details.missing), except an id already on the hot board, which is its own
+// validation error (there is nothing to restore). Duplicates collapse.
+//
+// A restored task comes back EXACTLY as archived — done lane, Closed stamp,
+// every field byte-preserved: restoring answers "put it back on the board",
+// and reopening is `furrow move <id> <lane>`'s job (which already clears
+// Closed on leaving the done lane). Same commit order as archiveMove, with the
+// stores swapped: the DESTINATION (hot) is persisted first — bodies, assets,
+// index — and only then is the archive side updated and its copies deleted, so
+// an interrupted run leaves at worst a harmless duplicate in archive/, never a
+// hot index entry whose body is still trapped in the archive.
+func (a *App) Unarchive(ids []string) ([]core.Task, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	if err := a.Store.Writable(); err != nil {
+		return nil, err
+	}
+	arc, err := a.archiveStore()
+	if err != nil {
+		return nil, err
+	}
+	arcIdx, err := arc.Load()
+	if err != nil {
+		return nil, err
+	}
+	var moved []core.Task
+	var missing []string
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		t, i := arcIdx.Find(id)
+		if i < 0 {
+			if idx.Has(id) {
+				return nil, core.Validationf(id, "%s is not archived — it is already on the hot board", id)
+			}
+			missing = append(missing, id)
+			continue
+		}
+		moved = append(moved, *t)
+	}
+	if len(missing) > 0 {
+		return nil, &core.Error{
+			Code:    core.CodeNotFound,
+			Kind:    core.KindNotFound,
+			Msg:     fmt.Sprintf("%d of %d ids not found in the archive — nothing was restored", len(missing), len(moved)+len(missing)),
+			Details: map[string]any{"missing": missing},
+		}
+	}
+	arcAssets, err := assetsOwnedBy(arc, moved)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range moved {
+		body, err := arc.LoadBody(t.ID)
+		if err != nil {
+			return nil, err
+		}
+		if err := a.Store.SaveBody(t.ID, body); err != nil {
+			return nil, err
+		}
+		for _, name := range arcAssets[t.ID] {
+			data, err := arc.LoadAsset(name)
+			if err != nil {
+				return nil, err
+			}
+			if err := a.Store.SaveAssetRaw(name, data); err != nil {
+				return nil, err
+			}
+		}
+		if !idx.Has(t.ID) { // idempotent: a retry won't double-add
+			idx.Add(t)
+		}
+		arcIdx.Remove(t.ID)
+	}
+	if err := a.Store.Save(idx); err != nil {
+		return nil, err
+	}
+	if err := arc.Save(arcIdx); err != nil {
+		return nil, err
+	}
+	for _, t := range moved { // both indexes are durable now — safe to delete the source
+		if err := arc.DeleteBody(t.ID); err != nil {
+			return nil, err
+		}
+		for _, name := range arcAssets[t.ID] {
+			if err := arc.DeleteAsset(name); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return moved, nil
+}
+
 // assetsByOwner groups the hot store's assets by the moved task that owns them —
 // an asset named "<id>-…" belongs to task id (frozen ids can't be one another's
 // prefix, so at most one owner matches). Only moved tasks are included, so
 // archive touches no other repo's or task's media.
 func (a *App) assetsByOwner(moved []core.Task) (map[string][]string, error) {
+	return assetsOwnedBy(a.Store, moved)
+}
+
+// assetLister is the sliver of a store the asset grouping reads — letting
+// assetsOwnedBy serve both directions of the archive round trip (the hot store
+// on the way out, the archive store on the way back).
+type assetLister interface {
+	ListAssets() ([]core.AssetInfo, error)
+}
+
+// assetsOwnedBy is assetsByOwner against any store side.
+func assetsOwnedBy(s assetLister, moved []core.Task) (map[string][]string, error) {
 	want := make(map[string]bool, len(moved))
 	for _, t := range moved {
 		want[t.ID] = true
 	}
-	assets, err := a.Store.ListAssets()
+	assets, err := s.ListAssets()
 	if err != nil {
 		return nil, err
 	}

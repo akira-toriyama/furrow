@@ -842,7 +842,7 @@ func (a *App) Get(id string) (*core.Task, string, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, "", core.NotFound(id)
+		return nil, "", a.notFoundTask(id)
 	}
 	body, err := a.Store.LoadBody(id)
 	if err != nil {
@@ -1005,7 +1005,7 @@ func (a *App) Backlinks(id string) ([]core.Task, error) {
 		return nil, err
 	}
 	if !idx.Has(id) {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	re := core.LinkPattern(a.Cfg.IDPrefix)
 	bodyIDs, err := a.Store.ListBodyIDs()
@@ -1527,12 +1527,7 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, error) {
 		order = append(order, id)
 	}
 	if len(missing) > 0 {
-		return nil, &core.Error{
-			Code:    core.CodeNotFound,
-			Kind:    core.KindNotFound,
-			Msg:     fmt.Sprintf("%d of %d ids not found — nothing was moved", len(missing), len(order)+len(missing)),
-			Details: map[string]any{"missing": missing},
-		}
+		return nil, a.batchMissingErr(missing, len(order)+len(missing), "moved")
 	}
 	now := a.Clock.Now()
 	for _, id := range order {
@@ -1596,7 +1591,7 @@ func (a *App) DoneNote(id, note string) (*core.Task, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	if err := a.appendBody(id, note); err != nil {
 		return nil, err
@@ -1751,7 +1746,7 @@ func (a *App) Check(id string, item int, done bool) (*core.Task, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	if item < 0 || item >= len(t.Checklist) {
 		return nil, core.Validationf(id, "checklist index %d out of range (have %d item(s))", item, len(t.Checklist))
@@ -1769,7 +1764,7 @@ func (a *App) RemoveCheck(id string, item int) (*core.Task, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	if item < 0 || item >= len(t.Checklist) {
 		return nil, core.Validationf(id, "checklist index %d out of range (have %d item(s))", item, len(t.Checklist))
@@ -1793,7 +1788,7 @@ func (a *App) RewordCheck(id string, item int, text string) (*core.Task, error) 
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	if item < 0 || item >= len(t.Checklist) {
 		return nil, core.Validationf(id, "checklist index %d out of range (have %d item(s))", item, len(t.Checklist))
@@ -1823,7 +1818,7 @@ func (a *App) AddDeps(id string, deps []string) (*core.Task, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	before, err := core.MarshalTask(t)
 	if err != nil {
@@ -1871,7 +1866,7 @@ func (a *App) RemoveDeps(id string, deps []string) (*core.Task, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	before, err := core.MarshalTask(t)
 	if err != nil {
@@ -1923,7 +1918,7 @@ func (a *App) Relabel(id string, add, remove []string) (*core.Task, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	next := labelDelta(t.Labels, add, remove)
 	if a.Cfg.LabelsRequired && len(next) == 0 {
@@ -1955,7 +1950,7 @@ func (a *App) Reref(id string, add, remove []string) (*core.Task, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	next := labelDelta(t.Refs, add, remove)
 	return a.mutateIn(idx, id, func(t *core.Task) { t.Refs = next })
@@ -2046,7 +2041,7 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, erro
 		return nil, nil, err
 	}
 	if _, i := idx.Find(id); i < 0 {
-		return nil, nil, core.NotFound(id)
+		return nil, nil, a.notFoundTask(id)
 	}
 	due, err := a.resolveDue(o)
 	if err != nil {
@@ -2140,12 +2135,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 		order = append(order, id)
 	}
 	if len(missing) > 0 {
-		return nil, &core.Error{
-			Code:    core.CodeNotFound,
-			Kind:    core.KindNotFound,
-			Msg:     fmt.Sprintf("%d of %d ids not found — nothing was set", len(missing), len(order)+len(missing)),
-			Details: map[string]any{"missing": missing},
-		}
+		return nil, a.batchMissingErr(missing, len(order)+len(missing), "set")
 	}
 	for _, id := range order {
 		if _, err := a.applySet(idx, id, o, due); err != nil {
@@ -2186,7 +2176,7 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 		}
 		rt, ri := idx.Find(relRef)
 		if ri < 0 {
-			return nil, core.NotFound(relRef)
+			return nil, a.notFoundTask(relRef)
 		}
 		dest := t.Status
 		if o.Status != nil {
@@ -2306,7 +2296,7 @@ func (a *App) mutate(id string, fn func(*core.Task)) (*core.Task, error) {
 func (a *App) mutateIn(idx *core.Index, id string, fn func(*core.Task)) (*core.Task, error) {
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	before, err := core.MarshalTask(t)
 	if err != nil {
@@ -2408,7 +2398,7 @@ func (a *App) EditPath(ref string) (string, error) {
 			return "", lerr
 		}
 		if !idx.Has(id) {
-			return "", core.NotFound(id)
+			return "", a.notFoundTask(id)
 		}
 	}
 	if !a.Store.BodyExists(id) {
@@ -2454,7 +2444,7 @@ func (a *App) AddNote(id, text string) (*core.Task, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	if err := a.appendBody(id, text); err != nil {
 		return nil, err
@@ -2502,7 +2492,7 @@ func (a *App) SetBody(id, text string) (*core.Task, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	if err := a.saveBody(id, text); err != nil {
 		return nil, err

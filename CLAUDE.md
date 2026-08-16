@@ -9,7 +9,7 @@ furrow's own tasks live on the **central board** (the private
 `.furrow/`**, so `furrow` commands run here resolve to the central board via
 the user-level config. When you work with any furrow store:
 
-- Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|tidy|upgrade|lint|config|init|migrate|schema|version`.
+- Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|unarchive|tidy|upgrade|lint|config|init|migrate|schema|version`.
   **`furrow brief [--json]` is the session-start read**: the sync → `next -r` →
   `show <id>` ritual in ONE process — the **due** band FIRST (`due`,
   `{overdue, today}`, longest-overdue first, omitted when nothing has arrived: a
@@ -61,7 +61,11 @@ the user-level config. When you work with any furrow store:
   `... --json | jq '.[].id'` silently walk an object's VALUES whenever a
   caller's id list happened to resolve to one);
   `archive <id>...` retires specific done
-  tasks by id (vs the age sweep). The READMEs' command table is **generated**
+  tasks by id (vs the age sweep), and `unarchive <id>...` brings them BACK —
+  all-or-nothing, fields untouched (still done + closed; reopening is
+  `move`'s job), body and assets included; every mutator's miss on an
+  archived id says so (`details.archived` + the restore command), so the
+  archive is a round trip, not a one-way door. The READMEs' command table is **generated**
   from this very cobra tree (hidden `furrow commands`, spliced by
   `scripts/gen-command-table.sh`, drift-checked by check.sh/CI): to change a
   command's one-liner or flags, edit `Short`/flag definitions in
