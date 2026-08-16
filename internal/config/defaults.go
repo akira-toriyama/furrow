@@ -112,6 +112,25 @@ type Config struct {
 	// app-layer lint warns about (clamp-don't-reject). Empty = suppress nothing.
 	LintIgnoreCodes []string
 
+	// LintTitleScopeMarkers are the [lint].title_scope_markers: when non-empty,
+	// `furrow lint` warns `title-scope-marker` on every open, non-terminal task
+	// whose TITLE contains one of these substrings (case-insensitive). The
+	// marker is the board's own idiom for "this task's scope was narrowed in
+	// place" — a title like "fix X (残り: docs only)" — which is the signal to
+	// retire the task or split the remainder out, not to keep annotating.
+	// Furrow ships no default wording (empty = off): the words are a board
+	// convention, exactly like provenance_markers.
+	LintTitleScopeMarkers []string
+
+	// LintStaleInboxDays is the [lint].stale_inbox_days: when > 0, `furrow
+	// lint` warns `stale-inbox` on every open task that has sat in the DEFAULT
+	// (intake) lane without an update for at least this many days — the
+	// inbox-zero pressure: intake is for triage, not storage (backlog is where
+	// waiting is fine). Distinct from [revisit].stale_days, which is
+	// lane-blind, longer, and a revisit signal rather than a lint finding.
+	// 0 (the default) keeps the check off.
+	LintStaleInboxDays int
+
 	// LintSeverity is the [lint.severity] table: lint code -> "error" | "warn",
 	// the board's own override of a code's shipped level. It exists for the code
 	// whose DEFAULT level fits one operation and not another — due-overdue is an

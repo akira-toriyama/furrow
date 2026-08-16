@@ -149,7 +149,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 	for _, l := range a.Cfg.NextLanes {
 		nextLanes[l] = true
 	}
-	ps = append(ps, core.ReadyBlockedProblems(idx, nextLanes, doneIDs)...)
+	ps = append(ps, core.ReadyBlockedProblems(idx, nextLanes, a.Cfg.Terminal, doneIDs)...)
 
 	// Due dates (due-overdue = ERROR, due-today = warn). Board-wide on purpose:
 	// no epic scope and no `next` lane filter, because the work that carries a
@@ -207,6 +207,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 	ps = append(ps, bodyPs...)
 
 	ps = append(ps, a.lintConfigProblems(idx)...)
+	ps = append(ps, a.lintHygieneProblems(idx)...)
 
 	// A board still on an older layout than this binary is read-only (every write
 	// hits the store's gate). Warn, don't error: that state is the legitimate
@@ -490,6 +491,76 @@ func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
 	// (running it once is explicit, unlike spamming every command's stderr).
 	for _, w := range GlobalConfigWarnings() {
 		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "global-config", Msg: w})
+	}
+	return ps
+}
+
+// lintHygieneProblems collects the board-hygiene findings that came out of
+// operating boards by hand (projects t-chad): states no invariant forbids but
+// that a periodic tidy pass kept re-finding. All warns — hygiene is advisory —
+// and the two config-driven ones ship OFF, because their thresholds and words
+// are board conventions, not furrow's (the provenance_markers stance).
+func (a *App) lintHygieneProblems(idx *core.Index) []core.Problem {
+	var ps []core.Problem
+
+	// title-scope-marker ([lint].title_scope_markers, OFF by default): a title
+	// carrying the board's "scope narrowed in place" idiom — "fix X (残り: docs
+	// only)" — is a task whose remainder should be split out or retired, not
+	// annotated further. Title-only and case-insensitive (search's matcher), on
+	// open, non-terminal tasks: a parked or finished task's title is history.
+	if len(a.Cfg.LintTitleScopeMarkers) > 0 {
+		for i := range idx.Tasks {
+			t := &idx.Tasks[i]
+			if a.Cfg.IsTerminal(t.Status) || t.Closed != nil {
+				continue
+			}
+			for _, m := range a.Cfg.LintTitleScopeMarkers {
+				if core.ContainsFold(t.Title, m) {
+					ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "title-scope-marker", ID: t.ID,
+						Msg: fmt.Sprintf("title carries the scope-narrowing marker %q — the remainder deserves its own task (or this one is done): split it out, then `furrow retitle %s` to the real scope", m, t.ID)})
+					break
+				}
+			}
+		}
+	}
+
+	// stale-inbox ([lint].stale_inbox_days, OFF by default): the intake lane is
+	// for triage, not storage — backlog is where waiting is fine — so an open
+	// task sitting in the DEFAULT lane past the threshold gets the inbox-zero
+	// nudge. Keyed on `updated` (the board's one staleness clock; a note resets
+	// it, which is self-healing rather than gameable), and deliberately shorter
+	// than [revisit].stale_days, which is lane-blind and a revisit signal.
+	if a.Cfg.LintStaleInboxDays > 0 {
+		cutoff := a.Clock.Now().AddDate(0, 0, -a.Cfg.LintStaleInboxDays)
+		for i := range idx.Tasks {
+			t := &idx.Tasks[i]
+			if t.Status != a.Cfg.DefaultLane || t.Closed != nil {
+				continue
+			}
+			if t.Updated.Before(cutoff) {
+				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "stale-inbox", ID: t.ID,
+					Msg: fmt.Sprintf("sat in the intake lane %q for over %dd without an update — triage it (`furrow set %s -s <lane>`, value/effort, an epic) or park it",
+						a.Cfg.DefaultLane, a.Cfg.LintStaleInboxDays, t.ID)})
+			}
+		}
+	}
+
+	// done-draft (always on, but only once the board USES the repo dimension —
+	// the epic-required participation pattern): a done-lane task with no repo is
+	// invisible to every repo-scoped read and mute on "which repo was this
+	// for", exactly when it has become a record. DONE lane only, deliberately
+	// narrower than "terminal": an icebox draft is a normal parked idea (the
+	// central board keeps several on purpose), and a waiting draft is delegated
+	// work whose repo may genuinely not exist yet — only finishing makes the
+	// missing attribution a defect.
+	if len(repoUniverse(idx, a.BoardRepos)) > 0 {
+		for i := range idx.Tasks {
+			t := &idx.Tasks[i]
+			if t.Status == a.Cfg.DoneLane && len(t.Repos) == 0 {
+				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "done-draft", ID: t.ID,
+					Msg: fmt.Sprintf("task is done but attached to no repo — hidden from every repo-scoped read; `furrow repo %s --add <owner/repo>`, or archive it if the gap is deliberate", t.ID)})
+			}
+		}
 	}
 	return ps
 }
