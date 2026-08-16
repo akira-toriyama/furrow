@@ -91,6 +91,17 @@ furrow done "$id"
 
 Every filtering read — `ls`, `next`, `revisit`, `stats`, `search` — takes `-q "<query>"`, a GitHub-Projects-style query folded into one string and compiled by ONE shared evaluator, so it means the same thing everywhere (`brief` is deliberately excluded — a fixed session-orient read). It is a **flat AND-list**: whitespace between terms is AND, a comma inside one value is OR, a leading `-` is NOT, and it ANDs with the other filters (`-s/-l/-r`, `--sort`, …) so a query never widens a scoped board. No cross-field OR, no grouping, no in-query sort — GitHub's own ceiling; `--json | jq` owns the long tail.
 
+The same filters drive the WRITE side: the batch mutators `set`, `done`, and
+`move` take `-q` (plus `-l`/`-r`) as a **selector** instead of an id list, so
+a bulk triage is one command, not `ls --json | jq | xargs` (which ARG_MAX can
+split into partial applies). A selection and explicit ids refuse to combine;
+the selection **previews until `--yes`** (`{dry_run: true, tasks}` in JSON —
+the archive/tidy destructive-op guard), applies as the same single
+all-or-nothing write as the id form, and a selection matching nothing is
+exit 0 with a stderr note, like every empty read. The board scope applies
+exactly as in `ls`, so `furrow ls <flags>` previews precisely what
+`furrow done <flags>` would close.
+
 ```sh
 furrow ls -q 'is:actionable label:cli,dx -status:icebox'   # workable now, (cli OR dx), not iced
 furrow next -q 'value:>=4 -label:chore'                     # ready AND worth it
@@ -255,11 +266,11 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `edit <id>` | Edit a task's or epic's markdown body in $EDITOR, or replace it with --body | `--body`, `--expect-updated` |
 | `note <id> <text>` | Append a paragraph to a task's or epic's body and advance its updated time | `--expect-updated` |
 | `attach <id> <file>` | Attach a media file to a task (copies into bodies/assets/, links it from the body) | — |
-| `done <id>...` | Move tasks into the done lane (stamps closed) | `--expect-updated`, `--note` |
-| `move <id>... <lane>` | Move tasks to a lane | `--expect-updated` |
+| `done [<id>...]` | Move tasks into the done lane (stamps closed) | `--expect-updated`, `-l/--label`, `--note`, `-q/--query`, `-r/--repo`, `--yes` |
+| `move [<id>...] <lane>` | Move tasks to a lane | `--expect-updated`, `-l/--label`, `-q/--query`, `-r/--repo`, `--yes` |
 | `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before`, `--expect-updated` |
 | `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | `--expect-updated` |
-| `set <id>...` | Apply several triage edits at once (lane, priority, value, effort, labels, epic, due) | `--add-label`, `--after`, `--before`, `--clear-due`, `--clear-effort`, `--clear-value`, `--due`, `--effort`, `-e/--epic`, `--expect-updated`, `-p/--priority`, `--rm-label`, `-s/--status`, `--value` |
+| `set [<id>...]` | Apply several triage edits at once (lane, priority, value, effort, labels, epic, due) | `--add-label`, `--after`, `--before`, `--clear-due`, `--clear-effort`, `--clear-value`, `--due`, `--effort`, `-e/--epic`, `--expect-updated`, `-l/--label`, `-p/--priority`, `-q/--query`, `-r/--repo`, `--rm-label`, `-s/--status`, `--value`, `--yes` |
 | `value <id> <1-5>` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear`, `--expect-updated` |
 | `effort <id> <1-5>` | Set a task's effort estimate (coarse 1..5), or clear it with --clear | `--clear`, `--expect-updated` |
 | `check <id> [item-index]` | Toggle, add, remove, or reword a checklist item | `--add`, `--expect-updated`, `--off`, `--reword`, `--rm` |

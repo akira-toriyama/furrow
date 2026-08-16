@@ -206,7 +206,17 @@ the user-level config. When you work with any furrow store:
   excluded) — a flat AND-list of `field:value` terms where a comma is OR, a
   leading `-` is NOT, plus `has:`/`no:` presence, `is:` computed flags,
   ordinal and date comparisons/ranges, and direct graph edges. It ANDs with
-  the other filters and never widens a scoped board. So you rarely need jq. Each `lint` problem carries
+  the other filters and never widens a scoped board. The batch mutators
+  (`set`/`done`/`move`) take the same `-q`/`-l`/`-r` as a write-side SELECTOR
+  instead of an id list (the two refuse to combine): the selection resolves
+  through the very same read path (board scope included, so `ls <flags>`
+  previews exactly what the write would touch), PREVIEWS until `--yes`
+  (`{dry_run: true, tasks}` in JSON; with `--yes` the usual envelope array),
+  matches-nothing is exit 0 with a stderr note, `--yes` without a selection
+  and `--expect-updated`/position flags beside one are exit 2, and the apply
+  is the same single all-or-nothing write — no `ls --json | jq | xargs`
+  pipeline, whose ARG_MAX splits break all-or-nothing. So you rarely need
+  jq, on reads and writes alike. Each `lint` problem carries
   a stable kebab-case `code` (`dangling-link`, `dep-cycle`, `epic-required`,
   `epic-no-active`, `orphan-asset`, `due-overdue`, `due-today`,
   `conflict-marker`, `unknown-shard-key`, …) — branch on it, not the message, since the `id` field

@@ -900,7 +900,11 @@ except where noted:
   `--stale-days` on `revisit`). The typed query `--query`/`-q` is on every
   filtering read — `ls`, `next`, `revisit`, `stats`, `search` — and ANDs with
   all of the above (it can only narrow, never widen a scoped board);
-  `brief` is deliberately excluded, being a fixed session-orient read. `-r` is the scope control (an
+  `brief` is deliberately excluded, being a fixed session-orient read. The
+  batch mutators (`set`/`done`/`move`) take the same `-q`/`-l`/`-r` as a
+  write-side selector — resolved through the very same read path, previewing
+  until `--yes`, refusing to combine with ids, and applying as one
+  all-or-nothing write. `-r` is the scope control (an
   explicit `-r` overrides the board scope; `-r ''` shows the whole board);
   `-l` is a pure tag filter that ANDs with the scope. Within a single `-s` or
   `-l`, a comma is OR (`-s inbox,backlog`, `-l bug,urgent`; tokens are trimmed,
