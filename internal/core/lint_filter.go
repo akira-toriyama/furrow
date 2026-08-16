@@ -129,6 +129,32 @@ func FilterProblems(ps []Problem, f ProblemFilter) []Problem {
 	return out
 }
 
+// ApplySeverity rewrites each problem's Severity per the overrides map (lint
+// code -> SevError | SevWarn) — the [lint.severity] board policy, applied
+// in-place-by-value so callers get a slice they may sort or filter without
+// aliasing the input. It is deliberately a TRANSFORM separate from
+// FilterProblems: the override changes what a finding IS (its level, and with
+// it lint's exit code and the sync ride-along's error count), not whether it is
+// shown, and it must land BEFORE any severity-keyed sort or --severity filter
+// so those see the effective level. Idempotent, so a caller that appends
+// late-born problems (the CLI's alias-shadow) can re-apply over the whole
+// slice. Callers pass a VALIDATED map — unknown codes are harmless here (they
+// match nothing), but level validation is the config loader's job and code
+// vocabulary warnings are app.Lint's.
+func ApplySeverity(ps []Problem, overrides map[string]string) []Problem {
+	if len(overrides) == 0 {
+		return ps
+	}
+	out := make([]Problem, len(ps))
+	for i, p := range ps {
+		if lv, ok := overrides[p.Code]; ok && (lv == SevError || lv == SevWarn) {
+			p.Severity = lv
+		}
+		out[i] = p
+	}
+	return out
+}
+
 // setFromSlice builds a membership set, or nil for an empty input (so callers can
 // cheaply test len()==0 / a nil map reads false for any key).
 func setFromSlice(ss []string) map[string]bool {

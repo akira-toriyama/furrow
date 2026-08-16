@@ -221,6 +221,11 @@ func (a *App) Lint() ([]core.Problem, error) {
 			Msg: fmt.Sprintf("board is schema v%d; this furrow writes v%d — writes are refused until `furrow upgrade` runs (a flag day: bump every pinned caller FIRST)", bv, core.SchemaVersion)})
 	}
 
+	// [lint.severity] board policy, applied BEFORE the sort so the ordering (and
+	// every consumer — the exit code, LintErrorCounts' sync line, --severity)
+	// sees the effective level, never the shipped one.
+	ps = core.ApplySeverity(ps, a.LintSeverityOverrides())
+
 	sort.SliceStable(ps, func(i, j int) bool {
 		if ps[i].Severity != ps[j].Severity {
 			return ps[i].Severity < ps[j].Severity
@@ -468,6 +473,17 @@ func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
 		}
 	}
 
+	// [lint.severity] clamp, the same split: the LEVEL was validated by the
+	// config loader (two literals it owns), but only this layer can tell a code
+	// that exists from a typo — a dead entry overrides nothing, and this warn is
+	// its only signal.
+	for _, code := range sortedKeys(a.Cfg.LintSeverity) {
+		if !core.IsLintCode(code) {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "config",
+				Msg: fmt.Sprintf("lint.severity entry %q is not a known lint code; it overrides nothing", code)})
+		}
+	}
+
 	// surface user-level (home) config clamp warnings too. Discovery drops these
 	// on its inert path — a half-written ~/.config/furrow/config.toml whose boards
 	// all clamp away leaves no board AND no signal — so lint is where they land
@@ -476,6 +492,37 @@ func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
 		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "global-config", Msg: w})
 	}
 	return ps
+}
+
+// LintSeverityOverrides returns the [lint.severity] entries that name a REAL
+// lint code — the validated map core.ApplySeverity consumes. Levels were
+// already validated by the config loader (an invalid one clamped away with a
+// warning), so this only drops the dead codes that lintConfigProblems warns
+// about. Exported for the one consumer outside Lint(): the CLI applies it to
+// the alias-shadow findings it appends after Lint() returns (the command set is
+// the CLI's, so those problems cannot be born inside the app layer).
+func (a *App) LintSeverityOverrides() map[string]string {
+	if len(a.Cfg.LintSeverity) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(a.Cfg.LintSeverity))
+	for code, level := range a.Cfg.LintSeverity {
+		if core.IsLintCode(code) {
+			out[code] = level
+		}
+	}
+	return out
+}
+
+// sortedKeys returns m's keys sorted — lint output is deterministic, so a
+// map-driven warning loop must not iterate in map order.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // archivedIDs returns the task AND epic ids in the sibling archive store

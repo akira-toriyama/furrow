@@ -112,6 +112,21 @@ type Config struct {
 	// app-layer lint warns about (clamp-don't-reject). Empty = suppress nothing.
 	LintIgnoreCodes []string
 
+	// LintSeverity is the [lint.severity] table: lint code -> "error" | "warn",
+	// the board's own override of a code's shipped level. It exists for the code
+	// whose DEFAULT level fits one operation and not another — due-overdue is an
+	// error because a shared board's CI gate is its consumer, and a standalone
+	// board (which has no CI to redden) demotes it to warn in one committed line
+	// instead of chasing ignore_codes as hygiene codes accrue (severity keeps the
+	// finding VISIBLE; ignore erases it). Levels are validated on load (error |
+	// warn — anything else clamps away with a warning, which is what lets `config
+	// set` refuse a typo'd level before writing it); whether the code names a
+	// real check is core's vocabulary, so app.Lint warns about a dead entry
+	// exactly as it does for ignore_codes. The filter still drives the exit code,
+	// so demoting the last error makes `furrow lint` exit 0. Empty (default) =
+	// every code keeps its shipped level.
+	LintSeverity map[string]string
+
 	// Alias is the board-level [alias] table (name -> command string) that
 	// `furrow <name> …` expands git-style. Empty when unset; a nil map is fine to
 	// range over. Builtin-shadowing entries are inert (expansion checks builtins

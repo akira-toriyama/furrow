@@ -211,6 +211,11 @@ the user-level config. When you work with any furrow store:
   `epic-no-active`, `orphan-asset`, `due-overdue`, `due-today`,
   `conflict-marker`, `unknown-shard-key`, …) — branch on it, not the message, since the `id` field
   is contextual (a task id, an asset name, an `owner/repo`, `meta`, or `config`).
+  A code's LEVEL is board policy, not a constant: the `[lint.severity]` config
+  table re-levels one code (`due-overdue = "warn"` on a standalone board with no
+  CI to redden — the shipped error's consumer is a shared board's CI gate), and
+  every consumer (lint's exit code, `sync`/`brief`'s error count) sees the
+  effective level, so read severities from the output, never from prose.
   Mutations (`done|move|note|set|reorder|retitle|value|effort|check|dep|epic|label|repo`)
   with `--json` emit
   `{before, after, changed}`; an out-of-range `value`/`effort` clamps to 1..5
