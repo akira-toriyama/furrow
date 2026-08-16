@@ -706,114 +706,19 @@ func (o AddOpts) requireNonBlankValues(id string) error {
 	return nil
 }
 
-// Add creates a task, writes its body file, and saves the index. Returns the
+// Add creates a task, writes its body file, and saves the index — a
+// one-element addMany, so the task-creation rule has exactly ONE
+// implementation (t-dk6w: Add and AddMany used to duplicate all 15 of its
+// steps, and every recorded divergence — t-adx9, t-ek9y, the dropped --check,
+// the unfolded title — was one path forgetting a step the other had). Errors
+// keep the classic single-task wording (no "spec 0" prefix). Returns the
 // created task.
 func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
-	title = core.NormalizeTitle(title)
-	if title == "" {
-		return nil, core.Validationf("", "title must not be empty")
-	}
-	o.Labels = a.withDefaultLabel(o.Labels)
-	status := o.Status
-	if status == "" {
-		status = a.Cfg.DefaultLane
-	}
-	if !a.Cfg.IsLane(status) {
-		return nil, a.unknownLaneErr("", status)
-	}
-	if a.Cfg.LabelsRequired && len(o.Labels) == 0 {
-		return nil, core.Validationf("", "a label is required ([labels].required); add -l <label>")
-	}
-	if o.Draft && len(o.Repos) > 0 {
-		return nil, core.Validationf("", "--draft cannot be combined with an explicit repo (-r): a draft is attached to no repo")
-	}
-	if err := o.requireNonBlankValues(""); err != nil {
-		return nil, err
-	}
-	idx, err := a.load()
+	created, err := a.addMany([]AddSpec{{Title: title, AddOpts: o}}, false)
 	if err != nil {
 		return nil, err
 	}
-
-	repos, err := resolveRepoArgs(o.Repos, "", repoUniverse(idx, a.BoardRepos))
-	if err != nil {
-		return nil, err
-	}
-	repos = a.withBoardRepo(repos, o.Draft)
-
-	// A --dep must name a task that exists, the same contract AddDep enforces —
-	// accepting a dangling one silently drops the task out of `next` (an unknown
-	// dep reads as unsatisfied) with no error.
-	for _, dep := range o.Deps {
-		if !idx.Has(dep) {
-			return nil, core.Validationf("", "dependency %q does not exist", dep)
-		}
-	}
-	epicID := ""
-	switch {
-	case o.Epic != "":
-		epicID, err = a.ResolveEpic(o.Epic)
-		if err != nil {
-			return nil, err
-		}
-	case !o.NoEpic:
-		// No -e given: file under the scope's single active epic, if there is
-		// exactly one. Best-effort — a capture must not fail because the epic
-		// store hiccupped; an unfiled task is what lint's epic-required is for.
-		epicID = a.inheritableEpic()
-	}
-	id, err := a.uniqueID(idx)
-	if err != nil {
-		return nil, err
-	}
-
-	var prio int
-	if o.Priority != nil {
-		prio = *o.Priority
-	} else {
-		prio = idx.NextPriority(status, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
-	}
-
-	now := a.Clock.Now()
-	// A task born directly in the done lane is closed at birth — otherwise it is a
-	// closed:null zombie that `done` no-ops on and `archive` skips forever (Move
-	// backfills the same field for an already-parked one; lint flags any leak).
-	var closed *time.Time
-	if status == a.Cfg.DoneLane {
-		closed = &now
-	}
-	// The due spelling binds against the SAME now the stamps use, so `--due +1d`
-	// is exactly one day after this task's own `created`.
-	var due *time.Time
-	if o.Due != "" {
-		d, err := ParseDue(o.Due, now, a.loc())
-		if err != nil {
-			return nil, err
-		}
-		due = &d
-	}
-	t := core.Task{
-		ID: id, Title: title, Status: status, Priority: prio,
-		Value: cloneIntp(o.Value), Effort: cloneIntp(o.Effort),
-		Labels: o.Labels, Repos: repos, Deps: o.Deps, Refs: o.Refs,
-		Checklist: seedChecklist(o.Checklist),
-		Created:   now, Updated: now, Closed: closed, Body: core.BodyPath(id),
-		Epic: epicID, Due: due,
-	}
-	idx.Add(t)
-
-	body := o.Body
-	if body == "" {
-		body = "# " + title + "\n"
-	}
-	if err := a.saveBody(id, body); err != nil {
-		return nil, err
-	}
-	if err := a.Store.Save(idx); err != nil {
-		return nil, err
-	}
-	saved, _ := idx.Find(id)
-	return saved, nil
+	return &created[0], nil
 }
 
 // uniqueID draws random ids from the store until one is not already present in

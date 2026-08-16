@@ -91,6 +91,18 @@ type AddSpec struct {
 // import leaves at worst orphan body files, which `furrow lint` reports). All
 // lanes are validated up front so a bad spec fails before anything is written.
 func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
+	return a.addMany(specs, true)
+}
+
+// addMany is the ONE implementation of the task-creation rule — single Add is a
+// one-element call of this (t-dk6w), so the bulk-vs-single divergence class
+// add_parity_test.go records (t-adx9: --value/--effort dropped; t-ek9y: --type
+// dropped; --check dropped; an unfolded title) is structurally impossible: a
+// rule added here exists on both paths by construction. prefixed controls the
+// "spec %d (%q): " error prefix — the bulk callers keep it (a failing spec must
+// be nameable in a batch), single Add drops it (its errors keep the classic
+// single-task wording).
+func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 	if len(specs) == 0 {
 		return nil, nil
 	}
@@ -133,13 +145,19 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		// bulk-vs-single divergence class of t-adx9/t-ek9y, in the error shape
 		// instead of the write.
 		specf := func(err error) error {
+			if !prefixed {
+				return err
+			}
 			if fe := core.AsError(err); fe != nil {
 				return fe.WithPrefixf("spec %d (%q): ", i, s.Title)
 			}
 			return err
 		}
 		if s.Title == "" {
-			return nil, core.Validationf("", "spec %d has an empty title", i)
+			if prefixed {
+				return nil, core.Validationf("", "spec %d has an empty title", i)
+			}
+			return nil, core.Validationf("", "title must not be empty")
 		}
 		lane := s.Status
 		if lane == "" {
@@ -149,10 +167,10 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 			return nil, specf(a.unknownLaneErr("", lane))
 		}
 		if a.Cfg.LabelsRequired && len(s.Labels) == 0 {
-			return nil, core.Validationf("", "spec %d (%q): a label is required ([labels].required)", i, s.Title)
+			return nil, specf(core.Validationf("", "a label is required ([labels].required); add -l <label>"))
 		}
 		if s.Draft && len(s.Repos) > 0 {
-			return nil, core.Validationf("", "spec %d (%q): --draft cannot be combined with an explicit repo (-r)", i, s.Title)
+			return nil, specf(core.Validationf("", "--draft cannot be combined with an explicit repo (-r): a draft is attached to no repo"))
 		}
 		if err := s.requireNonBlankValues(""); err != nil {
 			return nil, specf(err)
@@ -168,7 +186,7 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 		// repo resolution so the error precedence matches single Add.
 		for _, dep := range s.Deps {
 			if !idx.Has(dep) {
-				return nil, core.Validationf("", "spec %d (%q): dependency %q does not exist", i, s.Title, dep)
+				return nil, specf(core.Validationf("", "dependency %q does not exist", dep))
 			}
 		}
 		// Mirror single Add's epic resolution. Without this the bulk path would

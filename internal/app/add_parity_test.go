@@ -8,10 +8,15 @@ import (
 
 // `add` and `add --stdin` are the same command with a different input shape, so
 // every field the flags carry must land identically. Each row runs the SAME
-// AddOpts through both paths and compares the stored task — the divergence class
-// that produced t-adx9 (--value/--effort dropped), t-ek9y (--type dropped) and,
-// found by this test, --check dropped plus an unfolded title. A new AddOpts field
-// belongs here, not in a single-path test.
+// AddOpts through both paths and compares the stored task.
+//
+// Since t-dk6w, Add IS a one-element addMany, so this test passes by
+// construction — it is kept as the RE-FORK guard, not a divergence net: the
+// divergence class it used to catch (t-adx9: --value/--effort dropped; t-ek9y:
+// --type dropped; --check dropped; an unfolded title — every one of them "one
+// path forgot a step the other had") is exactly what returns the day someone
+// splits the two implementations again, and this table is what will say so. A
+// new AddOpts field still belongs here, not in a single-path test.
 func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 	cases := []struct {
 		name  string
