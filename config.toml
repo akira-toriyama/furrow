@@ -82,6 +82,16 @@ older_than_days = 30
 # words. Empty (the default) keeps the check off; the vocabulary is the board's
 # convention, not furrow's.
 # provenance_markers = ["Source:", "Verified:"]
+# When set, `furrow lint` warns `title-scope-marker` on every open, non-terminal
+# task whose TITLE contains one of these substrings (case-insensitive) — the
+# board's idiom for "scope narrowed in place", the signal to split the remainder
+# out or retire the task instead of annotating further. Empty (default) = off.
+# title_scope_markers = ["残り:", "only:"]
+# When > 0, `furrow lint` warns `stale-inbox` on every open task sitting in the
+# default (intake) lane for at least this many days without an update — the
+# inbox-zero pressure (intake is for triage; backlog is where waiting is fine).
+# Shorter and lane-bound, unlike [revisit].stale_days. 0 (the default) = off.
+# stale_inbox_days = 0
 
 # [lint.severity] re-levels one code for THIS board: code = "error" | "warn".
 # For the code whose shipped level fits one operation and not another —

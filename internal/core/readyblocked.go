@@ -22,21 +22,42 @@ import (
 // dep-missing reports the missing id itself; this rule reports the lane
 // contradiction it causes). One finding per task, naming every unsatisfied dep
 // — the remedy is per-task, not per-edge. Which lanes are "actionable" is the
-// caller's vocabulary ([next].lanes), never core's.
-func ReadyBlockedProblems(idx *Index, nextLanes, doneIDs map[string]bool) []Problem {
+// caller's vocabulary ([next].lanes), never core's — as is which lanes are
+// terminal, which the message uses to split the deps by KIND of blockage: a
+// dep that is merely open resolves by waiting (someone is doing it), but a dep
+// PARKED in a terminal non-done lane (icebox, waiting) will never complete on
+// its own, so "wait" is not among its remedies — unpark it, drop the edge, or
+// park this task too. One code for both: the lane contradiction is the same
+// defect; only the way out differs, and the message is where remedies live.
+func ReadyBlockedProblems(idx *Index, nextLanes, terminal, doneIDs map[string]bool) []Problem {
+	laneOf := make(map[string]string, len(idx.Tasks))
+	for i := range idx.Tasks {
+		laneOf[idx.Tasks[i].ID] = idx.Tasks[i].Status
+	}
 	var out []Problem
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
 		if !nextLanes[t.Status] {
 			continue
 		}
-		var open []string
+		var open, parked []string
 		for _, dep := range t.Deps {
-			if !doneIDs[dep] {
-				open = append(open, dep)
+			if doneIDs[dep] {
+				continue
 			}
+			if lane, ok := laneOf[dep]; ok && terminal[lane] {
+				parked = append(parked, fmt.Sprintf("%s (parked in %s)", dep, lane))
+				continue
+			}
+			open = append(open, dep)
 		}
-		if len(open) > 0 {
+		switch {
+		case len(parked) > 0:
+			all := append(append([]string(nil), open...), parked...)
+			out = append(out, Problem{SevError, "ready-blocked", t.ID, fmt.Sprintf(
+				"task is in actionable lane %q but dep(s) %s are not done — and a PARKED dep never completes on its own: unpark it, drop the edge (`furrow dep %s <dep> --rm`), or park this task too",
+				t.Status, strings.Join(all, ", "), t.ID)})
+		case len(open) > 0:
 			out = append(out, Problem{SevError, "ready-blocked", t.ID, fmt.Sprintf(
 				"task is in actionable lane %q but dep(s) %s are not done — `furrow next` will never hand it out; move it back or drop the dep",
 				t.Status, strings.Join(open, ", "))})

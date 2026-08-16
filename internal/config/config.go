@@ -53,6 +53,13 @@ type raw struct {
 		ArchiveDone       *int     `toml:"archive_done"`
 		IgnoreCodes       []string `toml:"ignore_codes"`
 		ProvenanceMarkers []string `toml:"provenance_markers"`
+		// TitleScopeMarkers and StaleInboxDays are opt-in hygiene checks (empty /
+		// 0 = off): a title substring that means "this task's scope was narrowed
+		// in place — retire or split it", and a days threshold for work stuck in
+		// the intake lane. Both vocabularies are the operator's, like
+		// provenance_markers.
+		TitleScopeMarkers []string `toml:"title_scope_markers"`
+		StaleInboxDays    *int     `toml:"stale_inbox_days"`
 		// Severity is the [lint.severity] table: lint code -> "error" | "warn",
 		// a per-board override of a code's shipped level. A map decodes any code
 		// name; the LEVEL vocabulary is this package's to check (two literals),
@@ -354,6 +361,29 @@ func fromRaw(r raw) (*Config, []string, error) {
 			}
 		}
 		c.LintIgnoreCodes = dedupeNonEmpty(codes)
+	}
+
+	// [lint].title_scope_markers: the board's scope-narrowing title vocabulary.
+	// Trimmed + deduped like provenance_markers; empty (the default) keeps the
+	// check off — the words ("残り:", "only:") are a board convention, not furrow's.
+	if len(r.Lint.TitleScopeMarkers) > 0 {
+		var markers []string
+		for _, m := range r.Lint.TitleScopeMarkers {
+			if t := strings.TrimSpace(m); t != "" {
+				markers = append(markers, t)
+			}
+		}
+		c.LintTitleScopeMarkers = dedupeNonEmpty(markers)
+	}
+
+	// [lint].stale_inbox_days: a "days" knob like revisit.stale_days — 0 (the
+	// default) keeps the check off; only a negative value clamps.
+	if r.Lint.StaleInboxDays != nil {
+		if *r.Lint.StaleInboxDays < 0 {
+			warn = append(warn, fmt.Sprintf("lint.stale_inbox_days %d < 0; disabling (0)", *r.Lint.StaleInboxDays))
+		} else {
+			c.LintStaleInboxDays = *r.Lint.StaleInboxDays
+		}
 	}
 
 	// [lint.severity]: per-code level overrides. The level vocabulary (error |
