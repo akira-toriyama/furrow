@@ -84,6 +84,7 @@ func newLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnReadOnly(a)
 			if drafts && cmd.Flags().Changed("repo") {
 				return core.Validationf("", "--drafts cannot be combined with -r/--repo (a draft has no repo)")
 			}
@@ -255,6 +256,7 @@ func newShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnReadOnly(a)
 			var (
 				entries []app.ShowEntry
 				missing []string
@@ -418,6 +420,7 @@ func newNextCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnReadOnly(a)
 			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
 			if err != nil {
 				return err
@@ -512,6 +515,7 @@ func newBriefCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnReadOnly(a)
 			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, "")
 			if err != nil {
 				return err
@@ -574,6 +578,7 @@ func newRevisitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnReadOnly(a)
 			days := a.Cfg.RevisitStaleDays
 			if cmd.Flags().Changed("stale-days") {
 				days = staleDays
@@ -654,6 +659,7 @@ func newStatsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnReadOnly(a)
 			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
 			if err != nil {
 				return err
@@ -740,6 +746,7 @@ func newSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnReadOnly(a)
 			o, err := scopedQuery(cmd, a, joinOrFilter(label), repo, epicRef)
 			if err != nil {
 				return err

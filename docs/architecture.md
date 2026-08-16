@@ -415,7 +415,13 @@ and the board's is an **INPUT to every write, never an output**.
   forward-compat is the store's normal read) but **read-only**: error kind
   **`schema-upgrade-required`**, exit 2 (validation — the *board* is stale and an
   explicit command fixes it), same `details` payload. Exit code alone therefore
-  says which side is stale: 3 = the binary, 2 = the board.
+  says which side is stale: 3 = the binary, 2 = the board. The read-only state
+  discloses itself on the READ side as well: the CLI's orient and listing reads
+  (`brief`/`sync`/`ls`/`show`/`next`/`revisit`/`stats`/`search`) print one
+  stderr "READ-ONLY for this binary" note (`warnReadOnly`), so a session learns
+  at `furrow brief` rather than at its first refused write — `board` and
+  `doctor` are deliberately unwired, since reporting the mismatch is their
+  output, and stdout stays pure data.
 
 Both store adapters (`fsstore`, `memstore`) enforce the read gate on `Load` and
 the write gate on `Save`. **No ordinary write raises `meta.json`'s version**;

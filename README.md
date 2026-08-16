@@ -187,7 +187,7 @@ The board-wide layout version lives on its own in `meta.json` (never inside a sh
 That number is the **board's** — not the binary's — and it is an **input** to every write, never an output. The gate has two sides, and the exit code alone says which to fix:
 
 - **The board is newer than your furrow** → refused: `schema-too-new`, exit 3. Update the binary (in CI: bump the `sync-task-status.yml@vX.Y.Z` pin).
-- **The board is older than your furrow** → fully **readable** but **read-only**: a write fails with `schema-upgrade-required`, exit 2. The board is the stale side, and an explicit command fixes it.
+- **The board is older than your furrow** → fully **readable** but **read-only**: a write fails with `schema-upgrade-required`, exit 2. The board is the stale side, and an explicit command fixes it. The state is not silent until then: the orient and listing reads (`brief`, `sync`, `ls`, `show`, `next`, `revisit`, `stats`, `search`) each print one stderr note — `note: this board is READ-ONLY for this binary (board layout vN, binary vM) …` — so a session learns at `furrow brief`, not at its first failed write (`board`/`doctor` stay quiet there: reporting the mismatch is their output).
 
 Both carry `"details": {"board_schema": N, "binary_schema": M}`. An ordinary command **never** migrates a board as a side effect — `meta.json` is stamped only when a genuinely empty store is created (`furrow init`). `furrow upgrade` is the one deliberate raiser, and it is a **flag day**: once it lands, no older furrow can write that board — including any CI pinned to an older release. furrow cannot see those pins, so you keep the order:
 
