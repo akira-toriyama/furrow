@@ -232,22 +232,28 @@ func newSyncCmd() *cobra.Command {
 				for _, sw := range prog.Switches {
 					fmt.Fprintln(out, epicSwitchLine(sw))
 				}
-				if len(prog.PendingBodies) > 0 {
-					fmt.Fprintln(errOut, pendingBodiesNote(prog.PendingBodies))
-				}
-				if len(prog.ForeignFiles) > 0 {
-					fmt.Fprintf(errOut, "note: %d foreign file(s) in .furrow/ left uncommitted (%s) — not furrow's to publish; delete them or move them out\n",
-						len(prog.ForeignFiles), strings.Join(prog.ForeignFiles, ", "))
-				}
-				// A stranded autostash is reported on EVERY sync, not just the one that
-				// stranded it: the entry sits there silently until someone pops it, and
-				// the whole defect this guards against is a leftover nobody was told about.
-				// (The sync that created it also fails — see sync-stash-stranded.)
-				if len(prog.PendingStash) > 0 {
-					fmt.Fprintf(errOut, "warning: %d autostash entr(ies) hold working-tree changes git could not restore — %s\n"+
-						"  recover with `git stash pop` (or `git stash drop` if the changes are already in the tree)\n",
-						len(prog.PendingStash), stashNote(prog.PendingStash))
-				}
+			}
+			// The leftover notes print in BOTH modes (t-mygx): the machine-readable
+			// facts are in the JSON (pending_bodies/pending_stash/foreign_files,
+			// complete:false), but the REMEDY lines lived only in the human branch —
+			// while every other command pairs --json stdout with its stderr notes
+			// (the -n cap note, the clamp note, the hidden-drafts hint). stderr
+			// only, so `sync --json`'s stdout stays pure JSON.
+			if len(prog.PendingBodies) > 0 {
+				fmt.Fprintln(errOut, pendingBodiesNote(prog.PendingBodies))
+			}
+			if len(prog.ForeignFiles) > 0 {
+				fmt.Fprintf(errOut, "note: %d foreign file(s) in .furrow/ left uncommitted (%s) — not furrow's to publish; delete them or move them out\n",
+					len(prog.ForeignFiles), strings.Join(prog.ForeignFiles, ", "))
+			}
+			// A stranded autostash is reported on EVERY sync, not just the one that
+			// stranded it: the entry sits there silently until someone pops it, and
+			// the whole defect this guards against is a leftover nobody was told about.
+			// (The sync that created it also fails — see sync-stash-stranded.)
+			if len(prog.PendingStash) > 0 {
+				fmt.Fprintf(errOut, "warning: %d autostash entr(ies) hold working-tree changes git could not restore — %s\n"+
+					"  recover with `git stash pop` (or `git stash drop` if the changes are already in the tree)\n",
+					len(prog.PendingStash), stashNote(prog.PendingStash))
 			}
 			return syncErr
 		},
