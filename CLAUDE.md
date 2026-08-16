@@ -9,7 +9,7 @@ furrow's own tasks live on the **central board** (the private
 `.furrow/`**, so `furrow` commands run here resolve to the central board via
 the user-level config. When you work with any furrow store:
 
-- Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|upgrade|lint|config|init|migrate|schema|version`.
+- Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|tidy|upgrade|lint|config|init|migrate|schema|version`.
   **`furrow brief [--json]` is the session-start read**: the sync → `next -r` →
   `show <id>` ritual in ONE process — the **due** band FIRST (`due`,
   `{overdue, today}`, longest-overdue first, omitted when nothing has arrived: a
@@ -364,8 +364,10 @@ the user-level config. When you work with any furrow store:
   update furrow" visible; (d) the `--json`
   views project the keys THIS binary knows — an unknown key lives on disk, not in
   the view (preserving beats displaying). Corollary for hand-edits: a typo in a
-  hand-edited shard (`"lables"`) is now **permanent** — nothing removes it, because
-  auto-deleting a key we don't understand IS the bug being fixed. That is also why
+  hand-edited shard (`"lables"`) stays until the OPERATOR drops it — nothing
+  removes an extra implicitly, because auto-deleting a key we don't understand IS
+  the bug being fixed; the deliberate exit is `furrow tidy --unknown-keys`
+  (preview first, `--yes` + the selector to apply). That is also why
   `lint` must cover all three files and the published schemas all declare
   `additionalProperties: true`: the flip made the schema stop rejecting a typo, so
   `lint` is the only detector left. One more reason
@@ -375,7 +377,8 @@ the user-level config. When you work with any furrow store:
   planned: **ridge** (github.com/akira-toriyama/ridge, a charm-v2 TUI, a CLI/JSON
   client) and **loom** (github.com/akira-toriyama/loom, a from-scratch TUI
   framework, future/gated). Destructive ops guard themselves: `furrow archive`
-  previews unless `--yes`.
+  and `furrow tidy` preview unless `--yes` (tidy also demands naming a class:
+  `--done-deps` / `--unknown-keys`).
 
 ## What this is
 

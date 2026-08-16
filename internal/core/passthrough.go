@@ -240,9 +240,12 @@ func extrasStringValue(e Extras, key string) (val string, ok, isString bool) {
 }
 
 // extraKeys names the unknown keys a record arrived with, sorted; nil when there
-// are none. It is the ONLY way out of an extras map, and there is deliberately no
-// way IN other than unmarshalling a shard: furrow must never be able to invent an
-// unknown key, only to hand one back.
+// are none. There is deliberately no way INTO an extras map other than
+// unmarshalling a shard — furrow must never be able to invent an unknown key —
+// and exactly two ways out: reading the names (here), and the explicit,
+// human-invoked prune (ClearExtras, the engine of `furrow tidy
+// --unknown-keys`). Nothing else may drop one: auto-deleting a key we do not
+// understand is the bug this file exists to prevent.
 func extraKeys(e Extras) []string {
 	if len(e) == 0 {
 		return nil
@@ -262,8 +265,8 @@ func extraKeys(e Extras) []string {
 // in their published schema — so `furrow lint` (internal/app.Lint) is the only
 // thing left that can say "this key is preserved, but IGNORED". A type that
 // parked unknown keys without an accessor would hide a typo in meta.json, a repo
-// review shard, or an epic from every tool furrow has, forever, because nothing
-// ever deletes an extra.
+// review shard, or an epic from every tool furrow has — where "forever" ends
+// only at the operator's own `furrow tidy --unknown-keys`.
 func (t *Task) ExtraKeys() []string { return extraKeys(t.extras) }
 
 // ExtraKeys reports the keys meta.json carried that furrow does not know.
@@ -274,3 +277,30 @@ func (r *RepoRecord) ExtraKeys() []string { return extraKeys(r.extras) }
 
 // ExtraKeys reports the keys this epic shard carried that furrow does not know.
 func (e *Epic) ExtraKeys() []string { return extraKeys(e.extras) }
+
+// clearExtras is ClearExtras' shared engine: name what is parked, then drop it.
+func clearExtras(e *Extras) []string {
+	keys := extraKeys(*e)
+	*e = nil
+	return keys
+}
+
+// ClearExtras drops every unknown key this record carries and returns their
+// names, sorted (nil when it carried none). It is the ONE deliberate exit from
+// the passthrough — the engine of `furrow tidy --unknown-keys` — and it exists
+// because "kept for a human" (upgrade's wording) was a promise with no tool
+// behind it: the human it kept the keys for had no way to drop them short of
+// hand-editing a machine-written shard, which the store contract forbids. The
+// decision stays the human's: nothing calls this on an ordinary write path,
+// the CLI previews the exact (record, keys) list first, and dropping a key a
+// NEWER binary wrote is the caller's stated risk, not an accident.
+func (t *Task) ClearExtras() []string { return clearExtras(&t.extras) }
+
+// ClearExtras drops meta.json's unknown keys — see Task.ClearExtras.
+func (m *Meta) ClearExtras() []string { return clearExtras(&m.extras) }
+
+// ClearExtras drops this repo review shard's unknown keys — see Task.ClearExtras.
+func (r *RepoRecord) ClearExtras() []string { return clearExtras(&r.extras) }
+
+// ClearExtras drops this epic shard's unknown keys — see Task.ClearExtras.
+func (e *Epic) ClearExtras() []string { return clearExtras(&e.extras) }

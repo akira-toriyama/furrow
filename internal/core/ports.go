@@ -65,6 +65,13 @@ type Store interface {
 	// may call it, because doing so locks out every binary still on the old
 	// layout — including a pinned CI's.
 	SetBoardVersion(v int) error
+	// PruneMetaExtras drops meta.json's unknown keys and reports their names —
+	// `furrow tidy --unknown-keys`' meta arm. It is deliberately this narrow
+	// (not a SaveMeta): the layout version must come back exactly as declared,
+	// so a general meta writer would be one more door to the version-stamping
+	// bug the write guard exists for. An ORDINARY write — gated like every
+	// mutation, and a no-op (nil, nil) when meta carries nothing unknown.
+	PruneMetaExtras() ([]string, error)
 
 	// LoadBody returns the markdown body for id, or "" if the file is absent.
 	LoadBody(id string) (string, error)

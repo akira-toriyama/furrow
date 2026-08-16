@@ -286,6 +286,7 @@ func newRootCmd() *cobra.Command {
 		newApplyCmd(),
 		newSyncCmd(),
 		newArchiveCmd(),
+		newTidyCmd(),
 		newMigrateCmd(),
 		newUpgradeCmd(),
 		newLintCmd(),
