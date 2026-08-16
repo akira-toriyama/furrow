@@ -94,6 +94,13 @@ type Store interface {
 	// attach`; the body's markdown reference is added by the app layer.
 	SaveAsset(id, srcName string, data []byte) (name string, err error)
 
+	// SaveAssetRaw writes data under the EXACT basename — no sanitizing, no
+	// collision suffix. It is the archive round trip's transport (both
+	// directions copy an already-final name between the hot store and
+	// archive/), never `furrow attach`'s: attach must go through SaveAsset so a
+	// caller's file name can neither collide nor escape the assets dir.
+	SaveAssetRaw(name string, data []byte) error
+
 	// ListAssets returns every file under bodies/assets/ as name+size, sorted by
 	// name (enumeration only — contents are not read), for lint's orphan and
 	// oversized checks. A missing bodies/assets/ dir yields nil, not an error, so

@@ -379,6 +379,14 @@ func (s *Store) SaveAsset(id, srcName string, data []byte) (string, error) {
 	return name, nil
 }
 
+// SaveAssetRaw stores data under the exact basename — the in-memory twin of
+// fsstore writing bodies/assets/<name> verbatim (the archive round trip's
+// transport; attach goes through SaveAsset).
+func (s *Store) SaveAssetRaw(name string, data []byte) error {
+	s.assets[name] = append([]byte(nil), data...)
+	return nil
+}
+
 // ListAssets returns every stored asset as name+size, sorted by name — the
 // in-memory twin of fsstore reading bodies/assets/. Size is the byte length of
 // the stored data. An empty store yields nil (no assets), matching fsstore's

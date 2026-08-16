@@ -28,7 +28,7 @@ func (a *App) Attach(id, srcName string, data []byte) (*AttachResult, error) {
 		return nil, err
 	}
 	if !idx.Has(id) {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	name, err := a.Store.SaveAsset(id, srcName, data)
 	if err != nil {

@@ -707,6 +707,12 @@ A few app-level rules worth stating, all verified against the code:
 - **`Archive`** selects done-lane tasks whose `Closed` is older than the cutoff
   and moves them (shard + body) into the sibling `.furrow/archive/` store (its own
   `tasks/`, `meta.json`, and `bodies/`).
+- **`Unarchive`** is its inverse — the named tasks move back to the hot board
+  (shard + body + assets, all-or-nothing, fields untouched: reopening is
+  `Move`'s job), with the destination committed before the source is cleaned,
+  exactly like the outbound move. Every task mutator's not-found error is
+  enriched when the id is actually archived (`details.archived` + the restore
+  command), so the archive is never a silent black hole to a write.
 - **`Upgrade`** raises the board's declared layout — both stores, hot and
   `archive/` — to `core.SchemaVersion` and re-serializes every shard. It is the
   only caller of `Store.SetBoardVersion`, previews unless `--yes`, and is a flag
@@ -720,7 +726,7 @@ except where noted:
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`,
 `board`, `boards`, `doctor`, `edit`, `note`, `attach`, `done`, `move`, `set`, `reorder`,
 `retitle`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`, `review`,
-`apply`, `sync`, `archive`, `tidy`, `upgrade`, `lint`, `config` (`init`/`path`/`set`), `schema`, `version`,
+`apply`, `sync`, `archive`, `unarchive`, `tidy`, `upgrade`, `lint`, `config` (`init`/`path`/`set`), `schema`, `version`,
 `migrate`.
 
 - **`set`** applies the routine triage edits — lane, POSITION (`--priority`, or

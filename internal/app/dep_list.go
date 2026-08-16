@@ -39,7 +39,7 @@ func (a *App) DepList(id string) (DepListResult, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return DepListResult{}, core.NotFound(id)
+		return DepListResult{}, a.notFoundTask(id)
 	}
 	res := DepListResult{ID: t.ID, Title: t.Title, DependsOn: []TaskRef{}, Blocks: []TaskRef{}}
 	for _, depID := range t.Deps {
