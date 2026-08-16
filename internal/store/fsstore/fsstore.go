@@ -230,6 +230,33 @@ func (s *Store) SetBoardVersion(v int) error {
 	return s.writeIfChanged(s.metaPath(), b)
 }
 
+// PruneMetaExtras drops meta.json's unknown keys — the tidy prune's meta arm.
+// The version comes back exactly as LoadMeta read it (raising is
+// SetBoardVersion's monopoly), and the write is gated like every ordinary
+// mutation: a board this binary may not write keeps its parked keys too. On a
+// meta with nothing parked it writes nothing and reports nil.
+func (s *Store) PruneMetaExtras() ([]string, error) {
+	m, err := s.LoadMeta()
+	if err != nil {
+		return nil, err
+	}
+	keys := m.ClearExtras()
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	if err := s.gateWrite(); err != nil {
+		return nil, err
+	}
+	b, err := core.MarshalMeta(m)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.writeIfChanged(s.metaPath(), b); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
 // Save splits the index into per-task shards under tasks/ and deletes the shards
 // of any ids no longer present. It does NOT write meta.json — it READS it
 // (gateWrite), and the only board it may stamp is a genuinely fresh one. Three

@@ -77,6 +77,10 @@ func (s *Store) SetBoardVersion(v int) error { s.schemaVersion = v; return nil }
 // unstamped.)
 func (s *Store) Writable() error { return core.CheckWritable(s.schemaVersion) }
 
+// PruneMetaExtras is fsstore's meta prune on a store whose meta can never
+// carry an unknown key (see LoadMeta): always a clean no-op.
+func (s *Store) PruneMetaExtras() ([]string, error) { return nil, nil }
+
 // gateWrite mirrors fsstore's: every mutating method refuses a board that does
 // not declare this binary's exact layout, so the fake is faithful where it
 // matters most — the app layer's tests exercise the SAME refusal the real store

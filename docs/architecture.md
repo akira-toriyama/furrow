@@ -298,7 +298,8 @@ The honest limits, none of them papered over:
    (`SevWarn`, naming the keys and blaming the task id / the `owner/repo` / `meta`)
    so the carried-but-ignored case is
    visible — and so is its other cause, a typo in a hand-edited shard (`"lables"`),
-   which is now **permanent**: nothing removes it, because auto-deleting a key we do
+   which stays until the operator prunes it (`furrow tidy --unknown-keys`):
+   nothing removes an extra implicitly, because auto-deleting a key we do
    not understand IS the bug being fixed. The warning covers **all three** written
    file kinds, and that is not tidiness: flipping their schemas to
    `additionalProperties: true` removed the only thing that ever rejected a typo in
@@ -719,7 +720,7 @@ except where noted:
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`,
 `board`, `boards`, `doctor`, `edit`, `note`, `attach`, `done`, `move`, `set`, `reorder`,
 `retitle`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`, `review`,
-`apply`, `sync`, `archive`, `upgrade`, `lint`, `config` (`init`/`path`/`set`), `schema`, `version`,
+`apply`, `sync`, `archive`, `tidy`, `upgrade`, `lint`, `config` (`init`/`path`/`set`), `schema`, `version`,
 `migrate`.
 
 - **`set`** applies the routine triage edits — lane, POSITION (`--priority`, or

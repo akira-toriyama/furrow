@@ -644,9 +644,11 @@ func assetOwner(name string, taskIDs map[string]bool) string {
 //   - A field a NEWER furrow wrote without bumping the layout version, so no gate
 //     fired. This binary carries it faithfully and IGNORES it: the task may be
 //     sorted, filtered, or closed as if the field were not there. Update furrow.
-//   - A typo in a hand-edited file ("lables"). It is now PERMANENT — nothing ever
-//     removes an extra, because auto-deleting a key we don't understand IS the bug
-//     the passthrough fixes. CLAUDE.md says never hand-edit these files; this is why.
+//   - A typo in a hand-edited file ("lables"). Nothing removes an extra
+//     IMPLICITLY — auto-deleting a key we don't understand IS the bug the
+//     passthrough fixes — so it stays until the operator prunes it (`furrow
+//     tidy --unknown-keys`, the deliberate exit). CLAUDE.md says never
+//     hand-edit these files; this is why.
 //
 // A warning, never an error: the data is intact, and a board being read by a
 // slightly older binary must not red anyone's CI.
@@ -655,7 +657,7 @@ func unknownKeyProblem(id, what string, keys []string) (core.Problem, bool) {
 		return core.Problem{}, false
 	}
 	return core.Problem{Severity: core.SevWarn, Code: "unknown-shard-key", ID: id,
-		Msg: fmt.Sprintf("%s carries %d key(s) this furrow does not know (%s) — preserved on write, but IGNORED: update furrow, or fix the hand-edit",
+		Msg: fmt.Sprintf("%s carries %d key(s) this furrow does not know (%s) — preserved on write, but IGNORED: update furrow, or drop them (`furrow tidy --unknown-keys`)",
 			what, len(keys), strings.Join(keys, ", "))}, true
 }
 
