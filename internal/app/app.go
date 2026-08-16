@@ -1904,6 +1904,12 @@ type SetOpts struct {
 	ClearEffort bool     // unset the effort estimate (wins over Effort)
 	AddLabels   []string // labels to union on
 	RmLabels    []string // labels to drop
+	// AddRepos/RmRepos attach and detach repos — the repos-field mirror of the
+	// label pair, with Rerepo's strict resolution (full owner/repo, or a short
+	// name naming exactly one known repo). Removing the last repo leaves a
+	// DRAFT (repos == [] is first-class), exactly as `repo <id> --rm` does.
+	AddRepos []string
+	RmRepos  []string
 	// Epic re-files the task into a box: an epic REFERENCE, resolved by Set
 	// through ResolveEpic exactly as Add resolves its own — storing a raw ref
 	// would file the task under a box that does not exist. A non-nil pointer to ""
@@ -1923,6 +1929,7 @@ func (o SetOpts) empty() bool {
 	return o.Status == nil && o.Priority == nil && o.Before == "" && o.After == "" &&
 		o.Value == nil && !o.ClearValue &&
 		o.Effort == nil && !o.ClearEffort && len(o.AddLabels) == 0 && len(o.RmLabels) == 0 &&
+		len(o.AddRepos) == 0 && len(o.RmRepos) == 0 &&
 		o.Epic == nil && o.Due == nil && !o.ClearDue
 }
 
@@ -1984,12 +1991,18 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 		}
 	}
 	if o.empty() {
-		return core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / -e / --due / --clear-due)")
+		return core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / --add-repo / --rm-repo / -e / --due / --clear-due)")
 	}
 	if err := requireNonBlank(id, "--add-label", o.AddLabels); err != nil {
 		return err
 	}
 	if err := requireNonBlank(id, "--rm-label", o.RmLabels); err != nil {
+		return err
+	}
+	if err := requireNonBlank(id, "--add-repo", o.AddRepos); err != nil {
+		return err
+	}
+	if err := requireNonBlank(id, "--rm-repo", o.RmRepos); err != nil {
 		return err
 	}
 	if (o.Priority != nil && (o.Before != "" || o.After != "")) || (o.Before != "" && o.After != "") {
@@ -2098,6 +2111,23 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 			return nil, core.Validationf(id, "a label is required ([labels].required); this set would remove the last one")
 		}
 	}
+	// The repos pair rides the same set algebra as labels (labelDelta), behind
+	// Rerepo's strict resolution — a bare name resolves against the board's
+	// repo universe or fails, never a silent new repo. Removing every repo
+	// leaves a first-class DRAFT.
+	nextRepos := t.Repos
+	if len(o.AddRepos) > 0 || len(o.RmRepos) > 0 {
+		universe := repoUniverse(idx, a.BoardRepos)
+		addR, err := resolveRepoArgs(o.AddRepos, id, universe)
+		if err != nil {
+			return nil, err
+		}
+		rmR, err := resolveRepoArgs(o.RmRepos, id, universe)
+		if err != nil {
+			return nil, err
+		}
+		nextRepos = labelDelta(t.Repos, addR, rmR)
+	}
 	if o.Status != nil {
 		a.applyLane(t, *o.Status)
 	}
@@ -2153,6 +2183,7 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 		}
 	}
 	t.Labels = nextLabels
+	t.Repos = nextRepos
 	if err := a.stampIfChanged(t, before); err != nil {
 		return renumbered, err
 	}

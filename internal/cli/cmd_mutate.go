@@ -722,6 +722,8 @@ func newSetCmd() *cobra.Command {
 		clearEffort bool
 		addLabels   []string
 		rmLabels    []string
+		addRepos    []string
+		rmRepos     []string
 		epicRef     string
 		priority    int
 		before      string
@@ -732,11 +734,14 @@ func newSetCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "set [<id>...]",
-		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, epic, due)",
+		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, repos, epic, due)",
 		Long: "Combine the routine triage edits into a single write: move a lane (-s),\n" +
 			"position the task (--priority, or --before/--after a task in the destination\n" +
 			"lane — so a cross-lane drop is lane + position in ONE write), set or clear\n" +
-			"the 1..5 value/effort estimates, add/remove labels, and file the task under\n" +
+			"the 1..5 value/effort estimates, add/remove labels, attach/detach repos\n" +
+			"(--add-repo/--rm-repo — Rerepo's strict resolution, so a short name must\n" +
+			"match exactly one known repo; removing the last repo leaves a first-class\n" +
+			"DRAFT), and file the task under\n" +
 			"an epic (-e), and set or clear the due date (--due/--clear-due, where\n" +
 			"--due +1d is the snooze) — instead of running move + reorder + value +\n" +
 			"effort + label as separate commands. At least one change is required; an unknown lane is\n" +
@@ -763,6 +768,7 @@ func newSetCmd() *cobra.Command {
 			"  furrow set t-k3m9p -s ready --before t-x1y2z\n" +
 			"  furrow set t-k3m9p -e e-v0zd\n" +
 			"  furrow set t-k3m9p t-x1y2z t-9f2qr -s backlog --add-label triaged\n" +
+			"  furrow set t-a1 t-b2 t-c3 --add-repo owner/app   # bulk attach, one write\n" +
 			"  furrow set t-k3m9p --due 2026-08-04     # promise it for that whole day\n" +
 			"  furrow set t-k3m9p --due +1d            # snooze a day from now\n" +
 			"  furrow set t-k3m9p --clear-value --rm-label wip\n" +
@@ -784,6 +790,8 @@ func newSetCmd() *cobra.Command {
 				After:       after,
 				AddLabels:   addLabels,
 				RmLabels:    rmLabels,
+				AddRepos:    addRepos,
+				RmRepos:     rmRepos,
 				ClearValue:  clearValue,
 				ClearEffort: clearEffort,
 				ClearDue:    clearDue,
@@ -822,7 +830,7 @@ func newSetCmd() *cobra.Command {
 			if f := cmd.Flags().Lookup("due"); f != nil && f.Changed && strings.TrimSpace(due) == "" {
 				return core.Validationf(subject, "--due was given an empty value; pass a date, or use --clear-due to remove it")
 			}
-			if err := emptyFlagErr(cmd, subject, "before", "after", "add-label", "rm-label", "status"); err != nil {
+			if err := emptyFlagErr(cmd, subject, "before", "after", "add-label", "rm-label", "add-repo", "rm-repo", "status"); err != nil {
 				return err
 			}
 			if err := sel.guard(cmd, args); err != nil {
@@ -836,7 +844,8 @@ func newSetCmd() *cobra.Command {
 				// shows a write the apply would refuse: an edit must exist (the
 				// app's own at-least-one-change rule), and a -s lane must be real.
 				hasEdit := o.Status != nil || o.Value != nil || o.Effort != nil || o.Epic != nil || o.Due != nil ||
-					o.ClearValue || o.ClearEffort || o.ClearDue || len(o.AddLabels) > 0 || len(o.RmLabels) > 0
+					o.ClearValue || o.ClearEffort || o.ClearDue || len(o.AddLabels) > 0 || len(o.RmLabels) > 0 ||
+					len(o.AddRepos) > 0 || len(o.RmRepos) > 0
 				if !hasEdit {
 					return core.Validationf("", "a selection needs at least one edit flag (-s, --value, --add-label, -e, --due, …) to apply")
 				}
@@ -935,6 +944,8 @@ func newSetCmd() *cobra.Command {
 	// so the write produced data unreachable by the tool that wrote it.
 	cmd.Flags().StringSliceVar(&addLabels, "add-label", nil, "add a label (repeatable; comma-separated)")
 	cmd.Flags().StringSliceVar(&rmLabels, "rm-label", nil, "remove a label (repeatable; comma-separated)")
+	cmd.Flags().StringSliceVar(&addRepos, "add-repo", nil, "attach a repo (owner/repo or a unique short name; repeatable; comma-separated)")
+	cmd.Flags().StringSliceVar(&rmRepos, "rm-repo", nil, "detach a repo (same forms; removing the last one leaves a draft; repeatable)")
 	cmd.MarkFlagsMutuallyExclusive("value", "clear-value")
 	cmd.MarkFlagsMutuallyExclusive("effort", "clear-effort")
 	cmd.MarkFlagsMutuallyExclusive("due", "clear-due")

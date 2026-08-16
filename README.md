@@ -270,7 +270,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `move [<id>...] <lane>` | Move tasks to a lane | `--expect-updated`, `-l/--label`, `-q/--query`, `-r/--repo`, `--yes` |
 | `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before`, `--expect-updated` |
 | `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | `--expect-updated` |
-| `set [<id>...]` | Apply several triage edits at once (lane, priority, value, effort, labels, epic, due) | `--add-label`, `--after`, `--before`, `--clear-due`, `--clear-effort`, `--clear-value`, `--due`, `--effort`, `-e/--epic`, `--expect-updated`, `-l/--label`, `-p/--priority`, `-q/--query`, `-r/--repo`, `--rm-label`, `-s/--status`, `--value`, `--yes` |
+| `set [<id>...]` | Apply several triage edits at once (lane, priority, value, effort, labels, repos, epic, due) | `--add-label`, `--add-repo`, `--after`, `--before`, `--clear-due`, `--clear-effort`, `--clear-value`, `--due`, `--effort`, `-e/--epic`, `--expect-updated`, `-l/--label`, `-p/--priority`, `-q/--query`, `-r/--repo`, `--rm-label`, `--rm-repo`, `-s/--status`, `--value`, `--yes` |
 | `value <id> <1-5>` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear`, `--expect-updated` |
 | `effort <id> <1-5>` | Set a task's effort estimate (coarse 1..5), or clear it with --clear | `--clear`, `--expect-updated` |
 | `check <id> [item-index]` | Toggle, add, remove, or reword a checklist item | `--add`, `--expect-updated`, `--off`, `--reword`, `--rm` |

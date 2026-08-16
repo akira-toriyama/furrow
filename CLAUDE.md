@@ -33,8 +33,10 @@ the user-level config. When you work with any furrow store:
   the `drafts` count, and sync's `lint` error-count ride-along (omitted when
   clean). Read-only, never touches git — orient a shared board
   with `furrow sync && furrow brief`.
-  `set <id>` combines lane/**priority**/value/effort/labels/**epic**/**due** in one
-  write (the triage shortcut for move+reorder+value+effort+label): `--priority`
+  `set <id>` combines lane/**priority**/value/effort/labels/**repos**
+  (`--add-repo`/`--rm-repo`, strict resolution; removing the last repo leaves a
+  draft)/**epic**/**due** in one
+  write (the triage shortcut for move+reorder+value+effort+label+repo): `--priority`
   is absolute, `--before/--after <ref>` relative in the DESTINATION lane — a
   cross-column drop (`-s <lane> --before <ref>`) is lane + position in ONE
   write, with the same respace/`renumbered` contract as reorder (the three
