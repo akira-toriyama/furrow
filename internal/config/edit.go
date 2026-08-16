@@ -90,6 +90,14 @@ func structKeys(t reflect.Type) []Key {
 				if stag == "" || stag == "-" {
 					continue
 				}
+				// A map INSIDE a section is a dynamic SUB-table ([lint.severity]):
+				// its Section is the dotted table header, so SetInSection edits the
+				// literal `[section.subtable]` block and ResolveKey's prefix match
+				// peels the operator-chosen key off the end.
+				if sf.Type.Kind() == reflect.Map {
+					keys = append(keys, Key{Section: tag + "." + stag, Name: tag + "." + stag, Kind: KindString, Dynamic: true})
+					continue
+				}
 				keys = append(keys, Key{Section: tag, Name: stag, Kind: kindOf(sf.Type)})
 			}
 			continue
@@ -120,19 +128,20 @@ func kindOf(t reflect.Type) KeyKind {
 }
 
 // ResolveKey matches a dotted CLI key against a vocabulary: the exact dotted
-// spelling, or a dynamic section's section.<anything>. A miss returns the full
+// spelling, or a dynamic section's section.<anything> — where the section may
+// itself be dotted ([lint.severity]), so a dynamic key is matched by PREFIX
+// rather than by splitting the input at its first dot. A miss returns the full
 // vocabulary for the caller's candidates array.
 func ResolveKey(keys []Key, dotted string) (Key, string, bool) {
-	section, name := "", dotted
-	if idx := strings.IndexByte(dotted, '.'); idx >= 0 {
-		section, name = dotted[:idx], dotted[idx+1:]
-	}
 	for _, k := range keys {
-		if k.Dynamic && k.Section == section && name != "" {
-			return k, name, true
+		if k.Dynamic {
+			if name, ok := strings.CutPrefix(dotted, k.Section+"."); ok && name != "" {
+				return k, name, true
+			}
+			continue
 		}
-		if !k.Dynamic && k.Section == section && k.Name == name {
-			return k, name, true
+		if k.Dotted() == dotted {
+			return k, k.Name, true
 		}
 	}
 	return Key{}, "", false

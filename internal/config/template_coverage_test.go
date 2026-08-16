@@ -30,8 +30,18 @@ func TestTemplateCoversEveryShippedKey(t *testing.T) {
 				continue
 			}
 			for j := 0; j < f.Type.NumField(); j++ {
-				leaf := tomlTag(f.Type.Field(j))
+				sf := f.Type.Field(j)
+				leaf := tomlTag(sf)
 				if leaf == "" {
+					continue
+				}
+				// A map leaf is a dynamic SUB-table ([lint.severity]): free-form
+				// keys, so what the template must show is the header, exactly as
+				// the top-level [alias] case below.
+				if sf.Type.Kind() == reflect.Map {
+					if !headerAppears(Template, tag+"."+leaf) {
+						t.Errorf("template is missing sub-table [%s.%s] (live or commented)", tag, leaf)
+					}
 					continue
 				}
 				if !keyAppears(Template, leaf) {
@@ -55,6 +65,13 @@ func TestTemplateCoversEveryShippedKey(t *testing.T) {
 // the point is a copy-uncomment-edit affordance.
 func keyAppears(template, key string) bool {
 	re := regexp.MustCompile(`(?m)^(# )?` + regexp.QuoteMeta(key) + ` = `)
+	return re.MatchString(template)
+}
+
+// headerAppears is keyAppears for a table header: `[dotted]` live or commented,
+// at line start, so the copy-uncomment-edit affordance holds for sub-tables too.
+func headerAppears(template, dotted string) bool {
+	re := regexp.MustCompile(`(?m)^(# )?\[` + regexp.QuoteMeta(dotted) + `\]`)
 	return re.MatchString(template)
 }
 

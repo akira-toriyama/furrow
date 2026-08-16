@@ -93,6 +93,17 @@ older_than_days = 30
 # convention, not furrow's.
 # provenance_markers = ["Source:", "Verified:"]
 
+# [lint.severity] re-levels one code for THIS board: code = "error" | "warn".
+# For the code whose shipped level fits one operation and not another —
+# ` + "`due-overdue`" + ` is an error because a shared board's CI gate consumes the red,
+# so a standalone board (no CI) demotes it to a warn in one committed line;
+# promoting a warn it wants gating works the same way. Unlike ignore_codes the
+# finding stays VISIBLE — only its level (and with it lint's exit code and the
+# sync ride-along's error count) changes. A level other than error/warn is
+# clamped away with a warning; a code naming no real check warns via ` + "`furrow lint`" + `.
+# [lint.severity]
+# due-overdue = "warn"
+
 [due]
 # Lanes where a due date raises NOTHING — no lint finding, no ` + "`furrow brief`" + `
 # section entry. The done lane is always exempt on top of this (a closed task's

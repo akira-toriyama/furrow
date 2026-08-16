@@ -53,6 +53,12 @@ type raw struct {
 		ArchiveDone       *int     `toml:"archive_done"`
 		IgnoreCodes       []string `toml:"ignore_codes"`
 		ProvenanceMarkers []string `toml:"provenance_markers"`
+		// Severity is the [lint.severity] table: lint code -> "error" | "warn",
+		// a per-board override of a code's shipped level. A map decodes any code
+		// name; the LEVEL vocabulary is this package's to check (two literals),
+		// while the CODE vocabulary is core's — app.Lint warns about an entry
+		// naming no real code, exactly as it does for ignore_codes.
+		Severity map[string]string `toml:"severity"`
 	} `toml:"lint"`
 	// Due is the [due] section: which lanes a due date says nothing in. A slice
 	// (not a *bool) because the answer is board vocabulary, not a switch — the
@@ -348,6 +354,27 @@ func fromRaw(r raw) (*Config, []string, error) {
 			}
 		}
 		c.LintIgnoreCodes = dedupeNonEmpty(codes)
+	}
+
+	// [lint.severity]: per-code level overrides. The level vocabulary (error |
+	// warn) is validated HERE — it is two literals this file owns, so a typo'd
+	// level is refused at `config set` time by the regression guard instead of
+	// surfacing only in a later lint. Whether the CODE names a real check is
+	// core's vocabulary and therefore app.Lint's job (the ignore_codes split).
+	for code, level := range r.Lint.Severity {
+		sc, sl := strings.TrimSpace(code), strings.TrimSpace(level)
+		if sc == "" {
+			warn = append(warn, "lint.severity entry with an empty code; ignored")
+			continue
+		}
+		if sl != "error" && sl != "warn" {
+			warn = append(warn, fmt.Sprintf("lint.severity.%s %q is not a level (error|warn); ignored", sc, level))
+			continue
+		}
+		if c.LintSeverity == nil {
+			c.LintSeverity = map[string]string{}
+		}
+		c.LintSeverity[sc] = sl
 	}
 
 	// [lint].provenance_markers: the board's own provenance vocabulary. Trimmed +

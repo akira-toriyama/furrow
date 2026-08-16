@@ -39,7 +39,10 @@ func newLintCmd() *cobra.Command {
 			"over --code), and --severity error|warn (exact level). An unknown --code /\n" +
 			"--exclude-code token is exit 2 with the known codes as candidates (a closed\n" +
 			"vocabulary, like a lane). Config's [lint].ignore_codes suppresses codes on\n" +
-			"every run (an unknown entry there only warns — clamp-don't-reject). THE FILTER\n" +
+			"every run (an unknown entry there only warns — clamp-don't-reject), and the\n" +
+			"[lint.severity] table re-levels one per board (`due-overdue = \"warn\"` where\n" +
+			"no CI consumes the red; promoting a warn to error also works) — every\n" +
+			"consumer, this exit code included, sees the effective level. THE FILTER\n" +
 			"DRIVES THE EXIT CODE: a problem filtered out is treated as if lint never found\n" +
 			"it, so excluding or ignoring the last error exits 0 (the point — silence a\n" +
 			"permanently-dead check so it stops reddening CI), and --severity warn always\n" +
@@ -81,7 +84,10 @@ func newLintCmd() *cobra.Command {
 			}
 			// A board [alias] that shadows a builtin is inert; surface it here (the
 			// CLI owns the command set, so this warning can't live in app.Lint).
-			ps = append(ps, aliasShadowProblems(a.Cfg.Alias)...)
+			// Born after Lint() applied the [lint.severity] overrides, so they get
+			// their own pass — ApplySeverity is idempotent, but scoping it to the
+			// appended rows keeps Lint() the one place the app's findings are leveled.
+			ps = append(ps, core.ApplySeverity(aliasShadowProblems(a.Cfg.Alias), a.LintSeverityOverrides())...)
 
 			// Filter drives BOTH the printout AND the exit code below — a problem
 			// removed here is as if lint never found it (see the Long help).
