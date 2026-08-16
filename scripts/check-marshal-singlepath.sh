@@ -1,8 +1,9 @@
 #!/bin/sh
-# check-marshal-singlepath.sh — guard the determinism invariant: core.Marshal is
-# the ONLY place an *Index is serialized to JSON. Any other json.Marshal /
-# json.NewEncoder on the index would bypass the canonical-sort + escape rules and
-# reintroduce git churn. CI runs this before the build.
+# check-marshal-singlepath.sh — guard the determinism invariant: the
+# core.Marshal*/Unmarshal* family is the ONLY place a persisted value is
+# (de)serialized. Any other json.Marshal / json.NewEncoder on a shard type
+# would bypass the canonical byte recipe and reintroduce git churn. CI runs
+# this before the build.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -33,19 +34,17 @@ if [ -n "$hits" ]; then
   echo "If this is a non-store view, render it in internal/cli/output.go." >&2
   exit 1
 fi
-# The two encoders must not silently swap roles. encodeCanonical serves exactly
-# one caller (Marshal, the in-memory *Index form); every PERSISTED value goes
-# through encodeCanonicalWithExtras, which re-applies the recipe around the
-# extras splice. Comments in marshal.go used to name encodeCanonical as the
-# shard path, which had quietly become false — so pin the arity here instead of
-# trusting prose: a second caller means either a persistence path regressed onto
-# the extras-blind encoder (silent data loss), or the split was deliberately
-# reworked and these comments plus this guard must be updated together.
-callers="$(grep -cE '[^a-zA-Z]encodeCanonical\(' internal/core/marshal.go internal/core/passthrough.go \
+# There is exactly ONE encoder: encodeCanonicalWithExtras, which applies the
+# byte recipe around the unknown-key splice. Its extras-blind twin
+# (encodeCanonical, once the in-memory *Index form's encoder) was deleted with
+# the dead Index marshaller (t-eb6a) — a bare encodeCanonical( reappearing
+# means someone resurrected a second encoder, and a persistence path regressing
+# onto an extras-blind encoder is silent data loss. Refuse any occurrence.
+callers="$(grep -rcE '[^a-zA-Z]encodeCanonical\(' internal/core \
   | awk -F: '{n += $2} END {print n+0}')"
-if [ "$callers" -gt 2 ]; then
-  echo "✖ encodeCanonical has more than its one caller (definition + Marshal):" >&2
-  grep -nE '[^a-zA-Z]encodeCanonical\(' internal/core/marshal.go internal/core/passthrough.go >&2
+if [ "$callers" -gt 0 ]; then
+  echo "✖ a bare encodeCanonical( exists again (the one encoder is encodeCanonicalWithExtras):" >&2
+  grep -rnE '[^a-zA-Z]encodeCanonical\(' internal/core >&2
   echo >&2
   echo "Persisted values must use encodeCanonicalWithExtras, or the shard's" >&2
   echo "unknown keys are dropped on write (core/passthrough.go)." >&2

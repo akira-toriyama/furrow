@@ -1,52 +1,35 @@
 package core
 
 import (
-	"bytes"
 	"encoding/json"
 	"sort"
 	"time"
 )
 
-// Marshal is the ONE path that serializes an Index to bytes; never call
-// json.Marshal on an Index anywhere else (scripts/check-marshal-singlepath.sh
-// enforces this in CI). It produces the in-memory aggregate's canonical form —
-// used by the determinism golden and for inspection — and is NOT a persistence
-// path: the store writes per-task shards via MarshalTask + meta.json via
-// MarshalMeta, so these bytes must never be written to .furrow/ (that would
-// resurrect the abolished, drift-prone index.json).
+// MarshalTask is the ONE path that serializes a single task to its shard bytes
+// (tasks/<id>.json); never call json.Marshal on a Task anywhere else
+// (scripts/check-marshal-singlepath.sh enforces this in CI).
 //
-// DO NOT regress the determinism contract. MarshalTask shares the
-// normalization (canonicalizeTask) but NOT the encoder — see encodeCanonical
-// below for which function each path really runs — so the recipe itself must be
-// kept identical on both sides:
-//   - key order        = struct field order (encoding/json guarantees this)
+// DO NOT regress the determinism contract. Every persisted value runs
+// encodeCanonicalWithExtras (passthrough.go), the one encoder, whose recipe is:
+//   - key order        = struct field order (encoding/json guarantees this),
+//     with any unknown keys re-emitted sorted after the known ones
 //   - indent           = 2 spaces
 //   - SetEscapeHTML(false) so CJK and < > & survive verbatim
-//   - []  not null     (Canonicalize replaces nil slices with empty ones)
-//   - sort             = lane-rank -> priority -> id
+//   - []  not null     (canonicalizeTask replaces nil slices with empty ones)
 //   - timestamps       = UTC, whole seconds (RFC3339 "...Z", no fractional)
-//   - trailing newline (Encode appends it)
+//   - trailing newline
 //
 // The payoff: shard bytes written by `furrow` equal bytes a human or Claude
 // would hand-edit, so re-saving an untouched task produces zero git churn.
-func Marshal(idx *Index, laneOrder []string) ([]byte, error) {
-	Canonicalize(idx, laneOrder)
-	data, err := encodeCanonical(idx)
-	if err != nil {
-		return nil, Internalf("index", "marshal index: %v", err)
-	}
-	return data, nil
-}
-
-// MarshalTask is the per-task twin of Marshal: the ONE path that serializes a
-// single task to its shard bytes (tasks/<id>.json). It shares Marshal's byte
-// recipe (encodeCanonicalWithExtras) and per-task normalization (canonicalizeTask) so a
-// shard written by furrow equals a hand-edit byte-for-byte, exactly as the index
-// does. Unlike the index, a shard carries NO schema_version — the store's
-// meta.json owns the one board-wide version, keeping every shard free of a field
-// that would otherwise be a needless merge point. canonicalizeTask mutates t in
-// place (as Canonicalize does for the index). t must be non-nil — a nil task is
-// a programmer error, mirroring Marshal's contract for a nil index.
+// (An Index-level marshaller once lived beside this one — the in-memory
+// aggregate's canonical form. Nothing in production ever called it, so it was
+// removed (t-eb6a); the index has no serialized form, only per-entity shards.)
+//
+// A shard carries NO schema_version — the store's meta.json owns the one
+// board-wide version, keeping every shard free of a field that would otherwise
+// be a needless merge point. canonicalizeTask mutates t in place. t must be
+// non-nil — a nil task is a programmer error.
 func MarshalTask(t *Task) ([]byte, error) {
 	canonicalizeTask(t)
 	// …WithExtras: any key this binary does not know came off disk in t.extras and
@@ -59,42 +42,8 @@ func MarshalTask(t *Task) ([]byte, error) {
 	return data, nil
 }
 
-// encodeCanonical applies the determinism byte-recipe to any value: no HTML
-// escaping (CJK and < > & survive verbatim), 2-space indent, and a trailing
-// newline (Encode appends it).
-//
-// It serves EXACTLY ONE caller — Marshal (*Index), the in-memory canonical form
-// used by tests and inspection. Nothing persisted goes through it: since the
-// unknown-key passthrough landed, all three on-disk marshallers (MarshalTask,
-// MarshalRepo, MarshalMeta) run encodeCanonicalWithExtras (passthrough.go),
-// which re-applies the same recipe around the extras splice. So a regression
-// HERE does not reach a shard — and one THERE does. The two must stay
-// byte-compatible; TestFrozenBoardRoundTripsByteIdentical is what notices if
-// they drift apart.
-func encodeCanonical(v any) ([]byte, error) {
-	var b bytes.Buffer
-	e := json.NewEncoder(&b)
-	e.SetEscapeHTML(false)
-	e.SetIndent("", "  ")
-	if err := e.Encode(v); err != nil { // Encode writes the trailing '\n'
-		return nil, err
-	}
-	return b.Bytes(), nil
-}
-
-// Unmarshal parses index bytes into an Index. A parse failure is a validation
-// error (the file is malformed input), not an internal fault.
-func Unmarshal(data []byte) (*Index, error) {
-	var idx Index
-	if err := json.Unmarshal(data, &idx); err != nil {
-		return nil, Validationf("index", "index.json is not valid JSON: %v", err)
-	}
-	return &idx, nil
-}
-
-// UnmarshalTask parses one shard's bytes into a Task, the per-task twin of
-// Unmarshal. A parse failure is a validation error (malformed input), not an
-// internal fault.
+// UnmarshalTask parses one shard's bytes into a Task. A parse failure is a
+// validation error (malformed input), not an internal fault.
 func UnmarshalTask(data []byte) (*Task, error) {
 	var t Task
 	if err := json.Unmarshal(data, &t); err != nil {
@@ -251,8 +200,9 @@ func UnmarshalMeta(data []byte) (*Meta, error) {
 
 // Canonicalize enforces the determinism invariants in place: non-nil slices,
 // whole-second UTC timestamps, sorted per-task string slices, and the stable
-// lane->priority->id task order. Marshal calls it; it is exported so tests and
-// the lint command can assert "this is already canonical".
+// lane->priority->id task order. It is the in-memory index's normal form —
+// list reads canonicalize before rendering, and tests and the lint command
+// assert "this is already canonical" against it.
 func Canonicalize(idx *Index, laneOrder []string) {
 	if idx.SchemaVersion == 0 {
 		idx.SchemaVersion = SchemaVersion

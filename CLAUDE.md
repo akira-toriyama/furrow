@@ -483,11 +483,13 @@ and drives the CLI, not these packages. Crossing a layer means a port is missing
 add the interface, don't add the import.
 
 ### The single marshaller path — DO NOT regress this
-`core.Marshal` is the **only** function that serializes the in-memory index;
-the store persists per-shard via `core.MarshalTask` (one `tasks/<id>.json`) and
-the layout version via `core.MarshalMeta` (`meta.json`). All three live in
-`internal/core/marshal.go`. Never call `json.Marshal`/`json.NewEncoder` on an
-`*Index`, `*Task`, or `*Meta` anywhere else. Recipe (same per shard):
+The `core.Marshal*` family is the **only** path that serializes persisted
+values: `core.MarshalTask` (one `tasks/<id>.json`), `core.MarshalEpic`,
+`core.MarshalRepo`, and `core.MarshalMeta` (`meta.json`), all in
+`internal/core/marshal.go`. (An Index-level `core.Marshal` no longer exists —
+nothing in production ever called it; the index's normal form is in-memory
+only, via `core.Canonicalize`.) Never call `json.Marshal`/`json.NewEncoder` on
+an `*Index`, `*Task`, or `*Meta` anywhere else. Recipe (same per shard):
 struct-field key order, 2-space indent, `SetEscapeHTML(false)`, `[]` not null,
 sorted+deduped label/dep sets, UTC whole-second timestamps, trailing newline.
 This is what makes app-writes equal hand-edits byte-for-byte, and Save writes

@@ -2,8 +2,6 @@ package core
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -51,19 +49,7 @@ func TestMarshalTaskGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden := filepath.Join("testdata", "task.golden.json")
-	if *update {
-		if err := os.WriteFile(golden, got, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	want, err := os.ReadFile(golden)
-	if err != nil {
-		t.Fatalf("read golden (run with -update first): %v", err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("MarshalTask output != golden\n--- got ---\n%s\n--- want ---\n%s", got, want)
-	}
+	goldenBytes(t, "task.golden.json", got)
 }
 
 // TestMarshalTaskDeterministic: the per-task twin of the index contract —
