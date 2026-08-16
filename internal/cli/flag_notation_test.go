@@ -66,9 +66,15 @@ func TestRepeatableFlagNotationFrozen(t *testing.T) {
 		"epic set --meta":     "stringArray",
 		"epic set --rm-meta":  "stringArray",
 
-		// filter flags: stringArray + downstream comma-OR split (joinOrFilter)
+		// filter flags: stringArray + downstream comma-OR split (joinOrFilter).
+		// done/move/set carry -l as a write-side SELECTOR, but it is the same
+		// filter (writeSelector.resolve routes through joinOrFilter+scopedQuery),
+		// so it classifies with the reads.
 		"brief --label":       "stringArray",
+		"done --label":        "stringArray",
 		"epic ls --label":     "stringArray",
+		"move --label":        "stringArray",
+		"set --label":         "stringArray",
 		"lint --code":         "stringArray",
 		"lint --exclude-code": "stringArray",
 		"ls --label":          "stringArray",

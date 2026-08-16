@@ -213,14 +213,26 @@ func readTextArg(cmd *cobra.Command, s string) (string, error) {
 
 func newDoneCmd() *cobra.Command {
 	var note string
+	var sel writeSelector
 	cmd := &cobra.Command{
-		Use:   "done <id>...",
+		Use:   "done [<id>...]",
 		Short: "Move tasks into the done lane (stamps closed)",
 		Long: "Close one or more tasks in a single index write, all-or-nothing: a batch\n" +
 			"with an unknown id closes NOTHING and exits 1 with every miss in\n" +
 			"details.missing (the show batch shape). --json is ALWAYS an array of\n" +
 			"{before,after,changed} envelopes, one per id (a single id is a one-element\n" +
 			"array); --ndjson streams one envelope per line.\n\n" +
+			"Instead of enumerating ids, SELECT the targets with the read side's own\n" +
+			"filters: -q (the ls/next typed query, same grammar), -l, and -r, which AND\n" +
+			"together under the board scope exactly as in ls — so `furrow ls <flags>`\n" +
+			"previews precisely what `furrow done <flags>` would close. A selection and\n" +
+			"an id list refuse to combine (exit 2). A selection only PREVIEWS the\n" +
+			"matched tasks until --yes (the archive/tidy destructive-op guard; the\n" +
+			"preview is {dry_run: true, tasks} in JSON), the close itself is the same\n" +
+			"single all-or-nothing write as the id form — no jq, no xargs, no ARG_MAX\n" +
+			"split — and a selection matching nothing is exit 0 with a stderr note, like\n" +
+			"every empty read. --expect-updated cannot ride a selection (one stamp\n" +
+			"describes one read of one task).\n\n" +
 			"--note \"<text>\" records the closing word in the same command: the text is\n" +
 			"appended to EVERY closed task's body as a new paragraph (the note command's\n" +
 			"contract — updated advances, nothing is deduped) and the envelope gains the\n" +
@@ -228,12 +240,37 @@ func newDoneCmd() *cobra.Command {
 			"exit 2, never a silent plain close.",
 		Example: "  furrow done t-k3m9p\n" +
 			"  furrow done t-k3m9p --note \"→ continued in t-x7q2\"\n" +
-			"  furrow done t-k3m9p t-x7q2 t-9d4n   # triage sweep, one write",
-		Args: cobra.MinimumNArgs(1),
+			"  furrow done t-k3m9p t-x7q2 t-9d4n   # triage sweep, one write\n" +
+			"  furrow done -q 'label:spike status:waiting'        # preview the selection\n" +
+			"  furrow done -q 'label:spike status:waiting' --yes  # close it, one write",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") {
+				return cobra.ArbitraryArgs(cmd, args) // the id/selector clash gets its own message in guard
+			}
+			return cobra.MinimumNArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
+			}
+			if err := sel.guard(cmd, args); err != nil {
+				return err
+			}
+			if sel.active(cmd) {
+				tasks, err := sel.resolve(cmd, a)
+				if err != nil {
+					return err
+				}
+				if !sel.yes {
+					emitSelectPreview("close", tasks)
+					return nil
+				}
+				if len(tasks) == 0 {
+					emitEmptySelection()
+					return nil
+				}
+				args = taskIDs(tasks)
 			}
 			if !cmd.Flags().Changed("note") {
 				return emitMutationMany(cmd, a, "done", args, func() ([]*core.Task, error) { return a.DoneMany(args) })
@@ -251,32 +288,73 @@ func newDoneCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&note, "note", "", "append this closing note to each task's body ('-' reads stdin)")
+	addSelectorFlags(cmd, &sel)
 	addExpectUpdatedFlag(cmd)
 	return cmd
 }
 
 func newMoveCmd() *cobra.Command {
+	var sel writeSelector
 	cmd := &cobra.Command{
-		Use:   "move <id>... <lane>",
+		Use:   "move [<id>...] <lane>",
 		Short: "Move tasks to a lane",
 		Long: "Move one or more tasks to <lane> (the LAST argument) in a single index\n" +
 			"write, all-or-nothing: a batch with an unknown id moves NOTHING and exits 1\n" +
 			"with every miss in details.missing; an unknown lane is exit 2 with the\n" +
 			"configured lanes in candidates. --json is ALWAYS an array of\n" +
 			"{before,after,changed} envelopes, one per id (a single id is a one-element\n" +
-			"array); --ndjson streams one envelope per line.",
+			"array); --ndjson streams one envelope per line.\n\n" +
+			"Instead of enumerating ids, SELECT the targets with the read side's own\n" +
+			"filters — -q/-l/-r, ANDed under the board scope exactly as in ls (then\n" +
+			"`move <flags> <lane>` takes just the lane). The selection previews until\n" +
+			"--yes ({dry_run: true, tasks} in JSON), applies as the same single\n" +
+			"all-or-nothing write, matches-nothing is exit 0 with a stderr note, and it\n" +
+			"refuses to combine with ids or --expect-updated (exit 2) — the full\n" +
+			"contract is spelled out in `furrow done --help`.",
 		Example: "  furrow move t-k3m9p in-progress\n" +
-			"  furrow move t-k3m9p t-x7q2 backlog   # triage sweep, one write",
-		Args: cobra.MinimumNArgs(2),
+			"  furrow move t-k3m9p t-x7q2 backlog     # triage sweep, one write\n" +
+			"  furrow move -q 'status:inbox no:value' icebox        # preview\n" +
+			"  furrow move -q 'status:inbox no:value' icebox --yes  # one write",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") {
+				return cobra.MinimumNArgs(1)(cmd, args) // <lane> only; extra ids get guard's message
+			}
+			return cobra.MinimumNArgs(2)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
 			ids, lane := args[:len(args)-1], args[len(args)-1]
+			if err := sel.guard(cmd, ids); err != nil {
+				return err
+			}
+			if sel.active(cmd) {
+				// Vet the lane BEFORE resolving: `move -q … typo-lane` must exit 2
+				// with candidates whether or not anything matches, and a preview
+				// against a lane the apply would refuse is a lie.
+				if err := a.CheckLane(lane); err != nil {
+					return err
+				}
+				tasks, err := sel.resolve(cmd, a)
+				if err != nil {
+					return err
+				}
+				if !sel.yes {
+					emitSelectPreview("move to "+lane, tasks)
+					return nil
+				}
+				if len(tasks) == 0 {
+					emitEmptySelection()
+					return nil
+				}
+				ids = taskIDs(tasks)
+			}
 			return emitMutationMany(cmd, a, "moved", ids, func() ([]*core.Task, error) { return a.MoveMany(ids, lane) })
 		},
 	}
+	addSelectorFlags(cmd, &sel)
 	addExpectUpdatedFlag(cmd)
 	return cmd
 }
@@ -650,9 +728,10 @@ func newSetCmd() *cobra.Command {
 		after       string
 		due         string
 		clearDue    bool
+		sel         writeSelector
 	)
 	cmd := &cobra.Command{
-		Use:   "set <id>...",
+		Use:   "set [<id>...]",
 		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, epic, due)",
 		Long: "Combine the routine triage edits into a single write: move a lane (-s),\n" +
 			"position the task (--priority, or --before/--after a task in the destination\n" +
@@ -672,15 +751,29 @@ func newSetCmd() *cobra.Command {
 			"details.missing, and --json is ALWAYS an array of envelopes, one per id\n" +
 			"(a single id is a one-element array). The position flags\n" +
 			"(--priority/--before/--after) apply to ONE task and are exit 2 for two or\n" +
-			"more ids.",
+			"more ids.\n\n" +
+			"Instead of enumerating ids, SELECT the targets with the read side's own\n" +
+			"filters — -q/-l/-r, ANDed under the board scope exactly as in ls. The\n" +
+			"selection previews until --yes ({dry_run: true, tasks} in JSON), applies\n" +
+			"as the same single all-or-nothing write, matches-nothing is exit 0 with a\n" +
+			"stderr note, and it refuses to combine with ids, --expect-updated, or the\n" +
+			"position flags (a position places ONE task) — the full contract is\n" +
+			"spelled out in `furrow done --help`.",
 		Example: "  furrow set t-k3m9p -s ready --value 4 --effort 2 --add-label bug\n" +
 			"  furrow set t-k3m9p -s ready --before t-x1y2z\n" +
 			"  furrow set t-k3m9p -e e-v0zd\n" +
 			"  furrow set t-k3m9p t-x1y2z t-9f2qr -s backlog --add-label triaged\n" +
 			"  furrow set t-k3m9p --due 2026-08-04     # promise it for that whole day\n" +
 			"  furrow set t-k3m9p --due +1d            # snooze a day from now\n" +
-			"  furrow set t-k3m9p --clear-value --rm-label wip",
-		Args: cobra.MinimumNArgs(1),
+			"  furrow set t-k3m9p --clear-value --rm-label wip\n" +
+			"  furrow set -q 'status:inbox label:bug' -e e-v0zd        # preview\n" +
+			"  furrow set -q 'status:inbox label:bug' -e e-v0zd --yes  # one write",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") {
+				return cobra.ArbitraryArgs(cmd, args) // the id/selector clash gets its own message in guard
+			}
+			return cobra.MinimumNArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -716,15 +809,55 @@ func newSetCmd() *cobra.Command {
 			if cmd.Flags().Changed("due") {
 				o.Due = &due
 			}
+			// subject names the task in a flag-validation error; a -q/-l/-r
+			// selection has no single task to blame, so it stays "".
+			subject := ""
+			if len(args) > 0 {
+				subject = args[0]
+			}
 			// An empty --due is exit 2, never a silent clear: a caller building
 			// `--due "$WHEN"` with an unset $WHEN has a bug, and --clear-due already
 			// spells the clear. Checked before the generic guard so the message can
 			// name the flag that DOES mean "remove it".
 			if f := cmd.Flags().Lookup("due"); f != nil && f.Changed && strings.TrimSpace(due) == "" {
-				return core.Validationf(args[0], "--due was given an empty value; pass a date, or use --clear-due to remove it")
+				return core.Validationf(subject, "--due was given an empty value; pass a date, or use --clear-due to remove it")
 			}
-			if err := emptyFlagErr(cmd, args[0], "before", "after", "add-label", "rm-label", "status"); err != nil {
+			if err := emptyFlagErr(cmd, subject, "before", "after", "add-label", "rm-label", "status"); err != nil {
 				return err
+			}
+			if err := sel.guard(cmd, args); err != nil {
+				return err
+			}
+			if sel.active(cmd) {
+				if cmd.Flags().Changed("priority") || cmd.Flags().Changed("before") || cmd.Flags().Changed("after") {
+					return core.Validationf("", "the position flags place ONE task; they cannot ride a -q/-l/-r selection")
+				}
+				// Vet what CAN be vetted before resolving, so the preview never
+				// shows a write the apply would refuse: an edit must exist (the
+				// app's own at-least-one-change rule), and a -s lane must be real.
+				hasEdit := o.Status != nil || o.Value != nil || o.Effort != nil || o.Epic != nil || o.Due != nil ||
+					o.ClearValue || o.ClearEffort || o.ClearDue || len(o.AddLabels) > 0 || len(o.RmLabels) > 0
+				if !hasEdit {
+					return core.Validationf("", "a selection needs at least one edit flag (-s, --value, --add-label, -e, --due, …) to apply")
+				}
+				if o.Status != nil {
+					if err := a.CheckLane(*o.Status); err != nil {
+						return err
+					}
+				}
+				tasks, err := sel.resolve(cmd, a)
+				if err != nil {
+					return err
+				}
+				if !sel.yes {
+					emitSelectPreview("set", tasks)
+					return nil
+				}
+				if len(tasks) == 0 {
+					emitEmptySelection()
+					return nil
+				}
+				args = taskIDs(tasks)
 			}
 			// The clamped disclosure is per ENVELOPE, whatever the arity: the
 			// batch arm used to route through the annotation-free
@@ -806,6 +939,7 @@ func newSetCmd() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("effort", "clear-effort")
 	cmd.MarkFlagsMutuallyExclusive("due", "clear-due")
 	cmd.MarkFlagsMutuallyExclusive("priority", "before", "after")
+	addSelectorFlags(cmd, &sel)
 	addExpectUpdatedFlag(cmd)
 	return cmd
 }

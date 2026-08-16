@@ -1478,6 +1478,17 @@ func (a *App) applyLane(t *core.Task, lane string) {
 // Done moves a task into the done lane (and stamps Closed via Move).
 func (a *App) Done(id string) (*core.Task, error) { return a.Move(id, a.Cfg.DoneLane) }
 
+// CheckLane validates a lane name against the configured vocabulary — the
+// exit-2 candidates error move/add raise, exposed for a caller that must vet
+// the lane BEFORE other work (the CLI's selection preview: previewing a write
+// against a lane the apply would refuse would be a lie).
+func (a *App) CheckLane(lane string) error {
+	if !a.Cfg.IsLane(lane) {
+		return a.unknownLaneErr("", lane)
+	}
+	return nil
+}
+
 // MoveMany sets the lane on several tasks in ONE index write, all-or-nothing:
 // every id is resolved before anything is touched, so a failed batch never
 // half-lands (a write must not partially succeed the way a batch READ may —
