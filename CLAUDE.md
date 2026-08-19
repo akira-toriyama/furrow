@@ -107,10 +107,11 @@ the user-level config. When you work with any furrow store:
 - **`standing` / `pinned` are the v7 permanent-channel declarations (`epic set
   --standing / --pinned`; `--standing=false` / `--pinned=false` clears).** A
   STANDING box is one whose goal is to sit there (a mandate inbox, a parking
-  lot): it is exempt from the finish-shaped revisit nags — `epic_all_done`
-  (open 0 is its healthy state) and `epic_dep_done` (an always-on box has no
-  "turn to open") — while `epic_stuck` still fires, and it is the box the
-  REVIEW CADENCE exists for (v9): `furrow review <epic-ref>` stamps its
+  lot): it is exempt from the lifecycle revisit nags — `epic_all_done`
+  (open 0 is its healthy state), `epic_dep_done` (an always-on box has no
+  "turn to open"), and `epic_stuck` (open members none actionable is an
+  inbox's OTHER resting state — deposits awaiting triage) — and it is the box
+  the REVIEW CADENCE exists for (v9): `furrow review <epic-ref>` stamps its
   `reviewed`, and `epic_review_due` fires when that review outlives the
   `[review]` staleness threshold — the same clock as the repo nudge, quiet
   until the first review opts the box in. A PINNED box's actionable
