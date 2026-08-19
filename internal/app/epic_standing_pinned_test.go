@@ -85,7 +85,7 @@ func TestNextPinnedEdgeCases(t *testing.T) {
 	}
 }
 
-// standing silences the finish-shaped nags (all_done, dep_done) but not stuck.
+// standing silences the lifecycle nags: all_done, dep_done, and stuck.
 func TestStandingSilencesFinishNags(t *testing.T) {
 	a := newApp()
 	inbox := mustEpic(t, a, "mandate inbox", EpicAddOpts{Repos: []string{"o/r"}})
@@ -118,7 +118,8 @@ func TestStandingSilencesFinishNags(t *testing.T) {
 		t.Errorf("a standing box has no turn to open: %v", sum.EpicDepDone)
 	}
 
-	// stuck still fires: an open member none actionable is a real problem.
+	// stuck is silenced too: deposits sitting non-actionable (an inbox full of
+	// untriaged backlog) is a standing channel's other healthy resting state.
 	blocked := mustAddReady(t, a, "waits forever", inbox)
 	gate := mustAdd(t, a, "the gate", AddOpts{Epic: inbox})
 	if _, err := a.AddDep(blocked, gate.ID); err != nil {
@@ -128,8 +129,8 @@ func TestStandingSilencesFinishNags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sum.EpicStuck) != 1 || sum.EpicStuck[0] != inbox {
-		t.Errorf("stuck must still fire for a standing box: %v", sum.EpicStuck)
+	if len(sum.EpicStuck) != 0 {
+		t.Errorf("a standing box must not report stuck: %v", sum.EpicStuck)
 	}
 }
 

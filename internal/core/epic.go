@@ -97,9 +97,11 @@ type Epic struct {
 	// there — an inbox-like channel (a mandate box), a parking lot. Its whole
 	// effect is to silence the lifecycle nags that assume a box is meant to
 	// finish: revisit's epic_all_done (open 0 is this box's HEALTHY state, not
-	// "consider closing") and epic_dep_done (an always-on box has no "turn to
-	// open"). epic_stuck still fires — open members none of which are actionable
-	// is a real problem in any box — and furrow still never auto-closes anything.
+	// "consider closing"), epic_dep_done (an always-on box has no "turn to
+	// open"), and epic_stuck (open members none of which are actionable is an
+	// inbox's OTHER resting state — deposits awaiting triage). The review
+	// cadence (epic_review_due) is its replacement signal, and furrow still
+	// never auto-closes anything.
 	// Which boxes get the flag is an operating convention (the operator's
 	// reserved-epics doc), not furrow's: furrow stays name-independent.
 	Standing bool `json:"standing"`

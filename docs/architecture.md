@@ -753,8 +753,8 @@ except where noted:
   `internal/app/epic.go`, the same mutation-funnel shape as `repo`/`review`):
   `add` / `ls` / `show` / `set` / `activate` / `deactivate` / `done` / `dep`.
   `set --standing/--pinned` (v7) flip the permanent-channel declarations: a
-  standing box is exempt from revisit's epic_all_done/epic_dep_done (stuck
-  still fires), a pinned box's actionable tasks lead `next`/`brief` past the
+  standing box is exempt from revisit's epic_all_done/epic_dep_done/epic_stuck
+  (untriaged deposits are its resting state), a pinned box's actionable tasks lead `next`/`brief` past the
   active scope (EpicScope.Pinned — board-wide, holding no repo slot).
   `dep` is the task-side `dep` contract carried to boxes (variadic add/`--rm`,
   all-or-nothing, acyclic at write time — `core.EpicDependsOn` — with lint's

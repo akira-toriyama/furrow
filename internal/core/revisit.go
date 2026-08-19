@@ -19,7 +19,7 @@ const (
 	// layer does. They live here so the `furrow revisit --json` reason vocabulary
 	// has one home.
 	RevisitEpicAllDone = "epic_all_done" // an open epic whose members are ALL done — consider closing it
-	RevisitEpicStuck   = "epic_stuck"    // an open epic with open members but not one actionable
+	RevisitEpicStuck   = "epic_stuck"    // an open epic with open members but not one actionable (standing boxes exempt — that is an inbox's resting state)
 	// RevisitEpicStale is the ACTIVE-epic-untouched signal. It is measured in DAYS
 	// (the [revisit].stale_days clock every other signal uses), not in sessions:
 	// furrow has no notion of a session, and inventing a second clock so that one
@@ -35,8 +35,8 @@ const (
 	// `furrow review <epic-ref>` is older than [review].stale_after_days — the
 	// same clock the per-repo review nudge reads, so one board keeps one review
 	// rhythm. It is the nag a standing box trades the finish-shaped ones for:
-	// exempt from epic_all_done/epic_dep_done, such a box is where a member's
-	// premise quietly rots, and nothing else asks "is what's inside still
+	// exempt from epic_all_done/epic_dep_done/epic_stuck, such a box is where a
+	// member's premise quietly rots, and nothing else asks "is what's inside still
 	// true?". A never-reviewed box stays quiet (the cadence is opted into by
 	// the first review, exactly like a repo's clock).
 	RevisitEpicReviewDue = "epic_review_due"

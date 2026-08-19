@@ -192,8 +192,8 @@ func newEpicSetCmd() *cobra.Command {
 		Use:   "set <epic>",
 		Short: "Edit an epic's title, goal, meta, labels, repos, or its standing/pinned declarations",
 		Long: "Edit a box's metadata. --standing and --pinned (v7) are the two PERMANENT-\n" +
-			"channel declarations: a standing box is exempt from the finish-shaped nags\n" +
-			"(revisit's epic_all_done / epic_dep_done; stuck still fires) and instead\n" +
+			"channel declarations: a standing box is exempt from the lifecycle nags\n" +
+			"(revisit's epic_all_done / epic_dep_done / epic_stuck) and instead\n" +
 			"carries the review cadence — once `furrow review <epic-ref>` has stamped\n" +
 			"it, epic_review_due fires when that review outlives [review]'s staleness\n" +
 			"threshold (v9) — and a pinned\n" +

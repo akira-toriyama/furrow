@@ -34,8 +34,12 @@ type EpicRevisitItem struct {
 // all_done and stuck are mutually exclusive by construction (all-done short
 // circuits), but stale is orthogonal and can accompany either — an active box can
 // be both blocked and forgotten, and that is worth saying twice. A STANDING box
-// (v7) is exempt from all_done and dep_done — the two nags that assume a box is
-// meant to finish and open — but not from stuck. dep_done is
+// (v7) is exempt from all_done, dep_done AND stuck — the nags that assume a box
+// is meant to finish, open, and drain: its healthy resting states are open 0 (a
+// drained inbox) and open N with none actionable (deposits awaiting triage), and
+// a board with a dozen standing channels would otherwise report a dozen
+// permanent stucks that drown the real one. The review cadence below is the
+// standing box's replacement signal. dep_done is
 // dep_done's box twin and needs the EPIC set (the edges point at boxes, not
 // members), which is why epics rides in: it fires only for a non-active box
 // with >=1 dep, every one of them existing and closed — never on a broken
@@ -69,15 +73,19 @@ func (a *App) epicReasons(e *core.Epic, idx *core.Index, epics []core.Epic, done
 		// A STANDING box (v7) is exempt: open 0 is its healthy resting state (a
 		// drained mandate inbox, a parking lot between deposits), so "consider
 		// closing" would be a permanent false nag — the exact failure mode a
-		// signal cannot recover from. stuck below still applies to it: open
-		// members none of which are actionable is a real problem in any box.
+		// signal cannot recover from.
 		if !e.Standing {
 			out = append(out, core.RevisitReason{Code: core.RevisitEpicAllDone,
 				Detail: fmt.Sprintf("all %d members done — consider closing", total)})
 		}
 	case actionable == 0:
-		out = append(out, core.RevisitReason{Code: core.RevisitEpicStuck,
-			Detail: fmt.Sprintf("%d open members but none actionable", open)})
+		// The same exemption: deposits sitting non-actionable (a requests box
+		// full of untriaged backlog) is a standing channel's OTHER healthy
+		// resting state, so stuck too would be a permanent false nag there.
+		if !e.Standing {
+			out = append(out, core.RevisitReason{Code: core.RevisitEpicStuck,
+				Detail: fmt.Sprintf("%d open members but none actionable", open)})
+		}
 	}
 
 	// A standing box also has no "turn to open" — it is always on — so the
