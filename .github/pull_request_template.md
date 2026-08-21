@@ -8,7 +8,7 @@
 ## Verification
 
 - [ ] `go build ./...`
-- [ ] `go test ./...`
+- [ ] `go test -race ./...`
 - [ ] `go vet ./...` + `golangci-lint run`
 - [ ] `sh scripts/check.sh`
 - [ ] Docs updated in this PR (don't leave unfinished work implicit)
