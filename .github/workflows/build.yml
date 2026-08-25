@@ -26,6 +26,12 @@ jobs:
       go-version: stable
       go-version-file: ''
       gotoolchain: local
+      # stable rides the CURRENT Go release, so the linter must too: the
+      # reusable's default (v2.12.2, May) predates Go 1.27 and typechecks its
+      # stdlib to pieces (math/rand/v2 "method must have no type parameters"),
+      # which blocked every PR here. Repos pinned via go.mod don't hit this;
+      # the price of `stable` is keeping this input current.
+      golangci-lint-version: v2.13.1
 
   # Do the tests this pull request adds actually bite? The gate runs them against
   # the source BEFORE the pull request and fails the ones that all still pass — a
