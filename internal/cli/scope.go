@@ -146,27 +146,38 @@ func hintCapped(shown, limit int, noun string, total func() (int, error)) {
 }
 
 // warnReadOnly is the read-side disclosure of a board this binary cannot
-// write. Reads deliberately keep answering on such a board (that is the
+// write. Reads deliberately keep answering on an OUTDATED board (that is the
 // gate's design), so before t-cx64 NOTHING said the board was read-only until
 // a write failed — twice in one night, each discovered only by a hunch
 // `furrow board`. One stderr line on the orient and listing reads (brief is
 // the load-bearing one — the session-start read); stdout stays pure data.
 // `board` and `doctor` are deliberately NOT wired: reporting the mismatch IS
-// their output. Writes need no line — they fail loudly on their own.
+// their output. Writes need no line — they fail loudly on their own, and so
+// does a TOO-NEW board's read (exit 3 before any rows), which is why that
+// state gets no note: one claiming "reads answer" in front of the refusal
+// was measured false (2026-08-27), and the refusal already names the fix.
+// The note names BOTH ways out of the outdated state: `furrow upgrade` alone
+// misled once (2026-08-12) — on a shared board the right move is usually
+// running a furrow at the board's layer, not flag-daying the board from a
+// source build that ran ahead of it.
 func warnReadOnly(a *app.App) {
 	err := a.Store.Writable()
 	if err == nil {
 		return
 	}
+	fe := core.AsError(err)
+	if fe != nil && fe.Kind == core.KindSchemaTooNew {
+		return
+	}
 	versions := ""
-	if fe := core.AsError(err); fe != nil {
+	if fe != nil {
 		if d, ok := fe.Details.(map[string]any); ok {
 			if b, ok := d["board_schema"]; ok {
 				versions = fmt.Sprintf(" (board layout v%v, binary v%v)", b, d["binary_schema"])
 			}
 		}
 	}
-	fmt.Fprintf(errOut, "note: this board is READ-ONLY for this binary%s — reads answer, writes will fail; `furrow board` explains, `furrow upgrade` raises the board (a flag day — see its --help)\n", versions)
+	fmt.Fprintf(errOut, "note: this board is READ-ONLY for this binary%s — reads answer, writes will fail; `furrow board` explains. Fix: run a furrow at the board's layer (a released binary or an older checkout), or `furrow upgrade` to raise the board (a flag day — see its --help)\n", versions)
 }
 
 // hintDue notes on STDERR what has come due, so a `furrow next` — the command a
