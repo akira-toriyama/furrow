@@ -211,7 +211,9 @@ func (d DueSummary) Total() int { return len(d.Overdue) + len(d.Today) }
 // "nothing you did not ask for may hide this" must not depend on its callers
 // opting in.
 //
-// Ordering is by due instant ascending, so the longest-overdue task leads.
+// Ordering is by due instant ascending, so the longest-overdue task leads; a
+// same-instant tie (every bare-day due lands on 23:59:59) breaks by the index's
+// canonical lane -> priority -> id order. See sortByDue.
 func (a *App) Due(o QueryOpts) (DueSummary, error) {
 	o.ScopeRepo = ""
 	idx, err := a.load()
@@ -239,10 +241,29 @@ func (a *App) Due(o QueryOpts) (DueSummary, error) {
 			sum.Today = append(sum.Today, it)
 		}
 	}
-	byDue := func(items []ListItem) {
-		sort.SliceStable(items, func(i, j int) bool { return items[i].Task.Due.Before(*items[j].Task.Due) })
-	}
-	byDue(sum.Overdue)
-	byDue(sum.Today)
+	canon := core.TaskOrder(a.Cfg.Lanes)
+	sortByDue(sum.Overdue, canon)
+	sortByDue(sum.Today, canon)
 	return sum, nil
+}
+
+// sortByDue orders one due band: earliest instant first, so the longest-overdue
+// task leads. canon is what makes the comparator a TOTAL order, and it is the
+// whole reason this is a named function rather than a closure: ParseDue pins a
+// bare-day due to that day's 23:59:59, so every task promised for the same day
+// carries a byte-identical instant and compares EQUAL on the primary key. Their
+// order used to be decided by nothing but sort.SliceStable's stability re-
+// emitting core.Canonicalize's index order — an invisible dependency that a
+// literal reading of Go's "prefer slices.SortFunc over sort.Slice" advice
+// silently breaks: swapping the call scrambled brief's overdue band from its
+// first row with all 11 packages still green. Tiebreaking on the same order the
+// index already carries reproduces that band from ANY algorithm, so it is the
+// tiebreak, not the stability, that holds it.
+func sortByDue(items []ListItem, canon func(a, b *core.Task) int) {
+	sort.SliceStable(items, func(i, j int) bool {
+		if c := items[i].Task.Due.Compare(*items[j].Task.Due); c != 0 {
+			return c < 0
+		}
+		return canon(&items[i].Task, &items[j].Task) < 0
+	})
 }

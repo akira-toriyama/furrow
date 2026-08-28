@@ -1,6 +1,7 @@
 package core
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -110,5 +111,25 @@ func TestCycleProblemsTwoDisjointCycles(t *testing.T) {
 	}}
 	if ps := CycleProblems(idx); len(ps) != 2 {
 		t.Fatalf("expected two disjoint cycles, got %d: %+v", len(ps), ps)
+	}
+}
+
+// Two disjoint cycles are two Problems, and their report order was resting on
+// the message string alone — which works only because a message happens to open
+// with the region's smallest id. Pin the order (and the id that identifies each
+// region), so the report stays a total order no matter what the message says.
+func TestCycleProblemsReportDisjointCyclesInIDOrder(t *testing.T) {
+	idx := &Index{Tasks: []Task{
+		{ID: "t-z1", Deps: []string{"t-z2"}},
+		{ID: "t-z2", Deps: []string{"t-z1"}},
+		{ID: "t-a1", Deps: []string{"t-a2"}},
+		{ID: "t-a2", Deps: []string{"t-a1"}},
+	}}
+	ps := CycleProblems(idx)
+	if len(ps) != 2 {
+		t.Fatalf("got %d cycle problems, want 2: %+v", len(ps), ps)
+	}
+	if got, want := []string{ps[0].ID, ps[1].ID}, []string{"t-a1", "t-z1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("report order = %v, want %v (each region named by its smallest id, ascending)", got, want)
 	}
 }

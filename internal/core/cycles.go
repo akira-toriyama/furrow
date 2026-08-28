@@ -87,7 +87,12 @@ func cycleProblemsGraph(order []string, adj map[string][]string, code, label, kn
 		}
 		out = append(out, Problem{SevError, code, scc[0], msg})
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Msg < out[j].Msg })
+	// The shared problem order (severity, id, message) rather than a private
+	// message-only one: every SCC is disjoint, so Problem.ID — the region's
+	// smallest id — already separates two reports, and reusing sortProblems
+	// makes that a stated total order instead of one resting on the accident
+	// that the message happens to start with the same id.
+	sortProblems(out)
 	return out
 }
 
