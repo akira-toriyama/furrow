@@ -211,20 +211,21 @@ func Canonicalize(idx *Index, laneOrder []string) {
 		idx.Tasks = []Task{}
 	}
 
-	rank := laneRank(laneOrder)
 	for i := range idx.Tasks {
 		canonicalizeTask(&idx.Tasks[i])
 	}
 
+	// SliceStable, not Slice, and it must stay that way: TaskOrder is total only
+	// while ids are unique, and a board CAN carry duplicates — lint errors
+	// `duplicate-id`, but nothing stops one arriving by hand-edit, by `cp` of a
+	// shard, or by a merge landing a renamed one. On such a board this tie picks
+	// which of the two the next Save keeps: measured, one ordinary `furrow add`
+	// rewrote the survivor and deleted the loser's shard at exit 0. Stability is
+	// then what keeps two machines from choosing different victims and fighting
+	// in git. The destruction itself is Save's to refuse, not this comparator's.
+	order := TaskOrder(laneOrder)
 	sort.SliceStable(idx.Tasks, func(a, b int) bool {
-		ta, tb := idx.Tasks[a], idx.Tasks[b]
-		if ra, rb := laneRankOf(rank, ta.Status), laneRankOf(rank, tb.Status); ra != rb {
-			return ra < rb
-		}
-		if ta.Priority != tb.Priority {
-			return ta.Priority < tb.Priority
-		}
-		return ta.ID < tb.ID
+		return order(&idx.Tasks[a], &idx.Tasks[b]) < 0
 	})
 }
 

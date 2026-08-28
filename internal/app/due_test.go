@@ -1,6 +1,8 @@
 package app
 
 import (
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -444,5 +446,80 @@ func TestQueryDueBareDayIsTheOperatorsDay(t *testing.T) {
 	}
 	if out, _ := a.List(QueryOpts{Query: "due:<=2026-08-04"}); len(out) != 1 {
 		t.Errorf("-q due:<=2026-08-04 = %d rows, want 1", len(out))
+	}
+}
+
+// The due band's rows tie constantly: ParseDue pins a bare-day due to that day's
+// 23:59:59, so every task promised for the same day carries a byte-identical
+// instant. Feeding sortByDue the REVERSE of the canonical order is what makes
+// this an assertion about the TIEBREAK rather than about sort.SliceStable — a
+// stable sort with no tiebreak hands a tied input straight back, so only the
+// canonical comparator can turn the reversed input into the canonical order.
+// Nothing pinned this before, which is how swapping the one sort call for an
+// unstable slices.SortFunc scrambled brief's overdue band from its first row
+// with all 11 packages still green.
+func TestSortByDueBreaksTiesByCanonicalOrderNotInputOrder(t *testing.T) {
+	lanes := config.Default().Lanes
+	sameDay := time.Date(2026, 8, 4, 14, 59, 59, 0, time.UTC) // 2026-08-04 23:59:59 JST
+	earlier := sameDay.Add(-24 * time.Hour)
+
+	mk := func(id, lane string, prio int, due time.Time) ListItem {
+		d := due
+		return ListItem{Task: core.Task{ID: id, Status: lane, Priority: prio, Due: &d}}
+	}
+	// Canonical order is lane rank, then priority, then id — so within sameDay:
+	// ready(t-b, t-c by priority) then waiting(t-a, t-z by id at equal priority).
+	want := []string{"t-old", "t-b", "t-c", "t-a", "t-z"}
+	items := []ListItem{
+		mk("t-z", "waiting", 20, sameDay),
+		mk("t-a", "waiting", 20, sameDay),
+		mk("t-c", "ready", 30, sameDay),
+		mk("t-b", "ready", 10, sameDay),
+		mk("t-old", "waiting", 99, earlier),
+	}
+	sortByDue(items, core.TaskOrder(lanes))
+
+	got := make([]string, len(items))
+	for i, it := range items {
+		got[i] = it.Task.ID
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("band = %v, want %v (earliest instant first, then lane -> priority -> id)", got, want)
+	}
+}
+
+// The end-to-end shape the defect was measured in: 15 tasks over 3 overdue days,
+// interleaved so no run of equal keys arrives already grouped — an input whose
+// ties are contiguous short-circuits pdqsort's sorted-run detection and hides
+// the scramble, which is why the first attempt to reproduce it saw nothing. One
+// lane and ascending add order make the expected within-day order the board
+// order a reader would see in `furrow ls`.
+func TestDueBandOrdersInterleavedDaysThenBoardOrder(t *testing.T) {
+	a := newDueApp(time.Date(2026, 8, 28, 3, 0, 0, 0, time.UTC)) // 2026-08-28 12:00 JST
+	days := []string{"2026-08-20", "2026-08-21", "2026-08-22"}
+	perDay := map[string][]string{}
+	for n := 1; n <= 15; n++ {
+		day := days[n%len(days)]
+		tk, err := a.Add(fmt.Sprintf("probe %d", n), AddOpts{Status: "waiting", Due: day})
+		if err != nil {
+			t.Fatalf("add probe %d: %v", n, err)
+		}
+		perDay[day] = append(perDay[day], tk.ID)
+	}
+	var want []string
+	for _, d := range days {
+		want = append(want, perDay[d]...)
+	}
+
+	sum, err := a.Due(QueryOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, len(sum.Overdue))
+	for i, it := range sum.Overdue {
+		got[i] = it.Task.ID
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("overdue band = %v,\nwant %v (oldest day first, board order within a day)", got, want)
 	}
 }

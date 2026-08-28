@@ -1,7 +1,9 @@
 package core
 
 import (
+	"cmp"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -16,6 +18,29 @@ func IsSortField(field string) bool {
 		}
 	}
 	return false
+}
+
+// TaskOrder returns the canonical task comparator for a board whose lanes are
+// laneOrder: lane rank, then priority, then id. It is a TOTAL order on any board
+// lint calls clean (`duplicate-id` is an error), and that is the point. Canonicalize sorts the index with
+// it, so any OTHER sort over those tasks can tiebreak with it and reproduce the
+// index order it would otherwise inherit through a stable sort's back door.
+// That back door is a real trap: App.Due sorts by the due instant, and ParseDue
+// normalizes a bare-day due to that day's 23:59:59, so same-day tasks carry a
+// byte-identical time.Time and nothing but sort.SliceStable's stability decided
+// their order. Swapping that one call for an unstable sort scrambled `furrow
+// brief`'s overdue band from its first row while all 11 packages stayed green.
+func TaskOrder(laneOrder []string) func(a, b *Task) int {
+	rank := laneRank(laneOrder)
+	return func(a, b *Task) int {
+		if c := cmp.Compare(laneRankOf(rank, a.Status), laneRankOf(rank, b.Status)); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Priority, b.Priority); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID, b.ID)
+	}
 }
 
 // SortTasks orders tasks in place by field. The default (reverse=false)

@@ -2,6 +2,8 @@ package core
 
 import (
 	"reflect"
+	"slices"
+	"sort"
 	"testing"
 	"time"
 )
@@ -86,5 +88,46 @@ func TestIsSortField(t *testing.T) {
 	}
 	if IsSortField("priority") || IsSortField("") {
 		t.Errorf("unlisted fields should be invalid")
+	}
+}
+
+// TaskOrder is the tiebreak App.Due leans on once its primary key (the due
+// instant) ties, so its TOTALITY is the contract: if two DISTINCT tasks could
+// compare 0, the caller would be back to depending on a sort's stability, which
+// is exactly the defect it exists to remove. Its second contract is that it
+// stays Canonicalize's order — the two are one definition, and a drift would
+// quietly reshuffle every band that tiebreaks with it.
+func TestTaskOrderIsTotalAndReproducesCanonicalize(t *testing.T) {
+	lanes := []string{"inbox", "ready", "done"}
+	tasks := []Task{
+		{ID: "t-c", Status: "ready", Priority: 20},
+		{ID: "t-a", Status: "ready", Priority: 20}, // ties t-c on lane AND priority
+		{ID: "t-b", Status: "inbox", Priority: 90},
+		{ID: "t-d", Status: "retired", Priority: 10}, // unknown lane sorts last
+		{ID: "t-e", Status: "ready", Priority: 10},
+	}
+	order := TaskOrder(lanes)
+	for i := range tasks {
+		for j := range tasks {
+			c := order(&tasks[i], &tasks[j])
+			switch {
+			case i == j && c != 0:
+				t.Errorf("%s vs itself = %d, want 0", tasks[i].ID, c)
+			case i != j && c == 0:
+				t.Errorf("distinct tasks %s and %s compare equal — the order is not total, so a caller tie-breaking with it still depends on sort stability",
+					tasks[i].ID, tasks[j].ID)
+			case i != j && c != -order(&tasks[j], &tasks[i]):
+				t.Errorf("%s vs %s = %d but the reverse = %d — not antisymmetric",
+					tasks[i].ID, tasks[j].ID, c, order(&tasks[j], &tasks[i]))
+			}
+		}
+	}
+
+	byOrder := slices.Clone(tasks)
+	sort.SliceStable(byOrder, func(a, b int) bool { return order(&byOrder[a], &byOrder[b]) < 0 })
+	idx := &Index{Tasks: slices.Clone(tasks)}
+	Canonicalize(idx, lanes)
+	if got, want := idsOf(byOrder), idsOf(idx.Tasks); !reflect.DeepEqual(got, want) {
+		t.Errorf("TaskOrder = %v but Canonicalize = %v — the tiebreak no longer reproduces the index order it stands in for", got, want)
 	}
 }
