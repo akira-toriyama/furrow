@@ -119,3 +119,33 @@ func TestListAssets(t *testing.T) {
 		}
 	}
 }
+
+// memstore mirrors fsstore's duplicate-id refusal so app/cli tests exercise it
+// without a disk. Its own collapse is the same last-wins loss — Save keys the
+// task map by id — and the refusal must leave the previously stored board
+// untouched.
+func TestSaveRefusesDuplicateIDs(t *testing.T) {
+	s := New("t-", "e-", 5)
+	seed := &core.Index{Tasks: []core.Task{{ID: "t-aaaaa", Title: "keep", Status: "inbox", Body: core.BodyPath("t-aaaaa")}}}
+	if err := s.Save(seed); err != nil {
+		t.Fatal(err)
+	}
+
+	dup := &core.Index{Tasks: []core.Task{
+		{ID: "t-bbbbb", Title: "one", Status: "inbox", Body: core.BodyPath("t-bbbbb")},
+		{ID: "t-bbbbb", Title: "two", Status: "inbox", Body: core.BodyPath("t-bbbbb")},
+	}}
+	err := s.Save(dup)
+	var fe *core.Error
+	if !errors.As(err, &fe) || fe.Kind != core.KindValidation || fe.Subject != "t-bbbbb" {
+		t.Fatalf("Save = %v, want a validation refusal about t-bbbbb", err)
+	}
+
+	idx, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx.Tasks) != 1 || idx.Tasks[0].ID != "t-aaaaa" {
+		t.Errorf("a refused Save must leave the stored board untouched, got %+v", idx.Tasks)
+	}
+}

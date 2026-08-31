@@ -199,6 +199,9 @@ func (s *Store) Save(idx *core.Index) error {
 	if err := s.gateWrite(); err != nil {
 		return err
 	}
+	if err := core.CheckUniqueIDs(idx); err != nil {
+		return err
+	}
 	next := make(map[string]core.Task, len(idx.Tasks))
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]

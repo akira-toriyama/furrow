@@ -282,6 +282,9 @@ func (s *Store) Save(idx *core.Index) error {
 	if err := s.gateWrite(); err != nil {
 		return err
 	}
+	if err := core.CheckUniqueIDs(idx); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.tasksDir(), 0o755); err != nil {
 		return core.Internalf("index", "create tasks/: %v", err)
 	}

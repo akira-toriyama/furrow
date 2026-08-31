@@ -592,7 +592,14 @@ There is **no shared counter** — nothing on disk to coordinate — so two
 operators running `furrow add` in separate worktrees/PRs won't mint the same id.
 The app draws ids until one is not already in the index (a retry loop; the first
 draw almost always wins at 32^5 ≈ 33.5M), and `core.Validate`/`furrow lint`
-flags any duplicate as a cross-branch backstop. Ids are still **frozen** (never
+flags any duplicate as a cross-branch backstop. The backstop has a write-side
+half, `core.CheckUniqueIDs`: both stores refuse to `Save` an index carrying a
+duplicate (validation, exit 2), because shards are keyed by id — a save would
+keep one file per id and the stale-shard sweep would silently delete the
+other's, which is exactly how a hand-copied shard once cost a task at exit 0.
+Reads stay open on such a board so `lint`/`show` can diagnose it, and a
+misnamed shard whose id is unique keeps getting repaired (rewritten under its
+canonical filename), not refused. Ids are still **frozen** (never
 reused or renumbered); legacy zero-padded numeric ids (`t-0042`) remain valid
 and coexist with new random ones.
 
