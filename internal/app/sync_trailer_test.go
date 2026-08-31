@@ -36,6 +36,18 @@ func TestSyncTrailerShape(t *testing.T) {
 	}
 }
 
+func TestNormalizeComm(t *testing.T) {
+	for in, want := range map[string]string{
+		"zsh":              "zsh",
+		"Code Helper (Plu": "Code_Helper_(Plu",
+		"  a \t b  ":       "a_b",
+	} {
+		if got := normalizeComm(in); got != want {
+			t.Errorf("normalizeComm(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestParentChainWalks(t *testing.T) {
 	chain := parentChain(4)
 	if len(chain) > 4 {
@@ -49,8 +61,8 @@ func TestParentChainWalks(t *testing.T) {
 		}
 	}
 	for _, c := range chain {
-		if c == "" || strings.ContainsAny(c, "\n<") {
-			t.Errorf("comm %q would corrupt the via= field", c)
+		if c == "" || strings.ContainsAny(c, "\n< \t") {
+			t.Errorf("comm %q would corrupt the via= field (spaces must be normalized to _)", c)
 		}
 	}
 }
