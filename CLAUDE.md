@@ -567,7 +567,10 @@ ids (`t-k3m9p`) are **frozen**: never reused, never renumbered. They are
 **random** (prefix + a random Crockford-base32 suffix, `[ids].width` chars),
 generated locally with no shared counter, so concurrent `furrow add`
 from separate worktrees/PRs won't collide (the app retries on the rare in-store
-clash; `furrow lint` flags any duplicate as a backstop). Legacy numeric ids
+clash; `furrow lint` flags any duplicate as a backstop, and both stores REFUSE
+to Save an index carrying one — shards are keyed by id, so writing would keep
+one file and silently delete the other's; reads stay open for diagnosis, and a
+misnamed shard with a unique id is still repaired, not refused). Legacy numeric ids
 (`t-0042`) stay valid and coexist. Reorder by editing the sparse integer
 `priority` (10-step) — one field, not a renumber. `reorder <id>
 --before/--after <ref>` computes that field for you (same lane only — a

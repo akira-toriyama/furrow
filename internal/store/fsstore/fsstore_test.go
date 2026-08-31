@@ -2,6 +2,7 @@ package fsstore
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -444,5 +445,86 @@ func TestRepoShardRoundTrip(t *testing.T) {
 	}
 	if len(recs) != 2 || recs[0].Repo != "akira-toriyama/chord" || recs[1].Repo != "akira-toriyama/furrow" {
 		t.Errorf("ListRepos = %+v, want [chord, furrow] sorted", recs)
+	}
+}
+
+// Two shard FILES carrying the same inner id (a hand-copied shard, a merge
+// landing a renamed one) used to lose a task on the next ordinary write: Save
+// keyed both to one path, the last writer won, and the stale-shard sweep
+// deleted the other file — all at exit 0. Save must refuse instead and leave
+// every byte on disk exactly as it found it.
+func TestSaveRefusesDuplicateIDs(t *testing.T) {
+	s := newStore(t)
+	if err := s.Save(&core.Index{Tasks: []core.Task{mkTask("t-orig1", "original", "inbox", 100)}}); err != nil {
+		t.Fatal(err)
+	}
+	orig, err := os.ReadFile(s.taskPath("t-orig1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone := bytes.Replace(orig, []byte("original"), []byte("CLONE"), 1)
+	stray := filepath.Join(s.tasksDir(), "t-zzzzz.json")
+	if err := os.WriteFile(stray, clone, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := s.Load()
+	if err != nil {
+		t.Fatalf("a duplicate-id board must stay READABLE (lint/show diagnose it): %v", err)
+	}
+	if len(idx.Tasks) != 2 {
+		t.Fatalf("loaded %d tasks, want both copies of t-orig1", len(idx.Tasks))
+	}
+
+	idx.Tasks = append(idx.Tasks, mkTask("t-newer", "another", "inbox", 110))
+	saveErr := s.Save(idx)
+	var fe *core.Error
+	if !errors.As(saveErr, &fe) || fe.Kind != core.KindValidation || fe.Subject != "t-orig1" {
+		t.Fatalf("Save = %v, want a validation refusal about t-orig1", saveErr)
+	}
+
+	for path, want := range map[string][]byte{s.taskPath("t-orig1"): orig, stray: clone} {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("%s must survive the refused write: %v", path, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s changed across a refused write", path)
+		}
+	}
+	if _, err := os.Stat(s.taskPath("t-newer")); !os.IsNotExist(err) {
+		t.Errorf("the refused write must not have created t-newer's shard")
+	}
+}
+
+// The refusal's boundary: a misnamed shard whose id is UNIQUE keeps getting
+// repaired — Save writes the task under its canonical tasks/<id>.json and the
+// sweep drops the stray filename. shard-misnamed alone is restoration, not
+// loss, and must not start failing.
+func TestSaveRepairsMisnamedShardWithUniqueID(t *testing.T) {
+	s := newStore(t)
+	if err := s.Save(&core.Index{Tasks: []core.Task{mkTask("t-alone", "alone", "inbox", 100)}}); err != nil {
+		t.Fatal(err)
+	}
+	stray := filepath.Join(s.tasksDir(), "t-stray.json")
+	if err := os.Rename(s.taskPath("t-alone"), stray); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx.Tasks) != 1 {
+		t.Fatalf("loaded %d tasks, want 1", len(idx.Tasks))
+	}
+	if err := s.Save(idx); err != nil {
+		t.Fatalf("a unique-id board must stay writable however its files are named: %v", err)
+	}
+	if _, err := os.Stat(s.taskPath("t-alone")); err != nil {
+		t.Errorf("canonical shard not written: %v", err)
+	}
+	if _, err := os.Stat(stray); !os.IsNotExist(err) {
+		t.Errorf("stray filename should be swept once the id lives under its canonical path")
 	}
 }

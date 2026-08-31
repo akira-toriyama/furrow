@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 )
 
 // Problem is one lint finding, shared by `furrow lint` and `furrow doctor`.
@@ -37,6 +38,40 @@ const (
 // hyphens). Kept permissive on purpose — it guards against obvious typos (bare
 // names, URLs, spaces), not against every invalid GitHub name.
 var repoShapeRe = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+$`)
+
+// CheckUniqueIDs is the write-side twin of lint's duplicate-id error. Save keys
+// shards by id, so an index carrying one id twice would collapse the two into
+// one file — and the stale-shard sweep then DELETES the loser's file: measured
+// on such a board (a hand-copied shard, same inner id under another filename),
+// a single ordinary `furrow add` destroyed one task and removed its shard at
+// exit 0. Both stores call this before touching anything, so the destruction
+// becomes a refusal. Reads stay open on purpose — show/lint must keep working
+// to diagnose the board — and a misnamed shard whose id is UNIQUE is
+// deliberately not caught here: Save rewriting it under its canonical filename
+// is repair, not loss.
+func CheckUniqueIDs(idx *Index) error {
+	count := make(map[string]int, len(idx.Tasks))
+	for i := range idx.Tasks {
+		count[idx.Tasks[i].ID]++
+	}
+	var dups []string
+	for id, n := range count {
+		if n > 1 {
+			dups = append(dups, id)
+		}
+	}
+	if len(dups) == 0 {
+		return nil
+	}
+	sort.Strings(dups)
+	plural := ""
+	if len(dups) > 1 {
+		plural = "s"
+	}
+	return Validationf(dups[0],
+		"duplicate task id%s %s — a save keeps one shard per id and DELETES the rest, so nothing was written; repair the extra shard by hand (give it its own id, or remove the file) — `furrow lint` flags every duplicate",
+		plural, strings.Join(dups, ", "))
+}
 
 // Validate runs the in-memory consistency rules that need only the Index plus
 // the configured lane order and id pattern. The filesystem-level check (the
