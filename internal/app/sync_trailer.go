@@ -62,7 +62,10 @@ func parentChain(max int) []string {
 	return chain
 }
 
-// procInfo resolves one pid to its short command name and parent pid.
+// procInfo resolves one pid to its short command name and parent pid. The name
+// is space-normalized (runs of whitespace become one "_"): macOS comms carry
+// spaces ("Code Helper (Plu"), and a space inside via= would break the
+// trailer's contract that every field before dir splits on spaces.
 func procInfo(pid int) (name string, ppid int, ok bool) {
 	if runtime.GOOS == "linux" {
 		if name, ppid, ok = procInfoStat(pid); ok {
@@ -84,7 +87,13 @@ func procInfo(pid int) (name string, ppid int, ok bool) {
 	if err != nil {
 		return "", 0, false
 	}
-	return strings.Join(fields[1:], " "), p, true
+	return normalizeComm(strings.Join(fields[1:], " ")), p, true
+}
+
+// normalizeComm collapses runs of whitespace in a command name to one "_" so a
+// comm can never split the space-separated trailer fields.
+func normalizeComm(s string) string {
+	return strings.Join(strings.Fields(s), "_")
 }
 
 // procInfoStat parses /proc/<pid>/stat: `pid (comm) state ppid …`. comm may
@@ -108,5 +117,5 @@ func procInfoStat(pid int) (name string, ppid int, ok bool) {
 	if err != nil {
 		return "", 0, false
 	}
-	return s[j+1 : i], p, true
+	return normalizeComm(s[j+1 : i]), p, true
 }
