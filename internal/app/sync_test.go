@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -752,4 +753,59 @@ func TestSyncJournalDrainsOnCleanTree(t *testing.T) {
 	if p.Committed || len(p.CommittedBodies) != 0 || len(p.PendingBodies) != 0 {
 		t.Errorf("clean tree must sync clean: %+v", p)
 	}
+}
+
+// Every sync commit names its own execution — host, pid, launcher chain, board
+// checkout — in a Furrow-sync trailer. The forensics this enables were
+// impossible when three identical "sync via furrow" commits appeared on the
+// shared board: author and committer are the same configured identity on every
+// machine, so git had no answer to "which machine, which launcher?" and a wrong
+// guess was reported as fact (t-zrjf). The subject stays untouched
+// (TestSyncDefaultMessageGrammar pins it) — attribution rides below, invisible
+// to --oneline — and -m does not suppress it: the writer nobody remembers
+// launching is exactly the one that must stamp itself.
+func TestSyncCommitCarriesAttributionTrailer(t *testing.T) {
+	git, cloneA, _ := setupClones(t)
+	a := openBoard(t, cloneA)
+	if _, err := a.Add("x", AddOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	trailerOf := func() string {
+		body := runGitT(t, git, cloneA, "log", "-1", "--format=%B")
+		for _, l := range strings.Split(body, "\n") {
+			if strings.HasPrefix(l, "Furrow-sync: ") {
+				return l
+			}
+		}
+		t.Fatalf("no Furrow-sync trailer in:\n%s", body)
+		return ""
+	}
+
+	tr := trailerOf()
+	for _, want := range []string{"host=", "pid=" + strconv.Itoa(os.Getpid()), "dir="} {
+		if !strings.Contains(tr, want) {
+			t.Errorf("trailer %q missing %s", tr, want)
+		}
+	}
+	// dir names the board checkout this sync ran in (git may resolve symlinks,
+	// so match on the unique leaf, not the whole path).
+	if !strings.Contains(tr, "dir=") || !strings.Contains(tr, filepath.Base(cloneA)) {
+		t.Errorf("trailer %q should name the board checkout %q", tr, filepath.Base(cloneA))
+	}
+
+	// -m overrides the subject, never the attribution.
+	if _, err := a.Add("y", AddOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(context.Background(), SyncOpts{Message: ":card_file_box:(board) custom subject"}); err != nil {
+		t.Fatal(err)
+	}
+	subject := strings.TrimSpace(runGitT(t, git, cloneA, "log", "-1", "--format=%s"))
+	if subject != ":card_file_box:(board) custom subject" {
+		t.Errorf("subject = %q, want the -m override", subject)
+	}
+	trailerOf()
 }

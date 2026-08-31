@@ -591,7 +591,13 @@ non-interactive command — a thin git wrapper, not a sync daemon or server
    un-published) and is disclosed in `foreign_files` plus a stderr note.
    `--all-bodies` restores the old sweep for a checkout
    you know is yours alone. Default message
-   `:card_file_box:(board) sync via furrow`; override with `-m`.
+   `:card_file_box:(board) sync via furrow`; override with `-m`. Either way the
+   commit carries a `Furrow-sync: host=… pid=… via=… dir=…` trailer naming the
+   machine, the process, its launcher chain (an agent-run sync and a human
+   terminal's are distinguishable), and the board checkout — author/committer
+   are the same configured identity on every machine, so without it a shared
+   board's history cannot answer "which execution wrote this?" (invisible to
+   `--oneline`; each field is best-effort and omitted when unreadable).
 2. `git fetch`, then `git rebase --autostash @{u}` — rebasing onto the upstream
    **tracking ref**, never `FETCH_HEAD`, so a co-writer's concurrent fetch in a
    shared checkout can't make it `fatal: Cannot rebase onto multiple branches`
