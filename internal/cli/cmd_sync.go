@@ -258,7 +258,7 @@ func newSyncCmd() *cobra.Command {
 			return syncErr
 		},
 	}
-	c.Flags().StringVarP(&message, "message", "m", "", "auto-commit message (default \""+app.DefaultSyncMessage+"\")")
+	c.Flags().StringVarP(&message, "message", "m", "", "auto-commit message (default \""+app.DefaultSyncMessage+"\"; a Furrow-sync attribution trailer is always appended)")
 	c.Flags().StringSliceVarP(&bodies, "body", "b", nil, "also commit these task ids' hand-edited bodies/<id>.md (repeatable)")
 	c.Flags().BoolVar(&allBodies, "all-bodies", false, "commit every dirty body (the pre-scoping sweep; only on a checkout that is yours alone)")
 	return c

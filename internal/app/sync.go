@@ -718,6 +718,10 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 			if message == "" {
 				message = DefaultSyncMessage
 			}
+			// The attribution trailer rides EVERY sync commit, -m included:
+			// self-identification is only worth anything when the writer that
+			// nobody remembers launching also stamps it (see syncTrailer).
+			message += "\n\n" + syncTrailer(r.Toplevel())
 			if err := r.Commit(ctx, message, commitPaths...); err != nil {
 				return p, err
 			}
