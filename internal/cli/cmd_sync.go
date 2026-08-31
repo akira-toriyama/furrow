@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/app"
+	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
 )
 
@@ -255,6 +257,15 @@ func newSyncCmd() *cobra.Command {
 					"  recover with `git stash pop` (or `git stash drop` if the changes are already in the tree)\n",
 					len(prog.PendingStash), stashNote(prog.PendingStash))
 			}
+			// A failed push's stderr, verbatim and BEFORE the envelope: on a board
+			// whose only gate is a pre-push hook, these lines are the block reason
+			// (which lint code fired, the --no-verify escape), and the one-line
+			// message cannot carry them — errorLine's error:/fatal: scan matches
+			// none of them (t-7kvj). stderr in both modes, so --json stdout stays
+			// pure while the operator still sees WHY before the error lands.
+			if s := pushStderr(syncErr); s != "" {
+				fmt.Fprintf(errOut, "git push stderr:\n%s\n", s)
+			}
 			return syncErr
 		},
 	}
@@ -262,6 +273,22 @@ func newSyncCmd() *cobra.Command {
 	c.Flags().StringSliceVarP(&bodies, "body", "b", nil, "also commit these task ids' hand-edited bodies/<id>.md (repeatable)")
 	c.Flags().BoolVar(&allBodies, "all-bodies", false, "commit every dirty body (the pre-scoping sweep; only on a checkout that is yours alone)")
 	return c
+}
+
+// pushStderr extracts the verbatim git-push stderr a failed sync carried in
+// its error details (gitrepo.Push parks it under "stderr"); "" when the
+// failure was not a push rejection or carried none.
+func pushStderr(err error) string {
+	var fe *core.Error
+	if !errors.As(err, &fe) || fe.Kind != core.KindGitFailed {
+		return ""
+	}
+	m, ok := fe.Details.(map[string]any)
+	if !ok {
+		return ""
+	}
+	s, _ := m["stderr"].(string)
+	return s
 }
 
 // incomingKinds is the render order of the incoming line's groups — the

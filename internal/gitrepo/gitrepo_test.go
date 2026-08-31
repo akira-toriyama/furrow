@@ -386,3 +386,57 @@ func TestRunGitForcesCLocale(t *testing.T) {
 		t.Errorf("LANGUAGE must be cleared (it overrides LC_ALL for gettext), got: %q", strings.TrimSpace(out))
 	}
 }
+
+// A push blocked by a pre-push hook: the hook's block reason (multi-line, none
+// of it matching errorLine's error:/fatal:/! scan) must ride the error's
+// Details verbatim, while the message stays git's one-liner. Before this, the
+// reason died in runGit's buffer and the operator saw only pushed=false
+// (t-7kvj, measured on the projects board whose only gate is this hook).
+func TestPushCarriesHookStderrInDetails(t *testing.T) {
+	git := gitOrSkip(t)
+	origin := t.TempDir()
+	runGitT(t, git, origin, "init", "-q", "--bare", "-b", "main")
+
+	dir := initRepo(t, git)
+	runGitT(t, git, dir, "remote", "add", "origin", origin)
+	runGitT(t, git, dir, "push", "-q", "-u", "origin", "main")
+
+	hook := filepath.Join(dir, ".git", "hooks", "pre-push")
+	script := "#!/bin/sh\n" +
+		"echo 'error  epic-required: t-xxxxx is filed under no box' >&2\n" +
+		"echo 'pre-push: projects lint found errors' >&2\n" +
+		"echo 'escape hatch: git push --no-verify' >&2\n" +
+		"exit 1\n"
+	if err := os.WriteFile(hook, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Something to push, or git skips the hook entirely.
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitT(t, git, dir, "add", "-A")
+	runGitT(t, git, dir, "commit", "-q", "-m", "blocked")
+
+	r, err := Open(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushErr := r.Push(context.Background())
+	var fe *core.Error
+	if !errors.As(pushErr, &fe) || fe.Kind != core.KindGitFailed {
+		t.Fatalf("push = %v, want kind git-failed", pushErr)
+	}
+	if strings.Contains(fe.Msg, "\n") {
+		t.Errorf("message must stay one line, got %q", fe.Msg)
+	}
+	m, ok := fe.Details.(map[string]any)
+	if !ok {
+		t.Fatalf("details = %#v, want a map carrying stderr", fe.Details)
+	}
+	stderr, _ := m["stderr"].(string)
+	for _, want := range []string{"epic-required", "projects lint found errors", "--no-verify"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("details.stderr %q should carry the hook line %q", stderr, want)
+		}
+	}
+}

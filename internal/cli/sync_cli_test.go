@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -172,5 +174,80 @@ func TestSyncSurfacesRevisitLine(t *testing.T) {
 	}
 	if got.Revisit == nil || len(got.Revisit.DepDone) != 1 || got.Revisit.DepDone[0] != user {
 		t.Errorf("revisit.dep_done = %+v, want [%s]", got.Revisit, user)
+	}
+}
+
+// t-7kvj end to end: a board whose only gate is a client-side pre-push hook.
+// When the hook blocks, sync used to say pushed=false and the envelope said
+// "failed to push some refs" — the hook's own lines (which lint code fired,
+// the --no-verify escape) died inside the git wrapper's buffer. They must now
+// reach the operator verbatim on stderr, and machine callers via the
+// envelope's details.stderr.
+func TestSyncRelaysPushHookStderr(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not on PATH")
+	}
+	t.Setenv(app.EnvBoard, "")
+
+	var so, se bytes.Buffer
+	out, errOut = &so, &se
+	t.Cleanup(func() { out, errOut = os.Stdout, os.Stderr })
+
+	origin := t.TempDir()
+	gitAt := func(dir string, args ...string) {
+		cmd := exec.Command(git, args...)
+		cmd.Dir = dir
+		if b, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, b)
+		}
+	}
+	gitAt(origin, "init", "-q", "--bare", "-b", "main")
+	boardRoot := filepath.Join(t.TempDir(), "central")
+	gitAt(filepath.Dir(boardRoot), "clone", "-q", origin, boardRoot)
+	for _, kv := range [][2]string{{"user.name", "t"}, {"user.email", "t@e"}} {
+		gitAt(boardRoot, "config", kv[0], kv[1])
+	}
+	if _, err := app.Init(boardRoot); err != nil {
+		t.Fatal(err)
+	}
+	gitAt(boardRoot, "add", "-A")
+	gitAt(boardRoot, "commit", "-q", "-m", "board")
+	gitAt(boardRoot, "push", "-q", "-u", "origin", "main")
+	t.Setenv(app.EnvDir, filepath.Join(boardRoot, app.DirName))
+
+	hook := filepath.Join(boardRoot, ".git", "hooks", "pre-push")
+	script := "#!/bin/sh\n" +
+		"echo 'error  epic-required: the new task is filed under no box' >&2\n" +
+		"echo 'escape hatch: git push --no-verify' >&2\n" +
+		"exit 1\n"
+	if err := os.WriteFile(hook, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	addTask(t, "blocked by the gate") // something to commit and push
+	so.Reset()
+	se.Reset()
+
+	fe, _ := runErr(t, "sync")
+	if fe == nil || fe.Kind != core.KindGitFailed {
+		t.Fatalf("sync = %+v, want kind git-failed", fe)
+	}
+	m, ok := fe.Details.(map[string]any)
+	if !ok {
+		t.Fatalf("details = %#v, want a map carrying stderr", fe.Details)
+	}
+	if s, _ := m["stderr"].(string); !strings.Contains(s, "epic-required") {
+		t.Errorf("details.stderr %q should carry the hook's block reason", s)
+	}
+
+	relay := se.String()
+	if !strings.Contains(relay, "git push stderr:") {
+		t.Errorf("stderr should introduce the relay, got:\n%s", relay)
+	}
+	for _, want := range []string{"epic-required", "--no-verify"} {
+		if !strings.Contains(relay, want) {
+			t.Errorf("stderr relay should carry %q, got:\n%s", want, relay)
+		}
 	}
 }
