@@ -25,9 +25,11 @@ import "time"
 // a second, hand-maintained copy of a number furrow can always compute.
 type Epic struct {
 	// ID is frozen and never reused, like a task's. It carries its own prefix
-	// ("e-") so an id names its entity kind on sight: `furrow show <id>` can tell
-	// a task from an epic without loading either, and the shared bodies/ dir below
-	// is unambiguous.
+	// ([ids].epic_prefix, default "e-") so task and epic ids stay disjoint, which
+	// is what makes the shared bodies/ dir below unambiguous. The prefix is a
+	// HINT, never a route: it is configurable and may even EXTEND the task prefix,
+	// so the id-keyed commands decide by store membership (see Body) and the shape
+	// only picks whose error an unresolvable ref gets.
 	ID string `json:"id"`
 	// Title is the one-line name of the box.
 	Title string `json:"title"`

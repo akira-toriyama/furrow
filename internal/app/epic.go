@@ -9,7 +9,8 @@ import (
 )
 
 // The epic entity's app layer: the single mutation funnel for boxes, shaped like
-// repo.go/review.go. Every write goes through mutateEpic so the `updated` stamp
+// repo.go/review.go. Every edit to an existing box goes through
+// mutateEpicStamping (via mutateEpic / mutateEpicProse) so the `updated` stamp
 // and the store call live in one place.
 
 // EpicItem is one `epic ls` row: the box plus its derived member roll-up.
@@ -144,8 +145,8 @@ type EpicQueryOpts struct {
 	Limit int
 }
 
-// EpicList returns the boxes matching o, active first, then open by id, then
-// closed by id — the order attention should go in.
+// EpicList returns the boxes matching o, sorted by epicRank then id — the order
+// attention should go in.
 func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 	epics, err := a.Store.LoadEpics()
 	if err != nil {

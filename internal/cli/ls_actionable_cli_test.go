@@ -9,7 +9,7 @@ import (
 )
 
 // lsItemView mirrors the flat `ls --json` row: the task fields we assert on plus
-// the derived facts the change adds.
+// the derived facts.
 type lsItemView struct {
 	ID         string   `json:"id"`
 	Status     string   `json:"status"`
@@ -33,7 +33,7 @@ func lsJSON(t *testing.T, args ...string) []lsItemView {
 }
 
 // TestCLILsDerivedFactsJSON: ls --json carries actionable / blocked_by / container
-// / stuck on every row (the deliverable — the derived facts were tree-only before).
+// / stuck on every row (the derived facts were tree-only before).
 func TestCLILsDerivedFactsJSON(t *testing.T) {
 	initStore(t)
 	gate := addTask(t, "gate", "-s", "ready")
@@ -112,13 +112,11 @@ func TestCLINextLanesOverride(t *testing.T) {
 	ready := addTask(t, "ready one", "-s", "ready")
 	back := addTask(t, "backlog one", "-s", "backlog")
 
-	// Default: the backlog task is not surfaced.
 	out, _ := run(t, "next", "--json")
 	if strings.Contains(out, back) {
 		t.Errorf("default next must not surface a backlog task:\n%s", out)
 	}
 
-	// --lanes backlog,ready surfaces both; the reason names the matched lane.
 	out, code := run(t, "next", "--lanes", "backlog,ready", "--json")
 	if code != 0 {
 		t.Fatalf("next --lanes exit = %d:\n%s", code, out)
@@ -140,7 +138,6 @@ func TestCLINextLanesOverride(t *testing.T) {
 		t.Errorf("--lanes should surface both with reason.in_next_lane naming the lane: %v", seen)
 	}
 
-	// An unknown --lanes token is exit 2 with the configured lanes in candidates.
 	fe, _ := runErr(t, "next", "--lanes", "nope")
 	if fe == nil || fe.Code != core.CodeValidation || len(fe.Candidates) == 0 {
 		t.Errorf("unknown --lanes token should be exit 2 + candidates, got %+v", fe)

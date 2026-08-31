@@ -44,7 +44,6 @@ func TestStatsJSONShape(t *testing.T) {
 	if len(s.ByLane) == 0 || s.ByLane[0].Lane != "inbox" || s.ByLane[0].Count != 1 {
 		t.Errorf("by_lane[0] should be inbox=1, got %+v", s.ByLane)
 	}
-	// by_label: cli(2) most-used first.
 	if len(s.ByLabel) != 1 || s.ByLabel[0].Label != "cli" || s.ByLabel[0].Count != 2 {
 		t.Errorf("by_label should be cli=2, got %+v", s.ByLabel)
 	}

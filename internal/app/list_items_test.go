@@ -138,8 +138,6 @@ func TestNextLanesOverride(t *testing.T) {
 		t.Errorf("default next must exclude backlog tasks: %v", def)
 	}
 
-	// --lanes backlog,ready: the free backlog task surfaces; the blocked one still
-	// does not (the deps-done half of the predicate is unchanged).
 	got, err := a.Next(QueryOpts{Lanes: []string{"backlog", "ready"}})
 	if err != nil {
 		t.Fatal(err)
@@ -152,12 +150,10 @@ func TestNextLanesOverride(t *testing.T) {
 		t.Error("a backlog task still blocked by an undone dep must not surface, even with --lanes")
 	}
 
-	// The override is in-memory only: config's next-lanes are untouched.
 	if !a.Cfg.IsNextLane("ready") || a.Cfg.IsNextLane("backlog") {
 		t.Error("--lanes must not mutate the configured next-lanes")
 	}
 
-	// An unknown --lanes token is a validation error (exit 2 + candidates).
 	if _, err := a.Next(QueryOpts{Lanes: []string{"nope"}}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("unknown --lanes token should be a validation error, got %v", err)
 	}

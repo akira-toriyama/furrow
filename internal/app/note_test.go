@@ -27,7 +27,6 @@ func TestAddNoteAppendsParagraphAndBumpsUpdated(t *testing.T) {
 	}
 	created := tk.Updated
 
-	// Time passes before the note is written.
 	clk.t = clk.t.Add(48 * time.Hour)
 
 	after, err := a.AddNote(tk.ID, "検証完了。次: アダプタ選定。")
@@ -46,8 +45,6 @@ func TestAddNoteAppendsParagraphAndBumpsUpdated(t *testing.T) {
 		t.Errorf("body = %q, want %q", body, want)
 	}
 
-	// A second note appends another paragraph separated by exactly one blank
-	// line — and is NOT deduped even if it repeats an earlier line.
 	if _, err := a.AddNote(tk.ID, "検証完了。次: アダプタ選定。"); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +87,6 @@ func TestAddNoteReconcilesStaleDep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The dep closes AFTER the epic's last update -> reconcile-gap fires.
 	clk.t = clk.t.Add(24 * time.Hour)
 	if _, err := a.Done(slice.ID); err != nil {
 		t.Fatal(err)

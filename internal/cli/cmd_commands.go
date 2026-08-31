@@ -55,8 +55,6 @@ func writeCommandRows(w io.Writer, root, c *cobra.Command) {
 	fmt.Fprintf(w, "| %s | %s | %s |\n", commandCell(root, c), mdCell(c.Short), flagsCell(c))
 }
 
-// commandCell renders `config init` / `add <title>...` — the full command path
-// with the Use line's argument tail, plus any aliases.
 func commandCell(root, c *cobra.Command) string {
 	path := strings.TrimPrefix(c.CommandPath(), root.Name()+" ")
 	tail := strings.TrimPrefix(c.Use, c.Name())

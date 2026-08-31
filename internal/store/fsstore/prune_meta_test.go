@@ -19,7 +19,6 @@ func TestPruneMetaExtras(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Clean meta: nothing to do, nothing reported.
 	if keys, err := s.PruneMetaExtras(); err != nil || keys != nil {
 		t.Fatalf("clean prune = %v, %v; want nil, nil", keys, err)
 	}
@@ -44,7 +43,6 @@ func TestPruneMetaExtras(t *testing.T) {
 		t.Fatalf("after prune: version %d extras %v", m.SchemaVersion, m.ExtraKeys())
 	}
 
-	// An outdated board is read-only for this too.
 	old := t.TempDir()
 	s2 := New(old, []string{"inbox", "done"}, "t-", "e-", 5)
 	if err := os.WriteFile(filepath.Join(old, "meta.json"), []byte("{\n  \"schema_version\": "+jsonInt(core.SchemaVersion-1)+",\n  \"flux\": true\n}\n"), 0o644); err != nil {

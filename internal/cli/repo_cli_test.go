@@ -16,7 +16,6 @@ func TestCLIAddAndFilterByRepo(t *testing.T) {
 	fid := addTask(t, "furrow work", "-s", "ready", "-r", "akira-toriyama/furrow")
 	cid := addTask(t, "chord work", "-s", "ready", "-r", "akira-toriyama/chord")
 
-	// -r with a full owner/repo filters the repos field.
 	out, code := run(t, "--json", "ls", "-r", "akira-toriyama/furrow")
 	if code != 0 || !strings.Contains(out, fid) || strings.Contains(out, cid) {
 		t.Errorf("ls -r full form should return only the furrow task (code %d):\n%s", code, out)
@@ -26,7 +25,6 @@ func TestCLIAddAndFilterByRepo(t *testing.T) {
 	if code != 0 || !strings.Contains(out, cid) || strings.Contains(out, fid) {
 		t.Errorf("ls -r short name should resolve to the chord repo (code %d):\n%s", code, out)
 	}
-	// next honors -r the same way.
 	out, code = run(t, "--json", "next", "-r", "furrow")
 	if code != 0 || !strings.Contains(out, fid) || strings.Contains(out, cid) {
 		t.Errorf("next -r short name (code %d):\n%s", code, out)
@@ -36,7 +34,6 @@ func TestCLIAddAndFilterByRepo(t *testing.T) {
 	if !strings.Contains(out, "(akira-toriyama/furrow)") {
 		t.Errorf("human ls should show the repos:\n%s", out)
 	}
-	// human show gets a repos: line.
 	out, _ = run(t, "show", fid)
 	if !strings.Contains(out, "repos:    akira-toriyama/furrow") {
 		t.Errorf("human show should display a repos line:\n%s", out)
@@ -110,7 +107,6 @@ func TestCLIDidYouMeanGuard(t *testing.T) {
 			t.Errorf("message %q should contain %q", fe.Msg, want)
 		}
 	}
-	// next and revisit guard the same way.
 	if fe, _ := runErr(t, "next", "-l", "furrow"); fe == nil || fe.Code != core.CodeValidation {
 		t.Errorf("next -l should hit the guard, got %+v", fe)
 	}
@@ -140,7 +136,6 @@ func TestCLIDraftsFlag(t *testing.T) {
 	if code != 0 || !strings.Contains(out, did) || strings.Contains(out, rid) {
 		t.Errorf("ls --drafts should list only the draft (code %d):\n%s", code, out)
 	}
-	// --draft conflicts with an explicit -r.
 	if _, code := run(t, "add", "x", "--draft", "-r", "o/r"); code != int(core.CodeValidation) {
 		t.Errorf("--draft with -r should exit 2, got %d", code)
 	}
@@ -171,14 +166,12 @@ func TestCLIHiddenDraftsHintOnStderr(t *testing.T) {
 		t.Errorf("the hint must never reach stdout:\n%s", sout)
 	}
 
-	// next hints too.
 	se.Reset()
 	run(t, "--json", "next", "-r", "furrow")
 	if !strings.Contains(se.String(), "1 draft(s) hidden") {
 		t.Errorf("next -r should hint on stderr, got %q", se.String())
 	}
 
-	// no -r, no hint.
 	se.Reset()
 	run(t, "--json", "ls")
 	if se.Len() != 0 {
@@ -223,7 +216,6 @@ func TestCLIRepoCommandMutatesAndReportsChanged(t *testing.T) {
 	if _, code := run(t, "repo", id, "--add", "not-a-repo"); code != int(core.CodeValidation) {
 		t.Errorf("strict --add should exit 2 on a bare unknown name, got %d", code)
 	}
-	// no flags is bad usage.
 	if _, code := run(t, "repo", id); code != int(core.CodeValidation) {
 		t.Errorf("repo with no flags should exit 2, got %d", code)
 	}

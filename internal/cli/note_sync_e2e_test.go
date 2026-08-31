@@ -69,7 +69,6 @@ func TestNoteThenPlainSyncPublishesBody_EndToEndViaCLI(t *testing.T) {
 		t.Errorf("furrow's own note must not pend: %s", sout)
 	}
 
-	// The remote carries the prose.
 	check := filepath.Join(t.TempDir(), "check")
 	gitAt(filepath.Dir(check), "clone", "-q", origin, check)
 	body, err := os.ReadFile(filepath.Join(check, app.DirName, "bodies", id+".md"))

@@ -28,7 +28,7 @@ func eqStrs(a, b []string) bool {
 func TestRevisitReasons(t *testing.T) {
 	p := func(n int) *int { return &n }
 	now := time.Date(2026, time.June, 29, 12, 0, 0, 0, time.UTC)
-	old := now.AddDate(0, 0, -47) // 47 days ago
+	old := now.AddDate(0, 0, -47)
 	fresh := now.AddDate(0, 0, -1)
 	done := map[string]bool{"t-d1": true, "t-d2": true}
 	rr := []string{"o/r"} // attached to a repo, so no_repo stays quiet in repo-agnostic cases
@@ -134,8 +134,8 @@ func TestRevisitReasonsDepDoneNamesDep(t *testing.T) {
 func TestRevisitReasonsDepDoneOrder(t *testing.T) {
 	now := time.Date(2026, time.June, 29, 12, 0, 0, 0, time.UTC)
 	done := map[string]bool{"t-d1": true, "t-d2": true}
-	// Deps order is [t-open, t-d2, t-d1]; only the two done deps emit, and they
-	// must come back in Deps order (t-d2 before t-d1) with the dep named in detail.
+	// The emitted order follows Deps, not the done map's iteration order — that is
+	// what makes this assertion deterministic at all.
 	rs := RevisitReasons(Task{Repos: []string{"o/r"}, Value: intptr(1), Effort: intptr(1), Updated: now, Deps: []string{"t-open", "t-d2", "t-d1"}}, now, 30, done)
 	want := []RevisitReason{
 		{Code: RevisitDepDone, Detail: "dep t-d2 is done"},

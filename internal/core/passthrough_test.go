@@ -10,15 +10,16 @@ import (
 // THE regression test for the silent-field-strip hole. furrow's version gate
 // (#112) only fires when someone BUMPS SchemaVersion. If a future furrow adds a
 // shard field and does NOT bump — because the change looks "additive" — then
-// meta.json still says v4, no gate fires anywhere, and an older binary reads the
-// shard, drops the key it doesn't know, and writes the loss back on the next
+// meta.json still declares the old version, no gate fires anywhere, and an older
+// binary reads the shard, drops the key it doesn't know, and writes the loss
+// back on the next
 // save. The 2026-07-13 outage was only VISIBLE because someone did the right
 // thing and bumped; this is the silent version of the same bug.
 //
 // A shard round-trip must therefore PRESERVE what it does not understand.
 func TestTaskRoundTripPreservesUnknownKeys(t *testing.T) {
-	// A shard as a NEWER furrow would write it: every key this binary knows, plus
-	// two it does not (a scalar and a nested object).
+	// A shard as a NEWER furrow would write it: known keys, plus two this binary
+	// does not know (a scalar and a nested object).
 	shard := []byte(`{
   "id": "t-k3m9p",
   "title": "a task",
@@ -109,7 +110,6 @@ func TestUnknownKeysObeyTheByteRecipe(t *testing.T) {
 	if !strings.Contains(s, `"alpha": "<b>&"`) || strings.Contains(s, escaped) {
 		t.Errorf("an unknown value was HTML-escaped; the byte recipe says it survives verbatim:\n%s", s)
 	}
-	// Unknown keys come after every known key, and among themselves are sorted.
 	iBody, iAlpha, iMid, iZeta := strings.Index(s, `"body"`), strings.Index(s, `"alpha"`), strings.Index(s, `"mid"`), strings.Index(s, `"zeta"`)
 	if iBody < 0 || iAlpha < 0 || iMid < 0 || iZeta < 0 {
 		t.Fatalf("a key went missing:\n%s", s)
@@ -117,11 +117,9 @@ func TestUnknownKeysObeyTheByteRecipe(t *testing.T) {
 	if iBody >= iAlpha || iAlpha >= iMid || iMid >= iZeta {
 		t.Errorf("unknown keys must follow the known ones, sorted (alpha < mid < zeta):\n%s", s)
 	}
-	// Nested unknown values are indented like everything else, not left compact.
 	if !strings.Contains(s, "\"mid\": {\n    \"k\": \"v\"\n  }") {
 		t.Errorf("a nested unknown value was not re-indented to the 2-space recipe:\n%s", s)
 	}
-	// The whole thing is still valid JSON.
 	var any map[string]any
 	if err := json.Unmarshal(out, &any); err != nil {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
@@ -198,11 +196,9 @@ func TestKnownKeysAreCaseFolded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// encoding/json already folded these into the known fields...
 	if task.Title != "shouty" || task.Body != "bodies/t-1.md" {
 		t.Fatalf("encoding/json should have case-folded TITLE/BODY into the struct: %+v", task)
 	}
-	// ...so they must NOT also be parked as unknown.
 	if n := len(task.ExtraKeys()); n != 0 {
 		t.Errorf("extras = %v, want none — those keys ARE known, just differently cased", task.ExtraKeys())
 	}
@@ -214,7 +210,6 @@ func TestKnownKeysAreCaseFolded(t *testing.T) {
 	if bytes.Contains(out, []byte(`"BODY"`)) || bytes.Contains(out, []byte(`"TITLE"`)) {
 		t.Errorf("a case-variant key was re-emitted, so the shard now carries it twice:\n%s", out)
 	}
-	// And the duplicate would self-replicate on the next round-trip.
 	again, err := UnmarshalTask(out)
 	if err != nil {
 		t.Fatal(err)

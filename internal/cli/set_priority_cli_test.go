@@ -126,7 +126,6 @@ func TestSetLabelFlagsSplitOnCommaLikeLabelAdd(t *testing.T) {
 		t.Fatalf("label --add exit = %d", code)
 	}
 
-	// Both tasks must now carry the same two labels, and -l must find both.
 	out, code := run(t, "--json", "ls", "-l", "a")
 	if code != 0 {
 		t.Fatalf("ls -l a exit = %d:\n%s", code, out)

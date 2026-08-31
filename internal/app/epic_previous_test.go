@@ -79,8 +79,6 @@ func TestPreviousActiveSuggestSkipsActiveAndClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Closing b: c is active (skip), d is closed (skip) -> a wins despite the
-	// oldest stamp.
 	prev := a.PreviousActiveSuggest(eb.ID)
 	if prev == nil || prev.ID != ea.ID {
 		t.Fatalf("previous = %+v, want %s (active/closed boxes are not candidates)", prev, ea.ID)

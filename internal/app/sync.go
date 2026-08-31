@@ -23,8 +23,6 @@ type retryPolicy struct {
 	max    int           // maximum number of sleeps
 }
 
-// next advances a backoff by the policy's factor, clamped at cap — the one
-// place the exponential-backoff step lives, shared by every retry loop here.
 func (pol retryPolicy) next(backoff time.Duration) time.Duration {
 	if backoff *= time.Duration(pol.factor); backoff > pol.cap {
 		return pol.cap
@@ -352,10 +350,8 @@ func opRemedy(op string) string {
 }
 
 // partitionSync splits the dirty .furrow paths into what the auto-commit should
-// stage. Machine-written files — an ALLOWLIST of the shapes furrow itself
-// writes: tasks/epics/repos shards, meta.json, config.toml, the board-level git
-// dotfiles, bodies/assets/ blobs, and the archive/ store's copies of the same
-// (see machineSyncPath) — are always committed: they are deterministic and
+// stage. Machine-written files — the ALLOWLIST of shapes furrow itself writes,
+// defined by machineSyncPath — are always committed: they are deterministic and
 // complete by construction. A hand-edited bodies/<id>.md is committed only when
 // it is brand-new (an add/retitle seed, still untracked) or explicitly opted in
 // (opts.Bodies or opts.AllBodies); an otherwise-modified body is left
@@ -628,8 +624,8 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 	// A rebase in progress is usually a concurrent writer (the board's bot / a
 	// second operator) momentarily holding `pull --rebase`; wait it out with a
 	// bounded backoff so agents don't fail spuriously in that sub-second window.
-	// sleep is the cancellable backoff used by both retry loops below: it waits
-	// out a transient concurrent-writer condition but returns early if ctx is
+	// sleep is the cancellable backoff the retry loops below share: it waits out
+	// a transient concurrent-writer condition but returns early if ctx is
 	// cancelled, so a Ctrl-C during a backoff doesn't have to ride out the budget.
 	sleep := func(d time.Duration) error { return a.ctxSleep(ctx, d) }
 

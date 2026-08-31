@@ -198,14 +198,12 @@ func TestEpicRoundTripPreservesUnknownKeys(t *testing.T) {
 	if known > bi || bi > oi {
 		t.Errorf("unknown keys must follow the known ones, sorted:\n%s", out)
 	}
-	// And the re-emitted document must still be valid JSON with the same shape.
 	var back map[string]any
 	if err := json.Unmarshal(out, &back); err != nil {
 		t.Fatalf("re-emitted epic is not valid JSON: %v\n%s", err, out)
 	}
 }
 
-// TestUnmarshalEpicRejectsGarbage: a malformed epic shard is a validation error.
 func TestUnmarshalEpicRejectsGarbage(t *testing.T) {
 	if _, err := UnmarshalEpic([]byte("{ not json")); err == nil {
 		t.Error("expected a validation error on malformed epic shard")

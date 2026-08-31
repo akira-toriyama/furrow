@@ -112,7 +112,6 @@ func TestDiscover_PointerRetiredDefaultLabelWarns(t *testing.T) {
 
 func TestDiscover_LocalFurrowBeatsPointer(t *testing.T) {
 	repoDir, _ := pointerLayout(t, "me/chord")
-	// Give the repo dir its OWN .furrow; it must win over the pointer.
 	if _, err := Init(repoDir); err != nil {
 		t.Fatal(err)
 	}

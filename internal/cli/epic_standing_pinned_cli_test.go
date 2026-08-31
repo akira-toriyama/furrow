@@ -48,7 +48,6 @@ func TestEpicSetStandingPinned(t *testing.T) {
 		t.Errorf("epic show must state the declarations:\n%s", out)
 	}
 
-	// Explicit =false clears; a bare re-run with no flag touches nothing.
 	out, code = run(t, "--json", "epic", "set", mandate, "--pinned=false")
 	if code != 0 {
 		t.Fatalf("clear exit=%d:\n%s", code, out)
@@ -143,7 +142,6 @@ func TestBriefCollapsesQuietPinned(t *testing.T) {
 		t.Errorf("want pinned omitted and pinned_quiet 1, got %+v", v)
 	}
 
-	// One open member flips the channel back into the band, and the count off.
 	addTask(t, "an instruction", "-e", mandate, "-s", "ready")
 	out, code = run(t, "brief")
 	if code != 0 {

@@ -54,7 +54,6 @@ func TestVersionGateRefusesNewerBoard(t *testing.T) {
 		t.Errorf("Save exit code = %d, want %d", got, core.CodeInternal)
 	}
 
-	// The refused Save must not have touched the board: the shard is intact.
 	if b, err := os.ReadFile(filepath.Join(root, "tasks", "t-0001.json")); err != nil || len(b) == 0 {
 		t.Errorf("refused Save must leave shards intact: %v", err)
 	}
@@ -122,7 +121,6 @@ func TestSaveNeverRaisesBoardVersion(t *testing.T) {
 		t.Errorf("Save exit code = %d, want %d (an explicit command fixes it)", fe.Code, core.CodeValidation)
 	}
 
-	// The refusal must be total: meta.json byte-identical, no new shard.
 	if got, err := os.ReadFile(metaPath); err != nil || !bytes.Equal(got, old) {
 		t.Errorf("meta.json = %q, want it untouched (%q); err=%v", got, old, err)
 	}
@@ -198,7 +196,6 @@ func TestOutdatedBoardIsReadOnlyForEveryWrite(t *testing.T) {
 		})
 	}
 
-	// Nothing may have reached the disk.
 	for _, p := range []string{"tasks/t-0001.json", "bodies/t-0001.md", "repos/owner__app.json"} {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(p))); !os.IsNotExist(err) {
 			t.Errorf("%s exists — a read-only board must refuse every write, totally", p)

@@ -179,7 +179,7 @@ type DueSummary struct {
 // Empty reports whether there is nothing to say (no section to print).
 func (d DueSummary) Empty() bool { return len(d.Overdue) == 0 && len(d.Today) == 0 }
 
-// Total is the count both surfaces quote ("N due").
+// Total is the size of the whole band, the number a due surface quotes.
 func (d DueSummary) Total() int { return len(d.Overdue) + len(d.Today) }
 
 // Due returns the arrived due dates under o's scope — the read behind brief's
@@ -206,10 +206,9 @@ func (d DueSummary) Total() int { return len(d.Overdue) + len(d.Today) }
 // hide a date, while an explicitly typed one (o.Repo from -r, o.Label from -l)
 // still applies — the reader asked for that, and can drop it.
 //
-// The drop lives HERE rather than in brief and hintDue because those are the two
-// callers today and a third would have to remember; a read whose whole point is
-// "nothing you did not ask for may hide this" must not depend on its callers
-// opting in.
+// The drop lives HERE rather than in each caller, which would leave every new
+// one free to forget it; a read whose whole point is "nothing you did not ask
+// for may hide this" must not depend on its callers opting in.
 //
 // Ordering is by due instant ascending, so the longest-overdue task leads; a
 // same-instant tie (every bare-day due lands on 23:59:59) breaks by the index's
@@ -256,7 +255,7 @@ func (a *App) Due(o QueryOpts) (DueSummary, error) {
 // emitting core.Canonicalize's index order — an invisible dependency that a
 // literal reading of Go's "prefer slices.SortFunc over sort.Slice" advice
 // silently breaks: swapping the call scrambled brief's overdue band from its
-// first row with all 11 packages still green. Tiebreaking on the same order the
+// first row with the test suite still green. Tiebreaking on the same order the
 // index already carries reproduces that band from ANY algorithm, so it is the
 // tiebreak, not the stability, that holds it.
 func sortByDue(items []ListItem, canon func(a, b *core.Task) int) {

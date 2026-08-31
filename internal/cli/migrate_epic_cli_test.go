@@ -153,7 +153,6 @@ func TestCLIMigrateWarnsUnfiledImport(t *testing.T) {
 		t.Errorf("warning must count only the open tasks (%q): %v", want, warnings)
 	}
 
-	// The human dry-run lists it among migrate's own warnings.
 	out, code := run(t, "migrate", src)
 	if code != 0 {
 		t.Fatalf("migrate dry-run exit %d:\n%s", code, out)
@@ -210,7 +209,6 @@ func TestCLIMigrateInheritsActiveEpic(t *testing.T) {
 	}
 	src := migrateSrc(t)
 
-	// The dry-run already names the box it would inherit.
 	if epic, warnings := migrateJSON(t, src); epic != box || hasUnfiledWarning(warnings) {
 		t.Errorf("dry-run epic = %q (want %s), warnings %v", epic, box, warnings)
 	}
@@ -265,7 +263,6 @@ func TestCLIMigrateRejectsUnknownEpic(t *testing.T) {
 			t.Errorf("%v must carry the board's boxes in candidates (the did-you-mean guard)", args)
 		}
 	}
-	// Nothing was created by the refused apply.
 	out, code := run(t, "--json", "ls")
 	if code != 0 {
 		t.Fatalf("ls exit %d:\n%s", code, out)

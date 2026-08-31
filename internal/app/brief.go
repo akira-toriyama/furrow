@@ -7,8 +7,8 @@ import "strings"
 // stuck (blocked: next-lane tasks with an unsatisfied dep, which plain `next`
 // deliberately hides), what deserves a fresh look (the revisit summary), and
 // how many loose balls sit repo-less (drafts). It is a pure COMPOSITION of the
-// existing reads — Next, GetBatch, ListItems, RevisitSummary, List — so its
-// answers can never diverge from the commands it summarizes.
+// existing reads, so its answers can never diverge from the commands it
+// summarizes.
 type BriefData struct {
 	// Active is the open+active epic(s) for the scope — the focus Next scopes to,
 	// with the member roll-up. EpicsDeclared distinguishes the two empty cases a

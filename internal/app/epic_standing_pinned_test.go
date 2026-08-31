@@ -6,7 +6,7 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// setStanding / setPinned flip the v7 declarations via the same EpicSet path
+// setFlag flips the v7 standing/pinned declarations via the same EpicSet path
 // the CLI drives.
 func setFlag(t *testing.T, a *App, id string, standing, pinned *bool) {
 	t.Helper()

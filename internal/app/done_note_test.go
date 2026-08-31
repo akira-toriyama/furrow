@@ -90,7 +90,6 @@ func TestDoneManyNoteIsAllOrNothing(t *testing.T) {
 	if strings.Join(miss, ",") != "t-nope" {
 		t.Errorf("details.missing = %v, want the miss", fe.Details)
 	}
-	// Nothing half-lands: the found task keeps its lane AND its body.
 	if cur, _, _ := a.Get(t1.ID); cur.Status == a.Cfg.DoneLane {
 		t.Errorf("t1 closed despite the failed batch; all-or-nothing broken")
 	}
@@ -98,7 +97,6 @@ func TestDoneManyNoteIsAllOrNothing(t *testing.T) {
 		t.Errorf("t1 body gained the note despite the failed batch:\n%q", body)
 	}
 
-	// The empty-note guard covers the batch path too.
 	if _, err := a.DoneManyNote([]string{t1.ID}, " "); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("empty note want CodeValidation, got %v", err)
 	}

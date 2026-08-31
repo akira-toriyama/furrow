@@ -20,8 +20,8 @@ func writeBoardConfig(t *testing.T, board, body string) {
 	}
 }
 
-// localBoardWithRepo inits a board at root/<name>, declares default_repo in its
-// own config.toml, and returns the checkout dir to Open from (the board's own
+// localBoardWithRepo inits a board in a fresh temp dir, declares default_repo in
+// its own config.toml, and returns the checkout dir to Open from (the board's own
 // tree, which is where local discovery wins).
 func localBoardWithRepo(t *testing.T, repo string) string {
 	t.Helper()

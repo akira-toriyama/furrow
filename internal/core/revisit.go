@@ -14,7 +14,7 @@ const (
 	RevisitStale       = "stale"        // not updated within the stale threshold
 	RevisitDepDone     = "dep_done"     // a dependency is already in the done lane
 	RevisitNoRepo      = "no_repo"      // repos is empty — the task is a draft awaiting a repo
-	// The three EPIC signals are about a box, not a task: they need the member
+	// The EPIC signals are about a box, not a task: they need the member
 	// index, so RevisitReasons (pure, per-task) does not compute them — the app
 	// layer does. They live here so the `furrow revisit --json` reason vocabulary
 	// has one home.

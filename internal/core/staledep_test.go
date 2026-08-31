@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// tm is a terse timestamp helper for these tests: day N of 2026-01, UTC.
 func tm(day int) time.Time { return time.Date(2026, 1, day, 0, 0, 0, 0, time.UTC) }
 
 // ptm returns a pointer to tm(day) — for the Closed field.
@@ -114,7 +113,6 @@ func TestStaleDepProblems(t *testing.T) {
 					t.Errorf("a reconcile gap must warn, not %q: %+v", p.Severity, p)
 				}
 			}
-			// Every expected owner id must appear as a problem id, in order.
 			for i, id := range c.wantIDs {
 				if i >= len(ps) {
 					break

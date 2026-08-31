@@ -10,8 +10,6 @@ import (
 	"github.com/akira-toriyama/furrow/internal/config"
 )
 
-// runConfigCLI drives the real root command and captures stdout/stderr through
-// the package output funnels (out/errOut), restoring them afterwards.
 func runConfigCLI(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	var so, se bytes.Buffer

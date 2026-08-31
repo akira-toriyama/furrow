@@ -183,7 +183,6 @@ func TestCLIDueRejectsBadSpellings(t *testing.T) {
 			t.Errorf("%v exit = %d, want 2 (validation)", args, fe.Code)
 		}
 	}
-	// …and nothing was created by the rejected adds.
 	out, _ := run(t, "--json", "ls", "-r", "o/r")
 	if strings.Contains(out, "bad date") {
 		t.Errorf("a rejected --due created a task:\n%s", out)
@@ -235,7 +234,6 @@ func TestCLIBriefDueSection(t *testing.T) {
 		t.Errorf("an icebox task must not appear in brief's due section: %+v", b.Due.Today)
 	}
 
-	// Human mode: the section leads, above the next block.
 	out, code = run(t, "brief")
 	if code != 0 {
 		t.Fatalf("brief exit = %d:\n%s", code, out)

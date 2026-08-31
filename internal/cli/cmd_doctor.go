@@ -93,9 +93,9 @@ func newDoctorCmd() *cobra.Command {
 	}
 }
 
-// printDoctorHuman renders the report: the config line, one block per board
-// (the `boards` shape plus the git column), the resolution simulations, then
-// the findings — or the ok line when the machine is clean.
+// printDoctorHuman renders the report; a board's block deliberately repeats
+// `furrow boards`' shape with the git column added, so the two commands
+// describe the same board identically.
 func printDoctorHuman(r *app.DoctorReport) {
 	fmt.Fprintf(out, "config: %s\n", r.Config)
 	if r.EnvDir != "" {

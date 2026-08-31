@@ -85,8 +85,6 @@ func (i Info) String() string {
 	return b.String()
 }
 
-// shortCommit trims a full sha to 7 chars for human display, leaving shorter
-// values (and the empty string) untouched.
 func shortCommit(c string) string {
 	if len(c) > 7 {
 		return c[:7]

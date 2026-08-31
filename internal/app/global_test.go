@@ -131,7 +131,6 @@ func TestGlobal_LocalFurrowBeatsGlobal(t *testing.T) {
 func TestGlobal_PointerBeatsGlobal(t *testing.T) {
 	scope, _ := globalLayout(t, "auto")
 	repo := mkGitRepo(t, filepath.Join(scope, "repoX"))
-	// a pointer in the repo redirects to the same central board with its own repo
 	body := "board = \"projects/.furrow\"\ndefault_repo = \"ptr/repo\"\n"
 	if err := os.WriteFile(filepath.Join(repo, PointerName), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -241,7 +240,6 @@ func TestGlobal_ConfigBoardMissingScopesIsInert(t *testing.T) {
 	root := t.TempDir()
 	scope := filepath.Join(root, "org")
 	board := mustInitBoard(t, filepath.Join(scope, "projects"))
-	// [[board]] with a path but no scopes -> clamped away.
 	writeGlobalConfig(t, "[[board]]\npath = \""+board+"\"\nrepo = \"auto\"\n")
 	repo := mkGitRepo(t, filepath.Join(scope, "repoX"))
 	_, err := Open(repo)
@@ -401,7 +399,6 @@ func TestGlobal_BadSiblingBoardDoesNotBreakUnrelatedRepo(t *testing.T) {
 	root := t.TempDir()
 	orgGood := filepath.Join(root, "good")
 	good := mustInitBoard(t, filepath.Join(root, "central-good"))
-	// A sibling board with a ~user path (unsupported) and an unrelated scope.
 	bad := boardEntry("~bob/projects/.furrow", "auto", filepath.Join(root, "bad"))
 	writeGlobalConfig(t, bad+boardEntry(good, "auto", orgGood))
 	repo := mkGitRepo(t, filepath.Join(orgGood, "repoX"))
@@ -472,7 +469,6 @@ func TestGlobal_SymlinkedScopeStillMatches(t *testing.T) {
 		t.Skipf("symlinks unsupported here: %v", err)
 	}
 	board := mustInitBoard(t, filepath.Join(root, "central"))
-	// scope is written via the symlink; the repo is opened via the real path.
 	writeGlobalConfig(t, boardEntry(board, "auto", filepath.Join(link, "org")))
 	repo := mkGitRepo(t, filepath.Join(realOrg, "repoX"))
 	a, err := Open(repo)
@@ -721,7 +717,6 @@ func TestGlobal_LabelAutoTombstoneWarnsOnOpen(t *testing.T) {
 	if !found {
 		t.Errorf("ScopeWarnings = %v, want the label=\"auto\" tombstone", a.ScopeWarnings)
 	}
-	// The task still gets the derived repo; no phantom "auto" label.
 	task, err := a.Add("x", AddOpts{})
 	if err != nil {
 		t.Fatal(err)

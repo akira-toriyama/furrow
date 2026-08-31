@@ -109,7 +109,6 @@ func TestShowNoBodyNDJSONBatchLeanLines(t *testing.T) {
 	a := addTask(t, "task a", "--body", "SECRETBODY")
 	b := addTask(t, "task b", "--body", "OTHERBODY")
 
-	// The advertised lean-batch combination: one bare line per id, no body.
 	out, code := run(t, "--ndjson", "show", a, b, "--no-body")
 	if code != 0 {
 		t.Fatalf("show --ndjson --no-body exit=%d:\n%s", code, out)
@@ -156,7 +155,6 @@ func TestShowBatchPartialMissEmitsFoundAndDetails(t *testing.T) {
 	initStore(t)
 	a := addTask(t, "task a")
 
-	// Found tasks still reach stdout; the miss is exit 1 + details.missing.
 	fe, out := runErr(t, "--json", "show", a, "t-zzzz1", "t-zzzz2")
 	if fe == nil || fe.Code != core.CodeNotFound {
 		t.Fatalf("partial miss should be a CodeNotFound error, got %+v", fe)
@@ -254,7 +252,6 @@ func TestShowBatchBacklinks(t *testing.T) {
 		t.Errorf("mentioned_by must be [] (never null) for unmentioned tasks:\n%s", out)
 	}
 
-	// --no-body --backlinks: mentioned_by present, body_text absent.
 	out, code = run(t, "--json", "show", target, other, "--backlinks", "--no-body")
 	if code != 0 {
 		t.Fatalf("show --no-body --backlinks exit=%d:\n%s", code, out)

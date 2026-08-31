@@ -50,7 +50,6 @@ func TestCLILintCodeAndExcludeFilter(t *testing.T) {
 	initStore(t)
 	addTask(t, "haslink", "--body", "see [[t-zzzzz]]") // dangling-link warn
 
-	// --code keeps only the named code.
 	ps, code := lintProblems(t, "--code", "dangling-link")
 	if code != 0 {
 		t.Fatalf("warn-only filter should exit 0, got %d", code)
@@ -59,7 +58,6 @@ func TestCLILintCodeAndExcludeFilter(t *testing.T) {
 		t.Errorf("--code dangling-link should keep it: %v", ps)
 	}
 
-	// --exclude-code drops the named code -> empty here.
 	ps, code = lintProblems(t, "--exclude-code", "dangling-link")
 	if code != 0 {
 		t.Fatalf("exit = %d", code)
@@ -77,11 +75,9 @@ func TestCLILintSeverityDrivesExit(t *testing.T) {
 	addTask(t, "no labels here")                  // add BEFORE requiring labels (add would reject it otherwise)
 	writeConfig(t, "[labels]\nrequired = true\n") // now the label-less task is a label-required ERROR
 
-	// Unfiltered: the error makes lint exit 2.
 	if _, code := lintProblems(t, "--severity", "error"); code != int(core.CodeValidation) {
 		t.Fatalf("an error present -> exit 2, got %d", code)
 	}
-	// Excluding the only error code -> nothing left is an error -> exit 0.
 	ps, code := lintProblems(t, "--exclude-code", "label-required")
 	if code != int(core.CodeOK) {
 		t.Fatalf("excluding the only error must exit 0, got %d: %v", code, ps)
@@ -89,7 +85,6 @@ func TestCLILintSeverityDrivesExit(t *testing.T) {
 	if hasCode(ps, "label-required") {
 		t.Errorf("label-required should be excluded: %v", ps)
 	}
-	// --severity warn hides the error too -> exit 0.
 	if _, code := lintProblems(t, "--severity", "warn"); code != int(core.CodeOK) {
 		t.Fatalf("--severity warn hides errors -> exit 0, got %d", code)
 	}

@@ -7,8 +7,8 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// find returns the problems carrying code, so a case asserts on ITS finding and
-// not on the rest of a board's lint output.
+// problemsWithCode narrows to one code so a case asserts on ITS finding and not
+// on the rest of a board's lint output.
 func problemsWithCode(ps []core.Problem, code string) []core.Problem {
 	var out []core.Problem
 	for _, p := range ps {

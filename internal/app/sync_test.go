@@ -15,9 +15,8 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// These are the real-git two-clone e2e tests for `furrow sync` (the style of
-// fsstore/conflict_test.go): a bare origin, two working clones A and B, and the
-// public App API driving the boards.
+// These are the real-git two-clone e2e tests for `furrow sync`: what sync
+// promises is git's own behavior, so nothing here stubs git.
 
 func gitOrSkip(t *testing.T) string {
 	t.Helper()
@@ -102,12 +101,10 @@ func TestSyncTwoClonesConverge(t *testing.T) {
 	if _, err := b.Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatalf("B sync: %v", err)
 	}
-	// B now has both tasks.
 	if _, _, err := openBoard(t, cloneB).Get(taskA.ID); err != nil {
 		t.Errorf("B must see A's task after sync: %v", err)
 	}
 
-	// A pulls B's task with a no-change sync (nothing to commit or push).
 	p, err = openBoard(t, cloneA).Sync(context.Background(), SyncOpts{})
 	if err != nil {
 		t.Fatalf("A second sync: %v", err)
@@ -138,8 +135,6 @@ func TestSyncCommittedTrueWhenPullRewritesTheCommit(t *testing.T) {
 		t.Fatalf("A sync: %v", err)
 	}
 
-	// B adds new shards, then syncs: auto-commit → pull rebases that commit
-	// onto A's head (rewriting its sha) → push.
 	b := openBoard(t, cloneB)
 	if _, err := b.Add("from B", AddOpts{}); err != nil {
 		t.Fatal(err)
@@ -210,8 +205,6 @@ func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
 		t.Errorf("details.paths = %v; must contain %s", paths, shardPath)
 	}
 
-	// The board is restored: no rebase in progress, no conflict markers — the
-	// store loads, and B's local commit (its title) survived.
 	if strings.TrimSpace(runGitT(t, git, cloneB, "status", "--porcelain")) != "" {
 		t.Errorf("board must be clean after auto-abort:\n%s", runGitT(t, git, cloneB, "status", "--porcelain"))
 	}
@@ -279,7 +272,7 @@ func TestSyncRefusesMidMerge(t *testing.T) {
 }
 
 // startStuckRebase leaves dir with a real, non-clearing rebase in progress (an
-// add/add conflict git stopped on), so MidOperation reports "rebase" — the
+// add/add conflict git stopped on), so sync's pre-flight sees op "rebase" — the
 // concurrent-writer signature, here made permanent so the retry budget runs out.
 func startStuckRebase(t *testing.T, git, dir string) {
 	t.Helper()
@@ -397,7 +390,6 @@ func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
 	if got := strings.TrimSpace(runGitT(t, git, cloneA, "status", "--porcelain", "--", bodySpec)); got != "" {
 		t.Errorf("t1 body must be clean after the opt-in sync, status: %q", got)
 	}
-	// Nothing pending now → complete, and the summary drops the pending clause.
 	if !p2.Complete {
 		t.Errorf("Complete must be true once nothing is pending: %+v", p2)
 	}
@@ -511,7 +503,6 @@ func TestSyncSkipsForeignFilesInStore(t *testing.T) {
 	if !slices.Contains(p.CommittedBodies, t2.ID) {
 		t.Errorf("t2's new body must ride along: %v", p.CommittedBodies)
 	}
-	// The junk is disclosed, sorted, and NOT in the commit or the index.
 	want := append([]string(nil), junk...)
 	sort.Strings(want)
 	if !slices.Equal(p.ForeignFiles, want) {

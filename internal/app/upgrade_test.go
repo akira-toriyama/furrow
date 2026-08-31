@@ -166,11 +166,9 @@ func TestArchiveOnAnOutdatedBoardWritesNothing(t *testing.T) {
 		t.Fatalf("archive onto an outdated board = %v, want schema-upgrade-required", err)
 	}
 
-	// Nothing may have been born under the read-only board...
 	if _, err := os.Stat(filepath.Join(dir, DirName, "archive")); !os.IsNotExist(err) {
 		t.Error("a refused archive must not create the sibling archive store")
 	}
-	// ...and the task must still be exactly where it was, once.
 	idx, err := a.Store.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -276,7 +274,6 @@ func TestFreshUnstampedBoardIsWritable(t *testing.T) {
 		}
 	}
 
-	// And the write really does succeed, stamping the board on the way.
 	if _, err := a.Add("first", AddOpts{}); err != nil {
 		t.Fatalf("a fresh board must accept its first write: %v", err)
 	}

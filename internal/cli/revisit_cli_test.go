@@ -143,7 +143,6 @@ func TestCLIRevisitConfigStaleDaysDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Bare `revisit` (no flag) must use config stale_days=7 -> 30d-old task is stale.
 	out, code := run(t, "--json", "revisit")
 	if code != 0 {
 		t.Fatalf("revisit exit = %d:\n%s", code, out)

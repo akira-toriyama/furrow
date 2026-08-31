@@ -95,8 +95,7 @@ func emitMutation(cmd *cobra.Command, a *app.App, verb, id string, mutate func()
 
 // emitMutationWith is emitMutation plus an optional `annotate`: given the
 // resulting task it returns extra top-level fields to merge into the --json
-// {before,after,changed} envelope (and may write a human note to stderr). Used
-// by value/effort/set to surface a `clamped` estimate.
+// {before,after,changed} envelope (and may write a human note to stderr).
 func emitMutationWith(cmd *cobra.Command, a *app.App, verb, id string, mutate func() (*core.Task, error), annotate func(after *core.Task) map[string]any) error {
 	expected, guard, gerr := expectUpdatedArg(cmd, id)
 	if gerr != nil {
@@ -710,9 +709,9 @@ func newDepCmd() *cobra.Command {
 	return cmd
 }
 
-// newSetCmd combines the routine triage edits (lane, position, value, effort,
-// labels, type) into one write, so triaging a task no longer means running move
-// + reorder + value + effort + label + epic as separate commands.
+// newSetCmd combines the routine triage edits into one write, so triaging a task
+// no longer means running move + reorder + value + effort + label + epic as
+// separate commands.
 func newSetCmd() *cobra.Command {
 	var (
 		status      string

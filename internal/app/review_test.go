@@ -19,7 +19,7 @@ func TestReviewTaskStampsReviewedNotUpdated(t *testing.T) {
 	}
 	addedUpdated := tk.Updated
 
-	clk.t = clk.t.AddDate(0, 0, 10) // 10 days later
+	clk.t = clk.t.AddDate(0, 0, 10)
 	reviewed, err := a.ReviewTask(tk.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -97,14 +97,12 @@ func TestRevisitSummaryUnreviewedNudge(t *testing.T) {
 		t.Errorf("Days = %d, want 20", sum.Unreviewed[0].Days)
 	}
 
-	// A fresh review clears the nudge.
 	a.ReviewRepo("o/reviewed", false)
 	sum, _ = a.RevisitSummary(QueryOpts{}, 30)
 	if len(sum.Unreviewed) != 0 {
 		t.Errorf("after re-review, Unreviewed = %+v, want empty", sum.Unreviewed)
 	}
 
-	// stale_after_days = 0 disables the nudge entirely.
 	clk.t = clk.t.AddDate(0, 0, 90)
 	cfg.ReviewStaleAfterDays = 0
 	sum, _ = a.RevisitSummary(QueryOpts{}, 30)
@@ -152,7 +150,6 @@ func TestReviewRepoResolvesAgainstExistingShards(t *testing.T) {
 		t.Fatalf("first review repo = %q", first.Repo)
 	}
 
-	// A short name must now resolve against that existing shard.
 	byShort, err := a.ReviewRepo("chord", false)
 	if err != nil {
 		t.Fatalf("short name should resolve against the existing review shard: %v", err)

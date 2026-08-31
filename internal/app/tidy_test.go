@@ -60,7 +60,6 @@ func TestTidyPreviewAndApply(t *testing.T) {
 		t.Errorf("unknown_keys = %+v, want parent on %s", rep.UnknownKeys, holder.ID)
 	}
 
-	// Preview wrote nothing: the edge and the key are still there.
 	before, _, _ := a.Get(holder.ID)
 	if len(before.Deps) != 1 || len(before.ExtraKeys()) != 1 {
 		t.Fatalf("preview mutated the board: %+v (extras %v)", before, before.ExtraKeys())
@@ -85,7 +84,6 @@ func TestTidyPreviewAndApply(t *testing.T) {
 		t.Errorf("updated advanced %v -> %v; a prune is bookkeeping and must not touch the staleness clocks", before.Updated, after.Updated)
 	}
 
-	// Now the other class; afterwards the board is clean and a re-run says so.
 	if rep, err = a.Tidy(TidyOpts{UnknownKeys: true, Apply: true}); err != nil || !rep.Applied {
 		t.Fatalf("unknown-keys apply = %+v, %v", rep, err)
 	}

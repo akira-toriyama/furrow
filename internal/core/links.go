@@ -5,10 +5,9 @@ import (
 	"strings"
 )
 
-// The [[<id>]] wiki-link notation lives here, in ONE place, so the two features
-// that read it never drift: `show --backlinks` (which tasks mention this one)
-// and `furrow lint`'s dangling-link check (a [[id]] pointing at nothing). Both
-// call LinkPattern once and feed it to ExtractLinks.
+// The [[<id>]] wiki-link notation lives here, in ONE place: every feature that
+// resolves a link builds its regex with LinkPattern, so no two readers of a
+// body can disagree on what counts as a link.
 
 // LinkPattern compiles the regex matching a [[<id>]] reference embedded in body
 // prose, for the given id prefix. The single capture group is the referenced id
@@ -46,13 +45,10 @@ func ExtractLinks(text string, re *regexp.Regexp) []string {
 
 // stripCode removes fenced code blocks and inline code spans from markdown so a
 // [[id]] written as an example inside code is not mistaken for a live link. It
-// is intentionally lightweight, not a full CommonMark parser: a line whose
-// trimmed text starts with ``` or ~~~ toggles a fenced block (fence lines and
-// their contents are dropped), and on the remaining lines a run of N backticks
-// opens an inline span that the next run of exactly N backticks closes (the span
-// is dropped). Good enough to keep documented [[t-…]] placeholders from
-// self-flagging; a pathological unbalanced fence just drops the tail, which only
-// ever suppresses links (never invents one).
+// is intentionally lightweight, not a full CommonMark parser: good enough to
+// keep documented [[t-…]] placeholders from self-flagging, and a pathological
+// unbalanced fence just drops the tail, which only ever suppresses links (never
+// invents one).
 func stripCode(md string) string {
 	var b strings.Builder
 	inFence := false

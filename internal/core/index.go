@@ -120,7 +120,7 @@ func (idx *Index) PlanRelativePriority(id, ref string, before bool, base, step i
 			break
 		}
 	}
-	ins := r // insertion index into lane
+	ins := r
 	if !before {
 		ins = r + 1
 	}
@@ -172,8 +172,7 @@ func (idx *Index) PlanRelativePriority(id, ref string, before bool, base, step i
 // semantics live in config, not core).
 //
 // It is NOT the full `furrow next` test. next-eligibility also requires a NEXT
-// lane and a non-container type, both of which live in app (workable /
-// actionable in internal/app) because both are config vocabulary. A task can be
+// lane, which lives in app because the lane vocabulary is config. A task can be
 // Actionable here and still, correctly, never appear in `next`.
 func (idx *Index) Actionable(t *Task, terminal map[string]bool, doneIDs map[string]bool) bool {
 	if terminal[t.Status] {

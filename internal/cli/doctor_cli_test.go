@@ -100,7 +100,6 @@ func TestDoctorCLIAssertedDir(t *testing.T) {
 	scope, _ := initHealthyMachine(t)
 	outside := t.TempDir()
 
-	// A dir inside the scope passes; the machine stays healthy.
 	inside := filepath.Join(scope, "repo1")
 	if err := os.MkdirAll(inside, 0o755); err != nil {
 		t.Fatal(err)
@@ -109,7 +108,6 @@ func TestDoctorCLIAssertedDir(t *testing.T) {
 		t.Fatalf("an in-scope dir must pass, got %d: %s", code, got)
 	}
 
-	// A dir outside every scope fails the assertion: exit 1 + dir-unresolved.
 	got, code := run(t, "--json", "doctor", outside)
 	if code != 1 || !strings.Contains(got, "dir-unresolved") {
 		t.Fatalf("an unresolvable asserted dir must exit 1 with dir-unresolved, got %d: %s", code, got)

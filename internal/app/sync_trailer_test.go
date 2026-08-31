@@ -53,8 +53,9 @@ func TestParentChainWalks(t *testing.T) {
 	if len(chain) > 4 {
 		t.Fatalf("chain %v longer than the cap", chain)
 	}
-	// The test process was launched by SOMETHING; on the two platforms CI
-	// runs, the walk must resolve at least one ancestor.
+	// The test process was launched by SOMETHING, so an empty chain on a
+	// platform that exposes a parent pid is a defect in the walk, not in the
+	// environment.
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		if len(chain) == 0 {
 			t.Fatal("empty ancestry on a platform where /proc or ps works")

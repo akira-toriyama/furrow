@@ -101,7 +101,6 @@ func TestEpicDoneClearsActiveAndFreesTheSlot(t *testing.T) {
 	if after.IsOpen() {
 		t.Error("closing a box must stamp closed")
 	}
-	// …and the slot is genuinely free.
 	if _, _, _, err := a.EpicActivate(next, ""); err != nil {
 		t.Errorf("the closed box must have released its repo's slot: %v", err)
 	}
@@ -174,7 +173,6 @@ func TestResolveEpicSpellingsAndAmbiguity(t *testing.T) {
 		t.Errorf("title match must fold case: got %q, %v", got, err)
 	}
 
-	// An ambiguous title names every candidate.
 	mustEpic(t, a, "travel booking", EpicAddOpts{})
 	_, err := a.ResolveEpic("travel")
 	var fe *core.Error
@@ -241,7 +239,6 @@ func TestAddInheritsSingleActiveEpic(t *testing.T) {
 	a := newApp()
 	box := mustEpic(t, a, "focus box", EpicAddOpts{Repos: []string{"o/r"}})
 
-	// No active epic yet: nothing to inherit.
 	t0, err := a.Add("before activate", AddOpts{})
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +267,6 @@ func TestAddInheritsSingleActiveEpic(t *testing.T) {
 		t.Errorf("NoEpic must suppress inheritance, got %q", t2.Epic)
 	}
 
-	// An explicit -e wins over inheritance.
 	other := mustEpic(t, a, "other box", EpicAddOpts{})
 	t3, err := a.Add("explicitly filed", AddOpts{Epic: other})
 	if err != nil {

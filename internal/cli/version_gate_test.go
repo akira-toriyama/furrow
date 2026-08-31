@@ -188,7 +188,6 @@ func TestStandaloneUpgradeDropsFlagDay(t *testing.T) {
 		t.Errorf("standalone preview must say it is standalone and how to apply:\n%s", out)
 	}
 
-	// Completion (human) drops the `furrow sync` publish line — nothing to publish.
 	out, code = run(t, "upgrade", "--yes")
 	if code != 0 {
 		t.Fatalf("standalone upgrade --yes: exit %d\n%s", code, out)

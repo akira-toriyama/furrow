@@ -14,7 +14,6 @@ func TestLintIgnoreCodesParsing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// trimmed, empty dropped, later dup dropped, unknown kept verbatim (no clamp).
 	want := []string{"reconcile-gap", "dep-mirrors-children", "totally-made-up"}
 	if !reflect.DeepEqual(cfg.LintIgnoreCodes, want) {
 		t.Fatalf("ignore_codes = %v, want %v", cfg.LintIgnoreCodes, want)

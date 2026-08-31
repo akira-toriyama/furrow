@@ -29,7 +29,6 @@ func TestSyncOutsideGitPrintsProgressAndExits2(t *testing.T) {
 		}
 	}
 
-	// Human mode prints the terse one-liner instead.
 	hout, hcode := run(t, "sync")
 	if hcode != int(core.CodeValidation) {
 		t.Errorf("human exit = %d, want %d", hcode, core.CodeValidation)
@@ -163,7 +162,6 @@ func TestSyncSurfacesRevisitLine(t *testing.T) {
 		t.Errorf("human sync missing revisit line:\n%s", hout)
 	}
 
-	// JSON sync carries the dependent id under revisit.dep_done.
 	jout, jcode := run(t, "--json", "sync")
 	if jcode != 0 {
 		t.Fatalf("json sync exit %d:\n%s", jcode, jout)

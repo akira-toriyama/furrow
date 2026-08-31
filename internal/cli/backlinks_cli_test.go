@@ -11,7 +11,6 @@ func TestShowBacklinks(t *testing.T) {
 	target := addTask(t, "target task", "-s", "ready")
 	mentioner := addTask(t, "the mentioner", "-s", "ready", "--body", "blocks [["+target+"]]")
 
-	// human: --backlinks lists the mentioning task under a "Mentioned in" section.
 	out, code := run(t, "show", target, "--backlinks")
 	if code != 0 {
 		t.Fatalf("show --backlinks exit=%d:\n%s", code, out)
@@ -20,13 +19,11 @@ func TestShowBacklinks(t *testing.T) {
 		t.Errorf("human --backlinks should list the mentioner:\n%s", out)
 	}
 
-	// plain show is unchanged: no backlinks scan, no "Mentioned in".
 	out, _ = run(t, "show", target)
 	if strings.Contains(out, "Mentioned in") {
 		t.Errorf("plain show must not scan backlinks:\n%s", out)
 	}
 
-	// --json --backlinks: mentioned_by carries the mentioner (id/title/status).
 	out, code = run(t, "--json", "show", target, "--backlinks")
 	if code != 0 {
 		t.Fatalf("show --backlinks --json exit=%d:\n%s", code, out)
@@ -49,7 +46,6 @@ func TestShowBacklinks(t *testing.T) {
 		t.Errorf("mentioned_by should list %s (the mentioner), got %+v", mentioner, v.MentionedBy)
 	}
 
-	// plain --json show must not carry mentioned_by (opt-in only).
 	out, _ = run(t, "--json", "show", target)
 	if strings.Contains(out, "mentioned_by") {
 		t.Errorf("plain show --json must not include mentioned_by:\n%s", out)

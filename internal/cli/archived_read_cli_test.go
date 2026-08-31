@@ -79,7 +79,6 @@ func TestLsArchivedListsRetired(t *testing.T) {
 	id := archiveOne(t, "retired task")
 	live := addTask(t, "live task")
 
-	// hot ls does not show the archived task...
 	out, code := run(t, "--json", "ls", "-r", "")
 	if code != 0 {
 		t.Fatalf("ls exit=%d:\n%s", code, out)
@@ -91,7 +90,6 @@ func TestLsArchivedListsRetired(t *testing.T) {
 		t.Errorf("hot ls should include the live task:\n%s", out)
 	}
 
-	// ...but ls --archived does (and not the live one).
 	out, code = run(t, "--json", "ls", "--archived", "-r", "")
 	if code != 0 {
 		t.Fatalf("ls --archived exit=%d:\n%s", code, out)

@@ -24,7 +24,6 @@ func TestEpicNoteAppendsParagraphAndBumpsUpdated(t *testing.T) {
 	}
 	created := e.Updated
 
-	// Time passes before the note is written.
 	clk.t = clk.t.Add(48 * time.Hour)
 
 	before, after, err := a.EpicNote(e.ID, "方針: pinned に寄せる。")
@@ -91,7 +90,6 @@ func TestEpicNoteResolutionAndValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A unique id prefix and a unique title substring both resolve.
 	if _, after, err := a.EpicNote(e.ID[:4], "by prefix"); err != nil {
 		t.Errorf("id prefix should resolve: %v", err)
 	} else if after.ID != e.ID {
@@ -122,7 +120,6 @@ func TestEpicNoteResolutionAndValidation(t *testing.T) {
 		t.Errorf("unknown box should carry candidates, got %+v", fe)
 	}
 
-	// The refused writes left the body alone.
 	body, _ := a.Store.LoadBody(e.ID)
 	if strings.Count(body, "\n\n") != 2 { // heading + the two accepted notes
 		t.Errorf("a refused note must not touch the body:\n%q", body)

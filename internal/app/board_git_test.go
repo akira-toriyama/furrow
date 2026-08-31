@@ -14,7 +14,6 @@ import (
 func TestBoardGitStates(t *testing.T) {
 	git, cloneA, _ := setupClones(t)
 
-	// A cloned, committed, pushed board: everything known.
 	g := openBoard(t, cloneA).Board().Git
 	if g.State != GitOK {
 		t.Fatalf("a pushed clone should be %q, got %q", GitOK, g.State)

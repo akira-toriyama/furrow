@@ -49,7 +49,6 @@ func TestSyncUnionMergesConcurrentBodyAppends(t *testing.T) {
 		t.Errorf("progress = %+v; want pushed=true conflict=false", p)
 	}
 
-	// Both paragraphs survive, in one clean body (no conflict markers).
 	body, err := os.ReadFile(filepath.Join(cloneB, ".furrow", "bodies", shared.ID+".md"))
 	if err != nil {
 		t.Fatal(err)

@@ -16,8 +16,9 @@ import (
 // back. But every bit of that protection is keyed on the version being BUMPED.
 //
 // If a future furrow adds a shard field and does NOT bump SchemaVersion — because
-// the change looks "additive" — then meta.json still says v4, no gate fires
-// anywhere, and an older binary reads the shard, drops the key it doesn't know
+// the change looks "additive" — then meta.json still declares the layout the old
+// binary already knows, no gate fires anywhere, and an older binary reads the
+// shard, drops the key it doesn't know
 // (encoding/json's lenient unmarshal), and writes the loss back on its next save.
 // One ordinary write, one destroyed field, no error. 2026-07-13 was only visible
 // because someone did the right thing and bumped; this is its silent twin.
@@ -83,7 +84,8 @@ func knownNames(v any) []string {
 //
 // EqualFold agrees with json on both, so a key is parked if and only if json
 // ignored it. It subsumes the exact match too, so one comparison covers both of
-// json's cases; the scan is linear over ~17 names, once per shard key.
+// json's cases; the scan is linear over one struct's field names, once per shard
+// key, which is why no index is built.
 func isKnown(names []string, key string) bool {
 	for _, n := range names {
 		if strings.EqualFold(n, key) {
@@ -151,8 +153,8 @@ func spliceExtras(obj []byte, extras Extras) ([]byte, error) {
 	}
 	sort.Strings(keys)
 
-	out := bytes.NewBuffer(obj[:len(obj)-1]) // drop the closing brace
-	empty := out.Len() == 1                  // the object was "{}" — no comma before the first key
+	out := bytes.NewBuffer(obj[:len(obj)-1])
+	empty := out.Len() == 1 // the object was "{}" — no comma before the first key
 	for _, k := range keys {
 		if !empty {
 			out.WriteByte(',')
@@ -178,7 +180,6 @@ func spliceExtras(obj []byte, extras Extras) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// The json key names each persisted type declares, derived once from the structs.
 var (
 	taskKnownKeys = knownNames(Task{})
 	repoKnownKeys = knownNames(RepoRecord{})
@@ -186,10 +187,9 @@ var (
 	metaKnownKeys = knownNames(Meta{})
 )
 
-// encodeCanonicalWithExtras is encodeCanonical plus the unknown keys: compose the
-// object compactly (known fields in struct order, then the unknown ones sorted),
-// then apply the recipe's indentation to the finished document in ONE pass. The
-// indent rules therefore still live in exactly one place.
+// encodeCanonicalWithExtras is the encoder every Marshal* runs: a value's known
+// fields plus the unknown keys it arrived with. It indents the finished document
+// in ONE pass so the byte recipe's indent rules live in exactly one place.
 //
 // NOTE ON WHY THIS IS NOT A MarshalJSON METHOD: a MarshalJSON on Task would be
 // PROMOTED to every struct that embeds it — and internal/cli's --json views embed
@@ -260,8 +260,8 @@ func extraKeys(e Extras) []string {
 
 // ExtraKeys reports the keys this record carried that furrow does not know.
 //
-// All FOUR persisted types expose it, and that is not symmetry for its own sake:
-// all four are machine-written, and all four declare additionalProperties: true
+// EVERY persisted type exposes it, and that is not symmetry for its own sake:
+// all of them are machine-written, and all declare additionalProperties: true
 // in their published schema — so `furrow lint` (internal/app.Lint) is the only
 // thing left that can say "this key is preserved, but IGNORED". A type that
 // parked unknown keys without an accessor would hide a typo in meta.json, a repo
@@ -278,7 +278,6 @@ func (r *RepoRecord) ExtraKeys() []string { return extraKeys(r.extras) }
 // ExtraKeys reports the keys this epic shard carried that furrow does not know.
 func (e *Epic) ExtraKeys() []string { return extraKeys(e.extras) }
 
-// clearExtras is ClearExtras' shared engine: name what is parked, then drop it.
 func clearExtras(e *Extras) []string {
 	keys := extraKeys(*e)
 	*e = nil

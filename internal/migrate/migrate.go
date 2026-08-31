@@ -113,7 +113,6 @@ func Parse(md string, laneOrder []string, defaultLane string, priorityBase, prio
 			flush()
 			sectionStyle = ""
 			sawSection = true
-			// Appendix sections (## 📎 付録 …) are skipped with a warning.
 			if isAppendix(m[1]) {
 				skipSection = true
 				curLane = ""

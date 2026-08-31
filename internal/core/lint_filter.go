@@ -11,9 +11,8 @@ import "sort"
 //   - `[lint].ignore_codes` is CLAMPED against it — an unknown entry is a harmless
 //     no-op (it matches nothing) that `furrow lint` warns about, never an error.
 //
-// Codes are produced across three layers — core (this package: validate.go,
-// cycles.go, staledep.go, epic_lint.go), app (lint.go), and cli (alias-shadow) — so this list,
-// NOT the scattered emission sites, is the single source of truth. EVERY new lint
+// Codes are produced at scattered emission sites across core, app, and cli — so
+// this list, NOT those sites, is the single source of truth. EVERY new lint
 // code MUST be registered here, or `lint --code <new>` would reject it as unknown
 // and `ignore_codes = ["<new>"]` would warn about a code that really exists.
 // TestLintCodeRegistryCoversEmitted (internal/cli) greps the tree and fails if an

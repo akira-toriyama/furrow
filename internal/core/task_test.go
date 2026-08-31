@@ -6,14 +6,13 @@ import (
 	"time"
 )
 
-// sampleTask is one deliberately-noisy task covering the same tricky cases the
-// index golden does, but for a single shard: CJK + HTML-ish title (must survive
-// SetEscapeHTML(false)), a set value/effort, labels that are unsorted AND
-// duplicated (must sort+dedupe), populated deps/refs/checklist, an open task
-// (closed == null), a set reviewed timestamp (the non-null pointer path, while
-// closed exercises the null one), and a set due stamp — which pins BOTH that
-// `due` is written last among the known keys and that it is omitted entirely
-// when nil (the shard of t-0002 in the index golden).
+// sampleTask is one deliberately-noisy task, every field chosen to pin a
+// marshalling rule: CJK + HTML-ish title (must survive SetEscapeHTML(false)),
+// a set value/effort, labels that are unsorted AND duplicated (must
+// sort+dedupe), populated deps/refs/checklist, an open task (closed == null),
+// a set reviewed timestamp (the non-null pointer path, while closed exercises
+// the null one), and a set due stamp, which pins that `due` is written last
+// among the known keys.
 func sampleTask() *Task {
 	mk := func(y int, mo time.Month, d int) time.Time {
 		return time.Date(y, mo, d, 1, 2, 3, 0, time.UTC)
@@ -52,9 +51,8 @@ func TestMarshalTaskGolden(t *testing.T) {
 	goldenBytes(t, "task.golden.json", got)
 }
 
-// TestMarshalTaskDeterministic: the per-task twin of the index contract —
-// re-marshalling a task parsed from canonical bytes yields byte-identical output
-// (zero churn when a shard is re-saved untouched).
+// Re-marshalling a task parsed from canonical bytes must yield byte-identical
+// output: zero git churn when a shard is re-saved untouched.
 func TestMarshalTaskDeterministic(t *testing.T) {
 	first, err := MarshalTask(sampleTask())
 	if err != nil {
@@ -97,7 +95,6 @@ func TestMarshalTaskDetails(t *testing.T) {
 			t.Errorf("expected literal %q to survive un-escaped:\n%s", lit, s)
 		}
 	}
-	// Labels are a set: sorted AND deduped, so ["zmk","canon","zmk"] -> [canon zmk].
 	ci, zi := bytes.Index(got, []byte(`"canon"`)), bytes.Index(got, []byte(`"zmk"`))
 	if ci < 0 || zi < 0 || ci > zi {
 		t.Errorf("labels must be sorted (canon before zmk):\n%s", s)
@@ -105,11 +102,9 @@ func TestMarshalTaskDetails(t *testing.T) {
 	if n := bytes.Count(got, []byte(`"zmk"`)); n != 1 {
 		t.Errorf("labels must be deduped: want 1 \"zmk\", got %d:\n%s", n, s)
 	}
-	// open task -> "closed": null
 	if !bytes.Contains(got, []byte(`"closed": null`)) {
 		t.Errorf("open task must serialize closed as null:\n%s", s)
 	}
-	// a set estimate serializes its key.
 	if !bytes.Contains(got, []byte(`"value": 4`)) || !bytes.Contains(got, []byte(`"effort": 2`)) {
 		t.Errorf("a task with value/effort must serialize them:\n%s", s)
 	}
@@ -140,8 +135,7 @@ func TestUnmarshalTaskRoundTrip(t *testing.T) {
 	}
 }
 
-// UnmarshalTask reports a parse failure as a validation error (malformed input),
-// mirroring Unmarshal for the index.
+// UnmarshalTask reports a parse failure as a validation error (malformed input).
 func TestUnmarshalTaskRejectsGarbage(t *testing.T) {
 	if _, err := UnmarshalTask([]byte("{not json")); err == nil {
 		t.Error("expected a validation error for malformed shard bytes")

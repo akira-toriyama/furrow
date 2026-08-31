@@ -134,7 +134,7 @@ func TestAutoCommitDisabledNeverCommits(t *testing.T) {
 	}
 }
 
-// Option 3: a `note` on an existing (tracked) task commits its OWN body prose —
+// A `note` on an existing (tracked) task commits its OWN body prose —
 // the whole point of the feature on a standalone board.
 func TestAutoCommitNoteCommitsOwnBody(t *testing.T) {
 	git, dir := setupACBoard(t)

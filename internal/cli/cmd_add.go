@@ -106,7 +106,6 @@ func newAddCmd() *cobra.Command {
 			warnClamp("effort", opts.Effort, t.Effort)
 			warnShadowedDraft(a, opts.Draft, len(t.Repos) == 0)
 			noteInheritedEpic(cmd, []core.Task{*t})
-			// printOK renders JSON (--json / --ndjson) or the human line.
 			printOK("added", t)
 			return nil
 		},

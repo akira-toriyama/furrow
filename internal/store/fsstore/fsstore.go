@@ -20,8 +20,8 @@ import (
 // meta.json (the one board-wide schema version). There is NO index.json — that
 // monolithic array was abolished so two operators adding tasks on separate
 // worktrees touch disjoint files and never git-conflict. The Store is
-// constructed with the few config-derived values it needs (lane order for the
-// marshaller's sort, id prefix/length for NextID) so it never imports config.
+// constructed with the config-derived values it needs (the id prefixes and
+// width for NextID/NextEpicID) so it never imports config.
 type Store struct {
 	root       string // absolute path to the .furrow directory
 	laneOrder  []string
@@ -128,8 +128,7 @@ func (s *Store) BoardVersion() (int, error) {
 // which is what gives BoardVersion its "0 means absent" contract; an unreadable
 // one is an error, never a guess.
 //
-// Everything that touches meta.json goes through here (BoardVersion, lint's
-// unknown-key check, SetBoardVersion's read-raise-write): one parse, one error
+// Everything that touches meta.json goes through here: one parse, one error
 // message, and no second place that could decide to fall back to "whatever
 // version this binary is" — the fallback that silently disabled the gate on
 // 2026-07-13.
@@ -289,7 +288,6 @@ func (s *Store) Save(idx *core.Index) error {
 		return core.Internalf("index", "create tasks/: %v", err)
 	}
 
-	// One shard per task, written only when it differs from disk.
 	want := make(map[string]bool, len(idx.Tasks))
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]

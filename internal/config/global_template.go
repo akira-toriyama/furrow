@@ -15,8 +15,9 @@ const (
 
 // GlobalTemplate is the canonical ~/.config/furrow/config.toml written by
 // `furrow config init` (with placeholder values when it can't derive a board
-// from context) and mirrored at the repo root as config.global.toml. furrow only
-// ever READS this file; a half-written entry is clamped away with a warning
+// from context) and mirrored at the repo root as config.global.toml. Only
+// `furrow config init` and `furrow config set --user` write it; every other
+// command READS it, and a half-written entry is clamped away with a warning
 // (`furrow lint` and `furrow config path` report it), never an error.
 //
 // Keep this in sync with the repo-root config.global.toml (a from-source

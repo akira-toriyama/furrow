@@ -129,7 +129,6 @@ func TestQueryRepoResolvesLikeDashR(t *testing.T) {
 	if got := qTitles(t, a, "repo:alice/tool"); !slices.Equal(got, []string{"alice work"}) {
 		t.Errorf("a full owner/repo must match exactly one repo, got %v", got)
 	}
-	// An unresolvable name is exit 2, not a silent empty result.
 	if e := qErr(t, a, "repo:nosuch"); e.Code == 0 {
 		t.Error("an unresolvable repo must be an error, not []")
 	}

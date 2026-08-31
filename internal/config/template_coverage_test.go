@@ -52,7 +52,7 @@ func TestTemplateCoversEveryShippedKey(t *testing.T) {
 			if !strings.Contains(Template, "["+tag+"]") {
 				t.Errorf("template is missing section [%s]", tag)
 			}
-		default: // a bare top-level key (standalone, default_repo)
+		default: // a bare top-level key
 			if !keyAppears(Template, tag) {
 				t.Errorf("template is missing top-level key %q (live or commented)", tag)
 			}

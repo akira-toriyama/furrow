@@ -85,10 +85,10 @@ func resolveRepoArgs(args []string, id string, universe []string) ([]string, err
 	return out, nil
 }
 
-// ResolveRepo resolves a single -r/--repo argument for the read commands
-// (ls/next/revisit): full owner/repo passes (canonicalized against the
-// universe's casing when known), a short name must match exactly one known
-// repo. See resolveRepoIn for the error contract.
+// ResolveRepo resolves a single -r/--repo argument against the board's repo
+// universe: full owner/repo passes (canonicalized against the universe's
+// casing when known), a short name must match exactly one known repo. See
+// resolveRepoIn for the error contract.
 func (a *App) ResolveRepo(arg string) (string, error) {
 	idx, err := a.load()
 	if err != nil {
@@ -144,9 +144,8 @@ func (a *App) Rerepo(id string, add, remove []string) (*core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Same set algebra labels and refs use — remove first, then append the adds
-	// not already present — so the three cannot drift apart. It was written out
-	// by hand here, a second implementation of one rule.
+	// Same set algebra labels and refs use, so the three cannot drift apart. It
+	// was written out by hand here, a second implementation of one rule.
 	next := labelDelta(t.Repos, addR, rmR)
 	return a.mutateIn(idx, id, func(t *core.Task) { t.Repos = next })
 }

@@ -78,7 +78,6 @@ func TestLintSelfDepReportedOnce(t *testing.T) {
 func TestLintReportsDanglingLink(t *testing.T) {
 	a := newApp()
 	live, _ := a.Add("live", AddOpts{Status: "ready"})
-	// One reference resolves (self), one dangles.
 	if err := a.Store.SaveBody(live.ID, "# live\n\nrelates to [["+live.ID+"]] and [[t-gone0]]\n"); err != nil {
 		t.Fatal(err)
 	}

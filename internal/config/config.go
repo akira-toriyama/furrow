@@ -208,8 +208,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 		}
 	}
 
-	// default lane must exist in the order. When the global default lane isn't
-	// part of a custom order, fall back to that order's first lane.
+	// The default lane must always exist in the lane order.
 	defaultFallback := DefaultLane
 	if !contains(c.Lanes, defaultFallback) {
 		defaultFallback = c.Lanes[0]
@@ -222,7 +221,6 @@ func fromRaw(r raw) (*Config, []string, error) {
 	}
 	c.DoneLane = clampLane(r.Lanes.Done, doneFallback, c.Lanes, "lanes.done", &warn)
 
-	// terminal lanes: keep only those that are real lanes.
 	if r.Lanes.Terminal != nil {
 		var keep []string
 		for _, l := range r.Lanes.Terminal {
@@ -234,7 +232,6 @@ func fromRaw(r raw) (*Config, []string, error) {
 		}
 		c.Terminal = setOf(keep)
 	} else {
-		// default terminal set, intersected with the configured lanes.
 		var keep []string
 		for _, l := range DefaultTerminal {
 			if contains(c.Lanes, l) {
@@ -268,7 +265,6 @@ func fromRaw(r raw) (*Config, []string, error) {
 		c.DueIgnoreLanes = setOf(keep)
 	}
 
-	// next lanes: keep only real lanes; empty/absent -> sensible default.
 	if r.Next.Lanes != nil {
 		var keep []string
 		for _, l := range r.Next.Lanes {

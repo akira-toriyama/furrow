@@ -15,8 +15,8 @@ import (
 // board, not just the hot half. `furrow board`'s `writable` is the key the
 // sync-task-status.yml pre-flight branches on, so a board that reports writable
 // while its archive store is behind sends CI on its way toward a write that will
-// be refused. This file is the one place that folds the stores together; board.go,
-// lint.go and upgrade.go all read it, so the answer cannot diverge between them.
+// be refused. This file is the one place that folds the stores together, so the
+// answer cannot diverge between the commands that report it.
 
 // storeVersion is one store of a board and the layout version it declares.
 type storeVersion struct {

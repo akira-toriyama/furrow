@@ -114,10 +114,9 @@ func newReviewCmd() *cobra.Command {
 	return cmd
 }
 
-// emitRepoReview reports a per-repo review. In machine mode it prints the whole
-// record ({repo, last_reviewed, last_agent_reviewed}) so an agent sees both
-// clocks; in human mode it prints which clock advanced (and, for an agent sweep,
-// that the human clock was deliberately left alone).
+// emitRepoReview reports a per-repo review. Machine mode emits the whole record
+// so an agent sees BOTH clocks; human mode names only the clock that advanced,
+// and an agent sweep says outright that the human clock was left alone.
 func emitRepoReview(rec *core.RepoRecord, byAgent bool) {
 	if jsonMode() {
 		emitObject(rec)

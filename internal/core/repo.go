@@ -6,8 +6,8 @@ import (
 )
 
 // IsRepoShaped reports whether s has the owner/repo shape a Task.Repos entry
-// must carry (the single shape gate — see repoShapeRe in validate.go; strict
-// writers reuse this instead of growing a second, divergent regexp).
+// must carry (the single shape gate — repoShapeRe; strict writers reuse this
+// instead of growing a second, divergent regexp).
 func IsRepoShaped(s string) bool { return repoShapeRe.MatchString(s) }
 
 // RepoMatches resolves q against a universe of owner/repo identifiers and

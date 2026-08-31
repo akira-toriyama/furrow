@@ -27,7 +27,7 @@ var out io.Writer = os.Stdout
 var errOut io.Writer = os.Stderr
 
 // mustJSON marshals deterministically (SetEscapeHTML(false), 2-space indent) so
-// CLI JSON output matches the index's encoding style.
+// CLI JSON output reads in the same byte style core.Marshal* writes a shard in.
 func mustJSON(v any) []byte {
 	var b bytes.Buffer
 	e := json.NewEncoder(&b)
@@ -76,8 +76,9 @@ func emitObject(v any) {
 	printJSON(v)
 }
 
-// isTTY reports whether stdout is a terminal — used to pick table vs plain
-// output and to gate destructive ops in non-interactive contexts.
+// isTTY reports whether stdout is a terminal, so a path that would otherwise
+// hand control to an interactive program prints its output instead when nobody
+// is there to drive it.
 func isTTY() bool {
 	return term.IsTerminal(int(os.Stdout.Fd()))
 }
@@ -108,7 +109,9 @@ func printTaskTable(a *app.App, tasks []core.Task) {
 		if len(t.Repos) > 0 {
 			title += "  (" + strings.Join(t.Repos, ",") + ")"
 		}
-		// The due tag rides in the title cell too — see printListItemTable.
+		// The due tag rides in the title cell like the labels and repos, not as its
+		// own column: a column would widen every row on every board for a field only
+		// a few tasks carry.
 		if tag := dueTag(a, &t); tag != "" {
 			title += "  " + tag
 		}
@@ -387,13 +390,7 @@ func printTreeGroup(a *app.App, g app.TreeGroup) {
 	}
 }
 
-// printTreeNode draws one member task. One glyph carries the state at a glance:
-//
-//	★  actionable — in a next lane with every dep done
-//	✓  done
-//	~  parked in a terminal lane that is not done (icebox, waiting)
-//	·  open, but not available: blocked by a dep, or not in a next lane
-//
+// printTreeNode draws one member task, marked with the shared state glyph.
 // The lane is printed too: a glyph is a summary, not a substitute, and `[ready]`
 // is what greps.
 func printTreeNode(a *app.App, n app.TreeNode) {
@@ -438,10 +435,9 @@ func stateGlyph(a *app.App, actionable bool, status string) string {
 
 // listItemView is one row of `ls`'s --json: the whole task (embedded, so it stays
 // a superset of the bare-task shape older readers expect) plus the DERIVED facts
-// the flat list now exposes — actionable (★), blocked_by (what's in the way),
-// container (a box), and stuck (a box with open work but nothing actionable under
-// it). Same discipline as treeView: core.Task is EMBEDDED, so it must never grow a
-// MarshalJSON or these sibling fields would silently vanish.
+// the flat list exposes beside the stored ones. Same discipline as treeView:
+// core.Task is EMBEDDED, so it must never grow a MarshalJSON or these sibling
+// fields would silently vanish.
 type listItemView struct {
 	core.Task
 	Actionable bool     `json:"actionable"`
@@ -475,9 +471,8 @@ func emitListItems(a *app.App, items []app.ListItem) error {
 
 // printListItemTable is printTaskTable plus a leading one-character state column
 // (the same glyph the tree uses) — so the everyday `ls` shows, at a glance, which
-// rows `furrow next` would hand you (★) and which are merely open (·). A ~ stuck
-// tag rides after a container box that has open work but nothing actionable under
-// it (the one flat-list place that signal can appear). Plain, greppable output.
+// rows are ready to pick up (★) and which are merely open (·). Plain, greppable
+// output.
 func printListItemTable(a *app.App, items []app.ListItem) {
 	if len(items) == 0 {
 		fmt.Fprintln(out, "(no tasks)")
@@ -514,9 +509,8 @@ func printListItemTable(a *app.App, items []app.ListItem) {
 }
 
 // taskRefView is one resolved edge (JSON shape): the referenced task's id, title,
-// and lane. A dangling ref (an id naming no task) has an empty title/status. Shared
-// by `dep --list` and `parent --list` — a dep, a parent, and a child are the same
-// shape, and one view keeps them reading the same.
+// and lane. A dangling ref (an id naming no task) has an empty title/status. One
+// shape for every edge direction, so both halves of `dep --list` read the same.
 type taskRefView struct {
 	ID     string `json:"id"`
 	Title  string `json:"title"`

@@ -56,7 +56,7 @@ type App struct {
 	// is what every real invocation uses (it is also the zone the CLI already
 	// renders timestamps in). It is a field, not a call to time.Local, because the
 	// Clock is UTC by contract (core.SystemClock) and a test that pinned only the
-	// clock would silently assert UTC days — see App.loc().
+	// clock would silently assert UTC days.
 	Loc *time.Location
 
 	// DefaultLabel is a central board's LITERAL `label` tag ("" = none): `add`
@@ -79,8 +79,7 @@ type App struct {
 
 	// AutoCommit reports whether this board opted into post-mutation git commits
 	// (the user-config [[board]] `autocommit` key; default false). When on, the
-	// CLI runs AutoCommitFlush after a successful mutating command. See
-	// autocommit.go.
+	// CLI runs AutoCommitFlush after a successful mutating command.
 	AutoCommit bool
 
 	// ScopeWarnings are discovery-time notes bound for stderr (e.g. the global
@@ -89,11 +88,10 @@ type App struct {
 	ScopeWarnings []string
 
 	// BoardRepos is the repo set the board scopes to (derived from the enclosing
-	// checkout — the owner/repo parsed from the git origin URL, see
-	// deriveScopeRepo — or declared by the board itself). Open
-	// populates it from DefaultRepo; it participates in the short-name
-	// resolution universe (see repoUniverse), so a derived repo resolves short
-	// names even before its first task exists.
+	// checkout — the owner/repo parsed from the git origin URL — or declared by
+	// the board itself). Open populates it from DefaultRepo; it participates in
+	// the short-name resolution universe, so a derived repo resolves short names
+	// even before its first task exists.
 	BoardRepos []string
 
 	// Source records how the store was discovered — "env" (FURROW_DIR or
@@ -224,7 +222,7 @@ type resolution struct {
 //
 // The rule is one sentence: the board's `default_repo` applies only when
 // discovery ran an arm that declares no scope at all, and when it applies it
-// always filters. So it bites exactly the two arms that inject nothing today —
+// always filters. So it bites exactly the arms that inject no scope at all —
 // a local `.furrow` (cwd inside the board's own tree) and FURROW_DIR — while a
 // pointer or a `[[board]]`, having ANSWERED the scope question, ends it. That is
 // the whole point: without it the same board answers `ls` differently depending
@@ -389,8 +387,8 @@ func resolvePathRelTo(baseDir, p string) (string, error) {
 // without a per-repo pointer. Several boards may be configured; the one whose
 // scope most specifically (longest canonical prefix) encloses cwd wins, with
 // ties broken by file order. It returns ok=false with no error whenever there is
-// no default board OR cwd is outside every scope, so discover falls through to
-// the usual "run furrow init" error and behaves exactly as before. A bad board
+// no default board OR cwd is outside every scope, so the walk's give-up error
+// decides the remedy rather than this arm failing. A bad board
 // path is a loud error, but only for the winning board once the scope gate has
 // passed (so a stray config never breaks furrow in unrelated repos).
 func resolveGlobalBoard(startDir string) (resolution, bool, error) {
@@ -439,7 +437,7 @@ func resolveGlobalBoard(startDir string) (resolution, bool, error) {
 		}
 	}
 	if winner == nil {
-		return resolution{}, false, nil // out of every scope: inert, behaves like today
+		return resolution{}, false, nil // out of every scope: the walk falls through to its give-up error
 	}
 	if fi, err := os.Stat(winBoard); err != nil || !fi.IsDir() {
 		return resolution{}, false, core.Validationf("", "central board %q is not an existing directory", winBoard)
@@ -708,8 +706,8 @@ func (o AddOpts) requireNonBlankValues(id string) error {
 
 // Add creates a task, writes its body file, and saves the index — a
 // one-element addMany, so the task-creation rule has exactly ONE
-// implementation (t-dk6w: Add and AddMany used to duplicate all 15 of its
-// steps, and every recorded divergence — t-adx9, t-ek9y, the dropped --check,
+// implementation (t-dk6w: Add and AddMany used to duplicate every step of it,
+// and every recorded divergence — t-adx9, t-ek9y, the dropped --check,
 // the unfolded title — was one path forgetting a step the other had). Errors
 // keep the classic single-task wording (no "spec 0" prefix). Returns the
 // created task.
@@ -1007,8 +1005,9 @@ type QueryOpts struct {
 	Repo      string // owner/repo filter on the repos field (already resolved)
 	Drafts    bool   // only tasks with repos == []; ignores ScopeRepo/Repo
 	// Since/Until filter on the Updated timestamp (inclusive bounds); nil = no
-	// bound. Only `ls` wires these today, but they live here so any read that
-	// funnels through match can gain a date window without a second predicate.
+	// bound. They live on QueryOpts rather than on one command's flags so any
+	// read funnelling through match can gain a date window without a second
+	// predicate.
 	Since *time.Time
 	Until *time.Time
 	// Sort re-orders List's result by one of core.SortFields (empty = canonical
@@ -1315,7 +1314,7 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 			}
 		}
 		// "Ready" = in a next lane AND every dep done — the same rule
-		// App.actionable/workable encode, expressed here against the (possibly
+		// App.actionable encodes, expressed here against the (possibly
 		// overridden) lane set so `ls --tree`'s ★ and a plain `next` still agree.
 		ready := inNextLane(t.Status) && idx.Actionable(t, a.Cfg.Terminal, doneIDs)
 		if !ready {
@@ -1885,14 +1884,13 @@ func labelDelta(cur, add, remove []string) []string {
 	return next
 }
 
-// SetOpts is the combined-edit payload for Set — the routine triage edits
-// (lane, priority, value, effort, labels, type) in one write. A nil pointer /
-// empty slice / false flag means "leave that facet alone"; ClearValue/
-// ClearEffort explicitly unset an estimate (distinct from "leave alone").
-// Priority sets the sparse integer directly; Before/After compute it relative
-// to a lane-mate in the DESTINATION lane (so a cross-column drop — lane plus
-// position — is one write: `-s <lane> --before <ref>`); the three are mutually
-// exclusive. Deps and repos keep their own commands.
+// SetOpts is the combined-edit payload for Set — the routine triage edits in
+// one write. A nil pointer / empty slice / false flag means "leave that facet
+// alone"; ClearValue/ClearEffort explicitly unset an estimate (distinct from
+// "leave alone"). Priority sets the sparse integer directly; Before/After
+// compute it relative to a lane-mate in the DESTINATION lane (so a cross-column
+// drop — lane plus position — is one write: `-s <lane> --before <ref>`); the
+// three are mutually exclusive. Deps keep their own command.
 type SetOpts struct {
 	Status      *string  // move to this lane (validated like Move)
 	Priority    *int     // set the sparse priority directly
@@ -2264,8 +2262,8 @@ func (a *App) mutateIn(idx *core.Index, id string, fn func(*core.Task)) (*core.T
 // calling it unconditionally: a path that also moved a NEIGHBOR (reorder's
 // respace) must still persist that even when the target itself did not move.
 //
-// This is what the idempotence three write paths already promise in prose
-// ("re-runs don't churn the diff" — Relabel, Reref, Rerepo) actually costs.
+// This is what the idempotence the list-editing write paths already promise in
+// prose ("re-runs don't churn the diff") actually costs.
 // Updated is the clock `is:stale`, revisit's stale signal, lint's reconcile-gap
 // and `ls --since` all read, so an agent's idempotent retry must not reset it —
 // and on a shared board each retry was one more commit for everyone to sync.
@@ -2480,8 +2478,8 @@ func (a *App) appendBody(id, text string) error {
 // markBodyTouched records that this process created, modified, or deleted the
 // body of task id — the set AutoCommitFlush passes as SyncOpts.Bodies so
 // autocommit commits the command's OWN body edits even when the file is already
-// tracked (see App.bodiesTouched and autocommit.go). Cheap by design so every
-// body write can call it unconditionally, whether or not autocommit is on.
+// tracked. Cheap by design so every body write can call it unconditionally,
+// whether or not autocommit is on.
 func (a *App) markBodyTouched(id string) {
 	if a.bodiesTouched == nil {
 		a.bodiesTouched = map[string]bool{}

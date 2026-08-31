@@ -75,7 +75,6 @@ func TestEpicDepAddListAndEnvelope(t *testing.T) {
 	if len(r.DependsOn) != 1 || r.DependsOn[0].ID != moving || r.DependsOn[0].State != "open" || r.DependsOn[0].Title != "moving" {
 		t.Errorf("depends_on must resolve id+title+state, got %+v", r.DependsOn)
 	}
-	// The reverse direction from the dep's side.
 	out, code = run(t, "--json", "epic", "dep", moving, "--list")
 	if code != 0 {
 		t.Fatalf("epic dep --list exit=%d:\n%s", code, out)
@@ -143,7 +142,6 @@ func TestEpicActivateOpenDepsWarning(t *testing.T) {
 		t.Errorf("open_deps = %v, want [%s]", env.OpenDeps, moving)
 	}
 
-	// After the dep closes, activate carries no open_deps key at all.
 	if _, code := run(t, "epic", "done", moving); code != 0 {
 		t.Fatal("done")
 	}

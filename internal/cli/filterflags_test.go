@@ -68,7 +68,6 @@ func TestFilterFlagUsagesAreUniform(t *testing.T) {
 			t.Errorf("read command %q not found in the tree — update this test's list", r)
 		}
 	}
-	// Each override must still exist as a flag, or the allowlist is stale.
 	for key := range overridden {
 		parts := strings.SplitN(key, "/", 2)
 		if parts[1] == "" {

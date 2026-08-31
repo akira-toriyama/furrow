@@ -1,7 +1,6 @@
 // Package memstore is an in-memory core.Store. It is a normal (non-test)
-// package so runtime code that must not touch disk could use it as well; today
-// every caller is a test. Mirrors chord's AdapterTest-as-a-real-target
-// convention.
+// package so runtime code that must not touch disk could use it as well.
+// Mirrors chord's AdapterTest-as-a-real-target convention.
 package memstore
 
 import (
@@ -427,7 +426,7 @@ func (s *Store) DeleteAsset(name string) error {
 }
 
 // BodyFile returns "" — an in-memory store is not file-backed, so $EDITOR
-// shell-out (the only caller) is not supported against it.
+// shell-out is not supported against it.
 func (s *Store) BodyFile(id string) string { return "" }
 
 func (s *Store) DeleteBody(id string) error {

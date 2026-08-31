@@ -29,7 +29,7 @@ func IsSortField(field string) bool {
 // normalizes a bare-day due to that day's 23:59:59, so same-day tasks carry a
 // byte-identical time.Time and nothing but sort.SliceStable's stability decided
 // their order. Swapping that one call for an unstable sort scrambled `furrow
-// brief`'s overdue band from its first row while all 11 packages stayed green.
+// brief`'s overdue band from its first row while the test suite stayed green.
 func TaskOrder(laneOrder []string) func(a, b *Task) int {
 	rank := laneRank(laneOrder)
 	return func(a, b *Task) int {

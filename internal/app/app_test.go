@@ -45,7 +45,6 @@ func TestAddAssignsRandomIDAndSparsePriority(t *testing.T) {
 	if t2.Body != "bodies/"+t2.ID+".md" {
 		t.Errorf("body path should match the id: %q", t2.Body)
 	}
-	// body file seeded from the title
 	if body, _ := a.Store.LoadBody(t2.ID); body != "# second\n" {
 		t.Errorf("body should seed a heading, got %q", body)
 	}
@@ -238,7 +237,6 @@ func TestAddStampsClosedWhenBornInDoneLane(t *testing.T) {
 	if tk.Closed == nil {
 		t.Error("a task added directly into the done lane must stamp Closed, got nil")
 	}
-	// a non-done lane must NOT stamp Closed.
 	open, _ := a.Add("open", AddOpts{Status: "ready"})
 	if open.Closed != nil {
 		t.Errorf("a task in a non-done lane must not stamp Closed, got %v", open.Closed)
@@ -382,7 +380,6 @@ func TestAddDepAndRemoveDep(t *testing.T) {
 	tb, _ := a.Add("b", AddOpts{})
 	tc, _ := a.Add("c", AddOpts{})
 
-	// b depends on a; c depends on b.
 	if _, err := a.AddDep(tb.ID, ta.ID); err != nil {
 		t.Fatalf("AddDep b->a: %v", err)
 	}
@@ -390,7 +387,6 @@ func TestAddDepAndRemoveDep(t *testing.T) {
 		t.Fatalf("AddDep c->b: %v", err)
 	}
 
-	// Re-adding is idempotent (no duplicate dep).
 	t2, err := a.AddDep(tb.ID, ta.ID)
 	if err != nil {
 		t.Fatalf("idempotent AddDep: %v", err)
@@ -399,11 +395,9 @@ func TestAddDepAndRemoveDep(t *testing.T) {
 		t.Errorf("re-adding a dep must not duplicate it, got %v", t2.Deps)
 	}
 
-	// Self-dependency is rejected.
 	if _, err := a.AddDep(ta.ID, ta.ID); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("self-dep should be a validation error, got %v", err)
 	}
-	// Unknown dependency is rejected.
 	if _, err := a.AddDep(tb.ID, "t-9999"); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("unknown dep should be a validation error, got %v", err)
 	}
@@ -412,7 +406,6 @@ func TestAddDepAndRemoveDep(t *testing.T) {
 		t.Errorf("cycle-creating dep should be a validation error, got %v", err)
 	}
 
-	// Remove a real dep.
 	rt, err := a.RemoveDep(tb.ID, ta.ID)
 	if err != nil {
 		t.Fatalf("RemoveDep: %v", err)
@@ -424,7 +417,6 @@ func TestAddDepAndRemoveDep(t *testing.T) {
 	if _, err := a.RemoveDep(tb.ID, ta.ID); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("removing a non-dependency should be a validation error, got %v", err)
 	}
-	// Unknown task id is NotFound.
 	if _, err := a.AddDep("t-9999", ta.ID); core.ExitCode(err) != int(core.CodeNotFound) {
 		t.Errorf("AddDep on unknown id should be NotFound, got %v", err)
 	}
@@ -440,7 +432,6 @@ func TestDoneStampsClosedAndMoveClears(t *testing.T) {
 	if done.Status != "done" || done.Closed == nil {
 		t.Errorf("done should set lane=done + Closed: %+v", done)
 	}
-	// moving back out of done clears Closed.
 	back, _ := a.Move(tk.ID, "ready")
 	if back.Closed != nil {
 		t.Errorf("moving out of done should clear Closed, got %v", back.Closed)
@@ -869,15 +860,12 @@ func TestCheckOutOfRangeIsValidationError(t *testing.T) {
 	if _, err := a.Check("t-9999", 0, true); core.ExitCode(err) != int(core.CodeNotFound) {
 		t.Errorf("missing id should be not-found, got %v", err)
 	}
-	// in-range still works.
 	if _, err := a.Check(tk.ID, 0, true); err != nil {
 		t.Errorf("in-range check should succeed, got %v", err)
 	}
 }
 
 func TestArchiveCommitsBeforeDeletingBodies(t *testing.T) {
-	// End-to-end archive against a real fsstore: aged done task moves to
-	// .furrow/archive/, hot body is gone, archive body+index present, hot lint clean.
 	dir := t.TempDir()
 	ia, err := Init(dir)
 	if err != nil {

@@ -45,8 +45,7 @@ func (a *App) LintErrorCounts() (LintErrorSummary, error) {
 // one place that tells you everything that is off.
 //
 // The filesystem-side checks mirror how the core rules are already split — one
-// named sweep per file kind (lintRecordKeys, lintStoreShape, lintBodyContent,
-// lintConfigProblems below), stitched here in dependency order: the store shape
+// named sweep per file kind, stitched here in dependency order: the store shape
 // yields the live id set the body scan resolves links against.
 func (a *App) Lint() ([]core.Problem, error) {
 	idx, err := a.Store.Load()
@@ -79,7 +78,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 	}
 
 	// One pass over the task shards: collect the done set and flag per-shard
-	// findings (unknown keys, done-unclosed) on the way.
+	// findings on the way.
 	doneIDs := map[string]bool{}
 	for _, t := range idx.Tasks {
 		if p, ok := unknownKeyProblem(t.ID, "task shard "+core.TaskPath(t.ID), t.ExtraKeys()); ok {
@@ -449,7 +448,6 @@ func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
 		}
 	}
 
-	// required-label rule (config [labels].required).
 	if a.Cfg.LabelsRequired {
 		for _, t := range idx.Tasks {
 			if len(t.Labels) == 0 {
@@ -458,7 +456,6 @@ func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
 		}
 	}
 
-	// surface config clamp warnings as lint warns.
 	for _, w := range a.Warnings {
 		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "config", Msg: w})
 	}

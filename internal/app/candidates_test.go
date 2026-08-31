@@ -11,8 +11,9 @@ import (
 // must ALWAYS fail with the candidates in
 // Candidates — CLAUDE.md tells agents to branch on that array and never regex
 // the prose, so a gate that omits it is a silent contract break, not a cosmetic
-// one. Before this test, unknownTypeErr had no coverage at all and AddMany
-// rebuilt both messages with Validationf, so `add --stdin -s ghots` exited 2
+// one. Before this test, the closed-vocabulary gate had no coverage at all and
+// AddMany rebuilt both messages with Validationf, so `add --stdin -s ghots`
+// exited 2
 // with NO candidates while `add -s ghots` had them (the bulk-vs-single
 // divergence class of t-adx9 / t-ek9y, this time in the error shape).
 func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {

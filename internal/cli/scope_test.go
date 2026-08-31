@@ -208,7 +208,6 @@ func TestLs_TagFilterANDsWithScope(t *testing.T) {
 		t.Errorf("-l tag must still filter by the tag:\n%s", got)
 	}
 
-	// -r '' is the whole-board escape.
 	whole, _ := runLs(t, "ls", "-r", "")
 	for _, want := range []string{"only on board", "other tagged", "in scope tagged", "in scope plain"} {
 		if !strings.Contains(whole, want) {
@@ -235,7 +234,6 @@ func TestLs_ScopeHidesDraftsHint(t *testing.T) {
 	if !strings.Contains(se, "draft(s) hidden") || !strings.Contains(se, "--drafts") {
 		t.Errorf("stderr should hint at the hidden draft, got:\n%s", se)
 	}
-	// The escape hatch shows the draft and mutes the hint.
 	so, se = runLs(t, "ls", "--drafts")
 	if !strings.Contains(so, "a draft") {
 		t.Errorf("--drafts should list the draft:\n%s", so)

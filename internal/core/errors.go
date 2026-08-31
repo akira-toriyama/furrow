@@ -54,10 +54,9 @@ type Error struct {
 	// non-empty, so agents branch on the array and never regex the prose.
 	Candidates []string
 	// Retryable marks transient failures whose documented recovery is
-	// re-running the same command (sync-busy, sync-push-rejected,
-	// sync-interrupted). Agents branch on this ONE key — retry on true,
-	// escalate or fix the input on false — instead of memorizing which kinds
-	// are transient. Always rendered in the envelope, even when false.
+	// re-running the same command. Agents branch on this ONE key — retry on
+	// true, escalate or fix the input on false — instead of memorizing which
+	// kinds are transient. Always rendered in the envelope, even when false.
 	Retryable bool
 }
 

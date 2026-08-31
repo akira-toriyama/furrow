@@ -41,7 +41,7 @@ func StaleDepProblems(idx *Index, terminal, doneIDs map[string]bool) []Problem {
 		}
 		for _, dep := range t.Deps {
 			if !doneIDs[dep] {
-				continue // not a done dependency
+				continue
 			}
 			closed := closedOf[dep]
 			if closed == nil {

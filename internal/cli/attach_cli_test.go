@@ -85,7 +85,6 @@ func TestCLIAttachUpdatesBodyAndJSON(t *testing.T) {
 		t.Errorf("line = %q", res.Line)
 	}
 
-	// the reference actually landed in the body
 	show, code := run(t, "--json", "show", id)
 	if code != 0 {
 		t.Fatalf("show exit = %d:\n%s", code, show)
@@ -94,7 +93,6 @@ func TestCLIAttachUpdatesBodyAndJSON(t *testing.T) {
 		t.Errorf("body does not reference the asset:\n%s", show)
 	}
 
-	// the asset file exists on disk under the store
 	assetFile := filepath.Join(os.Getenv(app.EnvDir), "bodies", "assets", wantName)
 	if _, err := os.Stat(assetFile); err != nil {
 		t.Errorf("asset file missing on disk: %v", err)

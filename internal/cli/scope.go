@@ -8,18 +8,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// scopedQuery resolves the board scope and the repo/epic filters for a read
-// command (ls/next/revisit/stats/search). The board scope (a pointer's or
-// central board's DefaultRepo, honored when AutoFilter is on) lands in
-// ScopeRepo; the explicit -l value is a pure tag filter (Label) that ANDs with
-// the scope and never clears it. Scope control is -r only: an explicit -r X
-// replaces the board scope with a repo filter (X resolved strictly — a full
-// owner/repo, or a short name matching exactly one repo known to the board),
-// and -r "" means the whole board. -e resolves through the same strict path
-// `epic show` uses (exact id, unique id prefix, unique title substring; a
-// miss/ambiguity is exit 2 + candidates), so a typo never silently returns [];
-// a command without the flag passes "". The filtering stays silent (stderr
-// quiet, stdout pure data).
+// scopedQuery resolves the board scope and the repo/epic filters for a read;
+// the batch mutators' write selector resolves through this same path, so a
+// selector matches exactly what the equivalent read lists. The board scope (a
+// pointer's or central board's DefaultRepo, honored when AutoFilter is on)
+// lands in ScopeRepo; the explicit -l value is a pure tag filter (Label) that
+// ANDs with the scope and never clears it. Scope control is -r only: an
+// explicit -r X replaces the board scope with a repo filter (X resolved
+// strictly — a full owner/repo, or a short name matching exactly one repo known
+// to the board), and -r "" means the whole board. -e resolves through the same
+// strict path `epic show` uses (exact id, unique id prefix, unique title
+// substring; a miss/ambiguity is exit 2 + candidates), so a typo never silently
+// returns []; a command without the flag passes "". The filtering stays silent
+// (stderr quiet, stdout pure data).
 func scopedQuery(cmd *cobra.Command, a *app.App, flagLabel, flagRepo, flagEpic string) (app.QueryOpts, error) {
 	o := app.QueryOpts{Label: flagLabel}
 	if a.DefaultRepo != "" && a.AutoFilter {

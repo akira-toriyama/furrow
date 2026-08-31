@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// findProblems returns the report's problems carrying code.
 func findProblems(r *DoctorReport, code string) []int {
 	var idx []int
 	for i, p := range r.Problems {
@@ -52,7 +51,6 @@ func TestDoctorHealthyMachine(t *testing.T) {
 	if r.Boards[0].Git.State != GitNotARepo {
 		t.Errorf("a board outside git must probe %q, got %q", GitNotARepo, r.Boards[0].Git.State)
 	}
-	// cwd resolves through the user-config arm, informationally.
 	if len(r.Resolutions) != 1 {
 		t.Fatalf("resolutions = %+v, want the cwd probe alone", r.Resolutions)
 	}

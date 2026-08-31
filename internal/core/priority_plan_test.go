@@ -74,7 +74,6 @@ func TestPlanRelativePriorityRespacesExhaustedGap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Lane respaced to 100,110,120 with c slotted between a and b.
 	if target != 110 {
 		t.Errorf("target = %d, want 110", target)
 	}

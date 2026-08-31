@@ -43,7 +43,6 @@ func TestPendingBodiesNote(t *testing.T) {
 	if !strings.Contains(note, "yours alone") {
 		t.Errorf("nudge must carry --all-bodies' yours-alone precondition inline: %q", note)
 	}
-	// The safe option must come BEFORE --all-bodies in the text.
 	if bi, ai := strings.Index(note, "-b <id>"), strings.Index(note, "--all-bodies"); bi < 0 || ai < 0 || bi > ai {
 		t.Errorf("`-b <id>` must precede `--all-bodies`: %q", note)
 	}
@@ -149,7 +148,6 @@ func TestReviewIDShapedRepoShortNameFallsThroughToRepo(t *testing.T) {
 		t.Errorf("t-digest should have been reviewed as a REPO, got %+v", rec)
 	}
 
-	// id-shaped, but neither an existing task nor a resolvable repo -> not found.
 	if _, code := run(t, "review", "t-zzzz9"); code != 1 {
 		t.Errorf("unknown id-shaped token exit = %d, want 1 (task not found)", code)
 	}

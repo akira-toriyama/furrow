@@ -27,8 +27,9 @@ type AssetInfo struct {
 // DefaultAssetWarnBytes is the size at or above which `furrow lint` warns that an
 // asset is large (a heuristic nudge to Git-LFS-track or shrink it, since a blob
 // committed raw stays in git history forever). 5 MiB comfortably clears masked
-// screenshots yet catches raw video and unoptimized captures. It is warn-only, so
-// crossing it never fails lint; a configurable threshold is a later refinement.
+// screenshots yet catches raw video and unoptimized captures. It ships as a warn,
+// so crossing it fails lint only where [lint.severity] re-levels oversized-asset;
+// a configurable threshold is a later refinement.
 const DefaultAssetWarnBytes int64 = 5 << 20
 
 // AssetPath returns the store-relative path of an attached asset by basename,

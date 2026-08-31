@@ -122,7 +122,6 @@ func TestCLIBriefEpicHeader(t *testing.T) {
 	addTask(t, "ready a", "-s", "ready", "-r", "o/r")
 	run(t, "epic", "add", "the focus", "-r", "o/r")
 
-	// Participating board, nothing active: human says WHY next is empty.
 	out, code := run(t, "brief")
 	if code != 0 {
 		t.Fatalf("brief exit = %d:\n%s", code, out)

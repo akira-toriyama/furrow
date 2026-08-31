@@ -56,8 +56,6 @@ func TestMarshalRepoDeterministic(t *testing.T) {
 	}
 }
 
-// TestMarshalRepoNormalizesTimestamps: a sub-second, non-UTC clock is coerced to
-// whole-second UTC, and a nil clock stays null.
 func TestMarshalRepoNormalizesTimestamps(t *testing.T) {
 	b, err := MarshalRepo(sampleRepoRecord())
 	if err != nil {
@@ -72,7 +70,6 @@ func TestMarshalRepoNormalizesTimestamps(t *testing.T) {
 	}
 }
 
-// TestUnmarshalRepoRejectsGarbage: a malformed repo shard is a validation error.
 func TestUnmarshalRepoRejectsGarbage(t *testing.T) {
 	if _, err := UnmarshalRepo([]byte("{ not json")); err == nil {
 		t.Error("expected a validation error on malformed repo shard")

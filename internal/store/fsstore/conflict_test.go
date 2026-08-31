@@ -68,7 +68,6 @@ func TestTwoOperatorsAddNoGitConflict(t *testing.T) {
 	run("add", "-A")
 	run("commit", "-q", "-m", "add from B")
 
-	// Merge A into B: with one shard per id this must be a clean, automatic merge.
 	cmd := exec.Command(git, "merge", "--no-edit", "a")
 	cmd.Dir = repo
 	cmd.Env = append(os.Environ(),
@@ -78,7 +77,6 @@ func TestTwoOperatorsAddNoGitConflict(t *testing.T) {
 		t.Fatalf("merge of two independent adds conflicted (sharding should prevent this):\n%s", out)
 	}
 
-	// The merged tree has all three tasks and remains loadable.
 	merged, err := store.Load()
 	if err != nil {
 		t.Fatal(err)

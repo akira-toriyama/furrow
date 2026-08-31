@@ -7,11 +7,11 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// TestChangedFieldsTracksEpic pins the same contract the `type` field needed: the
-// `set --json` envelope's `changed` array must include "epic" when membership
-// actually changes. Otherwise a headless agent that branches on `changed` (per
-// the integration contract) reads a `set -e <box>` as a no-op and thinks the
-// filing never took, even though the shard was written.
+// TestChangedFieldsTracksEpic pins the `set --json` envelope's `changed` array:
+// it must include "epic" when membership actually changes. Otherwise a headless
+// agent that branches on `changed` (per the integration contract) reads a
+// `set -e <box>` as a no-op and thinks the filing never took, even though the
+// shard was written.
 func TestChangedFieldsTracksEpic(t *testing.T) {
 	before := &core.Task{ID: "t-1"}
 	after := &core.Task{ID: "t-1", Epic: "e-k3m9"}
@@ -27,7 +27,6 @@ func TestChangedFieldsTracksEpic(t *testing.T) {
 		t.Errorf(`changedFields must report "epic" when it changes; got %v`, changed)
 	}
 
-	// Unchanged membership must not be reported.
 	if got := changedFields(after, after); len(got) != 0 {
 		t.Errorf("an all-equal pair must report no changes; got %v", got)
 	}

@@ -7,8 +7,6 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// reviewDueFires reports whether the epic revisit items carry an
-// epic_review_due signal for id.
 func reviewDueFires(items []EpicRevisitItem, id string) bool {
 	for _, it := range items {
 		if it.Epic.ID != id {
@@ -79,7 +77,6 @@ func TestEpicReviewDueCadence(t *testing.T) {
 		}
 	}
 
-	// Never reviewed: quiet.
 	items, err := a.RevisitEpics(QueryOpts{}, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +85,6 @@ func TestEpicReviewDueCadence(t *testing.T) {
 		t.Errorf("a never-reviewed standing box must stay quiet: %+v", items)
 	}
 
-	// Reviewed long ago: the standing box fires, the ordinary one never does.
 	seedEpicReviewed(standing.ID, &old)
 	seedEpicReviewed(plain.ID, &old)
 	items, err = a.RevisitEpics(QueryOpts{}, 0)
@@ -102,7 +98,6 @@ func TestEpicReviewDueCadence(t *testing.T) {
 		t.Errorf("a non-standing box must not carry the review cadence: %+v", items)
 	}
 
-	// The summary carries the id under its own key.
 	sum, err := a.RevisitSummary(QueryOpts{}, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +106,6 @@ func TestEpicReviewDueCadence(t *testing.T) {
 		t.Errorf("summary.epic_review_due = %v, want [%s]", sum.EpicReviewDue, standing.ID)
 	}
 
-	// A fresh review resets the cadence.
 	if _, _, err := a.ReviewEpic(standing.ID); err != nil {
 		t.Fatal(err)
 	}

@@ -456,7 +456,6 @@ func TestQueryLabelWildcard(t *testing.T) {
 	if got := ids("label:area"); len(got) != 0 {
 		t.Errorf("plain label:area must stay exact, got %v", got)
 	}
-	// comma-OR mixes wildcard and exact values.
 	if got := ids("label:uxarea,area/dx"); len(got) != 2 {
 		t.Errorf("mixed OR-set = %v, want 2 tasks", got)
 	}

@@ -1,6 +1,7 @@
 // Package config loads .furrow/config.toml — the one human-edited file in the
-// store. It is read-only from furrow's side (the app never writes it) and
-// follows a clamp-don't-reject policy: unknown keys are ignored and
+// store. Ordinary commands only read it; the ONE writer is `furrow config set`,
+// which is strict where reads are lenient. Reads follow a clamp-don't-reject
+// policy: unknown keys are ignored and
 // out-of-range values fall back to a safe default — each WITH a warning, so a
 // typo can never break the tool and never hides either. `furrow lint` surfaces
 // the warnings (there is no `furrow validate` command — the name this comment
@@ -199,8 +200,9 @@ func Default() *Config {
 	return c
 }
 
-// defaultNextLanes is the fallback `next` lane set: ready+in-progress if present,
-// else every non-terminal lane (for a custom lane scheme).
+// defaultNextLanes falls back to every non-terminal lane when the board's lane
+// scheme names none of DefaultNextLanes: a custom scheme must not leave `next`
+// permanently empty.
 func defaultNextLanes(lanes []string, terminal map[string]bool) []string {
 	var out []string
 	for _, l := range DefaultNextLanes {

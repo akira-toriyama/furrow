@@ -198,7 +198,6 @@ func TestSetManyRefusesPositionFlags(t *testing.T) {
 			t.Errorf("%s over 2 ids should be exit 2, got %v", name, err)
 		}
 	}
-	// One id still positions normally.
 	if _, err := a.SetMany([]string{two.ID}, SetOpts{Priority: intp(50)}); err != nil {
 		t.Errorf("a single id must still accept a position: %v", err)
 	}

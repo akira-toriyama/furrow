@@ -130,7 +130,6 @@ func TestCLINotFoundExit1(t *testing.T) {
 
 func TestCLIBadUsageExit2(t *testing.T) {
 	initStore(t)
-	// unknown lane is a validation error -> exit 2.
 	_, code := run(t, "add", "x", "-s", "ghost")
 	if code != int(core.CodeValidation) {
 		t.Errorf("unknown lane should exit 2, got %d", code)
@@ -142,7 +141,6 @@ func TestCLIBadUsageExit2(t *testing.T) {
 }
 
 func TestCLINoStoreExit2(t *testing.T) {
-	// FURROW_DIR points nowhere and cwd has no .furrow ancestor under TempDir.
 	t.Setenv(app.EnvDir, "")
 	t.Setenv("HOME", t.TempDir())
 	// We cannot easily guarantee no ancestor .furrow from the test's cwd, so
@@ -236,7 +234,6 @@ func TestCLIDoneAndNextFlow(t *testing.T) {
 	base := addTask(t, "base", "-s", "ready")
 	addTask(t, "dependent", "-s", "ready", "--dep", base)
 
-	// dependent is blocked while base is open.
 	out, _ := run(t, "next", "--ndjson")
 	if strings.Contains(out, "dependent") {
 		t.Errorf("dependent should be blocked before base is done:\n%s", out)
@@ -252,7 +249,6 @@ func TestCLIDoneAndNextFlow(t *testing.T) {
 
 func TestCLIArchiveJSONIsArrayNotNull(t *testing.T) {
 	initStore(t)
-	// nothing to archive -> tasks must be [] (array shape), not null.
 	out, code := run(t, "--json", "archive")
 	if code != 0 {
 		t.Fatalf("archive --json exit = %d", code)
@@ -285,7 +281,6 @@ func TestCLIArchiveRepoScope(t *testing.T) {
 	ia.Store.SaveBody("t-bbb1", "# b\n")
 	t.Setenv(app.EnvDir, filepath.Join(dir, app.DirName))
 
-	// -r owner/a --yes moves only owner/a; JSON records the repo scope.
 	out, code := run(t, "--json", "archive", "-r", "owner/a", "--yes")
 	if code != 0 {
 		t.Fatalf("archive -r exit = %d:\n%s", code, out)
@@ -368,7 +363,6 @@ func TestCLIListMultiValueOR(t *testing.T) {
 	addTask(t, "b-urgent", "-s", "backlog", "-l", "urgent")
 	addTask(t, "r-bug", "-s", "ready", "-l", "bug")
 
-	// -s comma = OR within the field: inbox,backlog matches the first two.
 	out, code := run(t, "--ndjson", "ls", "-s", "inbox,backlog")
 	if code != 0 {
 		t.Fatalf("ls -s exit = %d:\n%s", code, out)
@@ -377,7 +371,6 @@ func TestCLIListMultiValueOR(t *testing.T) {
 		t.Errorf("`ls -s inbox,backlog` should OR to i-bug + b-urgent only:\n%s", out)
 	}
 
-	// -l comma = OR: bug,urgent matches all three.
 	out, _ = run(t, "--ndjson", "ls", "-l", "bug,urgent")
 	for _, want := range []string{"i-bug", "b-urgent", "r-bug"} {
 		if !strings.Contains(out, want) {
@@ -385,7 +378,6 @@ func TestCLIListMultiValueOR(t *testing.T) {
 		}
 	}
 
-	// flags still AND across fields: (inbox|backlog) AND label bug -> i-bug only.
 	out, _ = run(t, "--ndjson", "ls", "-s", "inbox,backlog", "-l", "bug")
 	if !strings.Contains(out, "i-bug") || strings.Contains(out, "b-urgent") || strings.Contains(out, "r-bug") {
 		t.Errorf("`ls -s inbox,backlog -l bug` should AND to i-bug only:\n%s", out)
@@ -420,7 +412,6 @@ func TestCLILsStatusRepeatUnion(t *testing.T) {
 		t.Errorf("reversed repeated -s should union identically:\n%s", out)
 	}
 
-	// comma and repeat compose: -s inbox,backlog -s ready spans all three.
 	out, _ = run(t, "--ndjson", "ls", "-s", "inbox,backlog", "-s", "ready")
 	for _, want := range []string{"i-task", "b-task", "r-task"} {
 		if !strings.Contains(out, want) {
@@ -445,9 +436,9 @@ func TestCLILsStatusRepeatUnion(t *testing.T) {
 // TestCLILabelRepeatUnion pins t-k1sr: a REPEATED -l unions its tags instead of
 // silently keeping only the last — the same "silent last-wins" trap #128 fixed
 // for -s, now closed for -l. It is order-independent, composes with a comma
-// within one -l, is shared by every -l command (ls/next/search proven here;
-// revisit/stats reuse the same joinOrFilter), and does NOT regress the
-// single-token DidYouMeanRepo guard (the -l-specific risk of comma-joining).
+// within one -l, is shared by every -l command (ls/next/search/revisit/stats
+// all proven here), and does NOT regress the single-token DidYouMeanRepo guard
+// (the -l-specific risk of comma-joining).
 func TestCLILabelRepeatUnion(t *testing.T) {
 	initStore(t)
 	addTask(t, "wip bug", "-s", "ready", "-l", "bug")
@@ -470,7 +461,6 @@ func TestCLILabelRepeatUnion(t *testing.T) {
 		t.Errorf("reversed repeated -l should union identically:\n%s", out)
 	}
 
-	// comma and repeat compose: -l bug,urgent -l chore spans all three.
 	out, _ = run(t, "--ndjson", "ls", "-l", "bug,urgent", "-l", "chore")
 	for _, want := range []string{"wip bug", "wip urgent", "wip chore"} {
 		if !strings.Contains(out, want) {
@@ -677,7 +667,6 @@ func TestCLISetVerb(t *testing.T) {
 	if fe == nil || fe.Code != core.CodeValidation || len(fe.Candidates) == 0 {
 		t.Errorf("set to an unknown lane should exit 2 with candidates, got %+v", fe)
 	}
-	// no change is a validation error.
 	if _, code := run(t, "set", id); code != int(core.CodeValidation) {
 		t.Errorf("`set` with no change should exit 2, got %d", code)
 	}
@@ -697,7 +686,6 @@ func TestCLIDepVariadic(t *testing.T) {
 	if !strings.Contains(out, d1) || !strings.Contains(out, d2) {
 		t.Errorf("dep should add both deps:\n%s", out)
 	}
-	// remove both.
 	out, _ = run(t, "--json", "dep", base, d1, d2, "--rm")
 	var res struct {
 		After struct {
@@ -722,7 +710,6 @@ func TestCLIArchiveByID(t *testing.T) {
 	if _, code := run(t, "archive", openID, "--yes"); code != int(core.CodeValidation) {
 		t.Errorf("archiving a non-done id should exit 2, got %d", code)
 	}
-	// combining an id with the sweep knobs is refused.
 	if _, code := run(t, "archive", doneID, "--older-than", "0", "--yes"); code != int(core.CodeValidation) {
 		t.Errorf("archive <id> --older-than should exit 2, got %d", code)
 	}
@@ -734,7 +721,6 @@ func TestCLIArchiveByID(t *testing.T) {
 	if !strings.Contains(out, doneID) {
 		t.Errorf("archive --json should list the retired id:\n%s", out)
 	}
-	// it's gone from the hot store now.
 	if _, code := run(t, "show", doneID); code != int(core.CodeNotFound) {
 		t.Errorf("archived task should be not-found in the hot store, got %d", code)
 	}
@@ -937,7 +923,6 @@ func TestCLICheckOutOfRangeExit2(t *testing.T) {
 	if _, code := run(t, "check", id, "5"); code != int(core.CodeValidation) {
 		t.Errorf("out-of-range check should exit 2, got %d", code)
 	}
-	// index 0 is valid.
 	if _, code := run(t, "check", id, "0"); code != 0 {
 		t.Errorf("in-range check should exit 0, got %d", code)
 	}
@@ -1072,7 +1057,6 @@ func TestCLIMutationJSONDiff(t *testing.T) {
 	if res.Before.Status != "ready" || res.After.Status != "done" {
 		t.Errorf("before/after status wrong: %q -> %q", res.Before.Status, res.After.Status)
 	}
-	// done flips status and stamps closed.
 	has := func(f string) bool {
 		for _, c := range res.Changed {
 			if c == f {
@@ -1085,7 +1069,6 @@ func TestCLIMutationJSONDiff(t *testing.T) {
 		t.Errorf("changed should list status+closed, got %v", res.Changed)
 	}
 
-	// human mode stays the terse verb line (no before/after).
 	hout, _ := run(t, "done", id)
 	if strings.Contains(hout, "before") {
 		t.Errorf("human mutation output must stay terse:\n%s", hout)
@@ -1278,9 +1261,9 @@ func TestCLIShowDisplaysEstimate(t *testing.T) {
 }
 
 // `furrow edit <id>` with no TTY prints the body file path instead of launching
-// $EDITOR — the contract CLAUDE.md hands agents ("read/edit that file
-// directly"). It had no test at any layer, so nothing caught a regression in
-// the one shape a non-interactive caller sees.
+// $EDITOR — the contract an agent depends on to read and edit the body
+// directly. It had no test at any layer, so nothing caught a regression in the
+// one shape a non-interactive caller sees.
 //
 // bite-exempt: characterization. This pins shipped, documented behaviour that
 // nothing tested; there is no accompanying production change to fail without.

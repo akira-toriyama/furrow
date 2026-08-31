@@ -9,10 +9,9 @@
 // shards (epics/<id>.json, described by EpicV2), plus one
 // board-wide meta.json (described by MetaV2). Versioning: the version here
 // numbers each schema document; the board LAYOUT version lives in meta.json's
-// schema_version (currently 9 — 8 was the per-task due stamp, 7 epic-to-epic
-// deps, 6 the epic pivot, 5 the per-task type field, 4 the review shards +
-// per-task reviewed, 3 the repos pivot, 2 pre-repos shards, 1 the monolithic
-// index.json).
+// schema_version and advances independently — core.SchemaVersion is the number
+// this binary writes, and MetaV2's description below carries the layout
+// history.
 package schema
 
 // TaskV2 is the JSON Schema (draft 2020-12) for one task shard: the object in a
@@ -69,10 +68,10 @@ const TaskV2 = `{
 // board-wide schema version, kept in its own file so a version bump touches one
 // file and no shard becomes a merge point. Keep the const in lockstep with
 // internal/core.Meta and core.SchemaVersion. The schema DOCUMENT stays v2 (its
-// filename never changes) while the pinned layout version advances: it now pins
-// layout version 8 (the per-task due stamp; 7 was epic-to-epic deps, 6 the epic
-// pivot, 5 the per-task type field, 4 the review shards + per-task reviewed,
-// 3 the repos pivot). v1 (which pinned layout 2) is retired, not dual-supported.
+// filename never changes) while the pinned layout version advances — the const
+// below is the only statement of which layout is pinned, since a prose copy
+// here already drifted a version behind it once. v1 (which pinned layout 2) is
+// retired, not dual-supported.
 const MetaV2 = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.meta.v2.json",
