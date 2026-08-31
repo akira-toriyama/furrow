@@ -119,8 +119,8 @@ func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Pr
 			continue
 		}
 		sort.Strings(ids)
-		// Only reachable by a merge: EpicActivate refuses the second one. This is the
-		// git-merge backstop, the same role parent-cycle used to play.
+		// Only reachable by a merge: EpicActivate refuses the second one — the
+		// git-merge backstop against a state the write path cannot produce.
 		out = append(out, Problem{SevError, "epic-multi-active", repo, fmt.Sprintf(
 			"%d epics are active for %s (%s) — deactivate all but one (`furrow epic deactivate <id>`)",
 			len(ids), repo, strings.Join(ids, ", "))})
@@ -155,9 +155,9 @@ func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Pr
 	sort.Strings(idle)
 	// One idle repo keeps the targeted per-repo line (id = the repo, the fix
 	// spelled for it). Several fold into ONE problem: on a board with many
-	// dormant repos this warn used to print one line per repo (22 measured,
-	// on every lint/sync/hook run), and a wall the reader scrolls past is a
-	// warn that no longer warns. The fold keeps every repo NAME in the
+	// dormant repos this warn used to print one line per repo on every
+	// lint/sync/hook run, and a wall the reader scrolls past is a warn that
+	// no longer warns. The fold keeps every repo NAME in the
 	// message — information intact, only the line count collapses — with the
 	// synthetic id "board" (the archive-backlog precedent: a finding about no
 	// single entity gets a synthetic id). The code stays `epic-no-active`

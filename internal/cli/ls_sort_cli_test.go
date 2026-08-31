@@ -25,7 +25,6 @@ func TestLsSortByValue(t *testing.T) {
 	mid := addTask(t, "mid", "--value", "3")
 	un := addTask(t, "unset") // no value
 
-	// --sort value: highest first, unset last.
 	got := lsIDs(t, "--sort", "value")
 	want := []string{hi, mid, lo, un}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
@@ -87,7 +86,6 @@ func TestLsSinceUntilAcceptDates(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("a valid date window should exit 0, got %d", code)
 	}
-	// A future-only window excludes everything but is still a clean empty result.
 	out, code := run(t, "--json", "ls", "--since", "2099-01-01")
 	if code != 0 {
 		t.Fatalf("empty date window should exit 0, got %d:\n%s", code, out)

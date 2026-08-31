@@ -194,7 +194,6 @@ func TestIDPatternAcceptsLegacyAndRandom(t *testing.T) {
 }
 
 func TestNextLanes(t *testing.T) {
-	// default (no [next]) -> ready + in-progress.
 	c, _, _ := Load(filepath.Join(t.TempDir(), "absent.toml"))
 	if !c.IsNextLane("ready") || !c.IsNextLane("in-progress") {
 		t.Errorf("default next lanes should be ready+in-progress, got %v", c.NextLanes)
@@ -203,7 +202,6 @@ func TestNextLanes(t *testing.T) {
 		t.Errorf("default next lanes must exclude inbox/backlog, got %v", c.NextLanes)
 	}
 
-	// explicit [next].lanes, with a bogus entry dropped + a warning.
 	p := writeTOML(t, `
 [lanes]
 order = ["inbox", "ready", "done"]
@@ -218,7 +216,6 @@ lanes = ["ready", "ghost"]
 		t.Errorf("expected a warning about the bogus next lane, got %v", warn)
 	}
 
-	// custom scheme without ready/in-progress -> falls back to all non-terminal.
 	p2 := writeTOML(t, `
 [lanes]
 order = ["todo", "doing", "done"]
@@ -241,7 +238,6 @@ func TestWaitingLaneDefault(t *testing.T) {
 	if c.IsNextLane("waiting") {
 		t.Error("waiting must not be a next-lane")
 	}
-	// it sorts between in-progress and done.
 	inProg, _ := c.LaneRank("in-progress")
 	wait, _ := c.LaneRank("waiting")
 	done, _ := c.LaneRank("done")
@@ -264,12 +260,10 @@ func anyHas(ss []string, sub string) bool {
 }
 
 func TestLabelsRequired(t *testing.T) {
-	// default: not required.
 	c, _, _ := Load(filepath.Join(t.TempDir(), "absent.toml"))
 	if c.LabelsRequired {
 		t.Error("labels.required should default to false")
 	}
-	// explicit true.
 	p := writeTOML(t, "[labels]\nrequired = true\n")
 	c, _, err := Load(p)
 	if err != nil {
@@ -332,7 +326,6 @@ theme = "auto"
 	if err != nil {
 		t.Fatalf("unknown keys must not error: %v", err)
 	}
-	// The typo'd section fell back to defaults; the known section still decoded.
 	if len(c.Lanes) != len(DefaultLanes) {
 		t.Errorf("lanes should be the defaults (the [lanse] typo is ignored), got %v", c.Lanes)
 	}
@@ -390,7 +383,6 @@ func TestLoadBytesSalvagesWrongTypedKeys(t *testing.T) {
 		t.Errorf("want a file:line warning naming priority.step, got %v", warn)
 	}
 
-	// Two bad keys: both salvaged, both warned with their ORIGINAL lines.
 	doc = []byte("[priority]\nstep = \"10\"\n\n[ids]\nwidth = \"seven\"\n")
 	_, warn, err = LoadBytes(doc, "config.toml")
 	if err != nil {

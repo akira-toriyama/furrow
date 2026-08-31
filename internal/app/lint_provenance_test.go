@@ -20,7 +20,6 @@ func TestLintProvenanceMarkers(t *testing.T) {
 	}
 	parked, _ := a.Add("parked", AddOpts{Status: "icebox"})
 
-	// Off by default: no markers, no findings.
 	ps, err := a.Lint()
 	if err != nil {
 		t.Fatal(err)

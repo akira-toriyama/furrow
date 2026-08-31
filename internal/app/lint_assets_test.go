@@ -131,8 +131,6 @@ func TestLintReportsOversizedAsset(t *testing.T) {
 }
 
 func TestLintCleanAssetNoFindings(t *testing.T) {
-	// A small, referenced asset (the normal `furrow attach` outcome) yields no
-	// asset findings and keeps lint at exit 0.
 	a := newApp()
 	task, _ := a.Add("clean attach", AddOpts{Status: "ready"})
 	if _, err := a.Attach(task.ID, "shot.png", []byte("small")); err != nil {

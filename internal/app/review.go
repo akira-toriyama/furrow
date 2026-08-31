@@ -6,8 +6,8 @@ import "github.com/akira-toriyama/furrow/internal/core"
 // looked at and re-assessed this task. Unlike every other single-task edit it
 // does NOT go through mutate (which stamps `updated` on any real edit): a
 // review changes no content, so bumping `updated` would wrongly disturb
-// staleness and `--sort updated`. It loads, finds, sets `reviewed = now`, and saves; the
-// shard is rewritten only because `reviewed` changed (zero churn otherwise).
+// staleness and `--sort updated`. The shard is rewritten only because
+// `reviewed` changed (zero churn otherwise).
 func (a *App) ReviewTask(id string) (*core.Task, error) {
 	idx, err := a.load()
 	if err != nil {

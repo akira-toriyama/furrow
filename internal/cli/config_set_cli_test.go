@@ -55,14 +55,12 @@ func TestConfigSetBoardKey(t *testing.T) {
 		t.Error("comments must survive a set")
 	}
 
-	// The loader now hands new tasks the new default lane.
 	id := addTask(t, "post-set task")
 	o, _ := run(t, "--json", "show", id, "--no-body")
 	if !strings.Contains(o, `"status": "ready"`) {
 		t.Errorf("the set default lane must take effect:\n%s", o)
 	}
 
-	// No-op: same value again is changed [] and no write.
 	out, code = run(t, "--json", "config", "set", "lanes.default", "ready")
 	if code != 0 {
 		t.Fatalf("no-op set exit = %d:\n%s", code, out)
@@ -160,11 +158,9 @@ func TestConfigSetUserEntry(t *testing.T) {
 	if fe == nil || fe.Code != core.CodeValidation || len(fe.Candidates) != 2 {
 		t.Errorf("an ambiguous --board must be exit 2 with both candidates, got %+v", fe)
 	}
-	// Two entries and no --board: exit 2 with the paths.
 	if fe, _ := runErr(t, "config", "set", "--user", "autocommit", "true"); fe == nil || len(fe.Candidates) != 2 {
 		t.Errorf("a multi-entry file needs --board, got %+v", fe)
 	}
-	// --board without --user is a usage error.
 	if fe, _ := runErr(t, "config", "set", "--board", "work", "autocommit", "true"); fe == nil || fe.Code != core.CodeValidation {
 		t.Errorf("--board without --user must be exit 2, got %+v", fe)
 	}

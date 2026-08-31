@@ -62,7 +62,6 @@ func TestDepListJSONEmptyArraysNotNull(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("dep --list exit=%d:\n%s", code, out)
 	}
-	// A lone task's edges must serialize as [], never null.
 	if !strings.Contains(out, `"depends_on": []`) || !strings.Contains(out, `"blocks": []`) {
 		t.Errorf("empty edges must be [] not null:\n%s", out)
 	}

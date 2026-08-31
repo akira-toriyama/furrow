@@ -18,12 +18,7 @@ type EpicRevisitItem struct {
 	Reasons []core.RevisitReason
 }
 
-// epicReasons computes the box-level signals for an OPEN epic:
-//
-//   - epic_all_done — every member is done; consider closing the box
-//   - epic_stuck    — open members, but not one of them actionable
-//   - epic_stale    — an ACTIVE box untouched for staleDays
-//   - epic_dep_done — a PARKED box whose deps are all closed; its turn to open
+// epicReasons computes the box-level signals for an OPEN epic.
 //
 // An epic with NO members yields no MEMBER signal (all_done/stuck): declaring
 // the box before filling it is a legitimate first step, and nagging about it

@@ -9,8 +9,8 @@ import (
 func TestDepListBothDirections(t *testing.T) {
 	a := newApp()
 	base, _ := a.Add("base task", AddOpts{})
-	mid, _ := a.Add("middle task", AddOpts{Deps: []string{base.ID}}) // mid depends on base
-	top, _ := a.Add("top task", AddOpts{Deps: []string{mid.ID}})     // top depends on mid
+	mid, _ := a.Add("middle task", AddOpts{Deps: []string{base.ID}})
+	top, _ := a.Add("top task", AddOpts{Deps: []string{mid.ID}})
 	_ = top
 
 	res, err := a.DepList(mid.ID)
@@ -20,7 +20,6 @@ func TestDepListBothDirections(t *testing.T) {
 	if res.ID != mid.ID || res.Title != "middle task" {
 		t.Errorf("subject wrong: %+v", res)
 	}
-	// depends_on: mid waits on base, resolved to id+title+status.
 	if len(res.DependsOn) != 1 || res.DependsOn[0].ID != base.ID ||
 		res.DependsOn[0].Title != "base task" || res.DependsOn[0].Status != "inbox" {
 		t.Errorf("depends_on should resolve base, got %+v", res.DependsOn)

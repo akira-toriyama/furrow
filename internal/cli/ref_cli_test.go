@@ -34,7 +34,6 @@ func TestCLIRefCommandMutatesAndReportsChanged(t *testing.T) {
 		t.Errorf("changed should include refs, got %v", res.Changed)
 	}
 
-	// Adding an existing ref is a no-op: changed stays empty.
 	out, _ = run(t, "--json", "ref", id, "--add", "internal/cli/root.go:42")
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatal(err)

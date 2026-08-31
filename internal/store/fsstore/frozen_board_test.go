@@ -57,8 +57,8 @@ func TestFrozenBoardRoundTripsByteIdentical(t *testing.T) {
 
 	s := New(root, lanes, "t-", "e-", 5)
 
-	// The three machine-written file kinds, each through its own writer — a Save
-	// alone would only ever rewrite tasks/.
+	// Every machine-written file kind, each through its own writer — a Save alone
+	// would only ever rewrite tasks/.
 	idx, err := s.Load()
 	if err != nil {
 		t.Fatalf("Load the frozen board: %v", err)
@@ -75,7 +75,7 @@ func TestFrozenBoardRoundTripsByteIdentical(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// The fourth machine-written kind. Without this pass an epic shard's bytes
+	// The epic shard's own writer. Without this pass an epic shard's bytes
 	// would be frozen only by the golden the code under test wrote itself, which is
 	// exactly the coverage this fixture exists to NOT rely on.
 	epics, err := s.LoadEpics()
@@ -204,7 +204,6 @@ func TestFrozenBoardParksUnknownKeys(t *testing.T) {
 	}
 }
 
-// snapshot is one file's committed bytes and the mtime it had before the save.
 type snapshot struct {
 	data  []byte
 	mtime time.Time

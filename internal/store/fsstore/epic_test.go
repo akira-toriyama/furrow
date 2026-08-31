@@ -135,7 +135,8 @@ func TestSaveEpicIsZeroChurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A re-save of identical content must leave the file — and its mtime — alone.
+	// The sleep is what gives the mtime comparison teeth: without a gap, a real
+	// rewrite could land inside the same timestamp tick and read as a no-op.
 	time.Sleep(10 * time.Millisecond)
 	if err := s.SaveEpic(sampleEpic("e-k3m9", "box")); err != nil {
 		t.Fatal(err)

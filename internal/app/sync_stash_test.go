@@ -85,7 +85,6 @@ func TestSyncReportsStrandedAutostashOnCleanRebase(t *testing.T) {
 	if !ok || d["pending_stash"] == nil {
 		t.Errorf("details must carry pending_stash, got %#v", fe.Details)
 	}
-	// And git really did keep it: the entry is still there to be popped.
 	if out := runGitT(t, git, cloneB, "stash", "list"); !strings.Contains(out, "autostash") {
 		t.Errorf("the autostash entry must still exist for `git stash pop`: %q", out)
 	}
@@ -222,8 +221,6 @@ func TestSyncRefusesToCommitBodyWithConflictMarkers(t *testing.T) {
 	if p.Committed {
 		t.Error("the guard runs BEFORE the commit: a refused sync must have changed nothing")
 	}
-	// The refusal must leave the body exactly where it was — dirty, and the
-	// operator's to fix.
 	if out := runGitT(t, git, cloneA, "status", "--porcelain"); !strings.Contains(out, core.BodyPath(task.ID)) {
 		t.Errorf("the marked-up body must still be uncommitted: %q", out)
 	}

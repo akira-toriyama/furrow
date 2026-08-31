@@ -23,7 +23,6 @@ func TestEpicNoActiveFoldsManyRepos(t *testing.T) {
 		return out
 	}
 
-	// One idle repo: the targeted line, id = the repo.
 	idx := &Index{Tasks: []Task{
 		{ID: "t-1", Title: "a", Status: "inbox", Repos: []string{"me/a"}, Epic: "e-1"},
 	}}
@@ -32,7 +31,6 @@ func TestEpicNoActiveFoldsManyRepos(t *testing.T) {
 		t.Fatalf("single idle repo should keep the per-repo line, got %+v", got)
 	}
 
-	// Several idle repos: ONE folded problem, every repo named, count stated.
 	idx = &Index{Tasks: []Task{
 		{ID: "t-1", Title: "a", Status: "inbox", Repos: []string{"me/a"}, Epic: "e-1"},
 		{ID: "t-2", Title: "b", Status: "inbox", Repos: []string{"me/b"}, Epic: "e-1"},

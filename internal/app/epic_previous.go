@@ -65,8 +65,8 @@ func (a *App) PreviousActiveSuggest(exceptID string) *PreviousActive {
 }
 
 // latestActivation returns the newest recordSwitch stamp in body ("" when it
-// holds none), read with the same switchLineRe sync uses so the two consumers
-// of the log can never disagree on what an activation line is. The
+// holds none), read with the same switchLineRe sync uses so the log's consumers
+// can never disagree on what an activation line is. The
 // "YYYY-MM-DD HH:MM" layout is zero-padded fixed-width, so plain string
 // comparison IS chronological order (within one machine's zone — see the
 // caveat on PreviousActiveSuggest).

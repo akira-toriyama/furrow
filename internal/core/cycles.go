@@ -34,8 +34,8 @@ func CycleProblems(idx *Index) []Problem {
 // adjacency from `edges`, then hand the id graph to cycleProblemsGraph. It is
 // parameterized rather than inlined into its one caller because the shape has
 // already had two users (deps and, until v6, the `parent` hierarchy), and since
-// v7 the epic dep graph is the third — EpicDepCycleProblems (epic_lint.go)
-// enters at cycleProblemsGraph, the id level, instead of growing a second walk.
+// v7 the epic dep graph is the third — the epic dep lint enters at
+// cycleProblemsGraph, the id level, instead of growing a second walk.
 func cycleProblems(idx *Index, code, label, knot string, edges func(*Task) []string) []Problem {
 	ids := make(map[string]bool, len(idx.Tasks))
 	for i := range idx.Tasks {

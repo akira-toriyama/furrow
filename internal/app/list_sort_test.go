@@ -60,7 +60,6 @@ func TestListSinceUntilWindow(t *testing.T) {
 	recent, _ := a.Add("recent", AddOpts{})
 	seedUpdated(t, a, map[string]time.Time{old.ID: julyUTC(1), mid.ID: julyUTC(5), recent.ID: julyUTC(10)})
 
-	// since only: updated >= july 5.
 	got, err := a.List(QueryOpts{Since: tp(julyUTC(5))})
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +68,6 @@ func TestListSinceUntilWindow(t *testing.T) {
 		t.Errorf("since july-5 should keep mid+recent, got %v", ids)
 	}
 
-	// window: july 4 .. july 6 inclusive -> only mid.
 	got, err = a.List(QueryOpts{Since: tp(julyUTC(4)), Until: tp(julyUTC(6))})
 	if err != nil {
 		t.Fatal(err)

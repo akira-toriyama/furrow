@@ -177,7 +177,6 @@ func TestCLIShowEpicMisses(t *testing.T) {
 		t.Errorf("message should name the entity: %q", fe.Msg)
 	}
 
-	// A partial miss still emits what was found (the box) and exits 1.
 	out, code := run(t, "--json", "show", epic, "t-nope0", "--no-body")
 	if code != 1 {
 		t.Errorf("partial miss want exit 1, got %d", code)

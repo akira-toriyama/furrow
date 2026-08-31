@@ -86,7 +86,6 @@ func TestInitGlobalConfig_DerivesFromNearestFurrow(t *testing.T) {
 	}
 }
 
-// --path / --scope win over context derivation.
 func TestInitGlobalConfig_FlagsOverrideDerivation(t *testing.T) {
 	root := t.TempDir()
 	repo := filepath.Join(root, "org", "proj")
@@ -112,7 +111,6 @@ func TestInitGlobalConfig_FlagsOverrideDerivation(t *testing.T) {
 	}
 }
 
-// init never clobbers an existing home config.
 func TestInitGlobalConfig_RefusesWhenExists(t *testing.T) {
 	cfgHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", cfgHome)

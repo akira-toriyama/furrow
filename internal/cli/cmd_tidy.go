@@ -54,7 +54,7 @@ func newTidyCmd() *cobra.Command {
 				return core.Validationf("", "tidy --yes needs an explicit selector — name what to apply: --done-deps and/or --unknown-keys")
 			}
 			o := app.TidyOpts{DoneDeps: doneDeps, UnknownKeys: unknownKeys, Apply: yes}
-			if !sel { // a bare preview reports both classes
+			if !sel {
 				o.DoneDeps, o.UnknownKeys = true, true
 			}
 			rep, err := a.Tidy(o)

@@ -21,8 +21,7 @@ func TestBacklinksBatchMatchesPerIDAndIsSinglePass(t *testing.T) {
 	target1, _ := a.Add("target one", AddOpts{})
 	target2, _ := a.Add("target two", AddOpts{})
 	lonely, _ := a.Add("nobody mentions me", AddOpts{})
-	// Two mentioners of target1, one of target2, none of lonely. A double
-	// mention in one body must still count its author once.
+	// A double mention in one body must still count its author once.
 	a.Add("m1", AddOpts{Body: "blocks [[" + target1.ID + "]] and again [[" + target1.ID + "]]"})
 	a.Add("m2", AddOpts{Body: "also see [[" + target1.ID + "]] plus [[" + target2.ID + "]]"})
 
@@ -31,7 +30,6 @@ func TestBacklinksBatchMatchesPerIDAndIsSinglePass(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Each requested id's batch result equals calling Backlinks individually.
 	for _, id := range []string{target1.ID, target2.ID, lonely.ID} {
 		want, err := a.Backlinks(id)
 		if err != nil {
@@ -42,7 +40,6 @@ func TestBacklinksBatchMatchesPerIDAndIsSinglePass(t *testing.T) {
 		}
 	}
 
-	// lonely is present with an empty (non-nil) slice, not missing.
 	if v, ok := got[lonely.ID]; !ok || v == nil || len(v) != 0 {
 		t.Errorf("unmentioned id should map to [] (present, empty), got %#v ok=%v", got[lonely.ID], ok)
 	}

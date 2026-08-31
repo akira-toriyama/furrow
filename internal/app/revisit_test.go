@@ -32,7 +32,7 @@ func codesByID(items []RevisitItem) map[string][]string {
 
 func p(n int) *int { return &n }
 
-// The three epic signals, and the two states that must stay QUIET.
+// Three of the epic signals, and the two states that must stay QUIET.
 //
 // epic_all_done and epic_stuck are mutually exclusive by construction (all-done
 // short-circuits). epic_stale is orthogonal and rides along: an ACTIVE box can be
@@ -102,7 +102,6 @@ func TestRevisitSignalsAndExclusions(t *testing.T) {
 	stale, _ := a.Add("stale", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}})
 	a.Add("parked", AddOpts{Status: "icebox"}) // terminal; unset estimates
 
-	// Advance 60 days, then add fresh tasks.
 	clk.t = clk.t.AddDate(0, 0, 60)
 	fresh, _ := a.Add("fresh-needs-est", AddOpts{Status: "ready", Repos: []string{"o/r"}}) // value+effort unset, fresh
 	user, _ := a.Add("dep-user", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})

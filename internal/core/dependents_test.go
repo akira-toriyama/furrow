@@ -24,7 +24,6 @@ func TestDependents(t *testing.T) {
 		t.Errorf("Dependents(t-a) = %v, want %v", got, want)
 	}
 
-	// A task nobody depends on has no dependents (nil/empty).
 	if got := idx.Dependents("t-b"); len(got) != 0 {
 		t.Errorf("Dependents(t-b) should be empty, got %v", idFrom(got))
 	}

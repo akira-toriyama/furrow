@@ -40,7 +40,6 @@ func TestCLIWrongTypedConfigValueClamps(t *testing.T) {
 		t.Errorf("lint must carry the clamp warning naming the key, got (exit %d):\n%s", code, out)
 	}
 
-	// The repair repairs: config set writes the typed value, lint goes quiet.
 	if out, code := run(t, "config", "set", "priority.step", "10"); code != 0 {
 		t.Fatalf("config set must survive and fix, exit %d:\n%s", code, out)
 	}

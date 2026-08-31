@@ -2,13 +2,12 @@
 // single deterministic serialization path for the store's per-task shards.
 //
 // PURITY RULE (the spine — see docs/architecture.md): this package imports only
-// the standard library (encoding/json, sort, time, fmt, errors, regexp). It
-// must NOT import cobra, os, or filepath. Filesystem access lives in
-// internal/store; presentation lives in internal/cli (furrow is CLI-only — any
-// TUI/GUI front-end is a separate repo that drives furrow through its CLI/JSON
-// contract). They reach the filesystem through the ports declared here
-// (ports.go). Crossing a
-// layer means a port is missing, not that core should grow an import.
+// the standard library, and must NOT import cobra, os, or filepath. Filesystem
+// access lives in internal/store; presentation lives in internal/cli (furrow is
+// CLI-only — any TUI/GUI front-end is a separate repo that drives furrow through
+// its CLI/JSON contract). They reach the filesystem through the ports declared
+// here (ports.go). Crossing a layer means a port is missing, not that core
+// should grow an import.
 package core
 
 import (
@@ -64,11 +63,10 @@ const SchemaVersion = 9
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into
-// shards on Save. It is NOT an on-disk file — .furrow/index.json is abolished.
-// The struct field order IS the JSON key order for Marshal (an in-memory,
-// test/inspection-only canonical form; the store never persists these bytes), so
-// reordering fields changes the determinism golden — don't reorder without a
-// schema bump and a golden-file update.
+// shards on Save. It is NOT an on-disk file — .furrow/index.json is abolished,
+// and no marshaller serializes an Index at all (t-eb6a removed the one that
+// did), so this struct's field order binds nothing: the persisted key order is
+// each shard's own.
 //
 // SchemaVersion here is INFORMATIONAL — what the board declared when Load read
 // it. Save ignores it and consults the board on disk (Store.BoardVersion),

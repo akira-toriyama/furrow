@@ -43,7 +43,6 @@ func TestCLIDoneAndMoveAcceptMultipleIds(t *testing.T) {
 		}
 	}
 
-	// A single id is a ONE-ELEMENT array — the shape follows the signature.
 	out, code = run(t, "--json", "move", c, "ready")
 	if code != 0 {
 		t.Fatalf("move single exit = %d:\n%s", code, out)
@@ -53,7 +52,6 @@ func TestCLIDoneAndMoveAcceptMultipleIds(t *testing.T) {
 		t.Fatalf("single-id move --json is a one-element envelope array: %v\n%s", err, out)
 	}
 
-	// done <id>...: closes the batch, stamping closed on each.
 	out, code = run(t, "--json", "done", a, b)
 	if code != 0 {
 		t.Fatalf("done multi exit = %d:\n%s", code, out)
@@ -67,7 +65,6 @@ func TestCLIDoneAndMoveAcceptMultipleIds(t *testing.T) {
 		}
 	}
 
-	// --ndjson streams one envelope per line.
 	out, code = run(t, "--ndjson", "move", a, b, "backlog")
 	if code != 0 {
 		t.Fatalf("move --ndjson exit = %d:\n%s", code, out)
@@ -133,7 +130,6 @@ func TestCLISetManyArityAndPositionGuard(t *testing.T) {
 		}
 	}
 
-	// One id is a one-element array (always-array: `set <id>...`).
 	out, code = run(t, "--json", "set", a, "--effort", "2")
 	if code != 0 {
 		t.Fatalf("single set exit = %d:\n%s", code, out)
@@ -146,7 +142,6 @@ func TestCLISetManyArityAndPositionGuard(t *testing.T) {
 		t.Errorf("single-id set should emit [{before,after,changed}], got %v", single)
 	}
 
-	// --ndjson is one envelope per line at any arity.
 	out, code = run(t, "--ndjson", "set", a, b, "--value", "3")
 	if code != 0 {
 		t.Fatalf("ndjson set exit = %d:\n%s", code, out)
@@ -155,7 +150,6 @@ func TestCLISetManyArityAndPositionGuard(t *testing.T) {
 		t.Errorf("--ndjson should print one line per task, got %d:\n%s", n, out)
 	}
 
-	// A position flag over a batch is exit 2.
 	if _, code := run(t, "set", a, b, "--priority", "50"); code != int(core.CodeValidation) {
 		t.Errorf("--priority over 2 ids should exit 2, got %d", code)
 	}

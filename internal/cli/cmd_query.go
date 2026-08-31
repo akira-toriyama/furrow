@@ -161,11 +161,10 @@ func newLsCmd() *cobra.Command {
 	return cmd
 }
 
-// addQueryFlag registers the -q/--query typed-query flag — ONE registrar shared
-// by every filtering read (ls/next/revisit/stats/search), so the five commands
-// can never drift on what the query language is. The evaluator is equally
-// shared (app.queryPred), so wiring a new command is exactly this call plus
-// setting QueryOpts.Query.
+// addQueryFlag registers the -q/--query typed-query flag — the ONE registrar
+// for it, so no command can drift on what the query language is. The evaluator
+// is equally shared (app.queryPred), so wiring a new command is exactly this
+// call plus setting QueryOpts.Query.
 func addQueryFlag(cmd *cobra.Command, p *string) {
 	cmd.Flags().StringVarP(p, "query", "q", "",
 		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
@@ -257,8 +256,8 @@ func newShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// A hot-store miss might be an f.archived task: name that subset so the
-			// agent knows to retry with --f.archived (the archive read already
+			// A hot-store miss might be an archived task: name that subset so the
+			// agent knows to retry with --archived (the archive read already
 			// looked there, so it never re-hints itself).
 			var inArchive []string
 			if !f.archived && len(missing) > 0 {
@@ -301,7 +300,7 @@ func newShowCmd() *cobra.Command {
 				}
 				// A lone miss whose ref reads as a box says so: "ids not found"
 				// for an `e-` id would send the reader looking in the wrong
-				// store. Under --f.archived the box may well EXIST — the archive
+				// store. Under --archived the box may well EXIST — the archive
 				// simply holds tasks — so that reading gets its own sentence
 				// (and a bad-usage kind: a consumer branching on not-found would
 				// conclude the box is gone).
@@ -333,7 +332,7 @@ func newShowCmd() *cobra.Command {
 }
 
 // missDetails builds a show/not-found error's details: always the missing ids,
-// plus the subset found in the archive (so an agent can retry with --f.archived).
+// plus the subset found in the archive (so an agent can retry with --archived).
 // Kept as map[string][]string so a plain miss stays the historical
 // {"missing":[...]} shape and only gains an "archived" key when relevant.
 func missDetails(missing, inArchive []string) map[string][]string {

@@ -139,7 +139,7 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 		specs[i].Title = s.Title
 		// specf prefixes an error with WHICH spec failed. A closed-vocabulary gate
 		// must reuse the SAME constructor single Add uses (unknownLaneErr /
-		// unknownTypeErr / resolveRepoArgs) and only prefix its message: rebuilding
+		// resolveRepoArgs) and only prefix its message: rebuilding
 		// it with Validationf would drop Candidates, so `add --stdin -s ghots` used
 		// to exit 2 with no did-you-mean list while `add -s ghots` had one — the
 		// bulk-vs-single divergence class of t-adx9/t-ek9y, in the error shape

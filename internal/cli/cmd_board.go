@@ -203,8 +203,7 @@ func schemaLine(b app.BoardInfo) string {
 		return fmt.Sprintf("v%d (board) / v%d (binary) — READ-ONLY: run `furrow upgrade`",
 			b.SchemaVersion, b.BinarySchemaVersion)
 	case app.SchemaTooNew:
-		// Not "read-only" — this binary cannot read it either; every command but
-		// this one exits 3.
+		// Not "read-only" — this binary cannot read the board either.
 		return fmt.Sprintf("v%d (board) / v%d (binary) — UNREADABLE: this furrow is too old; update it",
 			b.SchemaVersion, b.BinarySchemaVersion)
 	case app.SchemaUnreadable:

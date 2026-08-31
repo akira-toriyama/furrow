@@ -602,8 +602,6 @@ func anyContains(set, vals []string) bool {
 	return false
 }
 
-// anyRepoMatch matches a repo value against a task's repos by full owner/repo or
-// by short name (the segment after the last '/').
 // anyRepoMatch reports whether the task carries any of the ALREADY-RESOLVED
 // repos. Resolution (short name -> unique owner/repo, case folding, the
 // ambiguity error) happens once at compile time through resolveRepoIn, so this

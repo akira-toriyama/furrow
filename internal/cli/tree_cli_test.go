@@ -80,18 +80,15 @@ func TestCLITreeHumanGroupsStarAndBlocker(t *testing.T) {
 			t.Fatalf("every task and its box must appear (%s missing):\n%s", id, out)
 		}
 	}
-	// The epic heads its group; members are indented under it.
 	if strings.HasPrefix(byID[epic], "    ") {
 		t.Errorf("the epic heads its group and must not be indented like a member: %q", byID[epic])
 	}
 	if !strings.HasPrefix(byID[gate], "    ") {
 		t.Errorf("a member must be indented under its box: %q", byID[gate])
 	}
-	// The group header carries the roll-up.
 	if !strings.Contains(byID[epic], "(0/2)") {
 		t.Errorf("the group header must carry progress: %q", byID[epic])
 	}
-	// The star says "pick this up now" — and only the gate can be.
 	if !strings.HasPrefix(strings.TrimSpace(byID[gate]), "★") {
 		t.Errorf("the gate is actionable and must be starred: %q", byID[gate])
 	}
@@ -196,7 +193,6 @@ func TestTreeMatchesFlatLsGuards(t *testing.T) {
 	addTask(t, "in repo", "-r", "akira-toriyama/foo")
 	addTask(t, "a draft", "--draft")
 
-	// -l naming a repo: flat and tree agree — exit 2, same candidates.
 	feFlat, _ := runErr(t, "ls", "-l", "foo")
 	feTree, _ := runErr(t, "ls", "--tree", "-l", "foo")
 	if feFlat == nil || feTree == nil {
@@ -209,7 +205,6 @@ func TestTreeMatchesFlatLsGuards(t *testing.T) {
 		t.Errorf("tree candidates = %v, want the repo steer", feTree.Candidates)
 	}
 
-	// A repo scope that hides the draft: both say so on stderr.
 	_, seFlat, codeFlat := runSplit(t, "ls", "-r", "akira-toriyama/foo")
 	_, seTree, codeTree := runSplit(t, "ls", "--tree", "-r", "akira-toriyama/foo")
 	if codeFlat != 0 || codeTree != 0 {

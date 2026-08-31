@@ -6,10 +6,9 @@ import (
 	"time"
 )
 
-// briefBoard builds the session-orient fixture: two actionable tasks (ready +
-// in-progress), one dep-blocked task in a next lane, one inbox task (neither),
-// one repo-less draft, and one backlog task whose dep is done (a revisit
-// signal). Repos keep the drafts count honest (a task with no repo IS a draft).
+// briefBoard builds the session-orient fixture. Every task carries a repo
+// except the one draft, so the drafts count stays honest (a task with no repo
+// IS a draft).
 func briefBoard(t *testing.T) (*App, map[string]string) {
 	t.Helper()
 	a, _ := appWithClock(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC))
@@ -44,7 +43,6 @@ func TestBriefComposesTheSessionOrientRead(t *testing.T) {
 		t.Fatalf("Brief: %v", err)
 	}
 
-	// next: the actionable tasks (ready-a, wip) in canonical order, WITH bodies.
 	if b.NextTotal != 2 || len(b.Next) != 2 {
 		t.Fatalf("next = %d shown / %d total, want 2/2", len(b.Next), b.NextTotal)
 	}
@@ -55,7 +53,6 @@ func TestBriefComposesTheSessionOrientRead(t *testing.T) {
 		t.Errorf("next[0] must carry its body, got %q", b.Next[0].Body)
 	}
 
-	// blocked: the next-lane task with an unsatisfied dep, naming what blocks it.
 	if len(b.Blocked) != 1 || b.Blocked[0].Task.ID != ids["blocked"] {
 		t.Fatalf("blocked = %+v; want just the dep-blocked ready task", b.Blocked)
 	}
@@ -63,12 +60,10 @@ func TestBriefComposesTheSessionOrientRead(t *testing.T) {
 		t.Errorf("blocked_by = %v, want [%s]", b.Blocked[0].BlockedBy, ids["ready-a"])
 	}
 
-	// revisit: the dep-done signal surfaces through the summary.
 	if strings.Join(b.Revisit.DepDone, ",") != ids["revisit-me"] {
 		t.Errorf("revisit.dep_done = %v, want [%s]", b.Revisit.DepDone, ids["revisit-me"])
 	}
 
-	// drafts: the repo-less task counts, wherever the scope points.
 	if b.Drafts != 1 {
 		t.Errorf("drafts = %d, want 1", b.Drafts)
 	}
@@ -134,8 +129,6 @@ func TestBriefCarriesTheEpicHeaderAndLintRideAlong(t *testing.T) {
 		t.Fatalf("the fixture's dep-blocked ready task must ride along as ready-blocked, got %+v", b.Lint)
 	}
 
-	// Declare a box and activate it: the header flips on, and epic-required now
-	// errors on every open task left unfiled.
 	e, err := a.EpicAdd("the focus", EpicAddOpts{Repos: []string{"o/r"}})
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +197,6 @@ func TestBriefCollapsesQuietPinnedChannels(t *testing.T) {
 		t.Errorf("PinnedQuiet = %d, want 1 (the empty box, counted not listed)", b.PinnedQuiet)
 	}
 
-	// Closing the live member turns that channel quiet too.
 	if _, err := a.Done(ids["ready-a"]); err != nil {
 		t.Fatal(err)
 	}

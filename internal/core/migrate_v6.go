@@ -93,8 +93,8 @@ type V6Changes struct {
 // "epic"` and returns the epic each becomes. Read-only: the index is not
 // touched, so a preview can call it and walk away.
 //
-// isClosed decides whether the box arrives closed (v5 epics in a terminal lane
-// — done, icebox — become closed epics). The closed timestamp is the task's
+// isClosed decides whether the box arrives closed (a v5 epic-task in a
+// terminal lane becomes a closed epic). The closed timestamp is the task's
 // own Closed when it has one, else its Updated: a migration carries history,
 // it does not stamp "now".
 func PlanV6Epics(idx *Index, epicIDFor func(taskID string) string, isClosed func(*Task) bool) []V6Epic {

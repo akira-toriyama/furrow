@@ -51,7 +51,6 @@ func TestResolveRepo(t *testing.T) {
 	if got, err := a.ResolveRepo("brand/new"); err != nil || got != "brand/new" {
 		t.Errorf("ResolveRepo(brand/new) = %q, %v; want pass-through", got, err)
 	}
-	// full form canonicalizes casing against the universe.
 	if got, _ := a.ResolveRepo("Akira-Toriyama/Chord"); got != "akira-toriyama/chord" {
 		t.Errorf("full-form casing should canonicalize, got %q", got)
 	}
@@ -83,7 +82,6 @@ func TestAddResolvesReposAndDraftConflicts(t *testing.T) {
 	if len(tk.Repos) != 1 || tk.Repos[0] != "akira-toriyama/furrow" {
 		t.Errorf("add should resolve the short name, got %v", tk.Repos)
 	}
-	// a bare unresolvable name is rejected (strict).
 	if _, err := a.Add("bad", AddOpts{Repos: []string{"ghost"}}); err == nil {
 		t.Error("add with an unresolvable short name should fail")
 	}
@@ -115,7 +113,6 @@ func TestRerepo(t *testing.T) {
 	if !reflect.DeepEqual(after.Repos, []string{"akira-toriyama/chord", "akira-toriyama/furrow"}) {
 		t.Errorf("after add short: %v", after.Repos)
 	}
-	// idempotent re-add.
 	again, err := a.Rerepo(tk.ID, []string{"furrow"}, nil)
 	if err != nil || len(again.Repos) != 2 {
 		t.Errorf("re-add should be a no-op, got %v, %v", again.Repos, err)
@@ -134,7 +131,6 @@ func TestRerepo(t *testing.T) {
 	// neither flag is bad usage.
 	_, err = a.Rerepo(tk.ID, nil, nil)
 	asValidation(t, err)
-	// unknown id is not-found.
 	if _, err := a.Rerepo("t-zzzzz", []string{"a/b"}, nil); core.ExitCode(err) != int(core.CodeNotFound) {
 		t.Errorf("unknown id should be not-found, got %v", err)
 	}
@@ -147,12 +143,10 @@ func TestListNextFilterByRepoAndDrafts(t *testing.T) {
 	c, _ := a.Add("chord work", AddOpts{Status: "ready", Repos: []string{"akira-toriyama/chord"}})
 	d, _ := a.Add("a draft", AddOpts{Status: "ready"})
 
-	// List by repo.
 	got, err := a.List(QueryOpts{Repo: "akira-toriyama/furrow"})
 	if err != nil || len(got) != 1 || got[0].ID != f.ID {
 		t.Errorf("List by repo = %+v, %v", got, err)
 	}
-	// Drafts only.
 	drafts, _ := a.List(QueryOpts{Drafts: true})
 	if len(drafts) != 1 || drafts[0].ID != d.ID {
 		t.Errorf("List drafts = %+v", drafts)
@@ -162,7 +156,6 @@ func TestListNextFilterByRepoAndDrafts(t *testing.T) {
 	if len(drafts) != 1 || drafts[0].ID != d.ID {
 		t.Errorf("drafts must bypass the scope, got %+v", drafts)
 	}
-	// Next by repo.
 	next, _ := a.Next(QueryOpts{Repo: "akira-toriyama/chord"})
 	if len(next) != 1 || next[0].ID != c.ID {
 		t.Errorf("Next by repo = %+v", next)
@@ -231,12 +224,10 @@ func TestDidYouMeanRepo(t *testing.T) {
 		}
 	}
 
-	// does not fire: the label exists as a tag somewhere.
 	a.Add("tagged", AddOpts{Labels: []string{"furrow"}})
 	if err := a.DidYouMeanRepo("furrow"); err != nil {
 		t.Errorf("guard must stay quiet when the label exists as a tag: %v", err)
 	}
-	// does not fire: nothing resolves.
 	if err := a.DidYouMeanRepo("ghost"); err != nil {
 		t.Errorf("guard must stay quiet on an unknown name: %v", err)
 	}

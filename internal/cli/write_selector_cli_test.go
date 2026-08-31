@@ -8,7 +8,6 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// addTitled creates a task and returns its id.
 func addTitled(t *testing.T, args ...string) string {
 	t.Helper()
 	out, code := run(t, append([]string{"add", "--json"}, args...)...)
@@ -30,7 +29,6 @@ func TestDoneSelectorPreviewsThenApplies(t *testing.T) {
 	bug2 := addTitled(t, "second bug", "-l", "bug")
 	other := addTitled(t, "unrelated")
 
-	// Preview: names both matches, closes nothing.
 	out, code := run(t, "done", "-q", "label:bug")
 	if code != 0 || !strings.Contains(out, "would close 2 task(s)") ||
 		!strings.Contains(out, bug1) || !strings.Contains(out, bug2) ||
@@ -51,7 +49,6 @@ func TestDoneSelectorPreviewsThenApplies(t *testing.T) {
 		t.Fatalf("json preview = %s (err %v), want dry_run:true with 2 tasks", out, err)
 	}
 
-	// Apply: one batch, the usual always-array envelopes.
 	out, code = run(t, "done", "-q", "label:bug", "--yes", "--json")
 	if code != 0 {
 		t.Fatalf("apply: exit %d\n%s", code, out)
@@ -111,9 +108,7 @@ func TestSetSelectorAppliesEdits(t *testing.T) {
 	}
 }
 
-// The selection contract's refusals, shared by the three commands: ids beside
-// a selection, --yes without one, --expect-updated or position flags beside
-// one, and a selection with nothing to apply.
+// The selection contract's refusals, shared by every command that takes one.
 func TestSelectorGuards(t *testing.T) {
 	initStore(t)
 	id := addTitled(t, "guard target")

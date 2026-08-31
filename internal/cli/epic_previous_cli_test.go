@@ -39,7 +39,6 @@ func TestEpicDoneSuggestsPreviousActive(t *testing.T) {
 	if !strings.Contains(got, "previous: "+ea) || !strings.Contains(got, "furrow epic activate "+ea) {
 		t.Errorf("done should suggest %s with the activate command:\n%s", ea, got)
 	}
-	// The suggestion is display data: nothing got activated.
 	st, _ := run(t, "--json", "epic", "show", ea)
 	if !strings.Contains(st, `"active": false`) {
 		t.Errorf("suggestion must never activate; epic show:\n%s", st)

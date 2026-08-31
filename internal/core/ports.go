@@ -5,7 +5,7 @@ import "time"
 // Ports. These interfaces are the seams between the pure core and the outside
 // world. They are declared HERE (in core) and implemented by adapters
 // (internal/store/fsstore for the real filesystem, internal/store/memstore for
-// an in-memory fake used by tests and dry-runs). The app/CLI layers depend
+// an in-memory fake used by tests). The app/CLI layers depend
 // on these interfaces, never on a concrete adapter — that is what keeps core
 // testable without touching disk.
 
@@ -49,8 +49,9 @@ type Store interface {
 	// it projects the one field it wants and throws the rest away, so a typo in
 	// meta.json would be invisible. meta.json's published schema now declares
 	// additionalProperties:true (furrow legitimately writes unknown keys back), so
-	// `furrow lint` is the only check left that can flag one — and nothing ever
-	// deletes an extra, so an unflagged typo is permanent.
+	// `furrow lint` is the only check left that can flag one — and nothing deletes
+	// an extra implicitly (only the operator, via `furrow tidy --unknown-keys`), so
+	// an unflagged typo is permanent.
 	LoadMeta() (*Meta, error)
 	// Writable reports whether this binary may write the board: nil = yes, else
 	// the refusal every mutation would raise (schema-upgrade-required /

@@ -78,12 +78,8 @@ func CheckUniqueIDs(idx *Index) error {
 // index<->body 1:1 mapping) lives in the app layer, which has the store; it
 // appends its findings to these.
 //
-// Rules:
-//   - id must be non-empty and match idPattern (frozen-id shape)
-//   - ids must be unique
-//   - status must be a known lane (else warn — the task still works, sorts last)
-//   - body path must equal the canonical bodies/<id>.md
-//   - every dep must reference an existing id
+// An unknown lane is a warn, not an error: the task still loads, and sorts
+// after every configured lane.
 //
 // The epic-membership rules are NOT here: they need the epic set, which is a
 // second store read, so they live in EpicProblems (epic_lint.go) beside the rest

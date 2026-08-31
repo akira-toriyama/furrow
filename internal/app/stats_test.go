@@ -40,7 +40,6 @@ func TestStatsDistribution(t *testing.T) {
 	if got := laneCount(s, "ready"); got != 0 {
 		t.Errorf("an empty configured lane should still appear with 0, got %d", got)
 	}
-	// by_label: cli(2) before bug(1), most-used first.
 	if len(s.ByLabel) != 2 || s.ByLabel[0].Key != "cli" || s.ByLabel[0].Count != 2 || s.ByLabel[1].Key != "bug" {
 		t.Errorf("by_label should be cli(2), bug(1) most-used first, got %+v", s.ByLabel)
 	}
@@ -70,7 +69,6 @@ func TestStatsTiesSortByKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// both count 1 -> tie broken by key ascending.
 	if len(s.ByLabel) != 2 || s.ByLabel[0].Key != "apple" || s.ByLabel[1].Key != "zebra" {
 		t.Errorf("ties should sort by key ascending, got %+v", s.ByLabel)
 	}
@@ -81,7 +79,6 @@ func TestStatsScopeFilter(t *testing.T) {
 	a.Add("t1", AddOpts{Labels: []string{"cli"}})
 	a.Add("t2", AddOpts{Status: "backlog"})
 
-	// -s narrows the aggregated set.
 	s, err := a.Stats(QueryOpts{Status: "backlog"})
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +111,7 @@ func TestStatsUnknownLaneFilterFailsFast(t *testing.T) {
 	}
 }
 
-// seedTask injects a task with explicit timestamps straight through the store —
+// seedTimedTask injects a task with explicit timestamps straight through the store —
 // the window tests need created/closed/updated to differ, which Add/Done under
 // one fixed clock cannot produce.
 func seedTimedTask(t *testing.T, a *App, id string, created, updated time.Time, closed *time.Time, repos ...string) {
@@ -185,7 +182,6 @@ func TestStatsWindowFlow(t *testing.T) {
 		}
 	}
 
-	// Open-ended window: --since only.
 	s2, err := a.Stats(QueryOpts{Since: &since})
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +189,6 @@ func TestStatsWindowFlow(t *testing.T) {
 	if len(s2.Window.Closed) != 4 { // t-done1, t-both1, t-late1, t-done2
 		t.Errorf("open-until closed = %v", s2.Window.Closed)
 	}
-	// No window flags -> no window section (the classic stats object).
 	s3, err := a.Stats(QueryOpts{})
 	if err != nil {
 		t.Fatal(err)
@@ -237,11 +232,9 @@ func TestStatsWindowUnionsArchive(t *testing.T) {
 	if _, err := a.ArchiveIDs([]string{"t-arch1"}, false); err != nil {
 		t.Fatal(err)
 	}
-	// Gone from the hot store…
 	if _, _, err := a.Get("t-arch1"); core.AsError(err) == nil {
 		t.Fatal("t-arch1 should be archived out of the hot store")
 	}
-	// …but still in the window's closed flow.
 	since := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	s, err := a.Stats(QueryOpts{Since: &since})
 	if err != nil {

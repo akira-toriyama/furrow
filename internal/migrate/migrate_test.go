@@ -64,15 +64,13 @@ func TestParseSynthetic(t *testing.T) {
 		got[tk.Title] = tk
 	}
 
-	// 6 tasks total: 2 open + 2 triage + 2 done. The bold DETAIL bullet under
-	// open task 1 must NOT be a task.
+	// 6 tasks total: 2 open + 2 triage + 2 done.
 	if len(res.Tasks) != 6 {
 		t.Fatalf("expected 6 tasks, got %d: %v titles=%v", len(res.Tasks), res.Tasks, titles(res.Tasks))
 	}
 	if _, isTask := got["詳細メモ"]; isTask {
 		t.Errorf("a bold detail bullet under a ### task was wrongly parsed as a task")
 	}
-	// appendix content must be skipped, not turned into a task.
 	if _, isTask := got["これはタスクではない（付録は body 行き）"]; isTask {
 		t.Errorf("an appendix (## 📎 付録) heading was wrongly parsed as a task")
 	}
@@ -92,7 +90,6 @@ func TestParseSynthetic(t *testing.T) {
 			got["first open task（旧 R1）"].Priority, got["second open task"].Priority)
 	}
 
-	// refs: markdown link target + bare URL captured; wikilink left in body.
 	first := got["first open task（旧 R1）"]
 	if !hasRef(first.Refs, "Sources/Foo.swift#L10") {
 		t.Errorf("expected file:line ref, got %v", first.Refs)
@@ -104,24 +101,20 @@ func TestParseSynthetic(t *testing.T) {
 		t.Errorf("expected bare URL ref, got %v", got["second open task"].Refs)
 	}
 
-	// the bold detail bullet's text is in the task body.
 	if !strings.Contains(first.Body, "詳細メモ") {
 		t.Errorf("detail bullet text should be in body, body=%q", first.Body)
 	}
 
-	// body starts with the title heading.
 	if !strings.HasPrefix(first.Body, "# first open task（旧 R1）\n") {
 		t.Errorf("body should start with the title heading, got %q", first.Body)
 	}
 
-	// the <details>/<summary> wrappers must not leak into a body.
 	for _, tk := range res.Tasks {
 		if strings.Contains(tk.Body, "<details>") || strings.Contains(tk.Body, "<summary>") {
 			t.Errorf("HTML wrapper leaked into body of %q", tk.Title)
 		}
 	}
 
-	// wikilink advisory present.
 	if !anyContains(res.Warnings, "wikilink") {
 		t.Errorf("expected a wikilink warning, got %v", res.Warnings)
 	}
@@ -188,7 +181,6 @@ func TestParseRealFacetTaskMd(t *testing.T) {
 	if len(res.Tasks) == 0 {
 		t.Fatal("expected some tasks from the real Task.md")
 	}
-	// Every task must land in a real lane and have a non-empty title + body.
 	known := map[string]bool{}
 	for _, l := range lanes {
 		known[l] = true
@@ -204,7 +196,6 @@ func TestParseRealFacetTaskMd(t *testing.T) {
 			t.Errorf("task %q body missing heading: %q", tk.Title, tk.Body[:min(40, len(tk.Body))])
 		}
 	}
-	// The Done archive items should be present and mapped to done.
 	if !anyTaskInLane(res.Tasks, "done") {
 		t.Errorf("expected at least one done task from the archive section")
 	}

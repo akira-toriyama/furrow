@@ -10,7 +10,6 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// vocabLines runs `furrow vocab <args>` and returns the output lines.
 func vocabLines(t *testing.T, args ...string) []string {
 	t.Helper()
 	out, code := run(t, append([]string{"vocab"}, args...)...)

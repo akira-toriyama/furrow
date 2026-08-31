@@ -82,7 +82,7 @@ type Query []Term
 
 // ParseError is a positioned parse/type failure. The App maps it to an exit-2
 // envelope (kind "query-parse") carrying Term and Offset in details, so a
-// front-end (vista's filter bar) can underline the offending token instead of
+// front-end can underline the offending token instead of
 // re-lexing the query. It deliberately carries no Field: the faults raised
 // here (a missing value, a half-open range) are about a term's SHAPE, so
 // there is no vocabulary to offer as candidates — the unknown-field and

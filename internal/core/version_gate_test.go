@@ -5,9 +5,10 @@ import (
 	"testing"
 )
 
-// The READ gate refuses a board layout NEWER than the binary (a lenient
-// unmarshal would silently drop fields the old binary doesn't know, then write
-// the loss back). Current and older versions read fine.
+// The READ gate refuses a board layout NEWER than the binary. It guards against
+// MISREADING such a board — acting as if a field it does not know did not exist;
+// the unknown-key passthrough already stops that field from being DESTROYED, and
+// preserving is not understanding. Current and older versions read fine.
 func TestCheckSchemaVersion(t *testing.T) {
 	for _, v := range []int{0, 1, SchemaVersion} {
 		if err := CheckSchemaVersion(v); err != nil {

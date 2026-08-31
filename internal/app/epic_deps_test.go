@@ -24,7 +24,6 @@ func TestEpicAddDeps(t *testing.T) {
 	furniture := mustEpic(t, a, "buy furniture", EpicAddOpts{Repos: []string{"o/r"}})
 	walk := mustEpic(t, a, "walk the new neighborhood", EpicAddOpts{Repos: []string{"o/r"}})
 
-	// Several deps in one write; re-adding one is a no-op, not an error.
 	if _, after, err := a.EpicAddDeps(walk, []string{moving, furniture}); err != nil {
 		t.Fatalf("add deps: %v", err)
 	} else if len(after.Deps) != 2 {
@@ -128,7 +127,6 @@ func TestEpicDepList(t *testing.T) {
 	if len(res.DependsOn) != 1 || res.DependsOn[0].ID != moving || res.DependsOn[0].State != "closed" {
 		t.Errorf("depends_on must resolve the closed dep: %+v", res.DependsOn)
 	}
-	// The reverse direction: what waits on `moving` — both branches, sorted.
 	rev, err := a.EpicDepList(moving)
 	if err != nil {
 		t.Fatal(err)

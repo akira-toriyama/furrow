@@ -128,8 +128,8 @@ func newEpicLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Disclose what the repo scope hid (the drafts-hint rule for boxes):
-			// count the same query unscoped and name the escape hatch.
+			// Disclose what the repo scope hid: a read never narrows silently
+			// (the drafts-hint rule, applied to boxes).
 			if resolved != "" {
 				u := o
 				u.Repo, u.Limit = "", 0

@@ -110,8 +110,8 @@ func TestAddAndSetDue(t *testing.T) {
 		t.Errorf("stored due is in %v, want UTC (the on-disk contract)", tk.Due.Location())
 	}
 
-	// Snooze: the offset is measured from NOW, so it lands in the future even
-	// though the existing date is in the past relative to it.
+	// Snooze: the offset is measured from NOW, never from the date already
+	// stored, so pushing an overdue task always lands it ahead.
 	spell := "+2d"
 	moved, _, err := a.Set(tk.ID, SetOpts{Due: &spell})
 	if err != nil {
@@ -385,7 +385,6 @@ func TestDueIgnoresTheBoardRepoScope(t *testing.T) {
 	if !got[here.ID] || !got[elsewhere.ID] {
 		t.Errorf("board-scoped due = %v, want BOTH %s (scoped) and %s (other repo)", got, here.ID, elsewhere.ID)
 	}
-	// Longest-overdue-first survives the widening.
 	if len(sum.Overdue) > 0 && sum.Overdue[0].Task.ID != elsewhere.ID {
 		t.Errorf("ordering broke: leader = %s, want the longest-overdue %s", sum.Overdue[0].Task.ID, elsewhere.ID)
 	}
@@ -457,7 +456,7 @@ func TestQueryDueBareDayIsTheOperatorsDay(t *testing.T) {
 // canonical comparator can turn the reversed input into the canonical order.
 // Nothing pinned this before, which is how swapping the one sort call for an
 // unstable slices.SortFunc scrambled brief's overdue band from its first row
-// with all 11 packages still green.
+// with the whole test suite still green.
 func TestSortByDueBreaksTiesByCanonicalOrderNotInputOrder(t *testing.T) {
 	lanes := config.Default().Lanes
 	sameDay := time.Date(2026, 8, 4, 14, 59, 59, 0, time.UTC) // 2026-08-04 23:59:59 JST

@@ -85,9 +85,9 @@ func readBodyText(cmd *cobra.Command, path string) (string, error) {
 	return string(b), nil
 }
 
-// printApplyResult renders the apply report: the full {on, ref, outcomes}
-// object in machine mode (indented under --json, one compact line under
-// --ndjson), else one human line per directive.
+// printApplyResult renders the apply report: the whole ApplyResult object in
+// machine mode (indented under --json, one compact line under --ndjson), else
+// one human line per directive.
 func printApplyResult(res app.ApplyResult) {
 	if jsonMode() {
 		emitObject(res)

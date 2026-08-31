@@ -7,9 +7,6 @@ import (
 )
 
 func TestBoardsListsConfiguredBoards(t *testing.T) {
-	// A real board on disk, a configured-but-missing one, and a clamped
-	// (scope-less) one. writeGlobalConfig/boardEntry are global_test.go's
-	// helpers.
 	boardParent := t.TempDir()
 	real := mustInitBoard(t, boardParent)
 	missing := filepath.Join(t.TempDir(), "nowhere", ".furrow")

@@ -53,14 +53,12 @@ func TestLsQueryFilters(t *testing.T) {
 		t.Errorf("is:actionable must exclude waiter/docs/parked: %v", act)
 	}
 
-	// is:blocked — the waiter has an unsatisfied dep.
 	if b := qIDs(t, "is:blocked"); !slices.Contains(b, waiter) || slices.Contains(b, cli) {
 		t.Errorf("is:blocked = %v; want just waiter", b)
 	}
 
-	// is:unfiled — every task here, since none was filed under a box. It replaces
-	// v5's is:container/is:stuck, which described a box; a box is no longer a task,
-	// so a TASK-level flag about one cannot exist.
+	// is:unfiled replaced v5's is:container/is:stuck, which described a box; a box
+	// is no longer a task, so a TASK-level flag about one cannot exist.
 	if u := qIDs(t, "is:unfiled"); len(u) != 5 {
 		t.Errorf("is:unfiled = %v; want all five (none is filed)", u)
 	}
@@ -71,12 +69,10 @@ func TestLsQueryFilters(t *testing.T) {
 		t.Errorf("label:cli,docs value:>=2 = %v; want cli+docs", or)
 	}
 
-	// negation: everything not in the backlog excludes docs+parked.
 	if nb := qIDs(t, "-status:backlog"); slices.Contains(nb, docs) || slices.Contains(nb, parked) {
 		t.Errorf("-status:backlog must exclude docs+parked: %v", nb)
 	}
 
-	// has:/no: presence.
 	if d := qIDs(t, "no:value"); !slices.Contains(d, base) || slices.Contains(d, cli) {
 		t.Errorf("no:value = %v; want the estimate-less tasks (base), not cli", d)
 	}
@@ -217,11 +213,9 @@ func TestQueryArchivedBodies(t *testing.T) {
 	if out, code := run(t, "archive", id, "--yes"); code != 0 {
 		t.Fatalf("archive exit = %d:\n%s", code, out)
 	}
-	// Gone from the hot board…
 	if got := qIDs(t, "body:zulu"); len(got) != 0 {
 		t.Errorf("hot board should no longer match: %v", got)
 	}
-	// …but its body is still queryable in the archive.
 	out, code := run(t, "--json", "ls", "--archived", "-q", "body:zulu")
 	if code != 0 || !strings.Contains(out, id) {
 		t.Errorf("ls --archived -q body:zulu should find %s: code=%d\n%s", id, code, out)

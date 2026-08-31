@@ -37,7 +37,6 @@ func TestUnarchiveRoundTrip(t *testing.T) {
 		t.Errorf("restored task = %+v, want done lane with the closed stamp preserved", e.After)
 	}
 
-	// Back on the hot board, gone from the archive.
 	if out, code := run(t, "show", id, "--json"); code != 0 || !strings.Contains(out, "comes back") {
 		t.Errorf("hot show after restore: exit %d\n%s", code, out)
 	}
@@ -76,8 +75,10 @@ func TestUnarchiveGuards(t *testing.T) {
 }
 
 // Every mutator's miss now says "it is archived" with details.archived — the
-// guidance show alone used to give (t-yszb). One single-task path, one batch
-// path, and one non-move mutator prove the funnels.
+// guidance show alone used to give (t-yszb). The enrichment lives on the
+// not-found funnels (app.notFoundTask / app.batchMissingErr), not on each
+// command, so the table samples commands across them rather than enumerating
+// every mutator.
 func TestMutatorMissHintsArchived(t *testing.T) {
 	initStore(t)
 	id := archiveOne(t, "retired")

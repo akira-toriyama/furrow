@@ -78,7 +78,6 @@ func TestFilterProblemsSeverityErrorDrivesEmptyExit(t *testing.T) {
 	if HasErrors(ps) {
 		t.Fatalf("excluding both errors must leave HasErrors=false, got %v", codes(ps))
 	}
-	// And --severity warn hides errors, so it too reports no errors.
 	if HasErrors(FilterProblems(sampleProblems(), ProblemFilter{Severity: SevWarn})) {
 		t.Fatal("severity=warn must hide errors so HasErrors=false")
 	}

@@ -11,7 +11,7 @@ import (
 // string constants and RevisitCodeList (the registry `furrow vocab
 // revisit-codes` and the docs drift guard read). This greps the const
 // declarations out of revisit.go — the same discipline as
-// TestLintCodeRegistryCoversEmitted — so adding an eighth Revisit* constant
+// TestLintCodeRegistryCoversEmitted — so adding a new Revisit* constant
 // without registering it fails here instead of silently weakening every
 // completeness claim in scripts/check-docs-vocab.sh.
 func TestRevisitCodeListMatchesConstants(t *testing.T) {

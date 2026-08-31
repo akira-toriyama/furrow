@@ -50,7 +50,7 @@ func seedForEdit(t *testing.T, a *App) string {
 	return tk.ID
 }
 
-// Every single-task edit reads the board ONCE. The six verbs below validate
+// Every single-task edit reads the board ONCE. The verbs below validate
 // against the task before editing it (a checklist index in range, a relabel that
 // must not empty a required set, a repo arg resolved against the board's repo
 // universe) and used to do that against one snapshot and then call mutate, which

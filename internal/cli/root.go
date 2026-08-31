@@ -35,13 +35,12 @@ var (
 var autoCommitApp *app.App
 
 // mutatingCommands names the subcommands that write to the store — the set the
-// autocommit post-run hook fires for. Reads (ls/show/next/brief/revisit/search/
-// stats), diagnostics (board/boards/doctor/lint/config/schema/version), `edit`
-// (whose real change happens out-of-process in $EDITOR), `migrate` (a rare,
-// possibly cross-board rewrite to commit deliberately), `init` (it creates the
-// store this hook would commit INTO, and never opens an App, so an entry for it
-// could not fire), and `sync` itself (its own git ritual) are deliberately
-// absent. A command missing here simply does
+// autocommit post-run hook fires for. Reads and diagnostics write nothing, so
+// they are absent; so are, deliberately, `edit` (whose real change happens
+// out-of-process in $EDITOR), `migrate` (a rare, possibly cross-board rewrite
+// to commit deliberately), `init` (it creates the store this hook would commit
+// INTO, and never opens an App, so an entry for it could not fire), and `sync`
+// itself (its own git ritual). A command missing here simply does
 // not autocommit its own change — it rides in on the next mutating command's
 // commit — a graceful degradation, never data loss.
 var mutatingCommands = map[string]bool{

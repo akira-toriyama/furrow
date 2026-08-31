@@ -8,7 +8,6 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// findIncoming returns the entry for id, or nil.
 func findIncoming(changes []IncomingChange, id string) *IncomingChange {
 	for i := range changes {
 		if changes[i].ID == id {
@@ -25,7 +24,6 @@ func findIncoming(changes []IncomingChange, id string) *IncomingChange {
 func TestSyncReportsIncomingChanges(t *testing.T) {
 	_, cloneA, cloneB := setupClones(t)
 
-	// A publishes two tasks.
 	a := openBoard(t, cloneA)
 	t1, err := a.Add("will close", AddOpts{})
 	if err != nil {
@@ -40,7 +38,6 @@ func TestSyncReportsIncomingChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// B's sync pulls them: both must report as created.
 	b := openBoard(t, cloneB)
 	p, err := b.Sync(context.Background(), SyncOpts{})
 	if err != nil {
@@ -87,7 +84,6 @@ func TestSyncReportsIncomingChanges(t *testing.T) {
 		t.Errorf("A's own auto-committed write reported as incoming: %+v", ch)
 	}
 
-	// A sync that pulls nothing new reports nothing incoming.
 	p, err = openBoard(t, cloneA).Sync(context.Background(), SyncOpts{})
 	if err != nil {
 		t.Fatal(err)

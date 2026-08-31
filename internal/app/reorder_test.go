@@ -27,7 +27,6 @@ func TestReorderRelativeMidpoint(t *testing.T) {
 	if !got.Updated.Equal(clk.Now()) {
 		t.Errorf("id's Updated must advance: got %s", got.Updated)
 	}
-	// The untouched neighbors keep their priorities.
 	if na, _, _ := a.Get(ta.ID); na.Priority != 100 {
 		t.Errorf("t-a priority = %d, want 100", na.Priority)
 	}

@@ -34,7 +34,6 @@ func TestSetAddRmRepos(t *testing.T) {
 		t.Errorf("short-name --rm-repo did not detach owner/app: %s", out)
 	}
 
-	// Removing the last repo leaves a DRAFT (repos == [] is first-class).
 	if _, code := run(t, "set", t1, "--rm-repo", "owner/lib"); code != 0 {
 		t.Fatal("removing the last repo must succeed")
 	}

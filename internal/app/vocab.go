@@ -12,16 +12,7 @@ import (
 // source behind the hidden `furrow vocab` command, which
 // scripts/check-docs-vocab.sh diffs the prose enumerations against. Each entry
 // delegates to (or reflects over) the code that OWNS the vocabulary, so a list
-// here can never be a second copy that itself drifts:
-//
-//   - config-keys:          reflection over internal/config's decode struct
-//   - doctor-codes:         doctor's finding-code registry (doctor.go)
-//   - error-kinds:          core's error-kind registry (the envelope's `kind`)
-//   - lint-codes:           core's lint-code registry (the `--code` candidates)
-//   - revisit-codes:        core's revisit signal constants
-//   - revisit-summary-keys: reflection over RevisitSummary's json tags
-//   - sync-progress-keys:   reflection over SyncProgress's json tags
-//   - query-qualifiers/-presence/-is: the `-q` compiler's own candidate lists
+// here can never be a second copy that itself drifts.
 //
 // The `commands` vocabulary is deliberately absent: only internal/cli can walk
 // the cobra tree, so the vocab command adds it there. To register a NEW

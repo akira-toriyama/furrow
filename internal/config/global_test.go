@@ -205,9 +205,10 @@ func TestLoadGlobalBoards_MalformedErrors(t *testing.T) {
 	}
 }
 
-// auto_filter is an explicit, discoverable per-board switch for whether the read
-// commands (ls/next/revisit) auto-filter by label. It defaults to true when the
-// key is omitted, so an existing [[board]] keeps scoping reads as before.
+// auto_filter is a per-board switch for whether reads are scoped by the board's
+// REPO — never by its label, which is only a literal add-time tag. It defaults
+// to true when the key is omitted, so an existing [[board]] keeps scoping reads
+// as before.
 func TestLoadGlobalBoards_AutoFilterDefaultsTrue(t *testing.T) {
 	boards, _, err := LoadGlobalBoards(writeGlobal(t,
 		"[[board]]\npath = \"/a/.furrow\"\nscopes = [\"/a\"]\n")) // no auto_filter key

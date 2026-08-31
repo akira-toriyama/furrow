@@ -299,11 +299,9 @@ jobs:
           # (`committed:false`) and only fetch/rebase/pushes.
           #
           # Branch on the envelope, never the exit code or the message — furrow's
-          # own contract. The envelope's `retryable` flag IS the retry decision
-          # (today it marks sync-push-rejected — a co-writer kept winning the push
-          # race, the cross-repo race this step exists for — sync-busy, a
-          # concurrent writer's rebase still in flight, and sync-interrupted):
-          # one key, no id table to keep in lockstep with the binary.
+          # own contract. The envelope's `retryable` flag IS the retry decision,
+          # which is why this step reads that one key instead of keeping its own
+          # table of retryable ids in lockstep with the binary.
           #
           # Everything else is terminal by furrow's classification — sync-conflict,
           # sync-stash-stranded, sync-unmerged, a stale ref lock, a schema

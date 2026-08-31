@@ -151,7 +151,6 @@ func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMod
 		return err
 	}
 
-	// Pick the lane to set for THIS event.
 	target := ""
 	switch mode {
 	case OnMerge:

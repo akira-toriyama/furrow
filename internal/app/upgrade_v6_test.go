@@ -128,8 +128,6 @@ func TestUpgradeV6PreviewPlansTheConversionAndWritesNothing(t *testing.T) {
 		t.Errorf("tasks = %d, want 4 after the conversion (the two boxes became epics)", st.Tasks)
 	}
 
-	// Preview writes NOTHING: the epic does not exist, the shard and body are
-	// untouched, the board still declares v5.
 	if _, err := os.Stat(filepath.Join(fdir, "epics", "e-box1.json")); !os.IsNotExist(err) {
 		t.Error("preview must not create the epic shard")
 	}

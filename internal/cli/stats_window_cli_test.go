@@ -46,8 +46,6 @@ func TestCLIStatsWindow(t *testing.T) {
 	}
 	_ = id
 
-	// A window that nothing falls into still emits the section, with empty
-	// arrays ([] not null) and zero counts.
 	out, code = run(t, "--json", "stats", "--since", "2000-01-01", "--until", "2000-01-02")
 	if code != 0 {
 		t.Fatalf("empty-window exit = %d:\n%s", code, out)
@@ -56,7 +54,6 @@ func TestCLIStatsWindow(t *testing.T) {
 		t.Errorf("empty flow must be [] not null:\n%s", out)
 	}
 
-	// No window flags -> no window key.
 	out, _ = run(t, "--json", "stats")
 	if strings.Contains(out, `"window"`) {
 		t.Errorf("windowless stats must not carry a window key:\n%s", out)

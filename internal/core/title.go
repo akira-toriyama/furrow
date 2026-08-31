@@ -32,10 +32,8 @@ func NormalizeTitle(s string) string {
 
 // TitleHasControl reports whether s contains a character NormalizeTitle would
 // strip — an interior control character. lint uses it as the backstop for a
-// title that reached the store WITHOUT going through NormalizeTitle. Every
-// app write path folds now (Add, AddMany/migrate and retitle alike), so what
-// is left for the backstop is a HAND-EDITED shard — and any future writer that
-// forgets to fold.
+// title that reached the store WITHOUT going through NormalizeTitle: a
+// HAND-EDITED shard, or a writer that forgets to fold.
 func TitleHasControl(s string) bool {
 	return strings.ContainsFunc(s, unicode.IsControl)
 }

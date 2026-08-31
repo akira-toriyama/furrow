@@ -61,7 +61,8 @@ type TreeNode struct {
 	// Actionable is `furrow next`'s task-level predicate: in a next lane, every
 	// dep done. It is deliberately NOT epic-scoped — the ★ means "ready to pick
 	// up", and a glyph whose meaning changed with which box happens to be active
-	// would be unreadable. `next` = ★ AND in the active epic.
+	// would be unreadable. `next` narrows ★ further with its own scope filters, so
+	// ★ is a strict superset of what it hands you.
 	Actionable bool
 	// BlockedBy names the deps that are NOT yet done — what is actually stopping
 	// this task. A done dep is history and is left out: the question a reader has
@@ -150,7 +151,6 @@ func (a *App) Tree(o QueryOpts, rootID string) ([]TreeGroup, error) {
 	return groups, nil
 }
 
-// treeNodes decorates a group's tasks with the derived facts.
 func (a *App) treeNodes(idx *core.Index, tasks []core.Task, doneIDs map[string]bool) []TreeNode {
 	out := make([]TreeNode, 0, len(tasks))
 	for i := range tasks {

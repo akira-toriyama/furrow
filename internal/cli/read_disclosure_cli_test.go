@@ -33,7 +33,6 @@ func TestSearch_ScopeHidesDraftsHint(t *testing.T) {
 		t.Errorf("stderr should disclose the hidden draft with the -r '' remedy, got:\n%s", se)
 	}
 
-	// The remedy works and mutes the hint: -r '' searches the whole board.
 	so, se = runLs(t, "search", "nix", "-r", "")
 	if !strings.Contains(so, "nix draft ball") {
 		t.Errorf("-r '' should surface the draft:\n%s", so)
@@ -72,7 +71,6 @@ func TestSearchStats_LabelDidYouMeanRepo(t *testing.T) {
 		t.Errorf("stats candidates = %v, want [me/demo]", fe.Candidates)
 	}
 
-	// A tag that exists is never second-guessed, even with zero search hits.
 	addTask(t, "tagged", "-l", "demo")
 	if _, code := run(t, "search", "zzz-no-hit", "-l", "demo"); code != 0 {
 		t.Errorf("an existing tag with no hits is a clean empty result, got exit %d", code)
@@ -120,7 +118,6 @@ func TestCapDisclosure(t *testing.T) {
 		t.Errorf("revisit -n1: stderr should disclose the cap, got:\n%s", se)
 	}
 
-	// A -n that does not bite stays silent.
 	_, se = runLs(t, "ls", "-n", "5")
 	if strings.Contains(se, "showing") {
 		t.Errorf("uncut ls must not hint, stderr:\n%s", se)

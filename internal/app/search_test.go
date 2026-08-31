@@ -46,7 +46,6 @@ func TestSearchCaseInsensitive(t *testing.T) {
 
 func TestSearchTitleTakesPrecedenceOverBody(t *testing.T) {
 	a := newApp()
-	// term in BOTH title and body -> a single hit, reported as a title match
 	t1, _ := a.Add("sync fixes", AddOpts{Body: "the sync command is also mentioned here"})
 	hits, err := a.Search(QueryOpts{}, "sync")
 	if err != nil {
@@ -143,7 +142,6 @@ func TestSearchArchivedReadsTheArchiveBodies(t *testing.T) {
 	if _, err := a.Done(old.ID); err != nil {
 		t.Fatal(err)
 	}
-	// Sixty days later, sweep everything closed more than thirty days ago.
 	a.Clock = &fixedClock{t: a.Clock.Now().AddDate(0, 0, 60)}
 	moved, err := a.Archive(30, false)
 	if err != nil {

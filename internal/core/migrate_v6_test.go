@@ -76,7 +76,6 @@ func TestPlanV6EpicsBuildsTheEpicFromTheTask(t *testing.T) {
 		t.Errorf("icebox epic (no Closed stamp) must close at Updated, got %+v", plans[2].Epic.Closed)
 	}
 
-	// Read-only: planning must not have touched the index.
 	if len(idx.Tasks) != 6 || idx.Tasks[0].ExtraKeys() == nil {
 		t.Error("PlanV6Epics mutated the index")
 	}
@@ -136,7 +135,6 @@ func TestApplyV6RemovesRehomesAndConsumes(t *testing.T) {
 		t.Errorf("t-same: epic=%q extras=%v, want the redundant parent consumed", byID["t-same"].Epic, byID["t-same"].ExtraKeys())
 	}
 
-	// Everything kept must still be parked, and reported with its reason.
 	wantKept := []V6Kept{
 		{TaskID: "t-str", Key: "parent", Value: "t-kid", Reason: "parent-not-epic"},
 		{TaskID: "t-raw", Key: "parent", Reason: "not-a-string"},

@@ -19,8 +19,8 @@ func sameIDs(tasks []core.Task, want []string) bool {
 	return true
 }
 
-// The active-epic scope predicate of `furrow next`, exhaustively, as the design
-// table (docs/plans/epic-entity.md §app) — active × flag × the task's epic:
+// The active-epic scope predicate of `furrow next`, exhaustively — active × flag ×
+// the task's epic:
 //
 //	| active | flag        | task's epic | in next |
 //	|--------|-------------|-------------|---------|

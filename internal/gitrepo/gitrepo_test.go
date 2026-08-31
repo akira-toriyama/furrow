@@ -150,7 +150,6 @@ func TestDirtyChangesTagsUntrackedAndScopesCommit(t *testing.T) {
 	if err := r.Commit(context.Background(), "seed", ".furrow"); err != nil { // body now tracked + committed
 		t.Fatal(err)
 	}
-	// A modification to the tracked body, plus a brand-new untracked meta.json.
 	if err := os.WriteFile(bodyPath, []byte("# one\n\nedited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +174,6 @@ func TestDirtyChangesTagsUntrackedAndScopesCommit(t *testing.T) {
 		t.Errorf("new meta.json: seen=%v untracked=%v; want seen, untracked", seen[".furrow/meta.json"], untracked[".furrow/meta.json"])
 	}
 
-	// Committing only the meta path must leave the modified body dirty.
 	if err := r.Commit(context.Background(), "meta only", ".furrow/meta.json"); err != nil {
 		t.Fatal(err)
 	}
@@ -184,8 +182,8 @@ func TestDirtyChangesTagsUntrackedAndScopesCommit(t *testing.T) {
 	}
 }
 
-// Push against a remote that moved is classified ErrNonFastForward — the one
-// failure Sync retries.
+// Push against a remote that moved is classified ErrNonFastForward — the push
+// failure Sync retries (pull once, push again).
 func TestPushClassifiesNonFastForward(t *testing.T) {
 	git := gitOrSkip(t)
 	origin := t.TempDir()

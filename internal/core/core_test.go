@@ -56,9 +56,8 @@ func sampleIndex() *Index {
 }
 
 // goldenBytes compares got against testdata/<name>, regenerating the file
-// under -update — the ONE home of the golden ritual, shared by the task, epic,
-// and repo shard goldens (they used to carry three identical copies of this
-// block, t-eb6a).
+// under -update — the ONE home of the golden ritual, shared by every shard
+// golden (they used to carry three identical copies of this block, t-eb6a).
 func goldenBytes(t *testing.T, name string, got []byte) {
 	t.Helper()
 	golden := filepath.Join("testdata", name)
@@ -312,7 +311,6 @@ func TestRandomIDSuffix(t *testing.T) {
 	if want := "012z01"; suf != want {
 		t.Errorf("byte->charset mapping = %q, want %q", suf, want)
 	}
-	// length matches n and every char is in the alphabet.
 	long := make([]byte, 64)
 	for i := range long {
 		long[i] = byte(i * 7)

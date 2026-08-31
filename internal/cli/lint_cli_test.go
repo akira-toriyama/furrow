@@ -85,8 +85,7 @@ func TestCLILintFailsOnConflictMarkerBody(t *testing.T) {
 }
 
 // TestCLILintRuleCode pins that lint problems carry a stable kebab-case `code`
-// (t-kx76 d): induce a dangling [[id]] link and assert code=dangling-link, so
-// agent triage branches on the code, not an English regex.
+// (t-kx76 d), so agent triage branches on the code, not an English regex.
 func TestCLILintRuleCode(t *testing.T) {
 	initStore(t)
 	addTask(t, "haslink", "--body", "see [[t-zzzzz]]")

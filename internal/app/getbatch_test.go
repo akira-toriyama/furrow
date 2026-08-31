@@ -57,7 +57,6 @@ func TestGetBatchBodyLoading(t *testing.T) {
 	a := newApp()
 	t1, _ := a.Add("first", AddOpts{Body: "long prose"})
 
-	// withBody=false: metadata only, Body stays empty.
 	items, _, err := a.GetBatch([]string{t1.ID}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +65,6 @@ func TestGetBatchBodyLoading(t *testing.T) {
 		t.Errorf("withBody=false should not load the body, got %q", items[0].Body)
 	}
 
-	// withBody=true: the stored body rides along.
 	items, _, err = a.GetBatch([]string{t1.ID}, true)
 	if err != nil {
 		t.Fatal(err)

@@ -423,7 +423,6 @@ func replaceValue(lines []string, kl, end int, key, rendered string) (SetResult,
 	line := lines[kl]
 	eq := strings.IndexByte(line, '=')
 	prefix := line[:eq+1]
-	// Scan the value from just after '=' across lines until it closes.
 	valText, comment, lastLine, err := scanValue(lines, kl, eq+1, end)
 	if err != nil {
 		return SetResult{}, err

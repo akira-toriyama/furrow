@@ -18,9 +18,9 @@ import (
 // never produces — plus one lint test that was green only because a value of 9
 // survived a write it cannot survive on disk.
 //
-// This is deliberately NOT a port-wide contract suite over core.Store's 24
-// methods: that was weighed and rejected as premature mechanization (furrow task
-// t-0mmj). Two behaviors, two demonstrated failures.
+// This is deliberately NOT a port-wide contract suite over every method of
+// core.Store: that was weighed and rejected as premature mechanization (furrow
+// task t-0mmj). Two behaviors, two demonstrated failures.
 
 type storeCase struct {
 	name string
@@ -87,7 +87,6 @@ func TestSaveCanonicalizesLikeFsstore(t *testing.T) {
 					t.Errorf("%s: due not UTC whole-second: %v", where, tk.Due)
 				}
 			}
-			// (a) what a subsequent read hands back...
 			got, err := st.Load()
 			if err != nil {
 				t.Fatal(err)
@@ -96,9 +95,9 @@ func TestSaveCanonicalizesLikeFsstore(t *testing.T) {
 				t.Fatalf("%s: expected 1 task, got %d", sc.name, len(got.Tasks))
 			}
 			check("after Save+Load", got.Tasks[0])
-			// (b) ...and what the CALLER is left holding. app code returns the
-			// in-memory task from a mutation without re-reading, so a store that
-			// skips this leaks the pre-Save shape into the --json envelope.
+			// app code returns the in-memory task from a mutation without
+			// re-reading, so a store that skips canonicalizing the CALLER's index
+			// leaks the pre-Save shape into the --json envelope.
 			check("caller's index after Save", idx.Tasks[0])
 		})
 	}

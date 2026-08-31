@@ -148,7 +148,6 @@ func samePtr(a, b *int) bool {
 	return *a == *b
 }
 
-// sameTime compares two optional timestamps: both nil is equal, one nil is not.
 func sameTime(a, b *time.Time) bool {
 	if a == nil || b == nil {
 		return a == b

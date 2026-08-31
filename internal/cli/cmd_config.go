@@ -9,9 +9,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newConfigCmd is furrow's first parent command: a `config` namespace for the
-// user-level (home) config that declares central boards. Its subcommands write
-// the template (`config init`) and locate it (`config path`).
+// newConfigCmd is the `config` namespace over furrow's config files — the
+// resolved board's .furrow/config.toml and the user-level one that declares
+// central boards.
 func newConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",

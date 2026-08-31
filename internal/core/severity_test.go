@@ -35,7 +35,6 @@ func TestApplySeverity(t *testing.T) {
 	if again := ApplySeverity(got, ov); !reflect.DeepEqual(again, want) {
 		t.Errorf("not idempotent: %+v", again)
 	}
-	// The empty-override fast path hands the input back untouched.
 	if out := ApplySeverity(in, nil); &out[0] != &in[0] {
 		t.Error("nil overrides should return the input slice as-is")
 	}

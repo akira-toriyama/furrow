@@ -72,7 +72,6 @@ func TestCLIAddInheritsActiveEpic(t *testing.T) {
 		t.Errorf("the inheritance must be disclosed on stderr, got: %q", stderr)
 	}
 
-	// Explicit -e '' stays unfiled, silently (nothing was inherited).
 	stdout, stderr, code = runSplit(t, "--json", "add", "scratch note", "-e", "")
 	if code != 0 {
 		t.Fatalf("add -e '' exit %d:\n%s", code, stdout)
@@ -88,7 +87,6 @@ func TestCLIAddInheritsActiveEpic(t *testing.T) {
 		t.Errorf("nothing inherited, nothing to disclose: %q", stderr)
 	}
 
-	// --stdin: every line inherits, one note for the batch.
 	so, se, code := runSplitStdin(t, "one\ntwo\n", "--json", "add", "--stdin")
 	if code != 0 {
 		t.Fatalf("add --stdin exit %d:\n%s", code, so)

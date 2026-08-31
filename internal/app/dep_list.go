@@ -4,11 +4,9 @@ import "github.com/akira-toriyama/furrow/internal/core"
 
 // TaskRef is an EDGE resolved for legibility: the referenced task's id plus its
 // title and lane, so a reader (agent or human) sees what an edge points at without
-// a second lookup. It is edge-agnostic on purpose — a dep, a parent, and a child
-// are all "a task this one is wired to", and one shape for all three is what keeps
-// `dep --list` and `parent --list` reading the same. A dangling ref (an id naming
-// no task — lint's dep-missing / parent-missing) resolves to the id with an empty
-// Title and Status, so a broken edge is still reported rather than vanishing.
+// a second lookup. A dangling ref (an id naming no task — lint's dep-missing)
+// resolves to the id with an empty Title and Status, so a broken edge is still
+// reported rather than vanishing.
 type TaskRef struct {
 	ID     string
 	Title  string
@@ -51,10 +49,9 @@ func (a *App) DepList(id string) (DepListResult, error) {
 	return res, nil
 }
 
-// resolveTaskRef looks up id in the index, returning its id+title+status. A
-// dangling id (no such task) yields the id alone with an empty title/status, so
-// the edge is still reported (faithful to the shard) and lint's dep-missing /
-// parent-missing finding is the place that flags it as a problem.
+// resolveTaskRef yields the id alone, with an empty title/status, for a dangling
+// id: the edge is still reported (faithful to the shard) and lint's dep-missing
+// finding is the place that flags it as a problem.
 func resolveTaskRef(idx *core.Index, id string) TaskRef {
 	if t, i := idx.Find(id); i >= 0 {
 		return TaskRef{ID: t.ID, Title: t.Title, Status: t.Status}

@@ -50,12 +50,10 @@ func TestSaveWritesShardsAndMeta(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// index.json must never appear.
 	if _, err := os.Stat(filepath.Join(s.root, "index.json")); !os.IsNotExist(err) {
 		t.Errorf("index.json must not exist under the sharded store (stat err = %v)", err)
 	}
 
-	// meta.json equals the canonical MarshalMeta bytes.
 	wantMeta, _ := core.MarshalMeta(&core.Meta{SchemaVersion: core.SchemaVersion})
 	gotMeta, err := os.ReadFile(filepath.Join(s.root, "meta.json"))
 	if err != nil {
@@ -115,7 +113,6 @@ func TestSaveDirtyOnlyNoChurn(t *testing.T) {
 		}
 	}
 
-	// Save the very same index again.
 	again, _ := s.Load()
 	if err := s.Save(again); err != nil {
 		t.Fatal(err)
@@ -151,7 +148,6 @@ func TestSaveRewritesOnlyChanged(t *testing.T) {
 		}
 	}
 
-	// mutate only t-0001.
 	next, _ := s.Load()
 	tk, _ := next.Find("t-0001")
 	tk.Title = "a changed"
@@ -402,7 +398,6 @@ func TestListAssets(t *testing.T) {
 func TestRepoShardRoundTrip(t *testing.T) {
 	s := newStore(t)
 
-	// Absent repo, empty list: no error before anything is reviewed.
 	if _, ok, err := s.LoadRepo("o/none"); err != nil || ok {
 		t.Fatalf("LoadRepo on a fresh store: ok=%v err=%v, want ok=false err=nil", ok, err)
 	}
@@ -416,7 +411,6 @@ func TestRepoShardRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// On-disk bytes equal the canonical MarshalRepo output.
 	want, _ := core.MarshalRepo(&core.RepoRecord{Repo: "akira-toriyama/furrow", LastReviewed: &now})
 	got, err := os.ReadFile(filepath.Join(s.root, "repos", "akira-toriyama__furrow.json"))
 	if err != nil {
@@ -426,7 +420,6 @@ func TestRepoShardRoundTrip(t *testing.T) {
 		t.Errorf("repo shard bytes != MarshalRepo\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 
-	// LoadRepo reads it back.
 	loaded, ok, err := s.LoadRepo("akira-toriyama/furrow")
 	if err != nil || !ok {
 		t.Fatalf("LoadRepo after save: ok=%v err=%v", ok, err)
@@ -435,7 +428,6 @@ func TestRepoShardRoundTrip(t *testing.T) {
 		t.Errorf("loaded record wrong: %+v", loaded)
 	}
 
-	// A second repo, then ListRepos is sorted by Repo.
 	if err := s.SaveRepo(&core.RepoRecord{Repo: "akira-toriyama/chord", LastReviewed: &now}); err != nil {
 		t.Fatal(err)
 	}

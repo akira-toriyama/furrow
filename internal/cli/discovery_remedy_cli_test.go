@@ -43,7 +43,6 @@ func TestDiscoveryErrorRemedyMatchesMachineState(t *testing.T) {
 		t.Errorf("candidates must name the configured board path %q, got %v", real, fe.Candidates)
 	}
 
-	// A machine with NO boards keeps the init steer.
 	empty := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", empty)
 	if err := os.MkdirAll(filepath.Join(empty, "furrow"), 0o755); err != nil {

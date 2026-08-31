@@ -43,7 +43,6 @@ func TestRenderErrorEnvelopeShape(t *testing.T) {
 		}
 	}
 
-	// A retryable failure carries retryable=true; an empty subject is omitted.
 	se.Reset()
 	renderError(&core.Error{Code: core.CodeInternal, Kind: core.KindSyncBusy, Retryable: true, Msg: "busy"})
 	env.Error = nil

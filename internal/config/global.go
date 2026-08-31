@@ -26,7 +26,7 @@ type GlobalBoard struct {
 	// reads; scoping moved to Repo. "auto" is a reserved word (the retired
 	// label="auto" mode), warned about and ignored below.
 	Label      string
-	AutoFilter bool // auto-filter reads (ls/next/revisit) by the board repo; defaults to true when omitted
+	AutoFilter bool // auto-filter reads by the board repo; defaults to true when omitted
 	// AutoCommit, when true, makes every mutating furrow command git-commit the
 	// board's .furrow/ afterwards (best-effort, no push) — the standalone-board
 	// backup guarantee turned into a tool behavior. It lives here (per-machine
@@ -248,7 +248,7 @@ func clampGlobalBoards(entries []rawBoard, path string) ([]GlobalBoard, []string
 			warn = append(warn, fmt.Sprintf("%s: [[board]] %q: label=\"auto\" moved to repo=\"auto\"; update your config (label ignored)", path, b.Path))
 			label = ""
 		}
-		autoFilter := b.AutoFilter == nil || *b.AutoFilter // omitted -> true
+		autoFilter := b.AutoFilter == nil || *b.AutoFilter
 		boards = append(boards, GlobalBoard{Path: b.Path, Scopes: scopes, Repo: b.Repo, Label: label, AutoFilter: autoFilter, AutoCommit: b.AutoCommit})
 	}
 	return boards, warn

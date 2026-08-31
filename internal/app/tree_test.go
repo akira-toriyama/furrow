@@ -111,7 +111,6 @@ func TestTreeProgressIgnoresTheReadFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// -s ready hides the done member from the DRAWING…
 	groups, err := a.Tree(QueryOpts{Status: "ready"}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +122,6 @@ func TestTreeProgressIgnoresTheReadFilter(t *testing.T) {
 	if len(g.Tasks) != 2 {
 		t.Errorf("drawn tasks = %d, want 2 (the filter applies to the drawing)", len(g.Tasks))
 	}
-	// …but the roll-up still counts all three.
 	if g.Progress == nil || g.Progress.Done != 1 || g.Progress.Total != 3 {
 		t.Errorf("progress = %+v, want {Done:1 Total:3} over the FULL index", g.Progress)
 	}

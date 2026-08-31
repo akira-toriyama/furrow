@@ -88,7 +88,6 @@ func TestApplyOnOpenNudgesToInProgressNotDone(t *testing.T) {
 	a := newSeededApp()
 	tk, _ := a.Add("wip", AddOpts{Status: "ready"})
 
-	// Directive names `done`, but on OPEN it must only reach in-progress.
 	res, err := a.ApplyDirectives("SetStatus-task: "+bodyLink(tk.ID)+" done", "furrow#9", OnOpen, "")
 	if err != nil {
 		t.Fatal(err)

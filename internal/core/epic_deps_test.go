@@ -43,10 +43,8 @@ func TestEpicDependsOn(t *testing.T) {
 	}
 }
 
-// The three graph rules, driven through EpicProblems so the wiring is covered
-// too: a dangling dep is an error, a merged-in cycle is an error naming every
-// box in the knot, and an ACTIVE epic still waiting on an open box is a warning
-// (a closed dep is a satisfied one and says nothing).
+// Driven through EpicProblems rather than the graph walk directly, so the lint
+// wiring is covered too and not just the rule.
 func TestEpicDepProblems(t *testing.T) {
 	idx := &Index{}
 	terminal := map[string]bool{"done": true}
