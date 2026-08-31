@@ -686,6 +686,11 @@ moment it happens — and never reaches the remote.
 
 Only `pre-push` blocks, and only on lint **errors** (`furrow lint` exits 2);
 warnings flow through and are surfaced non-blockingly after a merge or rebase.
+When any pre-push hook blocks a `furrow sync`, the hook's stderr is relayed
+verbatim — a `git push stderr:` block on sync's stderr, and the same text under
+the error envelope's `details.stderr` — because the hook's own lines are the
+block reason and git's one-line summary ("failed to push some refs") says
+nothing.
 One error is deliberately **excluded from the gate**: `due-overdue`. It is the
 only finding that appears with no edit — a promised instant passes and a push
 that has nothing to do with that task is refused, `furrow sync` included, so the

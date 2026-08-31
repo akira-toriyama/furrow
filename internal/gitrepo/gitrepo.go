@@ -547,7 +547,14 @@ func (r *Repo) AbortRebase(ctx context.Context) error {
 
 // Push runs `git push`. A rejection because the remote moved ahead is returned
 // as ErrNonFastForward (wrapped) so the caller can retry pull→push exactly
-// once; everything else is an internal error carrying git's first stderr line.
+// once; everything else is an internal error whose one-line message carries
+// git's first error-ish stderr line and whose Details carry the FULL stderr.
+// The details half exists for the pre-push hook: on a board whose only gate is
+// client-side, the hook's block reason (which lint code fired, the
+// `--no-verify` escape) matches none of errorLine's error:/fatal:/! prefixes,
+// so the scan lands on git's generic "failed to push some refs" and the WHY
+// used to die in runGit's buffer — the operator saw pushed=false and nothing
+// else (t-7kvj, measured).
 func (r *Repo) Push(ctx context.Context) error {
 	_, stderr, err := runGit(ctx, r.git, r.top, "push")
 	if err == nil {
@@ -556,7 +563,11 @@ func (r *Repo) Push(ctx context.Context) error {
 	if isNonFastForward(stderr) {
 		return fmt.Errorf("%w: %s", ErrNonFastForward, firstLine(stderr))
 	}
-	return gitFailed("git push: %s", errorLine(stderr))
+	e := gitFailed("git push: %s", errorLine(stderr))
+	if s := strings.TrimSpace(stderr); s != "" {
+		e.Details = map[string]any{"stderr": s}
+	}
+	return e
 }
 
 // isNonFastForward classifies a push rejection from git's stderr. git phrases
