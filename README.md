@@ -276,7 +276,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `check <id> [item-index]` | Toggle, add, remove, or reword a checklist item | `--add`, `--expect-updated`, `--off`, `--reword`, `--rm` |
 | `dep <id> [<dep-id>...]` | Add/remove a task's dependencies, or list them both ways with --list | `--expect-updated`, `--list`, `--rm` |
 | `epic add <title>` | Create an epic (never active — open it with `epic activate`) | `--body`, `--goal`, `-l/--label`, `--meta`, `-r/--repo` |
-| `epic ls` | List epics (open only by default), active first | `--all`, `-l/--label`, `-n/--limit`, `-r/--repo` |
+| `epic ls` (alias `list`) | List epics (open only by default), active first | `--all`, `-l/--label`, `-n/--limit`, `-r/--repo` |
 | `epic show <epic>` | Show one epic: goal, meta, progress, member tasks, and its body | — |
 | `epic set <epic>` | Edit an epic's title, goal, meta, labels, repos, or its standing/pinned declarations | `--add-label`, `--add-repo`, `--goal`, `--meta`, `--pinned`, `--rm-label`, `--rm-meta`, `--rm-repo`, `--standing`, `--title` |
 | `epic activate <epic>` | Make this the active epic for its repos (at most one each) | `--reason` |

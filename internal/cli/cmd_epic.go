@@ -91,8 +91,9 @@ func newEpicLsCmd() *cobra.Command {
 		f   filterFlags
 	)
 	cmd := &cobra.Command{
-		Use:   "ls",
-		Short: "List epics (open only by default), active first",
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List epics (open only by default), active first",
 		Long: "List the boxes: the active one first, then pinned open, then open by id,\n" +
 			"then closed (with --all). The board's repo scope applies exactly as on the\n" +
 			"task reads: inside a scoped checkout a bare `epic ls` lists this repo's\n" +
