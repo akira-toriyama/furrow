@@ -1035,8 +1035,10 @@ func newRefCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringSliceVar(&add, "add", nil, "ref to add (file:line or URL; repeatable)")
-	cmd.Flags().StringSliceVar(&rm, "rm", nil, "ref to remove (exact match; repeatable)")
+	// StringArray, not StringSlice: a ref is free text (a URL keeps its query
+	// commas, a path may carry a quote), so each value is stored verbatim.
+	cmd.Flags().StringArrayVar(&add, "add", nil, "ref to add (file:line or URL; verbatim; repeatable)")
+	cmd.Flags().StringArrayVar(&rm, "rm", nil, "ref to remove (exact match; verbatim; repeatable)")
 	addExpectUpdatedFlag(cmd)
 	return cmd
 }
