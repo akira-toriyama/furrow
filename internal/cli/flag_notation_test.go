@@ -12,9 +12,9 @@ import (
 
 // TestRepeatableFlagNotationFrozen pins the comma rule (t-ezv6 leg a):
 //
-//	a repeatable flag holding IDENTIFIERS (labels, repos, refs, deps, lanes,
-//	lint codes, ids) splits on comma; one holding FREE TEXT or a PATH-LIKE
-//	value (checklist items, key=value meta, scope dirs) takes each value
+//	a repeatable flag holding IDENTIFIERS (labels, repos, deps, lanes, lint
+//	codes, ids) splits on comma; one holding FREE TEXT or a PATH-LIKE value
+//	(checklist items, key=value meta, scope dirs, refs) takes each value
 //	verbatim.
 //
 // Comma is the reserved separator for identifier sets everywhere else in the
@@ -33,12 +33,16 @@ import (
 // split to the one filter parser downstream (see joinOrFilter) — splitting at
 // the flag layer too would double-split. The rule is about what a comma MEANS
 // to the user, not which layer implements it.
+//
+// A ref is free text, not an identifier: a URL legitimately carries a comma
+// (`?rows=1,2`) and a bare `"` — and pflag's CSV parse split the first into two
+// refs and rejected the second outright (t-pwrp). Refs were classified as
+// identifiers in the first cut of this table; that was the mistake it fixes.
 func TestRepeatableFlagNotationFrozen(t *testing.T) {
 	want := map[string]string{
 		// identifier sets: comma splits (stringSlice)
 		"add --dep":            "stringSlice",
 		"add --label":          "stringSlice",
-		"add --ref":            "stringSlice",
 		"add --repo":           "stringSlice",
 		"archive --repo":       "stringSlice",
 		"epic add --label":     "stringSlice",
@@ -50,8 +54,6 @@ func TestRepeatableFlagNotationFrozen(t *testing.T) {
 		"label --add":          "stringSlice",
 		"label --rm":           "stringSlice",
 		"migrate --label":      "stringSlice",
-		"ref --add":            "stringSlice",
-		"ref --rm":             "stringSlice",
 		"repo --add":           "stringSlice",
 		"repo --rm":            "stringSlice",
 		"set --add-label":      "stringSlice",
@@ -62,11 +64,14 @@ func TestRepeatableFlagNotationFrozen(t *testing.T) {
 
 		// free text / path-like: verbatim (stringArray)
 		"add --check":         "stringArray",
+		"add --ref":           "stringArray",
 		"check --add":         "stringArray",
 		"config init --scope": "stringArray",
 		"epic add --meta":     "stringArray",
 		"epic set --meta":     "stringArray",
 		"epic set --rm-meta":  "stringArray",
+		"ref --add":           "stringArray",
+		"ref --rm":            "stringArray",
 
 		// filter flags: stringArray + downstream comma-OR split (joinOrFilter).
 		// done/move/set carry -l as a write-side SELECTOR, but it is the same

@@ -52,3 +52,41 @@ func TestCLIRefCommandMutatesAndReportsChanged(t *testing.T) {
 		t.Errorf("ref on unknown id should exit 1, got %d", code)
 	}
 }
+
+// A ref is free text, so the flag layer must not CSV-parse it (t-pwrp): a URL
+// with a comma in its query stayed one ref only by luck of quoting, and a bare
+// `"` was a pflag parse error (exit 2). Both `add --ref` and `ref --add/--rm`
+// take each value verbatim, and --rm's exact match sees the same bytes.
+func TestCLIRefValuesAreVerbatim(t *testing.T) {
+	initStore(t)
+	url := "https://example.com/spec?rows=1,2"
+	quoted := `docs/"quoted".md:3`
+	id := addTask(t, "verbatim", "--ref", url, "--ref", quoted)
+
+	var shown []core.Task
+	out, code := run(t, "--json", "show", id, "--no-body")
+	if code != 0 {
+		t.Fatalf("show exit = %d:\n%s", code, out)
+	}
+	if err := json.Unmarshal([]byte(out), &shown); err != nil {
+		t.Fatalf("show --json: %v\n%s", err, out)
+	}
+	if want := []string{url, quoted}; !reflect.DeepEqual(shown[0].Refs, want) {
+		t.Fatalf("add --ref refs = %q, want %q (each value verbatim, no CSV split)", shown[0].Refs, want)
+	}
+
+	var res struct {
+		After   *core.Task `json:"after"`
+		Changed []string   `json:"changed"`
+	}
+	out, code = run(t, "--json", "ref", id, "--add", "a,b", "--rm", url)
+	if code != 0 {
+		t.Fatalf("ref --add/--rm exit = %d:\n%s", code, out)
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("ref --json: %v\n%s", err, out)
+	}
+	if want := []string{quoted, "a,b"}; !reflect.DeepEqual(res.After.Refs, want) {
+		t.Errorf("refs = %q, want %q (--rm matches the comma URL exactly; --add keeps a,b whole)", res.After.Refs, want)
+	}
+}

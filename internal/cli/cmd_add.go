@@ -120,7 +120,7 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "epic to file this task under (id, unique id prefix, or unique title substring; default: the scope's single active epic, '' stays unfiled)")
 	cmd.Flags().StringVar(&due, "due", "", "promise this for a date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d")
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
-	cmd.Flags().StringSliceVar(&refs, "ref", nil, "reference (file:line or URL, repeatable)")
+	cmd.Flags().StringArrayVar(&refs, "ref", nil, "reference (file:line or URL; verbatim; repeatable)")
 	cmd.Flags().StringVar(&body, "body", "", "initial body markdown ('-' reads stdin; default: a heading from the title)")
 	cmd.Flags().StringArrayVar(&checks, "check", nil, "seed an unchecked checklist item (repeatable; text verbatim)")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "read one task title per line from stdin; create all in one write")

@@ -943,9 +943,9 @@ except where noted:
   Comma is the reserved separator, so a lane/label whose name contains one can't
   be selected this way (lane/label names with commas are not a supported shape).
   The same meaning governs every REPEATABLE flag: one holding identifiers
-  (labels, repos, refs, deps, lanes) splits on comma, one holding free text or
-  a path (`check --add`, `--meta`, `config init --scope`) takes each value
-  verbatim — `TestRepeatableFlagNotationFrozen` freezes the classification, so
+  (labels, repos, deps, lanes) splits on comma, one holding free text or a
+  path (`check --add`, `--meta`, `config init --scope`, `--ref` — a URL keeps
+  its query commas and a bare `"`) takes each value verbatim — `TestRepeatableFlagNotationFrozen` freezes the classification, so
   a new flag fails the build until it picks a side.
   `ls --drafts` lists only the repo-less tasks. When an input *almost* resolved —
   an ambiguous repo short name, a label that uniquely names a repo (the
