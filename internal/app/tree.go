@@ -2,6 +2,7 @@ package app
 
 import (
 	"sort"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
 )
@@ -255,6 +256,46 @@ func (a *App) epicStuck(idx *core.Index, epicID string, doneIDs map[string]bool)
 		}
 	}
 	return open > 0 && actionable == 0
+}
+
+// EpicWait is the "parked until" state of a box: every non-terminal member is
+// done and at least one member sits in a due-tracked parked lane (a terminal
+// lane outside the done lane and [due].ignore_lanes — `waiting` on the shipped
+// config) with a due still ahead. It names the EARLIEST such due and the member
+// carrying it, so a row can say what the box waits for without a second read.
+//
+// The lane test is dueSkipLanes, not the lane's name: furrow never binds a lane
+// name to a meaning, and the board's own due policy already says which parked
+// lanes carry a date that counts. A parked member with NO due (or an arrived
+// one) never makes a box wait — nobody could say what it waits for, which is
+// exactly the box epic_all_done should still nag about.
+type EpicWait struct {
+	Until time.Time `json:"until"`
+	Task  string    `json:"task"`
+}
+
+// epicWaiting computes EpicWait for a box; nil when the box has open
+// (non-terminal) work — then it is not merely waiting — or no future-due parked
+// member. A same-instant tie breaks by task id so the carrier is deterministic.
+func (a *App) epicWaiting(idx *core.Index, epicID string, now time.Time) *EpicWait {
+	skip := a.dueSkipLanes()
+	var w *EpicWait
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if t.Epic != epicID {
+			continue
+		}
+		if !a.Cfg.IsTerminal(t.Status) {
+			return nil
+		}
+		if skip[t.Status] || t.Due == nil || !t.Due.After(now) {
+			continue
+		}
+		if w == nil || t.Due.Before(w.Until) || (t.Due.Equal(w.Until) && t.ID < w.Task) {
+			w = &EpicWait{Until: *t.Due, Task: t.ID}
+		}
+	}
+	return w
 }
 
 // actionable is the task-level readiness test: the task sits in a next lane and
