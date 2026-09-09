@@ -3,8 +3,10 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1363,5 +1365,63 @@ func TestCLIClampSignalBatch(t *testing.T) {
 	out, _ = run(t, "--json", "set", a, b, "--value", "3")
 	if strings.Contains(out, "clamped") {
 		t.Errorf("in-range batch set must not emit a clamped key:\n%s", out)
+	}
+}
+
+// TestCLIApplyDryRunWritesNothing pins the local-gate use of `apply --dry-run`
+// (the footer check before `gh pr create`): the store directory is
+// byte-identical before and after, the exit code is the real apply's (a bad
+// lane is still 2), and the report is the same shape plus dry_run.
+func TestCLIApplyDryRunWritesNothing(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "task one", "-s", "ready")
+	dir := os.Getenv(app.EnvDir)
+
+	snapshot := func() map[string]string {
+		t.Helper()
+		files := map[string]string{}
+		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			files[path] = string(b)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return files
+	}
+
+	before := snapshot()
+	out, code := runIn(t, "SetStatus-task: "+id+" done\n", "apply", "--on", "merge", "--ref", "x#1", "--dry-run")
+	if code != 0 {
+		t.Fatalf("dry-run exit %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, id+"  would move → done") {
+		t.Errorf("dry-run should say what it would do:\n%s", out)
+	}
+	if !reflect.DeepEqual(before, snapshot()) {
+		t.Errorf("dry-run changed the store directory")
+	}
+
+	out, code = runIn(t, "SetStatus-task: "+id+" ghostlane\n", "--json", "apply", "--on", "merge", "--dry-run")
+	if code != 2 {
+		t.Errorf("a bad lane under --dry-run should exit 2 like a real apply, got %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, `"dry_run": true`) || !strings.Contains(out, `"candidates"`) {
+		t.Errorf("dry-run --json should carry dry_run and the lane candidates:\n%s", out)
+	}
+	if !reflect.DeepEqual(before, snapshot()) {
+		t.Errorf("a failing dry-run changed the store directory")
+	}
+
+	// The real apply afterwards is unaffected by the previews.
+	if _, code := runIn(t, "SetStatus-task: "+id+" done\n", "apply", "--on", "merge"); code != 0 {
+		t.Errorf("real apply after previews exit %d", code)
 	}
 }

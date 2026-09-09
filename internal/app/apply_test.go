@@ -203,3 +203,64 @@ func TestApplyNoDirectivesIsCleanNoop(t *testing.T) {
 		t.Errorf("no directives should yield an empty, ok result, got %+v", res)
 	}
 }
+
+// TestPreviewDirectivesProjectsWithoutWriting pins the dry-run contract: the
+// preview's outcomes are the real apply's outcomes (id, lane, action, to, note,
+// error, code, candidates — everything but dry_run), and the store is untouched
+// by the preview. Both halves on one fixture: the projection only proves
+// something because the same text then applies for real and matches.
+func TestPreviewDirectivesProjectsWithoutWriting(t *testing.T) {
+	a := newSeededApp()
+	good, _ := a.Add("ship", AddOpts{Status: "ready"})
+	same, _ := a.Add("already there", AddOpts{Status: "done"})
+	text := "SetStatus-task: " + bodyLink(good.ID) + " done\n" +
+		"SetStatus-task: " + bodyLink(same.ID) + " done\n" + // already in lane: no change
+		"SetStatus-task: " + bodyLink("t-99999") + " done\n" + // unknown id
+		"SetStatus-task: " + bodyLink(good.ID) + " ghostlane\n" // unknown lane
+
+	before, beforeBody, _ := a.Get(good.ID)
+	preview, err := a.PreviewDirectives(text, "furrow#42", OnMerge, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.DryRun {
+		t.Errorf("preview must be marked dry_run, got %+v", preview)
+	}
+	after, afterBody, _ := a.Get(good.ID)
+	if !reflect.DeepEqual(before, after) || beforeBody != afterBody {
+		t.Errorf("preview wrote to the store:\nbefore %+v %q\nafter  %+v %q", before, beforeBody, after, afterBody)
+	}
+	if preview.WorstCode() == 0 {
+		t.Errorf("preview must carry the validation exit code, got outcomes %+v", preview.Outcomes)
+	}
+
+	real, err := a.ApplyDirectives(text, "furrow#42", OnMerge, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	real.DryRun = true
+	if !reflect.DeepEqual(preview, real) {
+		t.Errorf("preview should equal the real apply's report:\npreview %+v\nreal    %+v", preview, real)
+	}
+	if got, _, _ := a.Get(good.ID); got.Status != "done" {
+		t.Errorf("the real apply after the preview should still move, got %q", got.Status)
+	}
+}
+
+// A second preview after the real apply projects "no change": the lane is
+// already reached and the annotation line is already in the body.
+func TestPreviewDirectivesIsIdempotentLikeApply(t *testing.T) {
+	a := newSeededApp()
+	tk, _ := a.Add("ship", AddOpts{Status: "ready"})
+	text := "SetStatus-task: " + bodyLink(tk.ID) + " done"
+	if _, err := a.ApplyDirectives(text, "furrow#42", OnMerge, ""); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := a.PreviewDirectives(text, "furrow#42", OnMerge, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o := preview.Outcomes[0]; o.Action != "skipped" || o.To != "done" || o.Note != "" {
+		t.Errorf("re-preview should be a no-op projection, got %+v", o)
+	}
+}

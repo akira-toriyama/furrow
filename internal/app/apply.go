@@ -81,10 +81,14 @@ type ApplyOutcome struct {
 	Candidates []string `json:"candidates,omitempty"`
 }
 
-// ApplyResult is the full report — the JSON output of `furrow apply`.
+// ApplyResult is the full report — the JSON output of `furrow apply`. DryRun
+// marks a preview: the outcomes are what the same run WOULD do, and nothing
+// was written. It is omitted (not false) on a real apply so the report's shape
+// is byte-identical to what it was before previews existed.
 type ApplyResult struct {
 	On       string         `json:"on"`
 	Ref      string         `json:"ref,omitempty"`
+	DryRun   bool           `json:"dry_run,omitempty"`
 	Outcomes []ApplyOutcome `json:"outcomes"`
 }
 
@@ -115,10 +119,27 @@ func (r ApplyResult) WorstCode() int {
 // are reported with a non-zero Code while valid ones still apply. A returned
 // error is reserved for IO failures (the store layer).
 func (a *App) ApplyDirectives(text, ref string, mode ApplyMode, openLane string) (ApplyResult, error) {
+	return a.applyDirectives(text, ref, mode, openLane, false)
+}
+
+// PreviewDirectives is ApplyDirectives without the writes: the same parse and
+// the same per-directive validation (unknown id, unknown lane, unknown
+// --open-lane), with each valid directive's outcome projected from the current
+// store state instead of performed. It exists as a local gate — a PR author
+// validates the footer BEFORE `gh pr create`, where the CI apply is
+// non-blocking and a bad footer is otherwise noticed only after the merge did
+// not move the lane. The projection is exact for everything the validation
+// covers; a write-time refusal inside Move (a store-level invariant) is the one
+// thing a preview cannot see.
+func (a *App) PreviewDirectives(text, ref string, mode ApplyMode, openLane string) (ApplyResult, error) {
+	return a.applyDirectives(text, ref, mode, openLane, true)
+}
+
+func (a *App) applyDirectives(text, ref string, mode ApplyMode, openLane string, dryRun bool) (ApplyResult, error) {
 	if openLane == "" {
 		openLane = DefaultOpenLane
 	}
-	res := ApplyResult{On: string(mode), Ref: ref, Outcomes: []ApplyOutcome{}}
+	res := ApplyResult{On: string(mode), Ref: ref, DryRun: dryRun, Outcomes: []ApplyOutcome{}}
 
 	for _, d := range ParseDirectives(text) {
 		out := ApplyOutcome{ID: d.ID, Lane: d.Lane, Action: "skipped"}
@@ -131,7 +152,7 @@ func (a *App) ApplyDirectives(text, ref string, mode ApplyMode, openLane string)
 		case d.Lane != "" && !a.Cfg.IsLane(d.Lane):
 			fail(&out, a.unknownLaneErr(d.ID, d.Lane))
 		default:
-			if err := a.applyOne(&out, d, ref, mode, openLane); err != nil {
+			if err := a.applyOne(&out, d, ref, mode, openLane, dryRun); err != nil {
 				return res, err // IO failure: abort
 			}
 		}
@@ -143,8 +164,9 @@ func (a *App) ApplyDirectives(text, ref string, mode ApplyMode, openLane string)
 // applyOne performs the status move (if any) and body annotation for a single
 // validated directive, recording the result in out. It returns an error only on
 // an IO failure (which aborts the whole run); per-directive validation problems
-// are recorded in out, not returned.
-func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMode, openLane string) error {
+// are recorded in out, not returned. With dryRun the same decisions are made
+// and recorded, but no store write happens — the outcome is the projection.
+func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMode, openLane string, dryRun bool) error {
 	// Fetch once: needed for the terminal check (open) and the no-op skip below.
 	t, _, err := a.Get(d.ID)
 	if err != nil {
@@ -179,6 +201,8 @@ func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMod
 		if target != "" {
 			out.To = t.Status
 		}
+	case dryRun:
+		out.Action, out.To = "moved", target
 	default:
 		moved, err := a.Move(d.ID, target)
 		if err != nil {
@@ -193,7 +217,13 @@ func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMod
 
 	if ref != "" {
 		line := annotationLine(mode, ref, d.Lane)
-		changed, err := a.AppendBody(d.ID, line)
+		var changed bool
+		var err error
+		if dryRun {
+			changed, err = a.wouldAppendBody(d.ID, line)
+		} else {
+			changed, err = a.AppendBody(d.ID, line)
+		}
 		if err != nil {
 			return err
 		}
@@ -240,6 +270,16 @@ func annotationLine(mode ApplyMode, ref, lane string) string {
 		}
 		return "- 🔗 `" + ref + "` merged"
 	}
+}
+
+// wouldAppendBody is AppendBody's read-only half: whether the line is absent
+// from the body, i.e. whether a real AppendBody would change it.
+func (a *App) wouldAppendBody(id, line string) (bool, error) {
+	body, err := a.Store.LoadBody(id)
+	if err != nil {
+		return false, err
+	}
+	return !strings.Contains(body, line), nil
 }
 
 // AppendBody appends line (plus a newline) to a task's body, unless an identical
