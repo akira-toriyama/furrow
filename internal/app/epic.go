@@ -22,6 +22,9 @@ type EpicItem struct {
 	// "open after" edges, resolved here so a row can say what it waits on
 	// without a second read. Empty for a box whose deps are all closed.
 	OpenDeps []string
+	// Waiting is the box's "parked until" state (epicWaiting): nil unless every
+	// non-terminal member is done and a parked member's due is still ahead.
+	Waiting *EpicWait
 }
 
 // EpicDetail is `epic show`: the box, its roll-up, its members in canonical
@@ -32,6 +35,7 @@ type EpicDetail struct {
 	Epic     core.Epic
 	Progress Progress
 	Stuck    bool
+	Waiting  *EpicWait
 	// Deps are the epic's dep edges resolved to id+title+state (EpicRef), so
 	// `epic show` can print what this box waits on without a second read; the
 	// raw id set rides in Epic.Deps.
@@ -158,6 +162,7 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 	}
 	counts := epicProgress(idx, a.Cfg.DoneLane)
 	doneIDs := a.doneSet(idx)
+	now := a.Clock.Now()
 
 	out := make([]EpicItem, 0, len(epics))
 	for i := range epics {
@@ -175,7 +180,7 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 			continue
 		}
 		out = append(out, EpicItem{Epic: e, Progress: counts[e.ID], Stuck: a.epicStuck(idx, e.ID, doneIDs),
-			OpenDeps: openEpicDeps(&e, epics)})
+			OpenDeps: openEpicDeps(&e, epics), Waiting: a.epicWaiting(idx, e.ID, now)})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		ri, rj := epicRank(out[i].Epic), epicRank(out[j].Epic)
@@ -243,6 +248,7 @@ func (a *App) EpicShow(ref string) (*EpicDetail, error) {
 		Epic:     *e,
 		Progress: epicProgress(idx, a.Cfg.DoneLane)[id],
 		Stuck:    a.epicStuck(idx, id, a.doneSet(idx)),
+		Waiting:  a.epicWaiting(idx, id, a.Clock.Now()),
 		Deps:     deps,
 		Tasks:    items,
 		Body:     body,

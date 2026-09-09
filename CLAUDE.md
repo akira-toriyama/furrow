@@ -133,7 +133,14 @@ the user-level config. When you work with any furrow store:
   task `bodies/` directory (`note`/`edit --help` explain the routing). A box is not work:
   `furrow next` hands out only tasks, an epic's "progress" is the member
   roll-up, and furrow never auto-closes a box (`revisit`/`sync` raise
-  `epic_all_done` instead). `epic done`/`deactivate` SUGGEST the previous
+  `epic_all_done` instead — quiet while the box is WAITING: every
+  non-terminal member done and a member parked in a due-tracked terminal lane
+  (terminal, not the done lane, not in `[due].ignore_lanes` — `waiting` on the
+  shipped config) with a due still AHEAD. `epic ls`/`epic show`/`brief` print
+  `⏳ waiting until <due> (<task>)` for the earliest such due, `--json` carries
+  `waiting: {until, task}`, and the date's own surfaces (brief's due band,
+  lint's `due-overdue`) take over when it arrives; a parked member with NO due
+  earns no silence — nobody could say what the box waits for). `epic done`/`deactivate` SUGGEST the previous
   active box (open, currently inactive, newest activation record — computed
   fresh from the body's activation log, no stored pointer; one `previous:`
   stdout line + a `previous` key in `--json`, null = unknown) and never

@@ -69,7 +69,15 @@ func (a *App) epicReasons(e *core.Epic, idx *core.Index, epics []core.Epic, done
 		// drained mandate inbox, a parking lot between deposits), so "consider
 		// closing" would be a permanent false nag — the exact failure mode a
 		// signal cannot recover from.
-		if !e.Standing {
+		//
+		// So is a box that is WAITING: its remaining members are parked with a
+		// due still ahead ("confirm zero incidents by 10/1"), so "all N members
+		// done" would be false on its face — N counts the parked ones — and
+		// would nag every session until the date. The date's own surfaces
+		// (brief's due band, lint's due-overdue) take over once it arrives; a
+		// parked member with no due earns no such silence, since nobody could
+		// say what the box waits for.
+		if !e.Standing && a.epicWaiting(idx, e.ID, now) == nil {
 			out = append(out, core.RevisitReason{Code: core.RevisitEpicAllDone,
 				Detail: fmt.Sprintf("all %d members done — consider closing", total)})
 		}

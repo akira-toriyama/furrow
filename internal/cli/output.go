@@ -803,7 +803,7 @@ func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, noBod
 				// to the bare core.Task) — not an empty string, which a consumer
 				// cannot tell from a box whose body really is empty.
 				v := toEpicDetailView(e)
-				return epicMetaView{Epic: v.Epic, Progress: v.Progress, Stuck: v.Stuck, Tasks: v.Tasks}
+				return epicMetaView{Epic: v.Epic, Progress: v.Progress, Stuck: v.Stuck, Waiting: v.Waiting, Tasks: v.Tasks}
 			}
 			return toEpicDetailView(e)
 		}
@@ -845,6 +845,13 @@ func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, noBod
 // presentation only, applied inline so the caller's *core.Task is never mutated.
 func humanTime(t time.Time) string {
 	return t.Local().Format(core.TimeLayout)
+}
+
+// waitingUntil renders a box's EpicWait for the human rows: the earliest parked
+// due in local time (the same humanTime `show` prints a task's due with) and
+// the member carrying it, so "until when" and "on whose account" are one glance.
+func waitingUntil(w *app.EpicWait) string {
+	return fmt.Sprintf("⏳ waiting until %s (%s)", humanTime(w.Until), w.Task)
 }
 
 // dueDetail renders a due stamp for the `show` block: the local timestamp plus
@@ -1298,6 +1305,9 @@ func printBrief(b *app.BriefData, scope string) {
 			if len(it.OpenDeps) > 0 {
 				line += "  ⏳ waits: " + strings.Join(it.OpenDeps, ", ")
 			}
+			if it.Waiting != nil {
+				line += "  " + waitingUntil(it.Waiting)
+			}
 			fmt.Fprintln(out, line)
 		}
 		// The pinned channels ride under the focus line: their tasks lead next,
@@ -1353,10 +1363,14 @@ type epicView struct {
 	// derived, so it sits beside the stored deps set rather than replacing it.
 	// omitempty: a box with no waits keeps the pre-v7 row shape.
 	OpenDeps []string `json:"open_deps,omitempty"`
+	// Waiting is the box's "parked until" state — every non-terminal member
+	// done, a parked member's due still ahead — as `{until, task}`; omitted
+	// otherwise. The human rows print it as `⏳ waiting until <due> (<task>)`.
+	Waiting *app.EpicWait `json:"waiting,omitempty"`
 }
 
 func toEpicView(it app.EpicItem) epicView {
-	return epicView{Epic: it.Epic, Progress: it.Progress, Stuck: it.Stuck, OpenDeps: it.OpenDeps}
+	return epicView{Epic: it.Epic, Progress: it.Progress, Stuck: it.Stuck, OpenDeps: it.OpenDeps, Waiting: it.Waiting}
 }
 
 func emitEpicList(items []app.EpicItem) error {
@@ -1397,6 +1411,9 @@ func emitEpicList(items []app.EpicItem) error {
 			if len(v.OpenDeps) > 0 {
 				line += "  ⏳ waits: " + strings.Join(v.OpenDeps, ", ")
 			}
+			if v.Waiting != nil {
+				line += "  " + waitingUntil(v.Waiting)
+			}
 			if v.Goal != "" {
 				line += "\n    goal: " + v.Goal
 			}
@@ -1412,6 +1429,7 @@ type epicDetailView struct {
 	core.Epic
 	Progress app.Progress   `json:"progress"`
 	Stuck    bool           `json:"stuck"`
+	Waiting  *app.EpicWait  `json:"waiting,omitempty"`
 	Tasks    []listItemView `json:"tasks"`
 	BodyText string         `json:"body_text"`
 }
@@ -1424,6 +1442,7 @@ type epicMetaView struct {
 	core.Epic
 	Progress app.Progress   `json:"progress"`
 	Stuck    bool           `json:"stuck"`
+	Waiting  *app.EpicWait  `json:"waiting,omitempty"`
 	Tasks    []listItemView `json:"tasks"`
 }
 
@@ -1440,7 +1459,7 @@ func emitEpicDetail(a *app.App, d *app.EpicDetail) error {
 // <epic-id>` emits the SAME object `epic show` does — one shape per entity, no
 // second box view to keep in step.
 func toEpicDetailView(d *app.EpicDetail) epicDetailView {
-	v := epicDetailView{Epic: d.Epic, Progress: d.Progress, Stuck: d.Stuck, BodyText: d.Body}
+	v := epicDetailView{Epic: d.Epic, Progress: d.Progress, Stuck: d.Stuck, Waiting: d.Waiting, BodyText: d.Body}
 	v.Tasks = make([]listItemView, 0, len(d.Tasks))
 	for _, it := range d.Tasks {
 		v.Tasks = append(v.Tasks, toListItemView(it))
@@ -1471,6 +1490,9 @@ func printEpicDetail(a *app.App, d *app.EpicDetail) {
 	fmt.Fprintf(out, "progress: %d/%d\n", d.Progress.Done, d.Progress.Total)
 	if d.Stuck {
 		fmt.Fprintln(out, "          ⚠ stuck — open members but none actionable")
+	}
+	if d.Waiting != nil {
+		fmt.Fprintf(out, "          %s — open work done, a parked member's due still ahead\n", waitingUntil(d.Waiting))
 	}
 	if len(d.Epic.Labels) > 0 {
 		fmt.Fprintf(out, "labels:   %s\n", strings.Join(d.Epic.Labels, ", "))
