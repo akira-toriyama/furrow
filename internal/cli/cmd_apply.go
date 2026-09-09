@@ -16,9 +16,10 @@ func newApplyCmd() *cobra.Command {
 		ref      string
 		on       string
 		openLane string
+		dryRun   bool
 	)
 	cmd := &cobra.Command{
-		Use:   "apply --on <open|merge> [--ref <src>] [--body-file <path>]",
+		Use:   "apply --on <open|merge> [--ref <src>] [--body-file <path>] [--dry-run]",
 		Short: "Apply SetStatus-task directives parsed from PR/commit text",
 		Long: "Parse `SetStatus-task: <body-link> [<lane>]` directives from a blob of text\n" +
 			"(a PR body or commit message, via --body-file or stdin) and apply them to the\n" +
@@ -30,7 +31,13 @@ func newApplyCmd() *cobra.Command {
 			"the task at merge.\n\n" +
 			"Validation is non-blocking: an unknown id or lane is reported per-directive (and\n" +
 			"sets a non-zero exit) while the valid directives still apply. --json prints the\n" +
-			"full per-directive report to stdout.",
+			"full per-directive report to stdout.\n\n" +
+			"--dry-run runs the same parse and validation and reports what each directive\n" +
+			"WOULD do (`would move → <lane>`, `would annotate`, `no change`, `error`) without\n" +
+			"writing anything — the local gate before `gh pr create`, where the CI apply is\n" +
+			"non-blocking and a bad footer would otherwise surface only after the merge left\n" +
+			"the lane untouched. Same exit code as a real apply; the JSON report is the\n" +
+			"same shape plus `dry_run: true`.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mode := app.ApplyMode(on)
@@ -45,7 +52,12 @@ func newApplyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := a.ApplyDirectives(text, ref, mode, openLane)
+			var res app.ApplyResult
+			if dryRun {
+				res, err = a.PreviewDirectives(text, ref, mode, openLane)
+			} else {
+				res, err = a.ApplyDirectives(text, ref, mode, openLane)
+			}
 			if err != nil {
 				return err
 			}
@@ -62,6 +74,7 @@ func newApplyCmd() *cobra.Command {
 	cmd.Flags().StringVar(&ref, "ref", "", "source reference recorded in the task body, e.g. furrow#42")
 	cmd.Flags().StringVar(&on, "on", "", "event being applied: open|merge (required)")
 	cmd.Flags().StringVar(&openLane, "open-lane", app.DefaultOpenLane, "lane a task is nudged to on --on open")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate and report what each directive would do; write nothing")
 	_ = cmd.MarkFlagRequired("on")
 	return cmd
 }
@@ -97,12 +110,16 @@ func printApplyResult(res app.ApplyResult) {
 		fmt.Fprintln(out, "no SetStatus-task directives found")
 		return
 	}
+	moved, annotated := "moved", "annotated"
+	if res.DryRun {
+		moved, annotated = "would move", "would annotate"
+	}
 	for _, o := range res.Outcomes {
 		switch o.Action {
 		case "moved":
-			fmt.Fprintf(out, "%s  moved → %s\n", o.ID, o.To)
+			fmt.Fprintf(out, "%s  %s → %s\n", o.ID, moved, o.To)
 		case "annotated":
-			fmt.Fprintf(out, "%s  annotated\n", o.ID)
+			fmt.Fprintf(out, "%s  %s\n", o.ID, annotated)
 		case "error":
 			fmt.Fprintf(out, "%s  error: %s\n", o.ID, o.Error)
 		default: // skipped
