@@ -130,10 +130,14 @@ stale_after_days = 14
 # CLAUDECODE env; a human shell and CI pass untouched). A write that touches a
 # repo another, EARLIER-started session on this machine sits in is refused
 # (exit 2, kind `session-busy`; `add` escapes with --draft) while that session
-# wrote its transcript within this many seconds, and goes through with a
-# warning (stderr + `session_warn` in the --json envelope) once it has been
-# quiet longer. A session whose transcript cannot be found counts as busy.
-# 0 turns refusals off: every clash is a warning (the guard stays on).
+# is working, and goes through with a warning (stderr + `session_warn` in the
+# --json envelope) once it is idle. Idle = that session's transcript ends in an
+# assistant end_turn record (its turn is over, however recent the write), or,
+# when the turn is not known to have ended, it has been silent for more than
+# this many seconds — the ceiling that keeps a long tool call or an unanswered
+# permission prompt from refusing forever. A session whose transcript cannot
+# be found counts as busy. 0 turns refusals off: every clash is a warning (the
+# guard stays on).
 busy_seconds = 300
 
 [alias]

@@ -50,9 +50,10 @@ type raw struct {
 		StaleAfterDays *int `toml:"stale_after_days"`
 	} `toml:"review"`
 	// Session is the [session] section: the co-located-session write guard's
-	// one knob, how many seconds of transcript silence separate a WORKING
-	// occupant (the write is refused) from an idle one (it goes through with a
-	// warning). Board-level and committed on purpose: what "still working"
+	// one knob, how many seconds of transcript silence make a mid-turn
+	// occupant count as idle (an ended turn is idle at once) — the line between
+	// a WORKING occupant (the write is refused) and an idle one (it goes through
+	// with a warning). Board-level and committed on purpose: what "still working"
 	// means is a policy of the board the sessions share, not of one machine.
 	Session struct {
 		BusySeconds *int `toml:"busy_seconds"`

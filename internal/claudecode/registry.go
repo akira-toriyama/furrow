@@ -11,7 +11,14 @@
 //   - <config dir>/sessions/<pid>.json: {"pid","sessionId","cwd","startedAt"
 //     (epoch ms),"kind","name",…} — no activity field;
 //   - <config dir>/projects/<cwd with every non-alphanumeric byte → '-'>/
-//     <sessionId>.jsonl is the transcript, whose mtime is the last activity;
+//     <sessionId>.jsonl is the transcript, whose mtime is the last activity
+//     and whose LAST message record says whether the session is between
+//     turns: one JSON object per line, `type` "user"/"assistant" for the
+//     conversation (an assistant record carries `message.stop_reason`,
+//     "end_turn" once the turn is over, "tool_use" mid-turn) interleaved with
+//     bookkeeping records (`bridge-session`, `attachment`, `queue-operation`,
+//     `last-prompt`, `file-history-*`, `pr-link`, `system`, …) that say
+//     nothing about activity; `isSidechain: true` marks a subagent's record;
 //   - <config dir> is CLAUDE_CONFIG_DIR, else ~/.claude.
 //
 // Everything here is best-effort by contract: a missing registry is "no
@@ -25,6 +32,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -173,8 +181,80 @@ func (r Registry) readEntry(path string) (core.Session, bool) {
 	}
 	if fi, err := os.Stat(r.transcriptPath(e.CWD, e.SessionID)); err == nil {
 		s.LastActive = fi.ModTime().UTC().Truncate(time.Second)
+		s.TurnEnded = turnEnded(r.transcriptPath(e.CWD, e.SessionID))
 	}
 	return s, true
+}
+
+// transcriptTailBytes bounds how much of a transcript turnEnded reads: the
+// last message record sits within a few KB of the end (a bookkeeping record
+// is one line; a tool result can be large), and a bound keeps a multi-MB
+// transcript from being read whole on every guarded write.
+const transcriptTailBytes = 64 << 10
+
+// transcriptRecord mirrors the two fields turnEnded reads from a transcript
+// line; every other key is ignored.
+type transcriptRecord struct {
+	Type        string `json:"type"`
+	IsSidechain bool   `json:"isSidechain"`
+	Message     struct {
+		StopReason string `json:"stop_reason"`
+	} `json:"message"`
+}
+
+// turnEnded reports whether the transcript's LAST main-line message record is
+// an assistant record with stop_reason "end_turn" — the session has finished
+// its turn and is waiting for the human, whatever the mtime says (the turn's
+// closing message was written seconds ago). False is "not known to have
+// ended": a mid-turn record (a tool_use, a tool result, a fresh prompt), a
+// subagent's record (its end_turn is not the session's, so it is skipped
+// like bookkeeping), or a tail the reader cannot parse — every one of which
+// leaves the guard on the mtime window it used alone before, so a format
+// change degrades to the old behaviour, never to "everyone is idle".
+func turnEnded(path string) bool {
+	// #nosec G304 -- path is the transcript derived from a registry entry
+	// under the config dir; not attacker-supplied.
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	off := fi.Size() - transcriptTailBytes
+	if off < 0 {
+		off = 0
+	}
+	buf := make([]byte, fi.Size()-off)
+	if _, err := f.ReadAt(buf, off); err != nil && !errors.Is(err, io.EOF) {
+		return false
+	}
+	lines := strings.Split(string(buf), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		var rec transcriptRecord
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			// The first line of the window is usually a cut record; any other
+			// unparsable line is a format we do not know. Either way the
+			// records past it are what the file says, so keep walking.
+			continue
+		}
+		if rec.IsSidechain {
+			continue
+		}
+		switch rec.Type {
+		case "assistant":
+			return rec.Message.StopReason == "end_turn"
+		case "user":
+			return false
+		}
+	}
+	return false
 }
 
 // transcriptPath is projects/<mangled cwd>/<sessionId>.jsonl under Dir. The

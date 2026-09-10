@@ -411,11 +411,17 @@ the user-level config. When you work with any furrow store:
   Claude Code (`CLAUDECODE` env) a write that touches a repo an EARLIER-started
   session on this machine sits in is refused — exit 2, kind **`session-busy`**,
   `details.clashes` (`repo`/`pid`/`session_id`/`name`/`cwd`/`started_at`/
-  `last_active`/`idle_seconds`/`busy`), `details.hint` = `--draft` on an add —
-  while that session wrote its transcript within `[session].busy_seconds`
-  (default 300; no transcript found = busy; `0` = warn only), and goes through with a stderr
-  warning plus a **`session_warn`** `{clashes}` envelope key once it has been
-  quiet longer (every envelope of a batch; `add` is stderr-only). Judged on
+  `last_active`/`idle_seconds`/`turn_ended`/`busy`), `details.hint` = `--draft` on an add —
+  while that session is WORKING, and goes through with a stderr
+  warning plus a **`session_warn`** `{clashes}` envelope key once it is IDLE
+  (every envelope of a batch; `add` is stderr-only). Idle = the occupant's
+  transcript ends in an assistant `end_turn` record (its turn is over and it
+  waits for the human — however fresh that write is, since the closing
+  message IS the last write; `turn_ended: true`), or, when the turn is not
+  known to have ended (mid-turn, or a tail the adapter cannot read), silence
+  past `[session].busy_seconds` (default 300 — the ceiling that keeps a long
+  tool call or an unanswered permission prompt from refusing forever; no
+  transcript found = busy; `0` = warn only). Judged on
   the entity's repos: a new task's AFTER the board-scope union, an existing
   task's or box's BEFORE and AFTER the edit. First come, first served: the
   earlier session's own writes never clash. The escape is `add --draft`
@@ -426,8 +432,9 @@ the user-level config. When you work with any furrow store:
   the guard STAND DOWN with a `note: session guard: … standing down` line,
   never refuse on a guess; `doctor` warns
   `session-registry-unreadable` when the registry no longer parses. The
-  registry format (`~/.claude/sessions/<pid>.json`, transcript mtime as
-  activity) is Claude Code's private layout, read in ONE place —
+  registry format (`~/.claude/sessions/<pid>.json`, the transcript's mtime
+  as activity and its last message record as the turn state) is Claude
+  Code's private layout, read in ONE place —
   `internal/claudecode` — so a format change is one file to fix. Not guarded:
   reads, `archive`/`tidy`/`upgrade`/`review`/`sync`.
 - furrow is **CLI-only and non-interactive**; there is no in-repo TUI. A TUI/GUI

@@ -149,6 +149,33 @@ func TestSessionGuardIdleOccupantWarnsOnce(t *testing.T) {
 	}
 }
 
+func TestSessionGuardEndedTurnWarnsHoweverFreshTheTranscript(t *testing.T) {
+	// The occupant wrote its transcript 3 seconds ago — but that write was the
+	// message that ENDED its turn. It is waiting for the human, not working.
+	a, _ := guardedApp(t, 3*time.Second, false)
+	reg := a.Sessions.(fakeRegistry)
+	reg.sessions[1].TurnEnded = true
+	tk, err := a.Add("x", AddOpts{Repos: []string{"o/glyph"}})
+	if err != nil {
+		t.Fatalf("an occupant whose turn ended must not refuse: %v", err)
+	}
+	if _, err := a.AddNote(tk.ID, "still fine"); err != nil {
+		t.Fatalf("nor on a later write: %v", err)
+	}
+	w := a.TakeSessionWarn()
+	if len(w) != 1 || w[0].Repo != "o/glyph" || w[0].Busy || !w[0].TurnEnded || w[0].IdleSeconds == nil || *w[0].IdleSeconds != 3 {
+		t.Fatalf("one idle clash flagged turn_ended expected, got %+v", w)
+	}
+	if line := SessionWarnLine(w); !strings.Contains(line, "idle 3s, turn ended") {
+		t.Errorf("warn line = %q", line)
+	}
+	// Mid-turn 3 seconds ago is the refusal, unchanged.
+	b, _ := guardedApp(t, 3*time.Second, false)
+	if _, err := b.Add("y", AddOpts{Repos: []string{"o/glyph"}}); err == nil {
+		t.Fatal("a mid-turn occupant active 3s ago must still refuse")
+	}
+}
+
 func TestSessionGuardBusySecondsZeroIsWarnOnly(t *testing.T) {
 	a, _ := guardedApp(t, time.Second, false)
 	a.Cfg.SessionBusySeconds = 0
