@@ -4,10 +4,12 @@ Guidance for working in this repository (and for furrow itself as a tool).
 
 ## For Claude Code — integration contract (read first)
 
-furrow's own tasks live on the **central board** (the private
-`akira-toriyama/projects` repo) — this repo deliberately has **no local
-`.furrow/`**, so `furrow` commands run here resolve to the central board via
-the user-level config. When you work with any furrow store:
+furrow's own tasks live on the **shared central board** (the private
+`akira-toriyama/projects` repo) — **central** because the store sits outside
+the repos it backs and is reached by configuration, **shared** because it has a
+git remote and more than one writer. This repo deliberately has **no local
+`.furrow/`**, so `furrow` commands run here resolve to that board via the
+user-level config. When you work with any furrow store:
 
 - Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|unarchive|rm|tidy|upgrade|lint|config|init|migrate|schema|version`.
   **`furrow brief [--json]` is the session-start read**: the sync → `next -r` →
@@ -299,7 +301,7 @@ the user-level config. When you work with any furrow store:
   `--archived`) and hints it in the message; `show <id> --archived` /
   `ls --archived` read the sibling `.furrow/archive/` store (same output shapes),
   so a retired task never falls off the read API.
-- **A multi-machine board converges with `furrow sync`** (auto-commit scoped
+- **A shared board converges with `furrow sync`** (auto-commit scoped
   to `.furrow/` → `fetch` + `rebase --autostash @{u}` → `push`): run it before
   reading and after writing a shared board. Within `.furrow/`, machine-written
   files (an allowlist of what furrow itself writes: the `tasks/`/`epics/`/
@@ -312,8 +314,8 @@ the user-level config. When you work with any furrow store:
   ITSELF** — `note` / `edit --body` / `done --note` / `apply` journal the id
   per-checkout (inside `.git/`, never synced) and a plain sync publishes those
   bodies unnamed, so the progress record `furrow note` keeps now travels
-  without `-b`. On a shared
-  checkout a plain sync must not commit a co-located operator's in-progress
+  without `-b`. On a co-located
+  checkout a plain sync must not commit another operator's in-progress
   prose under the wrong author. A skipped body is listed in the JSON
   `pending_bodies` field (its twin `committed_bodies` lists what was committed)
   and in a stderr note, while sync still exits 0 and pushes everything else —
@@ -462,9 +464,13 @@ the user-level config. When you work with any furrow store:
 ## What this is
 
 furrow — an alternative to GitHub Projects/Issues: a clonable, git-native,
-plain-text task tracker. One central board can back many repos (tasks carry
-their repositories in the first-class `repos` field) or a store can live
-repo-local. Structured metadata lives in
+plain-text task tracker. The store either sits **inside** the repo it serves (a
+**repo-local board**) or outside it, reached by configuration (a **central
+board**, which can therefore back many repos — tasks carry their repositories
+in the first-class `repos` field). Orthogonal to WHERE THE STORE SITS is the
+MODE: a board with a git remote and other writers is a **shared board** (the
+default, declared by omission), while a board on one machine with no remote
+sets `standalone = true`. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
 (`{"schema_version": 9}`); long-form prose lives in
@@ -844,7 +850,7 @@ back into place — see the marshaller-path section.
 unfinished work implicit** — every in-flight task is a plan file, a tracked
 issue, or an explicit note; nothing important lives only in a chat transcript.
 
-**Multi-operator (shared checkout).** This repo is sometimes worked on by several
+**Multi-operator (co-located checkout).** This repo is sometimes worked on by several
 people/agents at once. A checkout has one shared HEAD/index/working tree, so two
 operators running git in the same directory corrupt each other (orphaned commits,
 commits on the wrong branch). **Each operator/session works in its own `git

@@ -38,21 +38,33 @@ A from-source build reports its version as `dev`, with the build commit/date fil
 
 ---
 
-## Three ways to run it
+## Two questions, four shapes
 
-- **A central board** — one clonable tracker repo backs *all* your repos: each
-  task carries the repos it relates to (the first-class `repos` field,
-  `owner/repo`), each checkout is auto-scoped to its own repo, and
-  `furrow sync` keeps clones on several machines converged. This is the
-  GitHub-Projects-alternative mode — see [Central board](#central-board).
-- **Repo-local** — another way to run it: a single repo carries its own
-  `.furrow/` next to the code (`furrow init` and go). Fully supported; the
-  Quickstart below runs this way, and everything except the board scoping
-  works identically on a central board.
-- **Standalone (local, no remote)** — a board you keep on one machine, under
-  its own git, and never push: no `furrow sync`, no CI. The common shape on a
-  work machine where you can't create a shared tracker repo — see
+Setting furrow up is two *independent* choices, not one menu of three. Ask them
+in this order and the four shapes name themselves.
+
+- **Mode — does the board have a remote?** A **shared board** is the default:
+  it has a git remote, so it is cloned on several machines and written by more
+  than one party (your other checkouts, a co-located session, every repo's
+  pinned CI caller), kept converged by
+  [`furrow sync`](#multi-machine-furrow-sync). A **standalone** board
+  (`standalone = true`) lives on one machine, under its own git, with no remote
+  you can push to: no sync, no CI — see
   [Standalone](#standalone-a-local-board-with-no-remote).
+- **Layout — where does the store sit?** A **central board** lives *outside*
+  the repos it backs and is reached by configuration, so one clonable tracker
+  repo can back all of them: each task carries the repos it relates to (the
+  first-class `repos` field, `owner/repo`) and each checkout is auto-scoped to
+  its own — the GitHub-Projects-alternative shape, see
+  [Central board](#central-board). A **repo-local board** sits *inside* the
+  repo it serves, committed next to the code (`furrow init` and go); the
+  Quickstart below runs this way, and everything except the board scoping works
+  identically either way.
+
+The two are orthogonal, so the shapes stack mode first: a *shared central
+board* (one tracker for a whole fleet), a *shared repo-local board*, a
+*standalone central board* (the work-machine recipe below), a *standalone
+repo-local board*. The schema and the on-disk bytes are identical in all four.
 
 ---
 
@@ -453,11 +465,15 @@ optional: release furrow → bump every caller's pin → *then* `furrow upgrade`
 
 ## Central board
 
-This is the GitHub-Projects-alternative mode: many repos share one central
-board (e.g. a private cross-repo tracker repo — clonable, greppable, diffable),
-each auto-scoped to its own repo (`owner/repo`, the first-class `repos` field).
-Wire it up once for whole trees of repos (user-level config), or per repo (a
-pointer file).
+A **central board** is a `.furrow` that lives *outside* the repos it backs and
+is reached by configuration rather than by sitting in the checkout. Because it
+sits outside, one tracker repo can back many repos at once — clonable,
+greppable, diffable, each checkout auto-scoped to its own repo (`owner/repo`,
+the first-class `repos` field). That is the GitHub-Projects-alternative shape,
+but the count is a consequence, not the definition: the
+[work-machine recipe](#standalone-a-local-board-with-no-remote) below is a
+central board backing exactly one repo. Wire it up once for whole trees of
+repos (user-level config), or per repo (a pointer file).
 
 ### User-level config (no per-repo file)
 
@@ -577,10 +593,10 @@ With a scope in effect (from a pointer, a user-level board, or the board's own
 
 ---
 
-### Multi-machine: `furrow sync`
+## Multi-machine: `furrow sync`
 
-A central board cloned on several machines needs only one ritual: pull before
-you read, push after you write. `furrow sync` is that ritual as one
+A **shared board** — one with a remote — needs only one ritual: pull before you
+read, push after you write. `furrow sync` is that ritual as one
 non-interactive command — a thin git wrapper, not a sync daemon or server
 (see [docs/non-goals.md](docs/non-goals.md)):
 
@@ -591,8 +607,8 @@ non-interactive command — a thin git wrapper, not a sync daemon or server
    and the `archive/` store's copies) are always committed, but a hand-edited
    `bodies/<id>.md` is committed **only when it is new or named with `-b/--body`**
    — a merely-modified body is left for its author (surfaced in `pending_bodies`)
-   so a shared checkout never commits a co-located operator's in-progress prose
-   under the wrong author. A body **furrow itself wrote** (`note`,
+   so a **co-located checkout** never commits another operator's in-progress
+   prose under the wrong author. A body **furrow itself wrote** (`note`,
    `edit --body`, `done --note`, an `apply` annotation) is not someone's WIP:
    the writing command records the id in a per-checkout journal (inside
    `.git/`, never synced), and a plain sync commits those bodies as if named
@@ -610,7 +626,7 @@ non-interactive command — a thin git wrapper, not a sync daemon or server
    `--oneline`; each field is best-effort and omitted when unreadable).
 2. `git fetch`, then `git rebase --autostash @{u}` — rebasing onto the upstream
    **tracking ref**, never `FETCH_HEAD`, so a co-writer's concurrent fetch in a
-   shared checkout can't make it `fatal: Cannot rebase onto multiple branches`
+   co-located checkout can't make it `fatal: Cannot rebase onto multiple branches`
 3. `git push` (one pull→push retry on non-fast-forward)
 
 Per-task shards make true conflicts rare — two machines *adding* tasks touch
@@ -639,7 +655,7 @@ shard diff: `created` / `closed` / `reopened` / `moved` / `refiled` /
 rendered as one `incoming:` human line, so the CI that closed your in-progress
 task surfaces in the sync that pulled it, not on a later re-read.
 
-### Sync failure modes
+## Sync failure modes
 
 Two failures are worth knowing; both are branch-on-the-`kind` (with `retryable` saying whether a re-run is the fix), and the full
 taxonomy (with the git-level reasons) is in
@@ -657,7 +673,7 @@ taxonomy (with the git-level reasons) is in
   error. A body carrying conflict markers is refused before commit
   (`body-conflict-marker`, exit 2); `furrow lint`'s `conflict-marker` rule covers
   any that got in.
-- **A concurrent writer.** A shared checkout races: a foreign rebase caught
+- **A concurrent writer.** A co-located checkout races: a foreign rebase caught
   mid-flight is waited out with a bounded backoff and, if still going, exits 3
   with the **retryable** `sync-busy` (re-run — not the `exit 2` "fix the args"
   class — usually the other writer has finished by then; a rebase genuinely stuck
@@ -685,7 +701,7 @@ block publishing the board) and the `epic activate` records this sync
 publishes (`epic: activated e-k3m9 "…" 2026-07-29 14:32 — <reason>`; a
 `switches` JSON key), so a focus switch surfaces in the session that made it.
 
-### Board git hooks (optional)
+## Board git hooks (optional)
 
 The design lens: **remote automation is GitHub Actions; local automation is git
 hooks.** furrow ships three POSIX-sh hooks in
@@ -735,7 +751,7 @@ not to replace. Each hook also **skips cleanly** when `furrow` is absent from
 
 ## Standalone: a local board with no remote
 
-The common setup on a work machine, where you can't create a shared tracker repo: keep a board on **one machine, under its own git, never pushed** — no `furrow sync`, no CI. Everything in [The store](#the-store) works identically; you just don't sync. Two small pieces of config make it seamless for you and a coding agent.
+The common setup on a work machine, where there is no remote you can push to: keep a board on **one machine, under its own git, never pushed** — no `furrow sync`, no CI. Everything in [The store](#the-store) works identically; you just don't sync. Two small pieces of config make it seamless for you and a coding agent.
 
 1. **Give the board its own git repo, ignored by the code repo.** A workspace dir beside the code, with its own `git init` and no remote, keeps the board's history out of the code repo:
 
@@ -748,7 +764,7 @@ The common setup on a work machine, where you can't create a shared tracker repo
            └── meta.json, tasks/, bodies/
    ```
 
-2. **Register it in your user-level config so it resolves from inside the checkout.** A board in a subdirectory isn't found by walking up from the code (that finds the *code* repo's git), so scope it explicitly — the same `[[board]]` mechanism as a [central board](#user-level-config-no-per-repo-file):
+2. **Register it in your user-level config so it resolves from inside the checkout.** A board in a subdirectory isn't found by walking up from the code (that finds the *code* repo's git), so scope it explicitly — the same `[[board]]` mechanism as a [central board](#user-level-config-no-per-repo-file), because that is what this is — a *standalone central board*, the two axes crossing:
 
    ```toml
    # ~/.config/furrow/config.toml
@@ -769,10 +785,10 @@ A fully separate directory (e.g. `~/furrow-boards/app/.furrow`, outside the code
 
 ### What a standalone board can't use
 
-Everything hosted-board-shaped is N/A here, and knowing the failure shapes saves a debugging detour:
+Everything shared-board-shaped is N/A here, and knowing the failure shapes saves a debugging detour:
 
 - **`furrow sync`** assumes an upstream. Run on a no-remote board it still prints its progress object first (which can say `"complete": true` — nothing was pending), then fails with **exit 3, kind `git-failed`**, relaying git's own wording about the missing upstream for your branch. The exact prose is git's and varies by version — branch on the kind, not the message. Nothing is broken afterwards; there was simply nothing to pull from or push to. Backup on a standalone board is `autocommit` (above), not sync.
-- **PR→status automation** — `furrow apply`, the `SetStatus-task:` PR footer, and the reusable `sync-task-status.yml` workflow — is hosted-board-only: the footer points CI at the board's body file **URL** (`https://…/blob/main/.furrow/bodies/<id>.md`), and a board that is never pushed has no such URL to point at. Status transitions on a standalone board are manual: `furrow move` / `furrow done`.
+- **PR→status automation** — `furrow apply`, the `SetStatus-task:` PR footer, and the reusable `sync-task-status.yml` workflow — is shared-board-only: the footer points CI at the board's body file **URL** (`https://…/blob/main/.furrow/bodies/<id>.md`), and a board that is never pushed has no such URL to point at. Status transitions on a standalone board are manual: `furrow move` / `furrow done`.
 
 ---
 
