@@ -12,6 +12,10 @@ cd "$(dirname "$0")/.."
 #   - internal/core/marshal.go      (the one true path)
 #   - internal/core/passthrough.go  (its unknown-key half — same file family)
 #   - internal/cli/output.go        (renders CLI views/errors, never the *Index)
+#   - internal/claudecode/          (decodes ANOTHER TOOL's file — Claude Code's
+#                                    session registry — into its own struct;
+#                                    furrow never writes it back, so there is no
+#                                    unknown key to lose and no shard type in reach)
 #   - *_test.go                     (tests may encode freely)
 #
 # DECODERS are guarded too, and that is not symmetry for its own sake: a raw
@@ -22,7 +26,8 @@ cd "$(dirname "$0")/.."
 hits="$(grep -rnE 'json\.(Marshal|NewEncoder|Unmarshal|NewDecoder)' --include='*.go' internal cmd \
   | grep -v '_test.go' \
   | grep -vE 'internal/core/(marshal|passthrough)\.go' \
-  | grep -vE 'internal/cli/output\.go' || true)"
+  | grep -vE 'internal/cli/output\.go' \
+  | grep -vE 'internal/claudecode/' || true)"
 
 if [ -n "$hits" ]; then
   echo "✖ encoding/json used outside the sanctioned paths:" >&2

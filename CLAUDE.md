@@ -406,6 +406,30 @@ the user-level config. When you work with any furrow store:
   `additionalProperties: true`: the flip made the schema stop rejecting a typo, so
   `lint` is the only detector left. One more reason
   the shards are furrow's to write, not yours.
+- **Every task and epic write is guarded against a co-located Claude Code
+  session (the session write guard, `internal/app/session_guard.go`).** Under
+  Claude Code (`CLAUDECODE` env) a write that touches a repo an EARLIER-started
+  session on this machine sits in is refused — exit 2, kind **`session-busy`**,
+  `details.clashes` (`repo`/`pid`/`session_id`/`name`/`cwd`/`started_at`/
+  `last_active`/`idle_seconds`/`busy`), `details.hint` = `--draft` on an add —
+  while that session wrote its transcript within `[session].busy_seconds`
+  (default 300; no transcript found = busy; `0` = warn only), and goes through with a stderr
+  warning plus a **`session_warn`** `{clashes}` envelope key once it has been
+  quiet longer (every envelope of a batch; `add` is stderr-only). Judged on
+  the entity's repos: a new task's AFTER the board-scope union, an existing
+  task's or box's BEFORE and AFTER the edit. First come, first served: the
+  earlier session's own writes never clash. The escape is `add --draft`
+  (attach later with `furrow repo <id> --add`), never a force flag; otherwise
+  wait, hand the write to that session, or use a shell outside Claude Code —
+  a human shell and CI pass untouched. Best-effort: an unreadable registry,
+  an unregistered self, or a self whose own transcript cannot be found makes
+  the guard STAND DOWN with a `note: session guard: … standing down` line,
+  never refuse on a guess; `doctor` warns
+  `session-registry-unreadable` when the registry no longer parses. The
+  registry format (`~/.claude/sessions/<pid>.json`, transcript mtime as
+  activity) is Claude Code's private layout, read in ONE place —
+  `internal/claudecode` — so a format change is one file to fix. Not guarded:
+  reads, `archive`/`tidy`/`upgrade`/`review`/`sync`.
 - furrow is **CLI-only and non-interactive**; there is no in-repo TUI. A TUI/GUI
   is a **separate front-end** that drives furrow through its CLI/JSON contract —
   planned: **ridge** (github.com/akira-toriyama/ridge, a charm-v2 TUI, a CLI/JSON
@@ -597,8 +621,8 @@ STRICT where reads are lenient (an unknown key is exit 2 with the vocabulary in
 candidates; a value the reader would clamp is refused before the write). Every
 other command still only reads. The shipped sections
 are `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`,
-`[archive]`, `[lint]`, `[due]`, `[revisit]`, `[review]`, `[alias]`, and the
-top-level `standalone` and `default_repo` — the repo-root `config.toml` (which `furrow init` writes
+`[archive]`, `[lint]`, `[due]`, `[revisit]`, `[review]`, `[session]`, `[alias]`,
+and the top-level `standalone` and `default_repo` — the repo-root `config.toml` (which `furrow init` writes
 and check.sh diffs byte-for-byte) is the canonical annotated copy; read it rather
 than trusting a prose list here. Two switches are genuinely OFF by default:
 `[labels].required` (a label-less task errors on `add` and in `lint`) and

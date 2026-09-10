@@ -68,6 +68,24 @@ func staleReadExtra(id string, actual *time.Time, expected time.Time) map[string
 	return map[string]any{"stale_read": map[string]any{"expected": e, "actual": a}}
 }
 
+// sessionGuardExtra drains the session guard's per-process output (see
+// app/session_guard.go): its stand-down notes and its idle-occupant warning
+// go to stderr, and the warning also becomes the `session_warn` envelope key
+// ({clashes: [...]}) — nil when the guard had nothing to say, so a clean write
+// stays key-free. Draining clears the state, so the envelope annotate and the
+// root post-run hook can both call this and only the first one prints.
+func sessionGuardExtra(a *app.App) map[string]any {
+	for _, n := range a.TakeSessionNotes() {
+		fmt.Fprintln(errOut, "note:", n)
+	}
+	clashes := a.TakeSessionWarn()
+	if len(clashes) == 0 {
+		return nil
+	}
+	fmt.Fprintln(errOut, "warning:", app.SessionWarnLine(clashes))
+	return map[string]any{"session_warn": map[string]any{"clashes": clashes}}
+}
+
 // mergeExtra folds add into extra, allocating only when there is something to
 // merge — so the envelope stays key-free on the common clean path.
 func mergeExtra(extra, add map[string]any) map[string]any {
@@ -118,6 +136,7 @@ func emitMutationWith(cmd *cobra.Command, a *app.App, verb, id string, mutate fu
 	if guard && before != nil {
 		extra = mergeExtra(extra, staleReadExtra(before.ID, &before.Updated, expected))
 	}
+	extra = mergeExtra(extra, sessionGuardExtra(a))
 	printMutation(verb, before, after, extra)
 	return nil
 }
@@ -167,6 +186,10 @@ func emitMutationManyWith(cmd *cobra.Command, a *app.App, verb string, ids []str
 			stale = staleReadExtra(b.ID, &b.Updated, expected)
 		}
 	}
+	// The session warning describes the whole batch write, so unlike the
+	// one-task stale_read it rides on EVERY envelope: a consumer reading any
+	// element sees it.
+	session := sessionGuardExtra(a)
 	if jsonMode() {
 		envs := make([]any, 0, len(after))
 		for _, t := range after {
@@ -177,6 +200,7 @@ func emitMutationManyWith(cmd *cobra.Command, a *app.App, verb string, ids []str
 			if t.ID == ids[0] {
 				extra = mergeExtra(extra, stale)
 			}
+			extra = mergeExtra(extra, session)
 			envs = append(envs, mutationEnvelope(befores[t.ID], t, extra))
 		}
 		if flagNDJSON {

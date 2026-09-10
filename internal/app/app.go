@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/akira-toriyama/furrow/internal/claudecode"
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/store/fsstore"
@@ -105,6 +106,25 @@ type App struct {
 	// the retry budget instantly.
 	sleep func(time.Duration)
 
+	// Sessions is the co-located-session write guard's registry (see
+	// session_guard.go); nil = the guard is off, which is every process not
+	// running under Claude Code (a human shell, CI, tests). Open wires
+	// internal/claudecode's registry when the environment says otherwise.
+	Sessions core.SessionRegistry
+	// Self identifies this process's session in that registry.
+	Self SessionRef
+	// The guard's per-process state: the registry is read once (sessionRead),
+	// self located (sessionSelf/sessionSelfOK), cwd→repo memoized
+	// (sessionRepos), idle clashes recorded for the CLI's warning
+	// (sessionWarn), and stand-down notes queued for stderr (sessionNotes).
+	sessionRead   bool
+	sessionSelf   core.Session
+	sessionSelfOK bool
+	sessionOthers []core.Session
+	sessionRepos  map[string]string
+	sessionWarn   []core.SessionClash
+	sessionNotes  []string
+
 	// bodiesTouched is the set of task ids whose bodies/<id>.md THIS process
 	// created, modified, or deleted (see saveBody/deleteBody). AutoCommitFlush
 	// passes it as SyncOpts.Bodies so autocommit commits the command's OWN body
@@ -162,6 +182,15 @@ func Open(startDir string) (*App, error) {
 	a.Source = res.Source
 	if res.DefaultRepo != "" {
 		a.BoardRepos = []string{res.DefaultRepo}
+	}
+	// The write guard is armed by the environment alone: under Claude Code
+	// every write is an AI write. A missing config dir is not an error here —
+	// the registry read reports (and stands down on) whatever it finds.
+	if pid, id, ok := claudecode.Self(); ok {
+		a.Self = SessionRef{PID: pid, ID: id}
+		if dir, err := claudecode.DefaultDir(); err == nil {
+			a.Sessions = claudecode.Registry{Dir: dir}
+		}
 	}
 	return a, nil
 }
@@ -1433,6 +1462,15 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, error) {
 	if len(missing) > 0 {
 		return nil, a.batchMissingErr(missing, len(order)+len(missing), "moved")
 	}
+	// The guard runs over the WHOLE batch before the loop writes anything: a
+	// `--note` lands on each body as the loop goes, so a refusal on the third
+	// id must not leave the first two annotated.
+	for _, id := range order {
+		t, _ := idx.Find(id)
+		if err := a.guardTask(t); err != nil {
+			return nil, err
+		}
+	}
 	now := a.Clock.Now()
 	for _, id := range order {
 		t, _ := idx.Find(id)
@@ -1497,6 +1535,9 @@ func (a *App) DoneNote(id, note string) (*core.Task, error) {
 	if i < 0 {
 		return nil, a.notFoundTask(id)
 	}
+	if err := a.guardTask(t); err != nil {
+		return nil, err
+	}
 	if err := a.appendBody(id, note); err != nil {
 		return nil, err
 	}
@@ -1542,6 +1583,9 @@ func (a *App) ReorderRelative(id, ref string, before bool) (*core.Task, []core.P
 		return nil, nil, err
 	}
 	t, _ := idx.Find(id)
+	if err := a.guardTask(t); err != nil {
+		return nil, nil, err
+	}
 	snap, err := core.MarshalTask(t)
 	if err != nil {
 		return nil, nil, err
@@ -1724,6 +1768,9 @@ func (a *App) AddDeps(id string, deps []string) (*core.Task, error) {
 	if i < 0 {
 		return nil, a.notFoundTask(id)
 	}
+	if err := a.guardTask(t); err != nil {
+		return nil, err
+	}
 	before, err := core.MarshalTask(t)
 	if err != nil {
 		return nil, err
@@ -1771,6 +1818,9 @@ func (a *App) RemoveDeps(id string, deps []string) (*core.Task, error) {
 	t, i := idx.Find(id)
 	if i < 0 {
 		return nil, a.notFoundTask(id)
+	}
+	if err := a.guardTask(t); err != nil {
+		return nil, err
 	}
 	before, err := core.MarshalTask(t)
 	if err != nil {
@@ -1950,16 +2000,25 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, erro
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, i := idx.Find(id); i < 0 {
+	t, i := idx.Find(id)
+	if i < 0 {
 		return nil, nil, a.notFoundTask(id)
 	}
 	due, err := a.resolveDue(o)
 	if err != nil {
 		return nil, nil, err
 	}
+	reposBefore := append([]string(nil), t.Repos...)
 	renumbered, err := a.applySet(idx, id, o, due)
 	if err != nil {
 		return nil, nil, err
+	}
+	// Judged on both sides of the edit: --add-repo lands in a repo the task did
+	// not carry yet, --rm-repo leaves one it did.
+	if t, _ = idx.Find(id); t != nil {
+		if err := a.guardRepos(id, unionRepos(reposBefore, t.Repos), ""); err != nil {
+			return nil, nil, err
+		}
 	}
 	if err := a.Store.Save(idx); err != nil {
 		return nil, nil, err
@@ -2054,8 +2113,15 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 		return nil, a.batchMissingErr(missing, len(order)+len(missing), "set")
 	}
 	for _, id := range order {
+		t, _ := idx.Find(id)
+		reposBefore := append([]string(nil), t.Repos...)
 		if _, err := a.applySet(idx, id, o, due); err != nil {
 			return nil, err
+		}
+		if t, _ = idx.Find(id); t != nil {
+			if err := a.guardRepos(id, unionRepos(reposBefore, t.Repos), ""); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := a.Store.Save(idx); err != nil {
@@ -2236,7 +2302,13 @@ func (a *App) mutateIn(idx *core.Index, id string, fn func(*core.Task)) (*core.T
 	if err != nil {
 		return nil, err
 	}
+	reposBefore := append([]string(nil), t.Repos...)
 	fn(t)
+	// The guard sees the edit's both sides (a repo attached or detached by fn),
+	// and a refusal here leaves the store untouched: nothing has been saved.
+	if err := a.guardRepos(id, unionRepos(reposBefore, t.Repos), ""); err != nil {
+		return nil, err
+	}
 	if err := a.stampIfChanged(t, before); err != nil {
 		return nil, err
 	}
@@ -2380,6 +2452,9 @@ func (a *App) AddNote(id, text string) (*core.Task, error) {
 	if i < 0 {
 		return nil, a.notFoundTask(id)
 	}
+	if err := a.guardTask(t); err != nil {
+		return nil, err
+	}
 	if err := a.appendBody(id, text); err != nil {
 		return nil, err
 	}
@@ -2427,6 +2502,9 @@ func (a *App) SetBody(id, text string) (*core.Task, error) {
 	t, i := idx.Find(id)
 	if i < 0 {
 		return nil, a.notFoundTask(id)
+	}
+	if err := a.guardTask(t); err != nil {
+		return nil, err
 	}
 	if err := a.saveBody(id, text); err != nil {
 		return nil, err

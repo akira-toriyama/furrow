@@ -115,6 +115,10 @@ func (a *App) EpicAdd(title string, o EpicAddOpts) (*core.Epic, error) {
 		repos = []string{a.DefaultRepo}
 	}
 
+	if err := a.guardRepos("", repos, ""); err != nil {
+		return nil, err
+	}
+
 	id, err := a.uniqueEpicID(epics)
 	if err != nil {
 		return nil, err
@@ -749,7 +753,18 @@ func (a *App) mutateEpicStamping(ref string, alwaysStamp bool, fn func(*core.Epi
 	if err != nil {
 		return nil, nil, err
 	}
+	// Guarded BEFORE fn: the prose paths' fn writes the body (a note appended,
+	// a body replaced), and a refusal after that would have already landed —
+	// or clobbered — the box's prose. Then again on the union after fn, so a
+	// repo the box is gaining (`epic set --add-repo`) is judged too; the
+	// registry is read once, so the second call costs nothing.
+	if err := a.guardRepos(id, before.Repos, ""); err != nil {
+		return nil, nil, err
+	}
 	if err := fn(e); err != nil {
+		return nil, nil, err
+	}
+	if err := a.guardRepos(id, unionRepos(before.Repos, e.Repos), ""); err != nil {
 		return nil, nil, err
 	}
 	// Same rule as tasks (App.stampIfChanged): a box whose edit changed nothing

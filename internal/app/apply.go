@@ -290,8 +290,12 @@ func (a *App) AppendBody(id, line string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if !idx.Has(id) {
+	t, i := idx.Find(id)
+	if i < 0 {
 		return false, core.NotFound(id)
+	}
+	if err := a.guardTask(t); err != nil {
+		return false, err
 	}
 	body, err := a.Store.LoadBody(id)
 	if err != nil {

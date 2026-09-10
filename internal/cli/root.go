@@ -82,17 +82,36 @@ func Execute() int {
 	if err == nil {
 		return int(core.CodeOK)
 	}
-	// app/core always return *core.Error; a bare error here is a cobra
-	// usage/parse problem, which is a validation error by contract.
-	fe := core.AsError(err)
-	if fe == nil {
-		fe = &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: err.Error()}
-	}
+	fe := classifyFailure(err)
 	// Remap a signal-caused interruption to 128+signal, leaving the envelope's
 	// code field consistent with the process exit code.
 	fe.Code = interruptedExitCode(fe, caught.Load())
 	renderError(fe)
 	return int(fe.Code)
+}
+
+// classifyFailure turns a failed root run into the *core.Error the envelope
+// renders — app/core always return one; a bare error is a cobra usage/parse
+// problem, a validation error by contract — and settles the session guard's
+// output for a run that FAILED. cobra skips PersistentPostRunE on a failed
+// RunE, so a stand-down note queued before a later failure would be lost:
+// it is printed here, ahead of the envelope. The idle-clash WARNING is
+// dropped instead of printed: its wording and the `session_warn` contract say
+// the write went through, and on this path it did not. Shared with the test
+// harness (runCLI/runSplit) so the suite exercises the path the binary runs.
+func classifyFailure(err error) *core.Error {
+	fe := core.AsError(err)
+	if fe == nil {
+		fe = &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: err.Error()}
+	}
+	if a := autoCommitApp; a != nil {
+		autoCommitApp = nil
+		a.TakeSessionWarn()
+		for _, n := range a.TakeSessionNotes() {
+			fmt.Fprintln(errOut, "note:", n)
+		}
+	}
+	return fe
 }
 
 // installSignalTrap wires SIGINT/SIGTERM to cancel the returned context and
@@ -223,7 +242,14 @@ func newRootCmd() *cobra.Command {
 		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
 			a := autoCommitApp
 			autoCommitApp = nil // consume: the next command re-populates via openApp
-			if a == nil || !mutatingCommands[cmd.Name()] {
+			if a == nil {
+				return nil
+			}
+			// The session guard's stderr output for the writes that have no
+			// {before,after,changed} envelope to annotate (add, epic, attach):
+			// a no-op when an envelope path already drained it.
+			sessionGuardExtra(a)
+			if !mutatingCommands[cmd.Name()] {
 				return nil
 			}
 			if a.AutoCommit {

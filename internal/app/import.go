@@ -222,6 +222,17 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 		}
 	}
 
+	// One guard call for the whole batch, on the union of every spec's repos
+	// AFTER the board-scope union above — so a bare `add` inside a checkout is
+	// judged on the repo it silently attaches. Before the first body hits disk.
+	var batchRepos []string
+	for _, s := range specs {
+		batchRepos = unionRepos(batchRepos, s.Repos)
+	}
+	if err := a.guardRepos("", batchRepos, "--draft"); err != nil {
+		return nil, err
+	}
+
 	ids := make([]string, 0, len(specs))
 	for i, s := range specs {
 		lane := s.Status

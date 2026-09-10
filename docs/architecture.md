@@ -56,6 +56,12 @@ library.
                   ports (Store, Clock), validate, index ops
                   imports: stdlib only
 
+   adapter beside gitrepo (implements a core port; reads another tool's files):
+     internal/claudecode  Claude Code's private session registry ->
+                          core.SessionRegistry, the session write guard's eyes
+                          (app maps a session's cwd to its repo with the same
+                          file-only derivation the "auto" scope uses)
+
    leaves (imported where needed, depend on nothing internal of note):
      internal/schema   JSON Schema source ( `furrow schema [task|meta|repo|epic]` )
      internal/version  build version string (ldflags-injected)
@@ -85,6 +91,7 @@ contract an agent does.
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
 | `internal/store/memstore` | In-memory `core.Store` for tests. A normal non-test package, so runtime code that must not touch disk could use it too (nothing does today). |
 | `internal/gitrepo` | git subprocess adapter behind `furrow sync`, `furrow doctor`'s freshness probe, and post-mutation autocommit (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
+| `internal/claudecode` | Adapter over Claude Code's **private** session registry (`~/.claude/sessions/<pid>.json`, the transcript's mtime as activity; env `CLAUDECODE`/`CLAUDE_PID`/`CLAUDE_CODE_SESSION_ID`): implements the `core.SessionRegistry` port for the session write guard and identifies this process's session. The ONE place that knows the format — a format change is one file to fix — and best-effort by contract (a dead pid is dropped, an unparsable entry skipped and named for `doctor`, only a registry with nothing readable is an error). |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough), the in-memory `Marshal`, the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard, `meta.json`, a repo review shard, and an epic shard as Go constants; emitted by `furrow schema [task\|meta\|repo\|epic]`. |
 | `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |
@@ -150,6 +157,11 @@ The seams between the pure core and the outside world are interfaces declared in
 - **`Clock`** — supplies `Now()`. Injected so tests get deterministic timestamps
   and the marshaller's UTC/whole-second contract is trivial to honor.
   `core.SystemClock()` is the production implementation.
+- **`SessionRegistry`** — `Sessions()`, the live sessions of an AI coding
+  harness on this machine (`core.Session`: pid, id, name, cwd, started, last
+  active). The session write guard's eyes; `internal/claudecode` implements it
+  for Claude Code, and the decision itself (`core.SessionClashes`) stays pure —
+  it takes a `repoOf(cwd)` function so core never touches git.
 
 These interfaces are implemented by adapters: `internal/store/fsstore` (the real
 filesystem) and `internal/store/memstore` (an in-memory fake). Both carry a
@@ -732,6 +744,51 @@ A few app-level rules worth stating, all verified against the code:
   only caller of `Store.SetBoardVersion`, previews unless `--yes`, and is a flag
   day (see the version gate).
 
+### The session write guard
+
+`internal/app/session_guard.go` is the mechanization of a rule that judgment
+kept breaking: on 2026-09-10 one Claude Code session, chatting with the human,
+ran `furrow add` into a repo where another session was working autonomously,
+having decided that creating a task was not interference. The guard runs in
+the funnel, once per write path — `addMany` (the batch's repo union, AFTER the
+board-scope union, before the first body hits disk), `mutateIn` and the Set /
+SetMany / epic funnels (the entity's repos BEFORE ∪ AFTER the edit, so
+`--add-repo` and `--rm-repo` are judged on both sides), and every path that
+saves without them (`moveMany`, `DoneNote`, `AddNote`, `SetBody`,
+`AppendBody`, `ReorderRelative`, the dep editors, `EpicAdd`). A refusal
+leaves the store untouched: the guard runs before `Save`, before the asset
+write in `Attach`, before `fn` in the epic funnel (whose prose paths write the
+body inside `fn`), and over the whole batch before `moveMany`'s per-id
+`--note` loop — pinned by `TestSessionGuardRefusalLeavesEveryFileUntouched`.
+
+The decision is pure (`core.SessionClashes`): self is the registry entry with
+this process's `CLAUDE_PID` (or session id); an occupant is any other live
+session that started strictly EARLIER and whose cwd derives to a repo the
+write touches (`repoForDir`, the `repo = "auto"` derivation, worktree-aware);
+a clash is *busy* when the occupant's transcript mtime is within
+`[session].busy_seconds` of now or cannot be found, else *idle* (`busy_seconds
+= 0` makes every clash idle: refusals off, guard on). Busy refuses
+(exit 2, `session-busy`, `details.clashes`, `details.hint` = `--draft` on an
+add); idle records the clash for the CLI, which prints one stderr warning and
+puts `session_warn {clashes}` in the `--json` envelope (`cli.sessionGuardExtra`,
+drained once — by the envelope annotate or by the root post-run hook for the
+writes that have no envelope). First come, first served is what keeps the
+autonomous session safe: its own writes never clash with a later watcher.
+
+Four stand-downs, each with one stderr `note: session guard: …` line and
+never a refusal: no `CLAUDECODE` env (a human shell, CI — the guard is not
+even armed), a registry that cannot be read (`doctor` names it,
+`session-registry-unreadable`), a self that is not in it (an unregistered
+autonomous session refused on a guess would be a NEW failure, worse than the
+one prevented), and a self whose own transcript cannot be found — self is
+running, so its transcript exists, and failing to find it means the
+derivation is wrong, under which every occupant would read as busy. The note
+is drained on the error path too (cobra skips the post-run hook there); the
+idle WARNING is not — it says the write went through, and there it did not. The registry is Claude Code's private format, measured on
+2026-09-10 and read in exactly one package (`internal/claudecode`); the
+board-level `[session]` section holds the one knob because what "still
+working" means is a policy of the board the sessions share.
+
 ### CLI commands
 
 Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
@@ -1041,8 +1098,8 @@ built-in defaults with no warnings; only *malformed TOML* is an error.
 
 Sections and their defaults:
 `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`, `[archive]`, `[lint]`,
-`[due]`, `[revisit]`, `[review]`, `[alias]`, and the top-level `standalone` and
-`default_repo`. The keys, defaults, and per-key reasoning live in the repo-root
+`[due]`, `[revisit]`, `[review]`, `[session]`, `[alias]`, and the top-level
+`standalone` and `default_repo`. The keys, defaults, and per-key reasoning live in the repo-root
 [`config.toml`](../config.toml) — the **canonical annotated copy**: it is the
 exact file `furrow init` writes, and check.sh/CI diff the two byte-for-byte, so
 unlike a prose table it cannot rot. (The table that used to sit here was the

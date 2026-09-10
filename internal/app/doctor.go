@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/akira-toriyama/furrow/internal/claudecode"
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/gitrepo"
@@ -32,22 +33,23 @@ const SevInfo = "info"
 // here; TestDoctorCodeRegistryCoversEmitted greps this file and fails if an
 // emitted code is missing.
 var doctorCodes = map[string]bool{
-	"board-ahead":              true,
-	"board-behind":             true,
-	"board-mid-operation":      true,
-	"board-missing":            true,
-	"board-unreadable":         true,
-	"dir-unresolved":           true,
-	"env-override":             true,
-	"env-override-broken":      true,
-	"global-config-clamp":      true,
-	"global-config-unreadable": true,
-	"no-boards":                true,
-	"no-body-union-merge":      true,
-	"schema-outdated":          true,
-	"schema-too-new":           true,
-	"scope-missing":            true,
-	"scope-shadowed":           true,
+	"board-ahead":                 true,
+	"board-behind":                true,
+	"board-mid-operation":         true,
+	"board-missing":               true,
+	"board-unreadable":            true,
+	"dir-unresolved":              true,
+	"env-override":                true,
+	"env-override-broken":         true,
+	"global-config-clamp":         true,
+	"global-config-unreadable":    true,
+	"no-boards":                   true,
+	"no-body-union-merge":         true,
+	"schema-outdated":             true,
+	"schema-too-new":              true,
+	"scope-missing":               true,
+	"scope-shadowed":              true,
+	"session-registry-unreadable": true,
 }
 
 // DoctorCodeList returns the known doctor finding codes, sorted — the machine
@@ -151,6 +153,7 @@ func Doctor(ctx context.Context, cwd string, assertDirs []string) (*DoctorReport
 	r.Problems = append(r.Problems, envOverrideProblems(r.EnvDir, r.EnvBoard)...)
 	r.Problems = append(r.Problems, doctorBoards(ctx, r, path)...)
 	r.Problems = append(r.Problems, doctorResolutions(r, cwd, assertDirs)...)
+	r.Problems = append(r.Problems, doctorSessionRegistry()...)
 
 	sortDoctorProblems(r.Problems)
 	r.Healthy = true
@@ -161,6 +164,34 @@ func Doctor(ctx context.Context, cwd string, assertDirs []string) (*DoctorReport
 		}
 	}
 	return r, nil
+}
+
+// doctorSessionRegistry probes the Claude Code session registry the write
+// guard reads (session_guard.go). The registry is another tool's private
+// format, so the one failure worth a finding is the format drifting under
+// furrow: an entry that no longer parses, or a registry that yields nothing
+// readable — in which case the guard silently protects nothing but a stderr
+// note. A machine without the registry raises nothing.
+func doctorSessionRegistry() []core.Problem {
+	dir, err := claudecode.DefaultDir()
+	if err != nil {
+		return nil
+	}
+	reg := claudecode.Registry{Dir: dir}
+	if !reg.Exists() {
+		return nil
+	}
+	_, unreadable, err := reg.Scan()
+	var ps []core.Problem
+	if err != nil {
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "session-registry-unreadable", ID: "session-registry",
+			Msg: fmt.Sprintf("%v — the session write guard stands down on every write until the registry reads again (update furrow if Claude Code changed the format)", err)})
+	}
+	for _, p := range unreadable {
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "session-registry-unreadable", ID: p,
+			Msg: "session registry entry cannot be parsed (or lacks pid/cwd/startedAt); that session is invisible to the write guard — a stale or half-written entry, or a format change (update furrow)"})
+	}
+	return ps
 }
 
 // envOverrideProblems reports the two env overrides. A set override is INFO —

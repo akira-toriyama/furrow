@@ -34,10 +34,7 @@ func runCLI(t *testing.T, stdin string, args ...string) (*core.Error, string) {
 	if err == nil {
 		return nil, buf.String()
 	}
-	fe := core.AsError(err)
-	if fe == nil {
-		fe = &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: err.Error()}
-	}
+	fe := classifyFailure(err) // before the buffer is read (see runSplit)
 	return fe, buf.String()
 }
 

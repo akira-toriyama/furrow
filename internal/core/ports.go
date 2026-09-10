@@ -158,6 +158,16 @@ type Store interface {
 	NextEpicID() (string, error)
 }
 
+// SessionRegistry is the port over the live-session registry an AI coding
+// harness keeps on this machine (implemented by internal/claudecode for Claude
+// Code). Sessions returns every registered session whose process is still
+// alive. An error means a registry EXISTS but cannot be read — the write guard
+// stands down on it and says so; a machine with no registry at all is
+// (nil, nil), which is simply "no other sessions".
+type SessionRegistry interface {
+	Sessions() ([]Session, error)
+}
+
 // Clock supplies the current time. Injected so tests get deterministic
 // timestamps and the marshaller's UTC/whole-second contract is easy to honor.
 type Clock interface {

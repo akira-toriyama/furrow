@@ -43,6 +43,7 @@ const (
 	KindRepoUnknown           = "repo-unknown"            // a repo arg matched no known repo
 	KindSchemaTooNew          = "schema-too-new"          // the BOARD is ahead of this binary — update furrow (exit 3)
 	KindSchemaUpgradeRequired = "schema-upgrade-required" // the board is behind this binary — run `furrow upgrade` (exit 2)
+	KindSessionBusy           = "session-busy"            // the write touches a repo an earlier, still-working session occupies (exit 2)
 	KindSyncBusy              = "sync-busy"               // a concurrent writer's rebase is still in flight — retryable
 	KindSyncConflict          = "sync-conflict"           // the pull rebase hit real conflicts; details.paths names them
 	KindSyncInterrupted       = "sync-interrupted"        // a signal cancelled the in-flight git — retryable
@@ -79,6 +80,7 @@ var errorKinds = map[string]bool{
 	KindRepoUnknown:           true,
 	KindSchemaTooNew:          true,
 	KindSchemaUpgradeRequired: true,
+	KindSessionBusy:           true,
 	KindSyncBusy:              true,
 	KindSyncConflict:          true,
 	KindSyncInterrupted:       true,
