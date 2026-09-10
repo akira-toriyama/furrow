@@ -62,13 +62,15 @@ var (
 	// motivates the 14-day default (two missed weeks).
 	DefaultReviewStaleAfterDays = 14
 
-	// DefaultSessionBusySeconds is [session].busy_seconds: how recently another
-	// Claude Code session on this machine must have written its transcript to
-	// count as WORKING in the repo it sits in, which makes a later session's write
-	// into that repo refuse (session-busy) rather than merely warn (session_warn).
-	// Five minutes covers the ordinary gap between tool calls; a long build can
-	// exceed it, which is why silence past it only demotes the refusal to a
-	// warning instead of pretending the session is gone.
+	// DefaultSessionBusySeconds is [session].busy_seconds: how long another
+	// Claude Code session on this machine, whose turn is NOT known to have
+	// ended, keeps counting as WORKING in the repo it sits in after its last
+	// transcript write — which makes a later session's write into that repo
+	// refuse (session-busy) rather than merely warn (session_warn). An ended
+	// turn is idle at once, so the window only bounds the mid-turn reading:
+	// five minutes covers the ordinary gap between tool calls, and a long build
+	// or an unanswered permission prompt exceeding it demotes the refusal to a
+	// warning instead of refusing forever.
 	DefaultSessionBusySeconds = 300
 )
 

@@ -91,7 +91,7 @@ contract an agent does.
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
 | `internal/store/memstore` | In-memory `core.Store` for tests. A normal non-test package, so runtime code that must not touch disk could use it too (nothing does today). |
 | `internal/gitrepo` | git subprocess adapter behind `furrow sync`, `furrow doctor`'s freshness probe, and post-mutation autocommit (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
-| `internal/claudecode` | Adapter over Claude Code's **private** session registry (`~/.claude/sessions/<pid>.json`, the transcript's mtime as activity; env `CLAUDECODE`/`CLAUDE_PID`/`CLAUDE_CODE_SESSION_ID`): implements the `core.SessionRegistry` port for the session write guard and identifies this process's session. The ONE place that knows the format — a format change is one file to fix — and best-effort by contract (a dead pid is dropped, an unparsable entry skipped and named for `doctor`, only a registry with nothing readable is an error). |
+| `internal/claudecode` | Adapter over Claude Code's **private** session registry (`~/.claude/sessions/<pid>.json`, the transcript's mtime as activity and its last message record as the turn state; env `CLAUDECODE`/`CLAUDE_PID`/`CLAUDE_CODE_SESSION_ID`): implements the `core.SessionRegistry` port for the session write guard and identifies this process's session. The ONE place that knows the format — a format change is one file to fix — and best-effort by contract (a dead pid is dropped, an unparsable entry skipped and named for `doctor`, only a registry with nothing readable is an error). |
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough), the in-memory `Marshal`, the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard, `meta.json`, a repo review shard, and an epic shard as Go constants; emitted by `furrow schema [task\|meta\|repo\|epic]`. |
 | `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |
@@ -765,9 +765,18 @@ The decision is pure (`core.SessionClashes`): self is the registry entry with
 this process's `CLAUDE_PID` (or session id); an occupant is any other live
 session that started strictly EARLIER and whose cwd derives to a repo the
 write touches (`repoForDir`, the `repo = "auto"` derivation, worktree-aware);
-a clash is *busy* when the occupant's transcript mtime is within
-`[session].busy_seconds` of now or cannot be found, else *idle* (`busy_seconds
-= 0` makes every clash idle: refusals off, guard on). Busy refuses
+a clash is *idle* when the occupant's turn is known to have ENDED — the
+transcript's last message record is an assistant `end_turn`: the session is
+waiting for the human, however fresh that write is, since the closing message
+IS the last write (`turn_ended` in the clash; measured 2026-09-10: a session
+told "we're done" counted as working for the whole window, and the wait was
+about 4 minutes) — or when it has been silent past `[session].busy_seconds`;
+otherwise *busy* (mid-turn and recent, or no transcript found). The window is
+the ceiling on a mid-turn reading, not the signal: a long tool call or an
+unanswered permission prompt goes idle after it rather than refusing forever,
+and a tail the adapter cannot parse degrades to the window alone, never to
+"everyone is idle" (`busy_seconds = 0` makes every clash idle: refusals off,
+guard on). Busy refuses
 (exit 2, `session-busy`, `details.clashes`, `details.hint` = `--draft` on an
 add); idle records the clash for the CLI, which prints one stderr warning and
 puts `session_warn {clashes}` in the `--json` envelope (`cli.sessionGuardExtra`,

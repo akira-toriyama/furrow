@@ -42,6 +42,18 @@ func TestSessionClashes(t *testing.T) {
 			[]Session{{PID: 1, ID: "a", CWD: "/w/glyph", StartedAt: earlier}},
 			[]string{"o/glyph"}, 5 * time.Minute,
 			[]SessionClash{{Repo: "o/glyph", PID: 1, Busy: true}}},
+		{"an occupant whose turn ended is idle however fresh its last write", self,
+			[]Session{{PID: 1, ID: "a", CWD: "/w/glyph", StartedAt: earlier, LastActive: busy, TurnEnded: true}},
+			[]string{"o/glyph"}, 5 * time.Minute,
+			[]SessionClash{{Repo: "o/glyph", PID: 1, Busy: false}}},
+		{"a turn ended with no activity record is still idle (the adapter's positive reading wins)", self,
+			[]Session{{PID: 1, ID: "a", CWD: "/w/glyph", StartedAt: earlier, TurnEnded: true}},
+			[]string{"o/glyph"}, 5 * time.Minute,
+			[]SessionClash{{Repo: "o/glyph", PID: 1, Busy: false}}},
+		{"a mid-turn occupant silent past the window is idle (the window is the ceiling)", self,
+			[]Session{{PID: 1, ID: "a", CWD: "/w/glyph", StartedAt: earlier, LastActive: idle, TurnEnded: false}},
+			[]string{"o/glyph"}, 5 * time.Minute,
+			[]SessionClash{{Repo: "o/glyph", PID: 1, Busy: false}}},
 		{"threshold 0 never blocks a known activity", self,
 			[]Session{{PID: 1, ID: "a", CWD: "/w/glyph", StartedAt: earlier, LastActive: busy}},
 			[]string{"o/glyph"}, 0,
@@ -106,5 +118,12 @@ func TestSessionClashIdleFields(t *testing.T) {
 	unknown := SessionClashes(self, []Session{{PID: 2, CWD: "x", StartedAt: now.Add(-time.Hour)}}, repoOf, []string{"o/r"}, now, time.Minute)
 	if len(unknown) != 1 || unknown[0].IdleSeconds != nil || unknown[0].LastActive != nil || !unknown[0].Busy {
 		t.Fatalf("unknown activity: %+v", unknown)
+	}
+	if known[0].TurnEnded {
+		t.Fatalf("TurnEnded must mirror the session, not be inferred from idleness: %+v", known)
+	}
+	ended := SessionClashes(self, []Session{{PID: 2, CWD: "x", StartedAt: now.Add(-time.Hour), LastActive: now.Add(-3 * time.Second), TurnEnded: true}}, repoOf, []string{"o/r"}, now, time.Minute)
+	if len(ended) != 1 || !ended[0].TurnEnded || ended[0].Busy || ended[0].IdleSeconds == nil || *ended[0].IdleSeconds != 3 {
+		t.Fatalf("ended turn: %+v", ended)
 	}
 }

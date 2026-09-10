@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -68,6 +69,106 @@ func TestScanReadsLiveEntriesAndTranscriptMtime(t *testing.T) {
 	}
 	if !got[1].LastActive.IsZero() {
 		t.Errorf("entry 22 should have unknown activity: %+v", got[1])
+	}
+}
+
+// setTranscript overwrites the transcript writeEntry planted for (cwd, id)
+// with content, keeping its mtime at active.
+func setTranscript(t *testing.T, dir, cwd, id, content string, active time.Time) {
+	t.Helper()
+	p := filepath.Join(dir, "projects", mangleCWD(cwd), id+".jsonl")
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(p, active, active); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const (
+	recEndTurn   = `{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"done"}]},"isSidechain":false}` + "\n"
+	recToolUse   = `{"type":"assistant","message":{"role":"assistant","stop_reason":"tool_use","content":[{"type":"tool_use","name":"Bash"}]},"isSidechain":false}` + "\n"
+	recUser      = `{"type":"user","message":{"role":"user","content":[{"type":"tool_result"}]},"isSidechain":false}` + "\n"
+	recBridge    = `{"type":"bridge-session","bridgeSessionId":"x","lastSequenceNum":3}` + "\n"
+	recAttach    = `{"type":"attachment","attachment":{"type":"hook_success"}}` + "\n"
+	recSidechain = `{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"sub"}]},"isSidechain":true}` + "\n"
+)
+
+func TestScanReadsTurnEndedOffTheTranscriptTail(t *testing.T) {
+	started := time.Date(2026, 9, 10, 1, 2, 3, 0, time.UTC)
+	active := time.Date(2026, 9, 10, 1, 30, 0, 0, time.UTC)
+	cases := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{"end_turn last: the turn ended", recUser + recEndTurn, true},
+		{"tool_use last: mid-turn", recUser + recToolUse, false},
+		{"a tool result last: mid-turn", recToolUse + recUser, false},
+		{"bookkeeping after the end_turn is skipped", recUser + recEndTurn + recBridge + recAttach, true},
+		{"bookkeeping after a tool_use is skipped too", recToolUse + recBridge, false},
+		{"a subagent's end_turn is not the session's", recToolUse + recSidechain, false},
+		{"a stop hook's feedback prompt reopens the turn", recEndTurn + `{"type":"user","message":{"role":"user","content":"Stop hook feedback: fix the report"}}` + "\n", false},
+		{"an assistant record with another stop reason is not ended", recUser + `{"type":"assistant","message":{"stop_reason":"max_tokens"}}` + "\n", false},
+		{"no message record at all: unknown, not ended", recBridge + recAttach, false},
+		{"unparsable tail: unknown, not ended", "{not json\n", false},
+		{"empty transcript: unknown, not ended", "", false},
+		{"a garbage line after the end_turn does not hide it", recEndTurn + "{cut\n", true},
+	}
+	for i, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			id := "s" + itoa(i)
+			writeEntry(t, dir, 11, id, "/w/one", started, active)
+			setTranscript(t, dir, "/w/one", id, c.content, active)
+			r := Registry{Dir: dir, alive: func(int) bool { return true }}
+			got, _, err := r.Scan()
+			if err != nil || len(got) != 1 {
+				t.Fatalf("scan: %+v %v", got, err)
+			}
+			if got[0].TurnEnded != c.want {
+				t.Fatalf("TurnEnded = %v, want %v", got[0].TurnEnded, c.want)
+			}
+			if !got[0].LastActive.Equal(active) {
+				t.Fatalf("LastActive must still come from the mtime: %v", got[0].LastActive)
+			}
+		})
+	}
+}
+
+func TestTurnEndedReadsOnlyTheTailOfALongTranscript(t *testing.T) {
+	dir := t.TempDir()
+	started := time.Date(2026, 9, 10, 1, 2, 3, 0, time.UTC)
+	active := time.Date(2026, 9, 10, 1, 30, 0, 0, time.UTC)
+	writeEntry(t, dir, 11, "long", "/w/one", started, active)
+	// A transcript far larger than the window, whose window starts mid-record:
+	// the cut first line must be skipped, not mistaken for a format change.
+	var b strings.Builder
+	filler := `{"type":"user","message":{"role":"user","content":"` + strings.Repeat("x", 1000) + `"}}` + "\n"
+	for b.Len() < 3*transcriptTailBytes {
+		b.WriteString(filler)
+	}
+	b.WriteString(recToolUse)
+	b.WriteString(recUser)
+	b.WriteString(recEndTurn)
+	b.WriteString(recBridge)
+	setTranscript(t, dir, "/w/one", "long", b.String(), active)
+	r := Registry{Dir: dir, alive: func(int) bool { return true }}
+	got, _, err := r.Scan()
+	if err != nil || len(got) != 1 || !got[0].TurnEnded {
+		t.Fatalf("long transcript: %+v %v", got, err)
+	}
+	// A transcript whose window holds only cut/bookkeeping lines: unknown.
+	setTranscript(t, dir, "/w/one", "long", strings.Repeat(recBridge, transcriptTailBytes/len(recBridge)+2), active)
+	if got, _, _ := r.Scan(); len(got) != 1 || got[0].TurnEnded {
+		t.Fatalf("no message record in the window must read as not ended: %+v", got)
+	}
+	// No transcript at all: neither activity nor a turn.
+	if err := os.Remove(filepath.Join(dir, "projects", mangleCWD("/w/one"), "long.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := r.Scan(); len(got) != 1 || got[0].TurnEnded || !got[0].LastActive.IsZero() {
+		t.Fatalf("missing transcript: %+v", got)
 	}
 }
 

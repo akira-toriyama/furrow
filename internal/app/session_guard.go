@@ -22,7 +22,12 @@ import (
 // The rule, in one sentence: a write from a Claude Code session that touches a
 // repo an EARLIER-started session on this machine sits in is refused
 // (session-busy) while that session is working, and warned about
-// (session_warn) while it is idle. Repos come from the entity being written —
+// (session_warn) while it is idle — idle being "its last turn ended" (read
+// off the transcript's last record; measured 2026-09-10: a session told
+// "we're done" still counted as working for the whole busy window, because
+// the closing message it had just written IS a fresh transcript write) or,
+// when that cannot be read, "silent past busy_seconds". Repos come from the
+// entity being written —
 // a new task's repos after the board-scope union (so a bare `add` inside a
 // checkout is guarded), and an existing task's or box's repos before AND after
 // the edit (so `--add-repo`/`--rm-repo` are judged on both sides). First come,
@@ -194,6 +199,9 @@ func activityLabel(c core.SessionClash) string {
 func idleLabel(c core.SessionClash) string {
 	if c.IdleSeconds == nil {
 		return "unknown"
+	}
+	if c.TurnEnded {
+		return humanDuration(*c.IdleSeconds) + ", turn ended"
 	}
 	return humanDuration(*c.IdleSeconds)
 }
