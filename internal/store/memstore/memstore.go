@@ -301,6 +301,16 @@ func (s *Store) LoadEpics() ([]core.Epic, error) {
 	return epics, nil
 }
 
+// DeleteEpic drops the epic shard; absent is a no-op — fsstore.DeleteEpic's
+// contract.
+func (s *Store) DeleteEpic(id string) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+	delete(s.epics, id)
+	return nil
+}
+
 // SaveEpic stores one epic — the in-memory twin of writing an epics/ shard. The
 // record round-trips through the single MarshalEpic/UnmarshalEpic path (not just
 // assigned) so the in-memory copy is canonicalized exactly as fsstore would

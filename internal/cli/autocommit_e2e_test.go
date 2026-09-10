@@ -95,4 +95,39 @@ func TestAutoCommit_EndToEndViaCLI(t *testing.T) {
 	if got := commitCount(); got != before {
 		t.Errorf("a read command must not autocommit; commit count %d -> %d", before, got)
 	}
+
+	// A NESTED mutator fires too: the gate is keyed by the top-level name, so
+	// `epic activate` — whose activation record is a BODY write — commits its
+	// shard and prose in one autocommit named after the full command path.
+	box := addEpic(t, "box", "-r", "o/r")
+	before = commitCount()
+	if out, code := run(t, "epic", "activate", box); code != 0 {
+		t.Fatalf("epic activate exit %d:\n%s", code, out)
+	}
+	if got := commitCount(); got != before+1 {
+		t.Errorf("want one autocommit after `epic activate`, commit count %d -> %d", before, got)
+	}
+	if s := strings.TrimSpace(gitAt("status", "--porcelain")); s != "" {
+		t.Errorf("board must be clean after `epic activate` (its body write was left behind):\n%s", s)
+	}
+	if subj := strings.TrimSpace(gitAt("log", "-1", "--format=%s")); !strings.Contains(subj, "furrow epic activate") {
+		t.Errorf("commit subject = %q, want it to name `furrow epic activate`", subj)
+	}
+
+	// A deletion is a furrow-owned change: `rm --yes` commits the removed shard
+	// AND body in one autocommit, leaving nothing for a later sync to disclose.
+	id := addTask(t, "withdrawn")
+	before = commitCount()
+	if out, code := run(t, "rm", id, "--yes"); code != 0 {
+		t.Fatalf("rm exit %d:\n%s", code, out)
+	}
+	if got := commitCount(); got != before+1 {
+		t.Errorf("want one autocommit after `rm`, commit count %d -> %d", before, got)
+	}
+	if s := strings.TrimSpace(gitAt("status", "--porcelain")); s != "" {
+		t.Errorf("board must be clean after rm (a deleted body left pending):\n%s", s)
+	}
+	if shown := gitAt("show", "--stat", "--format=", "HEAD"); !strings.Contains(shown, "bodies/"+id+".md") || !strings.Contains(shown, "tasks/"+id+".json") {
+		t.Errorf("rm's autocommit must carry both deletions:\n%s", shown)
+	}
 }

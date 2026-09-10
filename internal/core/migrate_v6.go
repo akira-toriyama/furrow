@@ -1,10 +1,5 @@
 package core
 
-import (
-	"regexp"
-	"strings"
-)
-
 // The v5 -> v6 migration: the pure half of `furrow upgrade`'s one semantic
 // conversion. Schema v6 retired Task.Type and Task.Parent and made the epic an
 // entity of its own, so a v5 board's `"type": "epic"` tasks must BECOME epics
@@ -212,69 +207,15 @@ func consumeExtra(t *Task, key string) {
 // as ExtractLinks/stripCode — a link inside a ``` fence ``` or `inline code` is
 // documentation, not a mention, and must survive verbatim — because the whole
 // point of the rewrite is agreeing with lint's dangling-link check about which
-// links are real.
+// links are real (RewriteLinks is that shared walker).
 func RewriteV6Links(text string, conv map[string]string, idPrefix string) (string, int) {
 	if len(conv) == 0 {
 		return text, 0
 	}
-	re := LinkPattern(idPrefix)
-	n := 0
-	lines := strings.Split(text, "\n")
-	inFence := false
-	for li, line := range lines {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
-			inFence = !inFence
-			continue
+	return RewriteLinks(text, LinkPattern(idPrefix), func(id string) (string, bool) {
+		if eid, ok := conv[id]; ok {
+			return "[[" + eid + "]]", true
 		}
-		if inFence {
-			continue
-		}
-		lines[li] = rewriteLinksOutsideInlineCode(line, re, conv, &n)
-	}
-	return strings.Join(lines, "\n"), n
-}
-
-// rewriteLinksOutsideInlineCode applies the link rewrite to the non-code
-// segments of one line, walking inline code spans with the same rules as
-// stripInlineCode (a run of N backticks opens, the next run of exactly N
-// closes; an unterminated run code-quotes the rest of the line) — but keeping
-// the spans verbatim instead of dropping them.
-func rewriteLinksOutsideInlineCode(line string, re *regexp.Regexp, conv map[string]string, n *int) string {
-	rewrite := func(seg string) string {
-		return re.ReplaceAllStringFunc(seg, func(m string) string {
-			id := m[2 : len(m)-2] // the match is the full [[id]]
-			if eid, ok := conv[id]; ok {
-				*n++
-				return "[[" + eid + "]]"
-			}
-			return m
-		})
-	}
-	var b strings.Builder
-	start := 0
-	for i := 0; i < len(line); {
-		if line[i] != '`' {
-			i++
-			continue
-		}
-		run := backtickRun(line, i)
-		j := i + run
-		for j < len(line) {
-			if line[j] == '`' && backtickRun(line, j) == run {
-				break
-			}
-			j++
-		}
-		b.WriteString(rewrite(line[start:i]))
-		if j >= len(line) {
-			b.WriteString(line[i:]) // unterminated span: the tail is code
-			return b.String()
-		}
-		b.WriteString(line[i : j+run]) // the span, verbatim
-		i = j + run
-		start = i
-	}
-	b.WriteString(rewrite(line[start:]))
-	return b.String()
+		return "", false
+	})
 }

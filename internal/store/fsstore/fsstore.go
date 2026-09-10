@@ -467,6 +467,19 @@ func (s *Store) SaveEpic(e *core.Epic) error {
 	return s.writeIfChanged(s.epicPath(e.ID), data)
 }
 
+// DeleteEpic removes epics/<id>.json; absent is not an error (DeleteBody's
+// contract), so a re-run after a partial removal is idempotent.
+func (s *Store) DeleteEpic(id string) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+	err := os.Remove(s.epicPath(id))
+	if err != nil && !os.IsNotExist(err) {
+		return core.Internalf(id, "delete epic shard: %v", err)
+	}
+	return nil
+}
+
 // ListEpicIDs returns the ids of all epic shards (epics/<id>.json), sorted, for
 // the shard-filename/id integrity lint — the epics/ twin of ListTaskIDs. A
 // missing epics/ dir yields nil, not an error.

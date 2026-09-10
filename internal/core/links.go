@@ -102,3 +102,87 @@ func backtickRun(s string, i int) int {
 	}
 	return n
 }
+
+// RewriteLinks applies fn to every LIVE [[id]] link in text — outside fenced
+// and inline code, by the same rules ExtractLinks reads by, so a rewrite and
+// lint's dangling-link check agree on which links are real and a documented
+// [[t-…]] example survives verbatim. fn receives the id inside the brackets
+// and returns the replacement for the WHOLE [[id]] token plus whether to
+// replace it; false keeps the token as written. Reports how many tokens
+// changed. It is the one link-rewriting walker: the v6 migration (an id
+// changes) and `furrow rm --force` (an id ceases to exist) both go through it.
+func RewriteLinks(text string, re *regexp.Regexp, fn func(id string) (string, bool)) (string, int) {
+	n := 0
+	lines := strings.Split(text, "\n")
+	inFence := false
+	for li, line := range lines {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		lines[li] = rewriteLinksOutsideInlineCode(line, re, fn, &n)
+	}
+	return strings.Join(lines, "\n"), n
+}
+
+// UnlinkIDs turns every live [[id]] whose id is in ids into the bare id — the
+// prose keeps saying what it said, it just stops pointing at a record that no
+// longer exists. A bare id is deliberately not a link (see ExtractLinks), so
+// the result is exactly what lint's dangling-link would otherwise flag, minus
+// the flag.
+func UnlinkIDs(text string, re *regexp.Regexp, ids map[string]bool) (string, int) {
+	return RewriteLinks(text, re, func(id string) (string, bool) {
+		if ids[id] {
+			return id, true
+		}
+		return "", false
+	})
+}
+
+// rewriteLinksOutsideInlineCode applies fn to the non-code segments of one
+// line, walking inline code spans with the same rules as stripInlineCode (a
+// run of N backticks opens, the next run of exactly N closes; an unterminated
+// run code-quotes the rest of the line) — but keeping the spans verbatim
+// instead of dropping them.
+func rewriteLinksOutsideInlineCode(line string, re *regexp.Regexp, fn func(id string) (string, bool), n *int) string {
+	rewrite := func(seg string) string {
+		return re.ReplaceAllStringFunc(seg, func(m string) string {
+			id := m[2 : len(m)-2] // the match is the full [[id]]
+			if repl, ok := fn(id); ok {
+				*n++
+				return repl
+			}
+			return m
+		})
+	}
+	var b strings.Builder
+	start := 0
+	for i := 0; i < len(line); {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		run := backtickRun(line, i)
+		j := i + run
+		for j < len(line) {
+			if line[j] == '`' && backtickRun(line, j) == run {
+				break
+			}
+			j++
+		}
+		b.WriteString(rewrite(line[start:i]))
+		if j >= len(line) {
+			b.WriteString(line[i:]) // unterminated span: the tail is code
+			return b.String()
+		}
+		b.WriteString(line[i : j+run]) // the span, verbatim
+		i = j + run
+		start = i
+	}
+	b.WriteString(rewrite(line[start:]))
+	return b.String()
+}
