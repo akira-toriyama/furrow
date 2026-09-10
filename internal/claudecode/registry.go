@@ -56,6 +56,9 @@ func Self() (pid int, id string, ok bool) {
 		return 0, "", false
 	}
 	pid, _ = strconv.Atoi(strings.TrimSpace(os.Getenv(EnvPID)))
+	if pid < 0 {
+		pid = 0
+	}
 	return pid, strings.TrimSpace(os.Getenv(EnvSessionID)), true
 }
 
@@ -63,7 +66,7 @@ func Self() (pid int, id string, ok bool) {
 // ~/.claude.
 func DefaultDir() (string, error) {
 	if d := os.Getenv(EnvConfigDir); d != "" {
-		return filepath.Clean(d), nil
+		return filepath.Abs(d)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -149,8 +152,10 @@ type entry struct {
 }
 
 // readEntry parses one registry file. ok is false when the file cannot be
-// read or parsed, or when a field the guard cannot do without (pid, cwd,
-// startedAt) is missing — a renamed field is a format change, not a session.
+// read or parsed, or when a field the guard cannot do without (pid,
+// sessionId, cwd, startedAt) is missing — a renamed field is a format
+// change, not a session, and requiring sessionId is what turns "every
+// transcript unfindable, so everyone is busy" into a stand-down.
 func (r Registry) readEntry(path string) (core.Session, bool) {
 	// #nosec G304 -- path is an entry under the config dir's sessions/
 	// registry, listed by ReadDir above; not attacker-supplied.
@@ -159,37 +164,39 @@ func (r Registry) readEntry(path string) (core.Session, bool) {
 		return core.Session{}, false
 	}
 	var e entry
-	if err := json.Unmarshal(data, &e); err != nil || e.PID <= 0 || e.CWD == "" || e.StartedAt <= 0 {
+	if err := json.Unmarshal(data, &e); err != nil || e.PID <= 0 || e.SessionID == "" || e.CWD == "" || e.StartedAt <= 0 {
 		return core.Session{}, false
 	}
 	s := core.Session{
 		PID: e.PID, ID: e.SessionID, Name: e.Name, CWD: e.CWD,
 		StartedAt: time.UnixMilli(e.StartedAt).UTC().Truncate(time.Second),
 	}
-	if e.SessionID != "" {
-		if fi, err := os.Stat(r.transcriptPath(e.CWD, e.SessionID)); err == nil {
-			s.LastActive = fi.ModTime().UTC().Truncate(time.Second)
-		}
+	if fi, err := os.Stat(r.transcriptPath(e.CWD, e.SessionID)); err == nil {
+		s.LastActive = fi.ModTime().UTC().Truncate(time.Second)
 	}
 	return s, true
 }
 
 // transcriptPath is projects/<mangled cwd>/<sessionId>.jsonl under Dir. The
-// mangling — every byte outside [A-Za-z0-9] becomes '-' — is Claude Code's,
-// reproduced here (measured: /Volumes/workspace/github.com/o/r →
-// -Volumes-workspace-github-com-o-r).
+// mangling — every character outside [A-Za-z0-9] becomes '-' — is Claude
+// Code's, reproduced here (measured on an ASCII path:
+// /Volumes/workspace/github.com/o/r → -Volumes-workspace-github-com-o-r).
+// It maps RUNES, not bytes: the original is a JavaScript replace over
+// characters, so a non-ASCII path segment becomes one dash per character
+// (the byte-wise reading would write three). Unmeasured for non-ASCII; the
+// guard's self-transcript check (app.sessionSnapshot) is what catches a
+// wrong reading — it stands down instead of calling everyone busy.
 func (r Registry) transcriptPath(cwd, sessionID string) string {
 	return filepath.Join(r.Dir, "projects", mangleCWD(cwd), sessionID+".jsonl")
 }
 
 func mangleCWD(cwd string) string {
-	b := []byte(cwd)
-	for i, c := range b {
+	return strings.Map(func(c rune) rune {
 		switch {
 		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+			return c
 		default:
-			b[i] = '-'
+			return '-'
 		}
-	}
-	return string(b)
+	}, cwd)
 }

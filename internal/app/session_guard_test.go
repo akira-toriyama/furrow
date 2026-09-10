@@ -158,11 +158,16 @@ func TestSessionGuardBusySecondsZeroIsWarnOnly(t *testing.T) {
 	if w := a.TakeSessionWarn(); len(w) != 1 {
 		t.Fatalf("it still warns: %+v", w)
 	}
-	// Unknown activity stays busy even at 0.
+	// 0 is the warn-only switch for unknown activity too: the one escape a
+	// non-add write has when an occupant's transcript cannot be found.
 	b, _ := guardedApp(t, 0, true)
 	b.Cfg.SessionBusySeconds = 0
-	_, err := b.Add("x", AddOpts{Repos: []string{"o/glyph"}})
-	wantSessionBusy(t, err, "")
+	if _, err := b.Add("x", AddOpts{Repos: []string{"o/glyph"}}); err != nil {
+		t.Fatalf("busy_seconds=0 never refuses: %v", err)
+	}
+	if w := b.TakeSessionWarn(); len(w) != 1 || w[0].Busy {
+		t.Fatalf("warned, not busy: %+v", w)
+	}
 }
 
 func TestSessionGuardFirstComeFirstServed(t *testing.T) {
@@ -186,6 +191,10 @@ func TestSessionGuardStandsDownWhenItCannotOrder(t *testing.T) {
 	}{
 		{"registry unreadable", func(a *App) { a.Sessions = fakeRegistry{err: os.ErrPermission} }, "cannot read"},
 		{"self not registered", func(a *App) { a.Self = SessionRef{PID: 999, ID: "ghost"} }, "not in the Claude Code session registry"},
+		{"self's own transcript unfindable", func(a *App) {
+			reg := a.Sessions.(fakeRegistry)
+			reg.sessions[0].LastActive = time.Time{}
+		}, "own transcript"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -301,6 +310,40 @@ func TestSessionGuardCoversEveryTaskWrite(t *testing.T) {
 	got, body, _ := a.Get(x.ID)
 	if got.Status != "ready" || got.Title != "x" || len(got.Labels) != 0 || len(got.Deps) != 1 || body != "# x\n" {
 		t.Fatalf("a refused write landed: %+v body=%q", got, body)
+	}
+}
+
+// The three refusals a first review found landing bytes anyway: an asset
+// written before the guard, an epic body replaced/annotated before it, and a
+// batch --note annotating the free tasks before refusing on the occupied one.
+func TestSessionGuardRefusalLeavesEveryFileUntouched(t *testing.T) {
+	a, _ := guardedApp(t, time.Second, false)
+	var occupied, free *core.Task
+	var box *core.Epic
+	offGuard(a, func() {
+		occupied, _ = a.Add("occupied", AddOpts{Repos: []string{"o/glyph"}, Status: "ready"})
+		free, _ = a.Add("free", AddOpts{Repos: []string{"o/furrow"}, Status: "ready"})
+		box, _ = a.EpicAdd("box", EpicAddOpts{Repos: []string{"o/glyph"}})
+	})
+	_, err := a.Attach(occupied.ID, "shot.png", []byte("png"))
+	wantSessionBusy(t, err, occupied.ID)
+	if assets, _ := a.Store.ListAssets(); len(assets) != 0 {
+		t.Fatalf("a refused attach must leave no asset: %+v", assets)
+	}
+	_, _, err = a.EpicSetBody(box.ID, "# clobbered")
+	wantSessionBusy(t, err, box.ID)
+	_, _, err = a.EpicNote(box.ID, "leaked")
+	wantSessionBusy(t, err, box.ID)
+	if body, _ := a.Store.LoadBody(box.ID); body != "# box\n" {
+		t.Fatalf("a refused epic prose write must not land: %q", body)
+	}
+	_, err = a.DoneManyNote([]string{free.ID, occupied.ID}, "batch note")
+	wantSessionBusy(t, err, occupied.ID)
+	if body, _ := a.Store.LoadBody(free.ID); body != "# free\n" {
+		t.Fatalf("a refused batch must not annotate the free task first: %q", body)
+	}
+	if got, _, _ := a.Get(free.ID); got.Status != "ready" {
+		t.Fatalf("free task moved: %s", got.Status)
 	}
 }
 

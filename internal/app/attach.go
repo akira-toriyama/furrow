@@ -27,8 +27,14 @@ func (a *App) Attach(id, srcName string, data []byte) (*AttachResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !idx.Has(id) {
+	t, i := idx.Find(id)
+	if i < 0 {
 		return nil, a.notFoundTask(id)
+	}
+	// Guarded BEFORE the asset lands: AppendBody guards too, but by then the
+	// asset would already be on disk — an orphan on a refusal.
+	if err := a.guardTask(t); err != nil {
+		return nil, err
 	}
 	name, err := a.Store.SaveAsset(id, srcName, data)
 	if err != nil {

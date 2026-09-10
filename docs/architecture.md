@@ -756,15 +756,19 @@ SetMany / epic funnels (the entity's repos BEFORE ∪ AFTER the edit, so
 `--add-repo` and `--rm-repo` are judged on both sides), and every path that
 saves without them (`moveMany`, `DoneNote`, `AddNote`, `SetBody`,
 `AppendBody`, `ReorderRelative`, the dep editors, `EpicAdd`). A refusal
-leaves the store untouched: the guard runs before `Save`, and the paths that
-write a body first are guarded before that write too.
+leaves the store untouched: the guard runs before `Save`, before the asset
+write in `Attach`, before `fn` in the epic funnel (whose prose paths write the
+body inside `fn`), and over the whole batch before `moveMany`'s per-id
+`--note` loop — pinned by `TestSessionGuardRefusalLeavesEveryFileUntouched`,
+which a first review wrote three failing versions of.
 
 The decision is pure (`core.SessionClashes`): self is the registry entry with
 this process's `CLAUDE_PID` (or session id); an occupant is any other live
 session that started strictly EARLIER and whose cwd derives to a repo the
 write touches (`repoForDir`, the `repo = "auto"` derivation, worktree-aware);
 a clash is *busy* when the occupant's transcript mtime is within
-`[session].busy_seconds` of now or cannot be found, else *idle*. Busy refuses
+`[session].busy_seconds` of now or cannot be found, else *idle* (`busy_seconds
+= 0` makes every clash idle: refusals off, guard on). Busy refuses
 (exit 2, `session-busy`, `details.clashes`, `details.hint` = `--draft` on an
 add); idle records the clash for the CLI, which prints one stderr warning and
 puts `session_warn {clashes}` in the `--json` envelope (`cli.sessionGuardExtra`,
@@ -772,12 +776,15 @@ drained once — by the envelope annotate or by the root post-run hook for the
 writes that have no envelope). First come, first served is what keeps the
 autonomous session safe: its own writes never clash with a later watcher.
 
-Three stand-downs, each with one stderr `note: session guard: …` line and
+Four stand-downs, each with one stderr `note: session guard: …` line and
 never a refusal: no `CLAUDECODE` env (a human shell, CI — the guard is not
 even armed), a registry that cannot be read (`doctor` names it,
-`session-registry-unreadable`), and a self that is not in it (an unregistered
+`session-registry-unreadable`), a self that is not in it (an unregistered
 autonomous session refused on a guess would be a NEW failure, worse than the
-one prevented). The registry is Claude Code's private format, measured on
+one prevented), and a self whose own transcript cannot be found — self is
+running, so its transcript exists, and failing to find it means the
+derivation is wrong, under which every occupant would read as busy. The note
+is drained on the error path too (cobra skips the post-run hook there). The registry is Claude Code's private format, measured on
 2026-09-10 and read in exactly one package (`internal/claudecode`); the
 board-level `[session]` section holds the one knob because what "still
 working" means is a policy of the board the sessions share.

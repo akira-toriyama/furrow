@@ -413,7 +413,7 @@ the user-level config. When you work with any furrow store:
   `details.clashes` (`repo`/`pid`/`session_id`/`name`/`cwd`/`started_at`/
   `last_active`/`idle_seconds`/`busy`), `details.hint` = `--draft` on an add —
   while that session wrote its transcript within `[session].busy_seconds`
-  (default 300; no transcript found = busy), and goes through with a stderr
+  (default 300; no transcript found = busy; `0` = warn only), and goes through with a stderr
   warning plus a **`session_warn`** `{clashes}` envelope key once it has been
   quiet longer (every envelope of a batch; `add` is stderr-only). Judged on
   the entity's repos: a new task's AFTER the board-scope union, an existing
@@ -421,9 +421,10 @@ the user-level config. When you work with any furrow store:
   earlier session's own writes never clash. The escape is `add --draft`
   (attach later with `furrow repo <id> --add`), never a force flag; otherwise
   wait, hand the write to that session, or use a shell outside Claude Code —
-  a human shell and CI pass untouched. Best-effort: an unreadable registry or
-  an unregistered self makes the guard STAND DOWN with a `note: session guard:
-  … standing down` line, never refuse on a guess; `doctor` warns
+  a human shell and CI pass untouched. Best-effort: an unreadable registry,
+  an unregistered self, or a self whose own transcript cannot be found makes
+  the guard STAND DOWN with a `note: session guard: … standing down` line,
+  never refuse on a guess; `doctor` warns
   `session-registry-unreadable` when the registry no longer parses. The
   registry format (`~/.claude/sessions/<pid>.json`, transcript mtime as
   activity) is Claude Code's private layout, read in ONE place —

@@ -133,7 +133,7 @@ stale_after_days = 14
 # wrote its transcript within this many seconds, and goes through with a
 # warning (stderr + `session_warn` in the --json envelope) once it has been
 # quiet longer. A session whose transcript cannot be found counts as busy.
-# 0 never refuses a session with a readable transcript (warn only).
+# 0 turns refusals off: every clash is a warning (the guard stays on).
 busy_seconds = 300
 
 [alias]

@@ -41,7 +41,9 @@ type SessionClash struct {
 // earlier session's own writes never clash), and (c) sits in a checkout whose
 // repo — repoOf(cwd), "" when underivable — is one the write touches. A clash
 // is Busy when the occupant's LastActive is unknown or within busyWithin of
-// now; busyWithin <= 0 makes every KNOWN activity idle (warn only).
+// now; busyWithin <= 0 is the warn-only switch — nothing is busy, unknown
+// activity included, so an operator can turn refusals off without turning
+// the guard off.
 //
 // A self with a zero StartedAt cannot be ordered against anyone and yields no
 // clash: the caller decides what "self not in the registry" means (the app
@@ -69,7 +71,7 @@ func SessionClashes(self Session, others []Session, repoOf func(cwd string) stri
 		}
 		c := SessionClash{
 			Repo: repo, PID: o.PID, SessionID: o.ID, Name: o.Name, CWD: o.CWD,
-			StartedAt: o.StartedAt.UTC().Truncate(time.Second), Busy: true,
+			StartedAt: o.StartedAt.UTC().Truncate(time.Second), Busy: busyWithin > 0,
 		}
 		if !o.LastActive.IsZero() {
 			last := o.LastActive.UTC().Truncate(time.Second)

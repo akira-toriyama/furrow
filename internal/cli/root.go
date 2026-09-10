@@ -88,6 +88,13 @@ func Execute() int {
 	if fe == nil {
 		fe = &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: err.Error()}
 	}
+	// cobra skips PersistentPostRunE on a failed RunE, so a session-guard
+	// stand-down note queued before a later validation failure would be lost
+	// with it; drain here so the note precedes the error envelope.
+	if a := autoCommitApp; a != nil {
+		autoCommitApp = nil
+		sessionGuardExtra(a)
+	}
 	// Remap a signal-caused interruption to 128+signal, leaving the envelope's
 	// code field consistent with the process exit code.
 	fe.Code = interruptedExitCode(fe, caught.Load())

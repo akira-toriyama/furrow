@@ -1462,12 +1462,18 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, error) {
 	if len(missing) > 0 {
 		return nil, a.batchMissingErr(missing, len(order)+len(missing), "moved")
 	}
-	now := a.Clock.Now()
+	// The guard runs over the WHOLE batch before the loop writes anything: a
+	// `--note` lands on each body as the loop goes, so a refusal on the third
+	// id must not leave the first two annotated.
 	for _, id := range order {
 		t, _ := idx.Find(id)
 		if err := a.guardTask(t); err != nil {
 			return nil, err
 		}
+	}
+	now := a.Clock.Now()
+	for _, id := range order {
+		t, _ := idx.Find(id)
 		before, err := core.MarshalTask(t)
 		if err != nil {
 			return nil, err

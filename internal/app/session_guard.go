@@ -125,8 +125,16 @@ func (a *App) sessionSnapshot() (self core.Session, others []core.Session, ok bo
 				break
 			}
 		}
-		if !found {
+		switch {
+		case !found:
 			a.sessionNotes = append(a.sessionNotes, fmt.Sprintf("session guard: this session (pid %d) is not in the Claude Code session registry, so its writes cannot be ordered against other sessions; standing down", a.Self.PID))
+		case a.sessionSelf.LastActive.IsZero():
+			// Self IS running, so its transcript exists; if the adapter cannot
+			// find it, the transcript derivation is what is broken (a moved
+			// directory, a different path mangling) — and every occupant would
+			// read as "activity unknown = busy". That is a guess, so stand down.
+			a.sessionNotes = append(a.sessionNotes, fmt.Sprintf("session guard: cannot find this session's own transcript (pid %d), so no session's activity can be read; standing down (update furrow if Claude Code moved its transcripts)", a.Self.PID))
+			found = false
 		}
 		a.sessionSelfOK = found
 	}

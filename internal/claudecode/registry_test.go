@@ -42,6 +42,10 @@ func TestMangleCWD(t *testing.T) {
 	if got := mangleCWD("/Volumes/workspace/github.com/o/r"); got != "-Volumes-workspace-github-com-o-r" {
 		t.Fatalf("mangle = %q", got)
 	}
+	// One dash per CHARACTER, not per byte (see transcriptPath).
+	if got := mangleCWD("/w/仕事/r"); got != "-w----r" {
+		t.Fatalf("rune-wise mangle = %q", got)
+	}
 }
 
 func TestScanReadsLiveEntriesAndTranscriptMtime(t *testing.T) {
@@ -78,6 +82,9 @@ func TestScanSkipsBrokenEntryButFailsWhenNothingParses(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sdir, "13.json"), []byte(`{"process":13,"dir":"/x"}`), 0o644); err != nil {
 		t.Fatal(err) // a renamed-field entry: parses, but lacks what the guard needs
 	}
+	if err := os.WriteFile(filepath.Join(sdir, "14.json"), []byte(`{"pid":14,"sid":"x","cwd":"/x","startedAt":1}`), 0o644); err != nil {
+		t.Fatal(err) // only sessionId renamed: no transcript could ever be found — unreadable, not "busy forever"
+	}
 	if err := os.WriteFile(filepath.Join(sdir, "notes.txt"), []byte("ignored"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +96,7 @@ func TestScanSkipsBrokenEntryButFailsWhenNothingParses(t *testing.T) {
 	if len(got) != 1 || got[0].PID != 11 {
 		t.Fatalf("sessions = %+v", got)
 	}
-	if len(unreadable) != 2 {
+	if len(unreadable) != 3 {
 		t.Fatalf("unreadable = %v", unreadable)
 	}
 	// Remove the good one: every entry unreadable is the format-change shape.
@@ -128,12 +135,20 @@ func TestSelfReadsEnv(t *testing.T) {
 	if pid, _, ok := Self(); !ok || pid != 0 {
 		t.Fatalf("unparsable pid must be 0 under Claude Code: %d %v", pid, ok)
 	}
+	t.Setenv(EnvPID, "-3")
+	if pid, _, ok := Self(); !ok || pid != 0 {
+		t.Fatalf("a negative pid must be 0: %d %v", pid, ok)
+	}
 }
 
 func TestDefaultDirHonorsOverride(t *testing.T) {
 	t.Setenv(EnvConfigDir, "/tmp/cc-alt/")
 	if d, err := DefaultDir(); err != nil || d != "/tmp/cc-alt" {
 		t.Fatalf("override: %q %v", d, err)
+	}
+	t.Setenv(EnvConfigDir, "rel/dir")
+	if d, err := DefaultDir(); err != nil || !filepath.IsAbs(d) {
+		t.Fatalf("a relative override resolves to an absolute path: %q %v", d, err)
 	}
 	t.Setenv(EnvConfigDir, "")
 	d, err := DefaultDir()
@@ -145,6 +160,9 @@ func TestDefaultDirHonorsOverride(t *testing.T) {
 func TestProcessAliveSelfAndBogus(t *testing.T) {
 	if !processAlive(os.Getpid()) {
 		t.Fatal("own pid must be alive")
+	}
+	if processAlive(0) || processAlive(-1) {
+		t.Fatal("pid 0 / a negative pid name a process GROUP to kill(2); never a session")
 	}
 	if processAlive(1<<30 - 1) {
 		t.Fatal("an absurd pid must be dead")
