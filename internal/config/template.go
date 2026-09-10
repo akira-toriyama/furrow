@@ -135,6 +135,17 @@ stale_days = 30
 # 0 disables both. A never-reviewed repo or box stays quiet either way.
 stale_after_days = 14
 
+[session]
+# The co-located-session write guard, active only under Claude Code (the
+# CLAUDECODE env; a human shell and CI pass untouched). A write that touches a
+# repo another, EARLIER-started session on this machine sits in is refused
+# (exit 2, kind ` + "`session-busy`" + `; ` + "`add`" + ` escapes with --draft) while that session
+# wrote its transcript within this many seconds, and goes through with a
+# warning (stderr + ` + "`session_warn`" + ` in the --json envelope) once it has been
+# quiet longer. A session whose transcript cannot be found counts as busy.
+# 0 never refuses a session with a readable transcript (warn only).
+busy_seconds = 300
+
 [alias]
 # Board-level command aliases, git-style: ` + "`furrow <name> …`" + ` expands to the
 # command string with the rest of argv appended. A builtin always wins (a

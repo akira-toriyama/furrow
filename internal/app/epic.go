@@ -115,6 +115,10 @@ func (a *App) EpicAdd(title string, o EpicAddOpts) (*core.Epic, error) {
 		repos = []string{a.DefaultRepo}
 	}
 
+	if err := a.guardRepos("", repos, ""); err != nil {
+		return nil, err
+	}
+
 	id, err := a.uniqueEpicID(epics)
 	if err != nil {
 		return nil, err
@@ -750,6 +754,11 @@ func (a *App) mutateEpicStamping(ref string, alwaysStamp bool, fn func(*core.Epi
 		return nil, nil, err
 	}
 	if err := fn(e); err != nil {
+		return nil, nil, err
+	}
+	// Both sides of the edit, as for a task (App.mutateIn): a repo the box is
+	// gaining or shedding is a repo the write touches.
+	if err := a.guardRepos(id, unionRepos(before.Repos, e.Repos), ""); err != nil {
 		return nil, nil, err
 	}
 	// Same rule as tasks (App.stampIfChanged): a box whose edit changed nothing

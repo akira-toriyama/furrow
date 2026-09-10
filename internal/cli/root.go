@@ -223,7 +223,14 @@ func newRootCmd() *cobra.Command {
 		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
 			a := autoCommitApp
 			autoCommitApp = nil // consume: the next command re-populates via openApp
-			if a == nil || !mutatingCommands[cmd.Name()] {
+			if a == nil {
+				return nil
+			}
+			// The session guard's stderr output for the writes that have no
+			// {before,after,changed} envelope to annotate (add, epic, attach):
+			// a no-op when an envelope path already drained it.
+			sessionGuardExtra(a)
+			if !mutatingCommands[cmd.Name()] {
 				return nil
 			}
 			if a.AutoCommit {

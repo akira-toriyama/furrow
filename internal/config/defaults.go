@@ -61,6 +61,15 @@ var (
 	// stale_after_days of 0 disables the nudge. The GTD weekly-review cadence
 	// motivates the 14-day default (two missed weeks).
 	DefaultReviewStaleAfterDays = 14
+
+	// DefaultSessionBusySeconds is [session].busy_seconds: how recently another
+	// Claude Code session on this machine must have written its transcript to
+	// count as WORKING in the repo it sits in, which makes a later session's write
+	// into that repo refuse (session-busy) rather than merely warn (session_warn).
+	// Five minutes covers the ordinary gap between tool calls; a long build can
+	// exceed it, which is why silence past it only demotes the refusal to a
+	// warning instead of pretending the session is gone.
+	DefaultSessionBusySeconds = 300
 )
 
 // Config is the effective, validated configuration the rest of furrow reads.
@@ -93,6 +102,11 @@ type Config struct {
 	ReviewStaleAfterDays int
 
 	LabelsRequired bool // when true, a task with zero labels is rejected/flagged
+
+	// SessionBusySeconds is the [session].busy_seconds threshold of the
+	// co-located-session write guard (see DefaultSessionBusySeconds). 0 =
+	// an occupant with a readable activity record is never busy: warn only.
+	SessionBusySeconds int
 
 	// LintArchiveDone is the [lint].archive_done nudge threshold: `furrow lint`
 	// warns when at least this many done tasks are older than ArchiveOlderThanDays
@@ -193,6 +207,7 @@ func Default() *Config {
 		ArchiveOlderThanDays: DefaultArchiveOlderThanDays,
 		RevisitStaleDays:     DefaultRevisitStaleDays,
 		ReviewStaleAfterDays: DefaultReviewStaleAfterDays,
+		SessionBusySeconds:   DefaultSessionBusySeconds,
 		DueIgnoreLanes:       setOf(DefaultDueIgnoreLanes),
 	}
 	c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)

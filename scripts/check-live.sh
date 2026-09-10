@@ -79,6 +79,7 @@ echo "→ smoke: version / init / add / ls --json / next / done / lint / board /
 sb="$(mktemp -d)"
 ( cd "$sb"
   export XDG_CONFIG_HOME="$sb/xdg"   # isolate from the dev's real ~/.config/furrow
+  unset CLAUDECODE                   # the smoke runs inside Claude Code; keep the session guard out of it
   "$BIN" init >/dev/null
   id="$("$BIN" --json add "smoke" -s ready | sed -n 's/.*"id": "\([^"]*\)".*/\1/p' | head -1)"
   "$BIN" ls --json | grep -q '"smoke"'

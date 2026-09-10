@@ -30,10 +30,7 @@ func deriveScopeRepo(mode, startDir string) (repo string, warn []string) {
 		if !ok {
 			return "", []string{"furrow: board active but no enclosing git repo; no repo scope (new tasks are drafts; use -r to attach)"}
 		}
-		if r, ok := originRepo(dir); ok {
-			return r, nil
-		}
-		if r, ok := ghqRepo(dir); ok {
+		if r, ok := repoOfGitDir(dir); ok {
 			return r, nil
 		}
 		return "", []string{fmt.Sprintf("furrow: cannot derive owner/repo for %s (no usable origin URL or ghq-style path); new tasks are drafts (use -r to attach)", dir)}
@@ -45,6 +42,26 @@ func deriveScopeRepo(mode, startDir string) (repo string, warn []string) {
 		}
 		return "", []string{fmt.Sprintf("furrow: board repo %q is not owner/repo-shaped; ignoring it (use \"auto\", \"\", or owner/repo)", mode)}
 	}
+}
+
+// repoForDir is the whole derivation for an arbitrary directory — the nearest
+// enclosing checkout's owner/repo, or ok=false — shared by the "auto" scope
+// arm and the session guard (another session's cwd → the repo it occupies).
+func repoForDir(dir string) (string, bool) {
+	gd, ok := nearestGitDir(dir)
+	if !ok {
+		return "", false
+	}
+	return repoOfGitDir(gd)
+}
+
+// repoOfGitDir derives owner/repo for a directory that IS a checkout root:
+// the origin URL first, the ghq-style path as the fallback.
+func repoOfGitDir(gitDir string) (string, bool) {
+	if r, ok := originRepo(gitDir); ok {
+		return r, true
+	}
+	return ghqRepo(gitDir)
 }
 
 // nearestGitDir walks up from startDir looking for a directory holding a `.git`
