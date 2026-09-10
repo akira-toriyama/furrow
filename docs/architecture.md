@@ -2,11 +2,11 @@
 
 furrow is a clonable, git-native, plain-text task tracker — an alternative to
 GitHub Projects/Issues — written in Go (module
-`github.com/akira-toriyama/furrow`, Go 1.25+). One board can back many repos (a
-central board, each task carrying its repos as first-class `owner/repo`
-identifiers) or live repo-local in a single repo's `.furrow/`. This document
-describes how the
-code is organized, why the layers are shaped the way they are, and which
+`github.com/akira-toriyama/furrow`, Go 1.25+). One board can live outside the
+repos it backs and be reached by configuration (a central board — each task
+carries its repos as first-class `owner/repo` identifiers, so one board can back
+many) or sit repo-local in a single repo's `.furrow/`. This document describes
+how the code is organized, why the layers are shaped the way they are, and which
 invariants hold the design together. It is the canonical reference for the
 package layout; the storage *rationale* lives in [`non-goals.md`](non-goals.md).
 
@@ -1152,8 +1152,11 @@ so this needs no new port.
 
 There is a **second**, machine-specific config — the user-level
 `${XDG_CONFIG_HOME:-~/.config}/furrow/config.toml` — that declares one or more
-**central boards**: a single `.furrow` that backs many repos *without* a per-repo
-`.furrow-pointer.toml`. It is to the board-local `config.toml` what `~/.gitconfig`
+**central boards**: a `.furrow` that sits *outside* the repos it backs and is
+reached by configuration rather than by sitting in the checkout — so one board
+can back many, though the count is a consequence, not the definition. This is
+the arm that needs no per-repo `.furrow-pointer.toml`. It is to the board-local
+`config.toml` what `~/.gitconfig`
 is to a repo's `.git/config`: ambient and personal, never committed. Each board
 is a `[[board]]` table (an array, so several can coexist) carrying `path`,
 `scopes`, `repo`, `label`, `auto_filter`, and `autocommit`. The annotated
@@ -1166,7 +1169,7 @@ Resolution is split across two layers, honouring the purity rule:
 - **`internal/config` (pure; reads everywhere, writes only for `config set`)** parses the `[[board]]` array and
   **clamps per entry**: an entry with no `path`, or no `scopes` after blank
   strings are pruned, is dropped with a warning; if every entry is dropped the
-  result is "no central board" (`nil`). It never touches cwd, the filesystem, or
+  result is "no user-level board" (`nil`). It never touches cwd, the filesystem, or
   symlinks — it only shapes what the file says. A legacy single `[board]` table
   decodes into a one-element array whose old `scope` key is ignored, so it clamps
   away to "no board" rather than erroring (the accepted rollout-window
@@ -1182,7 +1185,7 @@ Resolution is split across two layers, honouring the purity rule:
   the file with one synthetic board whose nil scopes are a sentinel for "derive
   the scope from the board repo's parent".
 
-A central board injects a scope repo exactly like a pointer (see the coordinator
+A `[[board]]` entry injects a scope repo exactly like a pointer (see the coordinator
 contract): `repo = "auto"` derives the owner/repo from the enclosing checkout
 (git origin URL, worktree-aware, ghq-path fallback — file reads only, never a
 git subprocess), which is how a cross-repo tracker attaches each task to its

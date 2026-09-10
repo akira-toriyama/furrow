@@ -15,8 +15,8 @@ A furrow command discovers its store from the current directory (walking up for 
 environment**, so make the store explicit. Two clean options:
 
 - **`FURROW_BOARD=/abs/path/to/.furrow`** — point straight at a central board
-  (its scope is derived from the board repo's parent). Best for a cross-repo
-  central board.
+  (its scope is derived from the board repo's parent). Best for a central
+  board, whatever number of repos it backs.
 - **`WorkingDirectory=/abs/path/to/repo`** — run "inside" a repo whose store (or
   pointer, or enclosing board scope) discovery then finds normally.
 

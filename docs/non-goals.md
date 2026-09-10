@@ -17,8 +17,8 @@ furrow ships no Model Context Protocol server. — *The plain CLI is already the
 agent interface: `--json`/`--ndjson` on every read, `{before, after, changed}`
 on mutations, machine-actionable error envelopes (`candidates`,
 `sync-conflict` paths), and a plain-text store the agent can read — and, for
-bodies, write — directly. That holds for multi-repo, multi-machine central
-boards too: the board is a git repo, so "remote access" is `git clone`, not a
+bodies, write — directly. That holds for a shared central board backing many
+repos too: the board is a git repo, so "remote access" is `git clone`, not a
 protocol. An MCP server would add a daemon to run and a second interface to
 keep in lockstep with the CLI, for zero new capability.*
 
@@ -130,8 +130,8 @@ furrow never raises a board's layout version on its own. An ordinary write to a
 board older than the binary is **refused** (`schema-upgrade-required`, exit 2 —
 the board stays fully readable, just read-only) rather than silently upgraded;
 only the explicit `furrow upgrade` (preview unless `--yes`) moves the number. —
-*A board is shared: one clone, many machines, and — through each repo's pinned
-`sync-task-status.yml@vX.Y.Z` — many binaries that are deliberately NOT the
+*A board is shared by default: one clone, many machines, and — through each repo's
+pinned `sync-task-status.yml@vX.Y.Z` — many binaries that are deliberately NOT the
 newest. Raising the layout is therefore a **flag day** for every one of them, and
 a flag day cannot be a side effect. It was one, once: on 2026-07-13 a routine
 `furrow sync` from an unreleased source build migrated the shared central board
@@ -157,11 +157,11 @@ board repo (every machine then wants the matching older binary again).*
 
 ### No cloud / hosted / web-app backend
 furrow has no server, no account, no hosted state. — *The store lives under
-`.furrow/` in a git repo the user owns — a code repo, or a dedicated central
-tracker repo; multi-machine and multi-repo use is git (clone + `furrow sync`),
-not a service. Cloud-/Issue-/account-backed candidates (Linear, Notion, GitHub
-Projects, CCPM, Spec Kit) were explicitly dropped for assuming a remote
-backend.*
+`.furrow/` in a git repo the user owns — a code repo, or a tracker repo of its
+own (a **central board**); multi-machine and multi-repo use is git (clone +
+`furrow sync`), not a service. Cloud-/Issue-/account-backed candidates (Linear,
+Notion, GitHub Projects, CCPM, Spec Kit) were explicitly dropped for assuming a
+remote backend.*
 
 ### Any UI is a separate front-end, not part of this repo
 furrow is **CLI-only**. The one presentation layer in-repo is `internal/cli`;

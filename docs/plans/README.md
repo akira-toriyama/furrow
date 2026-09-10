@@ -28,8 +28,8 @@ too long-running to finish in one sitting gets a **plan file** in this directory
 
 These ad-hoc plan files are a stopgap. furrow exists to replace exactly this kind
 of scattered, hand-maintained task tracking. Once furrow is comfortably eating
-its own dog food, prefer tracking work in a `.furrow/` store (or a central furrow
-tracker) over a new `docs/plans/*.md`.
+its own dog food, prefer tracking work in a repo-local `.furrow/` store (or a
+central board) over a new `docs/plans/*.md`.
 
 ---
 
