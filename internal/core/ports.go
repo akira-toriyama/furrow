@@ -147,6 +147,12 @@ type Store interface {
 	// the board's layout version: read-only has to mean read-only for every shard
 	// kind, or a stale board could still be mutated through its newest entity.
 	SaveEpic(e *Epic) error
+	// DeleteEpic removes one epic shard (epics/<id>.json). Absent is not an
+	// error (mirrors DeleteBody), so a re-run after a partial `furrow epic rm`
+	// is idempotent. Gated like every write. It deletes the SHARD only: the
+	// box's body and any member's `epic` field are the app's to settle first —
+	// a store cannot know what still points at the box.
+	DeleteEpic(id string) error
 	// ListEpicIDs returns the ids of all epic shards (epics/<id>.json), for the
 	// shard-filename/id integrity lint — the epics/ twin of ListTaskIDs.
 	ListEpicIDs() ([]string, error)

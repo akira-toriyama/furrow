@@ -48,7 +48,7 @@ var mutatingCommands = map[string]bool{
 	"move": true, "reorder": true, "retitle": true, "set": true, "value": true,
 	"effort": true, "check": true, "dep": true, "epic": true, "label": true,
 	"repo": true, "ref": true, "review": true, "apply": true, "archive": true,
-	"upgrade": true,
+	"rm": true, "upgrade": true,
 }
 
 // Execute builds the root command, runs it, and maps the result to furrow's
@@ -249,11 +249,18 @@ func newRootCmd() *cobra.Command {
 			// {before,after,changed} envelope to annotate (add, epic, attach):
 			// a no-op when an envelope path already drained it.
 			sessionGuardExtra(a)
-			if !mutatingCommands[cmd.Name()] {
+			// The gate is keyed by the TOP-LEVEL name: cobra hands the hook the
+			// LEAF command, so `epic activate` used to arrive as "activate", miss
+			// the set, and leave the activation record it wrote into the box's
+			// body neither committed nor journaled (measured 2026-09-10: a plain
+			// sync reported it pending). The `epic` entry always meant the whole
+			// subtree.
+			top, path := topLevel(cmd)
+			if !mutatingCommands[top] {
 				return nil
 			}
 			if a.AutoCommit {
-				for _, w := range a.AutoCommitFlush(cmd.Context(), cmd.Name(), args).Warnings {
+				for _, w := range a.AutoCommitFlush(cmd.Context(), path, args).Warnings {
 					fmt.Fprintln(errOut, w)
 				}
 			}
@@ -312,6 +319,7 @@ func newRootCmd() *cobra.Command {
 		newSyncCmd(),
 		newArchiveCmd(),
 		newUnarchiveCmd(),
+		newRmCmd(),
 		newTidyCmd(),
 		newMigrateCmd(),
 		newUpgradeCmd(),
@@ -323,6 +331,17 @@ func newRootCmd() *cobra.Command {
 		newVocabCmd(),
 	)
 	return root
+}
+
+// topLevel resolves the command the root registered for cmd (cmd itself, or
+// the ancestor just below the root) and cmd's path without the root name
+// (`epic activate`) — the gate key and the autocommit subject respectively.
+func topLevel(cmd *cobra.Command) (name, path string) {
+	top := cmd
+	for top.HasParent() && top.Parent().HasParent() {
+		top = top.Parent()
+	}
+	return top.Name(), strings.TrimPrefix(cmd.CommandPath(), cmd.Root().Name()+" ")
 }
 
 // expandAlias rewrites args when the first arg names a board-config [alias],

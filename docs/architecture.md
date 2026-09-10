@@ -806,7 +806,7 @@ except where noted:
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`,
 `board`, `boards`, `doctor`, `edit`, `note`, `attach`, `done`, `move`, `set`, `reorder`,
 `retitle`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`, `review`,
-`apply`, `sync`, `archive`, `unarchive`, `tidy`, `upgrade`, `lint`, `config` (`init`/`path`/`set`), `schema`, `version`,
+`apply`, `sync`, `archive`, `unarchive`, `rm`, `tidy`, `upgrade`, `lint`, `config` (`init`/`path`/`set`), `schema`, `version`,
 `migrate`.
 
 - **`set`** applies the routine triage edits — lane, POSITION (`--priority`, or

@@ -9,7 +9,7 @@ furrow's own tasks live on the **central board** (the private
 `.furrow/`**, so `furrow` commands run here resolve to the central board via
 the user-level config. When you work with any furrow store:
 
-- Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|unarchive|tidy|upgrade|lint|config|init|migrate|schema|version`.
+- Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|unarchive|rm|tidy|upgrade|lint|config|init|migrate|schema|version`.
   **`furrow brief [--json]` is the session-start read**: the sync → `next -r` →
   `show <id>` ritual in ONE process — the **due** band FIRST (`due`,
   `{overdue, today}`, longest-overdue first, omitted when nothing has arrived: a
@@ -67,7 +67,21 @@ the user-level config. When you work with any furrow store:
   all-or-nothing, fields untouched (still done + closed; reopening is
   `move`'s job), body and assets included; every mutator's miss on an
   archived id says so (`details.archived` + the restore command), so the
-  archive is a round trip, not a one-way door. The READMEs' command table is **generated**
+  archive is a round trip, not a one-way door. **`rm <id>...` / `epic rm
+  <epic>` DELETE outright** (shard + body + assets; git history is the only
+  way back) — the withdrawal of a filing, never a retirement: archive is for
+  done work, rm for the record that should not have been filed, and everyday
+  parking stays icebox. Preview unless `--yes`, all-or-nothing on a miss. A
+  target still referenced — a dep edge, a live `[[id]]` link in any body, a
+  box's members or the epics whose deps name it — is refused (exit 2, kind
+  `referenced`, `details.references` = `{deps, links, members, epic_deps}`);
+  `--force` severs instead (edge dropped, link de-linked to the bare id,
+  member unfiled) without advancing anyone's `updated`. Targets never
+  reference each other (a chain removes in one call); ids are never reused.
+  Guarded by the session write guard on the targets AND every entity
+  `--force` edits; the deletion is furrow-owned, so a plain `furrow sync`
+  publishes it. `--json` = one report `{dry_run, force, tasks|epic,
+  references}`. The READMEs' command table is **generated**
   from this very cobra tree (hidden `furrow commands`, spliced by
   `scripts/gen-command-table.sh`, drift-checked by check.sh/CI): to change a
   command's one-liner or flags, edit `Short`/flag definitions in
@@ -441,8 +455,8 @@ the user-level config. When you work with any furrow store:
   is a **separate front-end** that drives furrow through its CLI/JSON contract —
   planned: **ridge** (github.com/akira-toriyama/ridge, a charm-v2 TUI, a CLI/JSON
   client) and **loom** (github.com/akira-toriyama/loom, a from-scratch TUI
-  framework, future/gated). Destructive ops guard themselves: `furrow archive`
-  and `furrow tidy` preview unless `--yes` (tidy also demands naming a class:
+  framework, future/gated). Destructive ops guard themselves: `furrow archive`,
+  `furrow rm` / `epic rm`, and `furrow tidy` preview unless `--yes` (tidy also demands naming a class:
   `--done-deps` / `--unknown-keys`).
 
 ## What this is

@@ -197,3 +197,30 @@ func TestNextEpicIDUsesTheEpicPrefix(t *testing.T) {
 		t.Errorf("two NextEpicID calls returned the same id %q", id)
 	}
 }
+
+// DeleteEpic removes exactly epics/<id>.json; an absent shard is a no-op, so a
+// re-run after a partial `epic rm` is idempotent.
+func TestDeleteEpic(t *testing.T) {
+	s, root := epicStore(t)
+	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveEpic(sampleEpic("e-gone", "gone")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveEpic(sampleEpic("e-stay", "stays")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteEpic("e-gone"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "epics", "e-gone.json")); !os.IsNotExist(err) {
+		t.Errorf("shard survived: %v", err)
+	}
+	if _, ok, _ := s.LoadEpic("e-stay"); !ok {
+		t.Error("the other shard went too")
+	}
+	if err := s.DeleteEpic("e-gone"); err != nil {
+		t.Errorf("absent is not an error: %v", err)
+	}
+}

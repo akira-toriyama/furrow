@@ -47,3 +47,18 @@ func TestLinkPatternHonorsPrefix(t *testing.T) {
 		t.Errorf("with prefix issue-: got %v, want %v", got, want)
 	}
 }
+
+// UnlinkIDs turns the named [[id]]s into bare ids outside code, leaves other
+// links and every code-quoted example verbatim, and counts what it changed.
+func TestUnlinkIDs(t *testing.T) {
+	re := LinkPattern("t-")
+	in := "see [[t-aa]] and [[t-bb]], `[[t-aa]]` stays\n```\n[[t-aa]]\n```\n[[t-aa]] again"
+	got, n := UnlinkIDs(in, re, map[string]bool{"t-aa": true})
+	want := "see t-aa and [[t-bb]], `[[t-aa]]` stays\n```\n[[t-aa]]\n```\nt-aa again"
+	if got != want || n != 2 {
+		t.Errorf("UnlinkIDs = %q (n=%d), want %q (n=2)", got, n, want)
+	}
+	if links := ExtractLinks(got, re); len(links) != 1 || links[0] != "t-bb" {
+		t.Errorf("links after unlink = %v, want [t-bb]", links)
+	}
+}

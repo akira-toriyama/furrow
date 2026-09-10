@@ -30,7 +30,7 @@ func newEpicCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
 	cmd.AddCommand(newEpicAddCmd(), newEpicLsCmd(), newEpicShowCmd(), newEpicSetCmd(),
-		newEpicActivateCmd(), newEpicDeactivateCmd(), newEpicDoneCmd(), newEpicReopenCmd(), newEpicDepCmd())
+		newEpicActivateCmd(), newEpicDeactivateCmd(), newEpicDoneCmd(), newEpicReopenCmd(), newEpicDepCmd(), newEpicRmCmd())
 	return cmd
 }
 
