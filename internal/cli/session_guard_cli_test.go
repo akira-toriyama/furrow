@@ -181,4 +181,33 @@ func TestCLISessionGuardHumanAndStandDown(t *testing.T) {
 	if !strings.Contains(out, `"session-registry-unreadable"`) {
 		t.Fatalf("doctor should name the unreadable registry:\n%s", out)
 	}
+	// The note survives a run that FAILS after the guard ran (cobra skips the
+	// post-run hook there): `dep` guards, then rejects the unknown dep id.
+	id := addTask(t, "y", "-r", "o/glyph")
+	so, se, code = runSplit(t, "dep", id, "t-nope")
+	if code != 2 || !strings.Contains(se, "note: session guard:") {
+		t.Fatalf("stand-down note lost on the error path: exit %d\nSTDOUT=%q\nSTDERR=%q", code, so, se)
+	}
+}
+
+func TestCLISessionGuardRefusalNeverClaimsTheWriteWentThrough(t *testing.T) {
+	initStore(t)
+	cc, _ := armGuard(t, 20*time.Minute) // o/glyph occupant idle
+	// A second, BUSY occupant in o/other (pid 1 — init/launchd, alive on every
+	// unix host, and a foreign uid reads alive too): the batch clashes idle on
+	// the first id and busy on the second, so the run fails after an idle
+	// clash was queued.
+	other := plantCheckout(t, "o/other")
+	plantSession(t, cc, 1, "busy-sid", other, time.Now().Add(-2*time.Hour), time.Now())
+	t.Setenv(claudecode.EnvActive, "")
+	a := addTask(t, "a", "-r", "o/glyph", "-s", "ready")
+	b := addTask(t, "b", "-r", "o/other", "-s", "ready")
+	t.Setenv(claudecode.EnvActive, "1")
+	so, se, code := runSplit(t, "--json", "done", a, b)
+	if code != 2 {
+		t.Fatalf("the busy occupant must refuse the batch: exit %d\n%s%s", code, so, se)
+	}
+	if strings.Contains(se, "went through") || strings.Contains(so, "session_warn") {
+		t.Fatalf("a refused run must not print the idle warning:\n%s%s", so, se)
+	}
 }

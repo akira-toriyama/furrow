@@ -6,8 +6,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/akira-toriyama/furrow/internal/core"
 )
 
 // t-mzek, whole stack: on a board whose scope has exactly ONE active epic, a
@@ -30,10 +28,7 @@ func runSplitStdin(t *testing.T, stdin string, args ...string) (string, string, 
 	if err == nil {
 		return so.String(), se.String(), 0
 	}
-	fe := core.AsError(err)
-	if fe == nil {
-		return so.String(), se.String(), int(core.CodeValidation)
-	}
+	fe := classifyFailure(err) // before the buffers are read (see runSplit)
 	return so.String(), se.String(), int(fe.Code)
 }
 

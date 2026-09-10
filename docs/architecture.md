@@ -759,8 +759,7 @@ saves without them (`moveMany`, `DoneNote`, `AddNote`, `SetBody`,
 leaves the store untouched: the guard runs before `Save`, before the asset
 write in `Attach`, before `fn` in the epic funnel (whose prose paths write the
 body inside `fn`), and over the whole batch before `moveMany`'s per-id
-`--note` loop — pinned by `TestSessionGuardRefusalLeavesEveryFileUntouched`,
-which a first review wrote three failing versions of.
+`--note` loop — pinned by `TestSessionGuardRefusalLeavesEveryFileUntouched`.
 
 The decision is pure (`core.SessionClashes`): self is the registry entry with
 this process's `CLAUDE_PID` (or session id); an occupant is any other live
@@ -784,7 +783,8 @@ autonomous session refused on a guess would be a NEW failure, worse than the
 one prevented), and a self whose own transcript cannot be found — self is
 running, so its transcript exists, and failing to find it means the
 derivation is wrong, under which every occupant would read as busy. The note
-is drained on the error path too (cobra skips the post-run hook there). The registry is Claude Code's private format, measured on
+is drained on the error path too (cobra skips the post-run hook there); the
+idle WARNING is not — it says the write went through, and there it did not. The registry is Claude Code's private format, measured on
 2026-09-10 and read in exactly one package (`internal/claudecode`); the
 board-level `[session]` section holds the one knob because what "still
 working" means is a policy of the board the sessions share.

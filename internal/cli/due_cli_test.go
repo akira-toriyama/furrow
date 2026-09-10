@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/akira-toriyama/furrow/internal/core"
 )
 
 // runSplit drives the real root command with stdout and stderr captured
@@ -27,10 +25,9 @@ func runSplit(t *testing.T, args ...string) (stdout, stderr string, code int) {
 	if err == nil {
 		return so.String(), se.String(), 0
 	}
-	fe := core.AsError(err)
-	if fe == nil {
-		return so.String(), se.String(), int(core.CodeValidation)
-	}
+	// classifyFailure writes the session guard's notes to errOut, so it must
+	// run before the buffers are read (return operands evaluate left to right).
+	fe := classifyFailure(err)
 	return so.String(), se.String(), int(fe.Code)
 }
 
