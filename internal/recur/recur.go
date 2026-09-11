@@ -190,7 +190,8 @@ func splitTerminator(spec string, resolveDate func(string) (time.Time, error)) (
 }
 
 func parseHead(head string) (*rrule.ROption, error) {
-	h := strings.ToLower(strings.TrimSpace(head))
+	typed := strings.TrimSpace(head)
+	h := strings.ToLower(typed)
 	if h == "" {
 		return nil, fmt.Errorf("empty recurrence rule")
 	}
@@ -211,7 +212,7 @@ func parseHead(head string) (*rrule.ROption, error) {
 		h = strings.TrimSpace(h[:i])
 	}
 
-	freq, interval, err := parseFreq(h)
+	freq, interval, err := parseFreq(h, typed)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +238,7 @@ func parseHead(head string) (*rrule.ROption, error) {
 	return opt, nil
 }
 
-func parseFreq(h string) (rrule.Frequency, int, error) {
+func parseFreq(h, typed string) (rrule.Frequency, int, error) {
 	switch h {
 	case "daily":
 		return rrule.DAILY, 0, nil
@@ -250,11 +251,11 @@ func parseFreq(h string) (rrule.Frequency, int, error) {
 	}
 	m := everyRe.FindStringSubmatch(h)
 	if m == nil {
-		return 0, 0, fmt.Errorf("unknown recurrence spelling %q; expected one of: %s (or a raw RRULE line)", h, strings.Join(Spellings, ", "))
+		return 0, 0, fmt.Errorf("unknown recurrence spelling %q; expected one of: %s (or a raw RRULE line)", typed, strings.Join(Spellings, ", "))
 	}
 	n, err := strconv.Atoi(m[1])
 	if err != nil || n < 1 {
-		return 0, 0, fmt.Errorf("the interval in %q must be a positive whole number", h)
+		return 0, 0, fmt.Errorf("the interval in %q must be a positive whole number", typed)
 	}
 	switch strings.TrimSuffix(m[2], "s") {
 	case "day":

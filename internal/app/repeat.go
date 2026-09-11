@@ -296,7 +296,10 @@ func (a *App) RepeatWarning(t *core.Task) string {
 	if !ok {
 		return ""
 	}
-	return fmt.Sprintf("note: day %d does not exist in every month, so the rule skips those months (RFC 5545); `monthly on last` is the rule that always lands", day)
+	// The remedy is `on last`, spelled against whatever rule they typed — naming
+	// a full `monthly on last` prescribed a different FREQUENCY to anyone who
+	// wrote `every 3 months`.
+	return fmt.Sprintf("note: day %d does not exist in every month, so the rule skips those months (RFC 5545); anchoring on the last day instead (`… on last`) always lands", day)
 }
 
 // CompileRepeat exposes the spelling→RRULE compilation to a front-end that

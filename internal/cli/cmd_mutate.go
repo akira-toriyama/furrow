@@ -985,7 +985,7 @@ func newSetCmd() *cobra.Command {
 					}); err != nil {
 					return err
 				}
-				noteBoundRules(cmd, a, cmd.Flags().Changed("repeat"), closed)
+				noteBoundRules(cmd, a, cmd.Flags().Changed("repeat"), closed, rs)
 				rs.print(cmd.OutOrStdout(), closed)
 				return nil
 			}
@@ -1028,7 +1028,7 @@ func newSetCmd() *cobra.Command {
 			// `set -s done` closes like `done` does, so it owes the same receipt:
 			// without it the successor it just minted is invisible until a later
 			// read, and a machine could not tell it from a task that never repeated.
-			noteBoundRules(cmd, a, cmd.Flags().Changed("repeat"), closed)
+			noteBoundRules(cmd, a, cmd.Flags().Changed("repeat"), closed, rs)
 			rs.print(cmd.OutOrStdout(), closed)
 			return nil
 		},
@@ -1217,13 +1217,24 @@ func newRepoCmd() *cobra.Command {
 // noteBoundRules says, once per distinct note, what a rule this write just bound
 // will skip. Only on an actual bind: re-printing it on every unrelated edit of a
 // repeating task taught the reader to ignore it.
-func noteBoundRules(cmd *cobra.Command, a *app.App, bound bool, tasks []*core.Task) {
+func noteBoundRules(cmd *cobra.Command, a *app.App, bound bool, tasks []*core.Task, rs *seriesReports) {
 	if !bound {
 		return
 	}
 	said := map[string]bool{}
 	for _, t := range tasks {
-		w := a.RepeatWarning(t)
+		subject := t
+		// A write that BINDS a rule and CLOSES in one go hands the rule straight
+		// to the successor, so the returned task carries none — follow it, or the
+		// note is silent exactly when a rule was just bound.
+		if subject.Repeat == "" && rs != nil {
+			if r := rs.byID[t.ID]; r != nil && r.Created != nil {
+				if succ, _, err := a.Get(*r.Created); err == nil {
+					subject = succ
+				}
+			}
+		}
+		w := a.RepeatWarning(subject)
 		if w == "" || said[w] {
 			continue
 		}

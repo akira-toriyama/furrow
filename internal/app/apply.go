@@ -84,6 +84,10 @@ type ApplyOutcome struct {
 	// task on merge would create the next occurrence and say nothing, and the
 	// only trace would be a task appearing out of nowhere in someone's next sync.
 	Repeat *RepeatReport `json:"repeat,omitempty"`
+	// WillRepeat marks a DRY-RUN directive that would also create the next
+	// occurrence. The preview cannot name an id — nothing is generated — but
+	// reporting the close as a plain lane move hid that a task is coming.
+	WillRepeat bool `json:"will_repeat,omitempty"`
 }
 
 // ApplyResult is the full report — the JSON output of `furrow apply`. DryRun
@@ -208,6 +212,7 @@ func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMod
 		}
 	case dryRun:
 		out.Action, out.To = "moved", target
+		out.WillRepeat = target == a.Cfg.DoneLane && t.Repeat != "" && t.Status != a.Cfg.DoneLane
 	default:
 		moved, rep, err := a.moveOne(d.ID, target)
 		if err != nil {

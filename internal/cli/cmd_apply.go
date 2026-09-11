@@ -121,6 +121,9 @@ func printApplyResult(res app.ApplyResult) {
 			// A close can CREATE the next occurrence. Saying so only in --json
 			// left the human arm reporting a lane move while a task appeared out
 			// of nowhere in someone's next sync.
+			if o.WillRepeat {
+				fmt.Fprintf(out, "%s  would also create the next occurrence\n", o.ID)
+			}
 			if r := o.Repeat; r != nil {
 				switch {
 				case r.Completed:

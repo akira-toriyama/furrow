@@ -245,3 +245,41 @@ func TestChangedNamesTheRepeatFields(t *testing.T) {
 		t.Errorf("changed = %v, want it to name repeat and repeat_anchor", envs[0].Changed)
 	}
 }
+
+// A write that BINDS a rule and CLOSES in one go hands the rule straight to the
+// successor, so the returned task carries none — the note has to follow it, or
+// it is silent exactly when a rule was just bound.
+func TestTheBindNoteFollowsTheRuleToTheSuccessor(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "y", "--due", "2026-01-31")
+	id := addedID(t, out, code)
+
+	out, code = run(t, "set", id, "-s", "done", "--repeat", "every 3 months")
+	if code != 0 {
+		t.Fatalf("set exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, "does not exist in every month") {
+		t.Errorf("no bind-time note when the rule was bound and closed at once:\n%s", out)
+	}
+	// The remedy must not prescribe a different frequency to someone who wrote
+	// `every 3 months`.
+	if strings.Contains(out, "`monthly on last`") {
+		t.Errorf("the note prescribes a monthly rule for an every-3-months one:\n%s", out)
+	}
+}
+
+// A close CREATES a task. A preview that reports it as a plain lane move hides
+// that one is coming.
+func TestApplyDryRunSaysItWouldCreateTheNextOccurrence(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "x", "--due", "2026-10-01", "--repeat", "monthly")
+	id := addedID(t, out, code)
+
+	out, code = runIn(t, "SetStatus-task: "+id+" done\n", "apply", "--on", "merge", "--dry-run")
+	if code != 0 {
+		t.Fatalf("apply exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, "would also create the next occurrence") {
+		t.Errorf("the preview reported a close as a plain lane move:\n%s", out)
+	}
+}
