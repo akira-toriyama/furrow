@@ -93,6 +93,10 @@ type BoardVocab struct {
 	StaleDays            int      `json:"stale_days"`     // revisit staleness window (0 disables)
 	ArchiveOlderThanDays int      `json:"archive_older_than_days"`
 	LabelsRequired       bool     `json:"labels_required"` // add/lint reject a label-less task
+	// Timezone is the calendar a wall-clock date binds in ([due].timezone).
+	// Empty = undeclared, i.e. the zone of whatever process runs the command —
+	// which is the one thing an operator could not otherwise read anywhere.
+	Timezone string `json:"timezone"`
 }
 
 // SchemaTriple is the write-gate answer: what the BOARD declares, what this
@@ -272,5 +276,6 @@ func (a *App) boardVocab() BoardVocab {
 		StaleDays:            a.Cfg.RevisitStaleDays,
 		ArchiveOlderThanDays: a.Cfg.ArchiveOlderThanDays,
 		LabelsRequired:       a.Cfg.LabelsRequired,
+		Timezone:             a.Cfg.DueTimezoneName,
 	}
 }

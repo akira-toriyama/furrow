@@ -160,8 +160,12 @@ func printBoardHuman(b app.BoardInfo) {
 	if line := boardGitLine(b.Git); line != "" {
 		fmt.Fprintf(out, "git:      %s\n", line)
 	}
-	fmt.Fprintf(out, "stale_days: %d, archive_older_than_days: %d, labels_required: %t\n",
-		b.StaleDays, b.ArchiveOlderThanDays, b.LabelsRequired)
+	tz := b.Timezone
+	if tz == "" {
+		tz = "(process zone)"
+	}
+	fmt.Fprintf(out, "stale_days: %d, archive_older_than_days: %d, labels_required: %t, timezone: %s\n",
+		b.StaleDays, b.ArchiveOlderThanDays, b.LabelsRequired, tz)
 }
 
 // boardGitLine renders the board's git state for humans (doctor's gitLine is the
