@@ -58,6 +58,12 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	if lane != a.Cfg.DoneLane || was == a.Cfg.DoneLane || t.Repeat == "" {
 		return nil, nil, nil
 	}
+	if a.Cfg.DefaultLane == a.Cfg.DoneLane {
+		// bindRepeat refuses this at bind time, but the board's config can change
+		// afterwards — and a successor born in the done lane is closed at birth
+		// holding a live rule, which kills the series in silence.
+		return nil, nil, core.Validationf(t.ID, "this board's default lane (%q) is its done lane, so the next occurrence would be closed at birth — fix [lanes].default, or drop the rule with `furrow set %s --clear-repeat`", a.Cfg.DefaultLane, t.ID)
+	}
 	if t.Due == nil {
 		// Without a due there is nothing to advance FROM: the search would fall
 		// back to the wall clock and hand back the occurrence just closed, which
@@ -279,8 +285,14 @@ func (a *App) bindRepeat(t *core.Task, spec string) error {
 // months that lack it — so `monthly on 31` lands 7 times a year. That is a
 // defensible thing to ask for, so it is not an error; it is also almost never
 // what the operator meant, so it is not silent either.
-func RepeatWarning(line string, anchor time.Time) string {
-	day, ok := recur.SkipsMonths(line, anchor)
+func (a *App) RepeatWarning(t *core.Task) string {
+	if t.Repeat == "" || t.RepeatAnchor == nil {
+		return ""
+	}
+	// The anchor is stored UTC but the series is expanded in the BOARD's
+	// calendar, so the day this asks about has to be read there too — otherwise
+	// the note is inverted on any board whose offset crosses a date boundary.
+	day, ok := recur.SkipsMonths(t.Repeat, t.RepeatAnchor.In(a.loc()))
 	if !ok {
 		return ""
 	}

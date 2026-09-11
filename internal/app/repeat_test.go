@@ -841,3 +841,76 @@ func TestRecurrenceRefusesABoardThatBearsClosedTasks(t *testing.T) {
 		t.Error("a rule was bound on a board whose default lane is its done lane")
 	}
 }
+
+// An EPIC body counts as a live reference. Epics share the bodies/ directory and
+// can only ever illustrate themselves by pointing at a task-owned asset, so
+// scanning tasks alone let archive delete exactly those.
+func TestArchiveKeepsAnAssetAnEpicBodyReferences(t *testing.T) {
+	a := newFSApp(t)
+	task, err := a.Add("owner", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := a.Store.SaveAsset(task.ID, "shot.png", []byte("png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := a.EpicAdd("the box", EpicAddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.EpicNote(e.ID, "![shot](assets/"+name+")"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Done(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ArchiveIDs([]string{task.ID}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Store.LoadAsset(name); err != nil {
+		t.Errorf("archive took an asset an epic body still points at: %v", err)
+	}
+}
+
+// And when the LAST referrer leaves, the retained copy is collected — otherwise
+// it sits in the hot store forever, warned about and unreclaimable.
+func TestArchiveReapsAnAssetNothingHoldsAnyMore(t *testing.T) {
+	a := newFSApp(t)
+	owner, err := a.Add("owner", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := a.Store.SaveAsset(owner.ID, "shot.png", []byte("png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder, err := a.Add("holder", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.AddNote(holder.ID, "![shot](assets/"+name+")"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []string{owner.ID, holder.ID} {
+		if _, err := a.Done(id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.ArchiveIDs([]string{id}, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := a.Store.LoadAsset(name); err == nil {
+		t.Error("the asset is stranded in the hot store with nothing referencing it")
+	}
+	ps, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ps {
+		if p.Code == "orphan-asset" {
+			t.Errorf("lint reports a permanent orphan: %+v", p)
+		}
+	}
+}

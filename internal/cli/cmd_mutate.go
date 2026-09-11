@@ -985,6 +985,7 @@ func newSetCmd() *cobra.Command {
 					}); err != nil {
 					return err
 				}
+				noteBoundRules(cmd, a, cmd.Flags().Changed("repeat"), closed)
 				rs.print(cmd.OutOrStdout(), closed)
 				return nil
 			}
@@ -1000,11 +1001,7 @@ func newSetCmd() *cobra.Command {
 					if err != nil {
 						return nil, err
 					}
-					if t.Repeat != "" && t.RepeatAnchor != nil {
-						if w := app.RepeatWarning(t.Repeat, *t.RepeatAnchor); w != "" {
-							fmt.Fprintln(cmd.ErrOrStderr(), w)
-						}
-					}
+
 					out := []*core.Task{t}
 					rs.collect(out, []*app.RepeatReport{rep})
 					closed = out
@@ -1031,6 +1028,7 @@ func newSetCmd() *cobra.Command {
 			// `set -s done` closes like `done` does, so it owes the same receipt:
 			// without it the successor it just minted is invisible until a later
 			// read, and a machine could not tell it from a task that never repeated.
+			noteBoundRules(cmd, a, cmd.Flags().Changed("repeat"), closed)
 			rs.print(cmd.OutOrStdout(), closed)
 			return nil
 		},
@@ -1214,6 +1212,24 @@ func newRepoCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&rm, "rm", nil, "repo to detach (same forms; repeatable)")
 	addExpectUpdatedFlag(cmd)
 	return cmd
+}
+
+// noteBoundRules says, once per distinct note, what a rule this write just bound
+// will skip. Only on an actual bind: re-printing it on every unrelated edit of a
+// repeating task taught the reader to ignore it.
+func noteBoundRules(cmd *cobra.Command, a *app.App, bound bool, tasks []*core.Task) {
+	if !bound {
+		return
+	}
+	said := map[string]bool{}
+	for _, t := range tasks {
+		w := a.RepeatWarning(t)
+		if w == "" || said[w] {
+			continue
+		}
+		said[w] = true
+		fmt.Fprintln(cmd.ErrOrStderr(), w)
+	}
 }
 
 // seriesReports carries the per-task repeat reports a close produced, from the

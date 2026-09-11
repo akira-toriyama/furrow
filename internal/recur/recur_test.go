@@ -310,3 +310,55 @@ func TestSkipsMonthsSeesTheAnchorsDay(t *testing.T) {
 		t.Error("a rule anchored on the 15th lands every month; it must not be warned about")
 	}
 }
+
+// Lowercasing can change a string's LENGTH (İ becomes two runes), so an index
+// taken from a lowercased copy and used to slice the original lands mid-rune
+// and panics the process. The match is made on the original now.
+func TestAMultibyteSpellingDoesNotPanic(t *testing.T) {
+	until := time.Date(2026, 12, 31, 23, 59, 59, 0, jst)
+	for _, spec := range []string{
+		"monthly UNTİL 2026-12-31",
+		"İmonthly for 3 times",
+		"monthly Until 2026-12-31",
+		"DAILY FOR 3 TIMES",
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("Compile(%q) panicked: %v", spec, r)
+				}
+			}()
+			if _, err := Compile(spec, fixedDate(until)); err != nil {
+				t.Logf("Compile(%q) refused: %v", spec, err) // a refusal is fine; a panic is not
+			}
+		}()
+	}
+}
+
+// The terminator is recognised whatever case it is typed in, and the rest of
+// the spelling survives intact.
+func TestTerminatorsAreCaseInsensitive(t *testing.T) {
+	until := time.Date(2026, 12, 31, 23, 59, 59, 0, jst)
+	got, err := Compile("MONTHLY UNTIL 2026-12-31", fixedDate(until))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if !strings.HasPrefix(got, "FREQ=MONTHLY") || !strings.Contains(got, "UNTIL=") {
+		t.Errorf("Compile = %q, want a monthly rule with an UNTIL", got)
+	}
+	if got, err := Compile("DAILY FOR 3 TIMES", nil); err != nil || got != "FREQ=DAILY;COUNT=3" {
+		t.Errorf("Compile = %q, %v; want FREQ=DAILY;COUNT=3", got, err)
+	}
+}
+
+// A YEARLY rule names its month, so it cannot skip one — and the note it used
+// to print recommended a rule of a different frequency.
+func TestYearlyIsNotReportedAsSkipping(t *testing.T) {
+	line, err := Compile("yearly", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if day, ok := SkipsMonths(line, time.Date(2026, 1, 31, 23, 59, 59, 0, jst)); ok {
+		t.Errorf("a yearly rule anchored on the 31st was reported as skipping (day %d)", day)
+	}
+}

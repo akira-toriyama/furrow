@@ -110,7 +110,7 @@ func newAddCmd() *cobra.Command {
 			warnClamp("effort", opts.Effort, t.Effort)
 			warnShadowedDraft(a, opts.Draft, len(t.Repos) == 0)
 			noteInheritedEpic(cmd, []core.Task{*t})
-			noteRepeatSkips(cmd, []core.Task{*t})
+			noteRepeatSkips(cmd, a, []core.Task{*t})
 			printOK("added", t)
 			return nil
 		},
@@ -168,21 +168,18 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 	drafted := len(created) > 0 && len(created[0].Repos) == 0
 	warnShadowedDraft(a, opts.Draft, drafted)
 	noteInheritedEpic(cmd, created)
-	noteRepeatSkips(cmd, created)
+	noteRepeatSkips(cmd, a, created)
 	return emitTasks(a, created)
 }
 
 // noteRepeatSkips says, once, that a bound rule names a day some months lack —
 // legal, RFC-correct, and almost never what the operator meant. Said at BIND
 // time because the alternative is finding out in March.
-func noteRepeatSkips(cmd *cobra.Command, created []core.Task) {
+func noteRepeatSkips(cmd *cobra.Command, a *app.App, created []core.Task) {
 	errOut := cmd.ErrOrStderr()
 	said := map[string]bool{}
 	for _, t := range created {
-		if t.RepeatAnchor == nil {
-			continue
-		}
-		w := app.RepeatWarning(t.Repeat, *t.RepeatAnchor)
+		w := a.RepeatWarning(&t)
 		if w == "" || said[w] {
 			continue
 		}

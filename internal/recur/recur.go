@@ -49,6 +49,13 @@ var ordinals = map[string]int{"1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "5th": 5, 
 
 var everyRe = regexp.MustCompile(`^every ([0-9]+) (day|days|week|weeks|month|months|year|years)$`)
 
+// The two terminator introducers, matched case-insensitively on the ORIGINAL
+// spelling so every index is a valid byte offset into it.
+var (
+	untilRe = regexp.MustCompile(`(?i)\s+until\s+`)
+	forRe   = regexp.MustCompile(`(?i)\s+for\s+`)
+)
+
 // Compile turns one operator spelling into the RRULE line furrow stores.
 //
 // Two forms are accepted, deliberately: a short spelling (Spellings) and a raw
@@ -138,10 +145,16 @@ func refuseSubDaily(opt *rrule.ROption) error {
 
 func splitTerminator(spec string, resolveDate func(string) (time.Time, error)) (head string, until time.Time, count int, err error) {
 	head = spec
-	lower := strings.ToLower(spec)
-
-	ui := strings.Index(lower, " until ")
-	fi := strings.Index(lower, " for ")
+	// Case-insensitive, but matched against the ORIGINAL: lowercasing can change
+	// a string's LENGTH (İ -> i̇ is one rune to two), so an index taken from the
+	// lowercased copy and used to slice the original can land mid-rune and panic.
+	ui, fi := -1, -1
+	if m := untilRe.FindStringIndex(spec); m != nil {
+		ui = m[0]
+	}
+	if m := forRe.FindStringIndex(spec); m != nil {
+		fi = m[0]
+	}
 	if ui >= 0 && fi >= 0 {
 		return "", time.Time{}, 0, fmt.Errorf("a rule may end with `until <date>` or `for <n> times`, never both (RFC 5545 forbids UNTIL with COUNT)")
 	}
@@ -151,7 +164,7 @@ func splitTerminator(spec string, resolveDate func(string) (time.Time, error)) (
 		if resolveDate == nil {
 			return "", time.Time{}, 0, fmt.Errorf("`until <date>` is not accepted here")
 		}
-		text := strings.TrimSpace(spec[ui+len(" until "):])
+		text := strings.TrimSpace(untilRe.ReplaceAllString(spec[ui:], ""))
 		if text == "" {
 			return "", time.Time{}, 0, fmt.Errorf("`until` needs a date")
 		}
@@ -162,7 +175,7 @@ func splitTerminator(spec string, resolveDate func(string) (time.Time, error)) (
 		until = t.UTC()
 		head = strings.TrimSpace(spec[:ui])
 	case fi >= 0:
-		tail := strings.Fields(strings.ToLower(strings.TrimSpace(spec[fi+len(" for "):])))
+		tail := strings.Fields(strings.ToLower(forRe.ReplaceAllString(spec[fi:], "")))
 		if len(tail) != 2 || (tail[1] != "times" && tail[1] != "time") {
 			return "", time.Time{}, 0, fmt.Errorf("the count spelling is `for <n> times`")
 		}
@@ -425,8 +438,12 @@ func SkipsMonths(line string, anchor time.Time) (day int, ok bool) {
 	// months as `monthly on 31` while saying nothing about it. That is the
 	// spelling an operator reaches for first, so it is the one that most needs
 	// the note.
+	// MONTHLY only. A YEARLY rule anchored on the 31st lands every year — the
+	// month is part of the rule, so there is nothing to skip — and the note it
+	// used to print recommended `monthly on last`, a rule of a different
+	// frequency entirely.
 	if len(opt.Bymonthday) == 0 && len(opt.Byweekday) == 0 &&
-		(opt.Freq == rrule.MONTHLY || opt.Freq == rrule.YEARLY) && anchor.Day() >= 29 {
+		opt.Freq == rrule.MONTHLY && anchor.Day() >= 29 {
 		return anchor.Day(), true
 	}
 	return 0, false

@@ -177,9 +177,24 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 	// the archive would break a link on work someone is about to do, and leave
 	// `asset-missing` on the board forever. The archive keeps its own copy either
 	// way, so nothing is lost on that side.
-	live, err := a.assetsReferencedByLiveBodies(idx)
+	leaving := map[string]bool{}
+	for _, t := range moved {
+		leaving[t.ID] = true
+	}
+	// Gate on whether the store has ANY attachment, not on whether the tasks
+	// leaving own one: an asset retained by an EARLIER archive is held by a body
+	// that may be leaving now, and the tasks moving this time need own nothing
+	// for it to become stranded. Boards with no attachments — nearly all of
+	// them — skip the whole scan, which reads every remaining body.
+	hotAssets, err := a.Store.ListAssets()
 	if err != nil {
 		return nil, err
+	}
+	live := map[string]bool{}
+	if len(hotAssets) > 0 {
+		if live, err = a.assetsReferencedByLiveBodies(leaving); err != nil {
+			return nil, err
+		}
 	}
 	for _, t := range moved { // both indexes are durable now — safe to delete the source
 		if err := a.deleteBody(t.ID); err != nil {
@@ -192,6 +207,17 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 			if err := a.Store.DeleteAsset(name); err != nil {
 				return nil, err
 			}
+		}
+	}
+	// Collect what this archive just orphaned. An asset retained by an EARLIER
+	// archive is held only by a body that may itself be leaving now, and its
+	// owner is long gone — so nothing would ever name it again and it would sit
+	// in the hot store forever, permanently warned about and unreclaimable.
+	// Assets whose owner is still here are left alone: an unreferenced one is
+	// lint's `orphan-asset` to report, not archive's to delete.
+	if len(hotAssets) > 0 {
+		if err := a.reapStrandedAssets(idx, hotAssets, live); err != nil {
+			return nil, err
 		}
 	}
 	return moved, nil
@@ -287,11 +313,26 @@ func (a *App) Unarchive(ids []string) ([]core.Task, error) {
 	if err := arc.Save(arcIdx); err != nil {
 		return nil, err
 	}
+	// The mirror of archive's retention rule, on the archive side: a restored
+	// task's attachment may still be referenced by a body that is STAYING in the
+	// archive (a finished occurrence of the same series), and taking it away
+	// would break that link with no way back.
+	leavingArc := map[string]bool{}
+	for _, t := range moved {
+		leavingArc[t.ID] = true
+	}
+	arcLive, err := referencedByBodies(arc, leavingArc)
+	if err != nil {
+		return nil, err
+	}
 	for _, t := range moved { // both indexes are durable now — safe to delete the source
 		if err := arc.DeleteBody(t.ID); err != nil {
 			return nil, err
 		}
 		for _, name := range arcAssets[t.ID] {
+			if arcLive[name] {
+				continue // an archived body still points at it — the mirror of archive's rule
+			}
 			if err := arc.DeleteAsset(name); err != nil {
 				return nil, err
 			}
@@ -306,6 +347,13 @@ func (a *App) Unarchive(ids []string) ([]core.Task, error) {
 // archive touches no other repo's or task's media.
 func (a *App) assetsByOwner(moved []core.Task) (map[string][]string, error) {
 	return assetsOwnedBy(a.Store, moved)
+}
+
+// bodyReader is the sliver of a store the reference scan reads — letting one
+// scan serve both directions of the archive round trip.
+type bodyReader interface {
+	ListBodyIDs() ([]string, error)
+	LoadBody(id string) (string, error)
 }
 
 // assetLister is the sliver of a store the asset grouping reads — letting
@@ -337,19 +385,65 @@ func assetsOwnedBy(s assetLister, moved []core.Task) (map[string][]string, error
 	return out, nil
 }
 
-// assetsReferencedByLiveBodies is the set of asset basenames some remaining task
-// still points at. Read AFTER the archived tasks have left the index, so it
-// describes the store as it will be.
-func (a *App) assetsReferencedByLiveBodies(idx *core.Index) (map[string]bool, error) {
+// assetsReferencedByLiveBodies is the set of asset basenames something STAYING
+// BEHIND still points at. Read after the archived tasks have left the index, so
+// it describes the store as it will be.
+//
+// The population is every body file minus the ones leaving — which is what
+// `lint` scans, and lint is the consumer that reports a broken reference. An
+// EPIC body counts: epics share the bodies/ directory, an epic can only ever
+// illustrate itself by pointing at a task-owned asset, and scanning tasks alone
+// let archive delete exactly those.
+//
+// A body that cannot be READ is an error, not an empty answer: treating it as
+// referencing nothing is how you delete the asset it was pointing at.
+func (a *App) assetsReferencedByLiveBodies(leaving map[string]bool) (map[string]bool, error) {
+	return referencedByBodies(a.Store, leaving)
+}
+
+// referencedByBodies is the scan itself, over whichever store is asked — the hot
+// one for archive, the archive one for unarchive.
+func referencedByBodies(s bodyReader, leaving map[string]bool) (map[string]bool, error) {
+	ids, err := s.ListBodyIDs()
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]bool{}
-	for i := range idx.Tasks {
-		body, err := a.Store.LoadBody(idx.Tasks[i].ID)
+	for _, id := range ids {
+		if leaving[id] {
+			continue
+		}
+		body, err := s.LoadBody(id)
 		if err != nil {
-			continue // a missing body is lint's finding, not archive's
+			return nil, err
 		}
 		for _, name := range core.ExtractAssetRefs(body) {
 			out[name] = true
 		}
 	}
 	return out, nil
+}
+
+// reapStrandedAssets deletes hot-store assets whose owner has been archived and
+// which nothing remaining references. The archive store keeps its own copy, so
+// this reclaims the duplicate rather than losing anything.
+func (a *App) reapStrandedAssets(idx *core.Index, assets []core.AssetInfo, live map[string]bool) error {
+	for _, as := range assets {
+		if live[as.Name] {
+			continue
+		}
+		owner, _, found := strings.Cut(as.Name, "-")
+		if !found {
+			continue
+		}
+		// The owner id is "<prefix>-<suffix>"; Cut splits at the prefix hyphen,
+		// so rebuild it before asking the index.
+		rest, _, _ := strings.Cut(as.Name[len(owner)+1:], "-")
+		if !idx.Has(owner + "-" + rest) {
+			if err := a.Store.DeleteAsset(as.Name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
