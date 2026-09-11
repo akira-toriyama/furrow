@@ -362,3 +362,189 @@ func TestSnoozeDoesNotMoveTheAnchor(t *testing.T) {
 		t.Errorf("next due = %v, want %s — the snooze re-latticed the series", rep, want)
 	}
 }
+
+// The defect the review caught: `recur.Next` was asked for the first occurrence
+// after NOW, but a bare `--due` binds 23:59:59, so a close during the working
+// day was handed back the occurrence it had just completed. The series advanced
+// only when the operator was late — and a daily chore could never be cleared.
+func TestAnOnTimeOrEarlyCloseAdvancesExactlyOneStep(t *testing.T) {
+	cases := []struct {
+		name string
+		now  time.Time
+		due  string
+		rule string
+		want time.Time
+	}{
+		{"closed during the day it is due", time.Date(2026, 3, 1, 5, 32, 0, 0, time.UTC),
+			"2026-03-01", "daily", time.Date(2026, 3, 2, 14, 59, 59, 0, time.UTC)},
+		// Anchored on the 31st, so April is SKIPPED (RFC 5545) — the next
+		// occurrence after the one settled is 31 May, not 30 April.
+		{"closed weeks early", time.Date(2026, 3, 1, 5, 0, 0, 0, time.UTC),
+			"2026-03-31", "monthly", time.Date(2026, 5, 31, 14, 59, 59, 0, time.UTC)},
+		// Late: now (3 March 14:00 JST) wins over the settled due (1 March), and
+		// the answer is the first occurrence after NOW — today's, still ahead.
+		{"closed after the due instant still jumps forward", time.Date(2026, 3, 3, 5, 0, 0, 0, time.UTC),
+			"2026-03-01", "daily", time.Date(2026, 3, 3, 14, 59, 59, 0, time.UTC)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := newRepeatApp(c.now)
+			task := mustAddRepeating(t, a, "水やり", c.due, c.rule, AddOpts{})
+			_, rep, err := a.moveOne(task.ID, a.Cfg.DoneLane)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rep == nil || rep.Due == nil {
+				t.Fatalf("no successor: %+v", rep)
+			}
+			if !rep.Due.Equal(c.want) {
+				t.Errorf("next due = %s, want %s", rep.Due.Format(time.RFC3339), c.want.Format(time.RFC3339))
+			}
+			if rep.Due.Equal(*task.Due) {
+				t.Error("the successor repeats the occurrence that was just closed")
+			}
+		})
+	}
+}
+
+// The corollary: a bounded series must actually run out. It could not before,
+// because every on-time close re-issued the same occurrence.
+func TestABoundedSeriesRunsOut(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 1, 5, 0, 0, 0, time.UTC))
+	cur := mustAddRepeating(t, a, "3 回だけ", "2026-03-01", "daily for 3 times", AddOpts{})
+
+	for i := 1; i <= 2; i++ {
+		_, rep, err := a.moveOne(cur.ID, a.Cfg.DoneLane)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rep == nil || rep.Created == nil {
+			t.Fatalf("close %d ended the series early: %+v", i, rep)
+		}
+		next, _, gerr := a.Get(*rep.Created)
+		if gerr != nil {
+			t.Fatal(gerr)
+		}
+		cur = next
+	}
+	_, rep, err := a.moveOne(cur.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep == nil || !rep.Completed {
+		t.Errorf("the third close = %+v, want completed — COUNT never spent", rep)
+	}
+}
+
+// `set -s done` runs the repeat edits of the SAME write first, so the operator's
+// explicit intent wins over the rule the task happened to arrive with.
+func TestSetDoneHonorsTheRepeatEditInTheSameWrite(t *testing.T) {
+	done := "done"
+
+	t.Run("--clear-repeat ends the series instead of handing it on", func(t *testing.T) {
+		a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+		task := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
+		if _, _, err := a.Set(task.ID, SetOpts{Status: &done, ClearRepeat: true}); err != nil {
+			t.Fatal(err)
+		}
+		tasks, err := a.List(QueryOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(tasks) != 1 {
+			t.Errorf("%d tasks, want 1 — --clear-repeat still minted a successor", len(tasks))
+		}
+	})
+
+	t.Run("--repeat rebinds before the close, and only one task holds a rule", func(t *testing.T) {
+		a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+		task := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
+		weekly := "weekly"
+		closed, _, err := a.Set(task.ID, SetOpts{Status: &done, Repeat: &weekly})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if closed.Repeat != "" {
+			t.Errorf("the closed task kept a rule (%q) — the series forked", closed.Repeat)
+		}
+		succ := other(t, a, closed.ID)
+		if succ.Repeat != "FREQ=WEEKLY" {
+			t.Errorf("successor rule = %q, want the rule this write asked for", succ.Repeat)
+		}
+	})
+
+	t.Run("a successor born beside other edits inherits the edited values", func(t *testing.T) {
+		a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+		task := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
+		closed, _, err := a.Set(task.ID, SetOpts{Status: &done, AddLabels: []string{"chore"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		succ := other(t, a, closed.ID)
+		if len(succ.Labels) != 1 || succ.Labels[0] != "chore" {
+			t.Errorf("successor labels = %v, want the label this write added", succ.Labels)
+		}
+	})
+}
+
+// A refusal partway through a batch must leave NOTHING behind — neither the
+// note on the bodies it already reached, nor a body file for a successor that
+// was never inserted.
+func TestARefusedBatchLeavesNothingBehind(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	ok1 := mustAddRepeating(t, a, "first", "2026-03-01", "monthly", AddOpts{})
+	bad, err := a.Add("broken", AddOpts{Due: "2026-03-01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A shard furrow would never write: a rule with no anchor. planRepeat
+	// refuses it, and the refusal must undo nothing because nothing happened.
+	idx, err := a.Store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bt, _ := idx.Find(bad.ID)
+	bt.Repeat = "FREQ=MONTHLY"
+	bt.RepeatAnchor = nil
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := a.Store.LoadBody(ok1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.DoneManyNote([]string{ok1.ID, bad.ID}, "closing note"); err == nil {
+		t.Fatal("the batch was accepted despite an unusable rule")
+	}
+	after, err := a.Store.LoadBody(ok1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Errorf("a refused batch left the note on an earlier task's body:\n%s", after)
+	}
+	tasks, err := a.List(QueryOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 {
+		t.Errorf("%d tasks after a refused batch, want the original 2", len(tasks))
+	}
+	ids, err := a.Store.ListBodyIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 {
+		t.Errorf("%d body files, want 2 — a refused write left an orphan for a task that never existed", len(ids))
+	}
+}
+
+// A task created in the done lane is closed at birth, so a rule on it could
+// never fire: a series with no live occurrence, and nothing to say so.
+func TestAddRefusesARuleOnATaskClosedAtBirth(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	if _, err := a.Add("x", AddOpts{Status: a.Cfg.DoneLane, Due: "2026-03-01", Repeat: "monthly"}); err == nil {
+		t.Error("a rule was parked on a task that can never fire it")
+	}
+}

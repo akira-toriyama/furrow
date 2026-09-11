@@ -1416,7 +1416,7 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 		return nil, nil, err
 	}
 	var rep *RepeatReport
-	var succ *core.Task
+	var succ *pendingSuccessor
 	saved, err := a.mutateInPost(idx, id, func(t *core.Task) error {
 		r, s, rerr := a.planRepeat(idx, t, lane, a.Clock.Now())
 		if rerr != nil {
@@ -1429,10 +1429,7 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 		a.applyLane(t, lane)
 		return nil
 	}, func(ix *core.Index) error {
-		if succ != nil {
-			ix.Add(*succ)
-		}
-		return nil
+		return a.flushSuccessors(ix, []*pendingSuccessor{succ})
 	})
 	if err != nil {
 		return nil, nil, err
@@ -1489,7 +1486,7 @@ func (a *App) MoveMany(ids []string, lane string) ([]*core.Task, error) {
 // resolved, so a failed batch touches neither lanes nor prose.
 func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*RepeatReport, error) {
 	reports := map[string]*RepeatReport{}
-	var successors []core.Task
+	var successors []*pendingSuccessor
 	if !a.Cfg.IsLane(lane) {
 		return nil, nil, a.unknownLaneErr("", lane)
 	}
@@ -1523,24 +1520,30 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 		}
 	}
 	now := a.Clock.Now()
+	// A PRE-PASS, for the reason the guardTask pre-pass above exists: a `--note`
+	// lands on each body as the mutating loop goes, so a refusal on the third id
+	// must not leave the first two annotated. Planning writes nothing, so it can
+	// all happen before anything does.
+	for _, id := range order {
+		t, _ := idx.Find(id)
+		// The successor copies the body as it stood, and a completion note
+		// belongs to the occurrence that earned it — so this reads before the
+		// loop below appends one.
+		rep, succ, rerr := a.planRepeat(idx, t, lane, now)
+		if rerr != nil {
+			return nil, nil, rerr
+		}
+		reports[id] = rep
+		successors = append(successors, succ)
+	}
 	for _, id := range order {
 		t, _ := idx.Find(id)
 		before, err := core.MarshalTask(t)
 		if err != nil {
 			return nil, nil, err
 		}
-		// Before the note: the successor copies the body as it stood, and a
-		// completion note belongs to the occurrence that earned it.
-		rep, succ, rerr := a.planRepeat(idx, t, lane, now)
-		if rerr != nil {
-			return nil, nil, rerr
-		}
-		if rep != nil {
+		if reports[id] != nil {
 			consumeRepeat(t)
-		}
-		reports[id] = rep
-		if succ != nil {
-			successors = append(successors, *succ)
 		}
 		if note != "" {
 			if err := a.appendBody(id, note); err != nil {
@@ -1564,10 +1567,11 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 			t.Updated = now
 		}
 	}
-	// After the loop: every *core.Task above is dead, so appending cannot
-	// invalidate a pointer still in use (core.Index holds tasks by value).
-	for _, s := range successors {
-		idx.Add(s)
+	// After the loop: every *core.Task above is dead, so inserting cannot
+	// invalidate a pointer still in use (core.Index holds tasks by value), and
+	// nothing has refused since the pre-pass.
+	if err := a.flushSuccessors(idx, successors); err != nil {
+		return nil, nil, err
 	}
 	if err := a.Store.Save(idx); err != nil {
 		return nil, nil, err
@@ -1587,19 +1591,23 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 // task carried no recurrence rule. MoveMany / DoneMany / DoneManyNote are the
 // same write with the reports dropped, which is what a caller that cannot
 // render them wants.
-func (a *App) MoveManySeries(ids []string, lane, note string) ([]*core.Task, []*RepeatReport, error) {
-	if note != "" {
+// note is a POINTER so "no note asked for" and "an empty note asked for" stay
+// distinct: an empty `--note ""` is bad usage (exit 2), never a silent plain
+// close, and a `note != ""` test would have quietly turned it into one.
+func (a *App) MoveManySeries(ids []string, lane string, note *string) ([]*core.Task, []*RepeatReport, error) {
+	text := ""
+	if note != nil {
 		var err error
-		if note, err = normalizeNote("", note); err != nil {
+		if text, err = normalizeNote("", *note); err != nil {
 			return nil, nil, err
 		}
 	}
-	return a.moveMany(ids, lane, note)
+	return a.moveMany(ids, lane, text)
 }
 
 // DoneManySeries is MoveManySeries fixed to the done lane — the close path the
 // CLI renders series reports from.
-func (a *App) DoneManySeries(ids []string, note string) ([]*core.Task, []*RepeatReport, error) {
+func (a *App) DoneManySeries(ids []string, note *string) ([]*core.Task, []*RepeatReport, error) {
 	return a.MoveManySeries(ids, a.Cfg.DoneLane, note)
 }
 
@@ -1643,8 +1651,8 @@ func (a *App) DoneNote(id, note string) (*core.Task, error) {
 	}
 	a.applyLane(t, a.Cfg.DoneLane)
 	t.Updated = a.Clock.Now()
-	if succ != nil {
-		idx.Add(*succ)
+	if err := a.flushSuccessors(idx, []*pendingSuccessor{succ}); err != nil {
+		return nil, err
 	}
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
@@ -2103,43 +2111,51 @@ func (o SetOpts) empty() bool {
 // the CLI's `renumbered` report (their Updated deliberately does not advance).
 // At least one change is required.
 func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, error) {
+	t, ch, _, err := a.SetSeries(id, o)
+	return t, ch, err
+}
+
+// SetSeries is Set plus the series report a `set -s done` produces when the
+// task carries a recurrence rule (nil for every other edit). Set drops it, for
+// the callers that cannot render it.
+func (a *App) SetSeries(id string, o SetOpts) (*core.Task, []core.PriorityChange, *RepeatReport, error) {
 	if err := a.validateSetOpts(id, o); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	idx, err := a.load()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, nil, a.notFoundTask(id)
+		return nil, nil, nil, a.notFoundTask(id)
 	}
 	due, err := a.resolveDue(o)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	reposBefore := append([]string(nil), t.Repos...)
-	renumbered, successor, err := a.applySet(idx, id, o, due)
+	renumbered, successor, report, err := a.applySet(idx, id, o, due)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	// Judged on both sides of the edit: --add-repo lands in a repo the task did
 	// not carry yet, --rm-repo leaves one it did.
 	if t, _ = idx.Find(id); t != nil {
 		if err := a.guardRepos(id, unionRepos(reposBefore, t.Repos), ""); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
-	// Last, for the reason mutateInPost's hook exists: appending moves the
+	// Last, for the reason mutateInPost's hook exists: inserting moves the
 	// index's backing array, so every task pointer above must be done with.
-	if successor != nil {
-		idx.Add(*successor)
+	if err := a.flushSuccessors(idx, []*pendingSuccessor{successor}); err != nil {
+		return nil, nil, nil, err
 	}
 	if err := a.Store.Save(idx); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	saved, _ := idx.Find(id)
-	return saved, renumbered, nil
+	return saved, renumbered, report, nil
 }
 
 // validateSetOpts checks everything about the OPTIONS that does not need the
@@ -2227,25 +2243,23 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 	if len(missing) > 0 {
 		return nil, a.batchMissingErr(missing, len(order)+len(missing), "set")
 	}
-	var successors []core.Task
+	var successors []*pendingSuccessor
 	for _, id := range order {
 		t, _ := idx.Find(id)
 		reposBefore := append([]string(nil), t.Repos...)
-		_, succ, serr := a.applySet(idx, id, o, due)
+		_, succ, _, serr := a.applySet(idx, id, o, due)
 		if serr != nil {
 			return nil, serr
 		}
-		if succ != nil {
-			successors = append(successors, *succ)
-		}
+		successors = append(successors, succ)
 		if err := a.guardRepos(id, unionRepos(reposBefore, t.Repos), ""); err != nil {
 			return nil, err
 		}
 	}
-	// Held to the end: appending moves core.Index's backing array, and the loop
+	// Held to the end: inserting moves core.Index's backing array, and the loop
 	// above is holding task pointers into it.
-	for _, s := range successors {
-		idx.Add(s)
+	if err := a.flushSuccessors(idx, successors); err != nil {
+		return nil, err
 	}
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
@@ -2261,8 +2275,9 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 // applySet mutates one task in an ALREADY-LOADED index and returns any respace
 // the relative placement caused. It saves nothing: the caller owns the write, so
 // a batch is one Save. id must already resolve.
-func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([]core.PriorityChange, *core.Task, error) {
-	var successor *core.Task
+func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([]core.PriorityChange, *pendingSuccessor, *RepeatReport, error) {
+	var successor *pendingSuccessor
+	var report *RepeatReport
 	relRef, relBefore := o.Before, true
 	if relRef == "" {
 		relRef, relBefore = o.After, false
@@ -2270,7 +2285,7 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 	t, _ := idx.Find(id)
 	before, err := core.MarshalTask(t)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	// Pre-flight the relative placement against the DESTINATION lane before any
 	// mutation, so a bad target aborts with nothing half-applied (the plan
@@ -2278,25 +2293,25 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 	// agree).
 	if relRef != "" {
 		if relRef == id {
-			return nil, nil, core.Validationf(id, "--before/--after must name a different task")
+			return nil, nil, nil, core.Validationf(id, "--before/--after must name a different task")
 		}
 		rt, ri := idx.Find(relRef)
 		if ri < 0 {
-			return nil, nil, a.notFoundTask(relRef)
+			return nil, nil, nil, a.notFoundTask(relRef)
 		}
 		dest := t.Status
 		if o.Status != nil {
 			dest = *o.Status
 		}
 		if rt.Status != dest {
-			return nil, nil, core.Validationf(id, "relative target %s is in lane %q, not the destination lane %q — relative order only exists within one lane", relRef, rt.Status, dest)
+			return nil, nil, nil, core.Validationf(id, "relative target %s is in lane %q, not the destination lane %q — relative order only exists within one lane", relRef, rt.Status, dest)
 		}
 	}
 	nextLabels := t.Labels
 	if len(o.AddLabels) > 0 || len(o.RmLabels) > 0 {
 		nextLabels = labelDelta(t.Labels, o.AddLabels, o.RmLabels)
 		if a.Cfg.LabelsRequired && len(nextLabels) == 0 {
-			return nil, nil, core.Validationf(id, "a label is required ([labels].required); this set would remove the last one")
+			return nil, nil, nil, core.Validationf(id, "a label is required ([labels].required); this set would remove the last one")
 		}
 	}
 	// The repos pair rides the same set algebra as labels (labelDelta), behind
@@ -2308,27 +2323,18 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 		universe := repoUniverse(idx, a.BoardRepos)
 		addR, err := resolveRepoArgs(o.AddRepos, id, universe)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		rmR, err := resolveRepoArgs(o.RmRepos, id, universe)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		nextRepos = labelDelta(t.Repos, addR, rmR)
 	}
 	if o.Status != nil {
-		// `set -s done` is a close like any other, so the series advances here
-		// too. Its report is not rendered: set's envelope carries the keys set
-		// owns, and the successor surfaces in the next read (and in sync's
-		// `incoming`) either way.
-		r, s, rerr := a.planRepeat(idx, t, *o.Status, a.Clock.Now())
-		if rerr != nil {
-			return nil, nil, rerr
-		}
-		if r != nil {
-			consumeRepeat(t)
-		}
-		successor = s
+		// The lane lands HERE, before the position block: `--before/--after`
+		// resolve against the DESTINATION lane, which is what a cross-column
+		// drop means. Only the series advance waits until the end.
 		a.applyLane(t, *o.Status)
 	}
 	var renumbered []core.PriorityChange
@@ -2338,7 +2344,7 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 	case relRef != "":
 		target, changes, err := idx.PlanRelativePriority(id, relRef, relBefore, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		t.Priority = target
 		for _, c := range changes {
@@ -2375,14 +2381,14 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 		t.RepeatAnchor = nil
 	case o.Repeat != nil:
 		if err := a.bindRepeat(t, *o.Repeat); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	// A repeating task's anchor is its due: dropping the date would leave the
 	// rule with nothing to expand from, so furrow refuses rather than silently
 	// ending the series or inventing a start.
 	if t.Repeat != "" && t.Due == nil {
-		return nil, nil, core.Validationf(id, "task %s repeats, so it must keep a due date — drop the rule first with `furrow set %s --clear-repeat`", id, id)
+		return nil, nil, nil, core.Validationf(id, "task %s repeats, so it must keep a due date — drop the rule first with `furrow set %s --clear-repeat`", id, id)
 	}
 	if o.Epic != nil {
 		// Already validated in validateSetOpts; resolve again to store the ID, not
@@ -2392,17 +2398,33 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 		} else {
 			id, err := a.ResolveEpic(*o.Epic)
 			if err != nil {
-				return renumbered, nil, err
+				return renumbered, nil, nil, err
 			}
 			t.Epic = id
 		}
 	}
 	t.Labels = nextLabels
 	t.Repos = nextRepos
-	if err := a.stampIfChanged(t, before); err != nil {
-		return renumbered, nil, err
+	// The close runs LAST, so the successor is copied from the task as THIS
+	// write leaves it: `set -s done --clear-repeat` ends the series instead of
+	// handing it on, `set -s done --repeat <rule>` carries the NEW rule forward
+	// instead of binding it onto the task it just closed, and a successor born
+	// beside `--add-label`/`-e` inherits the edited values rather than a
+	// pre-edit snapshot (which could leave it violating `epic-required`).
+	if o.Status != nil {
+		r, succ, rerr := a.planRepeat(idx, t, *o.Status, a.Clock.Now())
+		if rerr != nil {
+			return renumbered, nil, nil, rerr
+		}
+		if r != nil {
+			consumeRepeat(t)
+		}
+		report, successor = r, succ
 	}
-	return renumbered, successor, nil
+	if err := a.stampIfChanged(t, before); err != nil {
+		return renumbered, nil, nil, err
+	}
+	return renumbered, successor, report, nil
 }
 
 // AddCheck appends a checklist item.

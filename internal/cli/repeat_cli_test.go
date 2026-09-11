@@ -154,3 +154,79 @@ func TestHasRepeatFindsOnlyTheLiveOccurrence(t *testing.T) {
 		t.Error("has:repeat returned the CLOSED occurrence; the rule should have moved on")
 	}
 }
+
+// Refusals the review found missing. Each was a silent accept before.
+func TestRepeatRefusalsAddedAfterReview(t *testing.T) {
+	initStore(t)
+	out, _ := run(t, "add", "水やり", "--due", "2026-10-01", "--repeat", "monthly")
+	id := strings.Fields(out)[1]
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"an empty --repeat, like an empty --due", []string{"add", "z", "--repeat", ""}},
+		{"a rule on a task closed at birth", []string{"add", "z", "-s", "done", "--due", "2026-10-01", "--repeat", "monthly"}},
+		{"rebinding and clearing at once", []string{"set", id, "--repeat", "weekly", "--clear-repeat"}},
+		{"an empty closing note", []string{"done", id, "--note", ""}},
+		{"a sub-daily rule", []string{"add", "z", "--due", "2026-10-01", "--repeat", "FREQ=MINUTELY"}},
+		{"a raw rule that already ends itself, plus a count", []string{"add", "z", "--due", "2026-10-01", "--repeat", "FREQ=MONTHLY;COUNT=3 for 5 times"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if out, code := run(t, c.args...); code != 2 {
+				t.Errorf("exit %d, want 2:\n%s", code, out)
+			}
+		})
+	}
+}
+
+// A raw RRULE line carries its own terminator; the compiler used to overwrite
+// it with the zero value, turning a bounded series into an endless one.
+func TestARawRuleKeepsItsOwnTerminator(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "3 回", "--due", "2026-10-01", "--repeat", "FREQ=MONTHLY;COUNT=3", "--json")
+	if code != 0 {
+		t.Fatalf("add exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, "FREQ=MONTHLY;COUNT=3") {
+		t.Errorf("the stored rule lost its COUNT:\n%s", out)
+	}
+}
+
+// `set -s done` closes like `done` does, so it owes the same receipt.
+func TestSetToDoneReportsTheSeries(t *testing.T) {
+	initStore(t)
+	out, _ := run(t, "add", "水やり", "--due", "2026-10-01", "--repeat", "monthly")
+	id := strings.Fields(out)[1]
+
+	out, code := run(t, "set", id, "-s", "done")
+	if code != 0 {
+		t.Fatalf("set exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, "repeat: next due ") {
+		t.Errorf("`set -s done` advanced the series in silence:\n%s", out)
+	}
+}
+
+// A close CONSUMES the rule, so the envelope must say the shard changed.
+func TestChangedNamesTheRepeatFields(t *testing.T) {
+	initStore(t)
+	out, _ := run(t, "add", "水やり", "--due", "2026-10-01", "--repeat", "monthly")
+	id := strings.Fields(out)[1]
+
+	out, code := run(t, "done", id, "--json")
+	if code != 0 {
+		t.Fatalf("done exit %d: %s", code, out)
+	}
+	var envs []struct {
+		Changed []string `json:"changed"`
+	}
+	if err := json.Unmarshal([]byte(out), &envs); err != nil {
+		t.Fatalf("done --json: %v\n%s", err, out)
+	}
+	joined := strings.Join(envs[0].Changed, ",")
+	if !strings.Contains(joined, "repeat") || !strings.Contains(joined, "repeat_anchor") {
+		t.Errorf("changed = %v, want it to name repeat and repeat_anchor", envs[0].Changed)
+	}
+}

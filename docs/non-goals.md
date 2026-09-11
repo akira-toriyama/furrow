@@ -95,8 +95,9 @@ skipped rather than quietly minting one task per lapsed month.*
 
 The consequences are deliberate, not gaps: a repeating task you never close
 NEVER piles up (there is only ever one open occurrence), and the next due is
-computed from the series anchor as the first occurrence strictly after now, so
-closing late moves you forward rather than into a backlog you did not accrue.
+computed from the series anchor as the first occurrence after both the
+occurrence just settled and now, so an on-time close advances exactly one step
+and a late one moves you forward rather than into a backlog you did not accrue.
 
 ## Storage format
 

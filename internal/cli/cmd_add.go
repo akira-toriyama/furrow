@@ -61,6 +61,9 @@ func newAddCmd() *cobra.Command {
 			if cmd.Flags().Changed("due") && strings.TrimSpace(due) == "" {
 				return core.Validationf("", "--due was given an empty value; pass a date, or drop the flag to create the task without one")
 			}
+			if cmd.Flags().Changed("repeat") && strings.TrimSpace(repeatSpec) == "" {
+				return core.Validationf("", "--repeat was given an empty value; pass a rule, or drop the flag to create the task without one")
+			}
 			opts := app.AddOpts{
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
 				Deps: deps, Refs: refs, Body: body, Checklist: checks,

@@ -73,8 +73,30 @@ func Compile(spec string, resolveDate func(string) (time.Time, error)) (string, 
 	if err != nil {
 		return "", err
 	}
-	opt.Count = count
-	opt.Until = until
+	// Assign ONLY what the spelling supplied. A raw RRULE line can carry its own
+	// COUNT/UNTIL, and overwriting them with the zero value turned a bounded
+	// series into an endless one — silently, since a zero Count and a zero Until
+	// are exactly how "no terminator" is spelled.
+	if count != 0 {
+		if opt.Count != 0 || !opt.Until.IsZero() {
+			return "", fmt.Errorf("the rule already ends itself (COUNT/UNTIL); drop `for <n> times` or the terminator in the rule")
+		}
+		opt.Count = count
+	}
+	if !until.IsZero() {
+		if opt.Count != 0 || !opt.Until.IsZero() {
+			return "", fmt.Errorf("the rule already ends itself (COUNT/UNTIL); drop `until <date>` or the terminator in the rule")
+		}
+		opt.Until = until
+	}
+	if opt.Count != 0 && !opt.Until.IsZero() {
+		return "", fmt.Errorf("a rule may end with `until <date>` or `for <n> times`, never both (RFC 5545 forbids UNTIL with COUNT)")
+	}
+	// furrow promises DATES. A sub-daily frequency is not just useless here — it
+	// is a denial of service: one close would expand millions of occurrences.
+	if opt.Freq > rrule.DAILY {
+		return "", fmt.Errorf("a recurrence finer than daily is not supported — furrow promises a date, not a time of day")
+	}
 
 	// Round-trip through the library: it both validates the combination and
 	// gives the canonical spelling that goes on disk.
@@ -298,9 +320,16 @@ func CountBetween(line string, anchor, lo, hi time.Time) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Iterate rather than materialize: Between allocates the whole slice, which a
+	// pathological stored rule can make enormous. Walking stops at hi.
 	n := 0
-	for _, t := range r.Between(lo, hi, false) {
-		if t.After(lo) && t.Before(hi) {
+	next := r.Iterator()
+	for {
+		t, ok := next()
+		if !ok || !t.Before(hi) {
+			break
+		}
+		if t.After(lo) {
 			n++
 		}
 	}

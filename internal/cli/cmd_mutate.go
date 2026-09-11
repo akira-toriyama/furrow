@@ -294,7 +294,7 @@ func newDoneCmd() *cobra.Command {
 			if !cmd.Flags().Changed("note") {
 				rs, after := newSeriesReports(), []*core.Task(nil)
 				if err := emitMutationManyWith(cmd, a, "done", args, func() ([]*core.Task, error) {
-					ts, reps, err := a.DoneManySeries(args, "")
+					ts, reps, err := a.DoneManySeries(args, nil)
 					rs.collect(ts, reps)
 					after = ts
 					return ts, err
@@ -314,7 +314,7 @@ func newDoneCmd() *cobra.Command {
 			rs, after := newSeriesReports(), []*core.Task(nil)
 			if err := emitMutationManyWith(cmd, a, "done", args,
 				func() ([]*core.Task, error) {
-					ts, reps, err := a.DoneManySeries(args, text)
+					ts, reps, err := a.DoneManySeries(args, &text)
 					rs.collect(ts, reps)
 					after = ts
 					return ts, err
@@ -398,7 +398,7 @@ func newMoveCmd() *cobra.Command {
 			}
 			rs, after := newSeriesReports(), []*core.Task(nil)
 			if err := emitMutationManyWith(cmd, a, "moved", ids, func() ([]*core.Task, error) {
-				ts, reps, err := a.MoveManySeries(ids, lane, "")
+				ts, reps, err := a.MoveManySeries(ids, lane, nil)
 				rs.collect(ts, reps)
 				after = ts
 				return ts, err
@@ -969,14 +969,18 @@ func newSetCmd() *cobra.Command {
 			// `set <id>...` has array cardinality by signature); only the
 			// single-task renumbered extra needs this separate path.
 			var renumbered []core.PriorityChange
-			return emitMutationManyWith(cmd, a, "set", args,
+			rs, closed := newSeriesReports(), []*core.Task(nil)
+			if err := emitMutationManyWith(cmd, a, "set", args,
 				func() ([]*core.Task, error) {
-					t, ch, err := a.Set(args[0], o)
+					t, ch, rep, err := a.SetSeries(args[0], o)
 					renumbered = ch
 					if err != nil {
 						return nil, err
 					}
-					return []*core.Task{t}, nil
+					out := []*core.Task{t}
+					rs.collect(out, []*app.RepeatReport{rep})
+					closed = out
+					return out, nil
 				},
 				func(after *core.Task) map[string]any {
 					extra := map[string]any{}
@@ -986,11 +990,21 @@ func newSetCmd() *cobra.Command {
 					for k, v := range respaceExtra(renumbered, after.Status) {
 						extra[k] = v
 					}
+					for k, v := range rs.annotate(after) {
+						extra[k] = v
+					}
 					if len(extra) == 0 {
 						return nil
 					}
 					return extra
-				})
+				}); err != nil {
+				return err
+			}
+			// `set -s done` closes like `done` does, so it owes the same receipt:
+			// without it the successor it just minted is invisible until a later
+			// read, and a machine could not tell it from a task that never repeated.
+			rs.print(cmd.OutOrStdout(), closed)
+			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "move to this lane")
@@ -1006,6 +1020,9 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&clearDue, "clear-due", false, "clear the due date")
 	cmd.Flags().StringVar(&repeatSpec, "repeat", "", "recur when closed: daily | every 2 weeks on mon,thu | monthly on last fri | ... (the task must carry a due)")
 	cmd.Flags().BoolVar(&clearRepeat, "clear-repeat", false, "stop this task recurring (drops the rule and its anchor)")
+	// Without this the rebind is silently discarded: applySet's switch puts
+	// --clear-repeat first, so `--repeat X --clear-repeat` looked like it took.
+	cmd.MarkFlagsMutuallyExclusive("repeat", "clear-repeat")
 	// StringSlice, not StringArray: these edit the SAME field `label --add` does
 	// (cmd_mutate.go's newLabelCmd), and comma is how every label surface splits —
 	// `-l a,b` is OR on reads. As StringArray, `set --add-label "a,b"` stored the

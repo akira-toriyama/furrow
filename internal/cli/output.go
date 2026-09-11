@@ -1124,6 +1124,14 @@ func changedFields(before, after *core.Task) []string {
 	if !timeEq(before.Due, after.Due) {
 		ch = append(ch, "due")
 	}
+	// In struct order, after due. A close CONSUMES a rule, so without these a
+	// write that rewrote the shard and advanced `updated` reported changed: [].
+	if before.Repeat != after.Repeat {
+		ch = append(ch, "repeat")
+	}
+	if !timeEq(before.RepeatAnchor, after.RepeatAnchor) {
+		ch = append(ch, "repeat_anchor")
+	}
 	return ch
 }
 

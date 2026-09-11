@@ -203,15 +203,18 @@ user-level config. When you work with any furrow store:
   successor is born in `[lanes].default` with the body and checklist copied
   (boxes unchecked) under a `[[prev id]]` link, inheriting everything except
   what the close settled (`closed`/`reviewed`), what the rule computes (`due`)
-  and this run's `deps`. Its due is the first occurrence strictly AFTER now, so
-  a late close moves forward and REPORTS the lapse: `repeat: next due … — N
+  and this run's `deps`. Its due is the first occurrence after BOTH the
+  occurrence just settled and now — an on-time or early close advances exactly
+  one step, a late one jumps the lapsed cycles and REPORTS them: `repeat: next due … — N
   occurrence(s) skipped`, or `repeat: series complete` when the rule is spent;
   `--json` carries `repeat` `{created, due, skipped, completed}` on the envelope
   — always that shape, so "not repeating" (no key) and "last occurrence"
   (`completed`) stay distinct. A day past 28 SKIPS the months that lack it (RFC
   5545 §3.3.10 — `monthly on last` is the rule that always lands; a stderr note
-  says so at bind time). The calendar is the board's `[due].timezone`, so
-  occurrences keep their wall clock across DST. Queryable as `has:`/`no:repeat`
+  says so at bind time). The calendar is the board's `[due].timezone` when it
+  declares one — undeclared, it is the ZONE OF THE MACHINE THAT CLOSES, so a
+  board written by both a JST laptop and a UTC CI runner should declare it.
+  With it, occurrences keep their wall clock across DST. Queryable as `has:`/`no:repeat`
   (= the live occurrences); `lint` errors `repeat-invalid` on a stored rule that
   no longer parses or lost its anchor.
 - **Repos are the scope; labels are pure tags.** A task's repositories live in

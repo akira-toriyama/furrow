@@ -43,12 +43,14 @@ var bodyLinkLine = regexp.MustCompile(`^\s*\[\[[^\]\s]+\]\]\s*$`)
 // successor in another file; a predecessor that kept its rule would mint a
 // second one on every reopen-then-close. With the rule held by exactly one task
 // at a time, a re-close has nothing to act on.
-// It does NOT touch the index. core.Index holds tasks BY VALUE, so appending
-// the successor can move the backing array and invalidate every *core.Task the
-// caller is holding — including the one being closed. The successor therefore
-// comes back for the caller to add once it has finished mutating, which is also
-// the only point at which the whole write is known to succeed.
-func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Time) (*RepeatReport, *core.Task, error) {
+// It writes NOTHING — not the index, not a body file. core.Index holds tasks BY
+// VALUE, so appending the successor can move the backing array and invalidate
+// every *core.Task the caller is holding, including the one being closed; and a
+// body written here would outlive a later refusal, leaving a file on disk for a
+// task that never existed, which only a human could find and remove. The
+// successor and its prose therefore come back PENDING, for the caller to flush
+// once the whole write is known to succeed.
+func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Time) (*RepeatReport, *pendingSuccessor, error) {
 	if lane != a.Cfg.DoneLane || t.Repeat == "" {
 		return nil, nil, nil
 	}
@@ -65,7 +67,19 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Ti
 	anchor := t.RepeatAnchor.In(a.loc())
 	anchorUTC := *t.RepeatAnchor
 
-	next, ok, err := recur.Next(rule, anchor, now)
+	// Search from the occurrence being SETTLED, not from the wall clock. A bare
+	// `--due 2026-09-11` binds 23:59:59 local, so a close at 14:32 that asked for
+	// "the first occurrence after now" was handed back TODAY — the very instant
+	// just completed — and the series advanced only when the operator was late.
+	// A daily chore could never be cleared for the day, and a COUNT-bounded one
+	// could never spend its count. Taking the later of the two keeps the late
+	// close jumping past the lapsed cycles, and makes an on-time or early close
+	// advance exactly one step.
+	after := now
+	if t.Due != nil && t.Due.After(after) {
+		after = *t.Due
+	}
+	next, ok, err := recur.Next(rule, anchor, after)
 	if err != nil {
 		return nil, nil, core.Validationf(t.ID, "%v", err)
 	}
@@ -92,9 +106,6 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Ti
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := a.saveBody(id, successorBody(body, t.ID)); err != nil {
-		return nil, nil, err
-	}
 
 	due := next.UTC()
 	// Everything carries over except what the close settles (closed, reviewed),
@@ -112,7 +123,34 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Ti
 		Epic: t.Epic, Due: &due,
 		Repeat: rule, RepeatAnchor: &anchorUTC,
 	}
-	return &RepeatReport{Created: &id, Due: &due, Skipped: skipped}, &successor, nil
+	return &RepeatReport{Created: &id, Due: &due, Skipped: skipped},
+		&pendingSuccessor{task: successor, body: successorBody(body, t.ID)}, nil
+}
+
+// pendingSuccessor is a generated occurrence that has not been committed yet:
+// the task to insert and the prose to write, both held until the caller knows
+// the whole write succeeds.
+type pendingSuccessor struct {
+	task core.Task
+	body string
+}
+
+// flushSuccessors inserts the generated occurrences and writes their bodies. It
+// must run after the LAST thing that can refuse and immediately before the index
+// is saved: every *core.Task pointer the caller held is dead by then (the insert
+// can move the index's backing array), and nothing is left on disk if an earlier
+// step refused.
+func (a *App) flushSuccessors(idx *core.Index, pending []*pendingSuccessor) error {
+	for _, p := range pending {
+		if p == nil {
+			continue
+		}
+		if err := a.saveBody(p.task.ID, p.body); err != nil {
+			return err
+		}
+		idx.Add(p.task)
+	}
+	return nil
 }
 
 // consumeRepeat strips the rule from the task the close is settling. Always
