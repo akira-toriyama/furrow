@@ -35,6 +35,17 @@ const EnvBoard = "FURROW_BOARD"
 // (and optionally scopes it to a repo) instead of holding its own .furrow.
 const PointerName = ".furrow-pointer.toml"
 
+// Discovery sources — how Open reached the store, reported by `furrow board`'s
+// `source`. A closed vocabulary because the LAYOUT axis is derived from it:
+// SourceLocal is the only arm that sits INSIDE the tree it serves (repo-local);
+// every other arm was reached by configuration, which is what central means.
+const (
+	SourceEnv        = "env"         // FURROW_DIR or FURROW_BOARD
+	SourceLocal      = "local"       // an ancestor .furrow
+	SourcePointer    = "pointer"     // a .furrow-pointer.toml
+	SourceUserConfig = "user-config" // a user-level [[board]] entry
+)
+
 // Store is what App needs from a store: the core port plus the few extras the
 // coordinator uses. Both fsstore and memstore satisfy it.
 type Store interface {
@@ -95,10 +106,10 @@ type App struct {
 	// even before its first task exists.
 	BoardRepos []string
 
-	// Source records how the store was discovered — "env" (FURROW_DIR or
-	// FURROW_BOARD), "local" (an ancestor .furrow), "pointer" (a
-	// .furrow-pointer.toml), or "user-config" (a global [[board]]). `furrow
-	// board` surfaces it so an agent sees why this store/scope is active.
+	// Source records how the store was discovered — one of the Source* constants.
+	// `furrow board` surfaces it so an agent sees why this store/scope is active,
+	// and it is what the LAYOUT axis is derived from (see layoutOf): SourceLocal
+	// is the only arm that sits inside the tree it serves.
 	Source string
 
 	// sleep is the backoff sleeper used by Sync's transient-rebase retry. nil
@@ -310,7 +321,7 @@ func discover(startDir string) (resolution, error) {
 		if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
 			return resolution{}, core.Validationf("", "%s=%q is not an existing directory", EnvDir, abs)
 		}
-		return resolution{Dir: abs, Source: "env"}, nil
+		return resolution{Dir: abs, Source: SourceEnv}, nil
 	}
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
@@ -319,7 +330,7 @@ func discover(startDir string) (resolution, error) {
 	for {
 		cand := filepath.Join(dir, DirName)
 		if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
-			return resolution{Dir: cand, Source: "local"}, nil
+			return resolution{Dir: cand, Source: SourceLocal}, nil
 		}
 		ptr := filepath.Join(dir, PointerName)
 		if fi, err := os.Stat(ptr); err == nil && !fi.IsDir() {
@@ -383,7 +394,7 @@ func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
 		return resolution{}, core.Validationf("", "%s: board %q is not an existing directory", pointerPath, board)
 	}
 	repo, rwarn := deriveScopeRepo(p.DefaultRepo, pointerDir)
-	return resolution{Dir: board, DefaultRepo: repo, AutoFilter: true, ScopeDeclared: true, ScopeWarn: append(pwarn, rwarn...), Source: "pointer"}, nil
+	return resolution{Dir: board, DefaultRepo: repo, AutoFilter: true, ScopeDeclared: true, ScopeWarn: append(pwarn, rwarn...), Source: SourcePointer}, nil
 }
 
 // resolvePathRelTo turns a path (bare ~ or ~/path, relative to baseDir, or
@@ -475,9 +486,9 @@ func resolveGlobalBoard(startDir string) (resolution, bool, error) {
 	// FURROW_BOARD enters through loadGlobalBoards as a synthetic board, so a
 	// winning board is "env" when that override is set, else a real user-config
 	// [[board]] entry.
-	source := "user-config"
+	source := SourceUserConfig
 	if os.Getenv(EnvBoard) != "" {
-		source = "env"
+		source = SourceEnv
 	}
 	return resolution{Dir: winBoard, DefaultLabel: winner.Label, DefaultRepo: repo, AutoFilter: winner.AutoFilter, AutoCommit: winner.AutoCommit, ScopeDeclared: true, ScopeWarn: append(warn, rwarn...), Source: source}, true, nil
 }

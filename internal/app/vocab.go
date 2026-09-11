@@ -21,6 +21,8 @@ import (
 func Vocabularies() map[string][]string {
 	return map[string][]string{
 		"config-keys":          config.TopLevelKeys(),
+		"modes":                config.Modes(),
+		"layouts":              Layouts(),
 		"doctor-codes":         DoctorCodeList(),
 		"error-kinds":          core.ErrorKindList(),
 		"lint-codes":           core.LintCodeList(),

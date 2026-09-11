@@ -9,11 +9,20 @@ import (
 )
 
 // BoardInfo is the machine-readable snapshot `furrow board` prints: where writes
-// land (Store), how the board was discovered (Source), what scope filters reads
+// land (Store), how the board was discovered (Source), which of the two board
+// axes it sits on (Mode / Layout), what scope filters reads
 // (ScopeRepo/AutoFilter), and the full lane vocabulary — so an agent learns the
 // lanes and the effective scope in one call, without provoking an error (the old
 // only-way-to-discover-lanes was to fail a `move` on purpose). Every field is a
 // copy or scalar, so a caller can never mutate the live config through it.
+//
+// The two axes are independent, and both are reported because neither can be
+// inferred from the other or from Git.State: Mode is what the board's committed
+// config.toml declares, Layout is where the store sits relative to the repos it
+// serves. Reading the mode off the git state is the trap this pair exists to
+// close — `ok` is evidence a board is shared, never proof of the converse (a
+// detached CI checkout, an untracked branch, and a board with no commits yet all
+// report no-upstream on a fully shared board).
 //
 // The scalars up front are the RESOLUTION — what this invocation's cwd
 // resolved to. The embedded BoardVocab and SchemaTriple are board-INTRINSIC and
@@ -23,6 +32,8 @@ import (
 type BoardInfo struct {
 	Store        string `json:"store"`         // absolute .furrow path (where writes land)
 	Source       string `json:"source"`        // env|local|pointer|user-config
+	Mode         string `json:"mode"`          // shared|standalone — the board's own config.toml
+	Layout       string `json:"layout"`        // central|repo-local — derived from Source, never configured
 	ScopeRepo    string `json:"scope_repo"`    // board-scope repo ("" = whole board)
 	AutoFilter   bool   `json:"auto_filter"`   // reads auto-filter by scope_repo (meaningful only when set)
 	AutoCommit   bool   `json:"autocommit"`    // git-commit .furrow/ after each mutating command (user-config [[board]] opt-in)
@@ -44,9 +55,13 @@ type BoardInfo struct {
 // probe can go wrong folds into a state instead:
 //
 //	ok            HEAD read (and compared to an upstream when there is one)
-//	not-a-repo    the board is not in git at all — a standalone board, legitimate
+//	not-a-repo    the board is not in git at all — legitimate, but it forfeits history
 //	no-upstream   a repo with no tracking ref: LastCommit still fills in
 //	unavailable   the probe itself failed (no git binary, or git errored)
+//
+// no-upstream, NOT not-a-repo, is what a standalone board reports: standalone
+// means git-with-no-remote, so the board is in git and simply has nothing to
+// compare against. Read the mode from BoardInfo.Mode, never from this field.
 //
 // LastCommit is what a standalone board actually needs: with no upstream there
 // is nothing for ahead/behind to compare against, so the commit TIME is the only
@@ -91,6 +106,32 @@ type SchemaTriple struct {
 	Writable            bool   `json:"writable"`              // == (schema_state == "current")
 }
 
+// Board layouts — the LAYOUT axis: where the store SITS relative to the repos it
+// serves. It is NOT a config key and must not become one: it is a fact about how
+// discovery reached this board, so declaring it could only contradict the
+// resolution. Orthogonal to the MODE axis (config.ModeShared /
+// config.ModeStandalone) — every one of the four combinations is a real setup.
+const (
+	LayoutCentral   = "central"    // the store sits outside the repos it backs, reached by configuration
+	LayoutRepoLocal = "repo-local" // the store sits inside the repo it serves, found by walking up from cwd
+)
+
+// Layouts returns the layout vocabulary in declaration order — the machine
+// source behind `furrow vocab layouts`.
+func Layouts() []string { return []string{LayoutCentral, LayoutRepoLocal} }
+
+// layoutOf maps a discovery source onto the layout axis. SourceLocal is the only
+// arm that sits inside the tree it serves; every other arm was reached by
+// configuration, which is exactly what "central" means — including FURROW_DIR,
+// which may well point at a repo-local store, but furrow cannot tell and the
+// caller chose it by configuration either way.
+func layoutOf(source string) string {
+	if source == SourceLocal {
+		return LayoutRepoLocal
+	}
+	return LayoutCentral
+}
+
 // Board schema states. Stable kebab-case tokens — branch on these, not on the
 // two integers, so the remediation ("upgrade the board" vs "update the binary")
 // is never derived by accident.
@@ -115,6 +156,8 @@ func (a *App) Board() BoardInfo {
 	return BoardInfo{
 		Store:        a.Dir,
 		Source:       a.Source,
+		Mode:         a.Cfg.Mode,
+		Layout:       layoutOf(a.Source),
 		ScopeRepo:    a.DefaultRepo,
 		AutoFilter:   a.AutoFilter,
 		AutoCommit:   a.AutoCommit,
@@ -134,7 +177,7 @@ func (a *App) boardGit() BoardGit {
 	repo, err := gitrepo.Open(ctx, a.Dir)
 	if err != nil {
 		if fe := core.AsError(err); fe != nil && fe.Code == core.CodeValidation {
-			return BoardGit{State: GitNotARepo} // not in git — a standalone board
+			return BoardGit{State: GitNotARepo}
 		}
 		return BoardGit{State: GitUnavailable} // no git binary: the probe failed, not the board
 	}
@@ -170,7 +213,7 @@ func (a *App) boardGit() BoardGit {
 	case aerr != nil:
 		g.State = GitUnavailable
 	case !hasUpstream:
-		g.State = GitNoUpstream // keep Commit/Dirty: they are exactly what a standalone board has
+		g.State = GitNoUpstream // keep Commit/Dirty: they are exactly what a standalone board has (git, no remote)
 	default:
 		g.Ahead, g.Behind = ahead, behind
 	}

@@ -53,8 +53,10 @@ func containsAny(have, want []string) bool {
 // directory; an in-memory app cannot archive to disk.
 //
 // repos, when non-empty, scopes the sweep to those (already-resolved)
-// owner/repo identifiers — for folding one repo's done on a shared board
-// without touching another's. Empty repos keeps the sweep global (the default).
+// owner/repo identifiers — for folding one repo's done on a board that backs
+// SEVERAL repos without touching another's. (Repo count, not mode: a standalone
+// board may back several repos too, and a shared board usually backs one.)
+// Empty repos keeps the sweep global (the default).
 func (a *App) Archive(olderThanDays int, dryRun bool, repos ...string) ([]core.Task, error) {
 	idx, err := a.load()
 	if err != nil {

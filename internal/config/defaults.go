@@ -169,15 +169,17 @@ type Config struct {
 	// first) and flagged by lint.
 	Alias map[string]string
 
-	// Standalone marks a board used on a single machine with no remote, no
-	// `furrow sync`, and no CI. It changes only USER-FACING GUIDANCE — never
-	// behavior, the schema gate, or the on-disk format: `furrow upgrade` drops the
-	// shared-board flag-day / pinned-CI checklist and the `furrow sync` publish
-	// line that misdirect a standalone operator. (The write-block error itself is
-	// CI-agnostic for every board; it just points at `furrow upgrade`.) Default
-	// false = shared-board behavior. Declared in config.toml (not meta.json), so it
-	// needs no schema bump.
-	Standalone bool
+	// Mode is the board's MODE axis: ModeShared (a git remote and co-writers) or
+	// ModeStandalone (one machine, no remote). It changes only USER-FACING
+	// GUIDANCE — never behavior, the schema gate, or the on-disk format:
+	// `furrow upgrade` drops the shared-board flag-day / pinned-CI checklist and
+	// the `furrow sync` publish line that misdirect a standalone operator. (The
+	// write-block error itself is CI-agnostic for every board; it just points at
+	// `furrow upgrade`.) Absent = DefaultMode. Declared in config.toml (not
+	// meta.json), so it needs no schema bump. Orthogonal to the LAYOUT axis
+	// (central / repo-local), which is not configured at all — it is derived from
+	// how discovery reached the board.
+	Mode string
 
 	// DefaultRepo is the board's own repo scope, declared in its committed
 	// config.toml: the owner/repo `add` attaches and reads filter by when
@@ -211,6 +213,7 @@ func Default() *Config {
 		ReviewStaleAfterDays: DefaultReviewStaleAfterDays,
 		SessionBusySeconds:   DefaultSessionBusySeconds,
 		DueIgnoreLanes:       setOf(DefaultDueIgnoreLanes),
+		Mode:                 DefaultMode,
 	}
 	c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)
 	c.compile()
@@ -284,3 +287,23 @@ func setOf(ss []string) map[string]bool {
 	}
 	return m
 }
+
+// Board modes — the MODE axis: does this board have a remote and co-writers?
+// A closed enum rather than the old `standalone` bool on purpose. A bool names
+// only ONE pole, so the shared side was nameless, and a nameless axis grows
+// synonyms: by 2026-09 the docs carried five spellings for "shared board" and
+// none of them greppable together. Adding a third mode later is a member here,
+// not another switch.
+const (
+	ModeShared     = "shared"     // a git remote and more than one writer (the default)
+	ModeStandalone = "standalone" // one machine, its own git, no remote
+)
+
+// DefaultMode is what a board declares by omission. Shared is the default
+// because it is the setup every fleet-facing guarantee assumes (sync, the
+// flag day, the SetStatus-task footer, due-overdue shipping as an error).
+const DefaultMode = ModeShared
+
+// Modes returns the mode vocabulary in declaration order — the machine source
+// behind `furrow vocab modes` and the candidates list a rejected value shows.
+func Modes() []string { return []string{ModeShared, ModeStandalone} }

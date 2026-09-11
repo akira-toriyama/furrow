@@ -86,11 +86,12 @@ type raw struct {
 	// Alias is the board-level [alias] table: name -> a command string that
 	// `furrow <name> …` expands to, git-style. A map decodes any [alias] key.
 	Alias map[string]string `toml:"alias"`
-	// Standalone marks a local single-machine board (no remote / no `furrow
-	// sync` / no CI). A pointer so "absent" (the shared-board default) is
-	// distinguishable; any bool value is accepted (clamp-don't-reject — a bool
-	// has no out-of-range value).
-	Standalone *bool `toml:"standalone"`
+	// Mode is the board's MODE axis (ModeShared | ModeStandalone): does this
+	// board have a remote and co-writers? A string enum, not a bool, so BOTH
+	// poles have a name — the nameless half of the old `standalone` switch is
+	// what let five spellings of "shared board" into the docs. An unrecognized
+	// value clamps to DefaultMode with a warning, like every other read.
+	Mode string `toml:"mode"`
 	// DefaultRepo is the board's OWN repo scope: the owner/repo that `add`
 	// attaches and reads filter by when discovery supplied none (a local
 	// `.furrow`, or FURROW_DIR). Stored verbatim — shape validation lives in the
@@ -456,10 +457,17 @@ func fromRaw(r raw) (*Config, []string, error) {
 		c.Alias[name] = cmd
 	}
 
-	// standalone: absent -> false (shared board, the default). A bool has no
-	// out-of-range value, so there is nothing to clamp or warn about.
-	if r.Standalone != nil {
-		c.Standalone = *r.Standalone
+	// mode: absent -> DefaultMode (shared). An unrecognized value is clamped to
+	// the default with a warning — the same clamp-don't-reject read policy every
+	// other key follows, and what makes `furrow config set mode <junk>` an exit 2
+	// (the writer refuses any value the reader would clamp away).
+	if v := strings.TrimSpace(r.Mode); v != "" {
+		if v == ModeShared || v == ModeStandalone {
+			c.Mode = v
+		} else {
+			warn = append(warn, fmt.Sprintf("mode %q is not one of %s; using %q",
+				v, strings.Join(Modes(), ", "), c.Mode))
+		}
 	}
 
 	// default_repo: trimmed and stored verbatim. Whether it is owner/repo-shaped

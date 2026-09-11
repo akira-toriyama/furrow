@@ -15,7 +15,7 @@ import (
 func TestTopLevelKeysFrozen(t *testing.T) {
 	want := []string{
 		"lanes", "priority", "ids", "archive", "next",
-		"labels", "revisit", "review", "session", "lint", "due", "alias", "standalone", "default_repo",
+		"labels", "revisit", "review", "session", "lint", "due", "alias", "mode", "default_repo",
 	}
 	got := TopLevelKeys()
 	if !reflect.DeepEqual(got, want) {

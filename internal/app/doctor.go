@@ -90,8 +90,8 @@ type DoctorBoard struct {
 // never fetches, so ahead/behind are as current as the last fetch. State is a
 // closed vocabulary: "ok" (upstream compared), "not-a-repo" (a board in a
 // plain, un-git-ed directory — legitimate, never a problem), "no-upstream" (a
-// repo with no tracking ref — what a STANDALONE board reports: `standalone`
-// means git-with-no-remote, not git-less), "unavailable" (the probe itself failed — no git binary, or rev-list
+// repo with no tracking ref — what a STANDALONE board reports: `mode =
+// "standalone"` means git-with-no-remote, not git-less), "unavailable" (the probe itself failed — no git binary, or rev-list
 // errored), and "unprobed" (the board is not on disk, so there was nothing to
 // ask).
 type DoctorGit struct {

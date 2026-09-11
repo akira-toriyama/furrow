@@ -23,7 +23,7 @@ import "path/filepath"
 // default_repo never gets here at all — applyBoardScope attaches the repo and
 // the task is not a draft.
 func (a *App) ShadowedDraftWarning(cwd string) string {
-	if a.Source != "local" {
+	if a.Source != SourceLocal {
 		return ""
 	}
 	boards, cfgDir, _, err := loadGlobalBoards()

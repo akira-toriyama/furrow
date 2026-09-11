@@ -16,11 +16,13 @@ import (
 func newBoardCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "board",
-		Short: "Print the active board: store path, scope, lane vocabulary, and schema state",
+		Short: "Print the active board: store path, mode/layout, scope, lane vocabulary, and schema state",
 		Long: "Print the resolved board furrow is acting on: the store path (where writes\n" +
-			"land), how it was discovered (env | local | pointer | user-config), the repo\n" +
-			"scope that filters reads, and the lane vocabulary (lanes / next-lanes /\n" +
-			"default / done / terminal) plus the stale/archive windows. It is the\n" +
+			"land), how it was discovered (env | local | pointer | user-config), the two\n" +
+			"board axes — mode (shared | standalone, from the board's config.toml) and\n" +
+			"layout (central | repo-local, derived from the source and never configured)\n" +
+			"— the repo scope that filters reads, and the lane vocabulary (lanes /\n" +
+			"next-lanes / default / done / terminal) plus the stale/archive windows. It is the\n" +
 			"introspection call for \"what lanes exist and what scope is active\" — so a\n" +
 			"typo'd `-s`/`move` need not be provoked to learn the lanes. --json emits the\n" +
 			"object; --ndjson emits it as one compact line.\n\n" +
@@ -37,7 +39,7 @@ func newBoardCmd() *cobra.Command {
 			"pre-flight (`writable != true` -> stop) instead of watching every task read\n" +
 			"fail with \"task not found\".",
 		Example: "  furrow board            # human summary\n" +
-			"  furrow board --json     # {store, source, scope_repo, lanes, schema_state, writable, ...}\n" +
+			"  furrow board --json     # {store, source, mode, layout, scope_repo, lanes, writable, ...}\n" +
 			"  furrow board --json | jq -e '.writable'   # CI pre-flight: is this board writable?",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -136,6 +138,7 @@ func printBoardHuman(b app.BoardInfo) {
 	}
 	fmt.Fprintf(out, "store:    %s\n", b.Store)
 	fmt.Fprintf(out, "source:   %s\n", b.Source)
+	fmt.Fprintf(out, "board:    %s / %s\n", b.Mode, b.Layout)
 	fmt.Fprintf(out, "scope:    %s (auto_filter=%t)\n", scope, b.AutoFilter)
 	if b.DefaultLabel != "" {
 		fmt.Fprintf(out, "add tag:  %s\n", b.DefaultLabel)
@@ -158,10 +161,11 @@ func printBoardHuman(b app.BoardInfo) {
 }
 
 // boardGitLine renders the board's git state for humans (doctor's gitLine is the
-// column form of a different struct), or "" for a board that is
-// not in git at all (a standalone board: there is nothing to say, and a line
-// saying so would be noise on every invocation). The machine view always
-// carries the state, so only the human line is conditional.
+// column form of a different struct), or "" for a board that is not in git at
+// all (there is nothing to say, and a line saying so would be noise on every
+// invocation — note this is the git-less arrangement, NOT a standalone board,
+// which has git and reports no-upstream). The machine view always carries the
+// state, so only the human line is conditional.
 func boardGitLine(g app.BoardGit) string {
 	if g.State == app.GitNotARepo {
 		return ""

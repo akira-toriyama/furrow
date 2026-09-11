@@ -8,7 +8,7 @@ package config
 // read would clamp.
 //
 // Keep this in sync with the repo-root config.toml (a from-source reference).
-const Template = `# furrow — repo-local configuration (.furrow/config.toml).
+const Template = `# furrow — board configuration (.furrow/config.toml).
 # https://github.com/akira-toriyama/furrow
 #
 # Ordinary furrow commands only READ this file; the one writer is
@@ -16,12 +16,15 @@ const Template = `# furrow — repo-local configuration (.furrow/config.toml).
 # preserves comments. Unknown keys and out-of-range values are clamped to safe
 # defaults on read (a typo can't break the tool); ` + "`furrow lint`" + ` reports what it clamped, unknown keys with their line.
 #
-# Two top-level switches (bare keys — TOML requires them ABOVE the [sections]):
+# Two top-level keys (bare — TOML requires them ABOVE the [sections]):
 #
-# A local single-machine board with no remote, no ` + "`furrow sync`" + `, and no CI.
-# Changes only wording (` + "`furrow upgrade`" + ` drops the shared-board flag-day
-# checklist) — never behavior, the schema gate, or an on-disk byte.
-# standalone = false
+# The board's MODE: "shared" (a git remote and co-writers — the default) or
+# "standalone" (one machine, its own git, no remote, no ` + "`furrow sync`" + `, no CI).
+# It changes only wording (` + "`furrow upgrade`" + ` drops the shared-board flag-day
+# checklist) — never behavior, the schema gate, or an on-disk byte. The OTHER
+# axis, layout (central / repo-local), is not configured: it follows from how
+# discovery reached this board. ` + "`furrow board`" + ` prints both.
+# mode = "shared"
 #
 # The repo this board is FOR. ` + "`furrow add`" + ` attaches it and reads filter by it
 # whenever discovery supplied no scope of its own — i.e. from inside the board's

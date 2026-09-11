@@ -6,8 +6,8 @@ import (
 )
 
 // TopLevelKeys returns every top-level key the board config parser understands
-// — the `[section]` tables plus the bare `standalone` switch — in declaration
-// order. It is derived by reflection from the raw decode struct's toml tags, so
+// — the `[section]` tables plus the bare `mode` and `default_repo` keys — in
+// declaration order. It is derived by reflection from the raw decode struct's toml tags, so
 // it can never disagree with what Load actually reads: add a section to raw and
 // this list carries it with no second registration. It backs `furrow vocab
 // config-keys`, the source scripts/check-docs-vocab.sh checks the documented
