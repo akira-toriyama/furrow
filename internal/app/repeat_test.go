@@ -914,3 +914,65 @@ func TestArchiveReapsAnAssetNothingHoldsAnyMore(t *testing.T) {
 		}
 	}
 }
+
+// Ownership is decided by the id-prefix rule, not by cutting the basename at
+// hyphens: an id's shape is configurable and a filename can carry hyphens of its
+// own. String surgery got both wrong, and on a board whose [ids].prefix has no
+// hyphen it deleted assets belonging to LIVE tasks.
+func TestTheReaperNeverTakesALiveTasksAsset(t *testing.T) {
+	for _, prefix := range []string{"t-", "x"} {
+		t.Run("prefix "+prefix, func(t *testing.T) {
+			a := newFSApp(t)
+			a.Cfg.IDPrefix = prefix
+
+			live, err := a.Add("still here", AddOpts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// An attachment nothing references: lint's orphan-asset to report,
+			// never archive's to delete, because its owner is on the board.
+			orphan, err := a.Store.SaveAsset(live.ID, "my-screen-shot.png", []byte("png"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			retired, err := a.Add("retiring", AddOpts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := a.Done(retired.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := a.ArchiveIDs([]string{retired.ID}, false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := a.Store.LoadAsset(orphan); err != nil {
+				t.Errorf("archive deleted %q, which belongs to a task still on the board: %v", orphan, err)
+			}
+		})
+	}
+}
+
+// A stray file in bodies/assets/ that no task owns is lint's finding, not
+// archive's to delete: archive did not put it there.
+func TestTheReaperLeavesAFileNoTaskOwns(t *testing.T) {
+	a := newFSApp(t)
+	if err := a.Store.SaveAssetRaw("hand-placed.png", []byte("png")); err != nil {
+		t.Fatal(err)
+	}
+	retired, err := a.Add("retiring", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Store.SaveAsset(retired.ID, "own.png", []byte("png")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Done(retired.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ArchiveIDs([]string{retired.ID}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Store.LoadAsset("hand-placed.png"); err != nil {
+		t.Errorf("archive deleted a file no task owns: %v", err)
+	}
+}

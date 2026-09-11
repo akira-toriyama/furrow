@@ -216,7 +216,7 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 	// Assets whose owner is still here are left alone: an unreferenced one is
 	// lint's `orphan-asset` to report, not archive's to delete.
 	if len(hotAssets) > 0 {
-		if err := a.reapStrandedAssets(idx, hotAssets, live); err != nil {
+		if err := a.reapStrandedAssets(arcIdx.Tasks, live); err != nil {
 			return nil, err
 		}
 	}
@@ -427,20 +427,26 @@ func referencedByBodies(s bodyReader, leaving map[string]bool) (map[string]bool,
 // reapStrandedAssets deletes hot-store assets whose owner has been archived and
 // which nothing remaining references. The archive store keeps its own copy, so
 // this reclaims the duplicate rather than losing anything.
-func (a *App) reapStrandedAssets(idx *core.Index, assets []core.AssetInfo, live map[string]bool) error {
-	for _, as := range assets {
-		if live[as.Name] {
-			continue
-		}
-		owner, _, found := strings.Cut(as.Name, "-")
-		if !found {
-			continue
-		}
-		// The owner id is "<prefix>-<suffix>"; Cut splits at the prefix hyphen,
-		// so rebuild it before asking the index.
-		rest, _, _ := strings.Cut(as.Name[len(owner)+1:], "-")
-		if !idx.Has(owner + "-" + rest) {
-			if err := a.Store.DeleteAsset(as.Name); err != nil {
+func (a *App) reapStrandedAssets(archived []core.Task, live map[string]bool) error {
+	// Ownership is decided by the SAME prefix rule the rest of archive uses, not
+	// by cutting the basename at hyphens: an id's shape is configurable
+	// ([ids].prefix), a filename can carry hyphens of its own, and reconstructing
+	// an id by string surgery got both wrong — on a board whose prefix has no
+	// hyphen it would have deleted assets belonging to LIVE tasks.
+	// Reap only what an ARCHIVED task owns. An asset owned by a task still on the
+	// board is lint's `orphan-asset` to report when nothing references it, and a
+	// stray file nobody owns is not archive's to delete at all — it did not put
+	// it there.
+	ownedByArchived, err := assetsOwnedBy(a.Store, archived)
+	if err != nil {
+		return err
+	}
+	for _, names := range ownedByArchived {
+		for _, name := range names {
+			if live[name] {
+				continue
+			}
+			if err := a.Store.DeleteAsset(name); err != nil {
 				return err
 			}
 		}
