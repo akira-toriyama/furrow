@@ -856,11 +856,9 @@ func newSetCmd() *cobra.Command {
 			}
 			if cmd.Flags().Changed("repeat") {
 				o.Repeat = &repeatSpec
-				if line, cerr := app.CompileRepeat(a, repeatSpec); cerr == nil {
-					if w := app.RepeatWarning(line); w != "" {
-						fmt.Fprintln(cmd.ErrOrStderr(), w)
-					}
-				}
+				// The note needs the anchor the rule will be bound to, which is
+				// the task's due — so it is emitted after the write, off the
+				// stored fields, rather than guessed at here.
 			}
 			if cmd.Flags().Changed("status") {
 				o.Status = &status
@@ -1001,6 +999,11 @@ func newSetCmd() *cobra.Command {
 					renumbered = ch
 					if err != nil {
 						return nil, err
+					}
+					if t.Repeat != "" && t.RepeatAnchor != nil {
+						if w := app.RepeatWarning(t.Repeat, *t.RepeatAnchor); w != "" {
+							fmt.Fprintln(cmd.ErrOrStderr(), w)
+						}
 					}
 					out := []*core.Task{t}
 					rs.collect(out, []*app.RepeatReport{rep})

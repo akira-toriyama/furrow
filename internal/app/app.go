@@ -1423,7 +1423,7 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 	var rep *RepeatReport
 	var succ *pendingSuccessor
 	saved, err := a.mutateInPost(idx, id, func(t *core.Task) error {
-		r, s, rerr := a.planRepeat(idx, t, lane, a.Clock.Now(), nil)
+		r, s, rerr := a.planRepeat(idx, t, t.Status, lane, a.Clock.Now(), nil)
 		if rerr != nil {
 			return rerr
 		}
@@ -1535,12 +1535,19 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 		// The successor copies the body as it stood, and a completion note
 		// belongs to the occurrence that earned it — so this reads before the
 		// loop below appends one.
-		rep, succ, rerr := a.planRepeat(idx, t, lane, now, reservedIDs)
+		rep, succ, rerr := a.planRepeat(idx, t, t.Status, lane, now, reservedIDs)
 		if rerr != nil {
 			return nil, nil, rerr
 		}
 		reports[id] = rep
 		successors = append(successors, succ)
+	}
+	// The generated prose and attachments land BEFORE any note does: writing them
+	// is the only step left that can fail, and a note is not idempotent — a
+	// failure after one had landed would leave it on the body and duplicate it on
+	// every retry.
+	if err := a.writeSuccessorFiles(successors); err != nil {
+		return nil, nil, err
 	}
 	for _, id := range order {
 		t, _ := idx.Find(id)
@@ -1574,11 +1581,9 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 		}
 	}
 	// After the loop: every *core.Task above is dead, so inserting cannot
-	// invalidate a pointer still in use (core.Index holds tasks by value), and
-	// nothing has refused since the pre-pass.
-	if err := a.flushSuccessors(idx, successors); err != nil {
-		return nil, nil, err
-	}
+	// invalidate a pointer still in use (core.Index holds tasks by value). The
+	// files are already written; this half cannot fail.
+	insertSuccessors(idx, successors)
 	if err := a.Store.Save(idx); err != nil {
 		return nil, nil, err
 	}
@@ -1645,21 +1650,22 @@ func (a *App) DoneNote(id, note string) (*core.Task, error) {
 	if err := a.guardTask(t); err != nil {
 		return nil, err
 	}
-	rep, succ, rerr := a.planRepeat(idx, t, a.Cfg.DoneLane, a.Clock.Now(), nil)
+	rep, succ, rerr := a.planRepeat(idx, t, t.Status, a.Cfg.DoneLane, a.Clock.Now(), nil)
 	if rerr != nil {
 		return nil, rerr
 	}
 	if rep != nil {
 		consumeRepeat(t)
 	}
+	if err := a.writeSuccessorFiles([]*pendingSuccessor{succ}); err != nil {
+		return nil, err
+	}
 	if err := a.appendBody(id, note); err != nil {
 		return nil, err
 	}
 	a.applyLane(t, a.Cfg.DoneLane)
 	t.Updated = a.Clock.Now()
-	if err := a.flushSuccessors(idx, []*pendingSuccessor{succ}); err != nil {
-		return nil, err
-	}
+	insertSuccessors(idx, []*pendingSuccessor{succ})
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
 	}
@@ -2350,6 +2356,7 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, re
 		}
 		nextRepos = labelDelta(t.Repos, addR, rmR)
 	}
+	laneBefore := t.Status
 	if o.Status != nil {
 		// The lane lands HERE, before the position block: `--before/--after`
 		// resolve against the DESTINATION lane, which is what a cross-column
@@ -2431,7 +2438,7 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, re
 	// beside `--add-label`/`-e` inherits the edited values rather than a
 	// pre-edit snapshot (which could leave it violating `epic-required`).
 	if o.Status != nil {
-		r, succ, rerr := a.planRepeat(idx, t, *o.Status, a.Clock.Now(), reserved)
+		r, succ, rerr := a.planRepeat(idx, t, laneBefore, *o.Status, a.Clock.Now(), reserved)
 		if rerr != nil {
 			return renumbered, nil, nil, rerr
 		}

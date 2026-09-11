@@ -179,7 +179,10 @@ func noteRepeatSkips(cmd *cobra.Command, created []core.Task) {
 	errOut := cmd.ErrOrStderr()
 	said := map[string]bool{}
 	for _, t := range created {
-		w := app.RepeatWarning(t.Repeat)
+		if t.RepeatAnchor == nil {
+			continue
+		}
+		w := app.RepeatWarning(t.Repeat, *t.RepeatAnchor)
 		if w == "" || said[w] {
 			continue
 		}

@@ -201,7 +201,7 @@ user-level config. When you work with any furrow store:
   all-or-nothing write and **hands the rule over to it**, so a series is carried
   by exactly one live task and re-closing (or reopen→close) mints nothing. The
   successor is born in `[lanes].default` with the body and checklist copied
-  (boxes unchecked) under a `[[prev id]]` link — the body as it stood just
+  (boxes unchecked) under a `previous: [[id]]` line — the body as it stood just
   BEFORE this close's `--note`, so the closing word stays put while everything
   else written during the cycle carries forward — inheriting everything except
   what the close settled (`closed`/`reviewed`), what the rule computes (`due`)

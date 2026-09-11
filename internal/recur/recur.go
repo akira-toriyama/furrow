@@ -92,10 +92,15 @@ func Compile(spec string, resolveDate func(string) (time.Time, error)) (string, 
 	if opt.Count != 0 && !opt.Until.IsZero() {
 		return "", fmt.Errorf("a rule may end with `until <date>` or `for <n> times`, never both (RFC 5545 forbids UNTIL with COUNT)")
 	}
-	// furrow promises DATES. A sub-daily frequency is not just useless here — it
-	// is a denial of service: one close would expand millions of occurrences.
-	if opt.Freq > rrule.DAILY {
-		return "", fmt.Errorf("a recurrence finer than daily is not supported — furrow promises a date, not a time of day")
+	// furrow promises DATES. A sub-daily rule is not just useless here — it is a
+	// denial of service: one close would expand millions of occurrences. FREQ is
+	// only half of it, since BYHOUR/BYMINUTE/BYSECOND multiply a DAILY rule into
+	// the same thing.
+	if err := refuseSubDaily(opt); err != nil {
+		return "", err
+	}
+	if opt.Count < 0 {
+		return "", fmt.Errorf("a count must be a positive whole number, got %d", opt.Count)
 	}
 
 	// Round-trip through the library: it both validates the combination and
@@ -114,6 +119,23 @@ func Compile(spec string, resolveDate func(string) (time.Time, error)) (string, 
 // splitTerminator peels a trailing `until <date>` or `for <n> times` off the
 // spelling. RFC 5545 forbids UNTIL and COUNT together, so asking for both is a
 // usage error rather than a silently dropped half.
+// refuseSubDaily rejects everything that would make one rule fire more than once
+// a day, whichever spelling asks for it.
+func refuseSubDaily(opt *rrule.ROption) error {
+	if opt.Freq > rrule.DAILY {
+		return fmt.Errorf("a recurrence finer than daily is not supported — furrow promises a date, not a time of day")
+	}
+	for _, f := range []struct {
+		name string
+		vals []int
+	}{{"BYHOUR", opt.Byhour}, {"BYMINUTE", opt.Byminute}, {"BYSECOND", opt.Bysecond}} {
+		if len(f.vals) > 0 {
+			return fmt.Errorf("%s makes a rule fire more than once a day, which furrow does not support — it promises a date, not a time of day", f.name)
+		}
+	}
+	return nil
+}
+
 func splitTerminator(spec string, resolveDate func(string) (time.Time, error)) (head string, until time.Time, count int, err error) {
 	head = spec
 	lower := strings.ToLower(spec)
@@ -336,6 +358,24 @@ func CountBetween(line string, anchor, lo, hi time.Time) (int, error) {
 	return n, nil
 }
 
+// Bindable reports whether a rule will ever fire again from this anchor. A rule
+// that parses, is accepted, and then produces NOTHING is the worst of both — the
+// shard says the task recurs and the first close ends the series without anyone
+// having asked for that.
+func Bindable(line string, anchor time.Time) error {
+	if err := Valid(line, anchor); err != nil {
+		return err
+	}
+	_, ok, err := Next(line, anchor, anchor)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("that rule has no occurrence after the first one — it would end the series on the very next close")
+	}
+	return nil
+}
+
 // Valid reports whether a stored rule still parses. `furrow lint` uses it: a
 // rule that stopped parsing (a hand-edited shard, or one written by a furrow
 // that knows a spelling this one does not) would end the series silently.
@@ -347,8 +387,8 @@ func Valid(line string, anchor time.Time) error {
 	// The compile door refuses a sub-daily rule, but a shard furrow did not
 	// write can carry one — and it makes every close of that task expand a
 	// pathological number of occurrences. What Compile refuses, Valid reports.
-	if r.OrigOptions.Freq > rrule.DAILY {
-		return fmt.Errorf("stored recurrence rule %q is finer than daily, which furrow does not support", line)
+	if err := refuseSubDaily(&r.OrigOptions); err != nil {
+		return fmt.Errorf("stored recurrence rule %q: %v", line, err)
 	}
 	return nil
 }
@@ -370,7 +410,7 @@ func build(line string, anchor time.Time) (*rrule.RRule, error) {
 // do not have — the 29/30/31 case RFC 5545 answers by SKIPPING the month. The
 // caller says so once, at bind time: the operator who typed `monthly on 31`
 // usually meant `monthly on last`, and silence would let them find out in March.
-func SkipsMonths(line string) (day int, ok bool) {
+func SkipsMonths(line string, anchor time.Time) (day int, ok bool) {
 	opt, err := rrule.StrToROption(line)
 	if err != nil {
 		return 0, false
@@ -379,6 +419,15 @@ func SkipsMonths(line string) (day int, ok bool) {
 		if d >= 29 {
 			return d, true
 		}
+	}
+	// A bare `monthly` (or `yearly`, or `every N months`) names no day at all: it
+	// takes the ANCHOR's, so anchoring one on the 31st skips exactly the same
+	// months as `monthly on 31` while saying nothing about it. That is the
+	// spelling an operator reaches for first, so it is the one that most needs
+	// the note.
+	if len(opt.Bymonthday) == 0 && len(opt.Byweekday) == 0 &&
+		(opt.Freq == rrule.MONTHLY || opt.Freq == rrule.YEARLY) && anchor.Day() >= 29 {
+		return anchor.Day(), true
 	}
 	return 0, false
 }

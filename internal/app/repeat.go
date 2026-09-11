@@ -26,7 +26,7 @@ type RepeatReport struct {
 // bodyLinkLine matches a body's leading `[[t-xxxx]]` back-link and nothing else,
 // so a successor replaces the previous occurrence's link instead of stacking one
 // more on top of it every cycle.
-var bodyLinkLine = regexp.MustCompile(`^\s*\[\[[^\]\s]+\]\]\s*$`)
+var bodyLinkLine = regexp.MustCompile(`^previous: \[\[[^\]\s]+\]\]\s*$`)
 
 // repeatOnClose advances the series when a task carrying a recurrence rule is
 // about to enter the done lane, and reports what it did. It returns (nil, nil)
@@ -50,8 +50,12 @@ var bodyLinkLine = regexp.MustCompile(`^\s*\[\[[^\]\s]+\]\]\s*$`)
 // task that never existed, which only a human could find and remove. The
 // successor and its prose therefore come back PENDING, for the caller to flush
 // once the whole write is known to succeed.
-func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Time, reserved map[string]bool) (*RepeatReport, *pendingSuccessor, error) {
-	if lane != a.Cfg.DoneLane || t.Repeat == "" {
+func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now time.Time, reserved map[string]bool) (*RepeatReport, *pendingSuccessor, error) {
+	// A TRANSITION into the done lane, not the mere fact of ending there. A task
+	// that is ALREADY closed cannot be closed again, and `set <closed-id> -s done
+	// --repeat X` would otherwise arm a rule and immediately spend it — minting a
+	// fresh successor on every invocation, from a task nothing is working on.
+	if lane != a.Cfg.DoneLane || was == a.Cfg.DoneLane || t.Repeat == "" {
 		return nil, nil, nil
 	}
 	if t.Due == nil {
@@ -139,7 +143,7 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Ti
 	// finished occurrence would break a link on the LIVE one and leave
 	// `asset-missing` on the board forever, so each referenced asset is copied
 	// under the successor's own id and the body re-pointed at the copy.
-	nextBody, assets, err := a.copyAssetsForSuccessor(id, successorBody(body, t.ID))
+	nextBody, assets, err := a.copyAssetsForSuccessor(t.ID, id, successorBody(body, t.ID))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -153,7 +157,7 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Ti
 // those names. An asset the store cannot produce is left pointing where it was:
 // `lint` already reports a dangling reference, and refusing an ordinary close
 // over a missing attachment would be worse than carrying the break forward.
-func (a *App) copyAssetsForSuccessor(succID, body string) (string, []pendingAsset, error) {
+func (a *App) copyAssetsForSuccessor(prevID, succID, body string) (string, []pendingAsset, error) {
 	refs := core.ExtractAssetRefs(body)
 	if len(refs) == 0 {
 		return body, nil, nil
@@ -166,21 +170,17 @@ func (a *App) copyAssetsForSuccessor(succID, body string) (string, []pendingAsse
 		}
 		// The NAME is computed here; the bytes are written at flush time, so
 		// planning still touches nothing on disk.
-		copied := succID + "-" + core.SanitizeAssetName(strings.TrimPrefix(name, assetOwnerPrefix(name)))
+		//
+		// Strip the PREDECESSOR's whole id, not the text up to the first hyphen:
+		// an id contains one ("t-k3m9p"), so cutting there left the old id in
+		// place and every cycle prepended another. The name grew six bytes a
+		// close until the filesystem refused it and the series could never be
+		// closed again.
+		copied := succID + "-" + core.SanitizeAssetName(strings.TrimPrefix(name, prevID+"-"))
 		body = strings.ReplaceAll(body, "assets/"+name, "assets/"+copied)
 		out = append(out, pendingAsset{name: copied, data: data})
 	}
 	return body, out, nil
-}
-
-// assetOwnerPrefix is the "<owner-id>-" an attached asset's basename carries, so
-// a copy is named after the successor rather than inheriting the predecessor's
-// id twice over.
-func assetOwnerPrefix(name string) string {
-	if i := strings.Index(name, "-"); i > 0 {
-		return name[:i+1]
-	}
-	return ""
 }
 
 // pendingSuccessor is a generated occurrence that has not been committed yet:
@@ -205,6 +205,18 @@ type pendingAsset struct {
 // can move the index's backing array), and nothing is left on disk if an earlier
 // step refused.
 func (a *App) flushSuccessors(idx *core.Index, pending []*pendingSuccessor) error {
+	if err := a.writeSuccessorFiles(pending); err != nil {
+		return err
+	}
+	insertSuccessors(idx, pending)
+	return nil
+}
+
+// writeSuccessorFiles puts the generated prose and attachments on disk. It is
+// the only half that can FAIL, so callers that also append a closing note run it
+// FIRST: a note is not idempotent, and a failure after one had landed would
+// leave it on the body and duplicate it on every retry.
+func (a *App) writeSuccessorFiles(pending []*pendingSuccessor) error {
 	for _, p := range pending {
 		if p == nil {
 			continue
@@ -217,9 +229,20 @@ func (a *App) flushSuccessors(idx *core.Index, pending []*pendingSuccessor) erro
 		if err := a.saveBody(p.task.ID, p.body); err != nil {
 			return err
 		}
-		idx.Add(p.task)
 	}
 	return nil
+}
+
+// insertSuccessors adds the generated occurrences to the index. In-memory and
+// infallible by construction, so it can run at the last possible moment — after
+// every *core.Task pointer the caller held is dead, since inserting can move
+// core.Index's backing array.
+func insertSuccessors(idx *core.Index, pending []*pendingSuccessor) {
+	for _, p := range pending {
+		if p != nil {
+			idx.Add(p.task)
+		}
+	}
 }
 
 // consumeRepeat strips the rule from the task the close is settling. Always
@@ -233,8 +256,13 @@ func consumeRepeat(t *core.Task) {
 // successorBody is the predecessor's prose with a back-link on top. A leading
 // link from the PREVIOUS occurrence is replaced rather than pushed down, so a
 // body that has recurred a hundred times still opens with exactly one link.
+//
+// The line carries a literal `previous: ` marker, and ONLY that shape is
+// replaced. A bare leading `[[t-…]]` is something an operator may well have
+// written — a pointer to the task this one came out of — and overwriting it
+// destroyed their link while leaving the prose that referred to it.
 func successorBody(body, prevID string) string {
-	link := "[[" + prevID + "]]"
+	link := "previous: [[" + prevID + "]]"
 	head, rest, _ := strings.Cut(body, "\n")
 	if bodyLinkLine.MatchString(head) {
 		return link + "\n" + rest
@@ -273,10 +301,19 @@ func (a *App) bindRepeat(t *core.Task, spec string) error {
 	if t.Due == nil {
 		return core.Validationf(t.ID, "--repeat needs a --due: the date of the FIRST occurrence is what the rule counts from")
 	}
+	if a.Cfg.DefaultLane == a.Cfg.DoneLane {
+		// The successor is born in the default lane. If that IS the done lane it
+		// would be closed at birth holding a live rule — the state `add -s done
+		// --repeat` refuses — and nothing would ever fire it.
+		return core.Validationf(t.ID, "this board's default lane (%q) is its done lane, so a generated occurrence would be closed at birth — recurrence needs a board whose [lanes].default is open", a.Cfg.DefaultLane)
+	}
 	line, err := recur.Compile(spec, func(text string) (time.Time, error) {
 		return ParseDue(text, a.Clock.Now(), a.loc())
 	})
 	if err != nil {
+		return core.Validationf(t.ID, "%v", err)
+	}
+	if err := recur.Bindable(line, t.Due.In(a.loc())); err != nil {
 		return core.Validationf(t.ID, "%v", err)
 	}
 	t.Repeat = line
@@ -291,8 +328,8 @@ func (a *App) bindRepeat(t *core.Task, spec string) error {
 // months that lack it — so `monthly on 31` lands 7 times a year. That is a
 // defensible thing to ask for, so it is not an error; it is also almost never
 // what the operator meant, so it is not silent either.
-func RepeatWarning(line string) string {
-	day, ok := recur.SkipsMonths(line)
+func RepeatWarning(line string, anchor time.Time) string {
+	day, ok := recur.SkipsMonths(line, anchor)
 	if !ok {
 		return ""
 	}

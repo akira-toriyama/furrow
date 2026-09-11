@@ -133,7 +133,7 @@ func TestCloseGeneratesTheNextOccurrence(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.HasPrefix(body, "[["+pred.ID+"]]\n") {
+		if !strings.HasPrefix(body, "previous: [["+pred.ID+"]]\n") {
 			t.Errorf("successor body does not open with the back-link:\n%s", body)
 		}
 		if !strings.Contains(body, "水やり") {
@@ -209,9 +209,24 @@ func TestALateCloseSkipsAndSaysSo(t *testing.T) {
 
 func TestSeriesEndReportsCompletionAndMintsNothing(t *testing.T) {
 	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
-	pred := mustAddRepeating(t, a, "3 回だけ", "2026-03-01", "daily for 1 times", AddOpts{})
+	// `for 2 times` binds (there IS one more occurrence) and is spent by the
+	// SECOND close. `for 1 times` is refused at bind time — a rule that would end
+	// on the very next close is a due date, not a recurrence.
+	pred := mustAddRepeating(t, a, "2 回だけ", "2026-03-01", "daily for 2 times", AddOpts{})
+	first, rep0, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep0 == nil || rep0.Created == nil {
+		t.Fatalf("the first close ended the series early: %+v", rep0)
+	}
+	live, _, err := a.Get(*rep0.Created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = first
 
-	closed, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+	closed, rep, err := a.moveOne(live.ID, a.Cfg.DoneLane)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,8 +240,8 @@ func TestSeriesEndReportsCompletionAndMintsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tasks) != 1 {
-		t.Errorf("%d tasks, want only the closed one", len(tasks))
+	if len(tasks) != 2 {
+		t.Errorf("%d tasks, want the two closed occurrences and no third", len(tasks))
 	}
 	if closed.Repeat != "" {
 		t.Errorf("a spent rule stayed on the task: %q", closed.Repeat)
@@ -693,5 +708,127 @@ func TestTheSuccessorGetsItsOwnCopyOfTheAttachments(t *testing.T) {
 	}
 	if _, err := a.Store.LoadAsset(refs[0]); err != nil {
 		t.Errorf("the copy is not on disk: %v", err)
+	}
+}
+
+// The defect inside the asset-copy fix: the owner prefix was cut at the FIRST
+// hyphen, which is the one inside the id ("t-k3m9p"), so every cycle prepended
+// another id without removing the old. The name grew six bytes a close until
+// the filesystem refused it and the series could never be closed again.
+func TestCarriedAttachmentNamesDoNotGrow(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	cur := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
+	name, err := a.Store.SaveAsset(cur.ID, "note.txt", []byte("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.AddNote(cur.ID, "![n](assets/"+name+")"); err != nil {
+		t.Fatal(err)
+	}
+
+	var lens []int
+	for i := 0; i < 4; i++ {
+		_, rep, err := a.moveOne(cur.ID, a.Cfg.DoneLane)
+		if err != nil {
+			t.Fatalf("cycle %d: %v", i+1, err)
+		}
+		next, _, err := a.Get(*rep.Created)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cur = next
+		body, err := a.Store.LoadBody(cur.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		refs := core.ExtractAssetRefs(body)
+		if len(refs) != 1 {
+			t.Fatalf("cycle %d: refs = %v, want exactly one", i+1, refs)
+		}
+		if !strings.HasSuffix(refs[0], "-note.txt") || strings.Count(refs[0], "-") != 2 {
+			t.Errorf("cycle %d: %q accreted an id (want <succ-id>-note.txt)", i+1, refs[0])
+		}
+		lens = append(lens, len(refs[0]))
+	}
+	for i := 1; i < len(lens); i++ {
+		if lens[i] != lens[0] {
+			t.Errorf("attachment name length drifted across cycles: %v", lens)
+			break
+		}
+	}
+}
+
+// The back-link carries a `previous: ` marker, and ONLY that shape is replaced.
+// A bare leading `[[t-…]]` is something an operator may well have written.
+func TestAnOperatorsOwnLeadingLinkSurvives(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	task, err := a.Add("水やり", AddOpts{Due: "2026-03-01", Body: "[[t-other]]\n\nsee the task above.\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := "monthly"
+	if _, _, err := a.Set(task.ID, SetOpts{Repeat: &rule}); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := a.Done(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := a.Store.LoadBody(other(t, a, closed.ID).ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, "[[t-other]]") {
+		t.Errorf("the operator's own link was overwritten:\n%s", body)
+	}
+	if !strings.HasPrefix(body, "previous: [["+closed.ID+"]]") {
+		t.Errorf("the back-link is missing or unmarked:\n%s", body)
+	}
+}
+
+// Only a TRANSITION into the done lane advances a series. `set <closed-id> -s
+// done --repeat X` would otherwise arm a rule and spend it in the same write,
+// minting a fresh occurrence on every invocation.
+func TestReArmingAClosedTaskDoesNotMint(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	task, err := a.Add("x", AddOpts{Due: "2026-03-01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Done(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	done, rule := a.Cfg.DoneLane, "monthly"
+	for i := 0; i < 3; i++ {
+		if _, _, err := a.Set(task.ID, SetOpts{Status: &done, Repeat: &rule}); err == nil {
+			t.Fatalf("attempt %d: arming a closed task was accepted", i+1)
+		}
+	}
+	tasks, err := a.List(QueryOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 {
+		t.Errorf("%d tasks, want 1 — re-closing minted occurrences", len(tasks))
+	}
+}
+
+// A rule that would end on the very next close is a due date, not a recurrence.
+func TestARuleDeadOnArrivalIsRefused(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	for _, spec := range []string{"daily for 1 times", "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30"} {
+		if _, err := a.Add("x", AddOpts{Due: "2026-03-01", Repeat: spec}); err == nil {
+			t.Errorf("%q was bound, and the first close would end the series", spec)
+		}
+	}
+}
+
+// A board whose default lane IS its done lane would bear every occurrence
+// closed at birth, holding a rule nothing will ever fire.
+func TestRecurrenceRefusesABoardThatBearsClosedTasks(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	a.Cfg.DefaultLane = a.Cfg.DoneLane
+	if _, err := a.Add("x", AddOpts{Due: "2026-03-01", Repeat: "monthly"}); err == nil {
+		t.Error("a rule was bound on a board whose default lane is its done lane")
 	}
 }

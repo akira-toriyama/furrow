@@ -122,11 +122,11 @@ func TestMonthlyOn31SkipsShortMonths(t *testing.T) {
 		cur = next
 	}
 
-	if day, ok := SkipsMonths(line); !ok || day != 31 {
+	if day, ok := SkipsMonths(line, anchor); !ok || day != 31 {
 		t.Errorf("SkipsMonths = (%d, %v), want (31, true) so the CLI can say so at bind time", day, ok)
 	}
 	lastLine, _ := Compile("monthly on last", nil)
-	if _, ok := SkipsMonths(lastLine); ok {
+	if _, ok := SkipsMonths(lastLine, anchor); ok {
 		t.Error("`monthly on last` always lands; it must not be reported as skipping")
 	}
 }
@@ -251,5 +251,62 @@ func TestValidReportsWhatCompileRefuses(t *testing.T) {
 	}
 	if err := Valid("FREQ=DAILY", anchor); err != nil {
 		t.Errorf("a daily rule was reported invalid: %v", err)
+	}
+}
+
+// FREQ is only half the sub-daily story: BYHOUR/BYMINUTE/BYSECOND multiply a
+// DAILY rule into the same thing, and furrow promises a date, not a time of day.
+func TestSubDailyIsRefusedWhicheverSpellingAsksForIt(t *testing.T) {
+	anchor := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, spec := range []string{
+		"FREQ=MINUTELY",
+		"FREQ=DAILY;BYHOUR=0,1,2,3,4,5,6,7,8,9,10,11",
+		"FREQ=DAILY;BYMINUTE=0,30",
+		"FREQ=DAILY;BYSECOND=0,1",
+	} {
+		if line, err := Compile(spec, nil); err == nil {
+			t.Errorf("Compile(%q) = %q, want a refusal", spec, line)
+		}
+		if err := Valid(spec, anchor); err == nil {
+			t.Errorf("Valid(%q) accepted a stored sub-daily rule — lint would never see it", spec)
+		}
+	}
+}
+
+// A count must be a count.
+func TestOutOfRangeCountIsRefused(t *testing.T) {
+	for _, spec := range []string{"FREQ=DAILY;COUNT=-5", "daily for 0 times"} {
+		if line, err := Compile(spec, nil); err == nil {
+			t.Errorf("Compile(%q) = %q, want a refusal", spec, line)
+		}
+	}
+}
+
+// Bindable is the door a rule that can never fire again must not get through.
+func TestBindableRejectsARuleWithNothingLeft(t *testing.T) {
+	anchor := time.Date(2026, 3, 1, 23, 59, 59, 0, jst)
+	if err := Bindable("FREQ=DAILY;COUNT=1", anchor); err == nil {
+		t.Error("a rule whose only occurrence is the anchor was called bindable")
+	}
+	if err := Bindable("FREQ=DAILY;COUNT=2", anchor); err != nil {
+		t.Errorf("a rule with one more occurrence was refused: %v", err)
+	}
+}
+
+// A bare `monthly` takes its day from the ANCHOR, so anchoring one on the 31st
+// skips exactly the months `monthly on 31` does — while naming no day at all.
+// That is the spelling an operator reaches for first.
+func TestSkipsMonthsSeesTheAnchorsDay(t *testing.T) {
+	line, err := Compile("monthly", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	onThe31st := time.Date(2026, 1, 31, 23, 59, 59, 0, jst)
+	if day, ok := SkipsMonths(line, onThe31st); !ok || day != 31 {
+		t.Errorf("SkipsMonths(bare monthly, anchored on the 31st) = (%d, %v), want (31, true)", day, ok)
+	}
+	onThe15th := time.Date(2026, 1, 15, 23, 59, 59, 0, jst)
+	if _, ok := SkipsMonths(line, onThe15th); ok {
+		t.Error("a rule anchored on the 15th lands every month; it must not be warned about")
 	}
 }
