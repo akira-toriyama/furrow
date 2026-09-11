@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/recur"
 	"github.com/akira-toriyama/furrow/internal/store/fsstore"
 )
 
@@ -112,6 +113,22 @@ func (a *App) Lint() ([]core.Problem, error) {
 			// stamps, Move backfills); this catches pre-fix or hand-edited leaks.
 			if t.Closed == nil {
 				ps = append(ps, core.Problem{Severity: core.SevError, Code: "done-unclosed", ID: t.ID, Msg: "task is in the done lane but has no closed timestamp (a `furrow done` will backfill it)"})
+			}
+		}
+		// A rule furrow cannot expand ends the series in SILENCE: the close would
+		// refuse (no anchor) or hand out nothing, with the shard still claiming
+		// the task recurs. Only a hand-edit or a newer furrow's spelling can
+		// produce one, which is exactly why nothing else would catch it.
+		if t.Repeat != "" {
+			if t.Due == nil {
+				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
+					Msg: "carries a repeat rule with no due, so a close has no occurrence to advance from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
+			} else if t.RepeatAnchor == nil {
+				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
+					Msg: "carries a repeat rule with no repeat_anchor, so the series has no start to expand from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
+			} else if err := recur.Valid(t.Repeat, *t.RepeatAnchor); err != nil {
+				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
+					Msg: err.Error() + " — closing this task would advance nothing; rebind with `furrow set " + t.ID + " --repeat <rule>` or drop it with `--clear-repeat`"})
 			}
 		}
 	}

@@ -272,6 +272,10 @@ func canonicalizeTask(t *Task) {
 		d := normTime(*t.Due)
 		t.Due = &d
 	}
+	if t.RepeatAnchor != nil {
+		r := normTime(*t.RepeatAnchor)
+		t.RepeatAnchor = &r
+	}
 
 	// value/effort are clamp-don't-reject: an out-of-range estimate (from a
 	// hand-edit) is rounded into 1..5 so furrow never writes a stray. lint

@@ -25,7 +25,7 @@ var qualifierVocab = []string{
 
 // presenceVocab is the field set has:/no: accept.
 var presenceVocab = []string{
-	"label", "repo", "epic", "value", "effort", "deps", "refs", "checklist", "closed", "reviewed", "body", "due",
+	"label", "repo", "epic", "value", "effort", "deps", "refs", "checklist", "closed", "reviewed", "body", "due", "repeat",
 }
 
 // stateVocab is the is: flag set.
@@ -263,6 +263,10 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 				return t.Reviewed != nil
 			case "due":
 				return t.Due != nil
+			case "repeat":
+				// The live occurrence of a series is the only task that carries
+				// the rule, so has:repeat is "the recurring work on this board".
+				return t.Repeat != ""
 			case "body":
 				// Non-whitespace body content. Note `add` seeds every body with
 				// a heading, so no:body means a body someone deliberately

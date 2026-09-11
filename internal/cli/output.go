@@ -854,6 +854,16 @@ func waitingUntil(w *app.EpicWait) string {
 	return fmt.Sprintf("⏳ waiting until %s (%s)", humanTime(w.Until), w.Task)
 }
 
+// repeatAnchorNote names the series start beside the rule. Without it the rule
+// alone cannot be read: FREQ=MONTHLY says nothing about WHICH day, which lives
+// in the anchor the rule is expanded from.
+func repeatAnchorNote(t *core.Task) string {
+	if t.RepeatAnchor == nil {
+		return ""
+	}
+	return " (since " + humanTime(*t.RepeatAnchor) + ")"
+}
+
 // dueDetail renders a due stamp for the `show` block: the local timestamp plus
 // the state, so "when" and "is that a problem?" are one line instead of a date
 // the reader has to compare against today by hand. Empty when there is no date.
@@ -929,6 +939,9 @@ func printTaskDetail(a *app.App, t *core.Task, body string) {
 			box = "[x]"
 		}
 		fmt.Fprintf(out, "  %s %s\n", box, c.Text)
+	}
+	if t.Repeat != "" {
+		fmt.Fprintf(out, "repeat:   %s%s\n", t.Repeat, repeatAnchorNote(t))
 	}
 	if d := dueDetail(a, t); d != "" {
 		fmt.Fprintf(out, "due:      %s\n", d)
@@ -1110,6 +1123,14 @@ func changedFields(before, after *core.Task) []string {
 	}
 	if !timeEq(before.Due, after.Due) {
 		ch = append(ch, "due")
+	}
+	// In struct order, after due. A close CONSUMES a rule, so without these a
+	// write that rewrote the shard and advanced `updated` reported changed: [].
+	if before.Repeat != after.Repeat {
+		ch = append(ch, "repeat")
+	}
+	if !timeEq(before.RepeatAnchor, after.RepeatAnchor) {
+		ch = append(ch, "repeat_anchor")
 	}
 	return ch
 }

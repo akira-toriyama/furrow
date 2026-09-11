@@ -25,7 +25,7 @@ const TaskV2 = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.task.v2.json",
   "title": "furrow task shard v2",
-  "description": "Schema for one .furrow/tasks/<id>.json shard (a single task's metadata). The board-wide schema_version lives in .furrow/meta.json, never in a shard. v2 adds the required repos set (owner/repo identifiers; [] = draft, attached to no repo). Board layout v6 removed parent and type and added epic (the box a task belongs to); v8 added the optional due stamp (the instant a task is promised for). Pin to a tagged URL or vendor this file.",
+  "description": "Schema for one .furrow/tasks/<id>.json shard (a single task's metadata). The board-wide schema_version lives in .furrow/meta.json, never in a shard. v2 adds the required repos set (owner/repo identifiers; [] = draft, attached to no repo). Board layout v6 removed parent and type and added epic (the box a task belongs to); v8 added the optional due stamp (the instant a task is promised for); v10 added the optional repeat rule and its series anchor (a task that regenerates itself when closed). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": true,
   "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a shard furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (naming the task) — nothing else can, since nothing ever deletes an extra. NOTE $defs/checklistItem below keeps additionalProperties:false, because passthrough is TOP-LEVEL ONLY — an unknown key inside a checklist item really is still dropped, and this schema must not promise what the marshaller does not do.",
@@ -48,6 +48,8 @@ const TaskV2 = `{
     "reviewed": { "type": ["string", "null"], "format": "date-time", "description": "when a human last reviewed this task (furrow review <id>); null = never. Tracked separately from updated." },
     "body": { "type": "string", "description": "relative path, e.g. bodies/t-0042.md" },
     "epic": { "type": "string", "description": "the epic (box) this task belongs to, 0..1 — an epics/<id>.json id. REQUIRED for an open task, enforced by furrow lint (epic-required) rather than at add time, so capture stays frictionless; absent is therefore legal on disk but flagged. furrow next scopes to the ACTIVE epic, which is why this is a schema field and not a label." },
+    "repeat": { "type": "string", "description": "the recurrence rule this task runs on: ONE RFC 5545 RRULE line, with no DTSTART line (repeat_anchor carries the series start); absent = not repeating. Closing a repeating task generates its successor and MOVES this field (and repeat_anchor) to it, so the rule is held by exactly one task at a time — re-closing therefore cannot mint a second successor." },
+    "repeat_anchor": { "type": "string", "format": "date-time", "description": "the series start the rule is expanded from: the FIRST occurrence's due. Immutable for the life of the series and inherited unchanged by each successor, which is what lets COUNT terminate and keeps a snooze (set --due) from re-latticing later occurrences. Present iff repeat is." },
     "due": { "type": "string", "format": "date-time", "description": "the instant this task is promised for; absent = no date (which is why it is not in required). An INSTANT, not a day: a date-only input (--due 2026-08-04) is bound to the END of that day in the operator's zone, so the day itself never starts out overdue. furrow lint ERRORS due-overdue and warns due-today, and furrow brief leads with the arrived ones — board-wide, not scoped to the active epic." }
   },
   "$defs": {
@@ -76,13 +78,13 @@ const MetaV2 = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.meta.v2.json",
   "title": "furrow meta v2",
-  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 9 = the per-epic reviewed timestamp (furrow review <epic-ref>; revisit's epic_review_due reads it for standing boxes); 8 = the per-task due stamp (an optional instant a task is promised for; lint errors due-overdue, brief leads with it); 7 = epic-to-epic deps (the epics/<id>.json shard gains the required deps set); 6 = the epic pivot (per-task type/parent removed, per-task epic + the epics/ shard kind added); 5 = the per-task type field; 4 = the per-repo review shards (repos/) and the per-task reviewed timestamp (3 = the repos pivot, 2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
+  "description": "Schema for .furrow/meta.json — the one board-wide layout version. schema_version 10 = the per-task repeat rule and its series anchor (closing a repeating task generates the next occurrence); 9 = the per-epic reviewed timestamp (furrow review <epic-ref>; revisit's epic_review_due reads it for standing boxes); 8 = the per-task due stamp (an optional instant a task is promised for; lint errors due-overdue, brief leads with it); 7 = epic-to-epic deps (the epics/<id>.json shard gains the required deps set); 6 = the epic pivot (per-task type/parent removed, per-task epic + the epics/ shard kind added); 5 = the per-task type field; 4 = the per-repo review shards (repos/) and the per-task reviewed timestamp (3 = the repos pivot, 2 = pre-repos shards, 1 = the monolithic index.json). Pin to a tagged URL or vendor this file.",
   "type": "object",
   "additionalProperties": true,
   "$comment": "true, deliberately: furrow PRESERVES top-level keys it does not know (a field written by a newer furrow that did not bump the layout version) and re-emits them on write, so a meta.json furrow itself produces may legitimately carry extras. Declaring them invalid here would make this artifact call furrow's own output non-conforming. Typo detection therefore lives in furrow lint, which warns unknown-shard-key (blamed on the id \"meta\", since meta.json belongs to no task) — nothing else can, since nothing ever deletes an extra. This document has no nested objects, so the top-level-only limit of the passthrough has nothing to qualify here; the task shard's schema explains it.",
   "required": ["schema_version"],
   "properties": {
-    "schema_version": { "const": 9 }
+    "schema_version": { "const": 10 }
   }
 }
 `
