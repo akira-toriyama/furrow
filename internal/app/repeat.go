@@ -54,6 +54,13 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Ti
 	if lane != a.Cfg.DoneLane || t.Repeat == "" {
 		return nil, nil, nil
 	}
+	if t.Due == nil {
+		// Without a due there is nothing to advance FROM: the search would fall
+		// back to the wall clock and hand back the occurrence just closed, which
+		// is defect #1's failure mode with no signal at all. Only a shard furrow
+		// did not write can reach this; `lint` names it as repeat-invalid.
+		return nil, nil, core.Validationf(t.ID, "task %s carries a repeat rule with no due, so the occurrence being closed has no date to advance from — rebind it with `furrow set %s --repeat <rule> --due <date>`, or drop it with `furrow set %s --clear-repeat`", t.ID, t.ID, t.ID)
+	}
 	if t.RepeatAnchor == nil {
 		// Only reachable from a shard furrow did not write: every write path
 		// binds the two together. Refusing beats inventing an anchor, which
@@ -76,7 +83,7 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Ti
 	// close jumping past the lapsed cycles, and makes an on-time or early close
 	// advance exactly one step.
 	after := now
-	if t.Due != nil && t.Due.After(after) {
+	if t.Due.After(after) {
 		after = *t.Due
 	}
 	next, ok, err := recur.Next(rule, anchor, after)
@@ -89,10 +96,7 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Ti
 
 	// What lapsed while the task sat open: occurrences after the one it was
 	// promised for, before the one it is handing on.
-	from := anchor
-	if t.Due != nil {
-		from = t.Due.In(a.loc())
-	}
+	from := t.Due.In(a.loc())
 	skipped, err := recur.CountBetween(rule, anchor, from, next)
 	if err != nil {
 		return nil, nil, core.Validationf(t.ID, "%v", err)
@@ -130,16 +134,69 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Ti
 		Epic: t.Epic, Due: &due,
 		Repeat: rule, RepeatAnchor: &anchorUTC,
 	}
+	// The copied prose may point at the predecessor's attachments, which live
+	// under ITS id and travel with it into the archive. Left alone, retiring a
+	// finished occurrence would break a link on the LIVE one and leave
+	// `asset-missing` on the board forever, so each referenced asset is copied
+	// under the successor's own id and the body re-pointed at the copy.
+	nextBody, assets, err := a.copyAssetsForSuccessor(id, successorBody(body, t.ID))
+	if err != nil {
+		return nil, nil, err
+	}
+
 	return &RepeatReport{Created: &id, Due: &due, Skipped: skipped},
-		&pendingSuccessor{task: successor, body: successorBody(body, t.ID)}, nil
+		&pendingSuccessor{task: successor, body: nextBody, assets: assets}, nil
+}
+
+// copyAssetsForSuccessor rewrites every `assets/<name>` reference in the copied
+// body to a name owned by the successor, and returns the bytes to write under
+// those names. An asset the store cannot produce is left pointing where it was:
+// `lint` already reports a dangling reference, and refusing an ordinary close
+// over a missing attachment would be worse than carrying the break forward.
+func (a *App) copyAssetsForSuccessor(succID, body string) (string, []pendingAsset, error) {
+	refs := core.ExtractAssetRefs(body)
+	if len(refs) == 0 {
+		return body, nil, nil
+	}
+	var out []pendingAsset
+	for _, name := range refs {
+		data, err := a.Store.LoadAsset(name)
+		if err != nil {
+			continue // dangling already; lint owns it
+		}
+		// The NAME is computed here; the bytes are written at flush time, so
+		// planning still touches nothing on disk.
+		copied := succID + "-" + core.SanitizeAssetName(strings.TrimPrefix(name, assetOwnerPrefix(name)))
+		body = strings.ReplaceAll(body, "assets/"+name, "assets/"+copied)
+		out = append(out, pendingAsset{name: copied, data: data})
+	}
+	return body, out, nil
+}
+
+// assetOwnerPrefix is the "<owner-id>-" an attached asset's basename carries, so
+// a copy is named after the successor rather than inheriting the predecessor's
+// id twice over.
+func assetOwnerPrefix(name string) string {
+	if i := strings.Index(name, "-"); i > 0 {
+		return name[:i+1]
+	}
+	return ""
 }
 
 // pendingSuccessor is a generated occurrence that has not been committed yet:
 // the task to insert and the prose to write, both held until the caller knows
 // the whole write succeeds.
 type pendingSuccessor struct {
-	task core.Task
-	body string
+	task   core.Task
+	body   string
+	assets []pendingAsset
+}
+
+// pendingAsset is one attachment copied for a successor, held with it until the
+// write is known to succeed.
+type pendingAsset struct {
+	name string
+	data []byte
 }
 
 // flushSuccessors inserts the generated occurrences and writes their bodies. It
@@ -151,6 +208,11 @@ func (a *App) flushSuccessors(idx *core.Index, pending []*pendingSuccessor) erro
 	for _, p := range pending {
 		if p == nil {
 			continue
+		}
+		for _, as := range p.assets {
+			if err := a.Store.SaveAssetRaw(as.name, as.data); err != nil {
+				return err
+			}
 		}
 		if err := a.saveBody(p.task.ID, p.body); err != nil {
 			return err

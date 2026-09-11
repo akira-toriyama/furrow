@@ -340,8 +340,17 @@ func CountBetween(line string, anchor, lo, hi time.Time) (int, error) {
 // rule that stopped parsing (a hand-edited shard, or one written by a furrow
 // that knows a spelling this one does not) would end the series silently.
 func Valid(line string, anchor time.Time) error {
-	_, err := build(line, anchor)
-	return err
+	r, err := build(line, anchor)
+	if err != nil {
+		return err
+	}
+	// The compile door refuses a sub-daily rule, but a shard furrow did not
+	// write can carry one — and it makes every close of that task expand a
+	// pathological number of occurrences. What Compile refuses, Valid reports.
+	if r.OrigOptions.Freq > rrule.DAILY {
+		return fmt.Errorf("stored recurrence rule %q is finer than daily, which furrow does not support", line)
+	}
+	return nil
 }
 
 func build(line string, anchor time.Time) (*rrule.RRule, error) {

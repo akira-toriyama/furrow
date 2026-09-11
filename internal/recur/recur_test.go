@@ -236,3 +236,20 @@ func TestValidRejectsAStoredRuleThatStoppedParsing(t *testing.T) {
 		t.Error("a rule that does not parse must be reported, or the series ends in silence")
 	}
 }
+
+// Compile refuses a sub-daily rule at the door, but a shard furrow did not
+// write can carry one — and it makes every close of that task expand a
+// pathological number of occurrences. What Compile refuses, Valid reports, so
+// `furrow lint` can see it.
+func TestValidReportsWhatCompileRefuses(t *testing.T) {
+	anchor := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := Compile("FREQ=MINUTELY", nil); err == nil {
+		t.Error("a sub-daily rule compiled")
+	}
+	if err := Valid("FREQ=MINUTELY;INTERVAL=1", anchor); err == nil {
+		t.Error("a stored sub-daily rule was reported valid — lint would never see it")
+	}
+	if err := Valid("FREQ=DAILY", anchor); err != nil {
+		t.Errorf("a daily rule was reported invalid: %v", err)
+	}
+}

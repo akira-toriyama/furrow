@@ -120,7 +120,10 @@ func (a *App) Lint() ([]core.Problem, error) {
 		// the task recurs. Only a hand-edit or a newer furrow's spelling can
 		// produce one, which is exactly why nothing else would catch it.
 		if t.Repeat != "" {
-			if t.RepeatAnchor == nil {
+			if t.Due == nil {
+				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
+					Msg: "carries a repeat rule with no due, so a close has no occurrence to advance from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
+			} else if t.RepeatAnchor == nil {
 				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
 					Msg: "carries a repeat rule with no repeat_anchor, so the series has no start to expand from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
 			} else if err := recur.Valid(t.Repeat, *t.RepeatAnchor); err != nil {

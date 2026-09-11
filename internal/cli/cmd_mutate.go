@@ -961,9 +961,34 @@ func newSetCmd() *cobra.Command {
 				return map[string]any{"clamped": clamped}
 			}
 			if len(args) > 1 {
-				return emitMutationManyWith(cmd, a, "set", args,
-					func() ([]*core.Task, error) { return a.SetMany(args, o) },
-					clampExtra)
+				// A close is a close whatever the arity: the batch arm owes the
+				// same series receipt the single-id one gives, on stdout and in
+				// every envelope.
+				rs, closed := newSeriesReports(), []*core.Task(nil)
+				if err := emitMutationManyWith(cmd, a, "set", args,
+					func() ([]*core.Task, error) {
+						ts, reps, err := a.SetManySeries(args, o)
+						rs.collect(ts, reps)
+						closed = ts
+						return ts, err
+					},
+					func(after *core.Task) map[string]any {
+						extra := map[string]any{}
+						for k, v := range clampExtra(after) {
+							extra[k] = v
+						}
+						for k, v := range rs.annotate(after) {
+							extra[k] = v
+						}
+						if len(extra) == 0 {
+							return nil
+						}
+						return extra
+					}); err != nil {
+					return err
+				}
+				rs.print(cmd.OutOrStdout(), closed)
+				return nil
 			}
 			// One id still emits a one-element ARRAY (the always-array rule —
 			// `set <id>...` has array cardinality by signature); only the

@@ -583,3 +583,115 @@ func TestABatchOfClosesReservesItsOwnIDs(t *testing.T) {
 		t.Errorf("%d tasks, want 10 (5 closed + 5 successors)", len(tasks))
 	}
 }
+
+// A close is a close whatever the arity: the batch form owes the same receipt.
+func TestBatchSetToDoneReportsEverySeries(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	var ids []string
+	for i := 0; i < 2; i++ {
+		ids = append(ids, mustAddRepeating(t, a, "chore", "2026-03-01", "monthly", AddOpts{}).ID)
+	}
+	done := a.Cfg.DoneLane
+	_, reps, err := a.SetManySeries(ids, SetOpts{Status: &done})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reps) != 2 {
+		t.Fatalf("%d reports, want 2", len(reps))
+	}
+	for i, r := range reps {
+		if r == nil || r.Created == nil {
+			t.Errorf("task %d advanced its series with no receipt: %+v", i, r)
+		}
+	}
+}
+
+// A closed task can never be closed again, so a rule on it could never fire —
+// the state `add -s done --repeat` refuses, reached the other way round.
+func TestSetRefusesARuleOnAnAlreadyClosedTask(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	task, err := a.Add("x", AddOpts{Due: "2026-03-01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Done(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	rule := "monthly"
+	if _, _, err := a.Set(task.ID, SetOpts{Repeat: &rule}); err == nil {
+		t.Error("a live rule was armed on a closed task")
+	}
+	// The same edit WITH a reopen is the supported way round.
+	lane := a.Cfg.DefaultLane
+	if _, _, err := a.Set(task.ID, SetOpts{Status: &lane, Repeat: &rule}); err != nil {
+		t.Errorf("reopening and binding in one write was refused: %v", err)
+	}
+}
+
+// A rule with no due has no occurrence to advance from; without this guard the
+// search falls back to the wall clock and re-mints what was just closed.
+func TestARuleWithNoDueIsRefusedAndLinted(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	task := mustAddRepeating(t, a, "x", "2026-03-01", "monthly", AddOpts{})
+
+	idx, err := a.Store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bt, _ := idx.Find(task.ID)
+	bt.Due = nil // a shard furrow would not write
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := a.Done(task.ID); err == nil {
+		t.Error("a close advanced a series with no occurrence to advance from")
+	}
+	ps, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, p := range ps {
+		if p.Code == "repeat-invalid" && p.ID == task.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("lint did not report the unusable rule")
+	}
+}
+
+// The predecessor's attachments travel with it into the archive, so a successor
+// that pointed at them would break the moment a finished occurrence is retired.
+func TestTheSuccessorGetsItsOwnCopyOfTheAttachments(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	task := mustAddRepeating(t, a, "x", "2026-03-01", "monthly", AddOpts{})
+	name, err := a.Store.SaveAsset(task.ID, "shot.png", []byte("png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.AddNote(task.ID, "![shot](assets/"+name+")"); err != nil {
+		t.Fatal(err)
+	}
+
+	closed, err := a.Done(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	succ := other(t, a, closed.ID)
+	body, err := a.Store.LoadBody(succ.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := core.ExtractAssetRefs(body)
+	if len(refs) != 1 {
+		t.Fatalf("successor asset refs = %v, want exactly one", refs)
+	}
+	if !strings.HasPrefix(refs[0], succ.ID+"-") {
+		t.Errorf("successor points at %q, still owned by the predecessor", refs[0])
+	}
+	if _, err := a.Store.LoadAsset(refs[0]); err != nil {
+		t.Errorf("the copy is not on disk: %v", err)
+	}
+}

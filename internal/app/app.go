@@ -2217,21 +2217,29 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 // which the sparse-priority model treats as unordered. Refusing is reversible;
 // inventing an order would not be.
 func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
+	t, _, err := a.SetManySeries(ids, o)
+	return t, err
+}
+
+// SetManySeries is SetMany plus the per-id series reports, one entry per id in
+// the same order — the batch twin of SetSeries, so a bulk `set -s done` owes
+// the same receipt a single one does. A close is a close whatever the arity.
+func (a *App) SetManySeries(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, error) {
 	if err := a.validateSetOpts("", o); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(ids) > 1 && (o.Priority != nil || o.Before != "" || o.After != "") {
-		return nil, core.Validationf("", "--priority/--before/--after position ONE task; set them in a separate single-id call")
+		return nil, nil, core.Validationf("", "--priority/--before/--after position ONE task; set them in a separate single-id call")
 	}
 	// One instant for the whole batch (see resolveDue): a bulk snooze promises
 	// every id for the same moment.
 	due, err := a.resolveDue(o)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	idx, err := a.load()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	order, missing := []string{}, []string{}
 	seen := map[string]bool{}
@@ -2247,36 +2255,40 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 		order = append(order, id)
 	}
 	if len(missing) > 0 {
-		return nil, a.batchMissingErr(missing, len(order)+len(missing), "set")
+		return nil, nil, a.batchMissingErr(missing, len(order)+len(missing), "set")
 	}
 	var successors []*pendingSuccessor
+	reports := map[string]*RepeatReport{}
 	reservedIDs := map[string]bool{}
 	for _, id := range order {
 		t, _ := idx.Find(id)
 		reposBefore := append([]string(nil), t.Repos...)
-		_, succ, _, serr := a.applySet(idx, id, o, due, reservedIDs)
+		_, succ, rep, serr := a.applySet(idx, id, o, due, reservedIDs)
 		if serr != nil {
-			return nil, serr
+			return nil, nil, serr
 		}
 		successors = append(successors, succ)
+		reports[id] = rep
 		if err := a.guardRepos(id, unionRepos(reposBefore, t.Repos), ""); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	// Held to the end: inserting moves core.Index's backing array, and the loop
 	// above is holding task pointers into it.
 	if err := a.flushSuccessors(idx, successors); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := a.Store.Save(idx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out := make([]*core.Task, 0, len(order))
+	reps := make([]*RepeatReport, 0, len(order))
 	for _, id := range order {
 		saved, _ := idx.Find(id)
 		out = append(out, saved)
+		reps = append(reps, reports[id])
 	}
-	return out, nil
+	return out, reps, nil
 }
 
 // applySet mutates one task in an ALREADY-LOADED index and returns any respace
@@ -2427,6 +2439,15 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, re
 			consumeRepeat(t)
 		}
 		report, successor = r, succ
+	}
+	// The end-state invariant, checked where the end state is known: a task that
+	// is closed cannot carry a live rule. `set -s done --repeat X` is fine — the
+	// close above consumed it and handed X to the successor — but `set
+	// <closed-id> --repeat X` would arm a rule on a task nothing will ever close
+	// again, the state `add -s done --repeat` already refuses, and it forks a
+	// series in two when the predecessor's own successor is still running.
+	if t.Repeat != "" && t.Status == a.Cfg.DoneLane {
+		return renumbered, nil, nil, core.Validationf(id, "task %s is closed, so a repeat rule on it could never fire — reopen it first (`furrow move %s %s`), or drop the rule", id, id, a.Cfg.DefaultLane)
 	}
 	if err := a.stampIfChanged(t, before); err != nil {
 		return renumbered, nil, nil, err
