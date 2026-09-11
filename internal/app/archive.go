@@ -170,11 +170,25 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) ([]co
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
 	}
+	// An asset a task STILL IN THE HOT STORE references must stay behind, even
+	// though it was attached to the task being retired. A recurring task hands
+	// its prose to the next occurrence, so the live one can point at an
+	// attachment owned by an occurrence that finished months ago; taking it into
+	// the archive would break a link on work someone is about to do, and leave
+	// `asset-missing` on the board forever. The archive keeps its own copy either
+	// way, so nothing is lost on that side.
+	live, err := a.assetsReferencedByLiveBodies(idx)
+	if err != nil {
+		return nil, err
+	}
 	for _, t := range moved { // both indexes are durable now — safe to delete the source
 		if err := a.deleteBody(t.ID); err != nil {
 			return nil, err
 		}
 		for _, name := range assetsByID[t.ID] {
+			if live[name] {
+				continue
+			}
 			if err := a.Store.DeleteAsset(name); err != nil {
 				return nil, err
 			}
@@ -318,6 +332,23 @@ func assetsOwnedBy(s assetLister, moved []core.Task) (map[string][]string, error
 				out[id] = append(out[id], as.Name)
 				break
 			}
+		}
+	}
+	return out, nil
+}
+
+// assetsReferencedByLiveBodies is the set of asset basenames some remaining task
+// still points at. Read AFTER the archived tasks have left the index, so it
+// describes the store as it will be.
+func (a *App) assetsReferencedByLiveBodies(idx *core.Index) (map[string]bool, error) {
+	out := map[string]bool{}
+	for i := range idx.Tasks {
+		body, err := a.Store.LoadBody(idx.Tasks[i].ID)
+		if err != nil {
+			continue // a missing body is lint's finding, not archive's
+		}
+		for _, name := range core.ExtractAssetRefs(body) {
+			out[name] = true
 		}
 	}
 	return out, nil

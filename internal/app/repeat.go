@@ -138,65 +138,21 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 		Epic: t.Epic, Due: &due,
 		Repeat: rule, RepeatAnchor: &anchorUTC,
 	}
-	// The copied prose may point at the predecessor's attachments, which live
-	// under ITS id and travel with it into the archive. Left alone, retiring a
-	// finished occurrence would break a link on the LIVE one and leave
-	// `asset-missing` on the board forever, so each referenced asset is copied
-	// under the successor's own id and the body re-pointed at the copy.
-	nextBody, assets, err := a.copyAssetsForSuccessor(t.ID, id, successorBody(body, t.ID))
-	if err != nil {
-		return nil, nil, err
-	}
-
+	// The copied prose keeps pointing at the PREDECESSOR's attachments. Copying
+	// them per cycle was the obvious answer and the wrong one: it duplicates
+	// every blob into the shared board's git history once per occurrence,
+	// forever. `archive` leaves behind any asset a live body still references
+	// instead, so one copy serves the whole series.
 	return &RepeatReport{Created: &id, Due: &due, Skipped: skipped},
-		&pendingSuccessor{task: successor, body: nextBody, assets: assets}, nil
-}
-
-// copyAssetsForSuccessor rewrites every `assets/<name>` reference in the copied
-// body to a name owned by the successor, and returns the bytes to write under
-// those names. An asset the store cannot produce is left pointing where it was:
-// `lint` already reports a dangling reference, and refusing an ordinary close
-// over a missing attachment would be worse than carrying the break forward.
-func (a *App) copyAssetsForSuccessor(prevID, succID, body string) (string, []pendingAsset, error) {
-	refs := core.ExtractAssetRefs(body)
-	if len(refs) == 0 {
-		return body, nil, nil
-	}
-	var out []pendingAsset
-	for _, name := range refs {
-		data, err := a.Store.LoadAsset(name)
-		if err != nil {
-			continue // dangling already; lint owns it
-		}
-		// The NAME is computed here; the bytes are written at flush time, so
-		// planning still touches nothing on disk.
-		//
-		// Strip the PREDECESSOR's whole id, not the text up to the first hyphen:
-		// an id contains one ("t-k3m9p"), so cutting there left the old id in
-		// place and every cycle prepended another. The name grew six bytes a
-		// close until the filesystem refused it and the series could never be
-		// closed again.
-		copied := succID + "-" + core.SanitizeAssetName(strings.TrimPrefix(name, prevID+"-"))
-		body = strings.ReplaceAll(body, "assets/"+name, "assets/"+copied)
-		out = append(out, pendingAsset{name: copied, data: data})
-	}
-	return body, out, nil
+		&pendingSuccessor{task: successor, body: successorBody(body, t.ID)}, nil
 }
 
 // pendingSuccessor is a generated occurrence that has not been committed yet:
 // the task to insert and the prose to write, both held until the caller knows
 // the whole write succeeds.
 type pendingSuccessor struct {
-	task   core.Task
-	body   string
-	assets []pendingAsset
-}
-
-// pendingAsset is one attachment copied for a successor, held with it until the
-// write is known to succeed.
-type pendingAsset struct {
-	name string
-	data []byte
+	task core.Task
+	body string
 }
 
 // flushSuccessors inserts the generated occurrences and writes their bodies. It
@@ -212,7 +168,7 @@ func (a *App) flushSuccessors(idx *core.Index, pending []*pendingSuccessor) erro
 	return nil
 }
 
-// writeSuccessorFiles puts the generated prose and attachments on disk. It is
+// writeSuccessorFiles puts the generated prose on disk. It is
 // the only half that can FAIL, so callers that also append a closing note run it
 // FIRST: a note is not idempotent, and a failure after one had landed would
 // leave it on the body and duplicate it on every retry.
@@ -220,11 +176,6 @@ func (a *App) writeSuccessorFiles(pending []*pendingSuccessor) error {
 	for _, p := range pending {
 		if p == nil {
 			continue
-		}
-		for _, as := range p.assets {
-			if err := a.Store.SaveAssetRaw(as.name, as.data); err != nil {
-				return err
-			}
 		}
 		if err := a.saveBody(p.task.ID, p.body); err != nil {
 			return err

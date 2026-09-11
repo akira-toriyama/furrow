@@ -677,11 +677,17 @@ func TestARuleWithNoDueIsRefusedAndLinted(t *testing.T) {
 	}
 }
 
-// The predecessor's attachments travel with it into the archive, so a successor
-// that pointed at them would break the moment a finished occurrence is retired.
-func TestTheSuccessorGetsItsOwnCopyOfTheAttachments(t *testing.T) {
-	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
-	task := mustAddRepeating(t, a, "x", "2026-03-01", "monthly", AddOpts{})
+// A successor keeps pointing at the PREDECESSOR's attachment — copying it per
+// cycle would duplicate the blob into the board's git history once per
+// occurrence, forever. `archive` is what keeps the link alive: an asset a live
+// body still references stays behind when its owner is retired.
+func TestArchiveLeavesAnAssetALiveOccurrencePointsAt(t *testing.T) {
+	a := newFSApp(t)
+	a.Loc = jst
+	task, err := a.Add("水やり", AddOpts{Due: "2026-03-01", Repeat: "monthly"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	name, err := a.Store.SaveAsset(task.ID, "shot.png", []byte("png"))
 	if err != nil {
 		t.Fatal(err)
@@ -699,23 +705,31 @@ func TestTheSuccessorGetsItsOwnCopyOfTheAttachments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	refs := core.ExtractAssetRefs(body)
-	if len(refs) != 1 {
-		t.Fatalf("successor asset refs = %v, want exactly one", refs)
+	if refs := core.ExtractAssetRefs(body); len(refs) != 1 || refs[0] != name {
+		t.Fatalf("successor refs = %v, want the predecessor's single attachment %q", refs, name)
 	}
-	if !strings.HasPrefix(refs[0], succ.ID+"-") {
-		t.Errorf("successor points at %q, still owned by the predecessor", refs[0])
+
+	if _, err := a.ArchiveIDs([]string{closed.ID}, false); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := a.Store.LoadAsset(refs[0]); err != nil {
-		t.Errorf("the copy is not on disk: %v", err)
+	if _, err := a.Store.LoadAsset(name); err != nil {
+		t.Errorf("archiving the finished occurrence took an attachment the LIVE one points at: %v", err)
+	}
+	ps, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ps {
+		if p.Code == "asset-missing" {
+			t.Errorf("lint reports a broken link after archiving: %+v", p)
+		}
 	}
 }
 
-// The defect inside the asset-copy fix: the owner prefix was cut at the FIRST
-// hyphen, which is the one inside the id ("t-k3m9p"), so every cycle prepended
-// another id without removing the old. The name grew six bytes a close until
-// the filesystem refused it and the series could never be closed again.
-func TestCarriedAttachmentNamesDoNotGrow(t *testing.T) {
+// Nothing is duplicated per cycle: the store holds ONE copy of the blob however
+// many times the chore has come round. The copy-per-cycle version of this grew
+// the filename by an id every close and wedged the series at ~40.
+func TestACarriedAttachmentIsNotDuplicatedPerCycle(t *testing.T) {
 	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
 	cur := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
 	name, err := a.Store.SaveAsset(cur.ID, "note.txt", []byte("x"))
@@ -726,7 +740,6 @@ func TestCarriedAttachmentNamesDoNotGrow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var lens []int
 	for i := 0; i < 4; i++ {
 		_, rep, err := a.moveOne(cur.ID, a.Cfg.DoneLane)
 		if err != nil {
@@ -741,20 +754,16 @@ func TestCarriedAttachmentNamesDoNotGrow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		refs := core.ExtractAssetRefs(body)
-		if len(refs) != 1 {
-			t.Fatalf("cycle %d: refs = %v, want exactly one", i+1, refs)
+		if refs := core.ExtractAssetRefs(body); len(refs) != 1 || refs[0] != name {
+			t.Fatalf("cycle %d: refs = %v, want the one original attachment %q", i+1, refs, name)
 		}
-		if !strings.HasSuffix(refs[0], "-note.txt") || strings.Count(refs[0], "-") != 2 {
-			t.Errorf("cycle %d: %q accreted an id (want <succ-id>-note.txt)", i+1, refs[0])
-		}
-		lens = append(lens, len(refs[0]))
 	}
-	for i := 1; i < len(lens); i++ {
-		if lens[i] != lens[0] {
-			t.Errorf("attachment name length drifted across cycles: %v", lens)
-			break
-		}
+	assets, err := a.Store.ListAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assets) != 1 {
+		t.Errorf("%d assets after 4 cycles, want 1 — the blob is being duplicated", len(assets))
 	}
 }
 
