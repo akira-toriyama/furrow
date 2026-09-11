@@ -1,0 +1,364 @@
+package app
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/akira-toriyama/furrow/internal/config"
+	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/store/memstore"
+)
+
+// newRepeatApp pins the clock and the board calendar, the way a real board that
+// declares [due].timezone runs: a UTC clock and a +09:00 calendar, which is the
+// only shape that catches a due bound off the process zone.
+func newRepeatApp(now time.Time) *App {
+	cfg := config.Default()
+	cfg.DueTimezone = jst
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
+	return NewWithStore(st, cfg, &fixedClock{t: now})
+}
+
+func mustAddRepeating(t *testing.T, a *App, title, due, rule string, o AddOpts) *core.Task {
+	t.Helper()
+	o.Due, o.Repeat = due, rule
+	task, err := a.Add(title, o)
+	if err != nil {
+		t.Fatalf("Add(%q, %q): %v", due, rule, err)
+	}
+	return task
+}
+
+func other(t *testing.T, a *App, closed string) *core.Task {
+	t.Helper()
+	tasks, err := a.List(QueryOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range tasks {
+		if tasks[i].ID != closed {
+			return &tasks[i]
+		}
+	}
+	t.Fatalf("no task other than %s on the board", closed)
+	return nil
+}
+
+func TestCloseGeneratesTheNextOccurrence(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC)) // 12:00 JST on 2 March
+	v, e := 4, 2
+	pred := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{
+		Labels: []string{"chore"}, Refs: []string{"docs/x.md:1"},
+		Value: &v, Effort: &e, Checklist: []string{"tap on", "tap off"},
+	})
+	if _, err := a.Check(pred.ID, 1, true); err != nil {
+		t.Fatalf("tick a box: %v", err)
+	}
+
+	closed, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep == nil || rep.Created == nil {
+		t.Fatalf("no successor reported: %+v", rep)
+	}
+	succ := other(t, a, closed.ID)
+	if succ.ID != *rep.Created {
+		t.Fatalf("report names %s, board has %s", *rep.Created, succ.ID)
+	}
+
+	t.Run("the closed occurrence keeps nothing of the rule", func(t *testing.T) {
+		if closed.Repeat != "" || closed.RepeatAnchor != nil {
+			t.Errorf("predecessor still carries the rule: %q / %v", closed.Repeat, closed.RepeatAnchor)
+		}
+		if closed.Status != a.Cfg.DoneLane || closed.Closed == nil {
+			t.Errorf("predecessor = %s, closed=%v; want the done lane, stamped", closed.Status, closed.Closed)
+		}
+		if closed.Due == nil || !closed.Due.Equal(time.Date(2026, 3, 1, 14, 59, 59, 0, time.UTC)) {
+			t.Errorf("predecessor due = %v; the close must not re-date the occurrence it settled", closed.Due)
+		}
+	})
+
+	t.Run("the successor is promised for the next occurrence", func(t *testing.T) {
+		want := time.Date(2026, 4, 1, 14, 59, 59, 0, time.UTC) // 1 April 23:59:59 +09:00
+		if succ.Due == nil || !succ.Due.Equal(want) {
+			t.Errorf("successor due = %v, want %s", succ.Due, want)
+		}
+		if succ.Repeat != "FREQ=MONTHLY" {
+			t.Errorf("successor rule = %q, want the predecessor's verbatim", succ.Repeat)
+		}
+		if succ.RepeatAnchor == nil || !succ.RepeatAnchor.Equal(time.Date(2026, 3, 1, 14, 59, 59, 0, time.UTC)) {
+			t.Errorf("successor anchor = %v, want the SERIES start (unchanged)", succ.RepeatAnchor)
+		}
+		if rep.Skipped != 0 {
+			t.Errorf("skipped = %d, want 0 — closed inside its own cycle", rep.Skipped)
+		}
+	})
+
+	t.Run("it inherits what describes the chore", func(t *testing.T) {
+		if succ.Title != pred.Title || succ.Priority != pred.Priority ||
+			strings.Join(succ.Labels, ",") != "chore" || strings.Join(succ.Refs, ",") != "docs/x.md:1" {
+			t.Errorf("successor = %+v, want the predecessor's descriptive fields", succ)
+		}
+		if succ.Value == nil || *succ.Value != v || succ.Effort == nil || *succ.Effort != e {
+			t.Errorf("estimates = %v/%v, want %d/%d", succ.Value, succ.Effort, v, e)
+		}
+	})
+
+	t.Run("it is born where furrow puts a task it creates", func(t *testing.T) {
+		if succ.Status != a.Cfg.DefaultLane {
+			t.Errorf("successor lane = %q, want the default lane %q — `next` does not read due, so a"+
+				" ready-born chore would sit in next for the whole cycle", succ.Status, a.Cfg.DefaultLane)
+		}
+		if succ.Closed != nil || succ.Reviewed != nil || len(succ.Deps) != 0 {
+			t.Errorf("successor carries settled state: closed=%v reviewed=%v deps=%v",
+				succ.Closed, succ.Reviewed, succ.Deps)
+		}
+	})
+
+	t.Run("the checklist is the chore's steps, not this run's ticks", func(t *testing.T) {
+		if len(succ.Checklist) != 2 {
+			t.Fatalf("checklist = %+v, want both items copied", succ.Checklist)
+		}
+		for _, it := range succ.Checklist {
+			if it.Done {
+				t.Errorf("item %q came over ticked", it.Text)
+			}
+		}
+	})
+
+	t.Run("the body carries over under a back-link", func(t *testing.T) {
+		body, err := a.Store.LoadBody(succ.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(body, "[["+pred.ID+"]]\n") {
+			t.Errorf("successor body does not open with the back-link:\n%s", body)
+		}
+		if !strings.Contains(body, "水やり") {
+			t.Errorf("successor body lost the predecessor's prose:\n%s", body)
+		}
+	})
+}
+
+// The invariant the whole design rests on: a rule is held by exactly one task,
+// so closing twice — or reopening and closing again — cannot mint a second
+// occurrence. furrow's no-op detection compares one task's own shard bytes and
+// structurally cannot see a side effect in another file.
+func TestClosingAgainMintsNothing(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	pred := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
+
+	if _, err := a.Done(pred.ID); err != nil {
+		t.Fatal(err)
+	}
+	count := func() int {
+		tasks, err := a.List(QueryOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(tasks)
+	}
+	if n := count(); n != 2 {
+		t.Fatalf("after one close: %d tasks, want 2", n)
+	}
+
+	if _, err := a.Done(pred.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(); n != 2 {
+		t.Errorf("closing an already-closed occurrence minted one: %d tasks", n)
+	}
+
+	if _, err := a.Move(pred.ID, "ready"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Done(pred.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(); n != 2 {
+		t.Errorf("reopen then close minted one: %d tasks, want 2", n)
+	}
+}
+
+// Closing late skips the cycles that went by rather than minting one task per
+// lapsed month, and says how many.
+func TestALateCloseSkipsAndSaysSo(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 5, 15, 3, 0, 0, 0, time.UTC)) // 15 May
+	pred := mustAddRepeating(t, a, "月次レビュー", "2026-03-01", "monthly", AddOpts{})
+
+	closed, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep == nil || rep.Created == nil {
+		t.Fatalf("no successor: %+v", rep)
+	}
+	want := time.Date(2026, 6, 1, 14, 59, 59, 0, time.UTC)
+	if rep.Due == nil || !rep.Due.Equal(want) {
+		t.Errorf("next due = %v, want %s (the first occurrence strictly after now)", rep.Due, want)
+	}
+	if rep.Skipped != 2 {
+		t.Errorf("skipped = %d, want 2 (1 April and 1 May)", rep.Skipped)
+	}
+	if succ := other(t, a, closed.ID); succ.Due == nil || !succ.Due.Equal(want) {
+		t.Errorf("board disagrees with the report: %v", succ.Due)
+	}
+}
+
+func TestSeriesEndReportsCompletionAndMintsNothing(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	pred := mustAddRepeating(t, a, "3 回だけ", "2026-03-01", "daily for 1 times", AddOpts{})
+
+	closed, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep == nil || !rep.Completed {
+		t.Fatalf("report = %+v, want completed", rep)
+	}
+	if rep.Created != nil || rep.Due != nil {
+		t.Errorf("a completed series reported a successor: %+v", rep)
+	}
+	tasks, err := a.List(QueryOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 {
+		t.Errorf("%d tasks, want only the closed one", len(tasks))
+	}
+	if closed.Repeat != "" {
+		t.Errorf("a spent rule stayed on the task: %q", closed.Repeat)
+	}
+}
+
+// `set -s done` is a close like any other: the triage shortcut must not be a
+// hole in the series.
+func TestSetToDoneAlsoAdvancesTheSeries(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	pred := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
+
+	done := a.Cfg.DoneLane
+	if _, _, err := a.Set(pred.ID, SetOpts{Status: &done}); err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := a.List(QueryOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("%d tasks, want 2 — `set -s done` skipped the series", len(tasks))
+	}
+}
+
+// done --note appends to the body BEFORE the close. The note belongs to the
+// occurrence that earned it, so the successor must not inherit it.
+func TestTheSuccessorDoesNotInheritThisClosesNote(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	pred := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
+
+	closed, err := a.DoneNote(pred.ID, "tap was stuck this time")
+	if err != nil {
+		t.Fatal(err)
+	}
+	predBody, err := a.Store.LoadBody(closed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(predBody, "tap was stuck") {
+		t.Fatalf("the note did not land on the closed occurrence:\n%s", predBody)
+	}
+	succBody, err := a.Store.LoadBody(other(t, a, closed.ID).ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(succBody, "tap was stuck") {
+		t.Errorf("this close's note rode into the next occurrence:\n%s", succBody)
+	}
+}
+
+// A body that has recurred many times still opens with exactly one back-link.
+func TestBackLinksDoNotStack(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	cur := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
+
+	// Follow the series by the id each close reports, so every past occurrence
+	// can stay on the board — which is the state that would stack the links.
+	for i := 0; i < 3; i++ {
+		_, rep, err := a.moveOne(cur.ID, a.Cfg.DoneLane)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rep == nil || rep.Created == nil {
+			t.Fatalf("cycle %d produced no successor", i+1)
+		}
+		next, _, gerr := a.Get(*rep.Created)
+		if gerr != nil {
+			t.Fatalf("cycle %d: %s is not on the board: %v", i+1, *rep.Created, gerr)
+		}
+		cur = next
+	}
+	body, err := a.Store.LoadBody(cur.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(body, "[["); n != 1 {
+		t.Errorf("%d back-links after 3 cycles, want 1:\n%s", n, body)
+	}
+}
+
+func TestRepeatRefusesWhatItCannotAnchor(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+
+	t.Run("--repeat with no --due", func(t *testing.T) {
+		if _, err := a.Add("水やり", AddOpts{Repeat: "monthly"}); err == nil {
+			t.Error("a rule with no first occurrence was accepted")
+		}
+	})
+
+	t.Run("--clear-due on a repeating task", func(t *testing.T) {
+		task := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
+		if _, _, err := a.Set(task.ID, SetOpts{ClearDue: true}); err == nil {
+			t.Error("dropping the anchor of a live series was accepted")
+		}
+	})
+
+	t.Run("--clear-repeat then --clear-due is the way out", func(t *testing.T) {
+		task := mustAddRepeating(t, a, "水やり2", "2026-03-01", "monthly", AddOpts{})
+		if _, _, err := a.Set(task.ID, SetOpts{ClearRepeat: true, ClearDue: true}); err != nil {
+			t.Errorf("clearing both at once was refused: %v", err)
+		}
+	})
+}
+
+// The snooze moves THIS occurrence. The anchor is what the rule counts from, so
+// it must not move with it — otherwise furrow's own remedy for an overdue task
+// would silently re-lattice every occurrence after it.
+func TestSnoozeDoesNotMoveTheAnchor(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	task := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
+	anchor := *task.RepeatAnchor
+
+	plus := "+3d"
+	snoozed, _, err := a.Set(task.ID, SetOpts{Due: &plus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snoozed.RepeatAnchor == nil || !snoozed.RepeatAnchor.Equal(anchor) {
+		t.Fatalf("anchor moved to %v, want %v", snoozed.RepeatAnchor, anchor)
+	}
+	if snoozed.Due == nil || snoozed.Due.Equal(anchor) {
+		t.Fatalf("due did not move: %v", snoozed.Due)
+	}
+
+	// The next occurrence still comes off the original lattice: the 1st.
+	_, rep, err := a.moveOne(task.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := time.Date(2026, 4, 1, 14, 59, 59, 0, time.UTC)
+	if rep == nil || rep.Due == nil || !rep.Due.Equal(want) {
+		t.Errorf("next due = %v, want %s — the snooze re-latticed the series", rep, want)
+	}
+}

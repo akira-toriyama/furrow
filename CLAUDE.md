@@ -186,6 +186,34 @@ user-level config. When you work with any furrow store:
   the one date a human authors in wall clock, so `-q due:2026-08-04` finds
   exactly what `--due 2026-08-04` wrote (a UTC day there would put the two up
   to 9h apart on a +09:00 machine).
+- **A task can RECUR: `repeat` + `repeat_anchor` (schema v10).** `add --repeat` /
+  `set --repeat` bind a short spelling (`daily`, `every 2 weeks on mon,thu`,
+  `monthly on last fri`, `every 3 months on 15`, … optionally ending in
+  `until <date>` or `for <n> times` — never both) compiled to ONE RFC 5545 RRULE
+  line; a raw RRULE line is accepted too, and `set --clear-repeat` drops it.
+  **It requires a `--due`**: that first date becomes the immutable
+  `repeat_anchor` the rule is expanded from, which is why `set --due +1d` (the
+  snooze furrow's own overdue remedy hands you) moves THIS occurrence and never
+  re-lattices the series, and why `--clear-due` on a repeating task is exit 2.
+  **Only a CLOSE advances it** — nothing is time-driven, so a repeating task
+  never piles up: entering the done lane (via `done`, `move <id> done`, `set -s
+  done`, or CI's `apply`) writes the next occurrence in the SAME
+  all-or-nothing write and **hands the rule over to it**, so a series is carried
+  by exactly one live task and re-closing (or reopen→close) mints nothing. The
+  successor is born in `[lanes].default` with the body and checklist copied
+  (boxes unchecked) under a `[[prev id]]` link, inheriting everything except
+  what the close settled (`closed`/`reviewed`), what the rule computes (`due`)
+  and this run's `deps`. Its due is the first occurrence strictly AFTER now, so
+  a late close moves forward and REPORTS the lapse: `repeat: next due … — N
+  occurrence(s) skipped`, or `repeat: series complete` when the rule is spent;
+  `--json` carries `repeat` `{created, due, skipped, completed}` on the envelope
+  — always that shape, so "not repeating" (no key) and "last occurrence"
+  (`completed`) stay distinct. A day past 28 SKIPS the months that lack it (RFC
+  5545 §3.3.10 — `monthly on last` is the rule that always lands; a stderr note
+  says so at bind time). The calendar is the board's `[due].timezone`, so
+  occurrences keep their wall clock across DST. Queryable as `has:`/`no:repeat`
+  (= the live occurrences); `lint` errors `repeat-invalid` on a stored rule that
+  no longer parses or lost its anchor.
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
   issue-draft analogue). `-r` is the scope control on reads: a full

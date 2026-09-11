@@ -10,7 +10,7 @@ func TestMarshalMetaCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"schema_version\": 9\n}\n"
+	want := "{\n  \"schema_version\": 10\n}\n"
 	if string(b) != want {
 		t.Errorf("MarshalMeta bytes = %q, want %q", b, want)
 	}
@@ -31,19 +31,18 @@ func TestUnmarshalMetaRejectsGarbage(t *testing.T) {
 	}
 }
 
-// SchemaVersion is 9: the per-epic `reviewed` timestamp — `furrow review
-// <epic-ref>` stamps it and revisit's epic_review_due reads it (the STANDING
-// box's review cadence). A v8 binary that merely PRESERVED the field would
-// silently never nag, and its `furrow review` would stamp nothing — a review
-// record a human believes they wrote, lost. The field is omitempty, so no
-// unreviewed epic shard rewrites — the gate exists for the reading, not for
-// the bytes.
+// SchemaVersion is 10: the per-task `repeat` rule and its `repeat_anchor` —
+// closing a repeating task generates the next occurrence. A v9 binary that
+// merely PRESERVED the two fields would carry them faithfully and then close
+// the task like any other: the series would stop dead, with the rule still on
+// disk saying it had not. Both fields are omitempty, so no existing shard
+// rewrites — the gate exists for the BEHAVIOUR, not for the bytes.
 //
 // The literal is deliberate (not `!= SchemaVersion`): this test's whole job is to
 // make a bump impossible to do by accident, so it has to fail when the const moves
 // and force the author to confirm the flag day.
-func TestSchemaVersionIsNine(t *testing.T) {
-	if SchemaVersion != 9 {
-		t.Errorf("SchemaVersion = %d, want 9 (the per-epic reviewed stamp)", SchemaVersion)
+func TestSchemaVersionIsTen(t *testing.T) {
+	if SchemaVersion != 10 {
+		t.Errorf("SchemaVersion = %d, want 10 (the per-task repeat rule and anchor)", SchemaVersion)
 	}
 }

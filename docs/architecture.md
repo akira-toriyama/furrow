@@ -68,6 +68,8 @@ library.
      internal/migrate  pure Task.md parser behind `furrow migrate`
      internal/query    pure `-q` typed-query parser (lexer+parser -> AST);
                        app.compileQuery binds the AST to a task predicate
+     internal/recur    recurrence: the short `--repeat` spelling -> one RFC 5545
+                       RRULE line, and a stored rule -> its next occurrence
 ```
 
 A dependency arrow means "imports". Note what is **absent**: `internal/core`
@@ -95,6 +97,7 @@ contract an agent does.
 | `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough), the in-memory `Marshal`, the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard, `meta.json`, a repo review shard, and an epic shard as Go constants; emitted by `furrow schema [task\|meta\|repo\|epic]`. |
 | `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |
+| `internal/recur` | Recurrence, as a leaf beside `query`: it compiles the short `--repeat` spellings into one RFC 5545 **RRULE line** and expands a stored rule to its next occurrence. It is the only package that imports the RRULE library, and the only one that knows the grammar — `internal/app` owns WHEN a rule advances (a close), never how it is read. It deliberately does NOT know furrow's date vocabulary: a trailing `until <date>` is resolved by the caller through the same parser `--due` uses, so the two can never become two date grammars. Validation is furrow's own, because the library's parse errors are not product-quality text. Two traps it exists to contain: an exhausted rule comes back as a ZERO time with no error (so every caller must look at the ok flag, not at err), and a day-of-month past 28 SKIPS the months that lack it per RFC 5545 §3.3.10 rather than clamping. |
 | `internal/query` | Pure parser (stdlib only) for the `-q` typed-query DSL: a flat AND-list of `field:value` terms (comma=OR, `-`=NOT, `has:`/`no:`, `is:`) → an AST. It knows the GRAMMAR, not furrow's fields; `internal/app`'s `compileQuery` binds each term to a task predicate (validating fields/lanes, exit 2 + candidates on a miss) against the index, the `Clock` (relative dates, `is:stale`), and the store's bodies (loaded on demand, only by terms that read them). One compiled predicate serves every filtering read — `ls`/`next`/`revisit`/`stats`/`search`. |
 | `internal/gittest` | Test-only helper: `Isolate()` neutralizes global/system git config at the process-env level (called from `TestMain`) so real-git tests — especially `App.Sync`'s subprocess — don't flake on a developer's `commit.gpgsign`/`core.hooksPath`. Imported only by `_test.go` files. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |
@@ -545,7 +548,7 @@ A `.furrow/` store directory contains:
     t-k3m9p-shot.png     written ONLY via Store.SaveAsset (atomic, collision-free
                          basename); linked from the body by `furrow attach`; scanned
                          by `furrow lint` (dangling / orphan / oversized warnings)
-  meta.json            board-wide layout version {"schema_version": 9} — MarshalMeta,
+  meta.json            board-wide layout version {"schema_version": 10} — MarshalMeta,
                          stamped only on a fresh store (`init`) or by `furrow upgrade`;
                          an ordinary Save READS it (the write gate) and leaves it alone
   repos/               one review shard per repo (repos/<owner>__<repo>.json) — MarshalRepo

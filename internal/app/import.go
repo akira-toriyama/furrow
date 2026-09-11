@@ -264,6 +264,11 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 			c := now
 			t.Closed = &c
 		}
+		if s.Repeat != "" {
+			if err := a.bindRepeat(&t, s.Repeat); err != nil {
+				return nil, err
+			}
+		}
 		body := s.Body
 		if body == "" {
 			body = "# " + t.Title + "\n"

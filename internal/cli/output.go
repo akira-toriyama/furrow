@@ -854,6 +854,16 @@ func waitingUntil(w *app.EpicWait) string {
 	return fmt.Sprintf("⏳ waiting until %s (%s)", humanTime(w.Until), w.Task)
 }
 
+// repeatAnchorNote names the series start beside the rule. Without it the rule
+// alone cannot be read: FREQ=MONTHLY says nothing about WHICH day, which lives
+// in the anchor the rule is expanded from.
+func repeatAnchorNote(t *core.Task) string {
+	if t.RepeatAnchor == nil {
+		return ""
+	}
+	return " (since " + humanTime(*t.RepeatAnchor) + ")"
+}
+
 // dueDetail renders a due stamp for the `show` block: the local timestamp plus
 // the state, so "when" and "is that a problem?" are one line instead of a date
 // the reader has to compare against today by hand. Empty when there is no date.
@@ -929,6 +939,9 @@ func printTaskDetail(a *app.App, t *core.Task, body string) {
 			box = "[x]"
 		}
 		fmt.Fprintf(out, "  %s %s\n", box, c.Text)
+	}
+	if t.Repeat != "" {
+		fmt.Fprintf(out, "repeat:   %s%s\n", t.Repeat, repeatAnchorNote(t))
 	}
 	if d := dueDetail(a, t); d != "" {
 		fmt.Fprintf(out, "due:      %s\n", d)

@@ -59,7 +59,7 @@ import (
 // write the loss back. v3 = shards whose tasks carry the required first-class
 // repos set (the repos pivot). v2 = per-task shards (tasks/<id>.json) +
 // meta.json (v1 was the monolithic index.json).
-const SchemaVersion = 9
+const SchemaVersion = 10
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into
@@ -236,6 +236,33 @@ type Task struct {
 	// and not a preserved-but-ignored field. It lives at the END of the struct per
 	// the shard-shape rule.
 	Due *time.Time `json:"due,omitempty"`
+
+	// Repeat is the recurrence RULE this task runs on: one RFC 5545 RRULE line
+	// (no DTSTART line — RepeatAnchor carries the series start), stored exactly as
+	// the CLI compiled the operator's spelling, so the shard never disagrees with
+	// what was typed.
+	//
+	// The rule lives on exactly ONE task at a time: closing a repeating task moves
+	// it, with RepeatAnchor, to the successor the close generates. That invariant
+	// is what makes re-closing idempotent — a shard-byte comparison cannot see a
+	// side effect in another file, so a predecessor that kept its rule would mint
+	// a second successor on every reopen-then-close.
+	//
+	// Empty = not repeating, which is every task on every board that never asks
+	// for one. It lives at the END of the struct per the shard-shape rule.
+	Repeat string `json:"repeat,omitempty"`
+
+	// RepeatAnchor is the series start: the FIRST occurrence's due, the DTSTART
+	// the rule is expanded from. Immutable for the life of the series — the
+	// successor inherits it unchanged.
+	//
+	// It is a separate field rather than a reuse of Due because the two answer
+	// different questions, and conflating them breaks both: COUNT would restart
+	// every cycle (so `for 12 times` could never terminate, and the zero-time stop
+	// signal would never fire), and `set --due +1d` — the snooze furrow's own
+	// overdue remedy hands the operator — would silently re-lattice every later
+	// occurrence. With the anchor held apart, a snooze moves this occurrence only.
+	RepeatAnchor *time.Time `json:"repeat_anchor,omitempty"`
 
 	// extras holds keys this binary does not know — a field written by a NEWER
 	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,

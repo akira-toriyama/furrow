@@ -6,6 +6,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
+	github.com/teambition/rrule-go v1.8.2
 	golang.org/x/term v0.45.0
 )
 

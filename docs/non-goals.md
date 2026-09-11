@@ -70,22 +70,39 @@ whole premise is "plain files in your repo".* To run furrow **on a schedule**
 (periodic archive, a `next` digest), the trigger lives outside furrow in your OS
 scheduler — see [scheduling.md](scheduling.md) for launchd recipes.
 
-### No reminders, alarms, or recurrence
+### No reminders or alarms
 A task can be **promised** for an instant (`due`), but nothing fires at it.
-furrow rings no bell, sends no notification, and has no repeat/recurrence rule:
-the date is state, surfaced by the reads you already run — `furrow brief` leads
-with what has come due, and `furrow lint` errors on `due-overdue` board-wide.
-— *A notifier needs an always-on process, which is the daemon non-goal above
-wearing a different hat; a recurrence rule needs furrow to WRITE tasks on its
-own, which is the automatic-migration non-goal below wearing a third.* Pushing
-the pull-read to a schedule is the OS's job — see
+furrow rings no bell and sends no notification: the date is state, surfaced by
+the reads you already run — `furrow brief` leads with what has come due, and
+`furrow lint` errors on `due-overdue` board-wide. — *A notifier needs an
+always-on process, which is the daemon non-goal above wearing a different hat.*
+Pushing the pull-read to a schedule is the OS's job — see
 [scheduling.md](scheduling.md), Recipe 5.
+
+### No recurrence on a CLOCK
+A task **can** recur (`--repeat`, board layout v10), but only a `furrow done`
+ever makes it happen: the close that settles one occurrence writes the next, in
+the same all-or-nothing index write, and hands the rule on with it. Nothing
+generates a task while furrow is not running.
+
+That is the whole of the design, and it is what keeps recurrence inside the
+non-goals above rather than against them. *A time-driven rule would need
+something awake at midnight — the daemon non-goal again — and would have to
+decide, alone, whether a month you never closed anything in still owes you a
+task. The on-done rule cannot drift: the series only advances when a human or
+an agent says this one is finished, and a late close says how many cycles it
+skipped rather than quietly minting one task per lapsed month.*
+
+The consequences are deliberate, not gaps: a repeating task you never close
+NEVER piles up (there is only ever one open occurrence), and the next due is
+computed from the series anchor as the first occurrence strictly after now, so
+closing late moves you forward rather than into a backlog you did not accrue.
 
 ## Storage format
 
 The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
 (structured metadata, machine-written) + `.furrow/meta.json`
-(`{"schema_version": 9}`, the board-wide layout version) +
+(`{"schema_version": 10}`, the board-wide layout version) +
 `.furrow/bodies/<id>.md` (long-form prose, hand/agent
 editable) + `.furrow/bodies/assets/` (media copied in by `furrow attach` as
 collision-free `<id>-<name>` files, referenced from the body by a relative

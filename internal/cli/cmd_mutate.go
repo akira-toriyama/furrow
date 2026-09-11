@@ -141,7 +141,7 @@ func emitMutationWith(cmd *cobra.Command, a *app.App, verb, id string, mutate fu
 	return nil
 }
 
-// emitMutationMany is emitMutation for a batch mutator: one {before,after,
+// emitMutationManyWith is emitMutation for a batch mutator: one {before,after,
 // changed} envelope per task, in the batch's (deduped) input order — --json
 // ALWAYS an array (a single id is a one-element array: a command whose Use
 // says `<id>...` has array cardinality by SIGNATURE, and the runtime argv
@@ -149,13 +149,9 @@ func emitMutationWith(cmd *cobra.Command, a *app.App, verb, id string, mutate fu
 // envelope per line, human mode one verb line per task. Befores come from one
 // batch read; a miss there is harmless because the mutate closure is the
 // authority and fails the whole batch before anything is printed.
-func emitMutationMany(cmd *cobra.Command, a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error)) error {
-	return emitMutationManyWith(cmd, a, verb, ids, mutate, nil)
-}
-
-// emitMutationManyWith is emitMutationMany plus an optional per-task annotate:
-// given a resulting task it returns extra top-level fields merged into THAT
-// task's envelope — the batch twin of emitMutationWith's annotate (done --note
+// emitMutationManyWith renders a batch mutation, with an optional per-task
+// annotate: given a resulting task it returns extra top-level fields merged
+// into THAT task's envelope — the batch twin of emitMutationWith's annotate (done --note
 // surfaces `appended` on each, a single-id set its `clamped`/`renumbered`).
 func emitMutationManyWith(cmd *cobra.Command, a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error), annotate func(after *core.Task) map[string]any) error {
 	expected, guard, gerr := expectUpdatedArg(cmd, strings.Join(ids, ","))
@@ -296,7 +292,17 @@ func newDoneCmd() *cobra.Command {
 				args = taskIDs(tasks)
 			}
 			if !cmd.Flags().Changed("note") {
-				return emitMutationMany(cmd, a, "done", args, func() ([]*core.Task, error) { return a.DoneMany(args) })
+				rs, after := newSeriesReports(), []*core.Task(nil)
+				if err := emitMutationManyWith(cmd, a, "done", args, func() ([]*core.Task, error) {
+					ts, reps, err := a.DoneManySeries(args, "")
+					rs.collect(ts, reps)
+					after = ts
+					return ts, err
+				}, rs.annotate); err != nil {
+					return err
+				}
+				rs.print(cmd.OutOrStdout(), after)
+				return nil
 			}
 			text, terr := readTextArg(cmd, note)
 			if terr != nil {
@@ -304,10 +310,26 @@ func newDoneCmd() *cobra.Command {
 			}
 			// `changed` tracks metadata only, so surface the note's effect the
 			// way the note command does.
-			appended := map[string]any{"appended": strings.TrimRight(text, "\n")}
-			return emitMutationManyWith(cmd, a, "done", args,
-				func() ([]*core.Task, error) { return a.DoneManyNote(args, text) },
-				func(*core.Task) map[string]any { return appended })
+			trimmed := strings.TrimRight(text, "\n")
+			rs, after := newSeriesReports(), []*core.Task(nil)
+			if err := emitMutationManyWith(cmd, a, "done", args,
+				func() ([]*core.Task, error) {
+					ts, reps, err := a.DoneManySeries(args, text)
+					rs.collect(ts, reps)
+					after = ts
+					return ts, err
+				},
+				func(t *core.Task) map[string]any {
+					m := map[string]any{"appended": trimmed}
+					if x := rs.annotate(t); x != nil {
+						m["repeat"] = x["repeat"]
+					}
+					return m
+				}); err != nil {
+				return err
+			}
+			rs.print(cmd.OutOrStdout(), after)
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&note, "note", "", "append this closing note to each task's body ('-' reads stdin)")
@@ -374,7 +396,17 @@ func newMoveCmd() *cobra.Command {
 				}
 				ids = taskIDs(tasks)
 			}
-			return emitMutationMany(cmd, a, "moved", ids, func() ([]*core.Task, error) { return a.MoveMany(ids, lane) })
+			rs, after := newSeriesReports(), []*core.Task(nil)
+			if err := emitMutationManyWith(cmd, a, "moved", ids, func() ([]*core.Task, error) {
+				ts, reps, err := a.MoveManySeries(ids, lane, "")
+				rs.collect(ts, reps)
+				after = ts
+				return ts, err
+			}, rs.annotate); err != nil {
+				return err
+			}
+			rs.print(cmd.OutOrStdout(), after)
+			return nil
 		},
 	}
 	addSelectorFlags(cmd, &sel)
@@ -753,11 +785,13 @@ func newSetCmd() *cobra.Command {
 		after       string
 		due         string
 		clearDue    bool
+		repeatSpec  string
+		clearRepeat bool
 		sel         writeSelector
 	)
 	cmd := &cobra.Command{
 		Use:   "set [<id>...]",
-		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, repos, epic, due)",
+		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, repos, epic, due, repeat)",
 		Long: "Combine the routine triage edits into a single write: move a lane (-s),\n" +
 			"position the task (--priority, or --before/--after a task in the destination\n" +
 			"lane — so a cross-lane drop is lane + position in ONE write), set or clear\n" +
@@ -818,6 +852,15 @@ func newSetCmd() *cobra.Command {
 				ClearValue:  clearValue,
 				ClearEffort: clearEffort,
 				ClearDue:    clearDue,
+				ClearRepeat: clearRepeat,
+			}
+			if cmd.Flags().Changed("repeat") {
+				o.Repeat = &repeatSpec
+				if line, cerr := app.CompileRepeat(a, repeatSpec); cerr == nil {
+					if w := app.RepeatWarning(line); w != "" {
+						fmt.Fprintln(cmd.ErrOrStderr(), w)
+					}
+				}
 			}
 			if cmd.Flags().Changed("status") {
 				o.Status = &status
@@ -867,7 +910,8 @@ func newSetCmd() *cobra.Command {
 				// shows a write the apply would refuse: an edit must exist (the
 				// app's own at-least-one-change rule), and a -s lane must be real.
 				hasEdit := o.Status != nil || o.Value != nil || o.Effort != nil || o.Epic != nil || o.Due != nil ||
-					o.ClearValue || o.ClearEffort || o.ClearDue || len(o.AddLabels) > 0 || len(o.RmLabels) > 0 ||
+					o.ClearValue || o.ClearEffort || o.ClearDue || o.ClearRepeat || o.Repeat != nil ||
+					len(o.AddLabels) > 0 || len(o.RmLabels) > 0 ||
 					len(o.AddRepos) > 0 || len(o.RmRepos) > 0
 				if !hasEdit {
 					return core.Validationf("", "a selection needs at least one edit flag (-s, --value, --add-label, -e, --due, …) to apply")
@@ -960,6 +1004,8 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&clearEffort, "clear-effort", false, "clear the effort estimate")
 	cmd.Flags().StringVar(&due, "due", "", "set the due date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d (the snooze)")
 	cmd.Flags().BoolVar(&clearDue, "clear-due", false, "clear the due date")
+	cmd.Flags().StringVar(&repeatSpec, "repeat", "", "recur when closed: daily | every 2 weeks on mon,thu | monthly on last fri | ... (the task must carry a due)")
+	cmd.Flags().BoolVar(&clearRepeat, "clear-repeat", false, "stop this task recurring (drops the rule and its anchor)")
 	// StringSlice, not StringArray: these edit the SAME field `label --add` does
 	// (cmd_mutate.go's newLabelCmd), and comma is how every label surface splits —
 	// `-l a,b` is OR on reads. As StringArray, `set --add-label "a,b"` stored the
@@ -1123,4 +1169,55 @@ func newRepoCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&rm, "rm", nil, "repo to detach (same forms; repeatable)")
 	addExpectUpdatedFlag(cmd)
 	return cmd
+}
+
+// seriesReports carries the per-task repeat reports a close produced, from the
+// mutate closure out to the two places that render them: each task's JSON
+// envelope (annotate) and the human summary (print).
+type seriesReports struct{ byID map[string]*app.RepeatReport }
+
+func newSeriesReports() *seriesReports { return &seriesReports{byID: map[string]*app.RepeatReport{}} }
+
+// collect zips the reports onto the tasks the write returned. app returns them
+// positionally, so a length mismatch means a contract change, not a data
+// condition — it is simply ignored rather than guessed at.
+func (s *seriesReports) collect(tasks []*core.Task, reps []*app.RepeatReport) {
+	if len(tasks) != len(reps) {
+		return
+	}
+	for i, t := range tasks {
+		if reps[i] != nil {
+			s.byID[t.ID] = reps[i]
+		}
+	}
+}
+
+func (s *seriesReports) annotate(t *core.Task) map[string]any {
+	if r := s.byID[t.ID]; r != nil {
+		return map[string]any{"repeat": r}
+	}
+	return nil
+}
+
+// print writes one line per advanced series, after the mutation summary. The
+// JSON path already carries the same facts on each envelope.
+func (s *seriesReports) print(out io.Writer, tasks []*core.Task) {
+	if jsonMode() {
+		return
+	}
+	for _, t := range tasks {
+		r := s.byID[t.ID]
+		if r == nil {
+			continue
+		}
+		if r.Completed {
+			fmt.Fprintf(out, "repeat: series complete — no further occurrences\n")
+			continue
+		}
+		line := fmt.Sprintf("repeat: next due %s (%s)", humanTime(*r.Due), *r.Created)
+		if r.Skipped > 0 {
+			line += fmt.Sprintf(" — %d occurrence(s) skipped", r.Skipped)
+		}
+		fmt.Fprintln(out, line)
+	}
 }
