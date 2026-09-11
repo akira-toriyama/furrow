@@ -548,3 +548,38 @@ func TestAddRefusesARuleOnATaskClosedAtBirth(t *testing.T) {
 		t.Error("a rule was parked on a task that can never fire it")
 	}
 }
+
+// The batch plans every successor BEFORE any is inserted, so the index cannot
+// answer for the batch's own ids. Two successors drawing the same id would be
+// refused by both stores at save time — a hard failure on a routine close.
+func TestABatchOfClosesReservesItsOwnIDs(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	var ids []string
+	for i := 0; i < 5; i++ {
+		ids = append(ids, mustAddRepeating(t, a, "chore", "2026-03-01", "monthly", AddOpts{}).ID)
+	}
+	closed, reps, err := a.MoveManySeries(ids, a.Cfg.DoneLane, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(closed) != 5 {
+		t.Fatalf("closed %d, want 5", len(closed))
+	}
+	seen := map[string]bool{}
+	for i, r := range reps {
+		if r == nil || r.Created == nil {
+			t.Fatalf("task %d produced no successor", i)
+		}
+		if seen[*r.Created] {
+			t.Errorf("two successors share the id %s", *r.Created)
+		}
+		seen[*r.Created] = true
+	}
+	tasks, err := a.List(QueryOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 10 {
+		t.Errorf("%d tasks, want 10 (5 closed + 5 successors)", len(tasks))
+	}
+}

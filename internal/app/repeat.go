@@ -50,7 +50,7 @@ var bodyLinkLine = regexp.MustCompile(`^\s*\[\[[^\]\s]+\]\]\s*$`)
 // task that never existed, which only a human could find and remove. The
 // successor and its prose therefore come back PENDING, for the caller to flush
 // once the whole write is known to succeed.
-func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Time) (*RepeatReport, *pendingSuccessor, error) {
+func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Time, reserved map[string]bool) (*RepeatReport, *pendingSuccessor, error) {
 	if lane != a.Cfg.DoneLane || t.Repeat == "" {
 		return nil, nil, nil
 	}
@@ -98,9 +98,16 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, lane string, now time.Ti
 		return nil, nil, core.Validationf(t.ID, "%v", err)
 	}
 
-	id, err := a.uniqueID(idx)
+	// `reserved` carries the ids the SAME batch already handed out. uniqueID only
+	// consults the index, and a pre-pass plans every successor before any of them
+	// is inserted — so without this, two successors in one batch could draw the
+	// same id, which both stores then refuse to save.
+	id, err := a.uniqueIDExcluding(idx, reserved)
 	if err != nil {
 		return nil, nil, err
+	}
+	if reserved != nil {
+		reserved[id] = true
 	}
 	body, err := a.Store.LoadBody(t.ID)
 	if err != nil {

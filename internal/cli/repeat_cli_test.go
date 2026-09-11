@@ -6,6 +6,21 @@ import (
 	"testing"
 )
 
+// addedID reads the id out of `add`'s human line, refusing rather than panicking
+// when the add did not happen — a test binary that panics takes the whole
+// package down with it, and the go-bite gate then cannot judge any test in it.
+func addedID(t *testing.T, out string, code int) string {
+	t.Helper()
+	if code != 0 {
+		t.Fatalf("add exit %d: %s", code, out)
+	}
+	f := strings.Fields(out)
+	if len(f) < 2 {
+		t.Fatalf("unexpected add output: %q", out)
+	}
+	return f[1]
+}
+
 // The close that advances a series has to SAY so. Without the line, the only
 // evidence a new task exists is a later read — and the id of the occurrence you
 // just created is exactly what a caller wants to act on.
@@ -15,7 +30,7 @@ func TestDonePrintsTheSeriesLine(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("add exit %d: %s", code, out)
 	}
-	id := strings.Fields(out)[1] // "added <id>  <title>"
+	id := addedID(t, out, code)
 
 	out, code = run(t, "done", id)
 	if code != 0 {
@@ -131,13 +146,13 @@ func TestRepeatRefusalsAreExitTwo(t *testing.T) {
 // one task of a series, so the query cannot return the closed ones.
 func TestHasRepeatFindsOnlyTheLiveOccurrence(t *testing.T) {
 	initStore(t)
-	out, _ := run(t, "add", "水やり", "--due", "2026-03-01", "--repeat", "monthly")
-	id := strings.Fields(out)[1] // "added <id>  <title>"
+	out, code := run(t, "add", "水やり", "--due", "2026-03-01", "--repeat", "monthly")
+	id := addedID(t, out, code)
 	if _, code := run(t, "done", id); code != 0 {
 		t.Fatalf("done: %s", out)
 	}
 
-	out, code := run(t, "ls", "-q", "has:repeat", "-s", "", "--json")
+	out, code = run(t, "ls", "-q", "has:repeat", "-s", "", "--json")
 	if code != 0 {
 		t.Fatalf("ls exit %d: %s", code, out)
 	}
@@ -158,8 +173,8 @@ func TestHasRepeatFindsOnlyTheLiveOccurrence(t *testing.T) {
 // Refusals the review found missing. Each was a silent accept before.
 func TestRepeatRefusalsAddedAfterReview(t *testing.T) {
 	initStore(t)
-	out, _ := run(t, "add", "水やり", "--due", "2026-10-01", "--repeat", "monthly")
-	id := strings.Fields(out)[1]
+	out, code := run(t, "add", "水やり", "--due", "2026-10-01", "--repeat", "monthly")
+	id := addedID(t, out, code)
 
 	cases := []struct {
 		name string
@@ -197,10 +212,10 @@ func TestARawRuleKeepsItsOwnTerminator(t *testing.T) {
 // `set -s done` closes like `done` does, so it owes the same receipt.
 func TestSetToDoneReportsTheSeries(t *testing.T) {
 	initStore(t)
-	out, _ := run(t, "add", "水やり", "--due", "2026-10-01", "--repeat", "monthly")
-	id := strings.Fields(out)[1]
+	out, code := run(t, "add", "水やり", "--due", "2026-10-01", "--repeat", "monthly")
+	id := addedID(t, out, code)
 
-	out, code := run(t, "set", id, "-s", "done")
+	out, code = run(t, "set", id, "-s", "done")
 	if code != 0 {
 		t.Fatalf("set exit %d: %s", code, out)
 	}
@@ -212,10 +227,10 @@ func TestSetToDoneReportsTheSeries(t *testing.T) {
 // A close CONSUMES the rule, so the envelope must say the shard changed.
 func TestChangedNamesTheRepeatFields(t *testing.T) {
 	initStore(t)
-	out, _ := run(t, "add", "水やり", "--due", "2026-10-01", "--repeat", "monthly")
-	id := strings.Fields(out)[1]
+	out, code := run(t, "add", "水やり", "--due", "2026-10-01", "--repeat", "monthly")
+	id := addedID(t, out, code)
 
-	out, code := run(t, "done", id, "--json")
+	out, code = run(t, "done", id, "--json")
 	if code != 0 {
 		t.Fatalf("done exit %d: %s", code, out)
 	}

@@ -767,13 +767,18 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 // also keeps a batch internally unique. Ids are random, so the first draw almost
 // always wins; the cap turns a pathological store into a loud error rather than
 // an infinite loop.
-func (a *App) uniqueID(idx *core.Index) (string, error) {
+func (a *App) uniqueID(idx *core.Index) (string, error) { return a.uniqueIDExcluding(idx, nil) }
+
+// uniqueIDExcluding is uniqueID that also avoids ids a caller has already handed
+// out in this same write but not yet inserted — the case a pre-pass creates,
+// where the index cannot yet answer for its own batch.
+func (a *App) uniqueIDExcluding(idx *core.Index, reserved map[string]bool) (string, error) {
 	for i := 0; i < 100; i++ {
 		id, err := a.Store.NextID()
 		if err != nil {
 			return "", err
 		}
-		if !idx.Has(id) {
+		if !idx.Has(id) && !reserved[id] {
 			return id, nil
 		}
 	}
@@ -1418,7 +1423,7 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 	var rep *RepeatReport
 	var succ *pendingSuccessor
 	saved, err := a.mutateInPost(idx, id, func(t *core.Task) error {
-		r, s, rerr := a.planRepeat(idx, t, lane, a.Clock.Now())
+		r, s, rerr := a.planRepeat(idx, t, lane, a.Clock.Now(), nil)
 		if rerr != nil {
 			return rerr
 		}
@@ -1487,6 +1492,7 @@ func (a *App) MoveMany(ids []string, lane string) ([]*core.Task, error) {
 func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*RepeatReport, error) {
 	reports := map[string]*RepeatReport{}
 	var successors []*pendingSuccessor
+	reservedIDs := map[string]bool{}
 	if !a.Cfg.IsLane(lane) {
 		return nil, nil, a.unknownLaneErr("", lane)
 	}
@@ -1529,7 +1535,7 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 		// The successor copies the body as it stood, and a completion note
 		// belongs to the occurrence that earned it — so this reads before the
 		// loop below appends one.
-		rep, succ, rerr := a.planRepeat(idx, t, lane, now)
+		rep, succ, rerr := a.planRepeat(idx, t, lane, now, reservedIDs)
 		if rerr != nil {
 			return nil, nil, rerr
 		}
@@ -1639,7 +1645,7 @@ func (a *App) DoneNote(id, note string) (*core.Task, error) {
 	if err := a.guardTask(t); err != nil {
 		return nil, err
 	}
-	rep, succ, rerr := a.planRepeat(idx, t, a.Cfg.DoneLane, a.Clock.Now())
+	rep, succ, rerr := a.planRepeat(idx, t, a.Cfg.DoneLane, a.Clock.Now(), nil)
 	if rerr != nil {
 		return nil, rerr
 	}
@@ -2135,7 +2141,7 @@ func (a *App) SetSeries(id string, o SetOpts) (*core.Task, []core.PriorityChange
 		return nil, nil, nil, err
 	}
 	reposBefore := append([]string(nil), t.Repos...)
-	renumbered, successor, report, err := a.applySet(idx, id, o, due)
+	renumbered, successor, report, err := a.applySet(idx, id, o, due, nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -2244,10 +2250,11 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 		return nil, a.batchMissingErr(missing, len(order)+len(missing), "set")
 	}
 	var successors []*pendingSuccessor
+	reservedIDs := map[string]bool{}
 	for _, id := range order {
 		t, _ := idx.Find(id)
 		reposBefore := append([]string(nil), t.Repos...)
-		_, succ, _, serr := a.applySet(idx, id, o, due)
+		_, succ, _, serr := a.applySet(idx, id, o, due, reservedIDs)
 		if serr != nil {
 			return nil, serr
 		}
@@ -2275,7 +2282,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
 // applySet mutates one task in an ALREADY-LOADED index and returns any respace
 // the relative placement caused. It saves nothing: the caller owns the write, so
 // a batch is one Save. id must already resolve.
-func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([]core.PriorityChange, *pendingSuccessor, *RepeatReport, error) {
+func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, reserved map[string]bool) ([]core.PriorityChange, *pendingSuccessor, *RepeatReport, error) {
 	var successor *pendingSuccessor
 	var report *RepeatReport
 	relRef, relBefore := o.Before, true
@@ -2412,7 +2419,7 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time) ([
 	// beside `--add-label`/`-e` inherits the edited values rather than a
 	// pre-edit snapshot (which could leave it violating `epic-required`).
 	if o.Status != nil {
-		r, succ, rerr := a.planRepeat(idx, t, *o.Status, a.Clock.Now())
+		r, succ, rerr := a.planRepeat(idx, t, *o.Status, a.Clock.Now(), reserved)
 		if rerr != nil {
 			return renumbered, nil, nil, rerr
 		}
