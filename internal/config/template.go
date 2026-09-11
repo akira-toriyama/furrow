@@ -125,6 +125,14 @@ older_than_days = 30
 # "look at this on that day" is exactly what a due date is for.
 # ignore_lanes = ["icebox"]
 
+# The calendar this board keeps. An IANA zone name; unset means the zone of
+# whatever process runs the command. Declared here because config.toml is
+# committed and shared: a bare --due date binds the END of that day, and "that
+# day" has to mean one thing whether the operator's machine or a UTC CI runner
+# writes it. A name that will not load falls back to the process zone with a
+# warning that furrow lint surfaces.
+# timezone = "Asia/Tokyo"
+
 [revisit]
 # Days a task may go without an update before ` + "`furrow revisit`" + ` flags it
 # stale. 0 disables the stale signal (the other revisit signals still fire).

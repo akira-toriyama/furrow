@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -82,6 +83,7 @@ type raw struct {
 	// it (default: icebox).
 	Due struct {
 		IgnoreLanes []string `toml:"ignore_lanes"`
+		Timezone    string   `toml:"timezone"`
 	} `toml:"due"`
 	// Alias is the board-level [alias] table: name -> a command string that
 	// `furrow <name> …` expands to, git-style. A map decodes any [alias] key.
@@ -279,6 +281,18 @@ func fromRaw(r raw) (*Config, []string, error) {
 			}
 		}
 		c.DueIgnoreLanes = setOf(keep)
+	}
+
+	// [due].timezone: the board's calendar. Unset keeps the process zone, which
+	// is what every board did before the key existed, so adding it rewrites no
+	// behaviour until someone declares one.
+	if r.Due.Timezone != "" {
+		if loc, err := time.LoadLocation(r.Due.Timezone); err != nil {
+			warn = append(warn, fmt.Sprintf("due.timezone %q is not a loadable IANA zone name; using the process zone", r.Due.Timezone))
+		} else {
+			c.DueTimezone = loc
+			c.DueTimezoneName = r.Due.Timezone
+		}
 	}
 
 	if r.Next.Lanes != nil {

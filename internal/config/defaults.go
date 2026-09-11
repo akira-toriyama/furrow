@@ -8,7 +8,10 @@
 // used to claim).
 package config
 
-import "regexp"
+import (
+	"regexp"
+	"time"
+)
 
 // Defaults mirror config.toml's shipped template and GitHub Projects #5's lanes.
 // Editing the template changes a user's config; editing these changes the
@@ -87,6 +90,21 @@ type Config struct {
 	// lint finding and no brief section entry (the done lane is skipped on top of
 	// these, structurally). Empty = signal in every lane but done.
 	DueIgnoreLanes map[string]bool
+	// DueTimezone is the [due].timezone: the calendar a wall-clock `--due`
+	// spelling is read in and the "today" boundary is drawn at. nil = unset,
+	// which keeps the process zone (time.Local).
+	//
+	// It is declared on the BOARD, not derived from the process, for the reason
+	// `default_repo = "auto"` is refused: config.toml is committed and shared, so
+	// a process-derived value means a different thing in every checkout — and CI
+	// closes tasks through the identical write path on a UTC runner, which made
+	// `--due 2026-08-04` bind 23:59:59Z there and 23:59:59+09:00 on the operator's
+	// machine. One board, one calendar.
+	DueTimezone *time.Location
+	// DueTimezoneName is the IANA name exactly as written ("" = unset). Kept
+	// beside the location because a *time.Location renders as its own name, not
+	// the spelling the operator committed.
+	DueTimezoneName string
 
 	PriorityStep    int
 	PriorityDefault int

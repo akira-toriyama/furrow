@@ -229,12 +229,12 @@ func openAt(dir string) (*App, error) {
 		return nil, core.Validationf("config", "%v", err)
 	}
 	st := fsstore.New(dir, cfg.Lanes, cfg.IDPrefix, cfg.EpicIDPrefix, cfg.IDWidth)
-	return &App{Store: st, Cfg: cfg, Clock: core.SystemClock(), Dir: dir, Warnings: warn}, nil
+	return &App{Store: st, Cfg: cfg, Clock: core.SystemClock(), Dir: dir, Warnings: warn, Loc: cfg.DueTimezone}, nil
 }
 
 // NewWithStore builds an App over an arbitrary Store (for tests / dry-runs).
 func NewWithStore(st Store, cfg *config.Config, clk core.Clock) *App {
-	return &App{Store: st, Cfg: cfg, Clock: clk}
+	return &App{Store: st, Cfg: cfg, Clock: clk, Loc: cfg.DueTimezone}
 }
 
 // resolution is the outcome of discovery: which .furrow to open, and (only when
