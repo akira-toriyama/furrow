@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/akira-toriyama/furrow/internal/app"
+	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +46,7 @@ func newUpgradeCmd() *cobra.Command {
 				emitObject(rep)
 				return nil
 			}
-			printUpgradeHuman(rep, a.Cfg.Standalone)
+			printUpgradeHuman(rep, a.Cfg.Mode == config.ModeStandalone)
 			return nil
 		},
 	}
@@ -54,7 +55,7 @@ func newUpgradeCmd() *cobra.Command {
 }
 
 // printUpgradeHuman renders the upgrade preview/result. On a standalone board
-// (config `standalone = true`) it drops the shared-board flag-day checklist and
+// (config `mode = "standalone"`) it drops the shared-board flag-day checklist and
 // the `furrow sync` publish line — a single-machine board with no remote has no
 // pinned CI to coordinate and nothing to publish, so that guidance only
 // misdirects. Behavior is identical; only the wording differs.

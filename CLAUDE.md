@@ -211,7 +211,9 @@ user-level config. When you work with any furrow store:
   uncapped count). `stats.drafts` spans the repo dimension exactly like
   `brief`'s (no scope can own a draft; `-s`/`-l`/`-q` still bind it), so the
   two counts agree on a bare read. `furrow board [--json]` prints the store
-  path, discovery source, repo
+  path, discovery source, the two board axes (`mode` = shared|standalone from the
+  board's own config.toml, `layout` = central|repo-local derived from the source —
+  so it says how THIS invocation reached the board, not where the store sits), repo
   scope, and lane vocabulary (lanes/next/default/done/terminal) — read it to
   learn the lanes and active scope without provoking an error. On a board, `add`
   unions the scope repo into `repos` (`--draft` suppresses exactly that), and
@@ -467,10 +469,11 @@ furrow — an alternative to GitHub Projects/Issues: a clonable, git-native,
 plain-text task tracker. The store either sits **inside** the repo it serves (a
 **repo-local board**) or outside it, reached by configuration (a **central
 board**, which can therefore back many repos — tasks carry their repositories
-in the first-class `repos` field). Orthogonal to WHERE THE STORE SITS is the
-MODE: a board with a git remote and other writers is a **shared board** (the
-default, declared by omission), while a board on one machine with no remote
-sets `standalone = true`. Structured metadata lives in
+in the first-class `repos` field). That axis is the **layout**, and `furrow
+board` reports it as `central` or `repo-local`. Orthogonal to it is the
+**mode**: a board with a git remote and other writers is a **shared board** (the
+default, declared by omission), while a board on one machine with no remote sets
+`mode = "standalone"`. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
 (`{"schema_version": 9}`); long-form prose lives in
@@ -649,7 +652,7 @@ candidates; a value the reader would clamp is refused before the write). Every
 other command still only reads. The shipped sections
 are `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`,
 `[archive]`, `[lint]`, `[due]`, `[revisit]`, `[review]`, `[session]`, `[alias]`,
-and the top-level `standalone` and `default_repo` — the repo-root `config.toml` (which `furrow init` writes
+and the top-level `mode` and `default_repo` — the repo-root `config.toml` (which `furrow init` writes
 and check.sh diffs byte-for-byte) is the canonical annotated copy; read it rather
 than trusting a prose list here. Two switches are genuinely OFF by default:
 `[labels].required` (a label-less task errors on `add` and in `lint`) and

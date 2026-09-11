@@ -49,8 +49,9 @@ func TestBoardGitStates(t *testing.T) {
 	}
 }
 
-// A board outside git at all — the standalone case. It is a STATE, never an
-// error, and the human line stays silent about it.
+// A board outside git at all — the git-less arrangement, NOT a standalone board
+// (which has git and reports no-upstream). It is a STATE, never an error, and
+// the human line stays silent about it.
 func TestBoardGitNotARepo(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Init(dir); err != nil {

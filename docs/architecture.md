@@ -1029,7 +1029,10 @@ except where noted:
   `candidates` array; when a repo scope — explicit `-r` or the board's auto
   scope — hides drafts, a one-line stderr hint points at `--drafts` (stdout
   stays pure data). `furrow board [--json]` prints the resolved store path,
-  discovery source (`env|local|pointer|user-config`), repo scope, the full
+  discovery source (`env|local|pointer|user-config`), the two board axes
+  (`mode` = `shared|standalone`, from the board's own config.toml; `layout` =
+  `central|repo-local`, derived from the source — how this invocation reached the
+  board, not where the store sits), repo scope, the full
   lane vocabulary (lanes / next-lanes / default / done / terminal), and the
   schema triple (`schema_version` / `binary_schema_version` / `schema_state` /
   `writable`) — the introspection call that answers "what lanes exist, what scope
@@ -1108,7 +1111,7 @@ built-in defaults with no warnings; only *malformed TOML* is an error.
 Sections and their defaults:
 `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`, `[archive]`, `[lint]`,
 `[due]`, `[revisit]`, `[review]`, `[session]`, `[alias]`, and the top-level
-`standalone` and `default_repo`. The keys, defaults, and per-key reasoning live in the repo-root
+`mode` and `default_repo`. The keys, defaults, and per-key reasoning live in the repo-root
 [`config.toml`](../config.toml) — the **canonical annotated copy**: it is the
 exact file `furrow init` writes, and check.sh/CI diff the two byte-for-byte, so
 unlike a prose table it cannot rot. (The table that used to sit here was the
@@ -1129,7 +1132,7 @@ names the claim to update.
 `status` is just a lane from `[lanes].order`; that list is simultaneously the
 status enum and the top-to-bottom sort rank.
 
-`standalone` is **presentation-only**: it changes no behavior, no schema gate,
+`mode` is **presentation-only**: it changes no behavior, no schema gate,
 and no on-disk byte — the CLI reads it (`cmd_upgrade.go`) to drop the
 shared-board flag-day / `furrow sync` wording that only misdirects a
 single-machine operator. It lives in `config.toml` (not `meta.json`), so it is

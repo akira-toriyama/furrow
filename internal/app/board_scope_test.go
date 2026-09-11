@@ -57,6 +57,12 @@ func TestBoardDefaultRepo_ScopesLocalDiscovery(t *testing.T) {
 	if len(a.Warnings) != 0 {
 		t.Errorf("a well-formed default_repo warns about nothing, got %v", a.Warnings)
 	}
+	// The repo-local arm of the LAYOUT axis, asserted where a source=local App
+	// already exists. It is the arm a CENTRAL board also hits when entered from
+	// inside its own tree, which is precisely why the value is reported.
+	if got := a.Board().Layout; got != LayoutRepoLocal {
+		t.Errorf("Board().Layout = %q, want %q for a locally discovered board", got, LayoutRepoLocal)
+	}
 }
 
 // FURROW_DIR is the other scope-less arm. It stays "explicit, no scope

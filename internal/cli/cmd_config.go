@@ -53,7 +53,7 @@ func newConfigSetCmd() *cobra.Command {
 			"~/.config/furrow/config.toml instead (--board <ref> picks the entry by path\n" +
 			"or scope — exact, else unique substring; omit it when one entry exists).\n\n" +
 			"<key> is dotted (lanes.default, next.lanes, alias.<name>; bare for a\n" +
-			"top-level key like standalone). A list value is comma-split\n" +
+			"top-level key like mode). A list value is comma-split\n" +
 			"(next.lanes ready,in-progress). The writer is STRICT where the reader is\n" +
 			"lenient: an unknown key is exit 2 with the vocabulary in candidates, and a\n" +
 			"value the reader would clamp away with a warning is refused before the\n" +

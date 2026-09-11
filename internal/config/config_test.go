@@ -59,28 +59,65 @@ func writeTOML(t *testing.T, body string) string {
 	return p
 }
 
-// standalone is the local single-machine opt-in: absent -> false (shared board,
-// the default), and a bool has no out-of-range value so it never warns.
-func TestStandaloneParsing(t *testing.T) {
+// mode is the MODE axis: absent -> "shared" (the default), either literal
+// parses without a warning, and anything else clamps back to the default WITH
+// one — the clamp-don't-reject read policy. The retired `standalone` bool is
+// now just an unknown key: carried, never honoured, and reported by lint.
+func TestModeParsing(t *testing.T) {
 	if c, _, err := Load(writeTOML(t, "")); err != nil {
 		t.Fatal(err)
-	} else if c.Standalone {
-		t.Errorf("absent standalone must default to false (shared board)")
+	} else if c.Mode != ModeShared {
+		t.Errorf("absent mode must default to %q, got %q", ModeShared, c.Mode)
 	}
 
-	c, warn, err := Load(writeTOML(t, "standalone = true\n"))
+	c, warn, err := Load(writeTOML(t, "mode = \"standalone\"\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Standalone {
-		t.Errorf("standalone = true must parse as true")
+	if c.Mode != ModeStandalone {
+		t.Errorf("mode = \"standalone\" must parse as %q, got %q", ModeStandalone, c.Mode)
 	}
 	if len(warn) != 0 {
-		t.Errorf("a valid standalone bool must not warn: %v", warn)
+		t.Errorf("a valid mode must not warn: %v", warn)
 	}
 
-	if c, _, _ := Load(writeTOML(t, "standalone = false\n")); c.Standalone {
-		t.Errorf("standalone = false must parse as false")
+	if c, warn, _ := Load(writeTOML(t, "mode = \"shared\"\n")); c.Mode != ModeShared || len(warn) != 0 {
+		t.Errorf("mode = \"shared\" must parse cleanly, got %q warn=%v", c.Mode, warn)
+	}
+
+	// An unrecognized value must not stick: it clamps to the default and says so,
+	// which is also what makes `furrow config set mode <junk>` an exit 2 (the
+	// writer refuses any value the reader would clamp away).
+	c, warn, err = Load(writeTOML(t, "mode = \"hosted\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Mode != ModeShared {
+		t.Errorf("an unknown mode must clamp to %q, got %q", ModeShared, c.Mode)
+	}
+	if len(warn) != 1 || !strings.Contains(warn[0], "hosted") {
+		t.Errorf("an unknown mode must warn and name the value: %v", warn)
+	}
+
+	// An explicitly EMPTY mode is a bad value, not an absent key. raw.Mode is a
+	// pointer for exactly this: with a plain string the two are one zero value,
+	// `mode = ""` would read as "unset" in silence, and `furrow config set mode
+	// ""` would pass the strict writer — whose guard refuses only what the reader
+	// warns about. Nothing else detects this spelling.
+	c, warn, err = Load(writeTOML(t, "mode = \"\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Mode != ModeShared {
+		t.Errorf("an empty mode must clamp to %q, got %q", ModeShared, c.Mode)
+	}
+	if len(warn) != 1 {
+		t.Errorf("an empty mode must warn exactly once: %v", warn)
+	}
+
+	// The retired bool is not silently honoured in either direction.
+	if c, _, _ := Load(writeTOML(t, "standalone = true\n")); c.Mode != ModeShared {
+		t.Errorf("the retired `standalone` key must not set the mode, got %q", c.Mode)
 	}
 }
 

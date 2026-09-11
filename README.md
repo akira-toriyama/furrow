@@ -48,7 +48,7 @@ in this order and the four shapes name themselves.
   than one party (your other checkouts, a co-located session, every repo's
   pinned CI caller), kept converged by
   [`furrow sync`](#multi-machine-furrow-sync). A **standalone** board
-  (`standalone = true`) lives on one machine, under its own git, with no remote
+  (`mode = "standalone"`) lives on one machine, under its own git, with no remote
   you can push to: no sync, no CI — see
   [Standalone](#standalone-a-local-board-with-no-remote).
 - **Layout — where does the store sit?** A **central board** lives *outside*
@@ -211,7 +211,7 @@ furrow upgrade              # 3. preview: which stores change, and how many shar
 furrow upgrade --yes && furrow sync
 ```
 
-On a **standalone board** (`standalone = true`, see [Standalone](#standalone-a-local-board-with-no-remote)) there is no fleet to coordinate, so `furrow upgrade` skips the flag-day checklist and the `furrow sync` step. The gate itself is unchanged; only the guidance differs.
+On a **standalone board** (`mode = "standalone"`, see [Standalone](#standalone-a-local-board-with-no-remote)) there is no fleet to coordinate, so `furrow upgrade` skips the flag-day checklist and the `furrow sync` step. The gate itself is unchanged; only the guidance differs.
 
 `furrow board` reports the whole triple (`schema_version`, `binary_schema_version`, `schema_state`, `writable`) plus the board repo's local `git` state (`state`, HEAD's `commit`/`commit_time`/`subject`, whether `.furrow/` is `dirty`, and `ahead`/`behind` as of the last fetch) and — by design — **never fails on a mismatch**: it is the one command that still answers when board and binary disagree, which is why the bundled task-status workflow pre-flights it instead of emitting N mysterious "task not found"s. `furrow lint` warns (`schema-outdated`) without erroring, because a read-only board is the legitimate middle of a flag day. Why the gate exists — and the 2026-07-13 outage a side-effecting `Save` once caused — is in [docs/architecture.md](docs/architecture.md) and [docs/non-goals.md](docs/non-goals.md).
 
@@ -272,7 +272,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `revisit` | List open tasks needing re-evaluation (agent re-weighing signal) | `-e/--epic`, `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `--stale-days` |
 | `search <term>` | Full-text search over task titles and bodies | `--archived`, `-e/--epic`, `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `-s/--status` |
 | `stats` | Summarize the board: counts by lane, repo, and label | `-e/--epic`, `-l/--label`, `-q/--query`, `-r/--repo`, `--since`, `-s/--status`, `--until` |
-| `board` | Print the active board: store path, scope, lane vocabulary, and schema state | — |
+| `board` | Print the active board: store path, mode/layout, scope, lane vocabulary, and schema state | — |
 | `boards` | List the configured boards (user-level config), independent of cwd | — |
 | `doctor [dir...]` | Diagnose this machine's board setup: config, boards, scopes, git freshness | — |
 | `edit <id>` | Edit a task's or epic's markdown body in $EDITOR, or replace it with --body | `--body`, `--expect-updated` |
@@ -536,7 +536,7 @@ stays `furrow sync`'s job — autocommit is a purely local backup), and it **ski
 board whose enclosing git repo isn't its own** (the classic slip of forgetting
 `git init` in the board's directory, which would drop board commits into a code
 repo). Distinct from the board-config
-[`standalone`](#standalone-a-local-board-with-no-remote) flag, which changes only
+[`mode`](#standalone-a-local-board-with-no-remote) key, which changes only
 `furrow upgrade`'s wording, never behavior.
 
 ### Per-repo pointer
@@ -760,7 +760,7 @@ The common setup on a work machine, where there is no remote you can push to: ke
    ├── .git/info/exclude    →  claude_workspace/     # keep the board out of the code repo
    └── claude_workspace/            # its own `git init`, no remote, never pushed
        └── .furrow/
-           ├── config.toml          # standalone = true, default_repo = "acme/app"
+           ├── config.toml          # mode = "standalone", default_repo = "acme/app"
            └── meta.json, tasks/, bodies/
    ```
 
@@ -775,7 +775,7 @@ The common setup on a work machine, where there is no remote you can push to: ke
    autocommit = true                            # commit the board after each change — the backup habit, automated
    ```
 
-Then set **`standalone = true`** in the board's `config.toml` (see [Configuration](#configuration)). It changes **only wording, never behavior**: `furrow upgrade` drops the shared-board flag-day checklist and the "run `furrow sync` to publish" line — a single-machine board has no pinned CI to coordinate and no remote to publish to. The write gate, schema, and on-disk format are byte-for-byte identical to a shared board.
+Then set **`mode = "standalone"`** in the board's `config.toml` (see [Configuration](#configuration)). It changes **only wording, never behavior**: `furrow upgrade` drops the shared-board flag-day checklist and the "run `furrow sync` to publish" line — a single-machine board has no pinned CI to coordinate and no remote to publish to. The write gate, schema, and on-disk format are byte-for-byte identical to a shared board.
 
 Set **`default_repo = "<owner>/<repo>"`** in that same `config.toml` too. The `[[board]]` entry above only scopes commands run from **under `scopes`** — but the board's `.furrow` sits *inside* that tree, so a command run from inside `claude_workspace/` finds it by plain local discovery, which outranks the `[[board]]` entry and carries none of its `repo`/`auto_filter`. The same board then shows a different `ls` depending on which directory you happened to be in, and a bare `add` there writes a repo-less draft. `default_repo` is what closes that hole: it travels with the board, so every way of reaching it agrees.
 
@@ -794,20 +794,20 @@ Everything shared-board-shaped is N/A here, and knowing the failure shapes saves
 
 ## Configuration
 
-`.furrow/config.toml` is the one human-edited file in the store. Reads apply a **clamp-don't-reject** policy: unknown keys are ignored and out-of-range values fall back to a safe default with a warning surfaced by `furrow lint` — so a typo can never break the tool. The one command that WRITES it is **`furrow config set <key> <value>`** — a surgical, git-config-style edit (comments and every untouched byte survive; a multi-line value collapses to the new one-line value) that is strict where reads are lenient: an unknown key is exit 2 with the key vocabulary in `candidates`, and a value the reader would clamp away is refused *before* the write, so what you set is exactly what a read will honor. Dotted keys (`lanes.default`, `next.lanes`, `alias.<name>`; bare `standalone`); a list value is comma-split. `--user [--board <ref>]` targets a `[[board]]` entry of the user-level config instead (ref = path or scope, exact else unique substring, `candidates` on a miss). A board write rides the next `furrow sync` like every machine-written file.
+`.furrow/config.toml` is the one human-edited file in the store. Reads apply a **clamp-don't-reject** policy: unknown keys are ignored and out-of-range values fall back to a safe default with a warning surfaced by `furrow lint` — so a typo can never break the tool. The one command that WRITES it is **`furrow config set <key> <value>`** — a surgical, git-config-style edit (comments and every untouched byte survive; a multi-line value collapses to the new one-line value) that is strict where reads are lenient: an unknown key is exit 2 with the key vocabulary in `candidates`, and a value the reader would clamp away is refused *before* the write, so what you set is exactly what a read will honor. Dotted keys (`lanes.default`, `next.lanes`, `alias.<name>`; bare `mode`); a list value is comma-split. `--user [--board <ref>]` targets a `[[board]]` entry of the user-level config instead (ref = path or scope, exact else unique substring, `candidates` on a miss). A board write rides the next `furrow sync` like every machine-written file.
 
 The full annotated reference is the repo-root [`config.toml`](config.toml) —
 the **canonical copy**: it is byte-for-byte the file `furrow init` writes
 (check.sh and CI diff the two), so unlike a prose copy it cannot rot. The
 sections: `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`, `[archive]`,
 `[lint]`, `[due]`, `[revisit]`, `[review]`, `[session]`, `[alias]`, plus the
-top-level `standalone` and `default_repo`. (The annotated copy that used to sit here had
+top-level `mode` and `default_repo`. (The annotated copy that used to sit here had
 already drifted — it lost `[lint].provenance_markers` and `[review]`'s epic
 review clock — which is exactly why it is now a pointer.)
 
 A board `[alias]` names a frequent command string; `furrow <name> <extra args>` expands it git-style (the alias tokens replace the name, the rest of the argv is appended), so every flag, board scope, and auto-filter composes for free. It lives in the **board** config (not the user-level one), so it syncs with the board and every machine/agent shares it. A real command always wins — an alias that shadows a builtin (`ls`, `next`, …) is inert and `furrow lint` flags it (`alias-shadow`); a blank alias value is dropped with a clamp warning. Put global flags *after* the alias (`furrow triage --json`), as with git.
 
-`standalone = true` marks a local single-machine board (no remote / `furrow sync` / CI). It changes **only wording** — never behavior, the schema gate, or the on-disk format: `furrow upgrade` drops the shared-board flag-day checklist and the `furrow sync` publish line, which would only misdirect a solo operator with no fleet to coordinate. Default `false` (shared board). See [Standalone](#standalone-a-local-board-with-no-remote).
+`mode` is the board's MODE axis: `"shared"` (a git remote and co-writers) or `"standalone"` (a local single-machine board — no remote, no `furrow sync`, no CI). It changes **only wording** — never behavior, the schema gate, or the on-disk format: `furrow upgrade` drops the shared-board flag-day checklist and the `furrow sync` publish line, which would only misdirect a solo operator with no fleet to coordinate. Absent = `"shared"`; an unrecognized value clamps back to it with a warning. The other axis, LAYOUT (`central` / `repo-local`), is not a config key at all — it follows from how discovery reached the board, and `furrow board` prints both. See [Standalone](#standalone-a-local-board-with-no-remote).
 
 `default_repo = "owner/repo"` is the repo the board itself is **for**. It is the *fallback* scope: consulted only when discovery ran an arm that declares no scope at all, and when it applies it filters reads as well as attaching the repo on `add`. So the key bites exactly the two arms that declare nothing — cwd **inside the board's own directory tree** (`source=local`) and `FURROW_DIR` — while a pointer's `default_repo` and a user-level `[[board]]`'s `repo` keep the last word, *including when they resolve to no repo at all* (see [Discovery precedence](#discovery-precedence)). Without it, the same board answers `ls` differently depending on which directory you ran from, and a bare `add` from inside the board silently produces repo-less drafts. Unlike the pointer key of the same name it takes a **literal** `owner/repo` only — `config.toml` is committed and shared, so a derived `"auto"` would differ per checkout and per machine, reintroducing exactly the cwd-dependence the key removes (it is clamped away with a `furrow lint` warning). There is deliberately no board-side `auto_filter`: declaring the scope declares it for reads too, and `-r ''` remains the per-command escape hatch.
 

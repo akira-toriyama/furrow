@@ -27,8 +27,9 @@ const GlobalTemplate = `# furrow — user-level configuration (~/.config/furrow/
 #
 # This file is PER-MACHINE — unlike a board's own .furrow/config.toml (which is
 # committed and shared, holding lane/id rules), it says which CENTRAL board backs
-# the repos under your tree. A central board is one .furrow that many repos use
-# WITHOUT each carrying its own .furrow or a .furrow-pointer.toml.
+# the repos under your tree. Central is the LAYOUT axis: the store lives OUTSIDE
+# the repos it backs and is reached by configuration (this file), rather than
+# sitting in one checkout. Backing many repos is what that buys, not what it means.
 #
 # Ordinary furrow commands only READ this file (` + "`furrow config set --user`" + `
 # edits one key of one [[board]] entry surgically); a half-written [[board]] is clamped away with a

@@ -78,9 +78,12 @@
 #     because grep is line-oriented and that region's code span WRAPS.
 #   * README's lint bullet appeared to name 7 nonexistent codes, because a bare
 #     ``` in the prose left the line's backticks odd and paired prose with code.
-# All 15 claims here were verified member by member in both directions (185
-# forward, 30 reverse), plus a check that no `subset` claim fails when a member is
-# merely absent — which is precisely what it must tolerate.
+# The 18 claims that predate the mode/layout axes were verified member by member
+# in both directions (185 forward, 30 reverse), plus a check that no `subset`
+# claim fails when a member is merely absent — which is precisely what it must
+# tolerate. The four `modes`/`layouts` claims added with the axes were verified
+# the same way: planting a deletion in each region fails the run and names the
+# missing member.
 #
 # WHY THERE IS A SELF-TEST. The first version of this script printed a real
 # failure and then exited 0, because the `status=1` ran in a subshell on the
@@ -497,6 +500,10 @@ complete|commands||docs/non-goals.md|^- \*\*Built and real today\*\*|^  Destruct
 complete|config-keys||CLAUDE.md|^`furrow lint` surfaces\. Read it through `internal/config`|^user-level central-board config
 complete|config-keys||docs/architecture.md|^Sections and their defaults:|^`status` is just a lane
 complete|config-keys||README.md|^## Configuration|^A board `\[alias\]` names
+complete|modes||CLAUDE.md|^## What this is|^## Build / run
+complete|layouts||CLAUDE.md|^## What this is|^## Build / run
+complete|modes||README.md|^## Two questions, four shapes|^## Quickstart
+complete|layouts||README.md|^## Two questions, four shapes|^## Quickstart
 both|revisit-codes|^[a-z]+(_[a-z]+)+$|CLAUDE.md|`revisit --json` a `revisit` array|^- \*\*Batch reads by id
 both|revisit-codes|^[a-z]+(_[a-z]+)+$|README.md|^- \*\*`revisit`\*\* — read-only|^- \*\*`search`\*\*
 complete|revisit-codes||internal/app/revisit.go|^// Revisit lists open tasks that may need a fresh judgment|^func \(a \*App\) Revisit\(

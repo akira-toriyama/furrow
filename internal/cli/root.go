@@ -168,10 +168,12 @@ func newRootCmd() *cobra.Command {
 	cobra.EnableCommandSorting = false
 	root := &cobra.Command{
 		Use:   "furrow",
-		Short: "Repo-local plain-text task tracker (per-task JSON shards + markdown bodies)",
+		Short: "Plain-text task tracker in git (per-task JSON shards + markdown bodies)",
 		Long: "furrow — a clonable, git-native plain-text task tracker: an alternative to\n" +
-			"GitHub Projects/Issues that lives in a git repo (a shared central board or the\n" +
-			"code repo itself).\n\n" +
+			"GitHub Projects/Issues that lives in a git repo. Two independent axes:\n" +
+			"MODE (shared | standalone — does the board have a remote?) and LAYOUT\n" +
+			"(central | repo-local — does the store sit outside the repos it backs, or\n" +
+			"inside the one it serves?). `furrow board` reports both.\n\n" +
 			"Structured metadata lives in one .furrow/tasks/<id>.json shard per task;\n" +
 			"long-form prose lives in .furrow/bodies/<id>.md. The bodies are YOURS — edit\n" +
 			"them by hand freely. Every other file furrow writes — tasks/*.json,\n" +

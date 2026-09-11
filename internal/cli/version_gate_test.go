@@ -163,7 +163,7 @@ func TestUpgradeCLIPreviewsThenApplies(t *testing.T) {
 func setStandalone(t *testing.T) {
 	t.Helper()
 	cfg := filepath.Join(os.Getenv(app.EnvDir), "config.toml")
-	if err := os.WriteFile(cfg, []byte("standalone = true\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte("mode = \"standalone\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

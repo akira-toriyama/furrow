@@ -6,7 +6,7 @@ import (
 )
 
 const editFixture = `# header comment
-standalone = false
+mode = "shared"
 
 [lanes]
 # which lanes exist
@@ -96,8 +96,8 @@ func TestSetAppendsMissingSection(t *testing.T) {
 // TestSetTopLevel: replaces the bare key in place; inserts before the first
 // header when absent.
 func TestSetTopLevel(t *testing.T) {
-	res := mustSet(t, editFixture, "", "standalone", "true")
-	if !strings.Contains(res.Doc, "standalone = true") || strings.Contains(res.Doc, "standalone = false") {
+	res := mustSet(t, editFixture, "", "mode", `"standalone"`)
+	if !strings.Contains(res.Doc, `mode = "standalone"`) || strings.Contains(res.Doc, `mode = "shared"`) {
 		t.Errorf("top-level replace failed:\n%s", res.Doc)
 	}
 	res = mustSet(t, editFixture, "", "default_repo", `"o/r"`)
@@ -132,15 +132,15 @@ func TestSetHashInsideStringIsNotAComment(t *testing.T) {
 // TestSetCommentedExampleDoesNotMatch: the template's `# default_repo = …`
 // documentation line is not the key.
 func TestSetCommentedExampleDoesNotMatch(t *testing.T) {
-	doc := "# standalone = false\n\n[lanes]\ndefault = \"inbox\"\n"
-	res, err := SetInSection(doc, "", "standalone", "true")
+	doc := "# mode = \"shared\"\n\n[lanes]\ndefault = \"inbox\"\n"
+	res, err := SetInSection(doc, "", "mode", `"standalone"`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.Existed {
 		t.Error("a commented-out example must read as absent")
 	}
-	if !strings.Contains(res.Doc, "# standalone = false\nstandalone = true\n") {
+	if !strings.Contains(res.Doc, "# mode = \"shared\"\nmode = \"standalone\"\n") {
 		t.Errorf("insert should land after the top-level block:\n%s", res.Doc)
 	}
 }
@@ -205,8 +205,13 @@ func TestKeyRegistryAndValues(t *testing.T) {
 	if k, _ := find("priority.step"); k.Kind != KindInt {
 		t.Errorf("priority.step kind = %v, want int", k.Kind)
 	}
-	if k, _ := find("standalone"); k.Kind != KindBool || k.Section != "" {
-		t.Errorf("standalone must be a top-level bool, got %+v", k)
+	if k, _ := find("mode"); k.Kind != KindString || k.Section != "" {
+		t.Errorf("mode must be a top-level string, got %+v", k)
+	}
+	// `mode` retired the only top-level bool, so keep a bool subject in the
+	// registry check: kindOf's bool arm is still live for section keys.
+	if k, _ := find("labels.required"); k.Kind != KindBool || k.Section != "labels" {
+		t.Errorf("labels.required must be a bool in [labels], got %+v", k)
 	}
 	if k, name := find("alias.triage"); !k.Dynamic || name != "triage" {
 		t.Errorf("alias.<name> must resolve dynamically, got %+v/%q", k, name)
