@@ -91,7 +91,13 @@ type raw struct {
 	// poles have a name — the nameless half of the old `standalone` switch is
 	// what let five spellings of "shared board" into the docs. An unrecognized
 	// value clamps to DefaultMode with a warning, like every other read.
-	Mode string `toml:"mode"`
+	//
+	// A POINTER so "absent" is distinguishable from `mode = ""`: with a plain
+	// string the two are the same zero value, and an explicit empty string would
+	// be read as "unset" — silently, which is also what let `furrow config set
+	// mode ""` through the strict writer (its guard refuses only what the reader
+	// WARNS about).
+	Mode *string `toml:"mode"`
 	// DefaultRepo is the board's OWN repo scope: the owner/repo that `add`
 	// attaches and reads filter by when discovery supplied none (a local
 	// `.furrow`, or FURROW_DIR). Stored verbatim — shape validation lives in the
@@ -461,8 +467,9 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// the default with a warning — the same clamp-don't-reject read policy every
 	// other key follows, and what makes `furrow config set mode <junk>` an exit 2
 	// (the writer refuses any value the reader would clamp away).
-	if v := strings.TrimSpace(r.Mode); v != "" {
-		if v == ModeShared || v == ModeStandalone {
+	if r.Mode != nil {
+		v := strings.TrimSpace(*r.Mode)
+		if contains(Modes(), v) {
 			c.Mode = v
 		} else {
 			warn = append(warn, fmt.Sprintf("mode %q is not one of %s; using %q",

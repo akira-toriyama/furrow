@@ -211,7 +211,9 @@ user-level config. When you work with any furrow store:
   uncapped count). `stats.drafts` spans the repo dimension exactly like
   `brief`'s (no scope can own a draft; `-s`/`-l`/`-q` still bind it), so the
   two counts agree on a bare read. `furrow board [--json]` prints the store
-  path, discovery source, repo
+  path, discovery source, the two board axes (`mode` = shared|standalone from the
+  board's own config.toml, `layout` = central|repo-local derived from the source —
+  so it says how THIS invocation reached the board, not where the store sits), repo
   scope, and lane vocabulary (lanes/next/default/done/terminal) — read it to
   learn the lanes and active scope without provoking an error. On a board, `add`
   unions the scope repo into `repos` (`--draft` suppresses exactly that), and

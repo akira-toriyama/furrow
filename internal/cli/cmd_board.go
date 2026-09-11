@@ -138,7 +138,11 @@ func printBoardHuman(b app.BoardInfo) {
 	}
 	fmt.Fprintf(out, "store:    %s\n", b.Store)
 	fmt.Fprintf(out, "source:   %s\n", b.Source)
-	fmt.Fprintf(out, "board:    %s / %s\n", b.Mode, b.Layout)
+	// One line per axis, each labelled with its own JSON key: the two are not the
+	// same KIND of fact (mode is the board's, layout is this invocation's), so a
+	// single combined line would invite reading both as board properties.
+	fmt.Fprintf(out, "mode:     %s\n", b.Mode)
+	fmt.Fprintf(out, "layout:   %s (from source)\n", b.Layout)
 	fmt.Fprintf(out, "scope:    %s (auto_filter=%t)\n", scope, b.AutoFilter)
 	if b.DefaultLabel != "" {
 		fmt.Fprintf(out, "add tag:  %s\n", b.DefaultLabel)

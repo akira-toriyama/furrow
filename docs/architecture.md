@@ -1029,7 +1029,10 @@ except where noted:
   `candidates` array; when a repo scope — explicit `-r` or the board's auto
   scope — hides drafts, a one-line stderr hint points at `--drafts` (stdout
   stays pure data). `furrow board [--json]` prints the resolved store path,
-  discovery source (`env|local|pointer|user-config`), repo scope, the full
+  discovery source (`env|local|pointer|user-config`), the two board axes
+  (`mode` = `shared|standalone`, from the board's own config.toml; `layout` =
+  `central|repo-local`, derived from the source — how this invocation reached the
+  board, not where the store sits), repo scope, the full
   lane vocabulary (lanes / next-lanes / default / done / terminal), and the
   schema triple (`schema_version` / `binary_schema_version` / `schema_state` /
   `writable`) — the introspection call that answers "what lanes exist, what scope

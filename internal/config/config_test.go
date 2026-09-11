@@ -99,6 +99,22 @@ func TestModeParsing(t *testing.T) {
 		t.Errorf("an unknown mode must warn and name the value: %v", warn)
 	}
 
+	// An explicitly EMPTY mode is a bad value, not an absent key. raw.Mode is a
+	// pointer for exactly this: with a plain string the two are one zero value,
+	// `mode = ""` would read as "unset" in silence, and `furrow config set mode
+	// ""` would pass the strict writer — whose guard refuses only what the reader
+	// warns about. Nothing else detects this spelling.
+	c, warn, err = Load(writeTOML(t, "mode = \"\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Mode != ModeShared {
+		t.Errorf("an empty mode must clamp to %q, got %q", ModeShared, c.Mode)
+	}
+	if len(warn) != 1 {
+		t.Errorf("an empty mode must warn exactly once: %v", warn)
+	}
+
 	// The retired bool is not silently honoured in either direction.
 	if c, _, _ := Load(writeTOML(t, "standalone = true\n")); c.Mode != ModeShared {
 		t.Errorf("the retired `standalone` key must not set the mode, got %q", c.Mode)

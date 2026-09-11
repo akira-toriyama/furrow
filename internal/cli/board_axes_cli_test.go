@@ -80,7 +80,10 @@ func TestBoardHumanShowsBothAxes(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("board exit = %d:\n%s", code, out)
 	}
-	if !strings.Contains(out, "board:    shared / central") {
-		t.Errorf("human board output must name mode and layout:\n%s", out)
+	if !strings.Contains(out, "mode:     shared") {
+		t.Errorf("human board output must name the mode:\n%s", out)
+	}
+	if !strings.Contains(out, "layout:   central") {
+		t.Errorf("human board output must name the layout:\n%s", out)
 	}
 }

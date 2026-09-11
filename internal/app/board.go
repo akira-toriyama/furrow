@@ -18,11 +18,14 @@ import (
 //
 // The two axes are independent, and both are reported because neither can be
 // inferred from the other or from Git.State: Mode is what the board's committed
-// config.toml declares, Layout is where the store sits relative to the repos it
-// serves. Reading the mode off the git state is the trap this pair exists to
+// config.toml declares, Layout is which discovery arm this invocation came in
+// through. Reading the mode off the git state is the trap this pair exists to
 // close — `ok` is evidence a board is shared, never proof of the converse (a
 // detached CI checkout, an untracked branch, and a board with no commits yet all
 // report no-upstream on a fully shared board).
+//
+// Mode is board-INTRINSIC; Layout is not, and that asymmetry is deliberate —
+// see layoutOf.
 //
 // The scalars up front are the RESOLUTION — what this invocation's cwd
 // resolved to. The embedded BoardVocab and SchemaTriple are board-INTRINSIC and
@@ -33,7 +36,7 @@ type BoardInfo struct {
 	Store        string `json:"store"`         // absolute .furrow path (where writes land)
 	Source       string `json:"source"`        // env|local|pointer|user-config
 	Mode         string `json:"mode"`          // shared|standalone — the board's own config.toml
-	Layout       string `json:"layout"`        // central|repo-local — derived from Source, never configured
+	Layout       string `json:"layout"`        // central|repo-local — how THIS invocation reached the board (see layoutOf)
 	ScopeRepo    string `json:"scope_repo"`    // board-scope repo ("" = whole board)
 	AutoFilter   bool   `json:"auto_filter"`   // reads auto-filter by scope_repo (meaningful only when set)
 	AutoCommit   bool   `json:"autocommit"`    // git-commit .furrow/ after each mutating command (user-config [[board]] opt-in)
@@ -106,10 +109,9 @@ type SchemaTriple struct {
 	Writable            bool   `json:"writable"`              // == (schema_state == "current")
 }
 
-// Board layouts — the LAYOUT axis: where the store SITS relative to the repos it
-// serves. It is NOT a config key and must not become one: it is a fact about how
-// discovery reached this board, so declaring it could only contradict the
-// resolution. Orthogonal to the MODE axis (config.ModeShared /
+// Board layouts — the LAYOUT axis. It is NOT a config key and must not become
+// one: declaring where the store sits could only contradict where discovery
+// actually found it. Orthogonal to the MODE axis (config.ModeShared /
 // config.ModeStandalone) — every one of the four combinations is a real setup.
 const (
 	LayoutCentral   = "central"    // the store sits outside the repos it backs, reached by configuration
@@ -120,11 +122,16 @@ const (
 // source behind `furrow vocab layouts`.
 func Layouts() []string { return []string{LayoutCentral, LayoutRepoLocal} }
 
-// layoutOf maps a discovery source onto the layout axis. SourceLocal is the only
-// arm that sits inside the tree it serves; every other arm was reached by
-// configuration, which is exactly what "central" means — including FURROW_DIR,
-// which may well point at a repo-local store, but furrow cannot tell and the
-// caller chose it by configuration either way.
+// layoutOf maps a discovery source onto the layout axis. It answers for THIS
+// INVOCATION, not for the board, and that gap is real in both directions:
+// FURROW_DIR may well point at a repo-local store (reported central — furrow
+// cannot tell, and the caller did reach it by configuration), and a CENTRAL
+// board entered from inside its own tree is found by walking up from cwd
+// (reported repo-local — the documented standalone-central recipe, and the arm
+// applyBoardScope's `default_repo` fallback exists for). Deriving it from the
+// board instead would cost `furrow board` its never-fails contract: it would
+// need an index load or a repo probe on a board CheckSchemaVersion may refuse to
+// open. So it reports the arm, and says so.
 func layoutOf(source string) string {
 	if source == SourceLocal {
 		return LayoutRepoLocal
