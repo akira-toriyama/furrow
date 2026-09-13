@@ -982,3 +982,61 @@ func TestAChainOfAfternoonClosesIsOnTimeAfterOneLateDay(t *testing.T) {
 	}
 	_ = task
 }
+
+// TestSuccessorInheritsTheEpicEvenWhenItIsClosed pins the membership half of the
+// inheritance, the half v10 shipped with no coverage at all, and the loop it
+// creates. The successor stays in the box whatever state the box is in —
+// dropping it for a CLOSED one would trade lint's epic-closed WARN for an
+// epic-required ERROR — so `epic done`'s disclosure (EpicOpenMembers) is what
+// makes the loop visible, and re-filing ONCE is what ends it: every later
+// occurrence inherits the new box.
+func TestSuccessorInheritsTheEpicEvenWhenItIsClosed(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	eid := mustEpic(t, a, "box", EpicAddOpts{})
+	pred := mustAddRepeating(t, a, "水やり", "2026-03-01", "daily", AddOpts{Epic: eid})
+	if _, _, err := a.EpicDone(eid); err != nil {
+		t.Fatalf("epic done: %v", err)
+	}
+
+	closed, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep == nil || rep.Created == nil {
+		t.Fatalf("no successor reported: %+v", rep)
+	}
+	succ := other(t, a, closed.ID)
+	if succ.Epic != eid {
+		t.Fatalf("successor epic = %q, want %q — the box's state is not a filing decision", succ.Epic, eid)
+	}
+	// The warn does not accumulate, it MOVES: the closed occurrence is terminal
+	// and drops out, the fresh one takes its place under the same closed box.
+	left := a.EpicOpenMembers(eid)
+	if len(left) != 1 || left[0].ID != succ.ID || left[0].Repeat == "" {
+		t.Fatalf("open members after the close = %+v, want only the live successor %s carrying the rule", left, succ.ID)
+	}
+
+	// Re-filing once carries the whole series, which is why the disclosure spells
+	// that remedy out rather than refusing the close.
+	open := mustEpic(t, a, "open box", EpicAddOpts{})
+	if _, _, err := a.Set(succ.ID, SetOpts{Epic: &open}); err != nil {
+		t.Fatalf("re-file: %v", err)
+	}
+	_, rep2, err := a.moveOne(succ.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep2 == nil || rep2.Created == nil {
+		t.Fatalf("no successor after the second close: %+v", rep2)
+	}
+	next, _, err := a.Get(*rep2.Created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Epic != open {
+		t.Errorf("next occurrence epic = %q, want %q — re-filing once must carry the series", next.Epic, open)
+	}
+	if left := a.EpicOpenMembers(eid); len(left) != 0 {
+		t.Errorf("closed box still holds %+v — the series left it for good", left)
+	}
+}
