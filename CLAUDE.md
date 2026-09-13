@@ -80,6 +80,11 @@ user-level config. When you work with any furrow store:
   `--force` severs instead (edge dropped, link de-linked to the bare id,
   member unfiled) without advancing anyone's `updated`. Targets never
   reference each other (a chain removes in one call); ids are never reused.
+  Removing a task that carries a live `repeat` rule ENDS the series — the
+  rule is held by exactly one occurrence and only a close hands it on — so
+  `rm` says so on the preview AND on the `--yes` apply (`repeat: <id> carries
+  a series (…) — removing it ends the series; no successor is minted`). A
+  disclosure, not a refusal: refusing stays reserved for `referenced`.
   Guarded by the session write guard on the targets AND every entity
   `--force` edits; the deletion is furrow-owned, so a plain `furrow sync`
   publishes it. `--json` = one report `{dry_run, force, tasks|epic,
