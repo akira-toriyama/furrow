@@ -204,8 +204,10 @@ user-level config. When you work with any furrow store:
   (boxes unchecked) under a `previous: [[id]]` line — the body as it stood just
   BEFORE this close's `--note`, so the closing word stays put while everything
   else written during the cycle carries forward — inheriting everything except
-  what the close settled (`closed`/`reviewed`), what the rule computes (`due`)
-  and this run's `deps`. Its due is the first occurrence after BOTH the
+  what the close settled (`closed`/`reviewed`), what the rule computes (`due`),
+  this run's `deps`, and its position (`priority` is lane-relative, so the
+  successor is APPENDED to the default lane exactly as `add` appends — a copied
+  number tied an existing task there). Its due is the first occurrence after BOTH the
   occurrence just settled and now — an on-time or early close advances exactly
   one step, a late one jumps the lapsed cycles and REPORTS them: `repeat: next due … — N
   occurrence(s) skipped`, or `repeat: series complete` when the rule is spent;

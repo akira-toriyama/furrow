@@ -130,10 +130,14 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 
 	due := next.UTC()
 	// Everything carries over except what the close settles (closed, reviewed),
-	// what the rule computes (due), and what belonged to THIS occurrence's run
-	// (deps — a satisfied edge is not a promise about the next cycle).
+	// what the rule computes (due), what belonged to THIS occurrence's run
+	// (deps — a satisfied edge is not a promise about the next cycle), and its
+	// POSITION: priority is relative to a lane, and the successor is born in a
+	// different one, so insertSuccessors appends it there exactly as `add` would
+	// — a copied number tied an existing task in the default lane and sorted
+	// ahead of it.
 	successor := core.Task{
-		ID: id, Title: t.Title, Status: a.Cfg.DefaultLane, Priority: t.Priority,
+		ID: id, Title: t.Title, Status: a.Cfg.DefaultLane,
 		Value: cloneIntp(t.Value), Effort: cloneIntp(t.Effort),
 		Labels:    append([]string(nil), t.Labels...),
 		Repos:     append([]string(nil), t.Repos...),
@@ -170,7 +174,7 @@ func (a *App) flushSuccessors(idx *core.Index, pending []*pendingSuccessor) erro
 	if err := a.writeSuccessorFiles(pending); err != nil {
 		return err
 	}
-	insertSuccessors(idx, pending)
+	a.insertSuccessors(idx, pending)
 	return nil
 }
 
@@ -194,9 +198,14 @@ func (a *App) writeSuccessorFiles(pending []*pendingSuccessor) error {
 // infallible by construction, so it can run at the last possible moment — after
 // every *core.Task pointer the caller held is dead, since inserting can move
 // core.Index's backing array.
-func insertSuccessors(idx *core.Index, pending []*pendingSuccessor) {
+//
+// The priority is assigned HERE, one insert at a time, not in planRepeat: a
+// batch plans every successor before any is inserted, so a number computed
+// there would be the same for all of them — the tie this exists to avoid.
+func (a *App) insertSuccessors(idx *core.Index, pending []*pendingSuccessor) {
 	for _, p := range pending {
 		if p != nil {
+			p.task.Priority = idx.NextPriority(p.task.Status, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
 			idx.Add(p.task)
 		}
 	}

@@ -97,7 +97,7 @@ func TestCloseGeneratesTheNextOccurrence(t *testing.T) {
 	})
 
 	t.Run("it inherits what describes the chore", func(t *testing.T) {
-		if succ.Title != pred.Title || succ.Priority != pred.Priority ||
+		if succ.Title != pred.Title ||
 			strings.Join(succ.Labels, ",") != "chore" || strings.Join(succ.Refs, ",") != "docs/x.md:1" {
 			t.Errorf("successor = %+v, want the predecessor's descriptive fields", succ)
 		}
@@ -791,4 +791,53 @@ func TestRecurrenceRefusesABoardThatBearsClosedTasks(t *testing.T) {
 	if _, err := a.Add("x", AddOpts{Due: "2026-03-01", Repeat: "monthly"}); err == nil {
 		t.Error("a rule was bound on a board whose default lane is its done lane")
 	}
+}
+
+// A successor is born in a DIFFERENT lane from the occurrence it follows, and
+// priority is relative to a lane — so copying the predecessor's number tied an
+// existing task in the default lane and sorted ahead of it. It is appended
+// exactly as `add` appends, and a batch of closes appends each in turn.
+func TestASuccessorIsAppendedToTheDefaultLane(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	for _, title := range []string{"P1", "P2"} {
+		if _, err := a.Add(title, AddOpts{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pred := mustAddRepeating(t, a, "水やり", "2026-03-01", "daily", AddOpts{Status: "ready"})
+	if pred.Priority != a.Cfg.PriorityDefault {
+		t.Fatalf("predecessor priority = %d, want the head of its own lane (%d)", pred.Priority, a.Cfg.PriorityDefault)
+	}
+
+	closed, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	succ, _, err := a.Get(*rep.Created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPrio := a.Cfg.PriorityDefault + 2*a.Cfg.PriorityStep // after P1 and P2
+	if succ.Status != a.Cfg.DefaultLane || succ.Priority != wantPrio {
+		t.Errorf("successor = %s/%d, want appended to %s at %d (not the predecessor's %d)",
+			succ.Status, succ.Priority, a.Cfg.DefaultLane, wantPrio, closed.Priority)
+	}
+
+	t.Run("a batch appends each successor in turn", func(t *testing.T) {
+		x := mustAddRepeating(t, a, "x", "2026-03-01", "daily", AddOpts{Status: "ready"})
+		y := mustAddRepeating(t, a, "y", "2026-03-01", "daily", AddOpts{Status: "ready"})
+		_, reps, err := a.moveMany([]string{x.ID, y.ID}, a.Cfg.DoneLane, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		sx, _, _ := a.Get(*reps[0].Created)
+		sy, _, _ := a.Get(*reps[1].Created)
+		if sx.Priority == sy.Priority {
+			t.Fatalf("both successors got priority %d — the batch tied them", sx.Priority)
+		}
+		if sx.Priority != wantPrio+a.Cfg.PriorityStep || sy.Priority != wantPrio+2*a.Cfg.PriorityStep {
+			t.Errorf("successors = %d/%d, want %d/%d (appended in close order)",
+				sx.Priority, sy.Priority, wantPrio+a.Cfg.PriorityStep, wantPrio+2*a.Cfg.PriorityStep)
+		}
+	})
 }

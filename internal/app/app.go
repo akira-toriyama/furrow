@@ -1583,7 +1583,7 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 	// After the loop: every *core.Task above is dead, so inserting cannot
 	// invalidate a pointer still in use (core.Index holds tasks by value). The
 	// files are already written; this half cannot fail.
-	insertSuccessors(idx, successors)
+	a.insertSuccessors(idx, successors)
 	if err := a.Store.Save(idx); err != nil {
 		return nil, nil, err
 	}
@@ -1665,7 +1665,7 @@ func (a *App) DoneNote(id, note string) (*core.Task, error) {
 	}
 	a.applyLane(t, a.Cfg.DoneLane)
 	t.Updated = a.Clock.Now()
-	insertSuccessors(idx, []*pendingSuccessor{succ})
+	a.insertSuccessors(idx, []*pendingSuccessor{succ})
 	if err := a.Store.Save(idx); err != nil {
 		return nil, err
 	}
