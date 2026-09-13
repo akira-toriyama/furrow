@@ -310,7 +310,7 @@ func newEpicDeactivateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return emitWithPreviousSuggest(a, before, after)
+			return emitWithPreviousSuggest(a, before, after, nil)
 		},
 	}
 }
@@ -322,6 +322,17 @@ func newEpicDoneCmd() *cobra.Command {
 		Long: "Close the box and free its repos' slots. furrow does NOT choose a\n" +
 			"successor — that judgement is the human's — so the repo is left with no\n" +
 			"active epic and `furrow lint` warns epic-no-active until someone picks one.\n\n" +
+			"Closing a box ahead of its tail is untidy, not broken, so members still\n" +
+			"open never REFUSE the close — they are DISCLOSED: a stderr note names them\n" +
+			"and --json carries open_members (an array of {id, title, status, repeat};\n" +
+			"[] = none, null = the board could not be read). `furrow lint` then warns\n" +
+			"epic-closed for each until it closes, moves to a terminal lane, is re-filed\n" +
+			"(`furrow set <id> -e <epic>`), or the box is reopened.\n\n" +
+			"A REPEATING member is called out separately, because its warn does not\n" +
+			"clear itself: closing an occurrence mints the next one, which inherits the\n" +
+			"epic, so the same warn comes back under this closed box every cycle. The\n" +
+			"fix is one-shot — re-file the live occurrence (`furrow set <id> -e\n" +
+			"<open-epic>`) and every later occurrence inherits the new box.\n\n" +
 			"It does SUGGEST where to return: the output names the open, currently\n" +
 			"inactive box with the newest activation record (`previous: <id> … —\n" +
 			"furrow epic activate <id>`; a `previous` key in --json, null = unknown).\n" +
@@ -340,9 +351,64 @@ func newEpicDoneCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return emitWithPreviousSuggest(a, before, after)
+			// Disclosure only, and computed AFTER the write: closing a box ahead of
+			// its tail is a warn-level condition (core.EpicProblems' epic-closed),
+			// so nothing here may refuse or alter the close.
+			members := a.EpicOpenMembers(after.ID)
+			for _, line := range openMembersNotes(after.ID, members) {
+				fmt.Fprintln(errOut, line)
+			}
+			return emitWithPreviousSuggest(a, before, after, map[string]any{"open_members": members})
 		},
 	}
+}
+
+// openMembersNotes renders `epic done`'s stderr disclosure: one line naming the
+// members the close left open, and — only when some of them recur — a second
+// line calling those out, since a repeating member's epic-closed comes back
+// every cycle instead of clearing when the task closes. Nothing open, nothing
+// printed; nil members (the board could not be read) says so rather than
+// printing a false all-clear.
+func openMembersNotes(epicID string, members []app.EpicOpenMember) []string {
+	if members == nil {
+		return []string{"note: " + epicID + " closed, but the board could not be read to report the members it leaves open — check with `furrow epic show " + epicID + "`"}
+	}
+	if len(members) == 0 {
+		return nil
+	}
+	lines := []string{fmt.Sprintf(
+		"note: %s closed with %d open member(s): %s — `furrow lint` warns epic-closed for each until it closes, moves to a terminal lane, is re-filed (`furrow set <id> -e <epic>`), or the box is reopened",
+		epicID, len(members), namedMemberIDs(members))}
+	if rep := app.RepeatingMembers(members); len(rep) > 0 {
+		verb := "repeats"
+		if len(rep) > 1 {
+			verb = "repeat"
+		}
+		lines = append(lines, fmt.Sprintf(
+			"note: %d of them %s: %s — closing an occurrence mints the next one under this CLOSED box, so the warn returns every cycle; re-file the live occurrence once (`furrow set %s -e <open-epic>`) and the whole series follows",
+			len(rep), verb, namedMemberIDs(rep), rep[0].ID))
+	}
+	return lines
+}
+
+// namedMemberIDs names at most three ids, "+N more" for the rest — incomingLine's
+// cap, for its reason: the count is exact, the line stays legible, and the full
+// list is the JSON open_members key.
+func namedMemberIDs(members []app.EpicOpenMember) string {
+	const maxNamed = 3
+	named := members
+	if len(named) > maxNamed {
+		named = named[:maxNamed]
+	}
+	ids := make([]string, len(named))
+	for i, m := range named {
+		ids[i] = m.ID
+	}
+	s := strings.Join(ids, ", ")
+	if len(members) > len(named) {
+		s += fmt.Sprintf(", +%d more", len(members)-len(named))
+	}
+	return s
 }
 
 // emitWithPreviousSuggest is done/deactivate's shared tail: the usual epic
@@ -350,10 +416,16 @@ func newEpicDoneCmd() *cobra.Command {
 // JSON (always present on these two verbs; null = unknown, so a consumer can
 // tell "computed, no answer" apart from an older binary that lacks the key)
 // and one human line after the mutation line. The suggestion is display data:
-// it is computed AFTER the mutation succeeded and can never affect it.
-func emitWithPreviousSuggest(a *app.App, before, after *core.Epic) error {
+// it is computed AFTER the mutation succeeded and can never affect it. extra
+// carries the keys only one of the two verbs has (done's open_members — the
+// box is not closed on a deactivate, so nothing is left BEHIND one).
+func emitWithPreviousSuggest(a *app.App, before, after *core.Epic, extra map[string]any) error {
 	prev := a.PreviousActiveSuggest(after.ID)
-	if err := emitEpicMutationResult(before, after, map[string]any{"previous": prev}); err != nil {
+	keys := map[string]any{"previous": prev}
+	for k, v := range extra {
+		keys[k] = v
+	}
+	if err := emitEpicMutationResult(before, after, keys); err != nil {
 		return err
 	}
 	if jsonMode() {

@@ -165,7 +165,19 @@ user-level config. When you work with any furrow store:
   active box (open, currently inactive, newest activation record — computed
   fresh from the body's activation log, no stored pointer; one `previous:`
   stdout line + a `previous` key in `--json`, null = unknown) and never
-  activate it — choosing stays the human's. Epic refs resolve as exact id, unique id prefix, or
+  activate it — choosing stays the human's. `epic done` also DISCLOSES what it
+  leaves open: closing a box ahead of its tail is untidy, not broken, so
+  members still in a non-terminal lane never refuse the close — a stderr note
+  names them (≤3 ids, `+N more`) and `--json` carries `open_members`
+  (`[{id, title, status, repeat}]`; `[]` = none, `null` = the board could not
+  be read, never a silent all-clear). The set is exactly `epic-closed`'s, and
+  a REPEATING member gets a second line: the successor inherits `epic`
+  whatever state the box is in (unfiling it would trade that warn for an
+  `epic-required` ERROR), so the warn returns under the closed box every cycle
+  — it MOVES to the new id rather than piling up — until one
+  `furrow set <live-id> -e <open-epic>` re-files the series, which every later
+  occurrence then inherits. `deactivate` carries neither note nor key: it
+  closes no box. Epic refs resolve as exact id, unique id prefix, or
   unique title substring (a miss/ambiguity is exit 2 with `candidates` — kinds
   `epic-not-found`/`epic-ambiguous`).
 - **A task can be PROMISED for an instant: the `due` stamp (schema v8).**
@@ -216,7 +228,9 @@ user-level config. When you work with any furrow store:
   what the close settled (`closed`/`reviewed`), what the rule computes (`due`),
   this run's `deps`, and its position (`priority` is lane-relative, so the
   successor is APPENDED to the default lane exactly as `add` appends — a copied
-  number tied an existing task there). Its due is the first occurrence after
+  number tied an existing task there) — the `epic` included, whatever state
+  that box is in, which is why `epic done` discloses a repeating member (above).
+  Its due is the first occurrence after
   what the close SETTLES: for a bare-date series (a 23:59:59 anchor) the whole
   local day of the later of now and the due — the day the work was done, or
   the day it was promised for while that is still ahead — and for a timed one

@@ -884,7 +884,18 @@ except where noted:
   (`PreviousActiveSuggest`): a stateless, best-effort read of the activation
   log `recordSwitch` writes and sync's `switchLineRe` already parses — the
   open, currently-inactive box with the newest stamp, `unknown` when no record
-  decides it, and never executed. A task's own membership is a plain field edit (`add -e` / `set -e`,
+  decides it, and never executed. `done` alone adds the second post-mutation
+  read in that shape, `EpicOpenMembers`: the members left in a non-terminal lane
+  — exactly `core.EpicProblems`' `epic-closed` set, so the disclosure and the
+  lint warning can never count differently — as a stderr note plus an
+  `open_members` array beside the envelope, with the **repeating** ones called
+  out because `planRepeat` copies `Epic` onto the successor (the box's state is
+  not a filing decision: unfiling it would trade a warn for an `epic-required`
+  error), so that warn returns every cycle until the series is re-filed. Both
+  helpers are computed AFTER the write and can never affect it; both are
+  best-effort, but this one returns nil rather than an empty slice when the read
+  fails, and the CLI says it could not look — an unreadable board rendering as
+  "nothing left open" would be a false all-clear. A task's own membership is a plain field edit (`add -e` / `set -e`,
   resolved through `ResolveEpic`: exact id → unique id prefix → unique title
   substring, ambiguity = exit 2 + candidates).
 - **`repo`** attaches/detaches `owner/repo` values on a task (`--add`/`--rm`,
