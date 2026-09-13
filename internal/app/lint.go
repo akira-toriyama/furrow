@@ -158,7 +158,7 @@ func (a *App) Lint() ([]core.Problem, error) {
 			} else if t.RepeatAnchor == nil {
 				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
 					Msg: "carries a repeat rule with no repeat_anchor, so the series has no start to expand from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
-			} else if err := recur.Valid(t.Repeat, *t.RepeatAnchor); err != nil {
+			} else if err := recur.Valid(t.Repeat, *t.RepeatAnchor, a.loc()); err != nil {
 				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
 					Msg: err.Error() + " — closing this task would advance nothing; rebind with `furrow set " + t.ID + " --repeat <rule>` or drop it with `--clear-repeat`"})
 			}

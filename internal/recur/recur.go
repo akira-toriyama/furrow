@@ -10,6 +10,10 @@
 // Validation is furrow's, not the library's: every spelling is checked here and
 // refused with furrow's own wording, because the library's parse errors are not
 // product-quality text.
+//
+// Every expansion runs in a frame that has no midnight gap rather than in the
+// board's calendar directly, and the calendar is an explicit parameter — see
+// naked for the day-grid defect that forces both.
 package recur
 
 import (
@@ -366,26 +370,29 @@ func applyMonthlyOn(opt *rrule.ROption, on string) error {
 }
 
 // Next returns the first occurrence strictly after `after`, expanding the rule
-// from `anchor`.
+// from `anchor` in the calendar loc.
 //
 // ok=false means the series is over — an UNTIL that has passed, a COUNT spent,
 // or a rule that can never match again. That is the case the library reports
 // with a ZERO time.Time rather than an error, which is why every caller has to
 // look at ok and not just err.
 //
-// The zone is the anchor's: occurrences keep the anchor's wall clock, so a
-// monthly rule anchored at 23:59:59 local stays at 23:59:59 local across a DST
-// boundary instead of sliding an hour.
-func Next(line string, anchor, after time.Time) (time.Time, bool, error) {
-	r, err := build(line, anchor)
+// Occurrences keep the anchor's WALL CLOCK: a monthly rule anchored at 23:59:59
+// local stays at 23:59:59 local across a DST boundary instead of sliding an
+// hour. loc is the calendar that clock is read in, and it is a parameter rather
+// than the zone `anchor` happens to carry: the answer must not depend on whether
+// a caller remembered to hand the stored (UTC) anchor over in board time.
+func Next(line string, anchor, after time.Time, loc *time.Location) (time.Time, bool, error) {
+	loc = calendar(loc)
+	r, err := build(line, anchor, loc)
 	if err != nil {
 		return time.Time{}, false, err
 	}
-	next := r.After(after, false)
+	next := r.After(naked(after, loc), false)
 	if next.IsZero() {
 		return time.Time{}, false, nil
 	}
-	return next, true, nil
+	return zoned(next, loc), true, nil
 }
 
 // CountBetween reports how many occurrences fall strictly between lo and hi.
@@ -393,11 +400,15 @@ func Next(line string, anchor, after time.Time) (time.Time, bool, error) {
 // It is what makes a late close honest: closing a monthly task two months after
 // its due skips two occurrences, and `furrow done` says so rather than quietly
 // pretending the series never lapsed.
-func CountBetween(line string, anchor, lo, hi time.Time) (int, error) {
-	r, err := build(line, anchor)
+func CountBetween(line string, anchor, lo, hi time.Time, loc *time.Location) (int, error) {
+	loc = calendar(loc)
+	r, err := build(line, anchor, loc)
 	if err != nil {
 		return 0, err
 	}
+	// The window is compared against occurrences the library hands back, so it
+	// crosses into their frame with them.
+	lo, hi = naked(lo, loc), naked(hi, loc)
 	// Iterate rather than materialize: Between allocates the whole slice, which a
 	// pathological stored rule can make enormous. Walking stops at hi.
 	n := 0
@@ -418,11 +429,11 @@ func CountBetween(line string, anchor, lo, hi time.Time) (int, error) {
 // that parses, is accepted, and then produces NOTHING is the worst of both — the
 // shard says the task recurs and the first close ends the series without anyone
 // having asked for that.
-func Bindable(line string, anchor time.Time) error {
-	if err := Valid(line, anchor); err != nil {
+func Bindable(line string, anchor time.Time, loc *time.Location) error {
+	if err := Valid(line, anchor, loc); err != nil {
 		return err
 	}
-	_, ok, err := Next(line, anchor, anchor)
+	_, ok, err := Next(line, anchor, anchor, loc)
 	if err != nil {
 		return err
 	}
@@ -435,7 +446,8 @@ func Bindable(line string, anchor time.Time) error {
 // Valid reports whether a stored rule still parses. `furrow lint` uses it: a
 // rule that stopped parsing (a hand-edited shard, or one written by a furrow
 // that knows a spelling this one does not) would end the series silently.
-func Valid(line string, anchor time.Time) error {
+func Valid(line string, anchor time.Time, loc *time.Location) error {
+	loc = calendar(loc)
 	// The refusals read the PARSED LINE, never the built rule: build() assigns
 	// the anchor over Dtstart, so a DTSTART check on the built rule would refuse
 	// every rule on the board.
@@ -453,7 +465,7 @@ func Valid(line string, anchor time.Time) error {
 	if err := refuseDtstart(opt); err != nil {
 		return fmt.Errorf("stored recurrence rule %q: %v", line, err)
 	}
-	if _, err := buildFrom(opt, anchor, line); err != nil {
+	if _, err := buildFrom(opt, anchor, line, loc); err != nil {
 		return err
 	}
 	return nil
@@ -467,26 +479,91 @@ func parseStored(line string) (*rrule.ROption, error) {
 	return opt, nil
 }
 
-func build(line string, anchor time.Time) (*rrule.RRule, error) {
+func build(line string, anchor time.Time, loc *time.Location) (*rrule.RRule, error) {
 	opt, err := parseStored(line)
 	if err != nil {
 		return nil, err
 	}
-	return buildFrom(opt, anchor, line)
+	return buildFrom(opt, anchor, line, loc)
 }
 
 // buildFrom is build's half that does not parse, so Valid can run its refusals
 // on the parsed line and still report the same "not usable" error; line is
 // carried for that message alone.
-func buildFrom(opt *rrule.ROption, anchor time.Time, line string) (*rrule.RRule, error) {
+func buildFrom(opt *rrule.ROption, anchor time.Time, line string, loc *time.Location) (*rrule.RRule, error) {
 	// The anchor IS the series start: a DTSTART the line carries is overwritten,
-	// never honoured, which is why both doors (Compile, Valid) refuse one.
-	opt.Dtstart = anchor
+	// never honoured, which is why both doors (Compile, Valid) refuse one. It
+	// enters the library in the gap-free frame, so every occurrence comes back in
+	// that frame too.
+	opt.Dtstart = naked(anchor, loc)
+	if !opt.Until.IsZero() {
+		// UNTIL is stored as a true instant and the library compares it against
+		// the occurrences it builds, so it is read in the same frame as they are —
+		// otherwise a bounded series loses (or gains) its last occurrence by the
+		// board zone's whole offset. The line on disk is untouched: it is rendered
+		// from OrigOptions in Compile, never from a built rule.
+		opt.Until = naked(opt.Until, loc)
+	}
 	r, err := rrule.NewRRule(*opt)
 	if err != nil {
 		return nil, fmt.Errorf("stored recurrence rule %q is not usable: %v", line, err)
 	}
 	return r, nil
+}
+
+// naked carries a wall clock across the library boundary, as if it were UTC.
+//
+// The library derives every occurrence's calendar day from January 1 at LOCAL
+// MIDNIGHT in dtstart's zone (rrule-go v1.8.2 rrule.go:337 builds it with
+// time.Date; :635 and :669 read the day off it). In a zone whose local midnight
+// does not exist — America/Santiago, America/Havana and Atlantic/Azores spring
+// forward AT 00:00 — Go resolves that construction BACKWARD onto the previous
+// day, and the whole year's day grid shifts with it: a daily rule emits the day
+// before twice and never the gap day (a close then under-reports `skipped` by
+// one), and a BYDAY/BYMONTHDAY rule lands a day early — a `weekly on sun` chore
+// promised for a Saturday, with no duplicate to notice it by. Upstream's fix is
+// one line, but furrow pins the version, so the frame is furrow's job.
+//
+// A UTC frame has no gap and no repeated hour, so the day grid is exact. What it
+// costs is that ordering inside the frame is WALL-CLOCK ordering — the one hour a
+// zone repeats compares equal — which is the ordering a rule promising dates
+// means anyway.
+func naked(t time.Time, loc *time.Location) time.Time {
+	w := t.In(loc)
+	y, mo, d := w.Date()
+	h, mi, s := w.Clock()
+	return time.Date(y, mo, d, h, mi, s, 0, time.UTC)
+}
+
+// zoned is naked's inverse: the wall clock t carries, read back in loc.
+//
+// A wall clock the zone SKIPS has no instant of its own, and time.Date resolves
+// one either way depending on the sign of the offset. The backward answer lands
+// on the PREVIOUS DAY — the defect this frame exists to remove — so a reading
+// that came back earlier than it was asked for is pushed on to the first instant
+// that does exist, which keeps the occurrence on the day the rule promised.
+func zoned(t time.Time, loc *time.Location) time.Time {
+	y, mo, d := t.Date()
+	h, mi, s := t.Clock()
+	got := time.Date(y, mo, d, h, mi, s, 0, loc)
+	if !naked(got, loc).Before(t) {
+		return got
+	}
+	// got sits before the gap, so the offset it carries is the one in force
+	// BEFORE the transition; reading the wall clock under that offset lands on
+	// the transition instant itself, or just past it.
+	_, off := got.Zone()
+	return time.Unix(t.Unix()-int64(off), 0).In(loc)
+}
+
+// calendar is the zone an expansion is read in. A nil one is UTC, never the
+// running machine's zone: a caller that supplies none must not get a different
+// series depending on where it ran.
+func calendar(loc *time.Location) *time.Location {
+	if loc == nil {
+		return time.UTC
+	}
+	return loc
 }
 
 // Period is what a rule SKIPS when the day of the month it lands on does not
@@ -583,17 +660,23 @@ func namedDay(opt *rrule.ROption, anchor time.Time) (int, bool) {
 // A rule that yields nothing at all from this anchor reports false: the bind
 // door (Bindable) refuses that case, so the only way to reach it is a
 // hand-edited shard, and a note naming no date would say less than silence.
-func OffLattice(line string, anchor time.Time) (first time.Time, off bool) {
-	r, err := build(line, anchor)
+//
+// It EXPANDS the rule, so it runs in the same naked frame Next and CountBetween
+// do: asked in the zone's own instants, a zone whose local midnight does not
+// exist would answer off by a day and report a lattice date as off-lattice.
+func OffLattice(line string, anchor time.Time, loc *time.Location) (first time.Time, off bool) {
+	loc = calendar(loc)
+	r, err := build(line, anchor, loc)
 	if err != nil {
 		return time.Time{}, false
 	}
 	// Inclusive: an anchor ON the lattice is the rule's own first occurrence.
-	next := r.After(anchor, true)
-	if next.IsZero() || next.Equal(anchor) {
+	bare := naked(anchor, loc)
+	next := r.After(bare, true)
+	if next.IsZero() || next.Equal(bare) {
 		return time.Time{}, false
 	}
-	return next, true
+	return zoned(next, loc), true
 }
 
 // selectsNoDay reports a rule that picks no day for itself in any spelling, so

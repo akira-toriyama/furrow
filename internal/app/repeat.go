@@ -82,7 +82,9 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 
 	rule := t.Repeat
 	// The anchor is expanded in the BOARD's calendar so occurrences keep their
-	// wall clock (23:59:59 stays 23:59:59 across a DST boundary).
+	// wall clock (23:59:59 stays 23:59:59 across a DST boundary). recur takes
+	// that calendar as its own argument; the conversion here is for the clock
+	// reading below, which decides what this close settles.
 	anchor := t.RepeatAnchor.In(a.loc())
 	anchorUTC := *t.RepeatAnchor
 
@@ -140,11 +142,11 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	// one this close settles and the day (or instant) of the close — never the
 	// settled day's own point, never one still ahead. Reported on completion
 	// too, since a late close is exactly what runs a bounded series out.
-	skipped, err := recur.CountBetween(rule, anchor, lo, hi)
+	skipped, err := recur.CountBetween(rule, anchorUTC, lo, hi, a.loc())
 	if err != nil {
 		return nil, nil, core.Validationf(t.ID, "%v", err)
 	}
-	next, ok, err := recur.Next(rule, anchor, after)
+	next, ok, err := recur.Next(rule, anchorUTC, after, a.loc())
 	if err != nil {
 		return nil, nil, core.Validationf(t.ID, "%v", err)
 	}
@@ -319,7 +321,7 @@ func (a *App) bindRepeat(t *core.Task, spec string) error {
 	if err != nil {
 		return core.Validationf(t.ID, "%v", err)
 	}
-	if err := recur.Bindable(line, t.Due.In(a.loc())); err != nil {
+	if err := recur.Bindable(line, *t.Due, a.loc()); err != nil {
 		return core.Validationf(t.ID, "%v", err)
 	}
 	t.Repeat = line
@@ -356,9 +358,9 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 	anchor := t.RepeatAnchor.In(a.loc())
 	var out []string
 	if skip, ok := recur.Skips(t.Repeat, anchor); ok {
-		out = append(out, skipNote(t.Repeat, anchor, skip))
+		out = append(out, skipNote(t.Repeat, anchor, skip, a.loc()))
 	}
-	if first, ok := recur.OffLattice(t.Repeat, anchor); ok {
+	if first, ok := recur.OffLattice(t.Repeat, anchor, a.loc()); ok {
 		out = append(out, fmt.Sprintf("note: the anchor %s is not a date this rule lands on, so it is one occurrence OUTSIDE the series and `for n times` hands out n MORE after it; the rule's own first date is %s, and anchoring there folds it in",
 			anchor.Format(core.TimeLayout), first.Format(core.TimeLayout)))
 	}
@@ -369,9 +371,9 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 // differs: a month that lacks day 31 is answered by `on last`, a year that
 // lacks February 29 is not — `on last` is a monthly spelling, and the rule that
 // lands every year is February's last day, which any frequency can name.
-func skipNote(line string, anchor time.Time, skip recur.Skip) string {
+func skipNote(line string, anchor time.Time, skip recur.Skip, loc *time.Location) string {
 	if skip.Period == recur.Years {
-		return fmt.Sprintf("note: February 29 exists only in leap years, so the rule skips the years without one (RFC 5545)%s; anchoring on February 28, or naming February's last day (`BYMONTH=2;BYMONTHDAY=-1`), lands every year", nextOccurrenceClause(line, anchor))
+		return fmt.Sprintf("note: February 29 exists only in leap years, so the rule skips the years without one (RFC 5545)%s; anchoring on February 28, or naming February's last day (`BYMONTH=2;BYMONTHDAY=-1`), lands every year", nextOccurrenceClause(line, anchor, loc))
 	}
 	// The remedy is `on last`, spelled against whatever rule they typed — naming
 	// a full `monthly on last` prescribed a different FREQUENCY to anyone who
@@ -384,8 +386,8 @@ func skipNote(line string, anchor time.Time, skip recur.Skip) string {
 // `every 3 years` from 2028-02-29 next lands in 2040. Empty when the rule
 // cannot say (a stored rule the expander refuses): a note missing its date
 // still beats no note.
-func nextOccurrenceClause(line string, anchor time.Time) string {
-	next, ok, err := recur.Next(line, anchor, anchor)
+func nextOccurrenceClause(line string, anchor time.Time, loc *time.Location) string {
+	next, ok, err := recur.Next(line, anchor, anchor, loc)
 	if err != nil || !ok {
 		return ""
 	}

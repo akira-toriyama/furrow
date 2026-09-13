@@ -1,6 +1,7 @@
 package recur
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -124,7 +125,7 @@ func TestMonthlyOn31SkipsShortMonths(t *testing.T) {
 	}
 	cur := anchor
 	for _, w := range want {
-		next, ok, err := Next(line, anchor, cur)
+		next, ok, err := Next(line, anchor, cur, jst)
 		if err != nil || !ok {
 			t.Fatalf("Next after %s: ok=%v err=%v", cur, ok, err)
 		}
@@ -155,13 +156,13 @@ func TestSeriesEnds(t *testing.T) {
 		}
 		cur := anchor
 		for i := 0; i < 2; i++ {
-			next, ok, err := Next(line, anchor, cur)
+			next, ok, err := Next(line, anchor, cur, jst)
 			if err != nil || !ok {
 				t.Fatalf("occurrence %d: ok=%v err=%v", i+2, ok, err)
 			}
 			cur = next
 		}
-		next, ok, err := Next(line, anchor, cur)
+		next, ok, err := Next(line, anchor, cur, jst)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -176,7 +177,7 @@ func TestSeriesEnds(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, ok, err := Next(line, anchor, until.AddDate(0, 0, 1)); ok || err != nil {
+		if _, ok, err := Next(line, anchor, until.AddDate(0, 0, 1), jst); ok || err != nil {
 			t.Errorf("past UNTIL: ok=%v err=%v, want (false, nil)", ok, err)
 		}
 	})
@@ -187,7 +188,7 @@ func TestSeriesEnds(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, ok, err := Next(line, anchor, anchor); ok || err != nil {
+		if _, ok, err := Next(line, anchor, anchor, jst); ok || err != nil {
 			t.Errorf("impossible rule: ok=%v err=%v, want (false, nil) — never an error", ok, err)
 		}
 	})
@@ -205,12 +206,139 @@ func TestOccurrencesKeepTheAnchorsWallClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, ok, err := Next(line, anchor, anchor.AddDate(0, 0, 20))
+	next, ok, err := Next(line, anchor, anchor.AddDate(0, 0, 20), ny)
 	if err != nil || !ok {
 		t.Fatalf("Next: ok=%v err=%v", ok, err)
 	}
 	if got := next.Format(time.RFC3339); got != "2026-03-15T23:59:59-04:00" {
 		t.Errorf("next = %s, want 2026-03-15T23:59:59-04:00 (same wall clock, DST offset moved)", got)
+	}
+}
+
+// The zones whose local MIDNIGHT does not exist — they spring forward AT 00:00 —
+// are the ones the library's day grid gets wrong: it is built from January 1 at
+// local midnight in the anchor's zone, so from the transition on, every
+// occurrence lands a day early (see naked). A daily rule emitted the day before
+// TWICE and never the gap day; a BYDAY or BYMONTHDAY rule simply landed on the
+// wrong day, with no duplicate to notice it by.
+func TestOccurrencesLandOnADayWithNoLocalMidnight(t *testing.T) {
+	for _, c := range []struct{ zone, gap string }{
+		{"America/Santiago", "2026-09-06"},
+		{"America/Havana", "2026-03-08"},
+		{"Atlantic/Azores", "2026-03-29"},
+	} {
+		t.Run(c.zone, func(t *testing.T) {
+			loc, err := time.LoadLocation(c.zone)
+			if err != nil {
+				t.Skipf("no tzdata for %s: %v", c.zone, err)
+			}
+			// Parsed in UTC, so the fields are the LITERAL day: the one instant
+			// this zone does not have is that day's own local midnight.
+			day, err := time.Parse("2006-01-02", c.gap)
+			if err != nil {
+				t.Fatal(err)
+			}
+			y, mo, d := day.Date()
+			endOfDay := func(offset int) time.Time {
+				return time.Date(y, mo, d+offset, 23, 59, 59, 0, loc)
+			}
+
+			t.Run("daily crosses it exactly once", func(t *testing.T) {
+				line, err := Compile("daily", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				anchor := endOfDay(-2)
+				cur := anchor
+				for _, want := range []time.Time{endOfDay(-1), endOfDay(0), endOfDay(1)} {
+					next, ok, err := Next(line, anchor, cur, loc)
+					if err != nil || !ok {
+						t.Fatalf("Next after %s: ok=%v err=%v", cur, ok, err)
+					}
+					if !next.Equal(want) {
+						t.Fatalf("occurrence after %s = %s, want %s", cur.Format(time.RFC3339), next.Format(time.RFC3339), want.Format(time.RFC3339))
+					}
+					cur = next
+				}
+			})
+
+			t.Run("a weekday rule keeps its weekday", func(t *testing.T) {
+				line, err := Compile("weekly on "+strings.ToLower(day.Weekday().String()[:3]), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				anchor := endOfDay(-7)
+				next, ok, err := Next(line, anchor, anchor, loc)
+				if err != nil || !ok {
+					t.Fatalf("Next: ok=%v err=%v", ok, err)
+				}
+				if !next.Equal(endOfDay(0)) {
+					t.Errorf("next = %s (%s), want %s (%s) — a weekly rule promised for the wrong weekday says nothing about it",
+						next.Format(time.RFC3339), next.Weekday(), endOfDay(0).Format(time.RFC3339), day.Weekday())
+				}
+			})
+
+			t.Run("a day-of-month rule keeps its day", func(t *testing.T) {
+				line, err := Compile(fmt.Sprintf("monthly on %d", d), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				anchor := endOfDay(-40) // the month before, whatever its length
+				next, ok, err := Next(line, anchor, endOfDay(-1), loc)
+				if err != nil || !ok {
+					t.Fatalf("Next: ok=%v err=%v", ok, err)
+				}
+				if !next.Equal(endOfDay(0)) {
+					t.Errorf("next = %s, want %s", next.Format(time.RFC3339), endOfDay(0).Format(time.RFC3339))
+				}
+			})
+		})
+	}
+}
+
+// The lapse count a late close reports reads the same grid, so the day with no
+// local midnight went missing from it too — the series below lapsed seven days
+// and six were reported.
+func TestCountBetweenCountsADayWithNoLocalMidnight(t *testing.T) {
+	loc, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Skipf("no tzdata for America/Santiago: %v", err)
+	}
+	line, err := Compile("daily", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := time.Date(2026, 9, 5, 23, 59, 59, 0, loc) // promised for the 5th
+	closedOn := time.Date(2026, 9, 13, 0, 0, 0, 0, loc) // cleared on the 13th
+	n, err := CountBetween(line, anchor, anchor, closedOn, loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 7 {
+		t.Errorf("skipped = %d, want 7 (6..12 September — the 6th is the day this zone has no midnight)", n)
+	}
+}
+
+// An occurrence whose wall clock is one the zone SKIPS has no instant of its
+// own, and time.Date resolves it BACKWARD, onto the previous day — the same
+// defect one layer down. It is pushed forward out of the gap instead, so the
+// occurrence stays on the day the rule promised.
+func TestAnOccurrenceInsideTheSkippedHourKeepsItsDay(t *testing.T) {
+	loc, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Skipf("no tzdata for America/Santiago: %v", err)
+	}
+	line, err := Compile("monthly on 6", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := time.Date(2026, 8, 6, 0, 30, 0, 0, loc) // 00:30 does not exist on 6 September
+	next, ok, err := Next(line, anchor, anchor, loc)
+	if err != nil || !ok {
+		t.Fatalf("Next: ok=%v err=%v", ok, err)
+	}
+	if got := next.Format(time.RFC3339); got != "2026-09-06T01:30:00-03:00" {
+		t.Errorf("next = %s, want 2026-09-06T01:30:00-03:00 — the promised day, past the hour the zone skips", got)
 	}
 }
 
@@ -223,14 +351,14 @@ func TestCountBetweenReportsSkippedCycles(t *testing.T) {
 	}
 	// Promised for 1 March, closed on 15 May: 1 April and 1 May went by.
 	closedAt := time.Date(2026, 5, 15, 12, 0, 0, 0, jst)
-	next, ok, err := Next(line, anchor, closedAt)
+	next, ok, err := Next(line, anchor, closedAt, jst)
 	if err != nil || !ok {
 		t.Fatalf("Next: ok=%v err=%v", ok, err)
 	}
 	if got := next.Format(time.RFC3339); got != "2026-06-01T23:59:59+09:00" {
 		t.Fatalf("next = %s, want 2026-06-01T23:59:59+09:00", got)
 	}
-	n, err := CountBetween(line, anchor, anchor, next)
+	n, err := CountBetween(line, anchor, anchor, next, jst)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,10 +369,10 @@ func TestCountBetweenReportsSkippedCycles(t *testing.T) {
 
 func TestValidRejectsAStoredRuleThatStoppedParsing(t *testing.T) {
 	anchor := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := Valid("FREQ=MONTHLY;BYMONTHDAY=15", anchor); err != nil {
+	if err := Valid("FREQ=MONTHLY;BYMONTHDAY=15", anchor, time.UTC); err != nil {
 		t.Errorf("a good rule reported invalid: %v", err)
 	}
-	if err := Valid("FREQ=SOMETIMES", anchor); err == nil {
+	if err := Valid("FREQ=SOMETIMES", anchor, time.UTC); err == nil {
 		t.Error("a rule that does not parse must be reported, or the series ends in silence")
 	}
 }
@@ -258,10 +386,10 @@ func TestValidReportsWhatCompileRefuses(t *testing.T) {
 	if _, err := Compile("FREQ=MINUTELY", nil); err == nil {
 		t.Error("a sub-daily rule compiled")
 	}
-	if err := Valid("FREQ=MINUTELY;INTERVAL=1", anchor); err == nil {
+	if err := Valid("FREQ=MINUTELY;INTERVAL=1", anchor, time.UTC); err == nil {
 		t.Error("a stored sub-daily rule was reported valid — lint would never see it")
 	}
-	if err := Valid("FREQ=DAILY", anchor); err != nil {
+	if err := Valid("FREQ=DAILY", anchor, time.UTC); err != nil {
 		t.Errorf("a daily rule was reported invalid: %v", err)
 	}
 }
@@ -279,7 +407,7 @@ func TestSubDailyIsRefusedWhicheverSpellingAsksForIt(t *testing.T) {
 		if line, err := Compile(spec, nil); err == nil {
 			t.Errorf("Compile(%q) = %q, want a refusal", spec, line)
 		}
-		if err := Valid(spec, anchor); err == nil {
+		if err := Valid(spec, anchor, time.UTC); err == nil {
 			t.Errorf("Valid(%q) accepted a stored sub-daily rule — lint would never see it", spec)
 		}
 	}
@@ -299,13 +427,13 @@ func TestDtstartIsRefusedAtBothDoors(t *testing.T) {
 		if line, err := Compile(spec, nil); err == nil {
 			t.Errorf("Compile(%q) = %q, want a refusal — the DTSTART was dropped", spec, line)
 		}
-		if err := Valid(spec, anchor); err == nil {
+		if err := Valid(spec, anchor, time.UTC); err == nil {
 			t.Errorf("Valid(%q) accepted a stored DTSTART — lint would never see it", spec)
 		}
 	}
 	// Valid reads the DTSTART off the LINE, never off build()'s result: build
 	// assigns the anchor to Dtstart, so a check there refuses everything.
-	if err := Valid("FREQ=DAILY", anchor); err != nil {
+	if err := Valid("FREQ=DAILY", anchor, time.UTC); err != nil {
 		t.Errorf("a plain stored rule was reported invalid: %v", err)
 	}
 }
@@ -322,10 +450,10 @@ func TestOutOfRangeCountIsRefused(t *testing.T) {
 // Bindable is the door a rule that can never fire again must not get through.
 func TestBindableRejectsARuleWithNothingLeft(t *testing.T) {
 	anchor := time.Date(2026, 3, 1, 23, 59, 59, 0, jst)
-	if err := Bindable("FREQ=DAILY;COUNT=1", anchor); err == nil {
+	if err := Bindable("FREQ=DAILY;COUNT=1", anchor, jst); err == nil {
 		t.Error("a rule whose only occurrence is the anchor was called bindable")
 	}
-	if err := Bindable("FREQ=DAILY;COUNT=2", anchor); err != nil {
+	if err := Bindable("FREQ=DAILY;COUNT=2", anchor, jst); err != nil {
 		t.Errorf("a rule with one more occurrence was refused: %v", err)
 	}
 }
@@ -455,7 +583,7 @@ func TestTheLeapDayRemediesLandEveryYear(t *testing.T) {
 		if _, ok := Skips(line, c.anchor); ok {
 			t.Errorf("%q was reported as skipping; it is the rule the note recommends", line)
 		}
-		next, ok, err := Next(line, c.anchor, c.anchor)
+		next, ok, err := Next(line, c.anchor, c.anchor, jst)
 		if err != nil || !ok {
 			t.Fatalf("Next(%q): ok=%v err=%v", line, ok, err)
 		}
@@ -506,7 +634,7 @@ func TestOffLatticeReportsTheRulesOwnFirstDate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Compile(%q): %v", c.spec, err)
 			}
-			first, off := OffLattice(line, c.anchor)
+			first, off := OffLattice(line, c.anchor, jst)
 			if off != !c.want.IsZero() {
 				t.Fatalf("OffLattice(%q) = (%s, %v), want off=%v", line, first.Format(time.RFC3339), off, !c.want.IsZero())
 			}
@@ -518,12 +646,12 @@ func TestOffLatticeReportsTheRulesOwnFirstDate(t *testing.T) {
 
 	// A raw RRULE line — the escape hatch for what the short grammar cannot say —
 	// is read exactly the same way.
-	if first, off := OffLattice("FREQ=WEEKLY;BYDAY=MO", friday); !off || !first.Equal(monday) {
+	if first, off := OffLattice("FREQ=WEEKLY;BYDAY=MO", friday, jst); !off || !first.Equal(monday) {
 		t.Errorf("OffLattice(raw RRULE) = (%s, %v), want (%s, true)", first.Format(time.RFC3339), off, monday.Format(time.RFC3339))
 	}
 	// A stored rule that no longer parses is `lint`'s finding (repeat-invalid),
 	// not this one's: a note naming no date would say less than silence.
-	if _, off := OffLattice("FREQ=NONSENSE", friday); off {
+	if _, off := OffLattice("FREQ=NONSENSE", friday, jst); off {
 		t.Error("an unparseable rule was reported as off-lattice")
 	}
 }

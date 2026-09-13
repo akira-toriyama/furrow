@@ -1118,3 +1118,74 @@ func TestAnOffLatticeAnchorSpendsOneOccurrenceMoreThanTheCount(t *testing.T) {
 		t.Errorf("`for 3 times` anchored off the lattice produced %d tasks, want 4 (the anchor plus the rule's 3)", tasks)
 	}
 }
+
+// newRepeatAppIn is newRepeatApp on a board whose calendar is a REAL IANA zone,
+// for the DST shapes a fixed offset cannot express.
+func newRepeatAppIn(loc *time.Location, now time.Time) *App {
+	cfg := config.Default()
+	cfg.DueTimezone = loc
+	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
+	return NewWithStore(st, cfg, &fixedClock{t: now})
+}
+
+// santiago is the board calendar these two tests need: one day a year it has no
+// local MIDNIGHT (it springs forward AT 00:00), which is the day the expansion's
+// day grid used to slide off by one. The board-level twin of recur's
+// TestOccurrencesLandOnADayWithNoLocalMidnight.
+func santiago(t *testing.T) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Skipf("no tzdata for America/Santiago: %v", err)
+	}
+	return loc
+}
+
+// A `weekly on sun` chore was promised for a SATURDAY: the successor's day came
+// off a grid that had shifted at the transition, and a weekday rule produces no
+// duplicate to notice it by — the board simply said the wrong day.
+func TestSuccessorKeepsItsWeekdayAcrossADayWithNoLocalMidnight(t *testing.T) {
+	loc := santiago(t)
+	// 2027-09-05 is the Sunday Santiago has no midnight on; this close is on
+	// time, on the Sunday before it.
+	a := newRepeatAppIn(loc, time.Date(2027, 8, 29, 15, 0, 0, 0, time.UTC))
+	pred := mustAddRepeating(t, a, "riego", "2027-08-29", "weekly on sun", AddOpts{})
+
+	_, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep == nil || rep.Due == nil {
+		t.Fatalf("no successor reported: %+v", rep)
+	}
+	got := rep.Due.In(loc)
+	if got.Format("2006-01-02 15:04:05") != "2027-09-05 23:59:59" {
+		t.Errorf("successor due = %s (%s), want 2027-09-05 23:59:59 (Sunday)", got.Format(time.RFC3339), got.Weekday())
+	}
+}
+
+// The lapse count crosses the same day, so a late close under-reported it by
+// one: four occurrences went by, three were named. The due sits on the day the
+// grid used to emit TWICE — from any earlier day the duplicate silently made the
+// count add up again, which is why this defect could sit on a board unnoticed.
+func TestLateCloseCountsTheDayWithNoLocalMidnight(t *testing.T) {
+	loc := santiago(t)
+	// Promised for 4 September 2027, cleared at noon on the 9th: 5 September —
+	// the day this zone has no midnight — is one of the four that lapsed.
+	a := newRepeatAppIn(loc, time.Date(2027, 9, 9, 15, 0, 0, 0, time.UTC))
+	pred := mustAddRepeating(t, a, "riego", "2027-09-04", "daily", AddOpts{})
+
+	_, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep == nil || rep.Due == nil {
+		t.Fatalf("no successor reported: %+v", rep)
+	}
+	if rep.Skipped != 4 {
+		t.Errorf("skipped = %d, want 4 (5..8 September, the 5th included)", rep.Skipped)
+	}
+	if got := rep.Due.In(loc).Format("2006-01-02 15:04:05"); got != "2027-09-10 23:59:59" {
+		t.Errorf("successor due = %s, want 2027-09-10 23:59:59", got)
+	}
+}
