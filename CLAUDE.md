@@ -253,6 +253,15 @@ user-level config. When you work with any furrow store:
   (`repeat-orphan-anchor`): furrow ignores it, but the published shard schema
   says the anchor is present iff the rule is, so a strict external reader is
   entitled to believe it. Both are cleared with `set <id> --clear-repeat`.
+  **A live rule is visible in the ROW**: a bare `repeats` tag beside the due
+  tag, on every human view that renders a task as a task (`ls` flat and
+  `--tree`, `next`, `revisit`, all three of `brief`'s bands, `epic show`'s
+  members) — WIDER than the due tag rides, since a date is guaranteed a surface
+  (brief's due band, board-wide `lint`) and a rule is not, and the row is where
+  the close that MINTS the next occurrence is launched from. A fixed word,
+  never the rule: the shard keeps the compiled RRULE, not the operator's
+  spelling, and `show` is where that belongs. `search` is the one exception —
+  its MATCH column is a snippet, not a title cell.
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
   issue-draft analogue). `-r` is the scope control on reads: a full

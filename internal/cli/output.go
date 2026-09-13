@@ -109,12 +109,10 @@ func printTaskTable(a *app.App, tasks []core.Task) {
 		if len(t.Repos) > 0 {
 			title += "  (" + strings.Join(t.Repos, ",") + ")"
 		}
-		// The due tag rides in the title cell like the labels and repos, not as its
-		// own column: a column would widen every row on every board for a field only
-		// a few tasks carry.
-		if tag := dueTag(a, &t); tag != "" {
-			title += "  " + tag
-		}
+		// The due and repeat tags ride in the title cell like the labels and repos,
+		// not as their own columns: a column would widen every row on every board
+		// for a field only a few tasks carry.
+		title = withTags(title, dueTag(a, &t), repeatTag(&t))
 		fmt.Fprintf(out, "%-*s  %-*s  %5d  %s\n", wID, t.ID, wStatus, t.Status, t.Priority, title)
 	}
 }
@@ -395,11 +393,10 @@ func printTreeGroup(a *app.App, g app.TreeGroup) {
 // is what greps.
 func printTreeNode(a *app.App, n app.TreeNode) {
 	line := "    " + stateGlyph(a, n.Actionable, n.Task.Status) + " " + n.Task.ID + "  [" + n.Task.Status + "]  " + n.Task.Title
-	// The same tag the flat row carries: --tree is the same matched rows
-	// regrouped, so it must not be the one view where a promise disappears.
-	if tag := dueTag(a, &n.Task); tag != "" {
-		line += "  " + tag
-	}
+	// The same tags the flat row carries: --tree is the same matched rows
+	// regrouped, so it must not be the one view where a promise — or a series —
+	// disappears.
+	line = withTags(line, dueTag(a, &n.Task), repeatTag(&n.Task))
 	if len(n.BlockedBy) > 0 {
 		line += "  ← blocked by: " + strings.Join(n.BlockedBy, ", ")
 	}
@@ -497,12 +494,10 @@ func printListItemTable(a *app.App, items []app.ListItem) {
 		if len(t.Repos) > 0 {
 			title += "  (" + strings.Join(t.Repos, ",") + ")"
 		}
-		// The due tag rides in the title cell like labels and repos, rather than as
-		// a column: a column would widen every row on every board for a field only a
-		// few tasks carry.
-		if tag := dueTag(a, &t); tag != "" {
-			title += "  " + tag
-		}
+		// The due and repeat tags ride in the title cell like labels and repos,
+		// rather than as columns: a column would widen every row on every board for
+		// a field only a few tasks carry.
+		title = withTags(title, dueTag(a, &t), repeatTag(&t))
 		g := stateGlyph(a, it.Actionable, t.Status)
 		fmt.Fprintf(out, "%s  %-*s  %-*s  %5d  %s\n", g, wID, t.ID, wStatus, t.Status, t.Priority, title)
 	}
@@ -900,6 +895,40 @@ func dueTag(a *app.App, t *core.Task) string {
 		word = "overdue"
 	}
 	return word + " " + t.Due.Local().Format("2006-01-02 15:04")
+}
+
+// repeatTag marks a row whose close MINTS the next occurrence. A fixed word,
+// never the rule: the shard stores the compiled RRULE (the operator's spelling
+// is not kept) and internal/recur has no RRULE-to-prose direction, so a row
+// could only print FREQ=WEEKLY;BYDAY=MO — width spent on a detail `show` already
+// carries, where the row needs one bit: closing this is not the end of it.
+//
+// It rides WIDER than dueTag, deliberately. A date is guaranteed a surface
+// (brief's due band is exactly the dates that have arrived, and lint errors on
+// them board-wide), so a band may omit it; a rule has no such surface — a
+// weekly chore due next month appears only as an ordinary row — and the one
+// place it matters is the row a close is launched from. So every human view
+// that renders a task AS a task (id + lane + title) tags it: `ls` flat and
+// `--tree`, `next`, `revisit`, all three of brief's bands, and `epic show`'s
+// members. `search` is the exception — its MATCH column is a snippet, not a
+// title cell, and a tag there would read as part of the matched text.
+func repeatTag(t *core.Task) string {
+	if t.Repeat == "" {
+		return ""
+	}
+	return "repeats"
+}
+
+// withTags appends the non-empty row tags, two spaces apart — the one spacing
+// rule every human row renderer shares, so the tags cannot drift into different
+// gaps on different views.
+func withTags(s string, tags ...string) string {
+	for _, tag := range tags {
+		if tag != "" {
+			s += "  " + tag
+		}
+	}
+	return s
 }
 
 // printTaskDetail renders a single task's human detail block for `show`. JSON
@@ -1309,10 +1338,12 @@ func printBrief(b *app.BriefData, scope string) {
 	if !b.Due.Empty() {
 		fmt.Fprintf(out, "due (%d):\n", b.Due.Total())
 		for _, it := range b.Due.Overdue {
-			fmt.Fprintf(out, "  ! %s  %-12s %s  (overdue %s)\n", it.Task.ID, it.Task.Status, it.Task.Title, humanTime(*it.Task.Due))
+			row := fmt.Sprintf("  ! %s  %-12s %s  (overdue %s)", it.Task.ID, it.Task.Status, it.Task.Title, humanTime(*it.Task.Due))
+			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
 		}
 		for _, it := range b.Due.Today {
-			fmt.Fprintf(out, "  · %s  %-12s %s  (today %s)\n", it.Task.ID, it.Task.Status, it.Task.Title, humanTime(*it.Task.Due))
+			row := fmt.Sprintf("  · %s  %-12s %s  (today %s)", it.Task.ID, it.Task.Status, it.Task.Title, humanTime(*it.Task.Due))
+			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
 		}
 	}
 	// The focus header, only on a participating board: which box `next` is
@@ -1344,15 +1375,22 @@ func printBrief(b *app.BriefData, scope string) {
 	if len(b.Next) == 0 {
 		fmt.Fprintln(out, "  (none)")
 	}
+	// The band carries no date (the due band above is where those land) but it
+	// does carry the repeat tag: a rule has no band of its own, and this is the
+	// row a session actually closes.
 	for _, it := range b.Next {
-		fmt.Fprintf(out, "  ★ %s  %-12s %s\n", it.Task.ID, it.Task.Status, it.Task.Title)
+		row := fmt.Sprintf("  ★ %s  %-12s %s", it.Task.ID, it.Task.Status, it.Task.Title)
+		fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
 	}
 	fmt.Fprintf(out, "blocked (%d):\n", len(b.Blocked))
 	if len(b.Blocked) == 0 {
 		fmt.Fprintln(out, "  (none)")
 	}
 	for _, it := range b.Blocked {
-		fmt.Fprintf(out, "  · %s  %-12s %s  ← %s\n", it.Task.ID, it.Task.Status, it.Task.Title, strings.Join(it.BlockedBy, ", "))
+		// The tag sits before the ← edge, as it does on a tree node: the arrow
+		// terminates the row.
+		row := withTags(fmt.Sprintf("  · %s  %-12s %s", it.Task.ID, it.Task.Status, it.Task.Title), repeatTag(&it.Task))
+		fmt.Fprintf(out, "%s  ← %s\n", row, strings.Join(it.BlockedBy, ", "))
 	}
 	fmt.Fprintf(out, "revisit: %d dep_done, %d stale", len(b.Revisit.DepDone), len(b.Revisit.Stale))
 	for _, c := range []struct {
@@ -1537,7 +1575,8 @@ func printEpicDetail(a *app.App, d *app.EpicDetail) {
 	}
 	fmt.Fprintf(out, "tasks (%d):\n", len(d.Tasks))
 	for _, it := range d.Tasks {
-		fmt.Fprintf(out, "  %s %s  [%s]  %s\n", stateGlyph(a, it.Actionable, it.Task.Status), it.Task.ID, it.Task.Status, it.Task.Title)
+		row := fmt.Sprintf("  %s %s  [%s]  %s", stateGlyph(a, it.Actionable, it.Task.Status), it.Task.ID, it.Task.Status, it.Task.Title)
+		fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
 	}
 	// The body last, exactly as `show` prints a task's: the compact dashboard
 	// first, the prose (goal context, the activation log) after it.
