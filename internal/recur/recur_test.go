@@ -36,6 +36,12 @@ func TestCompileSpellings(t *testing.T) {
 		{"daily for 3 times", "FREQ=DAILY;COUNT=3"},
 		// Case and surrounding space are the operator's, not the format's.
 		{"  MONTHLY on Last Fri  ", "FREQ=MONTHLY;BYDAY=-1FR"},
+		// A weekday list is a SET, in first-seen order: the library joins BYDAY
+		// in the order given and never dedupes, so these used to store
+		// BYDAY=MO,MO — a rule that behaves the same and is not canonical.
+		{"weekly on mon,mon", "FREQ=WEEKLY;BYDAY=MO"},
+		{"weekly on MON,mon", "FREQ=WEEKLY;BYDAY=MO"},
+		{"every 2 weeks on fri,fri,mon", "FREQ=WEEKLY;INTERVAL=2;BYDAY=FR,MO"},
 		// The second accepted form: a raw RRULE line for what the short
 		// grammar cannot say.
 		{"FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29", "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29"},

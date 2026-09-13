@@ -292,14 +292,33 @@ func parseFreq(h, typed string) (rrule.Frequency, int, error) {
 	}
 }
 
+// parseWeekdayList reads the weekly `on <days>` tail as a SET: a day named
+// twice is one member, kept where it was first typed.
+//
+// The dedupe is furrow's own. rrule-go joins BYDAY in the order given and never
+// dedupes, so `weekly on mon,mon` would store `BYDAY=MO,MO` — a rule that
+// behaves identically (BYDAY is a membership filter there, not a per-entry
+// generator) but contradicts Compile's promise of a canonical spelling, and is
+// read back verbatim by `furrow show`. Silent rather than a refusal: naming a
+// set member twice is not an error anywhere else in furrow (labels, deps,
+// repos all sort-and-dedupe).
+//
+// The seen-set keys on the whole rrule.Weekday — day AND n — so an
+// nth-qualified weekday (+2MO) stays its own member, never a duplicate of the
+// bare day.
 func parseWeekdayList(on string) ([]rrule.Weekday, error) {
 	var out []rrule.Weekday
+	seen := make(map[rrule.Weekday]bool)
 	for _, f := range strings.Split(on, ",") {
 		f = strings.TrimSpace(f)
 		w, ok := weekdays[f]
 		if !ok {
 			return nil, fmt.Errorf("%q is not a weekday; use mon,tue,wed,thu,fri,sat,sun", f)
 		}
+		if seen[w] {
+			continue
+		}
+		seen[w] = true
 		out = append(out, w)
 	}
 	if len(out) == 0 {
