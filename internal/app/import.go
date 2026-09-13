@@ -264,6 +264,17 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 			c := now
 			t.Closed = &c
 		}
+		if s.Repeat != "" {
+			// A task born in the done lane is closed at birth, and only a CLOSE
+			// advances a series — so the rule would sit on a task that can never
+			// fire it, a series with no live occurrence and nothing to say so.
+			if lane == a.Cfg.DoneLane {
+				return nil, core.Validationf("", "a task created in the %q lane is closed at birth, so a --repeat rule on it could never fire — create it open, or drop --repeat", lane)
+			}
+			if err := a.bindRepeat(&t, s.Repeat); err != nil {
+				return nil, err
+			}
+		}
 		body := s.Body
 		if body == "" {
 			body = "# " + t.Title + "\n"

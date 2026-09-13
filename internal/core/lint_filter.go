@@ -55,6 +55,8 @@ var lintCodes = map[string]bool{
 	"provenance-missing": true,
 	"ready-blocked":      true,
 	"reconcile-gap":      true,
+	"repeat-invalid":     true,
+	"repeat-no-timezone": true,
 	"repo-as-label":      true,
 	"repo-shape":         true,
 	"schema-outdated":    true,

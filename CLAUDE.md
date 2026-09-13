@@ -186,6 +186,62 @@ user-level config. When you work with any furrow store:
   the one date a human authors in wall clock, so `-q due:2026-08-04` finds
   exactly what `--due 2026-08-04` wrote (a UTC day there would put the two up
   to 9h apart on a +09:00 machine).
+- **A task can RECUR: `repeat` + `repeat_anchor` (schema v10).** `add --repeat` /
+  `set --repeat` bind a short spelling (`daily`, `every 2 weeks on mon,thu`,
+  `monthly on last fri`, `every 3 months on 15`, … optionally ending in
+  `until <date>` or `for <n> times` — never both) compiled to ONE RFC 5545 RRULE
+  line; a raw RRULE line is accepted too, and `set --clear-repeat` drops it.
+  **It requires a `--due`**: that first date becomes the immutable
+  `repeat_anchor` the rule is expanded from, which is why `set --due +1d` (the
+  snooze furrow's own overdue remedy hands you) moves THIS occurrence and never
+  re-lattices the series, and why `--clear-due` on a repeating task is exit 2.
+  **Only a CLOSE advances it** — nothing is time-driven, so a repeating task
+  never piles up: entering the done lane (via `done`, `move <id> done`, `set -s
+  done`, or CI's `apply`) writes the next occurrence in the SAME
+  all-or-nothing write and **hands the rule over to it**, so a series is carried
+  by exactly one live task and re-closing (or reopen→close) mints nothing. The
+  successor is born in `[lanes].default` with the body and checklist copied
+  (boxes unchecked) under a `previous: [[id]]` line — the body as it stood just
+  BEFORE this close's `--note`, so the closing word stays put while everything
+  else written during the cycle carries forward — inheriting everything except
+  what the close settled (`closed`/`reviewed`), what the rule computes (`due`),
+  this run's `deps`, and its position (`priority` is lane-relative, so the
+  successor is APPENDED to the default lane exactly as `add` appends — a copied
+  number tied an existing task there). Its due is the first occurrence after
+  what the close SETTLES: for a bare-date series (a 23:59:59 anchor) the whole
+  local day of the later of now and the due — the day the work was done, or
+  the day it was promised for while that is still ahead — and for a timed one
+  (`--due …T21:00`) the later of now and the due as instants, so tonight's
+  21:00 stands after a 17:00 close. An on-time or early close therefore
+  advances exactly one step, a snoozed one (`set --due +1d` lands off-lattice)
+  never hands the same day back, a late one jumps the lapsed cycles and
+  REPORTS them (what lies strictly between the settled occurrence and the day
+  of the close): `repeat: next due … — N occurrence(s) skipped`, or `repeat:
+  series complete` when the rule is spent (with the same lapse count) — and a
+  chain of afternoon closes is on time again after ONE late day, instead of
+  late forever. Two flip sides are deliberate: a close just past midnight
+  settles the NEW day, so closing yesterday's daily at 00:10 consumes today's
+  (re-date the successor with `set <id> --due <today>` when that is not what
+  was meant), and `for <n> times`/`until` count lattice SLOTS, so a close that
+  lands on a later slot's day settles that slot too and can spend a bounded
+  series a close early (the receipt says `series complete`);
+  `--json` carries `repeat` `{created, due, skipped, completed}` on the envelope
+  — always that shape, so "not repeating" (no key) and "last occurrence"
+  (`completed`) stay distinct. A day past 28 SKIPS the months that lack it (RFC
+  5545 §3.3.10 — `monthly on last` is the rule that always lands; a stderr note
+  says so at bind time). The calendar is the board's `[due].timezone` when it
+  declares one — undeclared, it is the ZONE OF THE MACHINE THAT CLOSES, so a
+  board written by both a JST laptop and a UTC CI runner MUST declare it: the
+  two zones put a bare-date anchor on different calendar days (every bare
+  date west of UTC, every early-morning wall clock east of it), so BYDAY /
+  BYMONTHDAY resolve a day off and the CI-minted successor lands on Sunday
+  for a `weekly on mon` — and the two disagree about which DAY a close
+  settles. `lint` ERRORS **`repeat-no-timezone`** on a shared board carrying a
+  live rule with no declared zone (a standalone board has one zone and is
+  exempt; a plain `due` never drifts, its instant is stored).
+  With it, occurrences keep their wall clock across DST. Queryable as `has:`/`no:repeat`
+  (= the live occurrences); `lint` errors `repeat-invalid` on a stored rule that
+  no longer parses or lost its anchor.
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
   issue-draft analogue). `-r` is the scope control on reads: a full

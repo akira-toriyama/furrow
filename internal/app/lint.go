@@ -7,9 +7,23 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/recur"
 	"github.com/akira-toriyama/furrow/internal/store/fsstore"
 )
+
+// countRepeating is the number of live occurrences on the board — open tasks
+// carrying a rule (a closed one has handed its rule on, or never had one).
+func countRepeating(idx *core.Index) int {
+	n := 0
+	for _, t := range idx.Tasks {
+		if t.Repeat != "" && t.Closed == nil {
+			n++
+		}
+	}
+	return n
+}
 
 // LintErrorSummary counts lint ERRORS by code — the terse ride-along `furrow
 // sync` prints beside its revisit summary. Warnings are deliberately excluded:
@@ -112,6 +126,22 @@ func (a *App) Lint() ([]core.Problem, error) {
 			// stamps, Move backfills); this catches pre-fix or hand-edited leaks.
 			if t.Closed == nil {
 				ps = append(ps, core.Problem{Severity: core.SevError, Code: "done-unclosed", ID: t.ID, Msg: "task is in the done lane but has no closed timestamp (a `furrow done` will backfill it)"})
+			}
+		}
+		// A rule furrow cannot expand ends the series in SILENCE: the close would
+		// refuse (no anchor) or hand out nothing, with the shard still claiming
+		// the task recurs. Only a hand-edit or a newer furrow's spelling can
+		// produce one, which is exactly why nothing else would catch it.
+		if t.Repeat != "" {
+			if t.Due == nil {
+				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
+					Msg: "carries a repeat rule with no due, so a close has no occurrence to advance from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
+			} else if t.RepeatAnchor == nil {
+				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
+					Msg: "carries a repeat rule with no repeat_anchor, so the series has no start to expand from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
+			} else if err := recur.Valid(t.Repeat, *t.RepeatAnchor); err != nil {
+				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
+					Msg: err.Error() + " — closing this task would advance nothing; rebind with `furrow set " + t.ID + " --repeat <rule>` or drop it with `--clear-repeat`"})
 			}
 		}
 	}
@@ -437,6 +467,26 @@ func (a *App) lintBodyContent(hasTask, hasEpic map[string]bool, bodyIDs []string
 // [lint].ignore_codes typos, user-level config).
 func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
 	var ps []core.Problem
+	// repeat-no-timezone: a series is expanded in the board's [due].timezone, and
+	// undeclared that is the zone of whatever process CLOSES the occurrence. On a
+	// shared board that is two calendars — the operator's machine and a UTC CI
+	// runner — and they disagree on which day an anchor sits in whenever the
+	// operator's zone puts the anchor on a different UTC date (every bare-date
+	// due west of UTC, every early-morning wall clock east of it), so BYDAY /
+	// BYMONTHDAY resolve to the wrong day and the successor lands a day off —
+	// and since a close settles the whole local DAY of a bare-date series, the
+	// two zones also disagree about which day that is. A fixed due does not
+	// drift (its instant is stored); only a rule expanded from it does, which
+	// is why this fires on repeating tasks alone. A standalone board has one
+	// zone and is exempt. An ERROR, not a warn: the shipped level's consumer is
+	// a shared board's CI gate, and this is a state someone must fix once —
+	// [lint.severity] re-levels it like every other code.
+	if a.Cfg.Mode == config.ModeShared && a.Loc == nil {
+		if n := countRepeating(idx); n > 0 {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-no-timezone", ID: "config",
+				Msg: fmt.Sprintf("%d repeating task(s) on a shared board with no [due].timezone — the series is expanded, and the day a close settles is chosen, in the zone of whichever machine closes it (a UTC CI runner lands weekly/monthly occurrences a day off); declare the calendar with `furrow config set due.timezone <IANA zone>`", n)})
+		}
+	}
 	// archive-backlog nudge ([lint].archive_done, off by default): warn when the
 	// pile of archivable done tasks (closed before the archive cutoff) reaches the
 	// threshold — a prompt to run `furrow archive` so the hot board stays legible.

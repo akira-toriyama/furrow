@@ -1352,6 +1352,11 @@ func TestRetitleHeading(t *testing.T) {
 		{"headingless prose untouched", "just prose\n# later\n", "x", "just prose\n# later\n", false},
 		{"h2 is not an h1", "## sub\n", "x", "## sub\n", false},
 		{"hash without space is not a heading", "#foo\n", "x", "#foo\n", false},
+		// A generated occurrence opens with its back-link (successorBody); the
+		// heading is the first line after it, and a retitle must still reach it.
+		{"a successor's back-link sits above the h1", "previous: [[t-abc1]]\n\n# old\ntail\n", "new", "previous: [[t-abc1]]\n\n# new\ntail\n", true},
+		{"back-link over headingless prose is untouched", "previous: [[t-abc1]]\n\nprose\n", "x", "previous: [[t-abc1]]\n\nprose\n", false},
+		{"an operator's bare link is not a back-link", "[[t-abc1]] came from here\n# old\n", "x", "[[t-abc1]] came from here\n# old\n", false},
 		{"leading blank lines then h1", "\n\n# old\ntail\n", "new", "\n\n# new\ntail\n", true},
 	}
 	for _, c := range cases {

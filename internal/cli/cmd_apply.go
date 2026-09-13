@@ -118,6 +118,15 @@ func printApplyResult(res app.ApplyResult) {
 		switch o.Action {
 		case "moved":
 			fmt.Fprintf(out, "%s  %s → %s\n", o.ID, moved, o.To)
+			// A close can CREATE the next occurrence. Saying so only in --json
+			// left the human arm reporting a lane move while a task appeared out
+			// of nowhere in someone's next sync.
+			if o.WillRepeat {
+				fmt.Fprintf(out, "%s  would also create the next occurrence\n", o.ID)
+			}
+			if r := o.Repeat; r != nil && (r.Completed || (r.Created != nil && r.Due != nil)) {
+				fmt.Fprintf(out, "%s  %s\n", o.ID, seriesLine(r))
+			}
 		case "annotated":
 			fmt.Fprintf(out, "%s  %s\n", o.ID, annotated)
 		case "error":
