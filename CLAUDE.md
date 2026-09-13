@@ -269,7 +269,14 @@ user-level config. When you work with any furrow store:
   — always that shape, so "not repeating" (no key) and "last occurrence"
   (`completed`) stay distinct. A day past 28 SKIPS the months that lack it (RFC
   5545 §3.3.10 — `monthly on last` is the rule that always lands; a stderr note
-  says so at bind time). The calendar is the board's `[due].timezone` when it
+  says so at bind time), and February 29 SKIPS the YEARS that lack one — a
+  second note, carrying the real next occurrence (anchored 2028-02-29, `yearly`
+  next lands 2032-02-29) and pointing at February's last day
+  (`BYMONTH=2;BYMONTHDAY=-1`), since the monthly `on last` remedy would
+  prescribe another frequency. Which period a rule skips is its SHAPE, not its
+  FREQ: `yearly` on January 31 names its month and lands every year (silent),
+  while `FREQ=MONTHLY;BYMONTH=2;BYMONTHDAY=29` fires only on the leap day.
+  The calendar is the board's `[due].timezone` when it
   declares one — undeclared, it is the ZONE OF THE MACHINE THAT CLOSES, so a
   board written by both a JST laptop and a UTC CI runner MUST declare it: the
   two zones put a bare-date anchor on different calendar days (every bare
