@@ -1044,7 +1044,7 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&clearEffort, "clear-effort", false, "clear the effort estimate")
 	cmd.Flags().StringVar(&due, "due", "", "set the due date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d (the snooze)")
 	cmd.Flags().BoolVar(&clearDue, "clear-due", false, "clear the due date")
-	cmd.Flags().StringVar(&repeatSpec, "repeat", "", "recur when closed: daily | every 2 weeks on mon,thu | monthly on last fri | ... (the task must carry a due)")
+	cmd.Flags().StringVar(&repeatSpec, "repeat", "", "recur when closed: daily | every 2 weeks on mon,thu | monthly on last fri | ... (the task must carry a due; a raw RRULE line also works, minus a DTSTART)")
 	cmd.Flags().BoolVar(&clearRepeat, "clear-repeat", false, "stop this task recurring (drops the rule and its anchor)")
 	// Without this the rebind is silently discarded: applySet's switch puts
 	// --clear-repeat first, so `--repeat X --clear-repeat` looked like it took.

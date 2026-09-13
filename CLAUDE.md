@@ -190,7 +190,11 @@ user-level config. When you work with any furrow store:
   `set --repeat` bind a short spelling (`daily`, `every 2 weeks on mon,thu`,
   `monthly on last fri`, `every 3 months on 15`, … optionally ending in
   `until <date>` or `for <n> times` — never both) compiled to ONE RFC 5545 RRULE
-  line; a raw RRULE line is accepted too, and `set --clear-repeat` drops it.
+  line; a raw RRULE line is accepted too — minus a `DTSTART`, which is exit 2 in
+  either spelling (a `DTSTART=` term or a leading `DTSTART:` line) at the door
+  and `repeat-invalid` in `lint` on a stored one, since the series start is the
+  `repeat_anchor` and a DTSTART could only be taken and then ignored — and
+  `set --clear-repeat` drops it.
   **It requires a `--due`**: that first date becomes the immutable
   `repeat_anchor` the rule is expanded from, which is why `set --due +1d` (the
   snooze furrow's own overdue remedy hands you) moves THIS occurrence and never
