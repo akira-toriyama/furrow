@@ -241,7 +241,14 @@ user-level config. When you work with any furrow store:
   exempt; a plain `due` never drifts, its instant is stored).
   With it, occurrences keep their wall clock across DST. Queryable as `has:`/`no:repeat`
   (= the live occurrences); `lint` errors `repeat-invalid` on a stored rule that
-  no longer parses or lost its anchor.
+  no longer parses or lost its anchor, and **`repeat-on-closed`** on a done-lane
+  task that still carries one — the state a hand-edit creates and no write path
+  allows, which arms a SECOND successor on the next reopen-then-close and
+  simultaneously hides that task from `repeat-no-timezone` (it counts live
+  carriers). A `repeat_anchor` with no rule is the mirror shape and only warns
+  (`repeat-orphan-anchor`): furrow ignores it, but the published shard schema
+  says the anchor is present iff the rule is, so a strict external reader is
+  entitled to believe it. Both are cleared with `set <id> --clear-repeat`.
 - **Repos are the scope; labels are pure tags.** A task's repositories live in
   the first-class `repos` field (`owner/repo`, 0..N; `[]` = a **draft**, the
   issue-draft analogue). `-r` is the scope control on reads: a full
