@@ -334,8 +334,10 @@ func (a *App) bindRepeat(t *core.Task, spec string) error {
 // Both notes describe a rule that is legal, RFC-correct, and almost never what
 // the operator meant — so neither is an error, and neither is silent:
 //
-//   - A day-of-month past 28 is answered by RFC 5545 with a SKIP of the months
-//     that lack it, so `monthly on 31` lands 7 times a year.
+//   - A day of the month past 28 is answered by RFC 5545 with a SKIP of the
+//     period that lacks it: `monthly on 31` lands 7 times a year, and a rule
+//     landing on February 29 lands once in four. The leap-day one needs the
+//     note most — its feedback loop is four years long.
 //   - An anchor the rule does not land on stands OUTSIDE the series
 //     (recur.OffLattice), so a `for n times` rule hands out n occurrences AFTER
 //     it — one task more than the count reads like.
@@ -348,21 +350,46 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 		return nil
 	}
 	// The anchor is stored UTC but the series is expanded in the BOARD's
+	// The anchor is stored UTC but the series is expanded in the BOARD's
 	// calendar, so the day these ask about has to be read there too — otherwise
 	// the notes are inverted on any board whose offset crosses a date boundary.
 	anchor := t.RepeatAnchor.In(a.loc())
 	var out []string
-	if day, ok := recur.SkipsMonths(t.Repeat, anchor); ok {
-		// The remedy is `on last`, spelled against whatever rule they typed — naming
-		// a full `monthly on last` prescribed a different FREQUENCY to anyone who
-		// wrote `every 3 months`.
-		out = append(out, fmt.Sprintf("note: day %d does not exist in every month, so the rule skips those months (RFC 5545); anchoring on the last day instead (`… on last`) always lands", day))
+	if skip, ok := recur.Skips(t.Repeat, anchor); ok {
+		out = append(out, skipNote(t.Repeat, anchor, skip))
 	}
 	if first, ok := recur.OffLattice(t.Repeat, anchor); ok {
 		out = append(out, fmt.Sprintf("note: the anchor %s is not a date this rule lands on, so it is one occurrence OUTSIDE the series and `for n times` hands out n MORE after it; the rule's own first date is %s, and anchoring there folds it in",
 			anchor.Format(core.TimeLayout), first.Format(core.TimeLayout)))
 	}
 	return out
+}
+
+// skipNote words the skip by the PERIOD that lacks the day, because the remedy
+// differs: a month that lacks day 31 is answered by `on last`, a year that
+// lacks February 29 is not — `on last` is a monthly spelling, and the rule that
+// lands every year is February's last day, which any frequency can name.
+func skipNote(line string, anchor time.Time, skip recur.Skip) string {
+	if skip.Period == recur.Years {
+		return fmt.Sprintf("note: February 29 exists only in leap years, so the rule skips the years without one (RFC 5545)%s; anchoring on February 28, or naming February's last day (`BYMONTH=2;BYMONTHDAY=-1`), lands every year", nextOccurrenceClause(line, anchor))
+	}
+	// The remedy is `on last`, spelled against whatever rule they typed — naming
+	// a full `monthly on last` prescribed a different FREQUENCY to anyone who
+	// wrote `every 3 months`.
+	return fmt.Sprintf("note: day %d does not exist in every month, so the rule skips those months (RFC 5545); anchoring on the last day instead (`… on last`) always lands", skip.Day)
+}
+
+// nextOccurrenceClause names the date the leap-day note is about, because a
+// four-year gap is the kind of thing an operator has to SEE to disbelieve —
+// `every 3 years` from 2028-02-29 next lands in 2040. Empty when the rule
+// cannot say (a stored rule the expander refuses): a note missing its date
+// still beats no note.
+func nextOccurrenceClause(line string, anchor time.Time) string {
+	next, ok, err := recur.Next(line, anchor, anchor)
+	if err != nil || !ok {
+		return ""
+	}
+	return " — the next occurrence is " + next.Format(dueDateLayout)
 }
 
 // CompileRepeat exposes the spelling→RRULE compilation to a front-end that

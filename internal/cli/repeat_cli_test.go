@@ -123,6 +123,37 @@ func TestAddWarnsAboutASkippingDayOfMonth(t *testing.T) {
 	}
 }
 
+// February 29 is the same defect with a four-year feedback loop: the operator
+// spells the rule `yearly`, the successor is minted silently, and the next
+// occurrence is 2032. So it is said at bind time too — with the date, and never
+// with the monthly remedy, which is a rule of another frequency.
+func TestAddWarnsAboutALeapDayRule(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "うるう", "--due", "2028-02-29", "--repeat", "yearly")
+	if code != 0 {
+		t.Fatalf("add exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, "February 29 exists only in leap years") {
+		t.Errorf("no note about the skipped years:\n%s", out)
+	}
+	if !strings.Contains(out, "the next occurrence is 2032-02-29") {
+		t.Errorf("the note does not name the date the rule really lands on:\n%s", out)
+	}
+	if strings.Contains(out, "on last") || strings.Contains(out, "every month") {
+		t.Errorf("a yearly rule was handed the monthly remedy:\n%s", out)
+	}
+
+	// The other half of the same question: a yearly rule on any other day past
+	// 28 names its month and lands every year, so it stays silent.
+	out, code = run(t, "add", "1月末", "--due", "2026-01-31", "--repeat", "yearly")
+	if code != 0 {
+		t.Fatalf("add exit %d: %s", code, out)
+	}
+	if strings.Contains(out, "RFC 5545") {
+		t.Errorf("`yearly` on January 31 lands every January; it must not be warned about:\n%s", out)
+	}
+}
+
 func TestRepeatRefusalsAreExitTwo(t *testing.T) {
 	initStore(t)
 	cases := []struct {

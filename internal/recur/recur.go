@@ -489,31 +489,78 @@ func buildFrom(opt *rrule.ROption, anchor time.Time, line string) (*rrule.RRule,
 	return r, nil
 }
 
-// SkipsMonths reports whether a rule names a day of the month that some months
-// do not have — the 29/30/31 case RFC 5545 answers by SKIPPING the month. The
-// caller says so once, at bind time: the operator who typed `monthly on 31`
-// usually meant `monthly on last`, and silence would let them find out in March.
-func SkipsMonths(line string, anchor time.Time) (day int, ok bool) {
+// Period is what a rule SKIPS when the day of the month it lands on does not
+// exist there: the months that lack that day, or — for February 29 alone — the
+// years that lack one.
+type Period int
+
+const (
+	Months Period = iota + 1
+	Years
+)
+
+// Skip is one rule's day-of-month problem: the day it names, and the period
+// that day is missing from.
+type Skip struct {
+	Day    int
+	Period Period
+}
+
+// Skips reports whether a rule names a day of the month that some periods do
+// not have — the 29/30/31 case RFC 5545 answers by SKIPPING the period instead
+// of clamping into it. The caller says so once, at bind time: the operator who
+// typed `monthly on 31` usually meant `monthly on last`, and the one who
+// anchored a yearly rule on February 29 would otherwise find out in four years.
+//
+// Which period is skipped follows the rule's SHAPE, not its FREQ. `yearly`
+// anchored on January 31 names its month as part of the rule and lands every
+// January, so it is silent; `FREQ=MONTHLY;BYMONTH=2;BYMONTHDAY=29` fires only
+// on February 29 and skips years like any other leap-day rule. A frequency test
+// would get both backwards.
+func Skips(line string, anchor time.Time) (Skip, bool) {
 	opt, err := rrule.StrToROption(line)
 	if err != nil {
-		return 0, false
+		return Skip{}, false
 	}
+	day, ok := namedDay(opt, anchor)
+	if !ok {
+		return Skip{}, false
+	}
+	var lacking, landing int
+	for _, m := range firingMonths(opt, anchor) {
+		if monthLacks(m, day) {
+			lacking++
+		} else {
+			landing++
+		}
+	}
+	switch {
+	case lacking == 0:
+		return Skip{}, false
+	case day == 29 && landing == 0:
+		// February is the only month this rule fires in, and February 29 is the
+		// only day of the month a whole YEAR can lack.
+		return Skip{Day: day, Period: Years}, true
+	default:
+		return Skip{Day: day, Period: Months}, true
+	}
+}
+
+// namedDay is the day of the month a rule lands on, reported only when it is
+// past the 28th — the days below that exist everywhere and have nothing to say.
+//
+// A rule that selects no day of its own takes the ANCHOR's, so `monthly`
+// anchored on the 31st skips exactly the months `monthly on 31` does while
+// naming no day at all. That is the spelling an operator reaches for first, so
+// it is the one that most needs the note. Only a monthly or yearly period can
+// miss a day: a daily or weekly rule lands on whatever day comes next.
+func namedDay(opt *rrule.ROption, anchor time.Time) (int, bool) {
 	for _, d := range opt.Bymonthday {
 		if d >= 29 {
 			return d, true
 		}
 	}
-	// A bare `monthly` (or `yearly`, or `every N months`) names no day at all: it
-	// takes the ANCHOR's, so anchoring one on the 31st skips exactly the same
-	// months as `monthly on 31` while saying nothing about it. That is the
-	// spelling an operator reaches for first, so it is the one that most needs
-	// the note.
-	// MONTHLY only. A YEARLY rule anchored on the 31st lands every year — the
-	// month is part of the rule, so there is nothing to skip — and the note it
-	// used to print recommended `monthly on last`, a rule of a different
-	// frequency entirely.
-	if len(opt.Bymonthday) == 0 && len(opt.Byweekday) == 0 &&
-		opt.Freq == rrule.MONTHLY && anchor.Day() >= 29 {
+	if selectsNoDay(opt) && (opt.Freq == rrule.MONTHLY || opt.Freq == rrule.YEARLY) && anchor.Day() >= 29 {
 		return anchor.Day(), true
 	}
 	return 0, false
@@ -547,4 +594,42 @@ func OffLattice(line string, anchor time.Time) (first time.Time, off bool) {
 		return time.Time{}, false
 	}
 	return next, true
+}
+
+// selectsNoDay reports a rule that picks no day for itself in any spelling, so
+// the anchor's day stands in for it.
+func selectsNoDay(opt *rrule.ROption) bool {
+	return len(opt.Bymonthday) == 0 && len(opt.Byweekday) == 0 &&
+		len(opt.Byyearday) == 0 && len(opt.Byweekno) == 0
+}
+
+// firingMonths is the months a rule can fire in. BYMONTH says so outright;
+// otherwise only a YEARLY rule that names no day narrows to one — measured
+// against the library, a YEARLY rule WITH a BYMONTHDAY expands across all
+// twelve months exactly like a MONTHLY one (`FREQ=YEARLY;BYMONTHDAY=29`
+// anchored in January fires next in March), so it skips the Februarys, not the
+// years.
+func firingMonths(opt *rrule.ROption, anchor time.Time) []int {
+	if len(opt.Bymonth) > 0 {
+		return opt.Bymonth
+	}
+	if opt.Freq == rrule.YEARLY && len(opt.Bymonthday) == 0 {
+		return []int{int(anchor.Month())}
+	}
+	return everyMonth
+}
+
+var everyMonth = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+
+// monthLacks reports a month that does not have that day of the month.
+// February counts for 29 even though three years in four it has one: the rule
+// still misses every year it does not.
+func monthLacks(month, day int) bool {
+	switch time.Month(month) {
+	case time.February:
+		return day >= 29
+	case time.April, time.June, time.September, time.November:
+		return day > 30
+	}
+	return false
 }

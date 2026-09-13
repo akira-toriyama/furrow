@@ -134,11 +134,11 @@ func TestMonthlyOn31SkipsShortMonths(t *testing.T) {
 		cur = next
 	}
 
-	if day, ok := SkipsMonths(line, anchor); !ok || day != 31 {
-		t.Errorf("SkipsMonths = (%d, %v), want (31, true) so the CLI can say so at bind time", day, ok)
+	if skip, ok := Skips(line, anchor); !ok || skip.Day != 31 || skip.Period != Months {
+		t.Errorf("Skips = (%+v, %v), want ({31 Months}, true) so the CLI can say so at bind time", skip, ok)
 	}
 	lastLine, _ := Compile("monthly on last", nil)
-	if _, ok := SkipsMonths(lastLine, anchor); ok {
+	if _, ok := Skips(lastLine, anchor); ok {
 		t.Error("`monthly on last` always lands; it must not be reported as skipping")
 	}
 }
@@ -333,17 +333,17 @@ func TestBindableRejectsARuleWithNothingLeft(t *testing.T) {
 // A bare `monthly` takes its day from the ANCHOR, so anchoring one on the 31st
 // skips exactly the months `monthly on 31` does — while naming no day at all.
 // That is the spelling an operator reaches for first.
-func TestSkipsMonthsSeesTheAnchorsDay(t *testing.T) {
+func TestSkipsSeesTheAnchorsDay(t *testing.T) {
 	line, err := Compile("monthly", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	onThe31st := time.Date(2026, 1, 31, 23, 59, 59, 0, jst)
-	if day, ok := SkipsMonths(line, onThe31st); !ok || day != 31 {
-		t.Errorf("SkipsMonths(bare monthly, anchored on the 31st) = (%d, %v), want (31, true)", day, ok)
+	if skip, ok := Skips(line, onThe31st); !ok || skip.Day != 31 || skip.Period != Months {
+		t.Errorf("Skips(bare monthly, anchored on the 31st) = (%+v, %v), want ({31 Months}, true)", skip, ok)
 	}
 	onThe15th := time.Date(2026, 1, 15, 23, 59, 59, 0, jst)
-	if _, ok := SkipsMonths(line, onThe15th); ok {
+	if _, ok := Skips(line, onThe15th); ok {
 		t.Error("a rule anchored on the 15th lands every month; it must not be warned about")
 	}
 }
@@ -388,15 +388,95 @@ func TestTerminatorsAreCaseInsensitive(t *testing.T) {
 	}
 }
 
-// A YEARLY rule names its month, so it cannot skip one — and the note it used
-// to print recommended a rule of a different frequency.
-func TestYearlyIsNotReportedAsSkipping(t *testing.T) {
-	line, err := Compile("yearly", nil)
-	if err != nil {
-		t.Fatal(err)
+// A YEARLY rule names its month, so most days past 28 cannot skip anything:
+// `yearly` anchored on January 31 lands every January. February 29 is the one
+// exception — it exists only in leap years, so the rule jumps three years in
+// four (measured: anchored 2028-02-29, the next occurrence is 2032-02-29) and
+// must never be handed the monthly `on last` remedy.
+func TestYearlySkipsOnlyOnFebruary29(t *testing.T) {
+	feb29 := time.Date(2028, 2, 29, 23, 59, 59, 0, jst)
+	jan31 := time.Date(2026, 1, 31, 23, 59, 59, 0, jst)
+	jun15 := time.Date(2026, 6, 15, 23, 59, 59, 0, jst)
+
+	cases := []struct {
+		name   string
+		spec   string
+		anchor time.Time
+		want   Skip // the zero Skip means: say nothing
+	}{
+		{"bare yearly on the leap day", "yearly", feb29, Skip{Day: 29, Period: Years}},
+		{"every 2 years on the leap day", "every 2 years", feb29, Skip{Day: 29, Period: Years}},
+		{"every 3 years on the leap day", "every 3 years", feb29, Skip{Day: 29, Period: Years}},
+		{"a raw leap-day line", "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29", feb29, Skip{Day: 29, Period: Years}},
+		// The rule names the day outright, so the anchor's own day says nothing.
+		{"a raw leap-day line anchored elsewhere", "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29", jun15, Skip{Day: 29, Period: Years}},
+		// Only February fires, whatever FREQ asks for it.
+		{"a monthly rule confined to February", "FREQ=MONTHLY;BYMONTH=2;BYMONTHDAY=29", feb29, Skip{Day: 29, Period: Years}},
+		// Measured: a YEARLY rule WITH a BYMONTHDAY expands over all twelve
+		// months, so it skips the Februarys — the months remedy is the right one.
+		{"a raw yearly line naming no month", "FREQ=YEARLY;BYMONTHDAY=29", feb29, Skip{Day: 29, Period: Months}},
+		{"yearly on January 31", "yearly", jan31, Skip{}},
+		{"February's last day", "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1", feb29, Skip{}},
 	}
-	if day, ok := SkipsMonths(line, time.Date(2026, 1, 31, 23, 59, 59, 0, jst)); ok {
-		t.Errorf("a yearly rule anchored on the 31st was reported as skipping (day %d)", day)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			line, err := Compile(c.spec, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			skip, ok := Skips(line, c.anchor)
+			if !ok {
+				skip = Skip{}
+			}
+			if skip != c.want {
+				t.Errorf("Skips(%q, %s) = (%+v, %v), want %+v", line, c.anchor.Format("2006-01-02"), skip, ok, c.want)
+			}
+		})
+	}
+}
+
+// The remedy the leap-day note prescribes has to be one that actually lands
+// every year — the whole complaint about `on last` was that it was measured
+// against the wrong frequency.
+func TestTheLeapDayRemediesLandEveryYear(t *testing.T) {
+	anchor := time.Date(2028, 2, 29, 23, 59, 59, 0, jst)
+	for _, c := range []struct {
+		spec   string
+		anchor time.Time
+		want   string
+	}{
+		{"FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1", anchor, "2029-02-28"},
+		{"yearly", time.Date(2028, 2, 28, 23, 59, 59, 0, jst), "2029-02-28"},
+	} {
+		line, err := Compile(c.spec, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := Skips(line, c.anchor); ok {
+			t.Errorf("%q was reported as skipping; it is the rule the note recommends", line)
+		}
+		next, ok, err := Next(line, c.anchor, c.anchor)
+		if err != nil || !ok {
+			t.Fatalf("Next(%q): ok=%v err=%v", line, ok, err)
+		}
+		if got := next.Format("2006-01-02"); got != c.want {
+			t.Errorf("Next(%q) = %s, want %s — the remedy must land the very next year", line, got, c.want)
+		}
+	}
+}
+
+// A rule whose period is a day or a week lands on whatever day comes next, so
+// the anchor's day of the month says nothing about it.
+func TestASubMonthlyRuleIsNeverReportedAsSkipping(t *testing.T) {
+	onThe31st := time.Date(2026, 1, 31, 23, 59, 59, 0, jst)
+	for _, spec := range []string{"daily", "every 3 days", "weekly"} {
+		line, err := Compile(spec, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if skip, ok := Skips(line, onThe31st); ok {
+			t.Errorf("%q anchored on the 31st was reported as skipping (%+v)", spec, skip)
+		}
 	}
 }
 
