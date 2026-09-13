@@ -286,7 +286,12 @@ user-level config. When you work with any furrow store:
   settles. `lint` ERRORS **`repeat-no-timezone`** on a shared board carrying a
   live rule with no declared zone (a standalone board has one zone and is
   exempt; a plain `due` never drifts, its instant is stored).
-  With it, occurrences keep their wall clock across DST. Queryable as `has:`/`no:repeat`
+  With it, occurrences keep their wall clock across DST — including the one day
+  a year a zone has no local MIDNIGHT (America/Santiago, America/Havana and
+  Atlantic/Azores spring forward AT 00:00, which slides the RRULE library's own
+  day grid by one from the transition on), since the series is expanded in a
+  frame with no midnight gap and read back into the board's calendar.
+  Queryable as `has:`/`no:repeat`
   (= the live occurrences); `lint` errors `repeat-invalid` on a stored rule that
   no longer parses or lost its anchor, and **`repeat-on-closed`** on a done-lane
   task that still carries one — the state a hand-edit creates and no write path
