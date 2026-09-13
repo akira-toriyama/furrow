@@ -225,15 +225,20 @@ user-level config. When you work with any furrow store:
   advances exactly one step, a snoozed one (`set --due +1d` lands off-lattice)
   never hands the same day back, a late one jumps the lapsed cycles and
   REPORTS them (what lies strictly between the settled occurrence and the day
-  of the close): `repeat: next due … — N occurrence(s) skipped`, or `repeat:
-  series complete` when the rule is spent (with the same lapse count) — and a
-  chain of afternoon closes is on time again after ONE late day, instead of
-  late forever. Two flip sides are deliberate: a close just past midnight
-  settles the NEW day, so closing yesterday's daily at 00:10 consumes today's
-  (re-date the successor with `set <id> --due <today>` when that is not what
-  was meant), and `for <n> times`/`until` count lattice SLOTS, so a close that
-  lands on a later slot's day settles that slot too and can spend a bounded
-  series a close early (the receipt says `series complete`);
+  of the close): `<closed-id>  repeat: next due … — N occurrence(s) skipped`,
+  or `<closed-id>  repeat: series complete` when the rule is spent (with the
+  same lapse count). The receipt carries the id of the occurrence that CLOSED,
+  in `apply`'s `<id>  <line>` shape and at every arity, since a batch close
+  prints one verb line per task but only as many receipts as there were
+  series — position would attach a mixed batch's lone receipt to the task that
+  does not repeat. And a chain of afternoon closes is on time again after ONE
+  late day, instead of late forever. Two flip sides are deliberate: a close
+  just past midnight settles the NEW day, so closing yesterday's daily at
+  00:10 consumes today's (re-date the successor with `set <id> --due <today>`
+  when that is not what was meant), and `for <n> times`/`until` count lattice
+  SLOTS, so a close that lands on a later slot's day settles that slot too and
+  can spend a bounded series a close early (the receipt says
+  `series complete`);
   `--json` carries `repeat` `{created, due, skipped, completed}` on the envelope
   — always that shape, so "not repeating" (no key) and "last occurrence"
   (`completed`) stay distinct. A day past 28 SKIPS the months that lack it (RFC
