@@ -145,3 +145,54 @@ func TestEpicRmForce(t *testing.T) {
 		t.Errorf("epic show after rm: %v", fe)
 	}
 }
+
+// rm is the ONE path that ends a recurrence: the rule is held by exactly one
+// live task and only a close hands it on, so deleting that task destroys the
+// series with nothing left behind to say so (lint stays clean). The preview
+// must disclose it, and so must the --yes apply — an operator who passes --yes
+// straight away never sees a preview. It must also stay QUIET on an ordinary
+// task: a note that cries wolf teaches the reader to skip it.
+func TestRmRepeatingSaysSeriesEnds(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "water the plants", "--due", "2030-05-01", "--repeat", "daily")
+	plain := addTask(t, "filed too early")
+
+	out, code := run(t, "rm", id)
+	if code != 0 {
+		t.Fatalf("preview: exit %d\n%s", code, out)
+	}
+	for _, want := range []string{
+		"repeat: " + id + " carries a series",
+		"FREQ=DAILY",
+		"due 2030-0",
+		"removing it ends the series; no successor is minted",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("preview does not say %q:\n%s", want, out)
+		}
+	}
+
+	out, code = run(t, "rm", id, "--yes")
+	if code != 0 {
+		t.Fatalf("apply: exit %d\n%s", code, out)
+	}
+	for _, want := range []string{
+		"repeat: " + id + " carried a series",
+		"FREQ=DAILY",
+		"the series ended; no successor was minted",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("apply does not say %q:\n%s", want, out)
+		}
+	}
+
+	for _, args := range [][]string{{"rm", plain}, {"rm", plain, "--yes"}} {
+		out, code = run(t, args...)
+		if code != 0 {
+			t.Fatalf("%v: exit %d\n%s", args, code, out)
+		}
+		if strings.Contains(out, "repeat:") {
+			t.Errorf("%v cried wolf on a task carrying no rule:\n%s", args, out)
+		}
+	}
+}

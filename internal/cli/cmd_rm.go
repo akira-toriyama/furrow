@@ -31,9 +31,16 @@ func newRmCmd() *cobra.Command {
 		Long: "Delete tasks — the record itself, not a lane change. All-or-nothing: a miss\n" +
 			"removes nothing (exit 1, details.missing; an archived id says so — unarchive\n" +
 			"it first). References among the targets themselves never count, so a chain\n" +
-			"removes in one call.\n\n" + rmLongTail + "\n\n" +
+			"removes in one call.\n\n" +
+			"A target carrying a recurrence rule is the series' ONLY live occurrence (a\n" +
+			"close hands the rule to the successor; a removal hands it to nobody), so\n" +
+			"removing it ENDS the series — no successor is minted, and nothing afterwards\n" +
+			"records that the series existed. Preview and apply both say so. It is a\n" +
+			"disclosure, not a refusal: refusing is for a target something still points\n" +
+			"at.\n\n" + rmLongTail + "\n\n" +
 			"--json prints one report: {dry_run, force, tasks, references} — `tasks` as\n" +
-			"they were, `references` what stands (and, with --force, was severed).",
+			"they were (a live `repeat` among them is the series this ends), `references`\n" +
+			"what stands (and, with --force, was severed).",
 		Example: "  furrow rm t-k3m9p                 # preview: what would go, what points at it\n" +
 			"  furrow rm t-k3m9p --yes           # delete (refused while referenced)\n" +
 			"  furrow rm t-k3m9p --force --yes   # sever the references, then delete\n" +
@@ -58,6 +65,7 @@ func newRmCmd() *cobra.Command {
 			for _, t := range rep.Tasks {
 				fmt.Fprintf(out, "  %s  %s\n", t.ID, t.Title)
 			}
+			printSeriesEnd(rep.Tasks, rep.DryRun)
 			printReferences(rep.References, rep.DryRun)
 			if rep.DryRun {
 				fmt.Fprintln(out, "re-run with --yes to apply")
@@ -120,6 +128,38 @@ func rmVerb(dry bool) string {
 		return "would remove"
 	}
 	return "removed"
+}
+
+// printSeriesEnd names the recurrence a removal destroys, on the preview and on
+// the apply alike (the apply is where an operator who skipped the preview with
+// --yes finds out at all).
+//
+// A live rule is held by exactly ONE task — a close consumes it and hands it to
+// the successor — so rm is the only path outside a spent rule that ends a
+// series, and it leaves nothing behind to say so: the board lints clean and the
+// board repo's git history is the only way back. A WARNING, never a refusal:
+// refusing is reserved for a target another entity still points at (`referenced`),
+// while the preview exists precisely to disclose what the deletion destroys.
+//
+// `epic rm` has no twin: a box holds no rule.
+func printSeriesEnd(tasks []core.Task, dry bool) {
+	for i := range tasks {
+		t := &tasks[i]
+		if t.Repeat == "" {
+			continue
+		}
+		when := ""
+		// A rule with no due is only reachable from a shard furrow did not write
+		// (`lint` names it repeat-invalid); the disclosure still stands without it.
+		if t.Due != nil {
+			when = ", due " + humanTime(*t.Due)
+		}
+		if dry {
+			fmt.Fprintf(out, "repeat: %s carries a series (%s%s) — removing it ends the series; no successor is minted\n", t.ID, t.Repeat, when)
+			continue
+		}
+		fmt.Fprintf(out, "repeat: %s carried a series (%s%s) — the series ended; no successor was minted\n", t.ID, t.Repeat, when)
+	}
 }
 
 // printReferences renders the reference list under the target lines — what
