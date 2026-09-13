@@ -36,7 +36,7 @@ func TestDonePrintsTheSeriesLine(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("done exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, "repeat: next due ") {
+	if !strings.Contains(out, id+"  repeat: next due ") {
 		t.Errorf("close said nothing about the series:\n%s", out)
 	}
 }
@@ -220,7 +220,7 @@ func TestSetToDoneReportsTheSeries(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("set exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, "repeat: next due ") {
+	if !strings.Contains(out, id+"  repeat: next due ") {
 		t.Errorf("`set -s done` advanced the series in silence:\n%s", out)
 	}
 }
@@ -462,5 +462,85 @@ func TestRepeatTagFollowsTheLiveOccurrence(t *testing.T) {
 	}
 	if tagged != 1 {
 		t.Errorf("%d rows carry the tag, want exactly the live successor:\n%s", tagged, out)
+	}
+}
+
+// A batch close prints one verb line per task but only as many receipts as
+// there were series, so a receipt has to name the occurrence it belongs to.
+// Two spent series otherwise render byte-identical lines and the mapping is
+// unrecoverable from the text.
+func TestABatchCloseNamesTheOccurrenceEachReceiptBelongsTo(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "alpha", "--due", "2026-10-01", "--repeat", "daily for 2 times")
+	a := addedID(t, out, code)
+	out, code = run(t, "add", "beta", "--due", "2026-10-01", "--repeat", "daily for 2 times")
+	b := addedID(t, out, code)
+
+	out, code = run(t, "done", a, b)
+	if code != 0 {
+		t.Fatalf("done exit %d: %s", code, out)
+	}
+	for _, id := range []string{a, b} {
+		if !strings.Contains(out, id+"  repeat: next due ") {
+			t.Errorf("no receipt naming %s:\n%s", id, out)
+		}
+	}
+
+	// The successors carry the last slot of each series, so closing both in one
+	// batch is the case where the two lines say the same words.
+	last := liveRepeatIDs(t)
+	if len(last) != 2 {
+		t.Fatalf("want 2 live occurrences, got %v", last)
+	}
+	out, code = run(t, append([]string{"done"}, last...)...)
+	if code != 0 {
+		t.Fatalf("done exit %d: %s", code, out)
+	}
+	for _, id := range last {
+		if !strings.Contains(out, id+"  repeat: series complete") {
+			t.Errorf("no receipt naming %s:\n%s", id, out)
+		}
+	}
+}
+
+// liveRepeatIDs reads the ids of the occurrences that still carry a rule.
+func liveRepeatIDs(t *testing.T) []string {
+	t.Helper()
+	out, code := run(t, "ls", "-q", "has:repeat", "--json")
+	if code != 0 {
+		t.Fatalf("ls exit %d: %s", code, out)
+	}
+	var tasks []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(out), &tasks); err != nil {
+		t.Fatalf("ls --json: %v\n%s", err, out)
+	}
+	ids := make([]string, 0, len(tasks))
+	for _, t := range tasks {
+		ids = append(ids, t.ID)
+	}
+	return ids
+}
+
+// The mixed batch is where position — the only mapping an unprefixed receipt
+// offered — pointed at the WRONG task: one trailing line under a block whose
+// first entry is the task that does not repeat.
+func TestAMixedBatchCloseNamesTheRepeatingTask(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "plain")
+	plain := addedID(t, out, code)
+	out, code = run(t, "add", "chore", "--due", "2026-10-01", "--repeat", "daily")
+	rep := addedID(t, out, code)
+
+	out, code = run(t, "done", plain, rep)
+	if code != 0 {
+		t.Fatalf("done exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, rep+"  repeat: next due ") {
+		t.Errorf("the receipt does not name the repeating task %s:\n%s", rep, out)
+	}
+	if strings.Contains(out, plain+"  repeat:") {
+		t.Errorf("a receipt was attached to the task that does not repeat:\n%s", out)
 	}
 }

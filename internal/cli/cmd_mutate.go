@@ -1271,8 +1271,14 @@ func (s *seriesReports) annotate(t *core.Task) map[string]any {
 	return nil
 }
 
-// print writes one line per advanced series, after the mutation summary. The
-// JSON path already carries the same facts on each envelope.
+// print writes one line per advanced series, after the mutation summary. Each
+// line is prefixed with the CLOSED task's id, in apply's `%s  %s` shape: a
+// batch prints one verb line per task but only as many receipts as there were
+// series, so position maps a receipt to the wrong task in any mixed batch, and
+// two spent series render byte-identical lines. The prefix is unconditional —
+// the same rule the batch envelopes follow, that the runtime argv length must
+// not fork the output shape. The JSON path already carries the same facts on
+// each envelope.
 func (s *seriesReports) print(out io.Writer, tasks []*core.Task) {
 	if jsonMode() {
 		return
@@ -1282,7 +1288,7 @@ func (s *seriesReports) print(out io.Writer, tasks []*core.Task) {
 		if r == nil {
 			continue
 		}
-		fmt.Fprintln(out, seriesLine(r))
+		fmt.Fprintf(out, "%s  %s\n", t.ID, seriesLine(r))
 	}
 }
 
