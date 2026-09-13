@@ -15,6 +15,11 @@ import (
 
 // countRepeating is the number of live occurrences on the board — open tasks
 // carrying a rule (a closed one has handed its rule on, or never had one).
+//
+// The exclusion is an assumption no longer: repeat-on-closed errors on a closed
+// carrier, so a board that would silence repeat-no-timezone this way reddens on
+// that code instead. Widening this to every carrier would report the same
+// hand-edit twice and count an occurrence that can never fire.
 func countRepeating(idx *core.Index) int {
 	n := 0
 	for _, t := range idx.Tasks {
@@ -127,6 +132,20 @@ func (a *App) Lint() ([]core.Problem, error) {
 			if t.Closed == nil {
 				ps = append(ps, core.Problem{Severity: core.SevError, Code: "done-unclosed", ID: t.ID, Msg: "task is in the done lane but has no closed timestamp (a `furrow done` will backfill it)"})
 			}
+			// A closed task must not carry a live rule: the close CONSUMES it and
+			// hands it to the successor, which is the whole reason re-closing is
+			// idempotent. Two things break at once when one survives. planRepeat
+			// fires on the TRANSITION into the done lane, so the next
+			// reopen-then-close mints a SECOND successor and the series forks for
+			// good. And countRepeating counts open carriers only, so this task stops
+			// answering for repeat-no-timezone — one hand-edit turns an ERROR the
+			// board already had OFF. Every write path refuses the state (Set's
+			// end-state invariant, `add -s done --repeat`, planRepeat's consume), so
+			// only a shard furrow did not write can be here.
+			if t.Repeat != "" {
+				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-on-closed", ID: t.ID,
+					Msg: "is in the done lane but still carries the repeat rule its close should have handed to a successor, so reopening and closing it would mint a second one — drop the rule with `furrow set " + t.ID + " --clear-repeat` if the successor already exists, or reopen this task (`furrow move " + t.ID + " " + a.Cfg.DefaultLane + "`) if it is the live occurrence"})
+			}
 		}
 		// A rule furrow cannot expand ends the series in SILENCE: the close would
 		// refuse (no anchor) or hand out nothing, with the shard still claiming
@@ -143,6 +162,14 @@ func (a *App) Lint() ([]core.Problem, error) {
 				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
 					Msg: err.Error() + " — closing this task would advance nothing; rebind with `furrow set " + t.ID + " --repeat <rule>` or drop it with `--clear-repeat`"})
 			}
+		} else if t.RepeatAnchor != nil {
+			// The published shard schema says the anchor is "Present iff repeat is",
+			// and an external reader (ridge) is entitled to believe it. Inside furrow
+			// the stray anchor is INERT — every reader short-circuits on an empty
+			// rule and bindRepeat re-derives the anchor from the due — so this is a
+			// broken promise, not a broken series: warn, not error.
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "repeat-orphan-anchor", ID: t.ID,
+				Msg: "carries a repeat_anchor with no repeat rule, which the shard schema says cannot happen (the anchor is present iff the rule is) — furrow ignores it and a rebind overwrites it, so clear it with `furrow set " + t.ID + " --clear-repeat`"})
 		}
 	}
 	// A label that NAMES a repo (a full owner/repo, or a short name the board's
