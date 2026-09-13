@@ -315,3 +315,152 @@ func TestADtstartIsRefusedAtTheDoor(t *testing.T) {
 		t.Errorf("a refused add left %d task(s) behind:\n%s", len(tasks), out)
 	}
 }
+
+// assertRepeatTag checks every row of a human listing: the ids in `tagged` must
+// carry the tag, the ids in `plain` must not. Both halves matter — a tag that
+// leaked onto every row is as useless as a missing one, and only the pair can
+// tell them apart.
+func assertRepeatTag(t *testing.T, out string, tagged, plain []string) {
+	t.Helper()
+	seen := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		for _, id := range tagged {
+			if strings.Contains(line, id) {
+				seen[id] = true
+				if !strings.Contains(line, "repeats") {
+					t.Errorf("a repeating row carries no tag:\n%s", line)
+				}
+			}
+		}
+		for _, id := range plain {
+			if strings.Contains(line, id) && strings.Contains(line, "repeats") {
+				t.Errorf("a one-off row carries a repeat tag:\n%s", line)
+			}
+		}
+	}
+	for _, id := range tagged {
+		if !seen[id] {
+			t.Errorf("%s never appeared in the listing:\n%s", id, out)
+		}
+	}
+}
+
+// A row whose close MINTS the next occurrence must not render like a one-off.
+// The date tag beside it says nothing about recurrence: two rows promised for
+// the same day are the same row until one of them is marked.
+func TestCLILsShowsRepeat(t *testing.T) {
+	initStore(t)
+	series := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "--due", dayOffset(30), "--repeat", "daily")
+	dated := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "--due", dayOffset(30))
+	bare := addTask(t, "no dates at all", "-s", "ready", "-r", "o/r")
+
+	out, code := run(t, "ls", "-r", "o/r")
+	if code != 0 {
+		t.Fatalf("ls exit = %d:\n%s", code, out)
+	}
+	assertRepeatTag(t, out, []string{series}, []string{dated, bare})
+}
+
+// `--tree` is the same matched rows regrouped, so it must not be the one view
+// where a series disappears.
+func TestCLITreeShowsRepeat(t *testing.T) {
+	initStore(t)
+	epic, code := run(t, "--json", "epic", "add", "ops", "-r", "o/r")
+	if code != 0 {
+		t.Fatalf("epic add exit = %d:\n%s", code, epic)
+	}
+	var e struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(epic), &e); err != nil {
+		t.Fatalf("parse epic add: %v\n%s", err, epic)
+	}
+	series := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "-e", e.ID, "--due", dayOffset(30), "--repeat", "daily")
+	dated := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "-e", e.ID, "--due", dayOffset(30))
+
+	out, code := run(t, "ls", "-r", "o/r", "--tree")
+	if code != 0 {
+		t.Fatalf("ls --tree exit = %d:\n%s", code, out)
+	}
+	assertRepeatTag(t, out, []string{series}, []string{dated})
+
+	// The box's own detail view lists the same members and is a place a close is
+	// launched from just as much as the tree is.
+	out, code = run(t, "epic", "show", e.ID)
+	if code != 0 {
+		t.Fatalf("epic show exit = %d:\n%s", code, out)
+	}
+	assertRepeatTag(t, out, []string{series}, []string{dated})
+}
+
+// `next` and `revisit` share one table, and it is the table a session picks work
+// off: the row it hands you is the row whose close writes another task.
+func TestCLINextAndRevisitShowRepeat(t *testing.T) {
+	initStore(t)
+	series := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "--due", dayOffset(30), "--repeat", "daily")
+	dated := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "--due", dayOffset(30))
+
+	for _, cmd := range []string{"next", "revisit"} {
+		out, code := run(t, cmd, "-r", "o/r")
+		if code != 0 {
+			t.Fatalf("%s exit = %d:\n%s", cmd, code, out)
+		}
+		assertRepeatTag(t, out, []string{series}, []string{dated})
+	}
+}
+
+// brief tags ALL THREE task bands, which is wider than the due tag rides: the
+// due band is the only surface a date is guaranteed, while a rule has none —
+// a chore promised for next month reaches the session only as a `next` row.
+func TestCLIBriefBandsShowRepeat(t *testing.T) {
+	initStore(t)
+	// The blocker sits in no band of its own: it is named only by the ← edge of
+	// the rows that wait on it, which the per-row assert must not read as a row.
+	blocker := addTask(t, "upstream answer", "-s", "waiting", "-r", "o/r")
+	lateSeries := addTask(t, "weekly review", "-s", "ready", "-r", "o/r", "--due", dayOffset(-1), "--repeat", "weekly")
+	lateOnce := addTask(t, "one-off overdue", "-s", "waiting", "-r", "o/r", "--due", dayOffset(-1))
+	nextSeries := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "--due", dayOffset(30), "--repeat", "daily")
+	blockedSeries := addTask(t, "monthly rotation", "-s", "ready", "-r", "o/r", "--due", dayOffset(30), "--repeat", "monthly", "--dep", blocker)
+	blockedOnce := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "--dep", blocker)
+
+	out, code := run(t, "brief")
+	if code != 0 {
+		t.Fatalf("brief exit = %d:\n%s", code, out)
+	}
+	for _, band := range []string{"due (", "next (", "blocked ("} {
+		if !strings.Contains(out, band) {
+			t.Fatalf("brief printed no %q band:\n%s", band, out)
+		}
+	}
+	assertRepeatTag(t, out, []string{lateSeries, nextSeries, blockedSeries}, []string{lateOnce, blockedOnce})
+}
+
+// The rule sits on exactly one task of a series, so the tag has to move with it:
+// a closed occurrence advertising a mint that already happened would be the same
+// defect in the other direction.
+func TestRepeatTagFollowsTheLiveOccurrence(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "water the plants", "--due", dayOffset(30), "--repeat", "daily")
+	closed := addedID(t, out, code)
+	if out, code := run(t, "done", closed); code != 0 {
+		t.Fatalf("done exit %d: %s", code, out)
+	}
+
+	out, code = run(t, "ls", "-s", "")
+	if code != 0 {
+		t.Fatalf("ls exit = %d:\n%s", code, out)
+	}
+	tagged := 0
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "repeats") {
+			continue
+		}
+		tagged++
+		if strings.Contains(line, closed) {
+			t.Errorf("the closed occurrence still advertises the series:\n%s", line)
+		}
+	}
+	if tagged != 1 {
+		t.Errorf("%d rows carry the tag, want exactly the live successor:\n%s", tagged, out)
+	}
+}
