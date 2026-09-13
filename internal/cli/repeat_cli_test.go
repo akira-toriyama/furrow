@@ -544,3 +544,41 @@ func TestAMixedBatchCloseNamesTheRepeatingTask(t *testing.T) {
 		t.Errorf("a receipt was attached to the task that does not repeat:\n%s", out)
 	}
 }
+
+// An anchor the rule does not land on is legal and RFC 5545 §3.8.5.3 leaves it
+// undefined; furrow's answer is that the anchor stands OUTSIDE the series, so
+// `for 3 times` hands out four tasks. The operator cannot see that from the
+// shard or from the count, so it is said once, at bind time, on stderr — and
+// `set --repeat` binds too.
+func TestBindingAnOffLatticeAnchorSaysSo(t *testing.T) {
+	initStore(t)
+	// 2026-09-18 is a Friday; the rule lands on Mondays.
+	out, code := run(t, "add", "週次", "--due", "2026-09-18", "--repeat", "weekly on mon for 3 times")
+	if code != 0 {
+		t.Fatalf("add exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, "not a date this rule lands on") {
+		t.Errorf("no note about the off-lattice anchor:\n%s", out)
+	}
+	if !strings.Contains(out, "2026-09-21") {
+		t.Errorf("the note does not name the rule's own first date:\n%s", out)
+	}
+
+	out, code = run(t, "add", "週次2", "--due", "2026-09-21", "--repeat", "weekly on mon for 3 times")
+	if code != 0 {
+		t.Fatalf("add exit %d: %s", code, out)
+	}
+	if strings.Contains(out, "not a date this rule lands on") {
+		t.Errorf("an anchor ON the lattice was warned about:\n%s", out)
+	}
+
+	out, code = run(t, "add", "後付け", "--due", "2026-09-18")
+	id := addedID(t, out, code)
+	out, code = run(t, "set", id, "--repeat", "weekly on mon")
+	if code != 0 {
+		t.Fatalf("set exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, "not a date this rule lands on") {
+		t.Errorf("`set --repeat` bound an off-lattice anchor silently:\n%s", out)
+	}
+}

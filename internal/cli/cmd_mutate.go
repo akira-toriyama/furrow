@@ -1215,8 +1215,9 @@ func newRepoCmd() *cobra.Command {
 }
 
 // noteBoundRules says, once per distinct note, what a rule this write just bound
-// will skip. Only on an actual bind: re-printing it on every unrelated edit of a
-// repeating task taught the reader to ignore it.
+// will do that was almost certainly not asked for (a skipped month, an anchor
+// off the rule's lattice). Only on an actual bind: re-printing it on every
+// unrelated edit of a repeating task taught the reader to ignore it.
 func noteBoundRules(cmd *cobra.Command, a *app.App, bound bool, tasks []*core.Task, rs *seriesReports) {
 	if !bound {
 		return
@@ -1234,12 +1235,13 @@ func noteBoundRules(cmd *cobra.Command, a *app.App, bound bool, tasks []*core.Ta
 				}
 			}
 		}
-		w := a.RepeatWarning(subject)
-		if w == "" || said[w] {
-			continue
+		for _, w := range a.RepeatWarnings(subject) {
+			if said[w] {
+				continue
+			}
+			said[w] = true
+			fmt.Fprintln(cmd.ErrOrStderr(), w)
 		}
-		said[w] = true
-		fmt.Fprintln(cmd.ErrOrStderr(), w)
 	}
 }
 

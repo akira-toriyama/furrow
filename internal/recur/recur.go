@@ -499,3 +499,33 @@ func SkipsMonths(line string, anchor time.Time) (day int, ok bool) {
 	}
 	return 0, false
 }
+
+// OffLattice reports whether the anchor is NOT itself an occurrence of the
+// rule, and names the rule's own first date when it is not.
+//
+// RFC 5545 §3.3.10 says the COUNT rule part range-bounds the recurrence with
+// "the DTSTART property value always counts as the first occurrence" — true
+// only while DTSTART is synchronized with the rule, which §3.8.5.3 says it
+// SHOULD be and leaves undefined when it is not. furrow's answer to the
+// undefined case is the library's: an unsynchronized anchor is never folded
+// into the series, so it is one live occurrence OUTSIDE it and a COUNT of n
+// yields n MORE after it — `--due <a Friday> --repeat "weekly on mon for 3
+// times"` is four tasks, not three. Nothing about that is wrong; it is just
+// the opposite of what the RFC sentence teaches, so the caller says it once at
+// bind time.
+//
+// A rule that yields nothing at all from this anchor reports false: the bind
+// door (Bindable) refuses that case, so the only way to reach it is a
+// hand-edited shard, and a note naming no date would say less than silence.
+func OffLattice(line string, anchor time.Time) (first time.Time, off bool) {
+	r, err := build(line, anchor)
+	if err != nil {
+		return time.Time{}, false
+	}
+	// Inclusive: an anchor ON the lattice is the rule's own first occurrence.
+	next := r.After(anchor, true)
+	if next.IsZero() || next.Equal(anchor) {
+		return time.Time{}, false
+	}
+	return next, true
+}

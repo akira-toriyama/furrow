@@ -328,27 +328,41 @@ func (a *App) bindRepeat(t *core.Task, spec string) error {
 	return nil
 }
 
-// RepeatWarning returns the one thing worth saying at bind time, or "".
+// RepeatWarnings returns what is worth saying at bind time, and nothing when
+// there is nothing to say.
 //
-// A day-of-month past 28 is legal and RFC 5545 answers it by SKIPPING the
-// months that lack it — so `monthly on 31` lands 7 times a year. That is a
-// defensible thing to ask for, so it is not an error; it is also almost never
-// what the operator meant, so it is not silent either.
-func (a *App) RepeatWarning(t *core.Task) string {
+// Both notes describe a rule that is legal, RFC-correct, and almost never what
+// the operator meant — so neither is an error, and neither is silent:
+//
+//   - A day-of-month past 28 is answered by RFC 5545 with a SKIP of the months
+//     that lack it, so `monthly on 31` lands 7 times a year.
+//   - An anchor the rule does not land on stands OUTSIDE the series
+//     (recur.OffLattice), so a `for n times` rule hands out n occurrences AFTER
+//     it — one task more than the count reads like.
+//
+// Both can fire on one bind (`monthly on 31` anchored on the 15th), which is
+// why this is a slice: they are independent facts about the same rule, and
+// picking one would leave the other to be discovered by a close.
+func (a *App) RepeatWarnings(t *core.Task) []string {
 	if t.Repeat == "" || t.RepeatAnchor == nil {
-		return ""
+		return nil
 	}
 	// The anchor is stored UTC but the series is expanded in the BOARD's
-	// calendar, so the day this asks about has to be read there too — otherwise
-	// the note is inverted on any board whose offset crosses a date boundary.
-	day, ok := recur.SkipsMonths(t.Repeat, t.RepeatAnchor.In(a.loc()))
-	if !ok {
-		return ""
+	// calendar, so the day these ask about has to be read there too — otherwise
+	// the notes are inverted on any board whose offset crosses a date boundary.
+	anchor := t.RepeatAnchor.In(a.loc())
+	var out []string
+	if day, ok := recur.SkipsMonths(t.Repeat, anchor); ok {
+		// The remedy is `on last`, spelled against whatever rule they typed — naming
+		// a full `monthly on last` prescribed a different FREQUENCY to anyone who
+		// wrote `every 3 months`.
+		out = append(out, fmt.Sprintf("note: day %d does not exist in every month, so the rule skips those months (RFC 5545); anchoring on the last day instead (`… on last`) always lands", day))
 	}
-	// The remedy is `on last`, spelled against whatever rule they typed — naming
-	// a full `monthly on last` prescribed a different FREQUENCY to anyone who
-	// wrote `every 3 months`.
-	return fmt.Sprintf("note: day %d does not exist in every month, so the rule skips those months (RFC 5545); anchoring on the last day instead (`… on last`) always lands", day)
+	if first, ok := recur.OffLattice(t.Repeat, anchor); ok {
+		out = append(out, fmt.Sprintf("note: the anchor %s is not a date this rule lands on, so it is one occurrence OUTSIDE the series and `for n times` hands out n MORE after it; the rule's own first date is %s, and anchoring there folds it in",
+			anchor.Format(core.TimeLayout), first.Format(core.TimeLayout)))
+	}
+	return out
 }
 
 // CompileRepeat exposes the spelling→RRULE compilation to a front-end that
