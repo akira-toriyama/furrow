@@ -217,7 +217,13 @@ user-level config. When you work with any furrow store:
   5545 §3.3.10 — `monthly on last` is the rule that always lands; a stderr note
   says so at bind time). The calendar is the board's `[due].timezone` when it
   declares one — undeclared, it is the ZONE OF THE MACHINE THAT CLOSES, so a
-  board written by both a JST laptop and a UTC CI runner should declare it.
+  board written by both a JST laptop and a UTC CI runner MUST declare it: the
+  two zones put a bare-date anchor on different calendar days (every bare
+  date west of UTC, every early-morning wall clock east of it), so BYDAY /
+  BYMONTHDAY resolve a day off and the CI-minted successor lands on Sunday
+  for a `weekly on mon`. `lint` warns **`repeat-no-timezone`** on a shared
+  board carrying a live rule with no declared zone (a standalone board has one
+  zone and is exempt; a plain `due` never drifts, its instant is stored).
   With it, occurrences keep their wall clock across DST. Queryable as `has:`/`no:repeat`
   (= the live occurrences); `lint` errors `repeat-invalid` on a stored rule that
   no longer parses or lost its anchor.

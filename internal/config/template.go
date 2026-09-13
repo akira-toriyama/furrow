@@ -130,7 +130,11 @@ older_than_days = 30
 # committed and shared: a bare --due date binds the END of that day, and "that
 # day" has to mean one thing whether the operator's machine or a UTC CI runner
 # writes it. A name that will not load falls back to the process zone with a
-# warning that furrow lint surfaces.
+# warning that furrow lint surfaces. A shared board that carries a REPEATING
+# task needs one: its series is expanded in the zone of whichever machine
+# closes it, and a UTC CI runner shifts a weekly/monthly occurrence by a day
+# for anyone bound in another zone — furrow lint warns repeat-no-timezone
+# until the calendar is declared.
 # timezone = "Asia/Tokyo"
 
 [revisit]
