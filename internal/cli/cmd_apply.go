@@ -124,13 +124,8 @@ func printApplyResult(res app.ApplyResult) {
 			if o.WillRepeat {
 				fmt.Fprintf(out, "%s  would also create the next occurrence\n", o.ID)
 			}
-			if r := o.Repeat; r != nil {
-				switch {
-				case r.Completed:
-					fmt.Fprintf(out, "%s  repeat: series complete — no further occurrences\n", o.ID)
-				case r.Created != nil && r.Due != nil:
-					fmt.Fprintf(out, "%s  repeat: next due %s (%s)\n", o.ID, humanTime(*r.Due), *r.Created)
-				}
+			if r := o.Repeat; r != nil && (r.Completed || (r.Created != nil && r.Due != nil)) {
+				fmt.Fprintf(out, "%s  %s\n", o.ID, seriesLine(r))
 			}
 		case "annotated":
 			fmt.Fprintf(out, "%s  %s\n", o.ID, annotated)

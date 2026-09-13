@@ -473,14 +473,18 @@ func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
 	// runner — and they disagree on which day an anchor sits in whenever the
 	// operator's zone puts the anchor on a different UTC date (every bare-date
 	// due west of UTC, every early-morning wall clock east of it), so BYDAY /
-	// BYMONTHDAY resolve to the wrong day and the successor lands a day off. A
-	// fixed due does not drift (its instant is stored); only a rule expanded
-	// from it does, which is why this fires on repeating tasks alone. A
-	// standalone board has one zone and is exempt.
+	// BYMONTHDAY resolve to the wrong day and the successor lands a day off —
+	// and since a close settles the whole local DAY of a bare-date series, the
+	// two zones also disagree about which day that is. A fixed due does not
+	// drift (its instant is stored); only a rule expanded from it does, which
+	// is why this fires on repeating tasks alone. A standalone board has one
+	// zone and is exempt. An ERROR, not a warn: the shipped level's consumer is
+	// a shared board's CI gate, and this is a state someone must fix once —
+	// [lint.severity] re-levels it like every other code.
 	if a.Cfg.Mode == config.ModeShared && a.Loc == nil {
 		if n := countRepeating(idx); n > 0 {
-			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "repeat-no-timezone", ID: "config",
-				Msg: fmt.Sprintf("%d repeating task(s) on a shared board with no [due].timezone — the series is expanded in the zone of whichever machine closes it (a UTC CI runner shifts weekly/monthly occurrences by a day); declare the calendar with `furrow config set due.timezone <IANA zone>`", n)})
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-no-timezone", ID: "config",
+				Msg: fmt.Sprintf("%d repeating task(s) on a shared board with no [due].timezone — the series is expanded, and the day a close settles is chosen, in the zone of whichever machine closes it (a UTC CI runner lands weekly/monthly occurrences a day off); declare the calendar with `furrow config set due.timezone <IANA zone>`", n)})
 		}
 	}
 	// archive-backlog nudge ([lint].archive_done, off by default): warn when the

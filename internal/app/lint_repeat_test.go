@@ -15,7 +15,7 @@ import (
 // them a UTC CI runner. lint is the only place that can say so before the
 // first successor lands a day off; a standalone board has one zone and a board
 // with no repeating task has nothing that drifts.
-func TestLintWarnsARepeatingSeriesWithNoBoardZone(t *testing.T) {
+func TestLintErrorsARepeatingSeriesWithNoBoardZone(t *testing.T) {
 	newApp := func(mode string, loc *time.Location) *App {
 		cfg := config.Default()
 		cfg.Mode = mode
@@ -51,8 +51,8 @@ func TestLintWarnsARepeatingSeriesWithNoBoardZone(t *testing.T) {
 			if len(got) != c.want {
 				t.Fatalf("repeat-no-timezone findings = %d, want %d: %+v", len(got), c.want, got)
 			}
-			if c.want == 1 && (got[0].Severity != core.SevWarn || got[0].ID != "config" || !strings.Contains(got[0].Msg, "due.timezone")) {
-				t.Errorf("finding = %+v, want a warn on the config naming the fix", got[0])
+			if c.want == 1 && (got[0].Severity != core.SevError || got[0].ID != "config" || !strings.Contains(got[0].Msg, "due.timezone")) {
+				t.Errorf("finding = %+v, want an error on the config naming the fix", got[0])
 			}
 		})
 	}

@@ -207,10 +207,24 @@ user-level config. When you work with any furrow store:
   what the close settled (`closed`/`reviewed`), what the rule computes (`due`),
   this run's `deps`, and its position (`priority` is lane-relative, so the
   successor is APPENDED to the default lane exactly as `add` appends — a copied
-  number tied an existing task there). Its due is the first occurrence after BOTH the
-  occurrence just settled and now — an on-time or early close advances exactly
-  one step, a late one jumps the lapsed cycles and REPORTS them: `repeat: next due … — N
-  occurrence(s) skipped`, or `repeat: series complete` when the rule is spent;
+  number tied an existing task there). Its due is the first occurrence after
+  what the close SETTLES: for a bare-date series (a 23:59:59 anchor) the whole
+  local day of the later of now and the due — the day the work was done, or
+  the day it was promised for while that is still ahead — and for a timed one
+  (`--due …T21:00`) the later of now and the due as instants, so tonight's
+  21:00 stands after a 17:00 close. An on-time or early close therefore
+  advances exactly one step, a snoozed one (`set --due +1d` lands off-lattice)
+  never hands the same day back, a late one jumps the lapsed cycles and
+  REPORTS them (what lies strictly between the settled occurrence and the day
+  of the close): `repeat: next due … — N occurrence(s) skipped`, or `repeat:
+  series complete` when the rule is spent (with the same lapse count) — and a
+  chain of afternoon closes is on time again after ONE late day, instead of
+  late forever. Two flip sides are deliberate: a close just past midnight
+  settles the NEW day, so closing yesterday's daily at 00:10 consumes today's
+  (re-date the successor with `set <id> --due <today>` when that is not what
+  was meant), and `for <n> times`/`until` count lattice SLOTS, so a close that
+  lands on a later slot's day settles that slot too and can spend a bounded
+  series a close early (the receipt says `series complete`);
   `--json` carries `repeat` `{created, due, skipped, completed}` on the envelope
   — always that shape, so "not repeating" (no key) and "last occurrence"
   (`completed`) stay distinct. A day past 28 SKIPS the months that lack it (RFC
@@ -221,9 +235,10 @@ user-level config. When you work with any furrow store:
   two zones put a bare-date anchor on different calendar days (every bare
   date west of UTC, every early-morning wall clock east of it), so BYDAY /
   BYMONTHDAY resolve a day off and the CI-minted successor lands on Sunday
-  for a `weekly on mon`. `lint` warns **`repeat-no-timezone`** on a shared
-  board carrying a live rule with no declared zone (a standalone board has one
-  zone and is exempt; a plain `due` never drifts, its instant is stored).
+  for a `weekly on mon` — and the two disagree about which DAY a close
+  settles. `lint` ERRORS **`repeat-no-timezone`** on a shared board carrying a
+  live rule with no declared zone (a standalone board has one zone and is
+  exempt; a plain `due` never drifts, its instant is stored).
   With it, occurrences keep their wall clock across DST. Queryable as `has:`/`no:repeat`
   (= the live occurrences); `lint` errors `repeat-invalid` on a stored rule that
   no longer parses or lost its anchor.

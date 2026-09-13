@@ -1282,14 +1282,21 @@ func (s *seriesReports) print(out io.Writer, tasks []*core.Task) {
 		if r == nil {
 			continue
 		}
-		if r.Completed {
-			fmt.Fprintf(out, "repeat: series complete — no further occurrences\n")
-			continue
-		}
-		line := fmt.Sprintf("repeat: next due %s (%s)", humanTime(*r.Due), *r.Created)
-		if r.Skipped > 0 {
-			line += fmt.Sprintf(" — %d occurrence(s) skipped", r.Skipped)
-		}
-		fmt.Fprintln(out, line)
+		fmt.Fprintln(out, seriesLine(r))
 	}
+}
+
+// seriesLine is the one human line a close's series report renders — shared
+// with `apply`, so the two closes that mint a successor say the same thing.
+// A spent series still names what lapsed: a late close is exactly what runs a
+// bounded one out.
+func seriesLine(r *app.RepeatReport) string {
+	line := "repeat: series complete — no further occurrences"
+	if !r.Completed {
+		line = fmt.Sprintf("repeat: next due %s (%s)", humanTime(*r.Due), *r.Created)
+	}
+	if r.Skipped > 0 {
+		line += fmt.Sprintf(" — %d occurrence(s) skipped", r.Skipped)
+	}
+	return line
 }

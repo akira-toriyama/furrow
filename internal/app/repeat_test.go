@@ -208,10 +208,12 @@ func TestALateCloseSkipsAndSaysSo(t *testing.T) {
 }
 
 func TestSeriesEndReportsCompletionAndMintsNothing(t *testing.T) {
-	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	a := newRepeatApp(time.Date(2026, 3, 1, 3, 0, 0, 0, time.UTC)) // 12:00 JST on 1 March: on time
 	// `for 2 times` binds (there IS one more occurrence) and is spent by the
-	// SECOND close. `for 1 times` is refused at bind time — a rule that would end
-	// on the very next close is a due date, not a recurrence.
+	// SECOND close — when both are on time. A close a day LATE settles that
+	// day's slot too, so it can spend a bounded series a close early; that case
+	// is pinned below. `for 1 times` is refused at bind time — a rule that would
+	// end on the very next close is a due date, not a recurrence.
 	pred := mustAddRepeating(t, a, "2 回だけ", "2026-03-01", "daily for 2 times", AddOpts{})
 	first, rep0, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
 	if err != nil {
@@ -246,6 +248,19 @@ func TestSeriesEndReportsCompletionAndMintsNothing(t *testing.T) {
 	if closed.Repeat != "" {
 		t.Errorf("a spent rule stayed on the task: %q", closed.Repeat)
 	}
+
+	t.Run("a day-late close settles that day's slot too, and spends the series", func(t *testing.T) {
+		a := newRepeatApp(time.Date(2026, 3, 1, 3, 0, 0, 0, time.UTC))
+		pred := mustAddRepeating(t, a, "2 回だけ", "2026-03-01", "daily for 2 times", AddOpts{})
+		a.Clock = &fixedClock{t: time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC)} // 12:00 JST on 2 March
+		_, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rep == nil || !rep.Completed || rep.Skipped != 0 {
+			t.Fatalf("report = %+v, want completed with nothing lapsed: the 2 March slot is the day of the close, settled rather than skipped", rep)
+		}
+	})
 }
 
 // `set -s done` is a close like any other: the triage shortcut must not be a
@@ -396,10 +411,11 @@ func TestAnOnTimeOrEarlyCloseAdvancesExactlyOneStep(t *testing.T) {
 		// occurrence after the one settled is 31 May, not 30 April.
 		{"closed weeks early", time.Date(2026, 3, 1, 5, 0, 0, 0, time.UTC),
 			"2026-03-31", "monthly", time.Date(2026, 5, 31, 14, 59, 59, 0, time.UTC)},
-		// Late: now (3 March 14:00 JST) wins over the settled due (1 March), and
-		// the answer is the first occurrence after NOW — today's, still ahead.
-		{"closed after the due instant still jumps forward", time.Date(2026, 3, 3, 5, 0, 0, 0, time.UTC),
-			"2026-03-01", "daily", time.Date(2026, 3, 3, 14, 59, 59, 0, time.UTC)},
+		// Late: now (3 March 14:00 JST) is past the settled due (1 March), so the
+		// close settles the day it lands on and the answer is TOMORROW's — one
+		// late afternoon must not make every following afternoon late as well.
+		{"closed after the due instant settles the day of the close", time.Date(2026, 3, 3, 5, 0, 0, 0, time.UTC),
+			"2026-03-01", "daily", time.Date(2026, 3, 4, 14, 59, 59, 0, time.UTC)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -840,4 +856,129 @@ func TestASuccessorIsAppendedToTheDefaultLane(t *testing.T) {
 				sx.Priority, sy.Priority, wantPrio+a.Cfg.PriorityStep, wantPrio+2*a.Cfg.PriorityStep)
 		}
 	})
+}
+
+// A bare-date series promises DAYS, so a close settles the whole local day of
+// the later of now and the due. Two defects of the instant rule this replaces,
+// both measured on 753c41f: the snooze (`set --due +1d`, the remedy furrow
+// prints for due-overdue) landed the due off-lattice and a close later that
+// day was handed back that very day's 23:59:59 point; and one afternoon-late
+// close of a daily chore made every following afternoon close late as well,
+// with a due-overdue error each day. A timed series promises instants and is
+// settled as written. Reviewed adversarially on 2026-09-13: settling the day
+// costs a just-past-midnight close of yesterday's chore today's occurrence,
+// which is deliberate and documented; the variant that also settled a timed
+// slot later that day, and the one that counted the settled day as skipped,
+// were refuted.
+func TestACloseSettlesTheWholeDayOfABareDateSeries(t *testing.T) {
+	at := func(y int, mo time.Month, d, h, m int) time.Time { return time.Date(y, mo, d, h, m, 0, 0, jst) }
+	eod := func(y int, mo time.Month, d int) time.Time { return time.Date(y, mo, d, 23, 59, 59, 0, jst) }
+	cases := []struct {
+		name        string
+		bindAt      time.Time
+		due, rule   string
+		snooze      string // a Set --due before the close; "" = none
+		closeAt     time.Time
+		want        time.Time
+		wantSkipped int
+		completed   bool
+	}{
+		{"snoozed to earlier today, closed this afternoon", at(2026, 9, 11, 17, 20),
+			"2026-09-10", "daily", "2026-09-11T08:00", at(2026, 9, 11, 17, 20), eod(2026, 9, 12), 0, false},
+		{"the printed remedy: +1d, closed the next day", at(2026, 9, 11, 17, 20),
+			"2026-09-10", "daily", "+1d", at(2026, 9, 12, 18, 0), eod(2026, 9, 13), 0, false},
+		{"+3d, closed early the same day: the snoozed-to day is the one settled", at(2026, 9, 11, 17, 19),
+			"2026-09-11", "daily", "+3d", at(2026, 9, 11, 17, 30), eod(2026, 9, 15), 0, false},
+		{"snoozed, then late again: the snoozed day is settled, not skipped", at(2026, 9, 11, 17, 20),
+			"2026-09-10", "daily", "2026-09-12T17:20", at(2026, 9, 13, 10, 0), eod(2026, 9, 14), 0, false},
+		{"one afternoon late: tomorrow's, so the next afternoon is on time", at(2026, 9, 10, 12, 0),
+			"2026-09-10", "daily", "", at(2026, 9, 11, 16, 0), eod(2026, 9, 12), 0, false},
+		{"just past midnight settles the new day (deliberate, documented)", at(2026, 9, 10, 12, 0),
+			"2026-09-10", "daily", "", at(2026, 9, 11, 0, 10), eod(2026, 9, 12), 0, false},
+		{"weekly closed three Fridays late: next Friday, two lapsed", at(2026, 8, 21, 12, 0),
+			"2026-08-21", "weekly on fri", "", at(2026, 9, 11, 17, 25), eod(2026, 9, 18), 2, false},
+		{"yearly closed on the anniversary settles this year's", at(2025, 9, 13, 12, 0),
+			"2025-09-13", "yearly", "", at(2026, 9, 13, 16, 2), eod(2027, 9, 13), 0, false},
+		{"a timed series is settled as written: tonight's slot stands", at(2026, 9, 11, 7, 0),
+			"2026-09-10T21:00", "daily", "2026-09-11T08:00", at(2026, 9, 11, 9, 0), at(2026, 9, 11, 21, 0), 0, false},
+		{"a timed series closed late counts the slots that passed", at(2026, 9, 10, 8, 0),
+			"2026-09-10T09:00", "daily", "", at(2026, 9, 11, 16, 0), at(2026, 9, 12, 9, 0), 1, false},
+		{"completion reports what lapsed", at(2026, 9, 11, 17, 20),
+			"2026-09-11", "daily until 2026-09-13", "", at(2026, 9, 15, 17, 0), time.Time{}, 2, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := newRepeatApp(c.bindAt.UTC())
+			task := mustAddRepeating(t, a, "水やり", c.due, c.rule, AddOpts{})
+			if c.snooze != "" {
+				snooze := c.snooze
+				if _, _, err := a.Set(task.ID, SetOpts{Due: &snooze}); err != nil {
+					t.Fatalf("snooze: %v", err)
+				}
+			}
+			a.Clock = &fixedClock{t: c.closeAt.UTC()}
+			_, rep, err := a.moveOne(task.ID, a.Cfg.DoneLane)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rep == nil {
+				t.Fatal("no series report")
+			}
+			if rep.Completed != c.completed {
+				t.Fatalf("completed = %v, want %v (%+v)", rep.Completed, c.completed, rep)
+			}
+			if !c.completed && (rep.Due == nil || !rep.Due.Equal(c.want)) {
+				t.Errorf("next due = %v, want %s", rep.Due, c.want.Format(time.RFC3339))
+			}
+			if rep.Skipped != c.wantSkipped {
+				t.Errorf("skipped = %d, want %d", rep.Skipped, c.wantSkipped)
+			}
+		})
+	}
+}
+
+// The regression no single-close test can see: under the instant rule, one
+// afternoon-late close of a bare-date daily minted a successor due that same
+// night, which the next afternoon's close was late for again — late forever,
+// with a due-overdue error each day. Settling the day heals the chain after
+// the one late close.
+func TestAChainOfAfternoonClosesIsOnTimeAfterOneLateDay(t *testing.T) {
+	at := func(d, h int) time.Time { return time.Date(2026, 9, d, h, 0, 0, 0, jst) }
+	a := newRepeatApp(at(10, 12).UTC())
+	task := mustAddRepeating(t, a, "水やり", "2026-09-10", "daily", AddOpts{})
+	live := func() *core.Task {
+		t.Helper()
+		tasks, err := a.List(QueryOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range tasks {
+			if tasks[i].Repeat != "" {
+				return &tasks[i]
+			}
+		}
+		t.Fatal("no live occurrence")
+		return nil
+	}
+	for day := 11; day <= 14; day++ {
+		now := at(day, 16)
+		a.Clock = &fixedClock{t: now.UTC()}
+		cur := live()
+		late := cur.Due.Before(now)
+		if day > 11 && late {
+			t.Fatalf("day %d: the close is late (due %v) — the chain did not heal", day, cur.Due.In(jst))
+		}
+		if day == 11 && !late {
+			t.Fatalf("day 11 should be the one late close (due %v)", cur.Due.In(jst))
+		}
+		_, rep, err := a.moveOne(cur.ID, a.Cfg.DoneLane)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := time.Date(2026, 9, day+1, 23, 59, 59, 0, jst)
+		if rep == nil || rep.Due == nil || !rep.Due.Equal(want) || rep.Skipped != 0 {
+			t.Fatalf("day %d: report %+v, want next due %s and nothing skipped", day, rep, want.Format(time.RFC3339))
+		}
+	}
+	_ = task
 }

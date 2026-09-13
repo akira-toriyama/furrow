@@ -15,11 +15,13 @@ import (
 // The shape is the SAME whether an occurrence was generated or the series
 // ended, because the alternative — omitting the key at the end — would leave a
 // machine unable to tell "this task does not repeat" (no key at all) from "this
-// was the last occurrence". Created and Due are null exactly when Completed.
+// was the last occurrence". Created and Due are null exactly when Completed;
+// Skipped is reported either way, since a late close is what runs a bounded
+// series out.
 type RepeatReport struct {
 	Created   *string    `json:"created"` // the successor's id; null when the series ended
 	Due       *time.Time `json:"due"`     // the successor's promised instant; null when the series ended
-	Skipped   int        `json:"skipped"` // occurrences that elapsed between this task's due and the next
+	Skipped   int        `json:"skipped"` // occurrences that lapsed between the one this close settled and the close
 	Completed bool       `json:"completed"`
 }
 
@@ -89,27 +91,65 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	// "the first occurrence after now" was handed back TODAY — the very instant
 	// just completed — and the series advanced only when the operator was late.
 	// A daily chore could never be cleared for the day, and a COUNT-bounded one
-	// could never spend its count. Taking the later of the two keeps the late
-	// close jumping past the lapsed cycles, and makes an on-time or early close
-	// advance exactly one step.
-	after := now
-	if t.Due.After(after) {
-		after = *t.Due
+	// could never spend its count.
+	//
+	// What a close settles depends on what the operator promised. A bare-date
+	// series (its anchor sits at 23:59:59 in the board's calendar) promises
+	// DAYS, so the close settles the whole local day of the later of now and
+	// the due: the day the work was done, or the day it was promised for while
+	// that is still ahead. Two failure modes of an instant rule fall out of
+	// that. A snooze (`set --due +1d`, the remedy `due-overdue` itself prints)
+	// lands the due off-lattice at 17:20, and "the first occurrence after
+	// 17:20" was that day's own 23:59:59 point. And a chore closed one
+	// afternoon late got a successor due that same night, which the next
+	// afternoon's close was late for again — every close late, forever, with a
+	// due-overdue ERROR on the board's gate each day. Settling the day heals
+	// the chain after one late close. Its cost is deliberate and documented: a
+	// close just past midnight settles the NEW day, so closing yesterday's
+	// daily at 00:10 consumes today's (re-date the successor with `set <id>
+	// --due <today>` when that is not what was meant).
+	//
+	// A timed series (`--due …T21:00`) promises INSTANTS and is settled as
+	// written: a close at 17:00 must not consume tonight's 21:00, so now stays
+	// an instant there.
+	//
+	// Day boundaries are the board's calendar. On a board that declares none,
+	// WHICH day a close settles depends on the closing machine's zone — the
+	// reason `lint` errors repeat-no-timezone on a shared board.
+	var after, lo, hi time.Time // the search start, and the lapse window (strictly between)
+	if h, m, s := anchor.Clock(); h == 23 && m == 59 && s == 59 {
+		loc := a.loc()
+		dueDay, settledDay := t.Due.In(loc), t.Due.In(loc)
+		if now.After(*t.Due) {
+			settledDay = now.In(loc)
+		}
+		// The wall-clock construction ParseDue binds with — never next-midnight
+		// minus a nanosecond or due+24h-1s, both of which misbehave on the days
+		// a zone skips or repeats an hour.
+		after = time.Date(settledDay.Year(), settledDay.Month(), settledDay.Day(), 23, 59, 59, 0, loc)
+		lo = time.Date(dueDay.Year(), dueDay.Month(), dueDay.Day(), 23, 59, 59, 0, loc)
+		hi = time.Date(settledDay.Year(), settledDay.Month(), settledDay.Day(), 0, 0, 0, 0, loc)
+	} else {
+		after = now
+		if t.Due.After(after) {
+			after = *t.Due
+		}
+		lo, hi = *t.Due, after
+	}
+	// What lapsed while the task sat open: the occurrences strictly between the
+	// one this close settles and the day (or instant) of the close — never the
+	// settled day's own point, never one still ahead. Reported on completion
+	// too, since a late close is exactly what runs a bounded series out.
+	skipped, err := recur.CountBetween(rule, anchor, lo, hi)
+	if err != nil {
+		return nil, nil, core.Validationf(t.ID, "%v", err)
 	}
 	next, ok, err := recur.Next(rule, anchor, after)
 	if err != nil {
 		return nil, nil, core.Validationf(t.ID, "%v", err)
 	}
 	if !ok {
-		return &RepeatReport{Completed: true}, nil, nil
-	}
-
-	// What lapsed while the task sat open: occurrences after the one it was
-	// promised for, before the one it is handing on.
-	from := t.Due.In(a.loc())
-	skipped, err := recur.CountBetween(rule, anchor, from, next)
-	if err != nil {
-		return nil, nil, core.Validationf(t.ID, "%v", err)
+		return &RepeatReport{Completed: true, Skipped: skipped}, nil, nil
 	}
 
 	// `reserved` carries the ids the SAME batch already handed out. uniqueID only
