@@ -252,3 +252,35 @@ func TestLintWarnsAnOrphanRepeatAnchor(t *testing.T) {
 		}
 	})
 }
+
+// A DTSTART cannot get in through `add`/`set` any more, so only a hand-edit or a
+// foreign writer can put one on a shard — and the expander then ignores it
+// forever while the shard keeps claiming it. lint is the only thing that can
+// say so, which is why recur.Valid reads the stored LINE and not the rule the
+// expander built from it.
+func TestLintErrorsAStoredRuleCarryingADtstart(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+	task := mustAddRepeating(t, a, "watering", "2026-03-01", "daily", AddOpts{})
+
+	idx, err := a.Store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bt, _ := idx.Find(task.ID)
+	bt.Repeat = "FREQ=DAILY;DTSTART=20200101T000000Z" // a shard furrow would not write
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+
+	ps, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := problemsWithCode(ps, "repeat-invalid")
+	if len(got) != 1 || got[0].ID != task.ID {
+		t.Fatalf("repeat-invalid findings = %+v, want exactly one on %s", got, task.ID)
+	}
+	if got[0].Severity != core.SevError || !strings.Contains(got[0].Msg, "DTSTART") {
+		t.Errorf("finding = %+v, want an error naming the DTSTART", got[0])
+	}
+}

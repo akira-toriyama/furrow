@@ -186,6 +186,7 @@ func TestRepeatRefusalsAddedAfterReview(t *testing.T) {
 		{"an empty closing note", []string{"done", id, "--note", ""}},
 		{"a sub-daily rule", []string{"add", "z", "--due", "2026-10-01", "--repeat", "FREQ=MINUTELY"}},
 		{"a raw rule that already ends itself, plus a count", []string{"add", "z", "--due", "2026-10-01", "--repeat", "FREQ=MONTHLY;COUNT=3 for 5 times"}},
+		{"a DTSTART on set", []string{"set", id, "--repeat", "FREQ=DAILY;DTSTART=20200101T000000Z"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -281,5 +282,36 @@ func TestApplyDryRunSaysItWouldCreateTheNextOccurrence(t *testing.T) {
 	}
 	if !strings.Contains(out, "would also create the next occurrence") {
 		t.Errorf("the preview reported a close as a plain lane move:\n%s", out)
+	}
+}
+
+// A DTSTART used to be taken at exit 0 and then dropped by the renderer: the
+// task was created carrying a rule the operator did not type. Both spellings are
+// refused as a validation error now, and nothing is created.
+func TestADtstartIsRefusedAtTheDoor(t *testing.T) {
+	initStore(t)
+	for _, spec := range []string{
+		"FREQ=DAILY;DTSTART=20200101T000000Z",
+		"DTSTART:20200101T000000Z\nRRULE:FREQ=DAILY",
+	} {
+		fe, out := runErr(t, "add", "watering", "--due", "2026-10-01", "--repeat", spec)
+		if fe == nil {
+			t.Fatalf("--repeat %q was accepted:\n%s", spec, out)
+		}
+		if fe.Kind != "validation" || !strings.Contains(fe.Msg, "DTSTART") {
+			t.Errorf("--repeat %q failed as %+v, want a validation error naming the DTSTART", spec, fe)
+		}
+	}
+	out, code := run(t, "ls", "--json")
+	if code != 0 {
+		t.Fatalf("ls exit %d: %s", code, out)
+	}
+	// Not a substring check: every task row carries empty arrays of its own.
+	var tasks []struct{}
+	if err := json.Unmarshal([]byte(out), &tasks); err != nil {
+		t.Fatalf("ls --json: %v\n%s", err, out)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("a refused add left %d task(s) behind:\n%s", len(tasks), out)
 	}
 }

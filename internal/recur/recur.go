@@ -23,7 +23,7 @@ import (
 )
 
 // Spellings is the closed vocabulary of short forms, in the order the help
-// lists them. A raw RRULE line is accepted too (see Compile).
+// lists them. A raw RRULE line is accepted too, minus a DTSTART (see Compile).
 var Spellings = []string{
 	"daily",
 	"every <n> days",
@@ -59,9 +59,10 @@ var (
 // Compile turns one operator spelling into the RRULE line furrow stores.
 //
 // Two forms are accepted, deliberately: a short spelling (Spellings) and a raw
-// RRULE line for anything the short grammar cannot say. Either way the result is
-// re-rendered by the library, so what lands on disk is always a rule the
-// expander can read back.
+// RRULE line for anything the short grammar cannot say — except a DTSTART,
+// which is refused: the series start is the task's repeat_anchor. Either way the
+// result is re-rendered by the library, so what lands on disk is always a rule
+// the expander can read back.
 //
 // resolveDate resolves the `until <date>` suffix with furrow's own date rules;
 // it is only called when that suffix is present.
@@ -106,6 +107,13 @@ func Compile(spec string, resolveDate func(string) (time.Time, error)) (string, 
 	if err := refuseSubDaily(opt); err != nil {
 		return "", err
 	}
+	// A DTSTART is the other property furrow cannot honour: RRuleString() drops
+	// it on the way to disk and build() overwrites it with the anchor, so
+	// accepting one would store a rule that silently disagrees with what was
+	// typed. Refusing keeps the promise the shard schema already publishes.
+	if err := refuseDtstart(opt); err != nil {
+		return "", err
+	}
 	if opt.Count < 0 {
 		return "", fmt.Errorf("a count must be a positive whole number, got %d", opt.Count)
 	}
@@ -123,9 +131,6 @@ func Compile(spec string, resolveDate func(string) (time.Time, error)) (string, 
 	return line, nil
 }
 
-// splitTerminator peels a trailing `until <date>` or `for <n> times` off the
-// spelling. RFC 5545 forbids UNTIL and COUNT together, so asking for both is a
-// usage error rather than a silently dropped half.
 // refuseSubDaily rejects everything that would make one rule fire more than once
 // a day, whichever spelling asks for it.
 func refuseSubDaily(opt *rrule.ROption) error {
@@ -143,6 +148,24 @@ func refuseSubDaily(opt *rrule.ROption) error {
 	return nil
 }
 
+// refuseDtstart rejects a DTSTART, in either raw spelling (a `DTSTART=` term of
+// the `;`-list, or a leading `DTSTART:`/`DTSTART;TZID=…` line) — the parsed
+// ROption carries both the same way.
+//
+// furrow's series start is repeat_anchor, the first due, and nothing else: the
+// stored line is rendered without a DTSTART and the expander assigns the anchor
+// over whatever one was parsed. So a DTSTART can only ever be a value furrow
+// took and then ignored, which is the one outcome worse than a refusal.
+func refuseDtstart(opt *rrule.ROption) error {
+	if !opt.Dtstart.IsZero() {
+		return fmt.Errorf("a DTSTART is not accepted in a rule — the series starts at the task's due date, which furrow stores as its repeat_anchor; drop the DTSTART")
+	}
+	return nil
+}
+
+// splitTerminator peels a trailing `until <date>` or `for <n> times` off the
+// spelling. RFC 5545 forbids UNTIL and COUNT together, so asking for both is a
+// usage error rather than a silently dropped half.
 func splitTerminator(spec string, resolveDate func(string) (time.Time, error)) (head string, until time.Time, count int, err error) {
 	head = spec
 	// Case-insensitive, but matched against the ORIGINAL: lowercasing can change
@@ -394,24 +417,51 @@ func Bindable(line string, anchor time.Time) error {
 // rule that stopped parsing (a hand-edited shard, or one written by a furrow
 // that knows a spelling this one does not) would end the series silently.
 func Valid(line string, anchor time.Time) error {
-	r, err := build(line, anchor)
+	// The refusals read the PARSED LINE, never the built rule: build() assigns
+	// the anchor over Dtstart, so a DTSTART check on the built rule would refuse
+	// every rule on the board.
+	opt, err := parseStored(line)
 	if err != nil {
 		return err
 	}
-	// The compile door refuses a sub-daily rule, but a shard furrow did not
-	// write can carry one — and it makes every close of that task expand a
-	// pathological number of occurrences. What Compile refuses, Valid reports.
-	if err := refuseSubDaily(&r.OrigOptions); err != nil {
+	// The compile door refuses a sub-daily rule and a DTSTART, but a shard furrow
+	// did not write can carry either — the first makes every close of that task
+	// expand a pathological number of occurrences, the second stores a start
+	// furrow ignores. What Compile refuses, Valid reports.
+	if err := refuseSubDaily(opt); err != nil {
 		return fmt.Errorf("stored recurrence rule %q: %v", line, err)
+	}
+	if err := refuseDtstart(opt); err != nil {
+		return fmt.Errorf("stored recurrence rule %q: %v", line, err)
+	}
+	if _, err := buildFrom(opt, anchor, line); err != nil {
+		return err
 	}
 	return nil
 }
 
-func build(line string, anchor time.Time) (*rrule.RRule, error) {
+func parseStored(line string) (*rrule.ROption, error) {
 	opt, err := rrule.StrToROption(line)
 	if err != nil {
 		return nil, fmt.Errorf("stored recurrence rule %q does not parse: %v", line, err)
 	}
+	return opt, nil
+}
+
+func build(line string, anchor time.Time) (*rrule.RRule, error) {
+	opt, err := parseStored(line)
+	if err != nil {
+		return nil, err
+	}
+	return buildFrom(opt, anchor, line)
+}
+
+// buildFrom is build's half that does not parse, so Valid can run its refusals
+// on the parsed line and still report the same "not usable" error; line is
+// carried for that message alone.
+func buildFrom(opt *rrule.ROption, anchor time.Time, line string) (*rrule.RRule, error) {
+	// The anchor IS the series start: a DTSTART the line carries is overwritten,
+	// never honoured, which is why both doors (Compile, Valid) refuse one.
 	opt.Dtstart = anchor
 	r, err := rrule.NewRRule(*opt)
 	if err != nil {

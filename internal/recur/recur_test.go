@@ -81,6 +81,12 @@ func TestCompileRefusals(t *testing.T) {
 		{"count spelled wrong", "daily for 3", "`for <n> times`"},
 		{"on with a daily rule", "daily on mon", "only meaningful with a weekly or monthly"},
 		{"raw rule that does not parse", "FREQ=NEVER", "not a usable RRULE line"},
+		{"DTSTART as a term of the rule", "FREQ=DAILY;DTSTART=20200101T000000Z", "DTSTART"},
+		{"DTSTART on its own line", "DTSTART:20200101T000000Z\nRRULE:FREQ=DAILY", "DTSTART"},
+		// TZID=UTC, not a named zone: parseHead upper-cases the whole raw line, and
+		// time.LoadLocation("AMERICA/NEW_YORK") resolves only on a case-insensitive
+		// filesystem — the refusal under test would be a parse error on Linux CI.
+		{"DTSTART with a zone", "DTSTART;TZID=UTC:20200101T083000\nRRULE:FREQ=WEEKLY;BYDAY=MO", "DTSTART"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -270,6 +276,31 @@ func TestSubDailyIsRefusedWhicheverSpellingAsksForIt(t *testing.T) {
 		if err := Valid(spec, anchor); err == nil {
 			t.Errorf("Valid(%q) accepted a stored sub-daily rule — lint would never see it", spec)
 		}
+	}
+}
+
+// A DTSTART furrow accepted would be dropped by the renderer and overwritten by
+// the expander, so the rule on disk would disagree with what was typed. Both
+// doors refuse it — and Valid is the one that can see a hand-edited shard, which
+// is the case the expander ignores in silence forever.
+func TestDtstartIsRefusedAtBothDoors(t *testing.T) {
+	anchor := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, spec := range []string{
+		"FREQ=DAILY;DTSTART=20200101T000000Z",
+		"DTSTART:20200101T000000Z\nRRULE:FREQ=DAILY",
+		"FREQ=MONTHLY;DTSTART=20200101T000000Z;BYMONTHDAY=15",
+	} {
+		if line, err := Compile(spec, nil); err == nil {
+			t.Errorf("Compile(%q) = %q, want a refusal — the DTSTART was dropped", spec, line)
+		}
+		if err := Valid(spec, anchor); err == nil {
+			t.Errorf("Valid(%q) accepted a stored DTSTART — lint would never see it", spec)
+		}
+	}
+	// Valid reads the DTSTART off the LINE, never off build()'s result: build
+	// assigns the anchor to Dtstart, so a check there refuses everything.
+	if err := Valid("FREQ=DAILY", anchor); err != nil {
+		t.Errorf("a plain stored rule was reported invalid: %v", err)
 	}
 }
 
