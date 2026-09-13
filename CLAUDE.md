@@ -216,6 +216,18 @@ user-level config. When you work with any furrow store:
   `repeat_anchor` the rule is expanded from, which is why `set --due +1d` (the
   snooze furrow's own overdue remedy hands you) moves THIS occurrence and never
   re-lattices the series, and why `--clear-due` on a repeating task is exit 2.
+  **The anchor need not LAND on the rule** — `--due <a Friday> --repeat
+  'weekly on mon'` is legal, and RFC 5545 leaves a start not synchronized with
+  its rule undefined (§3.8.5.3) while §3.3.10 teaches the opposite model for
+  COUNT ("the DTSTART property value always counts as the first occurrence").
+  furrow's answer is that an off-lattice anchor is NEVER folded in: it is one
+  live occurrence OUTSIDE the series, so `for <n> times` — which counts lattice
+  SLOTS — hands out n MORE after it, and `--due <a Friday> --repeat 'weekly on
+  mon for 3 times'` is FOUR tasks, not three (the same typing anchored on a
+  Monday is three). The bind-time refusal that catches `for 1 times` on a
+  lattice day ("no occurrence after the first one") therefore does not fire off
+  it. A stderr note says so at bind time and names the rule's own first date —
+  anchor there to fold the first occurrence into the series.
   **Only a CLOSE advances it** — nothing is time-driven, so a repeating task
   never piles up: entering the done lane (via `done`, `move <id> done`, `set -s
   done`, or CI's `apply`) writes the next occurrence in the SAME
@@ -250,9 +262,9 @@ user-level config. When you work with any furrow store:
   just past midnight settles the NEW day, so closing yesterday's daily at
   00:10 consumes today's (re-date the successor with `set <id> --due <today>`
   when that is not what was meant), and `for <n> times`/`until` count lattice
-  SLOTS, so a close that lands on a later slot's day settles that slot too and
-  can spend a bounded series a close early (the receipt says
-  `series complete`);
+  SLOTS — the same counting that makes an off-lattice anchor an extra task,
+  above — so a close that lands on a later slot's day settles that slot too and
+  can spend a bounded series a close early (the receipt says `series complete`);
   `--json` carries `repeat` `{created, due, skipped, completed}` on the envelope
   — always that shape, so "not repeating" (no key) and "last occurrence"
   (`completed`) stay distinct. A day past 28 SKIPS the months that lack it (RFC

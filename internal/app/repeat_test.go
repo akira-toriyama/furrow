@@ -1040,3 +1040,81 @@ func TestSuccessorInheritsTheEpicEvenWhenItIsClosed(t *testing.T) {
 		t.Errorf("closed box still holds %+v — the series left it for good", left)
 	}
 }
+
+// Both bind-time notes are independent facts about the same rule, and the dates
+// they name are read in the BOARD's calendar — a note that resolved them in UTC
+// would print the wrong day on every board whose offset crosses one.
+func TestRepeatWarningsSayTheAnchorIsOffTheLattice(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 9, 14, 5, 0, 0, 0, time.UTC))
+
+	// 2026-09-18 is a Friday; the rule lands on Mondays.
+	off := mustAddRepeating(t, a, "金曜起点", "2026-09-18", "weekly on mon", AddOpts{})
+	ws := a.RepeatWarnings(off)
+	if len(ws) != 1 {
+		t.Fatalf("RepeatWarnings = %q, want exactly the off-lattice note", ws)
+	}
+	if !strings.Contains(ws[0], "not a date this rule lands on") {
+		t.Errorf("note says nothing about the anchor: %q", ws[0])
+	}
+	if !strings.Contains(ws[0], "2026-09-21 23:59 +09:00") {
+		t.Errorf("note does not name the rule's own first date in the board's calendar: %q", ws[0])
+	}
+
+	on := mustAddRepeating(t, a, "月曜起点", "2026-09-21", "weekly on mon", AddOpts{})
+	if ws := a.RepeatWarnings(on); len(ws) != 0 {
+		t.Errorf("an anchor ON the lattice was warned about: %q", ws)
+	}
+
+	// `monthly on 31` anchored on the 15th is both at once: it skips the short
+	// months AND does not land on its own anchor.
+	both := mustAddRepeating(t, a, "両方", "2026-03-15", "monthly on 31", AddOpts{})
+	if ws := a.RepeatWarnings(both); len(ws) != 2 {
+		t.Errorf("RepeatWarnings = %q, want the skip note and the off-lattice note", ws)
+	}
+}
+
+// The anchor is a live occurrence OUTSIDE the series, so COUNT — which bounds
+// the rule's own lattice slots — hands out n MORE after it: `for 3 times`
+// anchored off the lattice is FOUR tasks, where the same rule anchored on it is
+// three (TestABoundedSeriesRunsOut).
+//
+// bite-exempt: characterization. It pins shipped behaviour this change
+// DOCUMENTS rather than changes; the fix that ships with it is the bind-time
+// note, which TestRepeatWarningsSayTheAnchorIsOffTheLattice bites.
+func TestAnOffLatticeAnchorSpendsOneOccurrenceMoreThanTheCount(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 9, 14, 5, 0, 0, 0, time.UTC))
+	// 2026-09-18 is a Friday; the rule lands on Mondays.
+	cur := mustAddRepeating(t, a, "3 回だけ", "2026-09-18", "weekly on mon for 3 times", AddOpts{})
+
+	want := []string{"2026-09-21", "2026-09-28", "2026-10-05"}
+	tasks := 1
+	for i := 0; i <= len(want); i++ {
+		_, rep, err := a.moveOne(cur.ID, a.Cfg.DoneLane)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rep == nil {
+			t.Fatalf("close %d reported nothing about the series", i+1)
+		}
+		if i == len(want) {
+			if !rep.Completed {
+				t.Errorf("close %d = %+v, want the series spent", i+1, rep)
+			}
+			break
+		}
+		if rep.Created == nil {
+			t.Fatalf("close %d ended the series early: %+v", i+1, rep)
+		}
+		if got := rep.Due.In(jst).Format("2006-01-02"); got != want[i] {
+			t.Errorf("successor %d due %s, want %s", i+1, got, want[i])
+		}
+		next, _, gerr := a.Get(*rep.Created)
+		if gerr != nil {
+			t.Fatal(gerr)
+		}
+		cur, tasks = next, tasks+1
+	}
+	if tasks != 4 {
+		t.Errorf("`for 3 times` anchored off the lattice produced %d tasks, want 4 (the anchor plus the rule's 3)", tasks)
+	}
+}

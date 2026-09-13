@@ -393,3 +393,51 @@ func TestYearlyIsNotReportedAsSkipping(t *testing.T) {
 		t.Errorf("a yearly rule anchored on the 31st was reported as skipping (day %d)", day)
 	}
 }
+
+// The anchor is not required to lie on the rule's lattice, and the library does
+// not fold an unsynchronized one in — the case RFC 5545 §3.8.5.3 leaves
+// undefined. OffLattice is how the caller can say so at bind time, rather than
+// letting a `for n times` rule hand out one occurrence more than it reads like.
+func TestOffLatticeReportsTheRulesOwnFirstDate(t *testing.T) {
+	friday := time.Date(2026, 9, 18, 23, 59, 59, 0, jst)
+	monday := time.Date(2026, 9, 21, 23, 59, 59, 0, jst)
+	cases := []struct {
+		name   string
+		spec   string
+		anchor time.Time
+		want   time.Time // zero when the anchor is ON the lattice
+	}{
+		{"weekly on mon anchored on a Friday", "weekly on mon for 3 times", friday, monday},
+		{"weekly on mon anchored on a Monday", "weekly on mon for 3 times", monday, time.Time{}},
+		{"a COUNT of 1 hides the same asymmetry", "weekly on mon for 1 times", friday, monday},
+		{"daily lands on every anchor", "daily", friday, time.Time{}},
+		{"a bare monthly takes the anchor's own day", "monthly", friday, time.Time{}},
+		{"a day-of-month rule anchored elsewhere", "monthly on 31", time.Date(2026, 3, 15, 23, 59, 59, 0, jst), time.Date(2026, 3, 31, 23, 59, 59, 0, jst)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			line, err := Compile(c.spec, nil)
+			if err != nil {
+				t.Fatalf("Compile(%q): %v", c.spec, err)
+			}
+			first, off := OffLattice(line, c.anchor)
+			if off != !c.want.IsZero() {
+				t.Fatalf("OffLattice(%q) = (%s, %v), want off=%v", line, first.Format(time.RFC3339), off, !c.want.IsZero())
+			}
+			if off && !first.Equal(c.want) {
+				t.Errorf("first date = %s, want %s", first.Format(time.RFC3339), c.want.Format(time.RFC3339))
+			}
+		})
+	}
+
+	// A raw RRULE line — the escape hatch for what the short grammar cannot say —
+	// is read exactly the same way.
+	if first, off := OffLattice("FREQ=WEEKLY;BYDAY=MO", friday); !off || !first.Equal(monday) {
+		t.Errorf("OffLattice(raw RRULE) = (%s, %v), want (%s, true)", first.Format(time.RFC3339), off, monday.Format(time.RFC3339))
+	}
+	// A stored rule that no longer parses is `lint`'s finding (repeat-invalid),
+	// not this one's: a note naming no date would say less than silence.
+	if _, off := OffLattice("FREQ=NONSENSE", friday); off {
+		t.Error("an unparseable rule was reported as off-lattice")
+	}
+}
