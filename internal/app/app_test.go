@@ -882,11 +882,11 @@ func TestArchiveCommitsBeforeDeletingBodies(t *testing.T) {
 	ia.Store.Save(idx)
 	ia.Store.SaveBody("t-0001", "# old done\n")
 
-	moved, err := ia.Archive(30, false)
+	rep, err := ia.Archive(30, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(moved) != 1 || moved[0].ID != "t-0001" {
+	if moved := rep.Tasks; len(moved) != 1 || moved[0].ID != "t-0001" {
 		t.Fatalf("expected to archive t-0001, got %+v", moved)
 	}
 	// hot store: task gone from index AND body deleted.
@@ -993,11 +993,11 @@ func TestArchiveRepoScope(t *testing.T) {
 	ia.Store.SaveBody("t-aaa1", "# a\n")
 	ia.Store.SaveBody("t-bbb1", "# b\n")
 
-	moved, err := ia.Archive(30, false, "owner/a")
+	rep, err := ia.Archive(30, false, "owner/a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(moved) != 1 || moved[0].ID != "t-aaa1" {
+	if moved := rep.Tasks; len(moved) != 1 || moved[0].ID != "t-aaa1" {
 		t.Fatalf("repo-scoped archive should move only t-aaa1, got %+v", moved)
 	}
 	hot, _ := ia.Store.Load()

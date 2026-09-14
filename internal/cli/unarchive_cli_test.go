@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
@@ -131,5 +132,56 @@ func TestUnarchiveRestoresAssets(t *testing.T) {
 		if strings.Contains(out, code) {
 			t.Errorf("lint reports %s after the round trip:\n%s", code, out)
 		}
+	}
+}
+
+// archive --json carries the asset half; a file another hot body shows stays
+// in the hot store and is named as kept (t-7hhb).
+func TestArchiveReportsKeptAssets(t *testing.T) {
+	initStore(t)
+	owner := addTask(t, "owner")
+	reader := addTask(t, "reader")
+	src := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(src, []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := run(t, "attach", owner, src, "--json")
+	var att struct {
+		Ref   string `json:"ref"`
+		Asset string `json:"asset"`
+	}
+	if err := json.Unmarshal([]byte(out), &att); err != nil {
+		t.Fatal(err)
+	}
+	run(t, "note", reader, "![shot]("+att.Ref+")")
+	run(t, "done", owner)
+	out, code := run(t, "archive", owner, "--yes", "--json")
+	if code != 0 {
+		t.Fatalf("archive: %s", out)
+	}
+	var rep struct {
+		Assets struct {
+			Copied  []string `json:"copied"`
+			Deleted []string `json:"deleted"`
+			Kept    []struct {
+				Name   string   `json:"name"`
+				HeldBy []string `json:"held_by"`
+			} `json:"kept"`
+		} `json:"assets"`
+	}
+	if err := json.Unmarshal([]byte(out), &rep); err != nil {
+		t.Fatalf("parse: %v\n%s", err, out)
+	}
+	if len(rep.Assets.Copied) != 1 || len(rep.Assets.Deleted) != 0 || len(rep.Assets.Kept) != 1 || rep.Assets.Kept[0].HeldBy[0] != reader {
+		t.Fatalf("assets = %+v", rep.Assets)
+	}
+	dir := os.Getenv(app.EnvDir)
+	for _, p := range []string{att.Asset, filepath.Join("archive", att.Asset)} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
+			t.Errorf("%s must exist: %v", p, err)
+		}
+	}
+	if out, _ := run(t, "lint", "--json"); strings.Contains(out, "asset-missing") {
+		t.Errorf("the reader's link must not dangle:\n%s", out)
 	}
 }

@@ -196,3 +196,48 @@ func TestRmRepeatingSaysSeriesEnds(t *testing.T) {
 		}
 	}
 }
+
+// An asset another body still shows survives rm and the report says so: the
+// human output names the holder, --json carries assets.kept (t-7hhb).
+func TestRmKeepsAssetAnotherBodyShows(t *testing.T) {
+	initStore(t)
+	owner := addTask(t, "owner")
+	reader := addTask(t, "reader")
+	src := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(src, []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code := run(t, "attach", owner, src, "--json")
+	if code != 0 {
+		t.Fatalf("attach: %s", out)
+	}
+	var att struct {
+		Ref string `json:"ref"`
+	}
+	if err := json.Unmarshal([]byte(out), &att); err != nil {
+		t.Fatal(err)
+	}
+	if out, code := run(t, "note", reader, "![shot]("+att.Ref+")"); code != 0 {
+		t.Fatalf("note: %s", out)
+	}
+	out, code = run(t, "rm", owner, "--yes")
+	if code != 0 || !strings.Contains(out, "asset kept in the store: bodies/"+att.Ref+" — still held by "+reader) {
+		t.Fatalf("rm must say what it kept and for whom: exit %d\n%s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv(app.EnvDir), "bodies", att.Ref)); err != nil {
+		t.Fatalf("the reader's file must survive: %v", err)
+	}
+	out, code = run(t, "rm", reader, "--json")
+	var rep struct {
+		Assets struct {
+			Deleted []string `json:"deleted"`
+			Kept    []any    `json:"kept"`
+		} `json:"assets"`
+	}
+	if err := json.Unmarshal([]byte(out), &rep); err != nil || code != 0 {
+		t.Fatalf("preview: exit %d %v\n%s", code, err, out)
+	}
+	if len(rep.Assets.Deleted) != 1 || len(rep.Assets.Kept) != 0 {
+		t.Errorf("the last holder's preview must show the file going: %+v", rep.Assets)
+	}
+}
