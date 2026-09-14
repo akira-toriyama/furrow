@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/internal/core"
 )
 
 // The t-44h4 repro: the task-status bot appends a marker line to a body while
@@ -14,6 +16,16 @@ import (
 // (`bodies/*.md merge=union`, scaffolded by furrow init) must let sync fold
 // both sides together instead of aborting — the whole point is that an
 // append-mostly prose file has no meaningful textual conflict.
+//
+// The bot side MUST go through AppendBody, the helper `apply` really uses: it
+// leaves the shard alone, so only the body diverges on both sides. AddNote on
+// both sides stamps `updated` on each clone with its own wall clock, and the
+// moment the two stamps fall in different seconds (a slow runner crossing a
+// boundary between A's add and B's note) the SHARD conflicts on that one line
+// — the deliberately-unhandled shard race t-44h4 left to the operator, which
+// no union rule covers and which this test is not about. That is how the test
+// flaked on macOS CI (t-gsf3): it passed only while every stamp shared one
+// second.
 func TestSyncUnionMergesConcurrentBodyAppends(t *testing.T) {
 	_, cloneA, cloneB := setupClones(t)
 
@@ -31,8 +43,8 @@ func TestSyncUnionMergesConcurrentBodyAppends(t *testing.T) {
 
 	// A appends the bot's marker line and pushes; B appends a closing note,
 	// then syncs into the collision.
-	if _, err := openBoard(t, cloneA).AddNote(shared.ID, "- 🔗 `furrow#153` merged"); err != nil {
-		t.Fatal(err)
+	if changed, err := openBoard(t, cloneA).AppendBody(shared.ID, "- 🔗 `furrow#153` merged"); err != nil || !changed {
+		t.Fatalf("bot append: changed=%v err=%v", changed, err)
 	}
 	if _, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: []string{shared.ID}}); err != nil {
 		t.Fatal(err)
@@ -43,7 +55,11 @@ func TestSyncUnionMergesConcurrentBodyAppends(t *testing.T) {
 
 	p, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{Bodies: []string{shared.ID}})
 	if err != nil {
-		t.Fatalf("concurrent body appends must union-merge, not conflict: %v", err)
+		var details any
+		if fe := core.AsError(err); fe != nil {
+			details = fe.Details
+		}
+		t.Fatalf("concurrent body appends must union-merge, not conflict: %v (details %v)", err, details)
 	}
 	if !p.Pushed || p.Conflict {
 		t.Errorf("progress = %+v; want pushed=true conflict=false", p)
