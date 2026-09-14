@@ -9,6 +9,27 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// printAssetTransfer renders the asset half of a move or removal report on
+// stdout, under the task lines: each asset that left the source store (gone
+// under `gone`, e.g. "moved to archive/" / "deleted"), and each one the source
+// KEPT — with who still holds it — so a file staying behind is a stated
+// outcome, never a surprise found by `ls`. Silent when nothing was in play.
+func printAssetTransfer(tr app.AssetTransfer, dry bool, gone, source string) {
+	if len(tr.Deleted) == 0 && len(tr.Kept) == 0 {
+		return
+	}
+	keep := "kept"
+	if dry {
+		gone, keep = "would be "+gone, "would be kept"
+	}
+	for _, name := range tr.Deleted {
+		fmt.Fprintf(out, "asset %s: %s\n", gone, core.AssetPath(name))
+	}
+	for _, k := range tr.Kept {
+		fmt.Fprintf(out, "asset %s in %s: %s — still held by %s\n", keep, source, core.AssetPath(k.Name), strings.Join(k.HeldBy, ", "))
+	}
+}
+
 func newArchiveCmd() *cobra.Command {
 	var (
 		olderThan int
@@ -22,7 +43,9 @@ func newArchiveCmd() *cobra.Command {
 			"With one or more <id>s it retires exactly those tasks (each must be in the\n" +
 			"done lane); with no id it sweeps every done task closed more than --older-than\n" +
 			"days ago. Without --yes it only previews what would move (the destructive-op\n" +
-			"guard from the CLI contract).\n\n" +
+			"guard from the CLI contract). A task's attached assets go with it; one that\n" +
+			"another hot body still shows (a repeat successor's, a box's) also STAYS in\n" +
+			"the hot store, and the output says so (`assets` in --json).\n\n" +
 			"The age sweep INHERITS THE BOARD SCOPE, like every read: with no -r it folds\n" +
 			"only the aged done of the repo your ls/next/search are already scoped to. An\n" +
 			"explicit -r (repeatable) swaps that scope; -r '' sweeps the whole board, and\n" +
@@ -46,11 +69,11 @@ func newArchiveCmd() *cobra.Command {
 				if cmd.Flags().Changed("older-than") || cmd.Flags().Changed("repo") {
 					return core.Validationf("", "archive <id>... cannot be combined with --older-than or -r/--repo (those scope the age sweep)")
 				}
-				moved, err := a.ArchiveIDs(args, dry)
+				rep, err := a.ArchiveIDs(args, dry)
 				if err != nil {
 					return err
 				}
-				emitArchive(moved, dry, true, 0, nil)
+				emitArchive(rep, dry, true, 0, nil)
 				return nil
 			}
 			days := a.Cfg.ArchiveOlderThanDays
@@ -61,11 +84,11 @@ func newArchiveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			moved, err := a.Archive(days, dry, repos...)
+			rep, err := a.Archive(days, dry, repos...)
 			if err != nil {
 				return err
 			}
-			emitArchive(moved, dry, false, days, repos)
+			emitArchive(rep, dry, false, days, repos)
 			return nil
 		},
 	}
@@ -79,12 +102,14 @@ func newArchiveCmd() *cobra.Command {
 // For the sweep, days/repos describe the selection and ride along in JSON; a
 // by-id retire omits them (the id list was explicit). Human output previews with
 // "would archive …" on a dry run. Honors --json (indented) and --ndjson (compact).
-func emitArchive(moved []core.Task, dry, byID bool, days int, repos []string) {
-	if moved == nil {
-		moved = []core.Task{} // array shape, never null
-	}
+// The asset half rides along (`assets` in JSON, lines after the tasks): what
+// went into archive/ with them, and what the hot store KEPT because another
+// body still shows it — the one outcome an operator would not expect from
+// "move", so it is never silent.
+func emitArchive(rep *app.ArchiveReport, dry, byID bool, days int, repos []string) {
+	moved := rep.Tasks
 	if jsonMode() {
-		payload := map[string]any{"dry_run": dry, "tasks": moved}
+		payload := map[string]any{"dry_run": dry, "tasks": moved, "assets": rep.Assets}
 		if !byID {
 			if repos == nil {
 				repos = []string{}
@@ -115,6 +140,7 @@ func emitArchive(moved []core.Task, dry, byID bool, days int, repos []string) {
 	for _, t := range moved {
 		fmt.Fprintf(out, "  %s  %s\n", t.ID, t.Title)
 	}
+	printAssetTransfer(rep.Assets, dry, "moved to archive/", "the hot store")
 	if dry && len(moved) > 0 {
 		fmt.Fprintln(out, "re-run with --yes to apply")
 	}

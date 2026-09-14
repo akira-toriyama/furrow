@@ -143,12 +143,12 @@ func TestSearchArchivedReadsTheArchiveBodies(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.Clock = &fixedClock{t: a.Clock.Now().AddDate(0, 0, 60)}
-	moved, err := a.Archive(30, false)
+	rep, err := a.Archive(30, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(moved) != 1 {
-		t.Fatalf("precondition: one task should have been archived, got %d", len(moved))
+	if len(rep.Tasks) != 1 {
+		t.Fatalf("precondition: one task should have been archived, got %d", len(rep.Tasks))
 	}
 
 	hits, err := a.Search(QueryOpts{}, "zulu")

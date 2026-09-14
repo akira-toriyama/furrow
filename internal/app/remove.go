@@ -126,21 +126,24 @@ func uniqueFrom(edges []DepEdge) []string {
 // RemoveTasksReport is `furrow rm`'s result: the targets (as they were) and
 // the references found — refused without Force, severed with it.
 type RemoveTasksReport struct {
-	DryRun     bool        `json:"dry_run"`
-	Force      bool        `json:"force"`
-	Tasks      []core.Task `json:"tasks"`
-	References References  `json:"references"`
+	DryRun     bool          `json:"dry_run"`
+	Force      bool          `json:"force"`
+	Tasks      []core.Task   `json:"tasks"`
+	References References    `json:"references"`
+	Assets     AssetTransfer `json:"assets"` // what goes with the targets, and what stays because another body still shows it
 }
 
 // RemoveEpicReport is `furrow epic rm`'s result.
 type RemoveEpicReport struct {
-	DryRun     bool       `json:"dry_run"`
-	Force      bool       `json:"force"`
-	Epic       *core.Epic `json:"epic"`
-	References References `json:"references"`
+	DryRun     bool          `json:"dry_run"`
+	Force      bool          `json:"force"`
+	Epic       *core.Epic    `json:"epic"`
+	References References    `json:"references"`
+	Assets     AssetTransfer `json:"assets"`
 }
 
-// RemoveTasks deletes the named tasks — shard, body, assets — all-or-nothing:
+// RemoveTasks deletes the named tasks — shard, body, and the assets nothing
+// else still holds (asset_hold.go; the kept ones are in the report) — all-or-nothing:
 // a miss removes nothing (the batch not-found shape, details.missing, with
 // the archived enrichment: an archived id is not removable, unarchive it
 // first). Duplicates collapse. References among the targets themselves do not
@@ -188,7 +191,16 @@ func (a *App) RemoveTasks(ids []string, o RemoveOpts) (*RemoveTasksReport, error
 	}
 	refs.Links = links
 
-	rep := &RemoveTasksReport{DryRun: !o.Apply, Force: o.Force, Tasks: targets, References: refs}
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return nil, err
+	}
+	plan, err := planAssets(a.Store, targetSet, remainingIDs(idx, epics, targetSet))
+	if err != nil {
+		return nil, err
+	}
+	rep := &RemoveTasksReport{DryRun: !o.Apply, Force: o.Force, Tasks: targets, References: refs, Assets: newAssetTransfer()}
+	rep.Assets.Deleted, rep.Assets.Kept = plan.outcome()
 	if !refs.Empty() && !o.Force {
 		return nil, referencedErr(strings.Join(ids, ","), refs)
 	}
@@ -216,10 +228,6 @@ func (a *App) RemoveTasks(ids []string, o RemoveOpts) (*RemoveTasksReport, error
 		}
 		t.Deps = without(t.Deps, targetSet)
 	}
-	assetsByID, err := a.assetsByOwner(targets)
-	if err != nil {
-		return nil, err
-	}
 	for id := range targetSet {
 		idx.Remove(id)
 	}
@@ -233,16 +241,15 @@ func (a *App) RemoveTasks(ids []string, o RemoveOpts) (*RemoveTasksReport, error
 		if err := a.deleteBody(t.ID); err != nil {
 			return nil, err
 		}
-		for _, name := range assetsByID[t.ID] {
-			if err := a.Store.DeleteAsset(name); err != nil {
-				return nil, err
-			}
-		}
+	}
+	if rep.Assets.Deleted, rep.Assets.Kept, err = reapAssets(a.Store, plan); err != nil {
+		return nil, err
 	}
 	return rep, nil
 }
 
-// RemoveEpic deletes one box — shard, body, assets — resolving ref like every
+// RemoveEpic deletes one box — shard, body, and the assets nothing else still
+// holds — resolving ref like every
 // epic command (exact id, unique prefix, unique title substring). Its
 // references are its members (the `epic` field of each), the boxes whose deps
 // name it, and the live [[e-id]] links in any body but its own.
@@ -288,7 +295,12 @@ func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 	}
 	refs.Links = links
 
-	rep := &RemoveEpicReport{DryRun: !o.Apply, Force: o.Force, Epic: e, References: refs}
+	plan, err := planAssets(a.Store, targetSet, remainingIDs(idx, epics, targetSet))
+	if err != nil {
+		return nil, err
+	}
+	rep := &RemoveEpicReport{DryRun: !o.Apply, Force: o.Force, Epic: e, References: refs, Assets: newAssetTransfer()}
+	rep.Assets.Deleted, rep.Assets.Kept = plan.outcome()
 	if !refs.Empty() && !o.Force {
 		return nil, referencedErr(id, refs)
 	}
@@ -331,16 +343,8 @@ func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 	if err := a.deleteBody(id); err != nil {
 		return nil, err
 	}
-	assets, err := a.Store.ListAssets()
-	if err != nil {
+	if rep.Assets.Deleted, rep.Assets.Kept, err = reapAssets(a.Store, plan); err != nil {
 		return nil, err
-	}
-	for _, as := range assets {
-		if strings.HasPrefix(as.Name, id+"-") {
-			if err := a.Store.DeleteAsset(as.Name); err != nil {
-				return nil, err
-			}
-		}
 	}
 	return rep, nil
 }

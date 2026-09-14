@@ -1,6 +1,11 @@
 package cli
 
 import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +26,8 @@ func newUnarchiveCmd() *cobra.Command {
 			"envelope carries `unarchived: true`); --ndjson streams one per line.\n\n" +
 			"A restored task comes back EXACTLY as it was archived: done lane, closed\n" +
 			"stamp, every field preserved (its body and attached assets travel back\n" +
-			"too). Restoring only puts it back on the board — to REOPEN it, follow with\n" +
+			"too; archive/ keeps a copy of any asset an archived body still shows,\n" +
+			"noted on stderr). Restoring only puts it back on the board — to REOPEN it, follow with\n" +
 			"`furrow move <id> <lane>`, which clears `closed` on leaving the done lane.\n" +
 			"No --yes: restoring destroys nothing (the destructive direction, archive,\n" +
 			"keeps its preview guard).",
@@ -34,19 +40,31 @@ func newUnarchiveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return emitMutationManyWith(cmd, a, "unarchived", args,
+			var kept []app.KeptAsset
+			err = emitMutationManyWith(cmd, a, "unarchived", args,
 				func() ([]*core.Task, error) {
-					moved, err := a.Unarchive(args)
+					rep, err := a.Unarchive(args)
 					if err != nil {
 						return nil, err
 					}
-					out := make([]*core.Task, len(moved))
-					for i := range moved {
-						out[i] = &moved[i]
+					kept = rep.Assets.Kept
+					out := make([]*core.Task, len(rep.Tasks))
+					for i := range rep.Tasks {
+						out[i] = &rep.Tasks[i]
 					}
 					return out, nil
 				},
 				func(*core.Task) map[string]any { return map[string]any{"unarchived": true} })
+			if err != nil {
+				return err
+			}
+			// The envelope array is per task; the asset half is per batch, so the
+			// one outcome worth a word — a copy archive/ kept for a body still
+			// there — goes to stderr as a note.
+			for _, k := range kept {
+				fmt.Fprintf(os.Stderr, "note: archive/ kept %s — still held by %s\n", core.AssetPath(k.Name), strings.Join(k.HeldBy, ", "))
+			}
+			return nil
 		},
 	}
 }

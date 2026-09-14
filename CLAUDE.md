@@ -69,9 +69,16 @@ user-level config. When you work with any furrow store:
   all-or-nothing, fields untouched (still done + closed; reopening is
   `move`'s job), body and assets included; every mutator's miss on an
   archived id says so (`details.archived` + the restore command), so the
-  archive is a round trip, not a one-way door. **`rm <id>...` / `epic rm
-  <epic>` DELETE outright** (shard + body + assets; git history is the only
-  way back) — the withdrawal of a filing, never a retirement: archive is for
+  archive is a round trip, not a one-way door. Assets move by ONE rule in
+  both directions and under rm (`internal/app/asset_hold.go`): a store loses
+  a file only when nothing remaining there holds it — no remaining body shows
+  it and no remaining entity owns it — so archiving a repeat predecessor keeps
+  the hot copy its successor's body points at (reported as `assets.kept`),
+  and the copy goes with the LAST holder; ownership alone never decides.
+  **`rm <id>...` / `epic rm
+  <epic>` DELETE outright** (shard + body + the assets nothing else still
+  shows — a file another body shows is kept and reported; git history is the
+  only way back) — the withdrawal of a filing, never a retirement: archive is for
   done work, rm for the record that should not have been filed, and everyday
   parking stays icebox. Preview unless `--yes`, all-or-nothing on a miss. A
   target still referenced — a dep edge, a live `[[id]]` link in any body, a

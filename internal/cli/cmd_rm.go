@@ -11,7 +11,9 @@ import (
 const rmLongTail = "It is NOT `archive`: archive RETIRES done work into .furrow/archive/ and is a\n" +
 	"round trip (`unarchive`); rm WITHDRAWS a record that should not have been\n" +
 	"filed — shard, body, and attached assets are deleted, and nothing brings them\n" +
-	"back but the board repo's git history. Everyday parking is still the icebox\n" +
+	"back but the board repo's git history. An asset another body still shows (a\n" +
+	"successor's, a box's) is KEPT, and the report says so — deleting it would\n" +
+	"blank that body's picture for good. Everyday parking is still the icebox\n" +
 	"lane; rm is the exception for a filing made before the decision was.\n\n" +
 	"Preview unless --yes (the destructive-op guard archive and tidy share). A\n" +
 	"target something still points at is refused — exit 2, kind `referenced`,\n" +
@@ -38,9 +40,10 @@ func newRmCmd() *cobra.Command {
 			"records that the series existed. Preview and apply both say so. It is a\n" +
 			"disclosure, not a refusal: refusing is for a target something still points\n" +
 			"at.\n\n" + rmLongTail + "\n\n" +
-			"--json prints one report: {dry_run, force, tasks, references} — `tasks` as\n" +
-			"they were (a live `repeat` among them is the series this ends), `references`\n" +
-			"what stands (and, with --force, was severed).",
+			"--json prints one report: {dry_run, force, tasks, references, assets} —\n" +
+			"`tasks` as they were (a live `repeat` among them is the series this ends),\n" +
+			"`references` what stands (and, with --force, was severed), `assets` what\n" +
+			"goes ({deleted}) and what stays ({kept: [{name, held_by}]}).",
 		Example: "  furrow rm t-k3m9p                 # preview: what would go, what points at it\n" +
 			"  furrow rm t-k3m9p --yes           # delete (refused while referenced)\n" +
 			"  furrow rm t-k3m9p --force --yes   # sever the references, then delete\n" +
@@ -57,7 +60,7 @@ func newRmCmd() *cobra.Command {
 			}
 			extra := sessionGuardExtra(a)
 			if jsonMode() {
-				payload := map[string]any{"dry_run": rep.DryRun, "force": rep.Force, "tasks": rep.Tasks, "references": rep.References}
+				payload := map[string]any{"dry_run": rep.DryRun, "force": rep.Force, "tasks": rep.Tasks, "references": rep.References, "assets": rep.Assets}
 				emitObject(mergeExtra(payload, extra))
 				return nil
 			}
@@ -67,6 +70,7 @@ func newRmCmd() *cobra.Command {
 			}
 			printSeriesEnd(rep.Tasks, rep.DryRun)
 			printReferences(rep.References, rep.DryRun)
+			printAssetTransfer(rep.Assets, rep.DryRun, "deleted", "the store")
 			if rep.DryRun {
 				fmt.Fprintln(out, "re-run with --yes to apply")
 			}
@@ -85,7 +89,7 @@ func newEpicRmCmd() *cobra.Command {
 		Long: "Delete a box — the record itself, not `epic done`. Its references are its\n" +
 			"members (each task's `epic` field), the boxes whose deps name it, and the live\n" +
 			"[[e-…]] links in any body but its own.\n\n" + rmLongTail + "\n\n" +
-			"--json prints one report: {dry_run, force, epic, references}. An unfiled\n" +
+			"--json prints one report: {dry_run, force, epic, references, assets}. An unfiled\n" +
 			"member is what `lint`'s epic-required then names — refile it with `set -e`.",
 		Example: "  furrow epic rm e-k3m9                 # preview\n" +
 			"  furrow epic rm e-k3m9 --yes           # delete (refused while referenced)\n" +
@@ -102,12 +106,13 @@ func newEpicRmCmd() *cobra.Command {
 			}
 			extra := sessionGuardExtra(a)
 			if jsonMode() {
-				payload := map[string]any{"dry_run": rep.DryRun, "force": rep.Force, "epic": rep.Epic, "references": rep.References}
+				payload := map[string]any{"dry_run": rep.DryRun, "force": rep.Force, "epic": rep.Epic, "references": rep.References, "assets": rep.Assets}
 				emitObject(mergeExtra(payload, extra))
 				return nil
 			}
 			fmt.Fprintf(out, "%s epic\n  %s  %s\n", rmVerb(rep.DryRun), rep.Epic.ID, rep.Epic.Title)
 			printReferences(rep.References, rep.DryRun)
+			printAssetTransfer(rep.Assets, rep.DryRun, "deleted", "the store")
 			if rep.DryRun {
 				fmt.Fprintln(out, "re-run with --yes to apply")
 			}

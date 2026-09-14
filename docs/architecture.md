@@ -734,8 +734,15 @@ A few app-level rules worth stating, all verified against the code:
   did show); the unfiled group exists because a tree that dropped unfiled tasks
   would show fewer tasks than the same flags without `--tree`.
 - **`Archive`** selects done-lane tasks whose `Closed` is older than the cutoff
-  and moves them (shard + body) into the sibling `.furrow/archive/` store (its own
-  `tasks/`, `meta.json`, and `bodies/`).
+  and moves them (shard + body + assets) into the sibling `.furrow/archive/` store
+  (its own `tasks/`, `meta.json`, and `bodies/`). Assets follow the **hold rule**
+  in `asset_hold.go`, shared with `Unarchive`, `RemoveTasks`, and `RemoveEpic`:
+  in play = owned by a leaving entity (the `<id>-` prefix) or shown by a leaving
+  body; held = shown by a remaining body or owned by a remaining entity. A move
+  copies every in-play asset across and the source loses only what nothing
+  remaining holds; a removal deletes only that and keeps the rest, disclosed in
+  the report's `assets`. Planned before any write, applied after both indexes
+  are durable, so an interrupted run converges on retry.
 - **`Unarchive`** is its inverse — the named tasks move back to the hot board
   (shard + body + assets, all-or-nothing, fields untouched: reopening is
   `Move`'s job), with the destination committed before the source is cleaned,
