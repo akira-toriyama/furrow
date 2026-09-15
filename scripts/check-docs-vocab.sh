@@ -486,8 +486,11 @@ self_test
 # word; the command is `ls`) — proof that a shape-less vocabulary cannot carry
 # this direction without crying wolf.
 #
-# CLAUDE.md is claimed first and most: it is the canon an agent reads INSTEAD of
-# the code, so a vocabulary that drifts there misinforms every session. A claim
+# CLAUDE.md is claimed for what it still enumerates (commands, config keys,
+# modes, layouts): it is the canon an agent reads INSTEAD of the code, so a
+# vocabulary that drifts there misinforms every session. The command-contract
+# vocabularies (revisit codes, incoming kinds, lint codes) left it for README
+# and the source, where their claims stand. A claim
 # may also name a SOURCE file — a doc comment that enumerates a vocabulary is the
 # same defect with a shorter blast radius, and it is where the audit's worst
 # instance lived: core.Problem's comment called itself "the closed vocabulary"
@@ -509,28 +512,24 @@ complete|error-kinds||README.md|^- \*\*`kind`\*\*|^- \*\*`retryable`\*\*
 complete|sync-progress-keys||README.md|^.\{committed, pulled, pushed|^failure alike
 complete|sync-progress-keys||docs/architecture.md|^  failure — carries|^  omitted when empty
 complete|commands||docs/non-goals.md|^- \*\*Built and real today\*\*|^  Destructive ops are guarded
-complete|config-keys||CLAUDE.md|^`furrow lint` surfaces\. Read it through `internal/config`|^user-level central-board config
+complete|config-keys||CLAUDE.md|^`furrow lint` surfaces\. Read it through `internal/config`|^### Schema
 complete|config-keys||docs/architecture.md|^Sections and their defaults:|^`status` is just a lane
 complete|config-keys||README.md|^## Configuration|^A board `\[alias\]` names
 complete|modes||CLAUDE.md|^## What this is|^## Build / run
 complete|layouts||CLAUDE.md|^## What this is|^## Build / run
 complete|modes||README.md|^## Two questions, four shapes|^## Quickstart
 complete|layouts||README.md|^## Two questions, four shapes|^## Quickstart
-both|revisit-codes|^[a-z]+(_[a-z]+)+$|CLAUDE.md|`revisit --json` a `revisit` array|^- \*\*Batch reads by id
 both|revisit-codes|^[a-z]+(_[a-z]+)+$|README.md|^- \*\*`revisit`\*\* — read-only|^- \*\*`search`\*\*
 complete|revisit-codes||internal/app/revisit.go|^// Revisit lists open tasks that may need a fresh judgment|^func \(a \*App\) Revisit\(
-both|revisit-summary-keys|^[a-z]+(_[a-z]+)+$|CLAUDE.md|A successful sync also gains a `revisit` key|^- \*\*A shard key this binary
 complete|revisit-summary-keys||internal/app/revisit.go|^// RevisitSummary tallies the loop-visible signals|^func \(a \*App\) RevisitSummary\(
 complete|query-qualifiers||README.md|^- \*\*qualifiers\*\*|^- \*\*presence\*\*
 complete|query-presence||README.md|^- \*\*presence\*\*|^- \*\*computed flags\*\*
 complete|query-is||README.md|^- \*\*computed flags\*\*|^- \*\*free text\*\*
 complete|repeat-spellings||README.md|^- \*\*`add`\*\*|^- \*\*`ls`\*\*
 complete|incoming-kinds||README.md|^`switches` names any `epic activate` records|^$
-complete|incoming-kinds||CLAUDE.md|^  \*\*`incoming`\*\* progress key classifies|^  A successful sync also gains
 complete|incoming-kinds||docs/architecture.md|^  `switches` = the epic activations this sync published|^  sync says WHAT it pulled
 complete|incoming-kinds||docs/glossary.md|^. \*\*sync\*\* .|^## 
 subset|lint-codes|^[a-z]+(-[a-z]+)+$|README.md|^- \*\*`lint`\*\* — every finding carries|^- \*\*`migrate`\*\*
-subset|lint-codes|^[a-z]+(-[a-z]+)+$|CLAUDE.md|a stable kebab-case `code`|^  Mutations \(
 # doctor-codes is registered in `furrow vocab` but deliberately UNCLAIMED: every
 # doc region that names doctor codes (README's doctor bullet, CLAUDE.md's,
 # glossary's) also names `doctor-unhealthy` — an ERROR KIND, kebab-shaped, not a
