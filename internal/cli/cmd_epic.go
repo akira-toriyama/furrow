@@ -138,7 +138,7 @@ func newEpicLsCmd() *cobra.Command {
 					s := o
 					s.Limit = 0
 					if scoped, err := a.EpicList(s); err == nil && len(board) > len(scoped) {
-						fmt.Fprintf(errOut, "%d box(es) outside %s hidden — furrow epic ls -r ''\n", len(board)-len(scoped), resolved)
+						fmt.Fprintf(errOut, "note: %d box(es) outside %s hidden — furrow epic ls -r ''\n", len(board)-len(scoped), resolved)
 					}
 				}
 			}
@@ -157,10 +157,14 @@ func newEpicLsCmd() *cobra.Command {
 }
 
 func newEpicShowCmd() *cobra.Command {
+	var noBody bool
 	cmd := &cobra.Command{
 		Use:   "show <epic>",
 		Short: "Show one epic: goal, meta, progress, member tasks, and its body",
-		Args:  cobra.ExactArgs(1),
+		Long: "Show one epic: goal, meta, progress, member tasks, and its body.\n\n" +
+			"--no-body omits the body (body_text under --json) — the lean metadata read,\n" +
+			"the same switch `furrow show <epic-id> --no-body` honors.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -170,9 +174,10 @@ func newEpicShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return emitEpicDetail(a, d)
+			return emitEpicDetail(a, d, noBody)
 		},
 	}
+	cmd.Flags().BoolVar(&noBody, "no-body", false, "omit the body (body_text under --json)")
 	return cmd
 }
 

@@ -1513,10 +1513,20 @@ type epicMetaView struct {
 	Tasks    []listItemView `json:"tasks"`
 }
 
-func emitEpicDetail(a *app.App, d *app.EpicDetail) error {
+func emitEpicDetail(a *app.App, d *app.EpicDetail, noBody bool) error {
 	if jsonMode() {
+		if noBody {
+			v := toEpicDetailView(d)
+			emitObject(epicMetaView{Epic: v.Epic, Progress: v.Progress, Stuck: v.Stuck, Waiting: v.Waiting, Tasks: v.Tasks})
+			return nil
+		}
 		emitObject(toEpicDetailView(d))
 		return nil
+	}
+	if noBody {
+		lean := *d
+		lean.Body = ""
+		d = &lean
 	}
 	printEpicDetail(a, d)
 	return nil

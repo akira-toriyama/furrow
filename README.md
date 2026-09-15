@@ -283,13 +283,13 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before`, `--expect-updated` |
 | `retitle <id> <title...>` | Rename a task (updates the shard title and the body heading) | `--expect-updated` |
 | `set [<id>...]` | Apply several triage edits at once (lane, priority, value, effort, labels, repos, epic, due, repeat) | `--add-label`, `--add-repo`, `--after`, `--before`, `--clear-due`, `--clear-effort`, `--clear-repeat`, `--clear-value`, `--due`, `--effort`, `-e/--epic`, `--expect-updated`, `-l/--label`, `-p/--priority`, `-q/--query`, `--repeat`, `-r/--repo`, `--rm-label`, `--rm-repo`, `-s/--status`, `--value`, `--yes` |
-| `value <id> <1-5>` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear`, `--expect-updated` |
-| `effort <id> <1-5>` | Set a task's effort estimate (coarse 1..5), or clear it with --clear | `--clear`, `--expect-updated` |
+| `value <id> [<1-5>]` | Set a task's value estimate (coarse 1..5), or clear it with --clear | `--clear`, `--expect-updated` |
+| `effort <id> [<1-5>]` | Set a task's effort estimate (coarse 1..5), or clear it with --clear | `--clear`, `--expect-updated` |
 | `check <id> [item-index]` | Toggle, add, remove, or reword a checklist item | `--add`, `--expect-updated`, `--off`, `--reword`, `--rm` |
 | `dep <id> [<dep-id>...]` | Add/remove a task's dependencies, or list them both ways with --list | `--expect-updated`, `--list`, `--rm` |
 | `epic add <title>` | Create an epic (never active — open it with `epic activate`) | `--body`, `--goal`, `-l/--label`, `--meta`, `-r/--repo` |
 | `epic ls` (alias `list`) | List epics (open only by default), active first | `--all`, `-l/--label`, `-n/--limit`, `-r/--repo` |
-| `epic show <epic>` | Show one epic: goal, meta, progress, member tasks, and its body | — |
+| `epic show <epic>` | Show one epic: goal, meta, progress, member tasks, and its body | `--no-body` |
 | `epic set <epic>` | Edit an epic's title, goal, meta, labels, repos, or its standing/pinned declarations | `--add-label`, `--add-repo`, `--goal`, `--meta`, `--pinned`, `--rm-label`, `--rm-meta`, `--rm-repo`, `--standing`, `--title` |
 | `epic activate <epic>` | Make this the active epic for its repos (at most one each) | `--reason` |
 | `epic deactivate <epic>` | Clear the active flag without closing the epic (suggests where to return) | — |

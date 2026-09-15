@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -40,8 +42,9 @@ func newSchemaCmd() *cobra.Command {
 			"schema for one .furrow/repos/<owner>__<repo>.json review shard; \"epic\" the\n" +
 			"one for .furrow/epics/<id>.json. These are the single source of truth;\n" +
 			"docs/schema/furrow.{task.v2,meta.v2,repo.v1,epic.v2}.json are committed\n" +
-			"copies and CI diffs them so they cannot drift.",
-		Args:      cobra.MaximumNArgs(1),
+			"copies and CI diffs them so they cannot drift. The output is already\n" +
+			"JSON: --json prints the same bytes, --ndjson compacts them to one line.",
+		Args:      cobra.MatchAll(cobra.MaximumNArgs(1), cobra.OnlyValidArgs),
 		ValidArgs: []string{"task", "meta", "repo", "epic"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kind := "task"
@@ -49,19 +52,30 @@ func newSchemaCmd() *cobra.Command {
 				kind = args[0]
 			}
 			// schema consts are already valid JSON text; print verbatim (not via
-			// the JSON encoder) so the bytes match the committed file exactly.
+			// the JSON encoder) so the bytes match the committed file exactly —
+			// under --ndjson, compacted to the one line that mode promises.
+			var doc string
 			switch kind {
 			case "task":
-				fmt.Fprint(out, schema.TaskV2)
+				doc = schema.TaskV2
 			case "meta":
-				fmt.Fprint(out, schema.MetaV2)
+				doc = schema.MetaV2
 			case "repo":
-				fmt.Fprint(out, schema.RepoV1)
+				doc = schema.RepoV1
 			case "epic":
-				fmt.Fprint(out, schema.EpicV2)
+				doc = schema.EpicV2
 			default:
 				return core.Validationf("", "unknown schema kind %q (want \"task\", \"meta\", \"repo\", or \"epic\")", kind)
 			}
+			if flagNDJSON {
+				var b bytes.Buffer
+				if err := json.Compact(&b, []byte(doc)); err != nil {
+					return core.Internalf("", "schema is not valid JSON: %v", err)
+				}
+				fmt.Fprintln(out, b.String())
+				return nil
+			}
+			fmt.Fprint(out, doc)
 			return nil
 		},
 	}

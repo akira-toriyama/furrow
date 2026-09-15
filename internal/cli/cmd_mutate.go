@@ -270,7 +270,7 @@ func newDoneCmd() *cobra.Command {
 			"  furrow done -q 'label:spike status:waiting'        # preview the selection\n" +
 			"  furrow done -q 'label:spike status:waiting' --yes  # close it, one write",
 		Args: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") {
+			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") || cmd.Flags().Changed("yes") {
 				return cobra.ArbitraryArgs(cmd, args) // the id/selector clash gets its own message in guard
 			}
 			return cobra.MinimumNArgs(1)(cmd, args)
@@ -368,7 +368,7 @@ func newMoveCmd() *cobra.Command {
 			"  furrow move -q 'status:inbox no:value' icebox        # preview\n" +
 			"  furrow move -q 'status:inbox no:value' icebox --yes  # one write",
 		Args: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") {
+			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") || cmd.Flags().Changed("yes") {
 				return cobra.MinimumNArgs(1)(cmd, args) // <lane> only; extra ids get guard's message
 			}
 			return cobra.MinimumNArgs(2)(cmd, args)
@@ -562,7 +562,7 @@ func respaceExtra(changes []core.PriorityChange, lane string) map[string]any {
 func newEstimateCmd(name string, set func(*app.App, string, *int) (*core.Task, error), get func(*core.Task) *int) *cobra.Command {
 	var clear bool
 	cmd := &cobra.Command{
-		Use:   name + " <id> <1-5>",
+		Use:   name + " <id> [<1-5>]",
 		Short: "Set a task's " + name + " estimate (coarse 1..5), or clear it with --clear",
 		Long: "Record a coarse 1..5 " + name + " estimate on a task; out-of-range scores are\n" +
 			"clamped into 1..5. With --clear, remove the estimate (back to unset, so intake\n" +
@@ -803,7 +803,7 @@ func newSetCmd() *cobra.Command {
 			"position the task (--priority, or --before/--after a task in the destination\n" +
 			"lane — so a cross-lane drop is lane + position in ONE write), set or clear\n" +
 			"the 1..5 value/effort estimates, add/remove labels, attach/detach repos\n" +
-			"(--add-repo/--rm-repo — Rerepo's strict resolution, so a short name must\n" +
+			"(--add-repo/--rm-repo — the same strict resolution `furrow repo --add` uses, so a short name must\n" +
 			"match exactly one known repo; removing the last repo leaves a first-class\n" +
 			"DRAFT), and file the task under\n" +
 			"an epic (-e), and set or clear the due date (--due/--clear-due, where\n" +
@@ -839,7 +839,7 @@ func newSetCmd() *cobra.Command {
 			"  furrow set -q 'status:inbox label:bug' -e e-v0zd        # preview\n" +
 			"  furrow set -q 'status:inbox label:bug' -e e-v0zd --yes  # one write",
 		Args: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") {
+			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") || cmd.Flags().Changed("yes") {
 				return cobra.ArbitraryArgs(cmd, args) // the id/selector clash gets its own message in guard
 			}
 			return cobra.MinimumNArgs(1)(cmd, args)
