@@ -68,7 +68,11 @@ fi
 # (the thing that broke) does not run at all.
 if command -v goreleaser >/dev/null 2>&1 && command -v syft >/dev/null 2>&1; then
   echo "→ release dry-run (goreleaser snapshot + artifact-shape assertions)"
-  goreleaser release --snapshot --clean --skip=publish,announce >/dev/null
+  # The cask template reads HOMEBREW_TAP_DEPLOY_KEY even under --snapshot; the
+  # dummy mirrors build.yml's, so the dry-run fails only for a real defect
+  # (measured: without it every machine with syft failed here on the template).
+  HOMEBREW_TAP_DEPLOY_KEY="${HOMEBREW_TAP_DEPLOY_KEY:-dry-run-not-a-real-key}" \
+    goreleaser release --snapshot --clean --skip=publish,announce >/dev/null
   sh scripts/check-release-artifacts.sh dist
 else
   echo "→ release dry-run (skipped — needs goreleaser + syft; CI runs it on every PR)"

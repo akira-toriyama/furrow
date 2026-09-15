@@ -658,8 +658,13 @@ Everything is verifiable without a terminal:
   draft and pushed the cask (v0.8.0 shipped broken twice). `build.yml` now runs a
   real `--snapshot` build (with syft, so the `sboms:` pipe actually runs) on every
   PR and asserts the artifact shape with
-  **`scripts/check-release-artifacts.sh`** — every path the attest steps feed to
-  `actions/attest` resolves to a real file (`sbom-path` is NOT glob-expanded), each
+  **`scripts/check-release-artifacts.sh`** — the platform set is read from
+  `.goreleaser.yaml`'s `goos × goarch` (the ONE list; the script and
+  `release.yml` used to hand-copy it), the archives in `dist/` must be exactly
+  that set, every path the attest steps feed to `actions/attest` resolves to a
+  real file (`sbom-path` is NOT glob-expanded), `release.yml` carries an
+  `Attest SBOM` step for each platform and for nothing else (a new goarch goes
+  red here on the PR instead of shipping without an SBOM attestation), each
   SBOM is SPDX-2.3 (the predicate type the READMEs document is derived from it),
   and `checksums.txt` names each archive exactly once as a whole field (a
   substring match also hits the SBOM line). `release.yml` runs the SAME script to
