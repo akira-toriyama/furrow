@@ -55,20 +55,30 @@ func TestLintFlagsConflictMarkerBodyAsError(t *testing.T) {
 	}
 }
 
-// The counterpart: a body that DOCUMENTS what a conflict looks like (inside a
-// fence) is not itself corrupt. An error-severity rule that fired on furrow's own
-// notes about conflict markers would be unusable.
-func TestLintDoesNotFlagFencedMarkerExample(t *testing.T) {
+// The counterpart: a body that DOCUMENTS what a conflict looks like — markers
+// quoted inline or indented, and a bare `=======` even inside a fence, where it
+// is a setext underline — is not itself corrupt. A fence does NOT shelter
+// `<<<<<<<`/`>>>>>>>`: a conflict is exactly what splits a fence, and the
+// all-markers skip went silent on the real thing (t-q5fk).
+func TestLintDoesNotFlagDocumentedMarkerExample(t *testing.T) {
 	a := newApp()
 	task, err := a.Add("notes about conflicts", AddOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := "# notes\n\ngit writes:\n\n```\n<<<<<<< Updated upstream\nours\n=======\ntheirs\n>>>>>>> Stashed changes\n```\n\nthat is all.\n"
+	body := "# notes\n\ngit writes `<<<<<<< Updated upstream`, then:\n\n```\n    <<<<<<< ours\nours\n=======\ntheirs\n    >>>>>>> theirs\n```\n\nthat is all.\n"
 	if err := a.Store.SaveBody(task.ID, body); err != nil {
 		t.Fatal(err)
 	}
 	if found := conflictFindings(t, a); len(found) != 0 {
-		t.Errorf("a fenced example is documentation, not corruption: %v", found)
+		t.Errorf("a documented example is documentation, not corruption: %v", found)
+	}
+
+	fenced := "# notes\n\n```\n<<<<<<< ours\nmine\n=======\ntheirs\n>>>>>>> theirs\n```\n"
+	if err := a.Store.SaveBody(task.ID, fenced); err != nil {
+		t.Fatal(err)
+	}
+	if found := conflictFindings(t, a); len(found) != 1 {
+		t.Errorf("column-0 <<<<<<< / >>>>>>> are a conflict wherever they stand, got %v", found)
 	}
 }

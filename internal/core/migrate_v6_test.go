@@ -197,7 +197,9 @@ func TestRewriteV6Links(t *testing.T) {
 		{"fence is documentation", "before\n```\n[[t-box]]\n```\nafter [[t-box]]", "before\n```\n[[t-box]]\n```\nafter [[e-box]]", 1},
 		{"tilde fence too", "~~~\n[[t-box]]\n~~~\n", "~~~\n[[t-box]]\n~~~\n", 0},
 		{"inline code is documentation", "the `[[t-box]]` notation, but [[t-box]] is real", "the `[[t-box]]` notation, but [[e-box]] is real", 1},
-		{"unterminated span code-quotes the tail", "a [[t-box]] then `broken [[t-box]]", "a [[e-box]] then `broken [[t-box]]", 1},
+		// An unclosed backtick run is ordinary text (CommonMark), so the link
+		// after it is as live as the one before it.
+		{"unterminated run is literal text", "a [[t-box]] then `broken [[t-box]]", "a [[e-box]] then `broken [[e-box]]", 2},
 		{"trailing newline survives", "[[t-box]]\n", "[[e-box]]\n", 1},
 	}
 	for _, tc := range cases {

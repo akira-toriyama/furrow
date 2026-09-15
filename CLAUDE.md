@@ -508,8 +508,11 @@ user-level config. When you work with any furrow store:
   auto-committed (id **`body-conflict-marker`**, exit 2, `details.bodies`
   `[{id, path, lines}]`, nothing committed), because a commit cannot be
   un-published; `furrow lint` flags any that got in already (`conflict-marker`,
-  **error**). A marker inside a fenced code block is documentation, not corruption,
-  and is not flagged.
+  **error**). `<<<<<<<`/`|||||||`/`>>>>>>>` are flagged wherever they stand,
+  fenced or not — no markdown has a use for them, and a conflict is exactly what
+  splits a fence, so a fence skip went silent on the real thing; only the bare
+  `=======` inside a fence is documentation (a setext underline) and not flagged.
+  A body documenting a conflict quotes its markers inline or indents them.
   A sync that pulled says WHAT it pulled, not just `pulled: true`: the
   **`incoming`** progress key classifies the task changes other machines and CI
   wrote — read off the pre-pull vs post-pull shard tree-diff, so your own
