@@ -7,11 +7,8 @@
 
 ## Verification
 
-- [ ] `go build ./...`
-- [ ] `go test -race ./...`
-- [ ] `go vet ./...` + `golangci-lint run`
-- [ ] `sh scripts/check.sh`
-- [ ] Docs updated in this PR (don't leave unfinished work implicit)
+- `sh scripts/check.sh` green (build, vet, golangci, tests, drift guards, smoke).
+- Docs updated in this PR (README + docs/ tier carry the same facts).
 
 ## Notes
 
