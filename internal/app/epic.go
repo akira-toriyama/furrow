@@ -174,7 +174,7 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	idx, err := a.Store.Load()
+	idx, err := a.load()
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +250,7 @@ func (a *App) EpicShow(ref string) (*EpicDetail, error) {
 	for _, d := range e.Deps {
 		deps = append(deps, resolveEpicRef(byID, d))
 	}
-	idx, err := a.Store.Load()
+	idx, err := a.load()
 	if err != nil {
 		return nil, err
 	}
@@ -822,7 +822,7 @@ func (a *App) resolveEpicRepos(repos []string) ([]string, error) {
 // epicRepoUniverse is what a box's repo args resolve against: every task's
 // repos plus the board's (repoUniverse), read in one load.
 func (a *App) epicRepoUniverse() ([]string, error) {
-	idx, err := a.Store.Load()
+	idx, err := a.load()
 	if err != nil {
 		return nil, err
 	}
