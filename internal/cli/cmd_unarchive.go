@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/app"
@@ -62,7 +61,7 @@ func newUnarchiveCmd() *cobra.Command {
 			// one outcome worth a word — a copy archive/ kept for a body still
 			// there — goes to stderr as a note.
 			for _, k := range kept {
-				fmt.Fprintf(os.Stderr, "note: archive/ kept %s — still held by %s\n", core.AssetPath(k.Name), strings.Join(k.HeldBy, ", "))
+				fmt.Fprintf(errOut, "note: archive/ kept %s — still held by %s\n", core.AssetPath(k.Name), strings.Join(k.HeldBy, ", "))
 			}
 			return nil
 		},

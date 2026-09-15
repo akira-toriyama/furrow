@@ -106,20 +106,20 @@ func TestDoneJSONCarriesTheRepeatKey(t *testing.T) {
 // is said once, at bind time, on stderr.
 func TestAddWarnsAboutASkippingDayOfMonth(t *testing.T) {
 	initStore(t)
-	out, code := run(t, "add", "月末", "--due", "2026-03-31", "--repeat", "monthly on 31")
+	out, se, code := runSplit(t, "add", "月末", "--due", "2026-03-31", "--repeat", "monthly on 31")
 	if code != 0 {
 		t.Fatalf("add exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, "does not exist in every month") {
-		t.Errorf("no note about the skipped months:\n%s", out)
+	if !strings.Contains(se, "does not exist in every month") {
+		t.Errorf("no note about the skipped months on stderr:\n%s", se)
 	}
 
-	out, code = run(t, "add", "月末2", "--due", "2026-03-31", "--repeat", "monthly on last")
+	out, se, code = runSplit(t, "add", "月末2", "--due", "2026-03-31", "--repeat", "monthly on last")
 	if code != 0 {
 		t.Fatalf("add exit %d: %s", code, out)
 	}
-	if strings.Contains(out, "does not exist in every month") {
-		t.Errorf("`monthly on last` always lands; it must not be warned about:\n%s", out)
+	if strings.Contains(se, "does not exist in every month") {
+		t.Errorf("`monthly on last` always lands; it must not be warned about:\n%s", se)
 	}
 }
 
@@ -129,17 +129,17 @@ func TestAddWarnsAboutASkippingDayOfMonth(t *testing.T) {
 // with the monthly remedy, which is a rule of another frequency.
 func TestAddWarnsAboutALeapDayRule(t *testing.T) {
 	initStore(t)
-	out, code := run(t, "add", "うるう", "--due", "2028-02-29", "--repeat", "yearly")
+	out, se, code := runSplit(t, "add", "うるう", "--due", "2028-02-29", "--repeat", "yearly")
 	if code != 0 {
 		t.Fatalf("add exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, "February 29 exists only in leap years") {
-		t.Errorf("no note about the skipped years:\n%s", out)
+	if !strings.Contains(se, "February 29 exists only in leap years") {
+		t.Errorf("no note about the skipped years on stderr:\n%s", se)
 	}
-	if !strings.Contains(out, "the next occurrence is 2032-02-29") {
-		t.Errorf("the note does not name the date the rule really lands on:\n%s", out)
+	if !strings.Contains(se, "the next occurrence is 2032-02-29") {
+		t.Errorf("the note does not name the date the rule really lands on:\n%s", se)
 	}
-	if strings.Contains(out, "on last") || strings.Contains(out, "every month") {
+	if strings.Contains(se, "on last") || strings.Contains(se, "every month") {
 		t.Errorf("a yearly rule was handed the monthly remedy:\n%s", out)
 	}
 
@@ -286,16 +286,16 @@ func TestTheBindNoteFollowsTheRuleToTheSuccessor(t *testing.T) {
 	out, code := run(t, "add", "y", "--due", "2026-01-31")
 	id := addedID(t, out, code)
 
-	out, code = run(t, "set", id, "-s", "done", "--repeat", "every 3 months")
+	out, se, code := runSplit(t, "set", id, "-s", "done", "--repeat", "every 3 months")
 	if code != 0 {
 		t.Fatalf("set exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, "does not exist in every month") {
-		t.Errorf("no bind-time note when the rule was bound and closed at once:\n%s", out)
+	if !strings.Contains(se, "does not exist in every month") {
+		t.Errorf("no bind-time note when the rule was bound and closed at once:\n%s", se)
 	}
 	// The remedy must not prescribe a different frequency to someone who wrote
 	// `every 3 months`.
-	if strings.Contains(out, "`monthly on last`") {
+	if strings.Contains(se, "`monthly on last`") {
 		t.Errorf("the note prescribes a monthly rule for an every-3-months one:\n%s", out)
 	}
 }
@@ -584,32 +584,32 @@ func TestAMixedBatchCloseNamesTheRepeatingTask(t *testing.T) {
 func TestBindingAnOffLatticeAnchorSaysSo(t *testing.T) {
 	initStore(t)
 	// 2026-09-18 is a Friday; the rule lands on Mondays.
-	out, code := run(t, "add", "週次", "--due", "2026-09-18", "--repeat", "weekly on mon for 3 times")
+	out, se, code := runSplit(t, "add", "週次", "--due", "2026-09-18", "--repeat", "weekly on mon for 3 times")
 	if code != 0 {
 		t.Fatalf("add exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, "not a date this rule lands on") {
-		t.Errorf("no note about the off-lattice anchor:\n%s", out)
+	if !strings.Contains(se, "not a date this rule lands on") {
+		t.Errorf("no note about the off-lattice anchor on stderr:\n%s", se)
 	}
-	if !strings.Contains(out, "2026-09-21") {
-		t.Errorf("the note does not name the rule's own first date:\n%s", out)
+	if !strings.Contains(se, "2026-09-21") {
+		t.Errorf("the note does not name the rule's own first date:\n%s", se)
 	}
 
-	out, code = run(t, "add", "週次2", "--due", "2026-09-21", "--repeat", "weekly on mon for 3 times")
+	out, se, code = runSplit(t, "add", "週次2", "--due", "2026-09-21", "--repeat", "weekly on mon for 3 times")
 	if code != 0 {
 		t.Fatalf("add exit %d: %s", code, out)
 	}
-	if strings.Contains(out, "not a date this rule lands on") {
-		t.Errorf("an anchor ON the lattice was warned about:\n%s", out)
+	if strings.Contains(se, "not a date this rule lands on") {
+		t.Errorf("an anchor ON the lattice was warned about:\n%s", se)
 	}
 
 	out, code = run(t, "add", "後付け", "--due", "2026-09-18")
 	id := addedID(t, out, code)
-	out, code = run(t, "set", id, "--repeat", "weekly on mon")
+	out, se, code = runSplit(t, "set", id, "--repeat", "weekly on mon")
 	if code != 0 {
 		t.Fatalf("set exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, "not a date this rule lands on") {
-		t.Errorf("`set --repeat` bound an off-lattice anchor silently:\n%s", out)
+	if !strings.Contains(se, "not a date this rule lands on") {
+		t.Errorf("`set --repeat` bound an off-lattice anchor silently:\n%s", se)
 	}
 }

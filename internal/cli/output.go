@@ -26,6 +26,14 @@ var out io.Writer = os.Stdout
 // human-facing notices go here so stdout stays pure data (JSON/table).
 var errOut io.Writer = os.Stderr
 
+// out and errOut are the ONLY writers this package prints through — never
+// cmd.OutOrStdout() / cmd.ErrOrStderr() / os.Stdout / os.Stderr in a command
+// body. Three outlets meant a test harness could redirect two and structurally
+// miss the third: the clamp note `set --value 9` owes the human reader vanished
+// for months while 355 tests stayed green (t-hs4a). The two exceptions are not
+// prints: isTTY asks os.Stdout whether it is a terminal, and `edit` hands the
+// real stdio to $EDITOR.
+
 // mustJSON marshals deterministically (SetEscapeHTML(false), 2-space indent) so
 // CLI JSON output reads in the same byte style core.Marshal* writes a shard in.
 func mustJSON(v any) []byte {

@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 )
@@ -62,11 +60,7 @@ func TestReorderRelativeCLIRespace(t *testing.T) {
 		t.Fatal("seed reorder failed")
 	}
 
-	var se bytes.Buffer
-	errOut = &se
-	defer func() { errOut = os.Stderr }()
-
-	got, code := run(t, "--json", "reorder", c, "--before", b)
+	got, se, code := runSplit(t, "--json", "reorder", c, "--before", b)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, got)
 	}
@@ -86,8 +80,8 @@ func TestReorderRelativeCLIRespace(t *testing.T) {
 	if env.Renumbered[1].ID != b || env.Renumbered[1].From != 11 || env.Renumbered[1].To != 120 {
 		t.Errorf("renumbered[1] = %+v, want %s 11->120", env.Renumbered[1], b)
 	}
-	if !strings.Contains(se.String(), "respaced 2") {
-		t.Errorf("stderr must note the respace, got: %q", se.String())
+	if !strings.Contains(se, "respaced 2") {
+		t.Errorf("stderr must note the respace, got: %q", se)
 	}
 }
 

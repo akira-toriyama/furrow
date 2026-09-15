@@ -110,7 +110,7 @@ func newAddCmd() *cobra.Command {
 			warnClamp("effort", opts.Effort, t.Effort)
 			warnShadowedDraft(a, opts.Draft, len(t.Repos) == 0)
 			noteInheritedEpic(cmd, []core.Task{*t})
-			noteRepeatBinds(cmd, a, []core.Task{*t})
+			noteRepeatBinds(a, []core.Task{*t})
 			printOK("added", t)
 			return nil
 		},
@@ -168,7 +168,7 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 	drafted := len(created) > 0 && len(created[0].Repos) == 0
 	warnShadowedDraft(a, opts.Draft, drafted)
 	noteInheritedEpic(cmd, created)
-	noteRepeatBinds(cmd, a, created)
+	noteRepeatBinds(a, created)
 	return emitTasks(a, created)
 }
 
@@ -177,8 +177,7 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 // lack, an anchor the rule does not land on. Said at BIND time because the
 // alternative is finding out in March, or at the close that hands out one
 // occurrence more than the count.
-func noteRepeatBinds(cmd *cobra.Command, a *app.App, created []core.Task) {
-	errOut := cmd.ErrOrStderr()
+func noteRepeatBinds(a *app.App, created []core.Task) {
 	said := map[string]bool{}
 	for i := range created {
 		for _, w := range a.RepeatWarnings(&created[i]) {

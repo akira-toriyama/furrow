@@ -186,13 +186,20 @@ func emitMutationManyWith(cmd *cobra.Command, a *app.App, verb string, ids []str
 	// one-task stale_read it rides on EVERY envelope: a consumer reading any
 	// element sees it.
 	session := sessionGuardExtra(a)
+	// annotate runs for every task in EVERY mode: its stderr side — the clamp
+	// and respace notes — is the human reader's only disclosure, and gating it
+	// on jsonMode was how `set --value 9` came to round silently while `value 9`
+	// (through emitMutationWith, which always annotates) said so (t-hs4a).
+	extras := make([]map[string]any, len(after))
+	if annotate != nil {
+		for i, t := range after {
+			extras[i] = annotate(t)
+		}
+	}
 	if jsonMode() {
 		envs := make([]any, 0, len(after))
-		for _, t := range after {
-			var extra map[string]any
-			if annotate != nil {
-				extra = annotate(t)
-			}
+		for i, t := range after {
+			extra := extras[i]
 			if t.ID == ids[0] {
 				extra = mergeExtra(extra, stale)
 			}
@@ -301,7 +308,7 @@ func newDoneCmd() *cobra.Command {
 				}, rs.annotate); err != nil {
 					return err
 				}
-				rs.print(cmd.OutOrStdout(), after)
+				rs.print(after)
 				return nil
 			}
 			text, terr := readTextArg(cmd, note)
@@ -328,7 +335,7 @@ func newDoneCmd() *cobra.Command {
 				}); err != nil {
 				return err
 			}
-			rs.print(cmd.OutOrStdout(), after)
+			rs.print(after)
 			return nil
 		},
 	}
@@ -405,7 +412,7 @@ func newMoveCmd() *cobra.Command {
 			}, rs.annotate); err != nil {
 				return err
 			}
-			rs.print(cmd.OutOrStdout(), after)
+			rs.print(after)
 			return nil
 		},
 	}
@@ -985,8 +992,8 @@ func newSetCmd() *cobra.Command {
 					}); err != nil {
 					return err
 				}
-				noteBoundRules(cmd, a, cmd.Flags().Changed("repeat"), closed, rs)
-				rs.print(cmd.OutOrStdout(), closed)
+				noteBoundRules(a, cmd.Flags().Changed("repeat"), closed, rs)
+				rs.print(closed)
 				return nil
 			}
 			// One id still emits a one-element ARRAY (the always-array rule —
@@ -1028,8 +1035,8 @@ func newSetCmd() *cobra.Command {
 			// `set -s done` closes like `done` does, so it owes the same receipt:
 			// without it the successor it just minted is invisible until a later
 			// read, and a machine could not tell it from a task that never repeated.
-			noteBoundRules(cmd, a, cmd.Flags().Changed("repeat"), closed, rs)
-			rs.print(cmd.OutOrStdout(), closed)
+			noteBoundRules(a, cmd.Flags().Changed("repeat"), closed, rs)
+			rs.print(closed)
 			return nil
 		},
 	}
@@ -1218,7 +1225,7 @@ func newRepoCmd() *cobra.Command {
 // will do that was almost certainly not asked for (a skipped month, an anchor
 // off the rule's lattice). Only on an actual bind: re-printing it on every
 // unrelated edit of a repeating task taught the reader to ignore it.
-func noteBoundRules(cmd *cobra.Command, a *app.App, bound bool, tasks []*core.Task, rs *seriesReports) {
+func noteBoundRules(a *app.App, bound bool, tasks []*core.Task, rs *seriesReports) {
 	if !bound {
 		return
 	}
@@ -1240,7 +1247,7 @@ func noteBoundRules(cmd *cobra.Command, a *app.App, bound bool, tasks []*core.Ta
 				continue
 			}
 			said[w] = true
-			fmt.Fprintln(cmd.ErrOrStderr(), w)
+			fmt.Fprintln(errOut, w)
 		}
 	}
 }
@@ -1281,7 +1288,7 @@ func (s *seriesReports) annotate(t *core.Task) map[string]any {
 // the same rule the batch envelopes follow, that the runtime argv length must
 // not fork the output shape. The JSON path already carries the same facts on
 // each envelope.
-func (s *seriesReports) print(out io.Writer, tasks []*core.Task) {
+func (s *seriesReports) print(tasks []*core.Task) {
 	if jsonMode() {
 		return
 	}
