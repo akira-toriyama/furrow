@@ -459,9 +459,11 @@ func machineSyncRel(rel string) bool {
 	case "tasks", "epics", "repos":
 		return strings.HasSuffix(file, ".json") && !strings.Contains(file, "/")
 	case "bodies":
-		// attach's blobs; bodies/*.md is the caller's hand-editable class.
+		// attach's blobs; bodies/*.md is the caller's hand-editable class. A
+		// `.tmp-*` under assets/ is a crashed write's staging file, never a
+		// blob to publish (t-rns9).
 		asset, isAsset := strings.CutPrefix(file, "assets/")
-		return isAsset && !strings.Contains(asset, "/")
+		return isAsset && !strings.Contains(asset, "/") && !strings.HasPrefix(asset, ".tmp-")
 	}
 	return false
 }

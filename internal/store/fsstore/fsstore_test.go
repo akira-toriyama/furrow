@@ -632,3 +632,45 @@ func TestWriteFileAtomicLeavesNoTemp(t *testing.T) {
 		t.Errorf("dir holds %d entries, want the file alone (no temp)", len(entries))
 	}
 }
+
+// A crashed write's staging file under bodies/assets/ is not an asset: listed,
+// it was lint's orphan-asset and sync's machine path — committed (t-rns9).
+func TestListAssetsSkipsStagingFiles(t *testing.T) {
+	s := newStore(t)
+	if _, err := s.SaveAsset("t-0001", "shot.png", []byte("png")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.assetsDir(), ".tmp-crashed"), []byte("half"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	assets, err := s.ListAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assets) != 1 || assets[0].Name != "t-0001-shot.png" {
+		t.Errorf("ListAssets = %+v, want the one real asset", assets)
+	}
+}
+
+// A staged file lands 0644 (CreateTemp's 0600 used to ride the rename, so a
+// board shared between users was unreadable), and a file being replaced keeps
+// the mode it has.
+func TestStagedFilesCarryAReadableMode(t *testing.T) {
+	s := newStore(t)
+	if err := s.SaveBody("t-0001", "one\n"); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(s.root, "bodies", "t-0001.md")
+	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o644 {
+		t.Errorf("new body mode = %o, want 644", fi.Mode().Perm())
+	}
+	if err := os.Chmod(p, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveBody("t-0001", "two\n"); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o640 {
+		t.Errorf("replaced body mode = %o, want the 640 it had", fi.Mode().Perm())
+	}
+}

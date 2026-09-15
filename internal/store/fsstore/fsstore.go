@@ -720,8 +720,8 @@ func (s *Store) ListAssets() ([]core.AssetInfo, error) {
 	}
 	var assets []core.AssetInfo
 	for _, e := range entries {
-		if e.IsDir() {
-			continue
+		if e.IsDir() || strings.HasPrefix(e.Name(), tempPrefix) {
+			continue // a crashed write's staging file is not an asset (t-rns9)
 		}
 		fi, err := e.Info()
 		if err != nil {
@@ -792,6 +792,10 @@ func WriteFileAtomic(path string, data []byte) error {
 	return nil
 }
 
+// tempPrefix names a staging file — what stage creates and what a crash can
+// leave behind; ListAssets and sync's machine-path rule skip it by this prefix.
+const tempPrefix = ".tmp-"
+
 // stagedFile is a fully written, fsynced temp file waiting to be renamed over
 // its target — the half of an atomic write that can fail, split from the half
 // that practically cannot, so SaveBodies can do all of the first before any of
@@ -804,7 +808,7 @@ func (s *Store) stage(path string, data []byte) (stagedFile, error) { return sta
 
 func stage(path string, data []byte) (stagedFile, error) {
 	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".tmp-*")
+	f, err := os.CreateTemp(dir, tempPrefix+"*")
 	if err != nil {
 		return stagedFile{}, core.Internalf("", "create temp in %s: %v", dir, err)
 	}
@@ -819,6 +823,17 @@ func stage(path string, data []byte) (stagedFile, error) {
 	}
 	if err := f.Sync(); err != nil {
 		return fail("fsync", err)
+	}
+	// CreateTemp opens 0600 and the rename carries that over, so every shard
+	// and body a board holds was owner-only — unreadable the moment a board is
+	// shared between users, while the directories above were 0755 (t-rns9).
+	// A file being replaced keeps the mode it has; a new one gets 0644.
+	mode := os.FileMode(0o644)
+	if fi, err := os.Stat(path); err == nil {
+		mode = fi.Mode().Perm()
+	}
+	if err := f.Chmod(mode); err != nil {
+		return fail("chmod", err)
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(tmp)

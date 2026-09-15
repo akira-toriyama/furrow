@@ -800,3 +800,17 @@ func TestSyncCommitCarriesAttributionTrailer(t *testing.T) {
 	}
 	trailerOf()
 }
+
+// A `.tmp-*` under bodies/assets/ is a crashed write's staging file, not a blob
+// sync may publish (t-rns9).
+func TestMachineSyncPathSkipsStagingFiles(t *testing.T) {
+	if machineSyncPath(".furrow", ".furrow/bodies/assets/.tmp-crashed") {
+		t.Error("a staging file under assets/ must not be a machine path")
+	}
+	if !machineSyncPath(".furrow", ".furrow/bodies/assets/t-x-shot.png") {
+		t.Error("a real asset is a machine path")
+	}
+	if machineSyncPath(".furrow", ".furrow/archive/bodies/assets/.tmp-crashed") {
+		t.Error("nor under the archive store")
+	}
+}
