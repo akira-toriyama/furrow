@@ -612,7 +612,7 @@ default, declared by omission), while a board on one machine with no remote sets
 `mode = "standalone"`. Structured metadata lives in
 one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
-(`{"schema_version": 9}`); long-form prose lives in
+(`{"schema_version": 10}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI drives it (CLI-only — any TUI/GUI is a
 separate out-of-repo front-end that speaks the CLI/JSON contract). Go,
