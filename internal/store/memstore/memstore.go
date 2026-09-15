@@ -397,6 +397,21 @@ func (s *Store) SaveBody(id, content string) error {
 	return nil
 }
 
+// SaveBodies is SaveBody over a batch — trivially all-or-nothing in memory,
+// which is the contract fsstore's two-phase write approximates.
+func (s *Store) SaveBodies(bodies map[string]string) error {
+	if len(bodies) == 0 {
+		return nil
+	}
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+	for id, content := range bodies {
+		s.bodies[id] = content
+	}
+	return nil
+}
+
 func (s *Store) BodyExists(id string) bool {
 	_, ok := s.bodies[id]
 	return ok

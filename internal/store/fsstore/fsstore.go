@@ -562,6 +562,51 @@ func (s *Store) SaveBody(id, content string) error {
 	return s.atomicWrite(s.bodyPath(id), []byte(content))
 }
 
+// SaveBodies writes every body in two phases — stage each one to a temp file
+// (the part that can fail: space, permissions), then rename them all — so a
+// staging failure leaves no body changed and no temp behind. See the port doc
+// for why a loop of SaveBody was not that. Keys are written in sorted order,
+// which is only for determinism of which failure is reported first.
+func (s *Store) SaveBodies(bodies map[string]string) error {
+	if len(bodies) == 0 {
+		return nil
+	}
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(s.bodiesDir(), 0o755); err != nil {
+		return core.Internalf("", "create bodies/: %v", err)
+	}
+	ids := make([]string, 0, len(bodies))
+	for id := range bodies {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	staged := make([]stagedFile, 0, len(ids))
+	committed := false
+	defer func() {
+		if !committed {
+			for _, f := range staged {
+				_ = os.Remove(f.tmp)
+			}
+		}
+	}()
+	for _, id := range ids {
+		f, err := s.stage(s.bodyPath(id), []byte(bodies[id]))
+		if err != nil {
+			return err
+		}
+		staged = append(staged, f)
+	}
+	for _, f := range staged {
+		if err := os.Rename(f.tmp, f.path); err != nil {
+			return core.Internalf("", "rename temp -> %s: %v", f.path, err)
+		}
+	}
+	committed = true
+	return nil
+}
+
 // BodyExists reports whether bodies/<id>.md is present.
 func (s *Store) BodyExists(id string) bool {
 	_, err := os.Stat(s.bodyPath(id))
@@ -726,26 +771,46 @@ func (s *Store) NextID() (string, error) {
 // atomicWrite writes data to a temp file in the destination directory, fsyncs,
 // and renames over the target — atomic on a single filesystem.
 func (s *Store) atomicWrite(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".tmp-*")
+	f, err := s.stage(path, data)
 	if err != nil {
-		return core.Internalf("", "create temp in %s: %v", dir, err)
+		return err
 	}
-	tmp := f.Name()
-	defer func() { _ = os.Remove(tmp) }() // no-op once the rename succeeds
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		return core.Internalf("", "write temp: %v", err)
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return core.Internalf("", "fsync temp: %v", err)
-	}
-	if err := f.Close(); err != nil {
-		return core.Internalf("", "close temp: %v", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := os.Rename(f.tmp, f.path); err != nil {
+		_ = os.Remove(f.tmp)
 		return core.Internalf("", "rename temp -> %s: %v", path, err)
 	}
 	return nil
+}
+
+// stagedFile is a fully written, fsynced temp file waiting to be renamed over
+// its target — the half of an atomic write that can fail, split from the half
+// that practically cannot, so SaveBodies can do all of the first before any of
+// the second.
+type stagedFile struct{ tmp, path string }
+
+// stage writes data to a temp file beside path and fsyncs it. The temp is the
+// caller's to rename or remove.
+func (s *Store) stage(path string, data []byte) (stagedFile, error) {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return stagedFile{}, core.Internalf("", "create temp in %s: %v", dir, err)
+	}
+	tmp := f.Name()
+	fail := func(what string, err error) (stagedFile, error) {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return stagedFile{}, core.Internalf("", "%s temp: %v", what, err)
+	}
+	if _, err := f.Write(data); err != nil {
+		return fail("write", err)
+	}
+	if err := f.Sync(); err != nil {
+		return fail("fsync", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return stagedFile{}, core.Internalf("", "close temp: %v", err)
+	}
+	return stagedFile{tmp: tmp, path: path}, nil
 }

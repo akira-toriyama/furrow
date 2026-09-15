@@ -1542,11 +1542,23 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 		reports[id] = rep
 		successors = append(successors, succ)
 	}
-	// The generated prose and attachments land BEFORE any note does: writing them
-	// is the only step left that can fail, and a note is not idempotent — a
-	// failure after one had landed would leave it on the body and duplicate it on
-	// every retry.
-	if err := a.writeSuccessorFiles(successors); err != nil {
+	// Every body this close writes — the generated successors' and the note on
+	// each closed task — is composed first and lands in ONE store write: a note
+	// is not idempotent, so a per-id loop that failed on the third body left the
+	// first two annotated, closed nothing, and duplicated them on the retry
+	// (t-5n2x). The prose is the only step left that can fail; after it, the
+	// index write is all-or-nothing on its own.
+	bodies := successorBodies(successors)
+	if note != "" {
+		for _, id := range order {
+			next, err := a.appendedBody(id, note)
+			if err != nil {
+				return nil, nil, err
+			}
+			bodies[id] = next
+		}
+	}
+	if err := a.saveBodies(bodies); err != nil {
 		return nil, nil, err
 	}
 	for _, id := range order {
@@ -1557,11 +1569,6 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 		}
 		if reports[id] != nil {
 			consumeRepeat(t)
-		}
-		if note != "" {
-			if err := a.appendBody(id, note); err != nil {
-				return nil, nil, err
-			}
 		}
 		a.applyLane(t, lane)
 		// A note is prose: it changed the task's content without touching the
@@ -1657,10 +1664,14 @@ func (a *App) DoneNote(id, note string) (*core.Task, error) {
 	if rep != nil {
 		consumeRepeat(t)
 	}
-	if err := a.writeSuccessorFiles([]*pendingSuccessor{succ}); err != nil {
+	// The successor's body and the note, in one write (moveMany's rule).
+	bodies := successorBodies([]*pendingSuccessor{succ})
+	next, err := a.appendedBody(id, note)
+	if err != nil {
 		return nil, err
 	}
-	if err := a.appendBody(id, note); err != nil {
+	bodies[id] = next
+	if err := a.saveBodies(bodies); err != nil {
 		return nil, err
 	}
 	a.applyLane(t, a.Cfg.DoneLane)
@@ -2769,9 +2780,20 @@ func normalizeBody(id, text string) (string, error) {
 // existing content by exactly one blank line, whatever the body's current
 // trailing whitespace.
 func (a *App) appendBody(id, text string) error {
-	body, err := a.Store.LoadBody(id)
+	next, err := a.appendedBody(id, text)
 	if err != nil {
 		return err
+	}
+	return a.saveBody(id, next)
+}
+
+// appendedBody composes what appendBody would write — the body with text as a
+// new paragraph — without writing it, so a batch can compose every body first
+// and land them all in one SaveBodies.
+func (a *App) appendedBody(id, text string) (string, error) {
+	body, err := a.Store.LoadBody(id)
+	if err != nil {
+		return "", err
 	}
 	var b strings.Builder
 	b.WriteString(body)
@@ -2785,7 +2807,7 @@ func (a *App) appendBody(id, text string) error {
 	}
 	b.WriteString(text)
 	b.WriteString("\n")
-	return a.saveBody(id, b.String())
+	return b.String(), nil
 }
 
 // markBodyTouched records that this process created, modified, or deleted the
@@ -2809,6 +2831,19 @@ func (a *App) saveBody(id, body string) error {
 		return err
 	}
 	a.markBodyTouched(id)
+	return nil
+}
+
+// saveBodies is saveBody over a batch, through the store's one-step write: a
+// failure leaves every body as it was (see core.Store.SaveBodies), which is
+// what lets a batch close carry a note without breaking all-or-nothing.
+func (a *App) saveBodies(bodies map[string]string) error {
+	if err := a.Store.SaveBodies(bodies); err != nil {
+		return err
+	}
+	for id := range bodies {
+		a.markBodyTouched(id)
+	}
 	return nil
 }
 
