@@ -292,19 +292,33 @@ type resolution struct {
 // reported would itself depend on the directory you ran from.
 func applyBoardScope(res *resolution, cfg *config.Config) []string {
 	repo := cfg.DefaultRepo
-	switch {
-	case repo == "":
+	if repo == "" {
 		return nil
-	case repo == "auto":
-		return []string{fmt.Sprintf("default_repo %q is not usable in a board config (it is committed and shared, so a derived repo would differ per checkout); ignored (use a literal owner/repo)", repo)}
-	case !core.IsRepoShaped(repo):
-		return []string{fmt.Sprintf("default_repo %q is not owner/repo-shaped; ignored", repo)}
+	}
+	if w := defaultRepoWarning(repo); w != "" {
+		return []string{w}
 	}
 	if res.ScopeDeclared {
 		return nil // a nearer arm already answered the scope question
 	}
 	res.DefaultRepo, res.AutoFilter = repo, true
 	return nil
+}
+
+// defaultRepoWarning is the clamp the app layer applies to `default_repo` —
+// config stores it verbatim because core.IsRepoShaped lives here. It is ONE
+// function because `config set` must ask the same question before writing:
+// its regression guard compared only config's own warnings, so `config set
+// default_repo notarepo` was exit 0 and wrote a value the next read clamped
+// away (t-ge22). "" = the value is usable.
+func defaultRepoWarning(repo string) string {
+	switch {
+	case repo == "auto":
+		return fmt.Sprintf("default_repo %q is not usable in a board config (it is committed and shared, so a derived repo would differ per checkout); ignored (use a literal owner/repo)", repo)
+	case !core.IsRepoShaped(repo):
+		return fmt.Sprintf("default_repo %q is not owner/repo-shaped; ignored", repo)
+	}
+	return ""
 }
 
 // discover finds the store: FURROW_DIR if set (no scope injection), else walk up
@@ -608,11 +622,11 @@ func InitAt(fdir string) (*App, error) {
 	if err := os.MkdirAll(filepath.Join(fdir, "bodies"), 0o755); err != nil {
 		return nil, core.Internalf("", "create %s: %v", fdir, err)
 	}
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(config.Template), 0o644); err != nil {
-		return nil, core.Internalf("", "write config.toml: %v", err)
+	if err := fsstore.WriteFileAtomic(filepath.Join(fdir, "config.toml"), []byte(config.Template)); err != nil {
+		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(fdir, ".gitattributes"), []byte(GitAttributesTemplate), 0o644); err != nil {
-		return nil, core.Internalf("", "write .gitattributes: %v", err)
+	if err := fsstore.WriteFileAtomic(filepath.Join(fdir, ".gitattributes"), []byte(GitAttributesTemplate)); err != nil {
+		return nil, err
 	}
 	a, err := openAt(fdir)
 	if err != nil {

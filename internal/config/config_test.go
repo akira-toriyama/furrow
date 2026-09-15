@@ -443,3 +443,20 @@ func TestLoadBytesSalvagesWrongTypedKeys(t *testing.T) {
 		t.Error("malformed TOML must stay a hard error")
 	}
 }
+
+// A table defined twice is malformed TOML and stays fatal. The salvaging
+// decoder used to blank the second header line as if it were a wrong-typed
+// key: the keys under it then fell into whatever table stood above, so a
+// stray second `[lanes]` at the end of the template turned `default = "nope"`
+// into the alias `default` — runnable — while the warning blamed a key path
+// that does not exist (t-ge22).
+func TestDuplicateTableIsFatal(t *testing.T) {
+	doc := "[lanes]\ndefault = \"inbox\"\n\n[alias]\nx = \"ls\"\n\n[lanes]\ndefault = \"nope\"\n"
+	c, warn, err := LoadBytes([]byte(doc), "config.toml")
+	if err == nil {
+		t.Fatalf("a duplicate [lanes] must be a hard error, got config %+v warnings %q", c, warn)
+	}
+	if !strings.Contains(err.Error(), ":7:") || !strings.Contains(err.Error(), "[lanes]") || !strings.Contains(err.Error(), "twice") {
+		t.Errorf("the error must name the line and the table: %v", err)
+	}
+}

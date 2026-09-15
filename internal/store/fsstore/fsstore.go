@@ -771,7 +771,17 @@ func (s *Store) NextID() (string, error) {
 // atomicWrite writes data to a temp file in the destination directory, fsyncs,
 // and renames over the target — atomic on a single filesystem.
 func (s *Store) atomicWrite(path string, data []byte) error {
-	f, err := s.stage(path, data)
+	return WriteFileAtomic(path, data)
+}
+
+// WriteFileAtomic is the store's tmp+fsync+rename write for the files that
+// live beside the shards but are not shards — config.toml, .gitattributes,
+// the user-level config. They were written with os.WriteFile, which truncates
+// first: a crash between truncate and write left a half TOML that config.Load
+// refuses outright, so `furrow board` could not even open the board that had
+// just been edited (t-ge22).
+func WriteFileAtomic(path string, data []byte) error {
+	f, err := stage(path, data)
 	if err != nil {
 		return err
 	}
@@ -790,7 +800,9 @@ type stagedFile struct{ tmp, path string }
 
 // stage writes data to a temp file beside path and fsyncs it. The temp is the
 // caller's to rename or remove.
-func (s *Store) stage(path string, data []byte) (stagedFile, error) {
+func (s *Store) stage(path string, data []byte) (stagedFile, error) { return stage(path, data) }
+
+func stage(path string, data []byte) (stagedFile, error) {
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {

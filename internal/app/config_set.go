@@ -9,6 +9,7 @@ import (
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/store/fsstore"
 )
 
 // ConfigEdit is `furrow config set`'s report: which file, which key, what the
@@ -114,9 +115,20 @@ func ConfigSetUser(boardRef, dotted, value string) (*ConfigEdit, error) {
 	return finishConfigEdit(path, dotted, typed, res)
 }
 
+// boardWarnings is every warning a READ of this document would raise: the
+// config layer's clamps plus the app layer's (default_repo's shape), so the
+// regression guard refuses exactly what a read would ignore.
 func boardWarnings(data []byte, path string) ([]string, error) {
-	_, warn, err := config.LoadBytes(data, path)
-	return warn, err
+	cfg, warn, err := config.LoadBytes(data, path)
+	if err != nil {
+		return warn, err
+	}
+	if cfg.DefaultRepo != "" {
+		if w := defaultRepoWarning(cfg.DefaultRepo); w != "" {
+			warn = append(warn, w)
+		}
+	}
+	return warn, nil
 }
 
 func userWarnings(data []byte, path string) ([]string, error) {
@@ -169,8 +181,8 @@ func finishConfigEdit(path, dotted string, typed any, res config.SetResult) (*Co
 	if res.Unchanged {
 		return edit, nil
 	}
-	if err := os.WriteFile(path, []byte(res.Doc), 0o644); err != nil {
-		return nil, core.Internalf("config", "write %s: %v", path, err)
+	if err := fsstore.WriteFileAtomic(path, []byte(res.Doc)); err != nil {
+		return nil, err
 	}
 	edit.Changed = []string{dotted}
 	return edit, nil

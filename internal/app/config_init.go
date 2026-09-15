@@ -7,6 +7,7 @@ import (
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/store/fsstore"
 )
 
 // GlobalConfigPath returns the resolved path to the user-level furrow config
@@ -73,8 +74,8 @@ func InitGlobalConfig(startDir, flagPath string, flagScopes []string) (string, b
 	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
 		return "", false, core.Internalf("", "create config dir: %v", err)
 	}
-	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
-		return "", false, core.Internalf("", "write %s: %v", cfgPath, err)
+	if err := fsstore.WriteFileAtomic(cfgPath, []byte(content)); err != nil {
+		return "", false, err
 	}
 	return cfgPath, boardPath != "", nil
 }

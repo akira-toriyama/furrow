@@ -1155,7 +1155,14 @@ dangling-link check read it, so the two features can never drift.
 The policy is **clamp-don't-reject**: unknown keys are ignored (go-toml/v2
 default), out-of-range values fall back to a safe default, and each correction is
 collected as a warning that `furrow lint` surfaces. A *missing* file yields the
-built-in defaults with no warnings; only *malformed TOML* is an error.
+built-in defaults with no warnings; only *malformed TOML* is an error — and a
+table defined twice counts as malformed: the salvaging decoder blanks a
+wrong-typed KEY's line and re-reads, but a blanked table header would hand the
+keys under it to the table above (a stray second `[lanes]` once turned
+`default = "nope"` into a runnable alias), so it is refused, naming the line.
+The writers — `furrow init`, `furrow config init`, `furrow config set` — land
+the file with the store's tmp+rename write, so a crash mid-write never leaves
+a half TOML that `furrow board` cannot open.
 
 Sections and their defaults:
 `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`, `[archive]`, `[lint]`,
