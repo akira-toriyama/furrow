@@ -68,20 +68,10 @@ func repoOfGitDir(gitDir string) (string, bool) {
 // entry (a dir for a normal repo, a file for a worktree/submodule). Returns
 // ("", false) when no git repo encloses startDir.
 func nearestGitDir(startDir string) (string, bool) {
-	dir, err := filepath.Abs(startDir)
-	if err != nil {
-		return "", false
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			return dir, true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", false
-		}
-		dir = parent
-	}
+	return walkUp(startDir, func(dir string) bool {
+		_, err := os.Stat(filepath.Join(dir, ".git")) // a dir, or a worktree's gitdir file
+		return err == nil
+	})
 }
 
 // originRepo derives owner/repo from repoDir's git config: locate the config

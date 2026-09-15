@@ -85,19 +85,9 @@ func InitGlobalConfig(startDir, flagPath string, flagScopes []string) (string, b
 // ok=false when none encloses startDir. `furrow config init` uses it to derive
 // the central board path from context.
 func nearestFurrow(startDir string) (string, bool) {
-	dir, err := filepath.Abs(startDir)
-	if err != nil {
+	dir, ok := walkUp(startDir, func(dir string) bool { return isDir(filepath.Join(dir, DirName)) })
+	if !ok {
 		return "", false
 	}
-	for {
-		cand := filepath.Join(dir, DirName)
-		if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
-			return cand, true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", false
-		}
-		dir = parent
-	}
+	return filepath.Join(dir, DirName), true
 }
