@@ -16,7 +16,8 @@ func vocabLines(t *testing.T, args ...string) []string {
 	if code != 0 {
 		t.Fatalf("vocab %v exit = %d, want 0:\n%s", args, code, out)
 	}
-	return strings.Fields(out)
+	// One member per LINE is the contract (a repeat spelling carries spaces).
+	return strings.Split(strings.TrimRight(out, "\n"), "\n")
 }
 
 // With no argument, vocab lists every registered vocabulary name — the app

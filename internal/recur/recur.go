@@ -594,11 +594,19 @@ type Skip struct {
 // January, so it is silent; `FREQ=MONTHLY;BYMONTH=2;BYMONTHDAY=29` fires only
 // on February 29 and skips years like any other leap-day rule. A frequency test
 // would get both backwards.
-func Skips(line string, anchor time.Time) (Skip, bool) {
+//
+// loc is the board's calendar, as for Next/Valid/OffLattice: the day a rule
+// lands on is a wall-clock fact, and an anchor handed over in UTC — how the
+// shard stores it — reads as the NEXT day east of Greenwich after 23:59:59,
+// so `monthly on 31` anchored on a local January 31 asked about February 1 and
+// went silent. Skips used to be the one sibling that left the conversion to
+// its caller (t-ax4c).
+func Skips(line string, anchor time.Time, loc *time.Location) (Skip, bool) {
 	opt, err := rrule.StrToROption(line)
 	if err != nil {
 		return Skip{}, false
 	}
+	anchor = anchor.In(calendar(loc))
 	day, ok := namedDay(opt, anchor)
 	if !ok {
 		return Skip{}, false

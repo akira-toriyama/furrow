@@ -135,11 +135,11 @@ func TestMonthlyOn31SkipsShortMonths(t *testing.T) {
 		cur = next
 	}
 
-	if skip, ok := Skips(line, anchor); !ok || skip.Day != 31 || skip.Period != Months {
+	if skip, ok := Skips(line, anchor, jst); !ok || skip.Day != 31 || skip.Period != Months {
 		t.Errorf("Skips = (%+v, %v), want ({31 Months}, true) so the CLI can say so at bind time", skip, ok)
 	}
 	lastLine, _ := Compile("monthly on last", nil)
-	if _, ok := Skips(lastLine, anchor); ok {
+	if _, ok := Skips(lastLine, anchor, jst); ok {
 		t.Error("`monthly on last` always lands; it must not be reported as skipping")
 	}
 }
@@ -467,12 +467,36 @@ func TestSkipsSeesTheAnchorsDay(t *testing.T) {
 		t.Fatal(err)
 	}
 	onThe31st := time.Date(2026, 1, 31, 23, 59, 59, 0, jst)
-	if skip, ok := Skips(line, onThe31st); !ok || skip.Day != 31 || skip.Period != Months {
+	if skip, ok := Skips(line, onThe31st, jst); !ok || skip.Day != 31 || skip.Period != Months {
 		t.Errorf("Skips(bare monthly, anchored on the 31st) = (%+v, %v), want ({31 Months}, true)", skip, ok)
 	}
 	onThe15th := time.Date(2026, 1, 15, 23, 59, 59, 0, jst)
-	if _, ok := Skips(line, onThe15th); ok {
+	if _, ok := Skips(line, onThe15th, jst); ok {
 		t.Error("a rule anchored on the 15th lands every month; it must not be warned about")
+	}
+}
+
+// The anchor arrives in whatever zone the caller holds it in — UTC, as the
+// shard stores it — and the day it names is a fact of the BOARD's calendar.
+// A local January 31 at 23:59:59 in a zone west of Greenwich is February 1 in
+// UTC; a rule that names its day (`monthly on 31`) never looked at the anchor,
+// but the BARE `monthly` reads the anchor's day and went silent on that UTC
+// instant (measured on the pre-change tree, t-ax4c). The sibling functions
+// already took loc, and now so does this one.
+func TestSkipsReadsTheAnchorInTheBoardsCalendar(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("tzdata unavailable")
+	}
+	line, _ := Compile("monthly on 31", nil)
+	local := time.Date(2026, 1, 31, 23, 59, 59, 0, ny)
+	utc := local.UTC() // 2026-02-01T04:59:59Z
+	if skip, ok := Skips(line, utc, ny); !ok || skip.Day != 31 || skip.Period != Months {
+		t.Errorf("Skips(UTC anchor, board zone New York) = (%+v, %v), want ({31 Months}, true)", skip, ok)
+	}
+	bare, _ := Compile("monthly", nil)
+	if skip, ok := Skips(bare, utc, ny); !ok || skip.Day != 31 {
+		t.Errorf("a bare monthly anchored on the local 31st must be read as the 31st, got (%+v, %v)", skip, ok)
 	}
 }
 
@@ -552,7 +576,7 @@ func TestYearlySkipsOnlyOnFebruary29(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			skip, ok := Skips(line, c.anchor)
+			skip, ok := Skips(line, c.anchor, c.anchor.Location())
 			if !ok {
 				skip = Skip{}
 			}
@@ -580,7 +604,7 @@ func TestTheLeapDayRemediesLandEveryYear(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := Skips(line, c.anchor); ok {
+		if _, ok := Skips(line, c.anchor, c.anchor.Location()); ok {
 			t.Errorf("%q was reported as skipping; it is the rule the note recommends", line)
 		}
 		next, ok, err := Next(line, c.anchor, c.anchor, jst)
@@ -602,7 +626,7 @@ func TestASubMonthlyRuleIsNeverReportedAsSkipping(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if skip, ok := Skips(line, onThe31st); ok {
+		if skip, ok := Skips(line, onThe31st, onThe31st.Location()); ok {
 			t.Errorf("%q anchored on the 31st was reported as skipping (%+v)", spec, skip)
 		}
 	}
