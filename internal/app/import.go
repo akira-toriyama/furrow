@@ -271,7 +271,7 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 			if lane == a.Cfg.DoneLane {
 				return nil, core.Validationf("", "a task created in the %q lane is closed at birth, so a --repeat rule on it could never fire — create it open, or drop --repeat", lane)
 			}
-			if err := a.bindRepeat(&t, s.Repeat); err != nil {
+			if err := a.bindRepeat("", &t, s.Repeat); err != nil { // no task exists yet to name
 				return nil, err
 			}
 		}

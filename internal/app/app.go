@@ -2507,7 +2507,7 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, re
 		t.Repeat = ""
 		t.RepeatAnchor = nil
 	case o.Repeat != nil:
-		if err := a.bindRepeat(t, *o.Repeat); err != nil {
+		if err := a.bindRepeat(t.ID, t, *o.Repeat); err != nil {
 			return nil, nil, nil, err
 		}
 	}

@@ -84,6 +84,7 @@ func TestCompileRefusals(t *testing.T) {
 		{"bad ordinal", "monthly on 9th tue", "not an ordinal"},
 		{"day out of range", "monthly on 32", "not a day of the month"},
 		{"zero interval", "every 0 days", "positive whole number"},
+		{"interval past the ceiling", "every 2147483647 days", "at most 10000"},
 		{"count not a number", "daily for many times", "positive whole number"},
 		{"count spelled wrong", "daily for 3", "`for <n> times`"},
 		{"on with a daily rule", "daily on mon", "only meaningful with a weekly or monthly"},

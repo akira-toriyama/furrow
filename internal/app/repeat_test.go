@@ -1189,3 +1189,30 @@ func TestLateCloseCountsTheDayWithNoLocalMidnight(t *testing.T) {
 		t.Errorf("successor due = %s, want 2027-09-10 23:59:59", got)
 	}
 }
+
+// A rule refused at bind time on `add` names NO task: the id was minted before
+// the rule was checked and no shard or body will ever carry it, so a tool that
+// trusted the envelope's subject grabbed a task that does not exist (t-qps2).
+// On `set` the task exists and the refusal names it.
+func TestRepeatRefusalSubjectNamesOnlyAnExistingTask(t *testing.T) {
+	a := newApp()
+	due := "2026-10-01"
+	_, err := a.Add("rep", AddOpts{Due: due, Repeat: "every 0 weeks"})
+	fe := core.AsError(err)
+	if fe == nil || fe.Code != core.CodeValidation {
+		t.Fatalf("add with a bad rule = %v, want exit 2", err)
+	}
+	if fe.Subject != "" {
+		t.Errorf("add's refusal names a task that was never created: subject %q", fe.Subject)
+	}
+	tk, err := a.Add("plain", AddOpts{Due: due})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := "every 0 weeks"
+	_, _, err = a.Set(tk.ID, SetOpts{Repeat: &bad})
+	if fe := core.AsError(err); fe == nil || fe.Subject != tk.ID {
+		t.Errorf("set's refusal must name the existing task: %+v", fe)
+	}
+	_ = time.Now
+}
