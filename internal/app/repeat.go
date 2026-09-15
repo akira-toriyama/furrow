@@ -358,12 +358,13 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 		return nil
 	}
 	// The anchor is stored UTC but the series is expanded in the BOARD's
-	// The anchor is stored UTC but the series is expanded in the BOARD's
 	// calendar, so the day these ask about has to be read there too — otherwise
 	// the notes are inverted on any board whose offset crosses a date boundary.
+	// Every recur entry point takes the calendar itself; the local anchor here
+	// is only for the wording.
 	anchor := t.RepeatAnchor.In(a.loc())
 	var out []string
-	if skip, ok := recur.Skips(t.Repeat, anchor); ok {
+	if skip, ok := recur.Skips(t.Repeat, *t.RepeatAnchor, a.loc()); ok {
 		out = append(out, skipNote(t.Repeat, anchor, skip, a.loc()))
 	}
 	if first, ok := recur.OffLattice(t.Repeat, anchor, a.loc()); ok {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/recur"
 )
 
 // Vocabularies returns furrow's closed vocabularies by name — the machine
@@ -32,6 +33,7 @@ func Vocabularies() map[string][]string {
 		"query-qualifiers":     append([]string(nil), qualifierVocab...),
 		"query-presence":       append([]string(nil), presenceVocab...),
 		"query-is":             append([]string(nil), stateVocab...),
+		"repeat-spellings":     append([]string(nil), recur.Spellings...),
 	}
 }
 

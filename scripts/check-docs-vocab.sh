@@ -228,17 +228,29 @@ check_claim() {
   # --- direction: every member present (complete / both) ---------------------
   if [ "$cc_dir" != subset ]; then
     cc_missing=""
+    # One member per LINE of `furrow vocab`, not per word: the repeat spellings
+    # (`every <n> days`) carry spaces, and word-splitting them would ask the
+    # docs for `every`, `<n>` and `days` separately — a claim that passes on
+    # prose that never lists the forms.
+    cc_saved_ifs=$IFS
+    IFS='
+'
     for cc_member in $cc_members; do
+      IFS=$cc_saved_ifs
       # Standalone-token match, so `ref` is not satisfied by "referenced", and
       # the config key `lanes` is not satisfied by `[next].lanes` (a dot may not
-      # precede a match). Members are [a-z_-] tokens straight from the
-      # registries, so they carry no ERE metacharacters of their own.
+      # precede a match). Members are [a-z_-] tokens, or space-joined words with
+      # `<placeholders>`, straight from the registries: none of that is an ERE
+      # metacharacter (`<`/`>` are literal in POSIX ERE).
       if ! printf '%s\n' "$cc_region" | grep -qE "(^|[^A-Za-z0-9_.-])$cc_member([^A-Za-z0-9_-]|$)"; then
-        cc_missing="$cc_missing $cc_member"
+        cc_missing="$cc_missing | $cc_member"
       fi
+      IFS='
+'
     done
+    IFS=$cc_saved_ifs
     if [ -n "$cc_missing" ]; then
-      echo "✖ $cc_file enumerates the '$cc_vocab' vocabulary but is missing:$cc_missing" >&2
+      echo "✖ $cc_file enumerates the '$cc_vocab' vocabulary but is missing: ${cc_missing# | }" >&2
       echo "  region: /$cc_start/ .. /$cc_end/" >&2
       echo "  source: furrow vocab $cc_vocab" >&2
       cc_status=1
@@ -512,6 +524,7 @@ complete|revisit-summary-keys||internal/app/revisit.go|^// RevisitSummary tallie
 complete|query-qualifiers||README.md|^- \*\*qualifiers\*\*|^- \*\*presence\*\*
 complete|query-presence||README.md|^- \*\*presence\*\*|^- \*\*computed flags\*\*
 complete|query-is||README.md|^- \*\*computed flags\*\*|^- \*\*free text\*\*
+complete|repeat-spellings||README.md|^- \*\*`add`\*\*|^- \*\*`ls`\*\*
 subset|lint-codes|^[a-z]+(-[a-z]+)+$|README.md|^- \*\*`lint`\*\* — every finding carries|^- \*\*`migrate`\*\*
 subset|lint-codes|^[a-z]+(-[a-z]+)+$|CLAUDE.md|a stable kebab-case `code`|^  Mutations \(
 # doctor-codes is registered in `furrow vocab` but deliberately UNCLAIMED: every
