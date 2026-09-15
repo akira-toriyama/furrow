@@ -391,11 +391,16 @@ func isBuiltinCommand(root *cobra.Command, name string) bool {
 // shadows a builtin command — the alias is inert (expansion checks builtins
 // first), so this surfaces the dead config entry. Sorted by name for
 // determinism.
-func aliasShadowProblems(aliases map[string]string) []core.Problem {
+//
+// root is the tree the running command belongs to (cmd.Root()), never a second
+// newRootCmd(): building one mid-run re-registers the persistent --json/--ndjson
+// flags on the package vars, and BoolVar writes its default at registration,
+// so the flags the operator passed were reset to false — `lint --json` printed
+// prose on any board whose config had one alias (t-8j5v).
+func aliasShadowProblems(root *cobra.Command, aliases map[string]string) []core.Problem {
 	if len(aliases) == 0 {
 		return nil
 	}
-	root := newRootCmd()
 	names := make([]string, 0, len(aliases))
 	for name := range aliases {
 		names = append(names, name)

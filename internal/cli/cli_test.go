@@ -853,6 +853,22 @@ func TestCLIAliasExpansion(t *testing.T) {
 	if !strings.Contains(out, "alias-shadow") || !strings.Contains(out, `"ls"`) {
 		t.Errorf("lint should warn about the shadowing alias:\n%s", out)
 	}
+	// ... and --json stays JSON on that board (t-8j5v: the shadow check used to
+	// build a second root mid-run, which reset --json to false and printed prose).
+	out, _ = run(t, "lint", "--json")
+	var ps []map[string]any
+	if err := json.Unmarshal([]byte(out), &ps); err != nil {
+		t.Fatalf("lint --json on a board with [alias] is not JSON: %v\n%s", err, out)
+	}
+	found := false
+	for _, p := range ps {
+		if p["code"] == "alias-shadow" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("lint --json should carry the alias-shadow problem:\n%s", out)
+	}
 }
 
 // TestCLICheckAddRepeatable pins that `check --add A --add B` appends BOTH items
