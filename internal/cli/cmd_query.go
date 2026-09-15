@@ -221,8 +221,8 @@ func newShowCmd() *cobra.Command {
 			"An id may name an EPIC: store membership routes each one (never the id's\n" +
 			"prefix), and a box is rendered as the box view `furrow epic show` prints —\n" +
 			"goal, member roll-up, body — so a mixed batch's --json array carries one\n" +
-			"shape per entity. --f.archived reads the task archive only (boxes are never\n" +
-			"f.archived), and --backlinks names the tasks whose [[id]] links point at a\n" +
+			"shape per entity. --archived reads the task archive only (boxes are never\n" +
+			"archived), and --backlinks names the tasks whose [[id]] links point at a\n" +
 			"TASK, so a box carries no mentioned_by.\n" +
 			"With --backlinks, also list the tasks whose body mentions each one via the\n" +
 			"[[id]] notation (the local, rate-limit-free twin of GitHub's \"mentioned\n" +
@@ -231,7 +231,7 @@ func newShowCmd() *cobra.Command {
 		Example: "  furrow show t-4fq1\n" +
 			"  furrow show t-4fq1 t-x2x9 --no-body --ndjson   # lean batch read\n" +
 			"  furrow show t-4fq1 --backlinks\n" +
-			"  furrow show t-4fq1 --f.archived                  # read a retired task",
+			"  furrow show t-4fq1 --archived                    # read a retired task",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -310,7 +310,7 @@ func newShowCmd() *cobra.Command {
 						if f.archived {
 							fe.Kind = core.KindValidation
 							fe.Code = core.CodeValidation
-							fe.Msg = fmt.Sprintf("%s is an epic — --f.archived reads the task archive, and boxes are never f.archived (drop the flag to read it)", missing[0])
+							fe.Msg = fmt.Sprintf("%s is an epic — --archived reads the task archive, and boxes are never archived (drop the flag to read it)", missing[0])
 						} else {
 							fe.Kind = core.KindEpicNotFound
 							fe.Msg = fmt.Sprintf("epic not found: %s", missing[0])

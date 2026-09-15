@@ -155,7 +155,7 @@ func TestCLIHiddenDraftsHintOnStderr(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("ls -r exit = %d", code)
 	}
-	if want := "1 draft(s) hidden — furrow ls --drafts\n"; se != want {
+	if want := "note: 1 draft(s) hidden — furrow ls --drafts\n"; se != want {
 		t.Errorf("stderr = %q, want %q", se, want)
 	}
 	if strings.Contains(sout, "hidden") {

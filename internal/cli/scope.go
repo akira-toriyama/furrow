@@ -118,7 +118,7 @@ func hintHiddenDrafts(o app.QueryOpts, count func(app.QueryOpts) ([]core.Task, e
 	d := o
 	d.Repo, d.ScopeRepo, d.Drafts, d.Limit = "", "", true, 0
 	if hidden, err := count(d); err == nil && len(hidden) > 0 {
-		fmt.Fprintf(errOut, "%d draft(s) hidden — %s\n", len(hidden), remedy)
+		fmt.Fprintf(errOut, "note: %d draft(s) hidden — %s\n", len(hidden), remedy)
 	}
 }
 
