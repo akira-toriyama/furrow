@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -188,10 +187,6 @@ func TestSyncRelaysPushHookStderr(t *testing.T) {
 	}
 	t.Setenv(app.EnvBoard, "")
 
-	var so, se bytes.Buffer
-	out, errOut = &so, &se
-	t.Cleanup(func() { out, errOut = os.Stdout, os.Stderr })
-
 	origin := t.TempDir()
 	gitAt := func(dir string, args ...string) {
 		cmd := exec.Command(git, args...)
@@ -224,10 +219,8 @@ func TestSyncRelaysPushHookStderr(t *testing.T) {
 	}
 
 	addTask(t, "blocked by the gate") // something to commit and push
-	so.Reset()
-	se.Reset()
 
-	fe, _ := runErr(t, "sync")
+	fe, _, relay := execCLI(t, "", "sync")
 	if fe == nil || fe.Kind != core.KindGitFailed {
 		t.Fatalf("sync = %+v, want kind git-failed", fe)
 	}
@@ -239,7 +232,6 @@ func TestSyncRelaysPushHookStderr(t *testing.T) {
 		t.Errorf("details.stderr %q should carry the hook's block reason", s)
 	}
 
-	relay := se.String()
 	if !strings.Contains(relay, "git push stderr:") {
 		t.Errorf("stderr should introduce the relay, got:\n%s", relay)
 	}

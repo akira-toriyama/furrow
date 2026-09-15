@@ -1,35 +1,12 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
-
-// runSplit drives the real root command with stdout and stderr captured
-// SEPARATELY — the only way to assert that a hint went to stderr while stdout
-// stayed a parseable array.
-func runSplit(t *testing.T, args ...string) (stdout, stderr string, code int) {
-	t.Helper()
-	var so, se bytes.Buffer
-	out, errOut = &so, &se
-	t.Cleanup(func() { out, errOut = os.Stdout, os.Stderr })
-	root := newRootCmd()
-	root.SetArgs(args)
-	root.SetOut(&so)
-	root.SetErr(&se)
-	err := root.Execute()
-	if err == nil {
-		return so.String(), se.String(), 0
-	}
-	// classifyFailure writes the session guard's notes to errOut, so it must
-	// run before the buffers are read (return operands evaluate left to right).
-	fe := classifyFailure(err)
-	return so.String(), se.String(), int(fe.Code)
-}
 
 // yesterday/today/tomorrow as `--due` spellings, in the LOCAL zone the CLI reads
 // them in. Dates, not instants, so a run at 23:59:59 does not flip a case.

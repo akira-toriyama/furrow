@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 )
@@ -16,20 +14,8 @@ import (
 // titles from the command's input stream.
 func runSplitStdin(t *testing.T, stdin string, args ...string) (string, string, int) {
 	t.Helper()
-	var so, se bytes.Buffer
-	out, errOut = &so, &se
-	t.Cleanup(func() { out, errOut = os.Stdout, os.Stderr })
-	root := newRootCmd()
-	root.SetArgs(args)
-	root.SetOut(&so)
-	root.SetErr(&se)
-	root.SetIn(strings.NewReader(stdin))
-	err := root.Execute()
-	if err == nil {
-		return so.String(), se.String(), 0
-	}
-	fe := classifyFailure(err) // before the buffers are read (see runSplit)
-	return so.String(), se.String(), int(fe.Code)
+	fe, so, se := execCLI(t, stdin, args...)
+	return so, se, exitOf(fe)
 }
 
 func TestCLIAddInheritsActiveEpic(t *testing.T) {

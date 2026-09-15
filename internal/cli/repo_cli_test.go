@@ -150,32 +150,26 @@ func TestCLIHiddenDraftsHintOnStderr(t *testing.T) {
 	addTask(t, "a draft", "-s", "ready")
 	addTask(t, "attached", "-s", "ready", "-r", "akira-toriyama/furrow")
 
-	var se bytes.Buffer
-	errOut = &se
-	defer func() { errOut = os.Stderr }()
-
 	// -r hides the draft -> ONE stderr hint line; stdout stays pure data.
-	sout, code := run(t, "--json", "ls", "-r", "furrow")
+	sout, se, code := runSplit(t, "--json", "ls", "-r", "furrow")
 	if code != 0 {
 		t.Fatalf("ls -r exit = %d", code)
 	}
-	if want := "1 draft(s) hidden — furrow ls --drafts\n"; se.String() != want {
-		t.Errorf("stderr = %q, want %q", se.String(), want)
+	if want := "1 draft(s) hidden — furrow ls --drafts\n"; se != want {
+		t.Errorf("stderr = %q, want %q", se, want)
 	}
 	if strings.Contains(sout, "hidden") {
 		t.Errorf("the hint must never reach stdout:\n%s", sout)
 	}
 
-	se.Reset()
-	run(t, "--json", "next", "-r", "furrow")
-	if !strings.Contains(se.String(), "1 draft(s) hidden") {
-		t.Errorf("next -r should hint on stderr, got %q", se.String())
+	_, se, _ = runSplit(t, "--json", "next", "-r", "furrow")
+	if !strings.Contains(se, "1 draft(s) hidden") {
+		t.Errorf("next -r should hint on stderr, got %q", se)
 	}
 
-	se.Reset()
-	run(t, "--json", "ls")
-	if se.Len() != 0 {
-		t.Errorf("plain ls must not hint, stderr = %q", se.String())
+	_, se, _ = runSplit(t, "--json", "ls")
+	if se != "" {
+		t.Errorf("plain ls must not hint, stderr = %q", se)
 	}
 }
 

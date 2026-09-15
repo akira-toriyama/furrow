@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -23,10 +22,6 @@ func TestSyncJSONStillPrintsPendingBodiesRemedy(t *testing.T) {
 		t.Skip("git not on PATH")
 	}
 	t.Setenv(app.EnvBoard, "")
-
-	var se bytes.Buffer
-	errOut = &se
-	t.Cleanup(func() { errOut = os.Stderr })
 
 	origin := t.TempDir()
 	gitAt := func(dir string, args ...string) string {
@@ -65,8 +60,7 @@ func TestSyncJSONStillPrintsPendingBodiesRemedy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	se.Reset()
-	sout, code := run(t, "sync", "--json")
+	sout, se, code := runSplit(t, "sync", "--json")
 	if code != 0 {
 		t.Fatalf("sync --json exit %d\n%s", code, sout)
 	}
@@ -80,8 +74,8 @@ func TestSyncJSONStillPrintsPendingBodiesRemedy(t *testing.T) {
 	if len(prog.PendingBodies) != 1 || prog.PendingBodies[0] != id || prog.Complete {
 		t.Fatalf("progress = %+v, want the hand edit pending and complete:false", prog)
 	}
-	if !strings.Contains(se.String(), "left uncommitted") || !strings.Contains(se.String(), id) {
-		t.Errorf("stderr %q must carry the pending-bodies remedy naming %s", se.String(), id)
+	if !strings.Contains(se, "left uncommitted") || !strings.Contains(se, id) {
+		t.Errorf("stderr %q must carry the pending-bodies remedy naming %s", se, id)
 	}
 	if strings.Contains(sout, "left uncommitted") {
 		t.Errorf("the remedy leaked into stdout: %s", sout)

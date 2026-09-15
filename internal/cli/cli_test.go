@@ -15,27 +15,53 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// runCLI is the one in-process furrow runner every test harness below is built
-// on: it wires stdin/stdout, runs the real root command, and classifies the
-// error exactly as Execute() does (a bare cobra error is a usage problem =
-// validation). Tests point the store at FURROW_DIR, so no chdir is needed.
-func runCLI(t *testing.T, stdin string, args ...string) (*core.Error, string) {
+// execCLI is the one in-process furrow runner every test harness below is
+// built on: it points BOTH funnel writers (out / errOut — the only outlets the
+// package prints through, see output.go) and cobra's own writers at two fresh
+// buffers, runs the real root command, and classifies the error exactly as
+// Execute() does (a bare cobra error is a usage problem = validation). Tests
+// point the store at FURROW_DIR, so no chdir is needed.
+//
+// stdout and stderr are captured SEPARATELY, always: a harness that captured
+// only stdout could not see a note go missing from stderr, and one that merged
+// the two could not see a note leak into stdout — t-hs4a's clamp note did the
+// former for months under 355 green tests. The previous writers are restored,
+// not nilled (a nil io.Writer panics on the next print), so a test that swapped
+// its own buffers in before calling run keeps them afterward.
+func execCLI(t *testing.T, stdin string, args ...string) (fe *core.Error, stdout, stderr string) {
 	t.Helper()
-	var buf bytes.Buffer
-	out = &buf
-	defer func() { out = nil }()
+	var so, se bytes.Buffer
+	prevOut, prevErr := out, errOut
+	out, errOut = &so, &se
+	defer func() { out, errOut = prevOut, prevErr }()
 
 	root := newRootCmd()
 	root.SetArgs(args)
-	root.SetOut(&buf)
-	root.SetErr(&buf)
+	root.SetOut(&so)
+	root.SetErr(&se)
 	root.SetIn(strings.NewReader(stdin))
 	err := root.Execute()
-	if err == nil {
-		return nil, buf.String()
+	if err != nil {
+		// classifyFailure writes the session guard's notes to errOut, so it must
+		// run before the buffers are read.
+		fe = classifyFailure(err)
 	}
-	fe := classifyFailure(err) // before the buffer is read (see runSplit)
-	return fe, buf.String()
+	return fe, so.String(), se.String()
+}
+
+// runCLI is execCLI for the tests that assert on stdout alone.
+func runCLI(t *testing.T, stdin string, args ...string) (*core.Error, string) {
+	t.Helper()
+	fe, stdout, _ := execCLI(t, stdin, args...)
+	return fe, stdout
+}
+
+// runSplit is execCLI for the tests that assert a note went to stderr while
+// stdout stayed a parseable array.
+func runSplit(t *testing.T, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	fe, stdout, stderr := execCLI(t, "", args...)
+	return stdout, stderr, exitOf(fe)
 }
 
 // run executes furrow against args, returning stdout and the exit code

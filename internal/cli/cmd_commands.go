@@ -27,7 +27,7 @@ func newCommandsCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			w := cmd.OutOrStdout()
+			w := out
 			fmt.Fprintln(w, "| Command | What it does | Flags |")
 			fmt.Fprintln(w, "|---|---|---|")
 			root := cmd.Root()
