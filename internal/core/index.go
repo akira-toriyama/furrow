@@ -39,6 +39,41 @@ func (idx *Index) Remove(id string) bool {
 	return true
 }
 
+// MarkSeen records that this index and the store agree on the shard at stem:
+// Load calls it with the bytes it read, Save with the bytes it wrote. stem is
+// the shard's filename stem, which is its id except for a misnamed hand-edit
+// (Save repairs that by writing the id's own path and forgetting the stem).
+func (idx *Index) MarkSeen(stem string, data []byte) {
+	if idx.seen == nil {
+		idx.seen = map[string][]byte{}
+	}
+	idx.seen[stem] = data
+}
+
+// Seen returns the bytes this index last agreed with the store on for stem,
+// and whether it has met that stem at all. A stem never met is one Save must
+// not delete and a task never met is one Save must write.
+func (idx *Index) Seen(stem string) ([]byte, bool) {
+	data, ok := idx.seen[stem]
+	return data, ok
+}
+
+// Forget drops stem from the seen set once its shard is gone.
+func (idx *Index) Forget(stem string) {
+	delete(idx.seen, stem)
+}
+
+// SeenStems returns every stem this index has met, sorted — the whole of what a
+// Save may delete.
+func (idx *Index) SeenStems() []string {
+	stems := make([]string, 0, len(idx.seen))
+	for stem := range idx.seen {
+		stems = append(stems, stem)
+	}
+	sort.Strings(stems)
+	return stems
+}
+
 // NextPriority returns a sparse priority that places a new task after every
 // existing task in the same lane: max(priority in lane) + step, or `base` when
 // the lane is empty. This is what keeps `add` from renumbering anything.

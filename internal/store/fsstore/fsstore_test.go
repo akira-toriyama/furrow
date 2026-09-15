@@ -3,6 +3,7 @@ package fsstore
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -186,6 +187,59 @@ func TestSaveDeletesRemovedShard(t *testing.T) {
 	got, _ := s.Load()
 	if got.Has("t-0002") {
 		t.Error("removed task should be gone from a re-loaded index")
+	}
+}
+
+// Ten goroutines stand in for ten `furrow add` processes on one board: every
+// one Loads before any Saves (the barrier), then each appends its own task and
+// Saves. Every shard must survive — the sweep that deleted "shards not in my
+// index" left ZERO of ten here (t-msqv) — and the run is -race clean because
+// the store itself stays stateless: what an index has met rides on the index.
+func TestConcurrentAddsKeepEveryShard(t *testing.T) {
+	s := newStore(t)
+	if err := s.Save(&core.Index{Tasks: []core.Task{mkTask("t-pre01", "pre", "ready", 100)}}); err != nil {
+		t.Fatal(err)
+	}
+	const n = 10
+	loaded := make(chan *core.Index, n)
+	go_ := make(chan struct{})
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			idx, err := s.Load()
+			if err != nil {
+				errs <- err
+				loaded <- nil
+				return
+			}
+			loaded <- idx
+			<-go_
+			idx.Add(mkTask(fmt.Sprintf("t-par%02d", i), fmt.Sprintf("z%d", i), "ready", 110))
+			errs <- s.Save(idx)
+		}(i)
+	}
+	for i := 0; i < n; i++ {
+		<-loaded
+	}
+	close(go_)
+	for i := 0; i < n; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids, err := s.ListTaskIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != n+1 {
+		t.Fatalf("%d concurrent adds left %d shards, want %d: %v", n, len(ids), n+1, ids)
+	}
+	got, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Tasks) != n+1 {
+		t.Fatalf("Load folds %d tasks, want %d", len(got.Tasks), n+1)
 	}
 }
 

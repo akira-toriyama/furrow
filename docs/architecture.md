@@ -561,11 +561,26 @@ A `.furrow/` store directory contains:
 `fsstore.Load` globs `tasks/*.json`, unmarshals each shard, and folds every one
 into a single in-memory `core.Index`; the board's `schema_version` is read from
 `meta.json` via `Store.BoardVersion` (0 = no `meta.json`; unreadable = an error)
-and checked against the read gate. `fsstore.Save` is the inverse: it splits the
-`Index` back into per-task shards and writes **only the shards whose bytes
-changed** (a byte-compare against what is already on disk), and **deletes** the
-shards of any ids no longer present. So a no-op save touches no files and
-produces zero git churn.
+and checked against the read gate, and it records, on the `Index` itself, the
+bytes of every shard it read (`Index.MarkSeen`, keyed by filename stem).
+`fsstore.Save` is the inverse: it splits the `Index` back into per-task shards
+and touches **only what this index changed** — a task is rewritten when its
+bytes moved from what `Load` read (then byte-compared against disk, so an
+identical file keeps its mtime), and a shard is deleted only when `Load` met it
+and the index dropped it. So a no-op save touches no files and produces zero
+git churn — and a shard this index **never met** is left exactly as found. That
+last clause is load-bearing: the store has no lock, so two processes routinely
+sit between each other's `Load` and `Save`. The old sweep (`ListTaskIDs` minus
+the index) deleted every shard the other process had just added — ten
+concurrent `furrow add` on one board left **zero** shards and ten `exit 0`s
+(t-msqv) — and the old compare-against-disk rewrite put a stale copy over the
+other's edit of a task this process never touched. What remains unguarded is a
+same-task race (two writers editing one id: the later `Save` wins, which is what
+`--expect-updated` reports). After a `Save` the index has met exactly what it
+wrote, so dropping a task and saving again still deletes; a literal `Index`
+that was never loaded has met nothing and its first `Save` deletes nothing.
+`memstore.Save` answers the same two questions per entry, so an app test on the
+double sees the survival a second process gets on disk.
 
 `Save` does **not** write `meta.json` on this path — it *reads* it, as the write
 gate's input (`core.CheckWritable`), and stamps it only when the store is
