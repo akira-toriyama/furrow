@@ -1481,3 +1481,24 @@ func TestLintWarnsOutOfRangeEstimate(t *testing.T) {
 		t.Errorf("lint should warn that value 9 is out of range; got %+v", probs)
 	}
 }
+
+// A title past core.MaxTitleLen is the writer's refusal, on add and retitle
+// alike: a 10,000-character title wrecked every human view's last column
+// (t-awr6). Counted in characters.
+func TestTitleLengthIsRefusedAtTheWriter(t *testing.T) {
+	a := newApp()
+	long := strings.Repeat("字", core.MaxTitleLen+1)
+	if _, err := a.Add(long, AddOpts{}); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("add with an over-long title = %v, want exit 2", err)
+	}
+	tk, err := a.Add("short", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Retitle(tk.ID, long); core.ExitCode(err) != int(core.CodeValidation) {
+		t.Errorf("retitle to an over-long title = %v, want exit 2", err)
+	}
+	if _, err := a.Retitle(tk.ID, strings.Repeat("字", core.MaxTitleLen)); err != nil {
+		t.Errorf("a title at the cap fits: %v", err)
+	}
+}

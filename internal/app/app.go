@@ -1775,6 +1775,9 @@ func (a *App) SetTitle(id, title string) (*core.Task, error) {
 	if title == "" {
 		return nil, core.Validationf(id, "title must not be empty")
 	}
+	if why := core.TitleTooLong(title); why != "" {
+		return nil, core.Validationf(id, "%s", why)
+	}
 	return a.mutate(id, func(t *core.Task) { t.Title = title })
 }
 
@@ -1797,6 +1800,9 @@ func (a *App) Retitle(id, title string) (*core.Task, error) {
 	title = core.NormalizeTitle(title)
 	if title == "" {
 		return nil, core.Validationf(id, "title must not be empty")
+	}
+	if why := core.TitleTooLong(title); why != "" {
+		return nil, core.Validationf(id, "%s", why)
 	}
 	idx, err := a.load()
 	if err != nil {

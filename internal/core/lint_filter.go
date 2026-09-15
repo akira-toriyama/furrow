@@ -22,6 +22,8 @@ var lintCodes = map[string]bool{
 	"archive-backlog":      true,
 	"asset-missing":        true,
 	"blank-entry":          true,
+	"updated-in-future":    true,
+	"priority-duplicate":   true,
 	"body-path":            true,
 	"config-clamp":         true,
 	"conflict-marker":      true,

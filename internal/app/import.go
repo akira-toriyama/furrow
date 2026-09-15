@@ -159,6 +159,9 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 			}
 			return nil, core.Validationf("", "title must not be empty")
 		}
+		if why := core.TitleTooLong(s.Title); why != "" {
+			return nil, core.Validationf("", "%s", why)
+		}
 		lane := s.Status
 		if lane == "" {
 			lane = a.Cfg.DefaultLane
