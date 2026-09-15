@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -436,5 +437,66 @@ func TestPushCarriesHookStderrInDetails(t *testing.T) {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("details.stderr %q should carry the hook line %q", stderr, want)
 		}
+	}
+}
+
+// The push-rejection classifier reads git's stderr, and the TRUE race — a
+// server refusing a compare-and-swap push because another client landed on the
+// same old tip — is worded `[remote rejected] … (incorrect old value provided)`,
+// with neither "[rejected]" nor "non-fast-forward" in it. It used to be a
+// terminal git-failed that sync-task-status.yml never retried (t-3t68).
+func TestIsNonFastForwardWordings(t *testing.T) {
+	for _, tc := range []struct {
+		stderr string
+		want   bool
+	}{
+		{"! [rejected]        main -> main (non-fast-forward)", true},
+		{"! [rejected]        main -> main (fetch first)", true},
+		{"! [remote rejected] main -> main (incorrect old value provided)", true},
+		{"! [remote rejected] main -> main (cannot lock ref 'refs/heads/main': is at X but expected Y)", true},
+		{"remote: error: GH006: Protected branch update failed", false},
+		{"fatal: unable to access 'https://…': Could not resolve host", false},
+		{"", false},
+	} {
+		if got := isNonFastForward(tc.stderr); got != tc.want {
+			t.Errorf("isNonFastForward(%q) = %v, want %v", tc.stderr, got, tc.want)
+		}
+	}
+}
+
+// AddedLines feeds the activation-switch disclosure, so it must read the diff
+// the same way under any operator git config: with diff.noprefix (and
+// mnemonicPrefix) set, the file header used to come out as `+++ <path>`, fall
+// into the "/dev/null" branch, and every added line after it was dropped. A
+// body line that itself begins with `++` renders as `+++…` and must be content,
+// not a header (t-3t68).
+func TestAddedLinesIgnoresOperatorDiffPrefixConfig(t *testing.T) {
+	git := gitOrSkip(t)
+	origin := t.TempDir()
+	runGitT(t, git, origin, "init", "-q", "--bare", "-b", "main")
+	seed := initRepo(t, git)
+	runGitT(t, git, seed, "remote", "add", "origin", origin)
+	runGitT(t, git, seed, "push", "-q", "-u", "origin", "main")
+	runGitT(t, git, seed, "config", "diff.noprefix", "true")
+	runGitT(t, git, seed, "config", "diff.mnemonicPrefix", "true")
+
+	body := filepath.Join(seed, "notes.md")
+	if err := os.WriteFile(body, []byte("++ looks like a header\n2026-09-15 activated\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitT(t, git, seed, "add", "-A")
+	runGitT(t, git, seed, "commit", "-q", "-m", "unpushed")
+
+	r, err := Open(context.Background(), seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := r.AddedLines(context.Background(), ".")
+	want := []AddedLine{
+		{Path: "notes.md", Text: "++ looks like a header"},
+		{Path: "notes.md", Text: "2026-09-15 activated"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("AddedLines under diff.noprefix = %+v, want %+v", got, want)
 	}
 }

@@ -205,10 +205,17 @@ func (a *App) boardGit() BoardGit {
 		g.Commit, g.CommitTime, g.Subject = c.SHA, &when, c.Subject
 		hasHEAD = true
 	}
-	// Scoped to .furrow/ deliberately: a co-located operator's dirty code file
-	// is not the board's business, and on a repo-local board it would report
-	// dirty for every ordinary edit.
-	if changes, derr := repo.DirtyChanges(ctx, DirName); derr != nil {
+	// Scoped to the store's own directory deliberately: a co-located operator's
+	// dirty code file is not the board's business, and on a repo-local board it
+	// would report dirty for every ordinary edit. The pathspec is the store's
+	// path RELATIVE to the toplevel (sync's and autocommit's spelling) — a
+	// constant `.furrow` matched nothing for a nested `sub/.furrow` or a
+	// FURROW_DIR of any other name, so Dirty was false there forever (t-3t68).
+	spec, serr := repo.RelPath(a.Dir)
+	if serr != nil {
+		return BoardGit{State: GitUnavailable}
+	}
+	if changes, derr := repo.DirtyChanges(ctx, spec); derr != nil {
 		g.State = GitUnavailable
 	} else {
 		g.Dirty = len(changes) > 0
