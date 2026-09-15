@@ -101,3 +101,23 @@ func TestBoardGitDirtyIsScopedToTheStore(t *testing.T) {
 		t.Errorf("a dirty file OUTSIDE .furrow must not mark the board dirty: %+v", g)
 	}
 }
+
+// The dirty probe's pathspec is the store's path relative to the toplevel —
+// sync's and autocommit's spelling — not the constant `.furrow`: a board at
+// `<repo>/sub/.furrow` (or a FURROW_DIR of any name) matched nothing under the
+// constant and reported Dirty:false forever (t-3t68).
+func TestBoardGitDirtySeesANestedStore(t *testing.T) {
+	git := gitOrSkip(t)
+	dir := t.TempDir()
+	runGitT(t, git, dir, "init", "-q", "-b", "main")
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Init(sub); err != nil { // board at dir/sub/.furrow, untracked
+		t.Fatal(err)
+	}
+	if g := openBoard(t, sub).Board().Git; !g.Dirty {
+		t.Errorf("an untracked nested store is dirty: %+v", g)
+	}
+}

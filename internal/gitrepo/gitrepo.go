@@ -158,10 +158,6 @@ type Change struct {
 // sorted by path for deterministic output. Porcelain parsing stays here, in the
 // adapter, so app never sees git's wire format (layer rule).
 func (r *Repo) DirtyChanges(ctx context.Context, pathspec string) ([]Change, error) {
-	// core.quotepath=false keeps non-ASCII paths literal (unquoted) so the parse
-	// below is a plain byte-slice; furrow's own ids are ASCII, but a repo may hold
-	// other files under the pathspec.
-	//
 	// -uall is load-bearing, not tidiness: git's DEFAULT collapses a wholly-untracked
 	// directory to one "?? .furrow/bodies/" entry, so on a board whose bodies/ has no
 	// tracked file yet (a fresh one — git cannot track an empty dir), every body is
@@ -169,7 +165,7 @@ func (r *Repo) DirtyChanges(ctx context.Context, pathspec string) ([]Change, err
 	// shard) to decide what to commit and what to check, and a directory is neither: the
 	// bodies would be committed while being counted as no body at all — invisible to
 	// committed_bodies AND to the conflict-marker guard. Enumerate files, always.
-	out, stderr, err := runGit(ctx, r.git, r.top, "-c", "core.quotepath=false", "status", "--porcelain", "-uall", "--", pathspec)
+	out, stderr, err := runGit(ctx, r.git, r.top, "status", "--porcelain", "-uall", "--", pathspec)
 	if err != nil {
 		return nil, gitFailed("git status: %s", firstLine(stderr))
 	}
@@ -217,8 +213,7 @@ type FileChange struct {
 // heuristic pairing two unrelated shards. Best-effort display read: any
 // failure returns nil.
 func (r *Repo) ChangedFiles(ctx context.Context, from, to, pathspec string) []FileChange {
-	out, _, err := runGit(ctx, r.git, r.top, "-c", "core.quotepath=false",
-		"diff", "--name-status", "--no-renames", from+".."+to, "--", pathspec)
+	out, _, err := runGit(ctx, r.git, r.top, "diff", "--name-status", "--no-renames", from+".."+to, "--", pathspec)
 	if err != nil {
 		return nil
 	}
@@ -258,23 +253,34 @@ type AddedLine struct {
 // configured, detached HEAD) returns nil rather than an error, because no
 // caller should ever fail a sync over a summary line. --unified=0 keeps context
 // lines out so every "+" line really was added.
+//
+// The `+++` file header is recognized only where the format puts it — the
+// line after a `---` header — so a body line that itself starts with `++`
+// (rendered `+++…` as an added line) is content, not a path reset. The `b/`
+// prefix it strips is fixed by gitConfig, so an operator's diff.noprefix or
+// diff.mnemonicPrefix cannot turn every header into "no path" and silence the
+// activation-switch disclosure this feeds (t-3t68).
 func (r *Repo) AddedLines(ctx context.Context, pathspec string) []AddedLine {
-	out, _, err := runGit(ctx, r.git, r.top, "-c", "core.quotepath=false",
-		"diff", "--unified=0", "@{upstream}..HEAD", "--", pathspec)
+	out, _, err := runGit(ctx, r.git, r.top, "diff", "--no-ext-diff", "--unified=0", "@{upstream}..HEAD", "--", pathspec)
 	if err != nil {
 		return nil
 	}
 	var lines []AddedLine
 	path := ""
+	header := false // the previous line was a `---` file header
 	for _, l := range strings.Split(out, "\n") {
 		switch {
-		case strings.HasPrefix(l, "+++ b/"):
+		case strings.HasPrefix(l, "--- "):
+			header = true
+			continue
+		case header && strings.HasPrefix(l, "+++ b/"):
 			path = filepath.ToSlash(strings.TrimPrefix(l, "+++ b/"))
-		case strings.HasPrefix(l, "+++"):
+		case header && strings.HasPrefix(l, "+++ "):
 			path = "" // a deletion's "+++ /dev/null"
 		case strings.HasPrefix(l, "+") && path != "":
 			lines = append(lines, AddedLine{Path: path, Text: strings.TrimPrefix(l, "+")})
 		}
+		header = false
 	}
 	return lines
 }
@@ -571,13 +577,19 @@ func (r *Repo) Push(ctx context.Context) error {
 
 // isNonFastForward classifies a push rejection from git's stderr. git phrases
 // it a few ways depending on version and cause ("non-fast-forward",
-// "fetch first", "[rejected]"); any of them means "remote moved — pull and
-// retry", which is all sync needs to know.
+// "fetch first", "[rejected]"), and a server that refuses a compare-and-swap
+// push — the TRUE race, two clients pushing on the same old tip — says
+// `! [remote rejected] main -> main (incorrect old value provided)`, which
+// carries neither "[rejected]" nor "non-fast-forward" and so surfaced as a
+// terminal git-failed that CI never retried (t-3t68). Any of them means
+// "remote moved — pull and retry", which is all sync needs to know.
 func isNonFastForward(stderr string) bool {
 	s := strings.ToLower(stderr)
 	return strings.Contains(s, "non-fast-forward") ||
 		strings.Contains(s, "fetch first") ||
-		strings.Contains(s, "[rejected]")
+		strings.Contains(s, "[rejected]") ||
+		strings.Contains(s, "[remote rejected]") ||
+		strings.Contains(s, "incorrect old value")
 }
 
 // GitPath resolves name to its absolute location inside this repo's git
@@ -610,7 +622,7 @@ func (r *Repo) absGitPath(out string) string {
 func runGit(ctx context.Context, git, dir string, args ...string) (stdout, stderr string, err error) {
 	// #nosec G204 -- git is resolved from PATH; args are furrow-built git
 	// subcommands and refs/paths, never an unescaped user shell string.
-	cmd := exec.CommandContext(ctx, git, args...)
+	cmd := exec.CommandContext(ctx, git, append(gitConfig(), args...)...)
 	cmd.Dir = dir
 	cmd.Env = gitEnv()
 	var so, se strings.Builder
@@ -618,6 +630,22 @@ func runGit(ctx context.Context, git, dir string, args ...string) (stdout, stder
 	cmd.Stderr = &se
 	err = cmd.Run()
 	return so.String(), se.String(), err
+}
+
+// gitConfig is the `-c` prelude every git call runs under: the operator's git
+// config must not change what furrow parses. quotepath=false keeps a
+// non-ASCII path literal in status/diff output (furrow's ids are ASCII, but a
+// repo may hold other files under the pathspec, and a C-quoted path would land
+// in a sync-conflict's details as `"\343\201\202.md"`); diff.noprefix and
+// diff.mnemonicPrefix are pinned off so a file header is always `+++ b/<path>`
+// (AddedLines strips exactly that). One place, so no reader of git output
+// carries its own copy — three did, and two readers had none (t-3t68).
+func gitConfig() []string {
+	return []string{
+		"-c", "core.quotepath=false",
+		"-c", "diff.noprefix=false",
+		"-c", "diff.mnemonicPrefix=false",
+	}
 }
 
 // gitEnv is the environment for a git subprocess with the locale forced to C.
