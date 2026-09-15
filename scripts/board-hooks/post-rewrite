@@ -13,7 +13,9 @@
 # ("rebase"|"amend") as $1; we lint the resulting tree regardless, so neither is
 # read.
 #
-# Install (once per machine, per board repo): git config core.hooksPath scripts/hooks
+# Install (once per machine, per board repo — git never auto-enables hooks on
+# clone, by design): copy this file into the board repo's hook dir (e.g.
+# scripts/hooks/), then: git config core.hooksPath <that dir>
 # Low-dependency: POSIX sh + furrow. See furrow README "Board git hooks".
 
 command -v furrow >/dev/null 2>&1 || exit 0

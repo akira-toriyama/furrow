@@ -10,7 +10,8 @@
 # cleanly, and a nag must not wedge your pull). The hard gate is pre-push.
 #
 # Install (once per machine, per board repo — git never auto-enables hooks on
-# clone, by design): git config core.hooksPath scripts/hooks
+# clone, by design): copy this file into the board repo's hook dir (e.g.
+# scripts/hooks/), then: git config core.hooksPath <that dir>
 # Low-dependency: POSIX sh + furrow. See furrow README "Board git hooks".
 
 # Don't hold the board hostage: no furrow on PATH, or not a furrow board → skip.
