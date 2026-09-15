@@ -175,6 +175,15 @@ func decodeSalvaging(data []byte, v any, path string) ([]string, error) {
 			return nil, err // cannot isolate the damage — fail honestly
 		}
 		blanked := append([]byte(nil), lines[row-1]...)
+		if bytes.HasPrefix(bytes.TrimSpace(blanked), []byte("[")) {
+			// The offending line is a TABLE HEADER — a `[lanes]` defined twice.
+			// Blanking it would not drop the table: its keys would fall into
+			// whatever table stands above, so `[lanes].default = "nope"` under
+			// a stray second `[lanes]` became the alias `default`, runnable,
+			// while the warning blamed "alias.names" (t-ge22). A document that
+			// says a table twice is malformed, and stays fatal.
+			return nil, fmt.Errorf("%s:%d: %w — a table defined twice cannot be salvaged; merge the two %s sections", path, row, err, strings.TrimSpace(string(blanked)))
+		}
 		lines[row-1] = nil
 		next := bytes.Join(lines, []byte("\n"))
 		if bytes.Equal(next, work) {

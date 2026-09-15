@@ -615,3 +615,20 @@ func TestSaveBodiesStagesAllBeforeRenamingAny(t *testing.T) {
 		t.Errorf("a clean batch must land every body, got %q", got)
 	}
 }
+
+// WriteFileAtomic is the tmp+rename write for the store's sibling files
+// (config.toml and friends): the content lands whole and no temp is left.
+func TestWriteFileAtomicLeavesNoTemp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := WriteFileAtomic(path, []byte("mode = \"standalone\"\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "mode = \"standalone\"\n" {
+		t.Errorf("content = %q", got)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("dir holds %d entries, want the file alone (no temp)", len(entries))
+	}
+}
