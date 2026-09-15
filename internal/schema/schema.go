@@ -89,13 +89,6 @@ const MetaV2 = `{
 }
 `
 
-// RepoV1 is the JSON Schema (draft 2020-12) for one per-repo review shard: the
-// object in a single .furrow/repos/<owner>__<repo>.json file. Like a task shard
-// it is one entity per file and carries NO schema_version (meta.json owns the
-// board-wide version). Keep it in lockstep with internal/core.RepoRecord's json
-// tags. Both timestamps are nullable (null = never reviewed by that actor);
-// last_reviewed is the human review clock the staleness nudge reads,
-// last_agent_reviewed logs an agent sweep without advancing it.
 // EpicV2 is the JSON Schema (draft 2020-12) for one epic shard: the object in a
 // single .furrow/epics/<id>.json. Like the other shard kinds it carries no
 // schema_version — that lives in meta.json (see MetaV2). v2 is the board-layout
@@ -132,6 +125,13 @@ const EpicV2 = `{
 }
 `
 
+// RepoV1 is the JSON Schema (draft 2020-12) for one per-repo review shard: the
+// object in a single .furrow/repos/<owner>__<repo>.json file. Like a task shard
+// it is one entity per file and carries NO schema_version (meta.json owns the
+// board-wide version). Keep it in lockstep with internal/core.RepoRecord's json
+// tags. Both timestamps are nullable (null = never reviewed by that actor);
+// last_reviewed is the human review clock the staleness nudge reads,
+// last_agent_reviewed logs an agent sweep without advancing it.
 const RepoV1 = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/akira-toriyama/furrow/main/docs/schema/furrow.repo.v1.json",
