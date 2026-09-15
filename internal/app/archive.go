@@ -2,11 +2,9 @@ package app
 
 import (
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/fsstore"
 )
 
 // Archivable returns the ids of done-lane tasks closed strictly before cutoff —
@@ -167,7 +165,10 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 	if err := a.Store.Writable(); err != nil {
 		return nil, err
 	}
-	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.EpicIDPrefix, a.Cfg.IDWidth)
+	arc, err := a.archiveStore()
+	if err != nil {
+		return nil, err
+	}
 	arcIdx, err := arc.Load()
 	if err != nil {
 		return nil, err

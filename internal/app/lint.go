@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,7 +10,6 @@ import (
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/recur"
-	"github.com/akira-toriyama/furrow/internal/store/fsstore"
 )
 
 // countRepeating is the number of live occurrences on the board — open tasks
@@ -751,7 +749,10 @@ func (a *App) archivedIDs() ([]string, error) {
 	if a.Dir == "" {
 		return nil, nil
 	}
-	arc := fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.EpicIDPrefix, a.Cfg.IDWidth)
+	arc, err := a.archiveStore()
+	if err != nil {
+		return nil, err
+	}
 	ids, err := arc.ListTaskIDs()
 	if err != nil {
 		return nil, err

@@ -1446,21 +1446,9 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 	if err != nil {
 		return nil, nil, err
 	}
-	order, missing := []string{}, []string{}
-	seen := map[string]bool{}
-	for _, id := range ids {
-		if seen[id] {
-			continue
-		}
-		seen[id] = true
-		if _, i := idx.Find(id); i < 0 {
-			missing = append(missing, id)
-			continue
-		}
-		order = append(order, id)
-	}
-	if len(missing) > 0 {
-		return nil, nil, a.batchMissingErr(missing, len(order)+len(missing), "moved")
+	order, err := a.resolveBatch(idx, ids, "moved")
+	if err != nil {
+		return nil, nil, err
 	}
 	// The guard runs over the WHOLE batch before the loop writes anything: a
 	// `--note` lands on each body as the loop goes, so a refusal on the third
@@ -1540,13 +1528,7 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 	if err := a.Store.Save(idx); err != nil {
 		return nil, nil, err
 	}
-	out := make([]*core.Task, 0, len(order))
-	reps := make([]*RepeatReport, 0, len(order))
-	for _, id := range order {
-		saved, _ := idx.Find(id)
-		out = append(out, saved)
-		reps = append(reps, reports[id])
-	}
+	out, reps := collectBatch(idx, order, reports)
 	return out, reps, nil
 }
 
@@ -1596,26 +1578,18 @@ func (a *App) ReorderRelative(id, ref string, before bool) (*core.Task, []core.P
 	if err != nil {
 		return nil, nil, err
 	}
-	t, _ := idx.Find(id)
-	if err := a.guardTask(t); err != nil {
-		return nil, nil, err
-	}
-	snap, err := core.MarshalTask(t)
+	// The neighbours a respace moves are edited directly, outside the stamp:
+	// positional bookkeeping, not progress, so their `updated` stays put.
+	saved, err := a.mutateIn(idx, id, func(t *core.Task) {
+		t.Priority = target
+		for _, c := range changes {
+			ct, _ := idx.Find(c.ID)
+			ct.Priority = c.To
+		}
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-	t.Priority = target
-	if err := a.stampIfChanged(t, snap); err != nil {
-		return nil, nil, err
-	}
-	for _, c := range changes {
-		ct, _ := idx.Find(c.ID)
-		ct.Priority = c.To
-	}
-	if err := a.Store.Save(idx); err != nil {
-		return nil, nil, err
-	}
-	saved, _ := idx.Find(id)
 	return saved, changes, nil
 }
 
@@ -1673,30 +1647,19 @@ func (a *App) Retitle(id, title string) (*core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	t, i := idx.Find(id)
-	if i < 0 {
-		return nil, a.notFoundTask(id)
-	}
-	// Guarded BEFORE the body write (AddNote's rule): a refusal must not have
-	// already landed the heading.
-	if err := a.guardTask(t); err != nil {
-		return nil, err
-	}
-	body, err := a.Store.LoadBody(id)
-	if err != nil {
-		return nil, err
-	}
-	next, headingChanged := retitleHeading(body, title)
-	if headingChanged {
-		if err := a.saveBody(id, next); err != nil {
-			return nil, err
+	return a.mutateInErr(idx, id, func(t *core.Task) error {
+		body, err := a.Store.LoadBody(id)
+		if err != nil {
+			return err
 		}
-	}
-	return a.mutateIn(idx, id, func(t *core.Task) {
+		if next, changed := retitleHeading(body, title); changed {
+			if err := a.saveBody(id, next); err != nil {
+				return err
+			}
+			t.Updated = a.Clock.Now() // prose moved: stamp unconditionally
+		}
 		t.Title = title
-		if headingChanged {
-			t.Updated = a.Clock.Now()
-		}
+		return nil
 	})
 }
 
@@ -1807,39 +1770,25 @@ func (a *App) AddDeps(id string, deps []string) (*core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	t, i := idx.Find(id)
-	if i < 0 {
-		return nil, a.notFoundTask(id)
-	}
-	if err := a.guardTask(t); err != nil {
-		return nil, err
-	}
-	before, err := core.MarshalTask(t)
-	if err != nil {
-		return nil, err
-	}
-	for _, dep := range deps {
-		if id == dep {
-			return nil, core.Validationf(id, "a task cannot depend on itself")
+	// Validated and applied against the ONE snapshot (mutateIn's reason to
+	// exist): the cycle check reads the same index the edit lands in.
+	return a.mutateInErr(idx, id, func(t *core.Task) error {
+		for _, dep := range deps {
+			if id == dep {
+				return core.Validationf(id, "a task cannot depend on itself")
+			}
+			if !idx.Has(dep) {
+				return core.Validationf(id, "dependency %q does not exist", dep)
+			}
+			if idx.DependsOn(dep, id) {
+				return core.Validationf(id, "adding dep %q would create a cycle (%s already depends on %s)", dep, dep, id)
+			}
+			if !contains(t.Deps, dep) {
+				t.Deps = append(t.Deps, dep)
+			}
 		}
-		if !idx.Has(dep) {
-			return nil, core.Validationf(id, "dependency %q does not exist", dep)
-		}
-		if idx.DependsOn(dep, id) {
-			return nil, core.Validationf(id, "adding dep %q would create a cycle (%s already depends on %s)", dep, dep, id)
-		}
-		if !contains(t.Deps, dep) {
-			t.Deps = append(t.Deps, dep)
-		}
-	}
-	if err := a.stampIfChanged(t, before); err != nil {
-		return nil, err
-	}
-	if err := a.Store.Save(idx); err != nil {
-		return nil, err
-	}
-	saved, _ := idx.Find(id)
-	return saved, nil
+		return nil
+	})
 }
 
 // RemoveDeps drops several dependencies from `id` in one write. Each must be a
@@ -1854,39 +1803,23 @@ func (a *App) RemoveDeps(id string, deps []string) (*core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	t, i := idx.Find(id)
-	if i < 0 {
-		return nil, a.notFoundTask(id)
-	}
-	if err := a.guardTask(t); err != nil {
-		return nil, err
-	}
-	before, err := core.MarshalTask(t)
-	if err != nil {
-		return nil, err
-	}
-	rm := make(map[string]bool, len(deps))
-	for _, dep := range deps {
-		if !contains(t.Deps, dep) {
-			return nil, core.Validationf(id, "%q is not a dependency of %s", dep, id)
+	return a.mutateInErr(idx, id, func(t *core.Task) error {
+		rm := make(map[string]bool, len(deps))
+		for _, dep := range deps {
+			if !contains(t.Deps, dep) {
+				return core.Validationf(id, "%q is not a dependency of %s", dep, id)
+			}
+			rm[dep] = true
 		}
-		rm[dep] = true
-	}
-	kept := make([]string, 0, len(t.Deps))
-	for _, d := range t.Deps {
-		if !rm[d] {
-			kept = append(kept, d)
+		kept := make([]string, 0, len(t.Deps))
+		for _, d := range t.Deps {
+			if !rm[d] {
+				kept = append(kept, d)
+			}
 		}
-	}
-	t.Deps = kept
-	if err := a.stampIfChanged(t, before); err != nil {
-		return nil, err
-	}
-	if err := a.Store.Save(idx); err != nil {
-		return nil, err
-	}
-	saved, _ := idx.Find(id)
-	return saved, nil
+		t.Deps = kept
+		return nil
+	})
 }
 
 // Relabel adds and/or removes labels on a task. Adding a label already present,
@@ -2084,35 +2017,28 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, *Rep
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	t, i := idx.Find(id)
-	if i < 0 {
-		return nil, nil, nil, a.notFoundTask(id)
-	}
 	due, err := a.resolveDue(o)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	reposBefore := append([]string(nil), t.Repos...)
-	renumbered, successor, report, err := a.applySet(idx, id, o, due, nil)
+	var (
+		renumbered []core.PriorityChange
+		successor  *pendingSuccessor
+		report     *RepeatReport
+	)
+	// applySet does the whole edit against the task mutateInPost hands it (the
+	// repo guard's both sides and the stamp are the skeleton's); the successor
+	// a `-s done` mints goes in through the post hook — inserting moves the
+	// index's backing array, so it must wait until every task pointer is dead.
+	saved, err := a.mutateInPost(idx, id, func(*core.Task) error {
+		renumbered, successor, report, err = a.applySet(idx, id, o, due, nil)
+		return err
+	}, func(idx *core.Index) error {
+		return a.flushSuccessors(idx, []*pendingSuccessor{successor})
+	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	// Judged on both sides of the edit: --add-repo lands in a repo the task did
-	// not carry yet, --rm-repo leaves one it did.
-	if t, _ = idx.Find(id); t != nil {
-		if err := a.guardRepos(id, unionRepos(reposBefore, t.Repos), ""); err != nil {
-			return nil, nil, nil, err
-		}
-	}
-	// Last, for the reason mutateInPost's hook exists: inserting moves the
-	// index's backing array, so every task pointer above must be done with.
-	if err := a.flushSuccessors(idx, []*pendingSuccessor{successor}); err != nil {
-		return nil, nil, nil, err
-	}
-	if err := a.Store.Save(idx); err != nil {
-		return nil, nil, nil, err
-	}
-	saved, _ := idx.Find(id)
 	return saved, renumbered, report, nil
 }
 
@@ -2178,21 +2104,9 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 	if err != nil {
 		return nil, nil, err
 	}
-	order, missing := []string{}, []string{}
-	seen := map[string]bool{}
-	for _, id := range ids {
-		if seen[id] {
-			continue
-		}
-		seen[id] = true
-		if _, i := idx.Find(id); i < 0 {
-			missing = append(missing, id)
-			continue
-		}
-		order = append(order, id)
-	}
-	if len(missing) > 0 {
-		return nil, nil, a.batchMissingErr(missing, len(order)+len(missing), "set")
+	order, err := a.resolveBatch(idx, ids, "set")
+	if err != nil {
+		return nil, nil, err
 	}
 	var successors []*pendingSuccessor
 	reports := map[string]*RepeatReport{}
@@ -2218,13 +2132,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 	if err := a.Store.Save(idx); err != nil {
 		return nil, nil, err
 	}
-	out := make([]*core.Task, 0, len(order))
-	reps := make([]*RepeatReport, 0, len(order))
-	for _, id := range order {
-		saved, _ := idx.Find(id)
-		out = append(out, saved)
-		reps = append(reps, reports[id])
-	}
+	out, reps := collectBatch(idx, order, reports)
 	return out, reps, nil
 }
 
@@ -2449,6 +2357,13 @@ func (a *App) mutateInPost(idx *core.Index, id string, fn func(*core.Task) error
 	if i < 0 {
 		return nil, a.notFoundTask(id)
 	}
+	// Guarded BEFORE fn as well as after it (mutateEpicStamping's shape): the
+	// prose paths' fn writes the body — a note appended, a body replaced, a
+	// heading synced — and a refusal after that would have already landed the
+	// prose. The registry is read once, so the second call costs nothing.
+	if err := a.guardTask(t); err != nil {
+		return nil, err
+	}
 	before, err := core.MarshalTask(t)
 	if err != nil {
 		return nil, err
@@ -2475,6 +2390,43 @@ func (a *App) mutateInPost(idx *core.Index, id string, fn func(*core.Task) error
 	}
 	saved, _ := idx.Find(id)
 	return saved, nil
+}
+
+// resolveBatch is the batch mutators' id resolution: the ids deduped to their
+// first occurrence, in input order, every one present — or the all-or-nothing
+// miss (batchMissingErr, verb-worded) with nothing resolved. moveMany and
+// SetMany carried it twice, 15 of 16 lines the same (t-gq4v).
+func (a *App) resolveBatch(idx *core.Index, ids []string, verb string) ([]string, error) {
+	order, missing := []string{}, []string{}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		if _, i := idx.Find(id); i < 0 {
+			missing = append(missing, id)
+			continue
+		}
+		order = append(order, id)
+	}
+	if len(missing) > 0 {
+		return nil, a.batchMissingErr(missing, len(order)+len(missing), verb)
+	}
+	return order, nil
+}
+
+// collectBatch is the batch mutators' result: the saved tasks and their series
+// reports, one per id in order.
+func collectBatch(idx *core.Index, order []string, reports map[string]*RepeatReport) ([]*core.Task, []*RepeatReport) {
+	out := make([]*core.Task, 0, len(order))
+	reps := make([]*RepeatReport, 0, len(order))
+	for _, id := range order {
+		saved, _ := idx.Find(id)
+		out = append(out, saved)
+		reps = append(reps, reports[id])
+	}
+	return out, reps
 }
 
 // stampIfChanged advances t.Updated only when the edit actually changed what
@@ -2625,22 +2577,15 @@ func (a *App) AddNote(id, text string) (*core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	t, i := idx.Find(id)
-	if i < 0 {
-		return nil, a.notFoundTask(id)
-	}
-	if err := a.guardTask(t); err != nil {
-		return nil, err
-	}
-	if err := a.appendBody(id, text); err != nil {
-		return nil, err
-	}
-	t.Updated = a.Clock.Now()
-	if err := a.Store.Save(idx); err != nil {
-		return nil, err
-	}
-	saved, _ := idx.Find(id)
-	return saved, nil
+	// Prose: the body goes first (a partial failure costs a timestamp, never
+	// content), and the stamp is unconditional — the shard cannot see a body.
+	return a.mutateInErr(idx, id, func(t *core.Task) error {
+		if err := a.appendBody(id, text); err != nil {
+			return err
+		}
+		t.Updated = a.Clock.Now()
+		return nil
+	})
 }
 
 // normalizeNote trims a note's trailing newlines and rejects an
@@ -2676,22 +2621,13 @@ func (a *App) SetBody(id, text string) (*core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	t, i := idx.Find(id)
-	if i < 0 {
-		return nil, a.notFoundTask(id)
-	}
-	if err := a.guardTask(t); err != nil {
-		return nil, err
-	}
-	if err := a.saveBody(id, text); err != nil {
-		return nil, err
-	}
-	t.Updated = a.Clock.Now()
-	if err := a.Store.Save(idx); err != nil {
-		return nil, err
-	}
-	saved, _ := idx.Find(id)
-	return saved, nil
+	return a.mutateInErr(idx, id, func(t *core.Task) error { // AddNote's order and stamp
+		if err := a.saveBody(id, text); err != nil {
+			return err
+		}
+		t.Updated = a.Clock.Now()
+		return nil
+	})
 }
 
 // normalizeBody normalizes a REPLACEMENT body: trailing newlines collapse to
