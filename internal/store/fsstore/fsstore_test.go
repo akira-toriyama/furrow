@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -572,5 +573,45 @@ func TestSaveRepairsMisnamedShardWithUniqueID(t *testing.T) {
 	}
 	if _, err := os.Stat(stray); !os.IsNotExist(err) {
 		t.Errorf("stray filename should be swept once the id lives under its canonical path")
+	}
+}
+
+// SaveBodies stages every body before renaming any: a body the batch cannot
+// stage (here an id under a directory that does not exist, sorted last so two
+// bodies are already staged) leaves the others' files exactly as they were and
+// no .tmp-* behind — the all-or-nothing a `done <id>... --note` relies on.
+func TestSaveBodiesStagesAllBeforeRenamingAny(t *testing.T) {
+	s := newStore(t)
+	for _, id := range []string{"t-aaaaa", "t-bbbbb"} {
+		if err := s.SaveBody(id, "old "+id+"\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := s.SaveBodies(map[string]string{
+		"t-aaaaa":       "new a\n",
+		"t-bbbbb":       "new b\n",
+		"missing/t-ccc": "unwritable\n",
+	})
+	if err == nil {
+		t.Fatal("a batch with an unstageable body must fail")
+	}
+	for _, id := range []string{"t-aaaaa", "t-bbbbb"} {
+		got, _ := s.LoadBody(id)
+		if got != "old "+id+"\n" {
+			t.Errorf("%s was rewritten by a batch that failed: %q", id, got)
+		}
+	}
+	entries, _ := os.ReadDir(s.bodiesDir())
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".tmp-") {
+			t.Errorf("staged temp left behind: %s", e.Name())
+		}
+	}
+
+	if err := s.SaveBodies(map[string]string{"t-aaaaa": "new a\n", "t-bbbbb": "new b\n"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.LoadBody("t-bbbbb"); got != "new b\n" {
+		t.Errorf("a clean batch must land every body, got %q", got)
 	}
 }

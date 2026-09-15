@@ -401,11 +401,19 @@ func (a *App) EpicActivate(ref, reason string) (before, after *core.Epic, openDe
 		return nil, nil, nil, err
 	}
 
-	before, after, err = a.mutateEpic(id, func(e *core.Epic) error { e.Active = true; return nil })
+	// The activation record is written INSIDE the mutation, before the shard
+	// lands — EpicNote's shape. Written after it, a failed append returned an
+	// error with Active already true, and the body is the only record
+	// PreviousActiveSuggest and sync's publishedSwitches read, so the box was
+	// open with its "previous" lost for good (t-5n2x).
+	before, after, err = a.mutateEpicProse(id, func(e *core.Epic) error {
+		if err := a.recordSwitch(id, reason); err != nil {
+			return err
+		}
+		e.Active = true
+		return nil
+	})
 	if err != nil {
-		return nil, nil, nil, err
-	}
-	if err := a.recordSwitch(id, reason); err != nil {
 		return nil, nil, nil, err
 	}
 	return before, after, openDeps, nil

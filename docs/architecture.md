@@ -129,7 +129,7 @@ The seams between the pure core and the outside world are interfaces declared in
 - **`Store`** — persists the per-task metadata shards and per-task bodies. It owns
   *all* path construction (callers never assemble `".furrow/bodies/<id>.md"` by
   hand) and *all* atomicity. Methods: `Load`, `Save`, `BoardVersion`, `LoadMeta`,
-  `Writable`, `SetBoardVersion`, `LoadBody`, `SaveBody`,
+  `Writable`, `SetBoardVersion`, `LoadBody`, `SaveBody`, `SaveBodies`,
   `BodyExists`, `ListBodyIDs`, `ListTaskIDs`, `SaveAsset`, `ListAssets`,
   `NextID`. `BoardVersion` reads the layout version the board *declares*
   (ungated, so `furrow board` can diagnose a board nothing else can open), and is
@@ -600,6 +600,18 @@ temp file is removed on any error path. A single-task change is one shard and th
 fully atomic; a bulk change is atomic **per shard** — each shard is independently
 valid, so an interrupted bulk save leaves a coherent store and is safely
 re-runnable.
+
+**A batch of bodies lands in two phases.** The prose a close writes — the
+generated successor bodies, and the `--note` on every closed task — goes
+through `SaveBodies`: every body is staged to its temp file first (the half
+that can fail: space, permissions), and only then are they all renamed over
+their targets. A staging failure therefore leaves no body changed and no temp
+behind. It exists because a note is not idempotent: a per-id loop of `SaveBody`
+that failed on the third body left the first two annotated while the index
+write never happened, and the retry appended the note again (t-5n2x). Only a
+rename can still split a batch, and a rename on one filesystem practically
+never fails. The app composes every body before writing any (`appendedBody`),
+so the store's one call is the last step that can refuse before the index save.
 
 ### Lazy body load
 

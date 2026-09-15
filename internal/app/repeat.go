@@ -220,20 +220,26 @@ func (a *App) flushSuccessors(idx *core.Index, pending []*pendingSuccessor) erro
 	return nil
 }
 
-// writeSuccessorFiles puts the generated prose on disk. It is
-// the only half that can FAIL, so callers that also append a closing note run it
-// FIRST: a note is not idempotent, and a failure after one had landed would
-// leave it on the body and duplicate it on every retry.
+// writeSuccessorFiles puts the generated prose on disk, all of it in one store
+// write. It is the only half that can FAIL; a caller that also appends a
+// closing note composes the note into the same batch instead (moveMany,
+// DoneNote), since a note is not idempotent and a failure after one had landed
+// would leave it on the body and duplicate it on every retry.
 func (a *App) writeSuccessorFiles(pending []*pendingSuccessor) error {
+	return a.saveBodies(successorBodies(pending))
+}
+
+// successorBodies is the id -> body map of the generated occurrences, the
+// shape a batch prose write takes; nil entries (a task that does not repeat)
+// contribute nothing.
+func successorBodies(pending []*pendingSuccessor) map[string]string {
+	bodies := map[string]string{}
 	for _, p := range pending {
-		if p == nil {
-			continue
-		}
-		if err := a.saveBody(p.task.ID, p.body); err != nil {
-			return err
+		if p != nil {
+			bodies[p.task.ID] = p.body
 		}
 	}
-	return nil
+	return bodies
 }
 
 // insertSuccessors adds the generated occurrences to the index. In-memory and

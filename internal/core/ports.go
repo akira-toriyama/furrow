@@ -84,6 +84,15 @@ type Store interface {
 	LoadBody(id string) (string, error)
 	// SaveBody writes the markdown body for id (creating bodies/ as needed).
 	SaveBody(id, content string) error
+	// SaveBodies writes several bodies as ONE step: every file is prepared
+	// before any lands, so a write that fails leaves none of them changed.
+	// It exists for the batch prose writes — `done <id>... --note`, a close's
+	// generated successor bodies — whose all-or-nothing contract a loop of
+	// SaveBody calls broke: a note is not idempotent, and a failure on the
+	// third body left the first two annotated and duplicated them on the
+	// retry. Only the final rename can still split a batch (fsstore), and a
+	// rename on one filesystem practically never fails.
+	SaveBodies(bodies map[string]string) error
 	// BodyExists reports whether bodies/<id>.md is present.
 	BodyExists(id string) bool
 	// ListBodyIDs returns the ids of all bodies/<id>.md files, for the
