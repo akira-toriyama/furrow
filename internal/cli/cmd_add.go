@@ -36,7 +36,24 @@ func newAddCmd() *cobra.Command {
 		Long: "Add a task. The id is assigned automatically (frozen, never reused) and a\n" +
 			"bodies/<id>.md file is created, seeded with the title as a heading.\n\n" +
 			"With --stdin, read one title per line from stdin and create them all in a\n" +
-			"single write (blank lines skipped); the shared flags apply to every task.",
+			"single write (blank lines skipped); the shared flags apply to every task.\n\n" +
+			"--due promises the task for an instant: `2026-08-04` (that WHOLE day — it\n" +
+			"binds 23:59:59 in the board's calendar, so the day never starts out\n" +
+			"overdue), `2026-08-04T10:30`, an RFC3339 instant, or a signed offset such\n" +
+			"as `+1d`. --repeat makes the task RECUR: a short spelling (daily, every <n>\n" +
+			"days, weekly, weekly on <days>, every <n> weeks on <days>, monthly, monthly\n" +
+			"on <day-of-month>, monthly on last, monthly on <nth> <weekday>, monthly on\n" +
+			"last <weekday>, every <n> months on <day-of-month>, yearly, every <n>\n" +
+			"years), optionally ending in `until <date>` or `for <n> times` (never\n" +
+			"both), or a raw RFC 5545 RRULE line — minus a DTSTART, which is exit 2 in\n" +
+			"either spelling: the series starts at --due, which --repeat therefore\n" +
+			"requires, and that first date becomes the immovable series anchor. The\n" +
+			"anchor need not land on the rule: an off-lattice one is a live occurrence\n" +
+			"OUTSIDE the series (`--due <a Friday> --repeat 'weekly on mon for 3 times'`\n" +
+			"is four tasks), and a stderr note names the rule's own first date. A day\n" +
+			"past 28 SKIPS the months that lack it (`monthly on last` always lands) and\n" +
+			"February 29 skips the years that lack one; both say so at bind time. Only\n" +
+			"a close advances a series — see `furrow done --help`.",
 		Example: "  furrow add \"Wire up the config loader\"\n" +
 			"  furrow add \"Fix flaky sync test\" -s ready -l bug --value 4 --effort 2\n" +
 			"  furrow add \"Cross-repo epic\" -r akira-toriyama/furrow -r akira-toriyama/cifail\n" +
