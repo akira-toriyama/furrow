@@ -510,7 +510,6 @@ done <<'CLAIMS'
 complete|commands||CLAUDE.md|^- Canonical commands:|^  \*\*`furrow brief \[--json\]`
 complete|error-kinds||README.md|^- \*\*`kind`\*\*|^- \*\*`retryable`\*\*
 complete|sync-progress-keys||README.md|^.\{committed, pulled, pushed|^failure alike
-complete|sync-progress-keys||docs/architecture.md|^  failure — carries|^  omitted when empty
 complete|commands||docs/non-goals.md|^- \*\*Built and real today\*\*|^  Destructive ops are guarded
 complete|config-keys||CLAUDE.md|^`furrow lint` surfaces\. Read it through `internal/config`|^### Schema
 complete|config-keys||docs/architecture.md|^Sections and their defaults:|^`status` is just a lane
@@ -527,7 +526,6 @@ complete|query-presence||README.md|^- \*\*presence\*\*|^- \*\*computed flags\*\*
 complete|query-is||README.md|^- \*\*computed flags\*\*|^- \*\*free text\*\*
 complete|repeat-spellings||README.md|^- \*\*`add`\*\*|^- \*\*`ls`\*\*
 complete|incoming-kinds||README.md|^`switches` names any `epic activate` records|^$
-complete|incoming-kinds||docs/architecture.md|^  `switches` = the epic activations this sync published|^  sync says WHAT it pulled
 complete|incoming-kinds||docs/glossary.md|^. \*\*sync\*\* .|^## 
 subset|lint-codes|^[a-z]+(-[a-z]+)+$|README.md|^- \*\*`lint`\*\* — every finding carries|^- \*\*`migrate`\*\*
 # doctor-codes is registered in `furrow vocab` but deliberately UNCLAIMED: every
