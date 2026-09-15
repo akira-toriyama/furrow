@@ -977,7 +977,7 @@ except where noted:
   `sync-push-rejected` (exit 3, retryable — a co-writer kept winning the push
   race, so the board is untouched and the local sync commit intact; re-run),
   `sync-lock-stale` (terminal — a likely-stale `.git/*.lock`, named in the
-  message), `sync-op-in-progress` (exit 2 — your own non-rebase git operation, a
+  message; the auto-commit and the pull both retry a live lock race first), `sync-op-in-progress` (exit 2 — your own non-rebase git operation, a
   merge say, blocks sync),
   `sync-interrupted` (exit 130/143 = 128+signal, retryable — SIGINT/SIGTERM
   cancelled the in-flight git; a genuine conflict is never masked by the signal,

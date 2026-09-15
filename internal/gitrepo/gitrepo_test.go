@@ -500,3 +500,31 @@ func TestAddedLinesIgnoresOperatorDiffPrefixConfig(t *testing.T) {
 		t.Errorf("AddedLines under diff.noprefix = %+v, want %+v", got, want)
 	}
 }
+
+// `git add`/`commit` take .git/index.lock, so a co-writer in a shared checkout
+// makes Commit lose the same lock race the pull classifies as transient. It
+// used to come back as a terminal git-failed (t-cdx9).
+func TestCommitClassifiesIndexLockAsTransient(t *testing.T) {
+	git := gitOrSkip(t)
+	repo := initRepo(t, git)
+	if err := os.WriteFile(filepath.Join(repo, "x.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".git", "index.lock"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Open(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = r.Commit(context.Background(), "locked", "x.txt")
+	if !errors.Is(err, ErrTransientRace) {
+		t.Fatalf("Commit under a held index.lock = %v, want ErrTransientRace", err)
+	}
+	if err := os.Remove(filepath.Join(repo, ".git", "index.lock")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Commit(context.Background(), "unlocked", "x.txt"); err != nil {
+		t.Fatalf("Commit after the lock cleared: %v", err)
+	}
+}

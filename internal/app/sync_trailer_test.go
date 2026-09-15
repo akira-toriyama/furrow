@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"runtime"
 	"strconv"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestSyncTrailerShape(t *testing.T) {
-	tr := syncTrailer("/tmp/some board")
+	tr := syncTrailer(context.Background(), "/tmp/some board")
 	if !strings.HasPrefix(tr, "Furrow-sync: ") {
 		t.Fatalf("trailer = %q, want the Furrow-sync: prefix", tr)
 	}
@@ -26,12 +27,12 @@ func TestSyncTrailerShape(t *testing.T) {
 	if !strings.HasSuffix(tr, " dir=/tmp/some board") {
 		t.Errorf("trailer %q must end with the dir field", tr)
 	}
-	if len(parentChain(4)) > 0 && !strings.Contains(tr, "via=") {
+	if len(parentChain(context.Background(), 4)) > 0 && !strings.Contains(tr, "via=") {
 		t.Errorf("trailer %q missing via= although the ancestry walk works here", tr)
 	}
 
 	// A dirless call (defensive) drops the field instead of writing dir=.
-	if tr := syncTrailer(""); strings.Contains(tr, "dir=") {
+	if tr := syncTrailer(context.Background(), ""); strings.Contains(tr, "dir=") {
 		t.Errorf("empty dir must be omitted, got %q", tr)
 	}
 }
@@ -49,7 +50,7 @@ func TestNormalizeComm(t *testing.T) {
 }
 
 func TestParentChainWalks(t *testing.T) {
-	chain := parentChain(4)
+	chain := parentChain(context.Background(), 4)
 	if len(chain) > 4 {
 		t.Fatalf("chain %v longer than the cap", chain)
 	}

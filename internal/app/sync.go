@@ -15,7 +15,7 @@ import (
 
 // retryPolicy bounds how long Sync waits out a transient concurrent-writer
 // condition before giving up: a foreign rebase caught by the pre-flight, or a
-// fetch/ref-lock race during the pull (see pullWithRetry).
+// lock/ref race during the auto-commit or the pull (see retryTransient).
 type retryPolicy struct {
 	base   time.Duration // first backoff
 	factor int           // per-attempt multiplier
@@ -72,29 +72,33 @@ func waitForRebaseToClear(check func() (string, bool), sleep func(time.Duration)
 	return op, false
 }
 
-// pullWithRetry runs pullOnce and, while it fails with a transient
-// concurrent-access race (a co-writer's fetch clobbering FETCH_HEAD or
-// contending a ref/index lock in a shared checkout — gitrepo.ErrTransientFetchRace),
-// retries with bounded backoff. A LIVE race self-resolves in well under a
-// second, so this rides it out silently in the common case. If it outlives the
-// whole budget the lock is almost certainly STALE (a crashed git left a
-// .git/*.lock) or the ref conflict permanent, so the residual is returned as a
-// TERMINAL error naming the recovery — deliberately NOT the retryable
-// "sync-busy", which would loop an agent forever on a stale lock (git can't tell
-// a stale lock from a live one, but "outlived the retry budget" can). Any other
-// outcome — success, a sync-conflict, a real error — is returned immediately and
-// unchanged. top is the work-tree root, named in the recovery guidance.
-func pullWithRetry(pullOnce func() error, sleep func(time.Duration) error, pol retryPolicy, top string) error {
-	err := pullOnce()
+// retryTransient runs once and, while it fails with a transient
+// concurrent-access race (a co-writer's fetch clobbering FETCH_HEAD, or a
+// ref/index lock contended in a shared checkout — gitrepo.ErrTransientRace),
+// retries with bounded backoff. Both git stages of a sync go through it: the
+// auto-commit (`git add`/`commit` take the index lock) and the pull. A LIVE
+// race self-resolves in well under a second, so this rides it out silently in
+// the common case. If it outlives the whole budget the lock is almost certainly
+// STALE (a crashed git left a .git/*.lock) or the ref conflict permanent, so
+// the residual is returned as a TERMINAL error naming the recovery —
+// deliberately NOT the retryable "sync-busy", which would loop an agent forever
+// on a stale lock (git can't tell a stale lock from a live one, but "outlived
+// the retry budget" can). Any other outcome — success, a sync-conflict, a real
+// error — is returned immediately and unchanged. top is the work-tree root,
+// named in the recovery guidance. The commit stage used to run bare, so the
+// index.lock the guidance itself names came back as a raw non-retryable
+// git-failed from that half (t-cdx9).
+func retryTransient(once func() error, sleep func(time.Duration) error, pol retryPolicy, top string) error {
+	err := once()
 	backoff := pol.base
-	for i := 0; err != nil && errors.Is(err, gitrepo.ErrTransientFetchRace) && i < pol.max; i++ {
+	for i := 0; err != nil && errors.Is(err, gitrepo.ErrTransientRace) && i < pol.max; i++ {
 		if serr := sleep(backoff); serr != nil {
 			return serr // cancelled mid-backoff — stop retrying and propagate
 		}
-		err = pullOnce()
+		err = once()
 		backoff = pol.next(backoff)
 	}
-	if err != nil && errors.Is(err, gitrepo.ErrTransientFetchRace) {
+	if err != nil && errors.Is(err, gitrepo.ErrTransientRace) {
 		return &core.Error{
 			Code: core.CodeInternal,
 			Kind: core.KindSyncLockStale,
@@ -717,8 +721,9 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 			// The attribution trailer rides EVERY sync commit, -m included:
 			// self-identification is only worth anything when the writer that
 			// nobody remembers launching also stamps it (see syncTrailer).
-			message += "\n\n" + syncTrailer(r.Toplevel())
-			if err := r.Commit(ctx, message, commitPaths...); err != nil {
+			message += "\n\n" + syncTrailer(ctx, r.Toplevel())
+			commit := func() error { return r.Commit(ctx, message, commitPaths...) }
+			if err := retryTransient(commit, sleep, defaultConcurrentWait, r.Toplevel()); err != nil {
 				return p, err
 			}
 			p.Committed = true
@@ -767,7 +772,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 
 	// pullOnce is a single pull --rebase attempt. A conflict is resolved
 	// definitively here (flag, abort, sync-conflict); a transient race bubbles up
-	// as ErrTransientFetchRace for pull (below) to retry; success sets Pulled.
+	// as ErrTransientRace for pull (below) to retry; success sets Pulled.
 	// Either way the stash is probed afterwards — git's autostash re-apply can fail
 	// silently on BOTH paths, and on the success path it is the only tell there is.
 	pullOnce := func() error {
@@ -836,7 +841,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 	// running more git in it is how the markers get committed.
 	pull := func() error {
 		stranded = false
-		if err := pullWithRetry(pullOnce, sleep, defaultConcurrentWait, r.Toplevel()); err != nil {
+		if err := retryTransient(pullOnce, sleep, defaultConcurrentWait, r.Toplevel()); err != nil {
 			return err
 		}
 		if stranded {
@@ -884,7 +889,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 // sync-task-status.yml's publish step had no honest retry policy available: it
 // could retry terminal failures, or abandon a race it should ride out.
 //
-// A helper with injected push/pull (like pullWithRetry above) so the exhausted
+// A helper with injected push/pull (like retryTransient above) so the exhausted
 // case is reachable in a test — as real git it needs the remote to move between
 // two specific instants.
 func pushWithRetry(push, pull func() error) error {
