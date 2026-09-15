@@ -995,9 +995,10 @@ back into place — see the marshaller-path section.
 
 ## Multi-session work policy
 
-`docs/plans/` holds one file per in-flight task (delete on merge). **Never leave
-unfinished work implicit** — every in-flight task is a plan file, a tracked
-issue, or an explicit note; nothing important lives only in a chat transcript.
+**The single source of progress is the task body on the board** (the fleet
+default: no plan files, no copies in memory or on a branch). On interruption,
+update the body's checkboxes and leave one line of what the next session
+should do; nothing important lives only in a chat transcript.
 
 **Multi-operator (co-located checkout).** This repo is sometimes worked on by several
 people/agents at once. A checkout has one shared HEAD/index/working tree, so two
