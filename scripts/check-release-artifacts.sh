@@ -20,22 +20,42 @@ dist="${1:-dist}"
 
 [ -d "$dist" ] || { echo "✖ no such directory: $dist (run goreleaser first)" >&2; exit 1; }
 
+# The platform set has ONE source: .goreleaser.yaml's goos × goarch. Everything
+# below is derived from it (or from the archives on disk) and cross-checked, so
+# adding a goarch cannot leave a platform unasserted here or unattested in
+# release.yml — the two lists used to be hand-copied in three places, and a
+# fifth platform would have shipped without an SBOM attestation while every
+# guard stayed green. Pure text extraction, like check-version-lockstep.sh.
+goos="$(sed -n 's/^[[:space:]]*goos:[[:space:]]*\[\(.*\)\].*/\1/p' .goreleaser.yaml | head -1 | tr ',' ' ')"
+goarch="$(sed -n 's/^[[:space:]]*goarch:[[:space:]]*\[\(.*\)\].*/\1/p' .goreleaser.yaml | head -1 | tr ',' ' ')"
+[ -n "$goos" ] && [ -n "$goarch" ] || { echo "✖ could not read goos/goarch from .goreleaser.yaml (expected the one-line \`goos: [a, b]\` form)" >&2; exit 1; }
+expected=""
+for os in $goos; do
+  for arch in $goarch; do
+    expected="$expected ${os}_${arch}"
+  done
+done
+
 # The version as it appears IN THE FILENAMES — not from git. In a snapshot build
 # it is something like 0.8.1-SNAPSHOT-abc1234; at release it is 0.8.0. Deriving it
-# from the artifact that actually exists is the whole point: it is what makes the
+# from an artifact that actually exists is the whole point: it is what makes the
 # concrete paths below concrete.
-f="$(ls "$dist"/furrow_*_linux_amd64.tar.gz 2>/dev/null | head -1 || true)"
-[ -n "$f" ] || { echo "✖ no furrow_*_linux_amd64.tar.gz in $dist/ — did the build pipe run?" >&2; exit 1; }
+f=""
+for candidate in "$dist"/furrow_*_*_*.tar.gz; do
+  [ -f "$candidate" ] && { f="$candidate"; break; }
+done
+[ -n "$f" ] || { echo "✖ no furrow_<version>_<os>_<arch>.tar.gz in $dist/ — did the build pipe run?" >&2; exit 1; }
 v="${f#"$dist"/furrow_}"
-v="${v%_linux_amd64.tar.gz}"
+v="${v%_*_*.tar.gz}"
 echo "release artifacts: version=$v"
 
 fail=0
 note() { echo "✖ $*" >&2; fail=1; }
 
 # ---------------------------------------------------------------------------
-# 1. Every path release.yml hands to the attest action must resolve to a REAL
-#    file — checked as the literal string, never a glob.
+# 1. The archives on disk are EXACTLY the configured platform set, and every
+#    path release.yml hands to the attest action resolves to a REAL file —
+#    checked as the literal string, never a glob.
 #
 #    This is v0.8.0's first CRITICAL: the attest action glob-expands
 #    `subject-path` but fs.stat()s `sbom-path` VERBATIM, so `dist/furrow_*_...json`
@@ -43,8 +63,20 @@ note() { echo "✖ $*" >&2; fail=1; }
 #    — after the cask was already pushed. Asserting the exact pair per platform is
 #    what would have caught it on the PR.
 # ---------------------------------------------------------------------------
+actual=""
+for a in "$dist"/furrow_"${v}"_*_*.tar.gz; do
+  p="${a#"$dist"/furrow_"${v}"_}"
+  actual="$actual ${p%.tar.gz}"
+done
+for platform in $actual; do
+  case " $expected " in
+    *" $platform "*) : ;;
+    *) note "dist/ carries $platform, which .goreleaser.yaml does not configure (goos × goarch = $expected)" ;;
+  esac
+done
+
 archives=""
-for platform in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64; do
+for platform in $expected; do
   archive="furrow_${v}_${platform}.tar.gz"
   sbom="${archive}.spdx.sbom.json"
   archives="$archives $archive"
@@ -60,6 +92,23 @@ for platform in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64; do
   if [ -f "$dist/$sbom" ] && ! grep -q '"spdxVersion"[: ]*"SPDX-2.3"' "$dist/$sbom"; then
     note "$sbom is not SPDX-2.3 — attest would publish a different predicateType than the READMEs document"
   fi
+
+  # release.yml attests one SBOM per platform, one step each (actions/attest
+  # takes a single sbom-path per call). A platform with no such step ships
+  # WITHOUT an SBOM attestation and nothing else would say so — release.yml
+  # only runs at a tag.
+  if ! grep -q "sbom-path: dist/furrow_\${{ steps.rel.outputs.version }}_${platform}.tar.gz.spdx.sbom.json" .github/workflows/release.yml; then
+    note "release.yml has no 'Attest SBOM' step for $platform — add one (sbom-path: dist/furrow_\${{ steps.rel.outputs.version }}_${platform}.tar.gz.spdx.sbom.json)"
+  fi
+done
+# …and no attest step for a platform that is no longer built (it would stat a
+# missing file and fail the release after the cask was pushed).
+attested_list="$(sed -n 's/^[[:space:]]*sbom-path: dist\/furrow_\${{ steps\.rel\.outputs\.version }}_\([a-z0-9]*_[a-z0-9]*\)\.tar\.gz\.spdx\.sbom\.json.*/\1/p' .github/workflows/release.yml)"
+for attested in $attested_list; do
+  case " $expected " in
+    *" $attested "*) : ;;
+    *) note "release.yml attests an SBOM for $attested, which .goreleaser.yaml no longer builds" ;;
+  esac
 done
 
 # ---------------------------------------------------------------------------
@@ -103,7 +152,7 @@ if [ -n "$arch" ] && [ -f "$native" ]; then
     got="$("$tmp/furrow" --version 2>/dev/null || true)"
     case "$got" in
       *"$v"*) : ;;
-      *) note "the ${os}_${arch} binary reports "${got:-<no output>}", not version $v — ldflags -X no-op'd (version package moved/renamed?)" ;;
+      *) note "the ${os}_${arch} binary reports ${got:-<no output>}, not version $v — ldflags -X no-op'd (version package moved/renamed?)" ;;
     esac
   else
     note "$native does not contain a top-level 'furrow' binary"
@@ -127,4 +176,5 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
   echo "version=$v" >> "$GITHUB_OUTPUT"
 fi
 
-echo "ok — 4 archives + 4 SPDX-2.3 SBOMs, every attest path concrete, checksums.txt exact-field unique, native binary carries $v"
+n="$(echo "$expected" | wc -w | tr -d ' ')"
+echo "ok — $n archives ($(echo "$expected" | tr -s ' ' | sed 's/^ //')) + $n SPDX-2.3 SBOMs, every attest path concrete and attested in release.yml, checksums.txt exact-field unique, native binary carries $v"
