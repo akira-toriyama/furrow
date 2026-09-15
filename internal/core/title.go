@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 	"unicode"
 )
@@ -14,13 +15,22 @@ import (
 // Folding (rather than rejecting) keeps bulk/stdin input forgiving;
 // a stray control character that reaches the store some other way is caught by
 // lint's control-char check (TitleHasControl).
+//
+// A FORMAT character (Unicode Cf — U+202E RIGHT-TO-LEFT OVERRIDE, zero-width
+// joiners, soft hyphens) is dropped outright: it renders nothing and steers
+// the terminal instead, so an override in one title flipped every row after
+// it in `ls` (t-awr6). Length is the writer's refusal (MaxTitleLen), not a
+// fold: a 10,000-character title is not a title with a typo.
 func NormalizeTitle(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
-		if unicode.IsControl(r) {
+		switch {
+		case unicode.IsControl(r):
 			b.WriteByte(' ')
-		} else {
+		case unicode.Is(unicode.Cf, r):
+			// dropped
+		default:
 			b.WriteRune(r)
 		}
 	}
@@ -35,5 +45,21 @@ func NormalizeTitle(s string) string {
 // title that reached the store WITHOUT going through NormalizeTitle: a
 // HAND-EDITED shard, or a writer that forgets to fold.
 func TitleHasControl(s string) bool {
-	return strings.ContainsFunc(s, unicode.IsControl)
+	return strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) })
+}
+
+// MaxTitleLen is the longest title a writer accepts, in characters. A title
+// is one row's last column in every human view and the body's H1; there is no
+// truncation on the way out (the JSON is the record), so the cap is the one
+// bound between a shard and a wrecked terminal.
+const MaxTitleLen = 500
+
+// TitleTooLong is the writer's refusal for a title past MaxTitleLen, "" when
+// it fits. Counted in characters, not bytes: a CJK title is not shorter for
+// being wider.
+func TitleTooLong(title string) string {
+	if n := len([]rune(title)); n > MaxTitleLen {
+		return fmt.Sprintf("title is %d characters; the limit is %d — put the rest in the body", n, MaxTitleLen)
+	}
+	return ""
 }

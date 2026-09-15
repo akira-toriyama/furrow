@@ -104,3 +104,76 @@ func TestLintDoneDraft(t *testing.T) {
 		t.Errorf("done-draft = %+v, want one warn on %s only", got, doneDraft.ID)
 	}
 }
+
+// updated-in-future: a hand-edited stamp ahead of the clock hides the task
+// from every reader of that clock (is:stale, --since, revisit) until the next
+// write rewinds it; lint says so, and clock skew of minutes does not (t-awr6).
+func TestLintUpdatedInFuture(t *testing.T) {
+	a := newApp()
+	tk, err := a.Add("x", AddOpts{Repos: []string{"o/r"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, _ := a.Store.Load()
+	future, _ := idx.Find(tk.ID)
+	future.Updated = a.Clock.Now().Add(72 * time.Hour)
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	ps, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := countCode(ps, "updated-in-future"); n != 1 {
+		t.Fatalf("updated-in-future = %d findings, want 1: %+v", n, ps)
+	}
+	idx, _ = a.Store.Load()
+	skew, _ := idx.Find(tk.ID)
+	skew.Updated = a.Clock.Now().Add(5 * time.Minute)
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	ps, _ = a.Lint()
+	if n := countCode(ps, "updated-in-future"); n != 0 {
+		t.Errorf("minutes of skew must not be a finding: %+v", ps)
+	}
+}
+
+// priority-duplicate: two open tasks sharing a lane and a priority have no
+// order; lint names the tie once, on the lowest id, with reorder as the remedy.
+func TestLintPriorityDuplicate(t *testing.T) {
+	a := newApp()
+	x, _ := a.Add("x", AddOpts{Repos: []string{"o/r"}})
+	y, _ := a.Add("y", AddOpts{Repos: []string{"o/r"}})
+	idx, _ := a.Store.Load()
+	tx, _ := idx.Find(x.ID)
+	ty, _ := idx.Find(y.ID)
+	ty.Priority = tx.Priority
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	ps, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := countCode(ps, "priority-duplicate"); n != 1 {
+		t.Fatalf("priority-duplicate = %d findings, want 1: %+v", n, ps)
+	}
+	if _, err := a.Done(y.ID); err != nil {
+		t.Fatal(err)
+	}
+	ps, _ = a.Lint()
+	if n := countCode(ps, "priority-duplicate"); n != 0 {
+		t.Errorf("a closed task is out of the ordering: %+v", ps)
+	}
+}
+
+func countCode(ps []core.Problem, code string) int {
+	n := 0
+	for _, p := range ps {
+		if p.Code == code {
+			n++
+		}
+	}
+	return n
+}

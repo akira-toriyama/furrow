@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -585,8 +586,66 @@ func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
 // that a periodic tidy pass kept re-finding. All warns — hygiene is advisory —
 // and the two config-driven ones ship OFF, because their thresholds and words
 // are board conventions, not furrow's (the provenance_markers stance).
+// updatedSkewTolerance is how far ahead of this machine's clock an `updated`
+// may sit before updated-in-future fires: two writers' clocks drift by
+// seconds, not hours.
+const updatedSkewTolerance = time.Hour
+
 func (a *App) lintHygieneProblems(idx *core.Index) []core.Problem {
 	var ps []core.Problem
+
+	// updated-in-future: a hand-edited `updated` ahead of the clock (a 2099
+	// stamp was measured) is invisible to every reader of that clock —
+	// is:stale never fires, `ls --since` always does, revisit's stale never
+	// nudges — and the next ordinary write silently rewinds it. A little skew
+	// between two machines' clocks is not a finding; an hour is (t-awr6).
+	now := a.Clock.Now()
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if t.Updated.After(now.Add(updatedSkewTolerance)) {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "updated-in-future", ID: t.ID,
+				Msg: fmt.Sprintf("updated %s is ahead of the clock (now %s) — is:stale, `ls --since` and revisit's stale read that stamp; any write (`furrow note %s`) re-stamps it",
+					t.Updated.UTC().Format(core.TimeLayout), now.UTC().Format(core.TimeLayout), t.ID)})
+		}
+	}
+
+	// priority-duplicate: two open tasks in one lane with one priority have no
+	// order — `ls` sorts lane, priority, then id, so the tie reads as neither
+	// creation nor intent — and nothing but a hand edit produces it (add
+	// appends past the lane's max, reorder respaces). One finding per tie,
+	// on the lowest id, naming the rest; the remedy is reorder (t-awr6).
+	type slot struct {
+		lane string
+		prio int
+	}
+	ties := map[slot][]string{}
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if t.Closed != nil {
+			continue
+		}
+		k := slot{t.Status, t.Priority}
+		ties[k] = append(ties[k], t.ID)
+	}
+	tieKeys := make([]slot, 0, len(ties))
+	for k, ids := range ties {
+		if len(ids) > 1 {
+			tieKeys = append(tieKeys, k)
+		}
+	}
+	sort.Slice(tieKeys, func(i, j int) bool {
+		if tieKeys[i].lane != tieKeys[j].lane {
+			return tieKeys[i].lane < tieKeys[j].lane
+		}
+		return tieKeys[i].prio < tieKeys[j].prio
+	})
+	for _, k := range tieKeys {
+		ids := ties[k]
+		sort.Strings(ids)
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "priority-duplicate", ID: ids[0],
+			Msg: fmt.Sprintf("priority %d in lane %q is shared with %s, so their order is undefined — `furrow reorder %s --before <ref>` (or --after) places them",
+				k.prio, k.lane, strings.Join(ids[1:], ", "), ids[0])})
+	}
 
 	// title-scope-marker ([lint].title_scope_markers, OFF by default): a title
 	// carrying the board's "scope narrowed in place" idiom — "fix X (残り: docs
