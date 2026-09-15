@@ -27,7 +27,6 @@ func sampleIndex() *Index {
 	closed := mk(2026, 6, 20)
 	vi := func(n int) *int { return &n }
 	return &Index{
-		SchemaVersion: SchemaVersion,
 		Tasks: []Task{
 			{
 				ID: "t-0003", Title: "done item <b>&amp;</b> 完了", Status: "done",
@@ -122,7 +121,6 @@ func TestMarshalTaskEmptySets(t *testing.T) {
 func TestValidate(t *testing.T) {
 	pat := regexp.MustCompile(`^t-[0-9]+$`)
 	idx := &Index{
-		SchemaVersion: SchemaVersion,
 		Tasks: []Task{
 			{ID: "t-0001", Status: "ready", Body: BodyPath("t-0001"), Deps: []string{"t-0099"},
 				Repos: []string{"furrow", "akira-toriyama/furrow", "https://github.com/a/b"}}, // bare name + URL are not owner/repo

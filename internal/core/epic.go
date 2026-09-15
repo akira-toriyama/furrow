@@ -131,14 +131,8 @@ type Epic struct {
 	// a board that reviews no boxes rewrites no shards.
 	Reviewed *time.Time `json:"reviewed,omitempty"`
 
-	// extras holds keys this binary does not know — a field written by a NEWER
-	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,
-	// one ordinary write would silently destroy that field (see passthrough.go).
-	// nil when the shard had no unknown keys, which is the normal case.
-	//
-	// UNEXPORTED, like Task's, Meta's and RepoRecord's: encoding/json cannot see
-	// it, so it never becomes a key of its own, and no MarshalJSON re-emits it —
-	// the splice happens on the store's write path (core.MarshalEpic).
+	// extras: the unknown-key passthrough's carrier — passthrough.go states
+	// the contract once; Task's comment carries the MarshalJSON rule.
 	extras Extras
 }
 

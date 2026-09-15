@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"sort"
 	"time"
 )
 
@@ -53,11 +52,6 @@ func StaleDepProblems(idx *Index, terminal, doneIDs map[string]bool) []Problem {
 			}
 		}
 	}
-	sort.SliceStable(out, func(a, b int) bool {
-		if out[a].ID != out[b].ID {
-			return out[a].ID < out[b].ID
-		}
-		return out[a].Msg < out[b].Msg
-	})
+	sortProblems(out)
 	return out
 }

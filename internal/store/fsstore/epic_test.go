@@ -36,7 +36,7 @@ func sampleEpic(id, title string) *core.Epic {
 // path the store owns and callers never assemble.
 func TestSaveAndLoadEpic(t *testing.T) {
 	s, root := epicStore(t)
-	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{}}); err != nil {
+	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err) // stamp meta.json so the write gate is satisfied
 	}
 	want := sampleEpic("e-k3m9", "旅行の準備")
@@ -90,7 +90,7 @@ func TestLoadEpicsOnBoardWithoutEpicsDir(t *testing.T) {
 // filesystem's directory order.
 func TestLoadEpicsSortedByID(t *testing.T) {
 	s, _ := epicStore(t)
-	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{}}); err != nil {
+	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"e-zzz9", "e-aaa1", "e-mmm5"} {
@@ -123,7 +123,7 @@ func TestLoadEpicsSortedByID(t *testing.T) {
 // would churn every epic shard in git.
 func TestSaveEpicIsZeroChurn(t *testing.T) {
 	s, root := epicStore(t)
-	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{}}); err != nil {
+	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}
 	e := sampleEpic("e-k3m9", "box")
@@ -155,7 +155,7 @@ func TestSaveEpicIsZeroChurn(t *testing.T) {
 // in it would let a stale board be mutated through epics/ instead of tasks/.
 func TestSaveEpicRefusedOnOutdatedBoard(t *testing.T) {
 	s, root := epicStore(t)
-	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{}}); err != nil {
+	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "meta.json"), []byte("{\n  \"schema_version\": 1\n}\n"), 0o644); err != nil {
@@ -202,7 +202,7 @@ func TestNextEpicIDUsesTheEpicPrefix(t *testing.T) {
 // re-run after a partial `epic rm` is idempotent.
 func TestDeleteEpic(t *testing.T) {
 	s, root := epicStore(t)
-	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{}}); err != nil {
+	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SaveEpic(sampleEpic("e-gone", "gone")); err != nil {

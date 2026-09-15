@@ -68,11 +68,11 @@ const SchemaVersion = 10
 // did), so this struct's field order binds nothing: the persisted key order is
 // each shard's own.
 //
-// SchemaVersion here is INFORMATIONAL — what the board declared when Load read
-// it. Save ignores it and consults the board on disk (Store.BoardVersion),
-// because an in-memory field defaults to the binary's version at marshal time
-// (Canonicalize) and trusting it is exactly how a routine write once migrated a
-// shared board behind its owner's back.
+// It carries no version of its own: the board's number lives in meta.json
+// and is an input to every write (Store.BoardVersion); an in-memory copy that
+// defaulted to the binary's version at Canonicalize time is exactly how a
+// routine write once migrated a shared board behind its owner's back, and no
+// reader ever consulted it — so the field is gone (t-2xqp).
 //
 // seen is the index's memory of the store: shard stem -> the bytes the two last
 // agreed on (Load read them, Save wrote them). It is what lets Save touch ONLY
@@ -84,8 +84,7 @@ const SchemaVersion = 10
 // SeenStems). A literal Index has met nothing, so saving one writes its tasks
 // and deletes nothing.
 type Index struct {
-	SchemaVersion int    `json:"schema_version"`
-	Tasks         []Task `json:"tasks"`
+	Tasks []Task `json:"tasks"`
 
 	seen map[string][]byte
 }
@@ -97,23 +96,9 @@ type Index struct {
 type Meta struct {
 	SchemaVersion int `json:"schema_version"`
 
-	// extras holds keys this binary does not know — a field written by a NEWER
-	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,
-	// one ordinary write would silently destroy that field (see passthrough.go).
-	// nil when there were none, which is the normal case.
-	//
-	// UNEXPORTED on purpose, and it is structural, not stylistic: encoding/json
-	// cannot see it, so it can never surface as a literal "extras" key, and it can
-	// never leak into internal/cli/output.go's --json views. Which leads to the
-	// rule that must not be broken:
-	//
-	//   *** Task must NEVER grow a MarshalJSON method. ***
-	//
-	// internal/cli's views EMBED core.Task to put body_text / reason / revisit /
-	// snippet / mentioned_by beside it. A MarshalJSON on Task would be PROMOTED to
-	// those outer structs, Go would call it for the whole view, and every sibling
-	// field would vanish — with no compile error. The splice happens on the store's
-	// write path instead (core.MarshalTask).
+	// extras: the unknown-key passthrough's carrier — see passthrough.go for
+	// the contract (what is parked, why it is unexported, why no carrier may
+	// grow a MarshalJSON).
 	extras Extras
 }
 
@@ -276,20 +261,10 @@ type Task struct {
 	// occurrence. With the anchor held apart, a snooze moves this occurrence only.
 	RepeatAnchor *time.Time `json:"repeat_anchor,omitempty"`
 
-	// extras holds keys this binary does not know — a field written by a NEWER
-	// furrow that did not bump SchemaVersion, so no version gate fired. Without it,
-	// one ordinary write would silently destroy that field (see passthrough.go).
-	// nil when the shard had no unknown keys, which is the normal case.
-	//
-	// UNEXPORTED, and structurally so — the same rule Meta.extras spells out above,
-	// and it binds hardest HERE: encoding/json cannot see this field, so it can
-	// never surface as a literal "extras" key, and *** Task must NEVER grow a
-	// MarshalJSON method *** to re-emit it. Go would PROMOTE that method to
-	// internal/cli's --json views (they embed core.Task to put body_text / reason /
-	// revisit / snippet / mentioned_by beside it), call it for the whole view, and
-	// drop every sibling field with no compile error. The splice happens on the
-	// store's write path instead — core.MarshalTask -> encodeCanonicalWithExtras.
-	// Read it back with ExtraKeys().
+	// extras: the unknown-key passthrough's carrier (passthrough.go states the
+	// contract once). *** Task must NEVER grow a MarshalJSON method *** — the
+	// cli's --json views embed Task, and a promoted MarshalJSON would drop
+	// every sibling field with no compile error. Read it back with ExtraKeys().
 	extras Extras
 }
 

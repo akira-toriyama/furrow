@@ -132,15 +132,7 @@ func Validate(idx *Index, laneOrder []string, idPattern *regexp.Regexp) []Proble
 
 	// Deterministic order: errors before warns, then by id, then by message —
 	// so two runs over the same index print identically.
-	sort.SliceStable(out, func(a, b int) bool {
-		if out[a].Severity != out[b].Severity {
-			return out[a].Severity < out[b].Severity // "error" < "warn"
-		}
-		if out[a].ID != out[b].ID {
-			return out[a].ID < out[b].ID
-		}
-		return out[a].Msg < out[b].Msg
-	})
+	sortProblems(out)
 	return out
 }
 

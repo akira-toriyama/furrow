@@ -57,7 +57,7 @@ const (
 	KindUnknownSubcommand     = "unknown-subcommand"      // an unknown subcommand; candidates carries the known ones
 )
 
-// errorKinds is the registry ErrorKindList/IsErrorKind read. Every Kind*
+// errorKinds is the registry ErrorKindList reads. Every Kind*
 // constant above appears here exactly once (pinned by
 // TestErrorKindListMatchesConstants).
 var errorKinds = map[string]bool{
@@ -95,14 +95,15 @@ var errorKinds = map[string]bool{
 	KindUnknownSubcommand:     true,
 }
 
-// IsErrorKind reports whether k is a registered error kind (see errorKinds).
-func IsErrorKind(k string) bool { return errorKinds[k] }
-
 // ErrorKindList returns every registered error kind, sorted — the machine
 // source behind `furrow vocab error-kinds` and the docs drift guard.
-func ErrorKindList() []string {
-	out := make([]string, 0, len(errorKinds))
-	for k := range errorKinds {
+func ErrorKindList() []string { return sortedKeys(errorKinds) }
+
+// sortedKeys is a map's keys, sorted — the shape every registry publishes
+// and every extras splice walks (four hand-written copies, t-2xqp).
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
 		out = append(out, k)
 	}
 	sort.Strings(out)

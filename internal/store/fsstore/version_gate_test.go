@@ -22,7 +22,7 @@ func TestVersionGateRefusesNewerBoard(t *testing.T) {
 	s := New(root, gateLanes, "t-", "e-", 5)
 
 	// A normal Save stamps the current version — loads fine.
-	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{
+	if err := s.Save(&core.Index{Tasks: []core.Task{
 		{ID: "t-0001", Title: "x", Status: "ready", Priority: 100, Body: core.BodyPath("t-0001")},
 	}}); err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func TestVersionGateRefusesNewerBoard(t *testing.T) {
 		t.Errorf("Load error should say the fix: %q", err.Error())
 	}
 
-	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion}); err == nil {
+	if err := s.Save(&core.Index{}); err == nil {
 		t.Fatal("Save onto a v99 board must fail")
 	} else if got := core.ExitCode(err); got != int(core.CodeInternal) {
 		t.Errorf("Save exit code = %d, want %d", got, core.CodeInternal)
@@ -64,18 +64,17 @@ func TestVersionGateRefusesNewerBoard(t *testing.T) {
 func TestVersionGateAllowsOlderMeta(t *testing.T) {
 	root := t.TempDir()
 	s := New(root, gateLanes, "t-", "e-", 5)
-	if err := s.Save(&core.Index{SchemaVersion: core.SchemaVersion}); err != nil {
+	if err := s.Save(&core.Index{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "meta.json"), []byte("{\n  \"schema_version\": 1\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	idx, err := s.Load()
-	if err != nil {
+	if _, err := s.Load(); err != nil {
 		t.Fatalf("older board must load: %v", err)
 	}
-	if idx.SchemaVersion != 1 {
-		t.Errorf("loaded SchemaVersion = %d, want the board's 1", idx.SchemaVersion)
+	if v, _ := s.BoardVersion(); v != 1 {
+		t.Errorf("BoardVersion = %d, want the board's 1", v)
 	}
 }
 

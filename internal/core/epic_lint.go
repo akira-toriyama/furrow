@@ -175,6 +175,11 @@ func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Pr
 
 // sortProblems applies the shared deterministic ordering (errors before warns,
 // then id, then message) so two runs over the same board print identically.
+// sortProblems is THE order every Problem list leaves core in — severity
+// (error before warn), then id, then message. One function: four rules
+// carried their own copy, and due.go's had dropped the severity key, so its
+// error (due-overdue) and warn (due-today) rows came back interleaved by id
+// (t-2xqp).
 func sortProblems(ps []Problem) {
 	sort.SliceStable(ps, func(a, b int) bool {
 		if ps[a].Severity != ps[b].Severity {

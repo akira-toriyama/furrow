@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -67,25 +66,18 @@ func epicDepProblems(epics []Epic) []Problem {
 		byID[epics[i].ID] = &epics[i]
 	}
 
-	// Adjacency limited to known ids, sorted, for the deterministic SCC walk.
-	order := make([]string, 0, len(epics))
-	adj := make(map[string][]string, len(epics))
+	// A dep on a box that does not exist is reported (a task's dangling dep
+	// has its own rule); the graph itself is limited to known ids.
 	for i := range epics {
 		e := &epics[i]
-		order = append(order, e.ID)
-		var outs []string
 		for _, d := range e.Deps {
-			if _, ok := byID[d]; ok {
-				outs = append(outs, d)
-			} else {
+			if _, ok := byID[d]; !ok {
 				out = append(out, Problem{SevError, "epic-dep-missing", e.ID,
 					fmt.Sprintf("dep epic %q does not exist", d)})
 			}
 		}
-		sort.Strings(outs)
-		adj[e.ID] = outs
 	}
-	sort.Strings(order)
+	order, adj := buildIDGraph(byID, func(e *Epic) []string { return e.Deps })
 	out = append(out, cycleProblemsGraph(order, adj, "epic-dep-cycle", "epic dependency cycle", "mutually waiting")...)
 
 	for i := range epics {

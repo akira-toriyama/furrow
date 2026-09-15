@@ -77,19 +77,14 @@ func (s *Store) Load() (*core.Index, error) {
 	if err := core.CheckSchemaVersion(ver); err != nil {
 		return nil, err
 	}
-	if ver == 0 {
-		// No meta.json (a fresh store, or one predating the file): read leniently
-		// and report the layout we understand. Only WRITING such a board is gated.
-		ver = core.SchemaVersion
-	}
 	entries, err := os.ReadDir(s.tasksDir())
 	if os.IsNotExist(err) {
-		return &core.Index{SchemaVersion: ver, Tasks: []core.Task{}}, nil
+		return &core.Index{Tasks: []core.Task{}}, nil
 	}
 	if err != nil {
 		return nil, core.Internalf("index", "read tasks/: %v", err)
 	}
-	idx := &core.Index{SchemaVersion: ver}
+	idx := &core.Index{}
 	tasks := make([]core.Task, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {

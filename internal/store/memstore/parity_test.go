@@ -61,7 +61,7 @@ func TestSaveCanonicalizesLikeFsstore(t *testing.T) {
 			// duplicated sets, nil collections, an out-of-range estimate, and a
 			// zoned sub-second stamp.
 			zoned := time.Date(2026, 6, 25, 12, 0, 0, 500_000_000, time.FixedZone("JST", 9*60*60))
-			idx := &core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{{
+			idx := &core.Index{Tasks: []core.Task{{
 				ID: "t-00001", Title: "messy", Status: "inbox",
 				Labels:  []string{"zeta", "alpha", "zeta"},
 				Deps:    []string{"t-9", "t-1x"},

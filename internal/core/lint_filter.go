@@ -1,7 +1,5 @@
 package core
 
-import "sort"
-
 // lintCodes is the authoritative registry of every stable kebab-case `code` that
 // `furrow lint` can emit. It is the closed vocabulary two features check against:
 //
@@ -77,14 +75,7 @@ func IsLintCode(code string) bool { return lintCodes[code] }
 
 // LintCodeList returns the known lint codes, sorted — the did-you-mean
 // `candidates` array for an unknown `lint --code`/`--exclude-code` token.
-func LintCodeList() []string {
-	out := make([]string, 0, len(lintCodes))
-	for c := range lintCodes {
-		out = append(out, c)
-	}
-	sort.Strings(out)
-	return out
-}
+func LintCodeList() []string { return sortedKeys(lintCodes) }
 
 // ProblemFilter narrows a lint problem set. The zero value filters nothing.
 //

@@ -37,27 +37,36 @@ func CycleProblems(idx *Index) []Problem {
 // v7 the epic dep graph is the third — the epic dep lint enters at
 // cycleProblemsGraph, the id level, instead of growing a second walk.
 func cycleProblems(idx *Index, code, label, knot string, edges func(*Task) []string) []Problem {
-	ids := make(map[string]bool, len(idx.Tasks))
+	byID := make(map[string]*Task, len(idx.Tasks))
 	for i := range idx.Tasks {
-		ids[idx.Tasks[i].ID] = true
+		byID[idx.Tasks[i].ID] = &idx.Tasks[i]
 	}
-	// Adjacency limited to known ids, each node's edges sorted for determinism.
-	adj := make(map[string][]string, len(idx.Tasks))
-	order := make([]string, 0, len(idx.Tasks))
-	for i := range idx.Tasks {
-		t := &idx.Tasks[i]
-		order = append(order, t.ID)
+	order, adj := buildIDGraph(byID, func(t *Task) []string { return edges(t) })
+	return cycleProblemsGraph(order, adj, code, label, knot)
+}
+
+// buildIDGraph is the adjacency the cycle walk consumes, built once for every
+// entity kind: the known ids sorted, and each node's edges limited to known
+// ids and sorted, for a deterministic SCC walk. Tasks and epics carried the
+// same twenty lines each (t-2xqp); the caller decides what an UNKNOWN edge
+// means (a task's is dropped — dangling deps have their own rule — an epic's
+// is reported).
+func buildIDGraph[N any](byID map[string]*N, edges func(*N) []string) (order []string, adj map[string][]string) {
+	order = make([]string, 0, len(byID))
+	adj = make(map[string][]string, len(byID))
+	for id, n := range byID {
+		order = append(order, id)
 		var outs []string
-		for _, d := range edges(t) {
-			if ids[d] {
+		for _, d := range edges(n) {
+			if _, ok := byID[d]; ok {
 				outs = append(outs, d)
 			}
 		}
 		sort.Strings(outs)
-		adj[t.ID] = outs
+		adj[id] = outs
 	}
 	sort.Strings(order)
-	return cycleProblemsGraph(order, adj, code, label, knot)
+	return order, adj
 }
 
 // cycleProblemsGraph reports each cyclic region of an id graph as one Problem.

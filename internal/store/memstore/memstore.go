@@ -104,7 +104,7 @@ func (s *Store) Load() (*core.Index, error) {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	idx := &core.Index{SchemaVersion: s.schemaVersion}
+	idx := &core.Index{}
 	tasks := make([]core.Task, 0, len(ids))
 	for _, id := range ids {
 		tasks = append(tasks, cloneTask(s.tasks[id]))

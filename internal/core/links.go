@@ -140,7 +140,7 @@ func backtickRun(s string, i int) int {
 	return n
 }
 
-// RewriteLinks applies fn to every LIVE [[id]] link in text — outside fenced
+// rewriteLinks applies fn to every LIVE [[id]] link in text — outside fenced
 // and inline code, by the same rules ExtractLinks reads by, so a rewrite and
 // lint's dangling-link check agree on which links are real and a documented
 // [[t-…]] example survives verbatim. fn receives the id inside the brackets
@@ -148,7 +148,7 @@ func backtickRun(s string, i int) int {
 // replace it; false keeps the token as written. Reports how many tokens
 // changed. It is the one link-rewriting walker: the v6 migration (an id
 // changes) and `furrow rm --force` (an id ceases to exist) both go through it.
-func RewriteLinks(text string, re *regexp.Regexp, fn func(id string) (string, bool)) (string, int) {
+func rewriteLinks(text string, re *regexp.Regexp, fn func(id string) (string, bool)) (string, int) {
 	n := 0
 	lines := strings.Split(text, "\n")
 	eachProseLine(text, func(i int, line string) {
@@ -163,7 +163,7 @@ func RewriteLinks(text string, re *regexp.Regexp, fn func(id string) (string, bo
 // the result is exactly what lint's dangling-link would otherwise flag, minus
 // the flag.
 func UnlinkIDs(text string, re *regexp.Regexp, ids map[string]bool) (string, int) {
-	return RewriteLinks(text, re, func(id string) (string, bool) {
+	return rewriteLinks(text, re, func(id string) (string, bool) {
 		if ids[id] {
 			return id, true
 		}

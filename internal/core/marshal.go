@@ -77,14 +77,8 @@ func MarshalRepo(r *RepoRecord) ([]byte, error) {
 // canonicalizeRepo enforces the per-repo determinism invariants in place:
 // whole-second UTC timestamps, nil-guarded so an unset clock stays nil (-> null).
 func canonicalizeRepo(r *RepoRecord) {
-	if r.LastReviewed != nil {
-		t := normTime(*r.LastReviewed)
-		r.LastReviewed = &t
-	}
-	if r.LastAgentReviewed != nil {
-		t := normTime(*r.LastAgentReviewed)
-		r.LastAgentReviewed = &t
-	}
+	r.LastReviewed = normTimePtr(r.LastReviewed)
+	r.LastAgentReviewed = normTimePtr(r.LastAgentReviewed)
 }
 
 // UnmarshalRepo parses one repo shard's bytes into a RepoRecord, the per-repo
@@ -145,14 +139,8 @@ func canonicalizeEpic(e *Epic) {
 
 	e.Created = normTime(e.Created)
 	e.Updated = normTime(e.Updated)
-	if e.Closed != nil {
-		c := normTime(*e.Closed)
-		e.Closed = &c
-	}
-	if e.Reviewed != nil {
-		r := normTime(*e.Reviewed)
-		e.Reviewed = &r
-	}
+	e.Closed = normTimePtr(e.Closed)
+	e.Reviewed = normTimePtr(e.Reviewed)
 }
 
 // UnmarshalEpic parses one epic shard's bytes into an Epic, the per-epic twin of
@@ -204,9 +192,6 @@ func UnmarshalMeta(data []byte) (*Meta, error) {
 // list reads canonicalize before rendering, and tests and the lint command
 // assert "this is already canonical" against it.
 func Canonicalize(idx *Index, laneOrder []string) {
-	if idx.SchemaVersion == 0 {
-		idx.SchemaVersion = SchemaVersion
-	}
 	if idx.Tasks == nil {
 		idx.Tasks = []Task{}
 	}
@@ -260,22 +245,10 @@ func canonicalizeTask(t *Task) {
 
 	t.Created = normTime(t.Created)
 	t.Updated = normTime(t.Updated)
-	if t.Closed != nil {
-		c := normTime(*t.Closed)
-		t.Closed = &c
-	}
-	if t.Reviewed != nil {
-		r := normTime(*t.Reviewed)
-		t.Reviewed = &r
-	}
-	if t.Due != nil {
-		d := normTime(*t.Due)
-		t.Due = &d
-	}
-	if t.RepeatAnchor != nil {
-		r := normTime(*t.RepeatAnchor)
-		t.RepeatAnchor = &r
-	}
+	t.Closed = normTimePtr(t.Closed)
+	t.Reviewed = normTimePtr(t.Reviewed)
+	t.Due = normTimePtr(t.Due)
+	t.RepeatAnchor = normTimePtr(t.RepeatAnchor)
 
 	// value/effort are clamp-don't-reject: an out-of-range estimate (from a
 	// hand-edit) is rounded into 1..5 so furrow never writes a stray. lint
@@ -287,6 +260,17 @@ func canonicalizeTask(t *Task) {
 // normTime coerces a timestamp to the on-disk contract: UTC, whole seconds. A
 // zero time stays zero (encoding/json emits "0001-01-01T00:00:00Z").
 func normTime(t time.Time) time.Time { return t.UTC().Truncate(time.Second) }
+
+// normTimePtr is normTime for an optional stamp: nil stays nil (-> null), and
+// a set one comes back as a fresh pointer so the caller's value is never
+// aliased. Eight copies of the three-line form preceded it (t-2xqp).
+func normTimePtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	n := normTime(*t)
+	return &n
+}
 
 // clampEstimate rounds a non-nil value/effort into [EstimateMin, EstimateMax]
 // in place. A nil pointer (unset) is left untouched so absent stays absent.
