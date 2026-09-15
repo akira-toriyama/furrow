@@ -102,6 +102,11 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # Four external waits inside (curl --retry, gh attestation verify ×3,
+    # furrow sync ×3 with backoff) and a measured 1–2 min run: the 360-minute
+    # default would let a wedged wait hold a runner for six hours, on every
+    # repo that calls this reusable.
+    timeout-minutes: 10
     steps:
       - name: Gate — resolve event mode and PAT auth
         id: gate
@@ -306,19 +311,12 @@ jobs:
           # Everything else is terminal by furrow's classification — sync-conflict,
           # sync-stash-stranded, sync-unmerged, a stale ref lock, a schema
           # mismatch — and retrying it only burns minutes to fail identically.
-          # v2-envelope fallback: `furrow-version` above still defaults to a
-          # binary that emits {"error":{"code","id","message"}} — no `retryable`,
-          # no `kind`. Reading only the new keys would turn `// false` into
-          # "never retry", silently disabling this loop for the push race it
-          # exists for. So each read falls back to the old field, and the
-          # fallback (with this comment) dies when the default pin first moves
-          # to a v3 furrow.
           sync_kind=unknown
           for i in 1 2 3; do
             furrow sync --json >/tmp/sync.json 2>/tmp/sync.err &&
               { echo "pushed"; cat /tmp/sync.json; exit 0; }
-            sync_kind="$(jq -r '.error.kind // .error.id // "unknown"' /tmp/sync.err 2>/dev/null || echo unknown)"
-            retryable="$(jq -r 'if (.error.retryable | type) == "boolean" then .error.retryable else (.error.id == "sync-push-rejected" or .error.id == "sync-busy") end' /tmp/sync.err 2>/dev/null || echo false)"
+            sync_kind="$(jq -r '.error.kind // "unknown"' /tmp/sync.err 2>/dev/null || echo unknown)"
+            retryable="$(jq -r '.error.retryable // false' /tmp/sync.err 2>/dev/null || echo false)"
             echo "furrow sync failed (attempt $i, kind=${sync_kind}, retryable=${retryable})" >&2
             cat /tmp/sync.err >&2
             [ "$retryable" = "true" ] || break
