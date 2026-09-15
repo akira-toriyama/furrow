@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -78,7 +79,7 @@ func TestSyncReportsStrandedAutostashOnCleanRebase(t *testing.T) {
 	if st.Commit == "" {
 		t.Error("the stash commit oid is the stable handle (stash@{N} shifts) — it must be reported")
 	}
-	if !containsStr(st.Paths, "notes.md") {
+	if !slices.Contains(st.Paths, "notes.md") {
 		t.Errorf("the stash paths answer \"did it eat my edit?\" — want notes.md, got %v", st.Paths)
 	}
 	// The machine-actionable half: an agent branches on details, never on prose.
@@ -161,7 +162,7 @@ func TestSyncReportsPreExistingAutostashWithoutFailing(t *testing.T) {
 	if !p.Pushed {
 		t.Errorf("the sync itself was fine and must complete: %+v", p)
 	}
-	if len(p.PendingStash) != 1 || !containsStr(p.PendingStash[0].Paths, "notes.md") {
+	if len(p.PendingStash) != 1 || !slices.Contains(p.PendingStash[0].Paths, "notes.md") {
 		t.Errorf("a leftover autostash must stay VISIBLE on every sync until it is popped, got %+v", p.PendingStash)
 	}
 }
@@ -247,13 +248,4 @@ func TestSyncRefusesToCommitNewBodyWithConflictMarkers(t *testing.T) {
 	if fe := core.AsError(err); fe == nil || fe.Kind != core.KindBodyConflictMarker {
 		t.Fatalf("an untracked body is committed with no opt-in, so it must be guarded too; got %v (progress %+v)", err, p)
 	}
-}
-
-func containsStr(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -74,7 +75,7 @@ func TestReviewCommand(t *testing.T) {
 	if task.After.Reviewed == nil {
 		t.Errorf("task reviewed should be set, got null:\n%s", out)
 	}
-	if !contains(task.Changed, "reviewed") {
+	if !slices.Contains(task.Changed, "reviewed") {
 		t.Errorf("changed should include reviewed, got %v", task.Changed)
 	}
 

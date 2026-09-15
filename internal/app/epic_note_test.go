@@ -9,7 +9,6 @@ import (
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // A box's progress record is the SAME operation as a task's: the paragraph
@@ -17,7 +16,7 @@ import (
 // half a hand-edit cannot do, and the whole reason `furrow note` takes either
 // entity's id instead of an `epic note` verb.
 func TestEpicNoteAppendsParagraphAndBumpsUpdated(t *testing.T) {
-	a, clk := appWithClock(time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC))
+	a, clk := newAppWith(at(time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)))
 	e, err := a.EpicAdd("a box", EpicAddOpts{Repos: []string{"o/r"}})
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +61,7 @@ func TestEpicNoteAppendsParagraphAndBumpsUpdated(t *testing.T) {
 // The activation log and a note share one body, and neither clobbers the other:
 // `epic activate --reason` appends through the same helper.
 func TestEpicNoteCoexistsWithTheActivationLog(t *testing.T) {
-	a, _ := appWithClock(time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)))
 	e, err := a.EpicAdd("a box", EpicAddOpts{Repos: []string{"o/r"}})
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +83,7 @@ func TestEpicNoteCoexistsWithTheActivationLog(t *testing.T) {
 // A box reference resolves the way every other epic ref does — and that is why
 // an unknown box is exit 2 with candidates where an unknown task id is exit 1.
 func TestEpicNoteResolutionAndValidation(t *testing.T) {
-	a, _ := appWithClock(time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)))
 	e, err := a.EpicAdd("a box", EpicAddOpts{Repos: []string{"o/r"}})
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +129,7 @@ func TestEpicNoteResolutionAndValidation(t *testing.T) {
 // its own store, an epic REF resolves like every other one, and a ref naming
 // nothing routes by shape — which only picks whose error the caller gets.
 func TestRefTargetsEpicRoutes(t *testing.T) {
-	a, _ := appWithClock(time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)))
 	tk, err := a.Add("a task", AddOpts{})
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +151,7 @@ func TestRefTargetsEpicRoutes(t *testing.T) {
 		{"e-nope0", true, "an unknown epic-shaped id: the box resolver's candidates"},
 		{"nothing like this", false, "an unresolvable non-id ref"},
 		{"E-K3M9", false, "ids are lowercase base32"},
-		{"e-", true, "a bare prefix still resolves while it is UNIQUE — the epic ref rule, not a shape rule"},
+		{config.Default().EpicIDPrefix, true, "a bare prefix still resolves while it is UNIQUE — the epic ref rule, not a shape rule"},
 		{"", false, ""},
 	} {
 		got, err := a.RefTargetsEpic(tc.ref)
@@ -232,8 +231,7 @@ func appWithConfig(t *testing.T, toml string) *App {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := memstore.New(cfg.IDPrefix, cfg.EpicIDPrefix, cfg.IDWidth)
-	return NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)})
+	return NewWithStore(newStore(cfg), cfg, &fixedClock{t: time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)})
 }
 
 // plantTask writes a task with a CHOSEN id straight through the store — the

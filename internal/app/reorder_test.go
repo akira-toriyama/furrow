@@ -8,7 +8,7 @@ import (
 )
 
 func TestReorderRelativeMidpoint(t *testing.T) {
-	a, clk := appWithClock(time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC))
+	a, clk := newAppWith(at(time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)))
 	ta, _ := a.Add("a", AddOpts{}) // 100
 	tb, _ := a.Add("b", AddOpts{}) // 110
 	tc, _ := a.Add("c", AddOpts{}) // 120
@@ -36,7 +36,7 @@ func TestReorderRelativeMidpoint(t *testing.T) {
 }
 
 func TestReorderRelativeRespaceIsOneWrite(t *testing.T) {
-	a, clk := appWithClock(time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC))
+	a, clk := newAppWith(at(time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)))
 	ta, _ := a.Add("a", AddOpts{})
 	tb, _ := a.Add("b", AddOpts{})
 	tc, _ := a.Add("c", AddOpts{})
@@ -78,7 +78,7 @@ func TestReorderRelativeRespaceIsOneWrite(t *testing.T) {
 }
 
 func TestReorderRelativeValidationLeavesBoardUntouched(t *testing.T) {
-	a, _ := appWithClock(time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)))
 	ta, _ := a.Add("a", AddOpts{})
 	tb, _ := a.Add("b", AddOpts{})
 	if _, err := a.Move(tb.ID, "ready"); err != nil {

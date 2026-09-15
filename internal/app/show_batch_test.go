@@ -39,7 +39,7 @@ func TestShowBatchRoutesAcrossEntities(t *testing.T) {
 	}
 
 	// The box's members ride along, exactly as `epic show` returns them.
-	if _, _, _, err := a.Set(tk.ID, SetOpts{Epic: strptr(epic)}); err != nil {
+	if _, _, _, err := a.Set(tk.ID, SetOpts{Epic: ptr(epic)}); err != nil {
 		t.Fatal(err)
 	}
 	entries, _, err = a.ShowBatch([]string{epic}, true)
@@ -138,5 +138,3 @@ func TestEditPathRoutesToTheBox(t *testing.T) {
 		t.Errorf("unknown task id want CodeNotFound, got %v", err)
 	}
 }
-
-func strptr(s string) *string { return &s }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 		{
 			name:  "estimates and type",
 			title: "estimated epic",
-			opts:  AddOpts{Value: intp(4), Effort: intp(2)},
+			opts:  AddOpts{Value: ptr(4), Effort: ptr(2)},
 		},
 		{
 			// A due spelling is a REFERENCE the app binds (like an epic ref), so the
@@ -98,10 +99,10 @@ func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 			if b.Status != single.Status {
 				t.Errorf("status: bulk %q != single %q", b.Status, single.Status)
 			}
-			if !equalStrings(b.Labels, single.Labels) {
+			if !slices.Equal(b.Labels, single.Labels) {
 				t.Errorf("labels: bulk %v != single %v", b.Labels, single.Labels)
 			}
-			if !equalStrings(b.Refs, single.Refs) {
+			if !slices.Equal(b.Refs, single.Refs) {
 				t.Errorf("refs: bulk %v != single %v", b.Refs, single.Refs)
 			}
 		})

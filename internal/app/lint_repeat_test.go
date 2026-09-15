@@ -7,7 +7,6 @@ import (
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // A series is expanded in the zone of whichever machine closes it when the
@@ -17,11 +16,9 @@ import (
 // with no repeating task has nothing that drifts.
 func TestLintErrorsARepeatingSeriesWithNoBoardZone(t *testing.T) {
 	newApp := func(mode string, loc *time.Location) *App {
-		cfg := config.Default()
-		cfg.Mode = mode
-		cfg.DueTimezone = loc
-		st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-		return NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC)})
+		a, _ := newAppWith(at(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC)), zone(loc),
+			withCfg(func(c *config.Config) { c.Mode = mode }))
+		return a
 	}
 	cases := []struct {
 		name      string
@@ -96,10 +93,8 @@ func handEditRepeat(t *testing.T, a *App, id, rule string, anchor *time.Time) {
 func TestLintErrorsAClosedTaskStillCarryingARepeatRule(t *testing.T) {
 	setup := func(t *testing.T, mode string, loc *time.Location) (*App, *core.Task) {
 		t.Helper()
-		cfg := config.Default()
-		cfg.Mode, cfg.DueTimezone = mode, loc
-		st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-		a := NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC)})
+		a, _ := newAppWith(at(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC)), zone(loc),
+			withCfg(func(c *config.Config) { c.Mode = mode }))
 		return a, mustAddRepeating(t, a, "water the plants", "2026-03-01", "daily", AddOpts{})
 	}
 
@@ -197,10 +192,7 @@ func TestLintErrorsAClosedTaskStillCarryingARepeatRule(t *testing.T) {
 func TestLintWarnsAnOrphanRepeatAnchor(t *testing.T) {
 	newBoard := func(t *testing.T) *App {
 		t.Helper()
-		cfg := config.Default()
-		cfg.DueTimezone = jst
-		st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-		return NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC)})
+		return newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
 	}
 
 	t.Run("a live series carries both and is clean", func(t *testing.T) {

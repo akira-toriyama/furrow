@@ -3,18 +3,7 @@ package app
 import (
 	"reflect"
 	"testing"
-
-	"github.com/akira-toriyama/furrow/internal/core"
 )
-
-// backlinkIDs is the ids of one BacklinksBatch entry, in returned order.
-func backlinkIDs(tasks []core.Task) []string {
-	out := []string{}
-	for _, t := range tasks {
-		out = append(out, t.ID)
-	}
-	return out
-}
 
 func TestBacklinksBatchMatchesPerIDAndIsSinglePass(t *testing.T) {
 	a := newApp()
@@ -35,8 +24,8 @@ func TestBacklinksBatchMatchesPerIDAndIsSinglePass(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Backlinks(%s): %v", id, err)
 		}
-		if !reflect.DeepEqual(backlinkIDs(got[id]), backlinkIDs(want)) {
-			t.Errorf("id %s: batch=%v single=%v", id, backlinkIDs(got[id]), backlinkIDs(want))
+		if !reflect.DeepEqual(idsOf(got[id]), idsOf(want)) {
+			t.Errorf("id %s: batch=%v single=%v", id, idsOf(got[id]), idsOf(want))
 		}
 	}
 

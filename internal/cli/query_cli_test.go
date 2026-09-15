@@ -293,7 +293,7 @@ func TestCLIQueryIsStaleUsesTheCallsWindow(t *testing.T) {
 				t.Fatalf("exit = %d:\n%s", code, out)
 			}
 			if got := strings.Contains(out, id); got != c.want {
-				t.Errorf("contains(%s) = %t, want %t:\n%s", id, got, c.want, out)
+				t.Errorf("slices.Contains(%s) = %t, want %t:\n%s", id, got, c.want, out)
 			}
 		})
 	}

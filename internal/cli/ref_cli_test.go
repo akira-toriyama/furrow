@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -30,7 +31,7 @@ func TestCLIRefCommandMutatesAndReportsChanged(t *testing.T) {
 	if !reflect.DeepEqual(res.After.Refs, []string{"internal/cli/root.go:42"}) {
 		t.Errorf("after refs = %v, want the added ref only", res.After.Refs)
 	}
-	if !contains(res.Changed, "refs") {
+	if !slices.Contains(res.Changed, "refs") {
 		t.Errorf("changed should include refs, got %v", res.Changed)
 	}
 

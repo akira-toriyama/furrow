@@ -11,7 +11,7 @@ import (
 // IS a draft).
 func briefBoard(t *testing.T) (*App, map[string]string) {
 	t.Helper()
-	a, _ := appWithClock(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)))
 	ids := map[string]string{}
 	add := func(key, title string, o AddOpts) string {
 		t.Helper()

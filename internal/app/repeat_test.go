@@ -5,21 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // newRepeatApp pins the clock and the board calendar, the way a real board that
 // declares [due].timezone runs: a UTC clock and a +09:00 calendar, which is the
 // only shape that catches a due bound off the process zone.
-func newRepeatApp(now time.Time) *App {
-	cfg := config.Default()
-	cfg.DueTimezone = jst
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	return NewWithStore(st, cfg, &fixedClock{t: now})
-}
-
 func mustAddRepeating(t *testing.T, a *App, title, due, rule string, o AddOpts) *core.Task {
 	t.Helper()
 	o.Due, o.Repeat = due, rule
@@ -1119,15 +1110,6 @@ func TestAnOffLatticeAnchorSpendsOneOccurrenceMoreThanTheCount(t *testing.T) {
 	}
 }
 
-// newRepeatAppIn is newRepeatApp on a board whose calendar is a REAL IANA zone,
-// for the DST shapes a fixed offset cannot express.
-func newRepeatAppIn(loc *time.Location, now time.Time) *App {
-	cfg := config.Default()
-	cfg.DueTimezone = loc
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	return NewWithStore(st, cfg, &fixedClock{t: now})
-}
-
 // santiago is the board calendar these two tests need: one day a year it has no
 // local MIDNIGHT (it springs forward AT 00:00), which is the day the expansion's
 // day grid used to slide off by one. The board-level twin of recur's
@@ -1148,7 +1130,7 @@ func TestSuccessorKeepsItsWeekdayAcrossADayWithNoLocalMidnight(t *testing.T) {
 	loc := santiago(t)
 	// 2027-09-05 is the Sunday Santiago has no midnight on; this close is on
 	// time, on the Sunday before it.
-	a := newRepeatAppIn(loc, time.Date(2027, 8, 29, 15, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2027, 8, 29, 15, 0, 0, 0, time.UTC)), zone(loc))
 	pred := mustAddRepeating(t, a, "riego", "2027-08-29", "weekly on sun", AddOpts{})
 
 	_, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
@@ -1172,7 +1154,7 @@ func TestLateCloseCountsTheDayWithNoLocalMidnight(t *testing.T) {
 	loc := santiago(t)
 	// Promised for 4 September 2027, cleared at noon on the 9th: 5 September —
 	// the day this zone has no midnight — is one of the four that lapsed.
-	a := newRepeatAppIn(loc, time.Date(2027, 9, 9, 15, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2027, 9, 9, 15, 0, 0, 0, time.UTC)), zone(loc))
 	pred := mustAddRepeating(t, a, "riego", "2027-09-04", "daily", AddOpts{})
 
 	_, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)

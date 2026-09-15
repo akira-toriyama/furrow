@@ -15,15 +15,13 @@ func setFlag(t *testing.T, a *App, id string, standing, pinned *bool) {
 	}
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 // The pass-through contract, in all three configurations that matter:
 // a DIFFERENT box active, NOTHING active, and an explicit -e bypass.
 func TestNextPinnedPassesThroughActiveScope(t *testing.T) {
 	a := newApp()
 	focus := mustEpic(t, a, "the focus box", EpicAddOpts{Repos: []string{"o/r"}})
 	mandate := mustEpic(t, a, "mandate box", EpicAddOpts{Repos: []string{"o/r"}})
-	setFlag(t, a, mandate, boolPtr(true), boolPtr(true))
+	setFlag(t, a, mandate, ptr(true), ptr(true))
 
 	focusTask := mustAddReady(t, a, "focus work", focus)
 	order := mustAddReady(t, a, "an instruction", mandate)
@@ -33,14 +31,14 @@ func TestNextPinnedPassesThroughActiveScope(t *testing.T) {
 	unfiled := mustAddReady(t, a, "unfiled stray", "")
 	got := mustNext(t, a)
 	if len(got) != 1 || got[0].ID != order {
-		t.Fatalf("with nothing active only the pinned band may show: got %v", taskIDs(got))
+		t.Fatalf("with nothing active only the pinned band may show: got %v", idsOf(got))
 	}
 
 	// A different box active: pinned tasks LEAD, focus follows, unfiled rescues.
 	mustActivate(t, a, focus)
 	got = mustNext(t, a)
 	if len(got) != 3 || got[0].ID != order || got[1].ID != focusTask || got[2].ID != unfiled {
-		t.Fatalf("want [pinned, focus, unfiled], got %v", taskIDs(got))
+		t.Fatalf("want [pinned, focus, unfiled], got %v", idsOf(got))
 	}
 
 	// -n1 hands you the pinned channel, not whatever sorts first.
@@ -49,7 +47,7 @@ func TestNextPinnedPassesThroughActiveScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(limited) != 1 || limited[0].ID != order {
-		t.Fatalf("-n1 must hand the pinned channel first: got %v", taskIDs(limited))
+		t.Fatalf("-n1 must hand the pinned channel first: got %v", idsOf(limited))
 	}
 
 	// An explicit -e bypasses the scope, pinned band included.
@@ -58,7 +56,7 @@ func TestNextPinnedPassesThroughActiveScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(scoped) != 1 || scoped[0].ID != focusTask {
-		t.Fatalf("-e must read one box only: got %v", taskIDs(scoped))
+		t.Fatalf("-e must read one box only: got %v", idsOf(scoped))
 	}
 }
 
@@ -67,13 +65,13 @@ func TestNextPinnedPassesThroughActiveScope(t *testing.T) {
 func TestNextPinnedEdgeCases(t *testing.T) {
 	a := newApp()
 	box := mustEpic(t, a, "pinned and active", EpicAddOpts{Repos: []string{"o/r"}})
-	setFlag(t, a, box, nil, boolPtr(true))
+	setFlag(t, a, box, nil, ptr(true))
 	work := mustAddReady(t, a, "the work", box)
 	mustActivate(t, a, box)
 
 	got := mustNext(t, a)
 	if len(got) != 1 || got[0].ID != work {
-		t.Fatalf("pinned+active must show the task exactly once: got %v", taskIDs(got))
+		t.Fatalf("pinned+active must show the task exactly once: got %v", idsOf(got))
 	}
 
 	if _, _, err := a.EpicDone(box); err != nil {
@@ -81,7 +79,7 @@ func TestNextPinnedEdgeCases(t *testing.T) {
 	}
 	got = mustNext(t, a)
 	if len(got) != 0 {
-		t.Fatalf("a closed pinned box must inject nothing: got %v", taskIDs(got))
+		t.Fatalf("a closed pinned box must inject nothing: got %v", idsOf(got))
 	}
 }
 
@@ -89,7 +87,7 @@ func TestNextPinnedEdgeCases(t *testing.T) {
 func TestStandingSilencesFinishNags(t *testing.T) {
 	a := newApp()
 	inbox := mustEpic(t, a, "mandate inbox", EpicAddOpts{Repos: []string{"o/r"}})
-	setFlag(t, a, inbox, boolPtr(true), nil)
+	setFlag(t, a, inbox, ptr(true), nil)
 
 	// A drained inbox: its one member is done — open 0 is HEALTHY here.
 	tsk := mustAddReady(t, a, "consumed instruction", inbox)
@@ -139,7 +137,7 @@ func TestBriefListsPinnedChannels(t *testing.T) {
 	a := newApp()
 	focus := mustEpic(t, a, "the focus", EpicAddOpts{Repos: []string{"o/r"}})
 	mandate := mustEpic(t, a, "mandate box", EpicAddOpts{Repos: []string{"o/other"}})
-	setFlag(t, a, mandate, boolPtr(true), boolPtr(true))
+	setFlag(t, a, mandate, ptr(true), ptr(true))
 	mustActivate(t, a, focus)
 	mustAddReady(t, a, "an instruction", mandate)
 
@@ -152,7 +150,7 @@ func TestBriefListsPinnedChannels(t *testing.T) {
 	}
 
 	// A box both pinned and active appears once, as the focus.
-	setFlag(t, a, focus, nil, boolPtr(true))
+	setFlag(t, a, focus, nil, ptr(true))
 	b, err = a.Brief(QueryOpts{}, 0, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -180,12 +178,4 @@ func mustNext(t *testing.T, a *App) []core.Task {
 		t.Fatal(err)
 	}
 	return tasks
-}
-
-func taskIDs(ts []core.Task) []string {
-	out := make([]string, 0, len(ts))
-	for _, tk := range ts {
-		out = append(out, tk.ID)
-	}
-	return out
 }

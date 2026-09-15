@@ -3,24 +3,14 @@ package app
 import (
 	"testing"
 	"time"
-
-	"github.com/akira-toriyama/furrow/internal/config"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // newClockedApp is newApp with the clock handed back, so a test can advance it
 // between activations (recordSwitch stamps are minute-precision).
-func newClockedApp() (*App, *fixedClock) {
-	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	clk := &fixedClock{t: time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)}
-	return NewWithStore(st, cfg, clk), clk
-}
-
 // The suggestion is the open, currently-inactive box with the newest
 // activation record — computed from the body log, no stored state.
 func TestPreviousActiveSuggest(t *testing.T) {
-	a, clk := newClockedApp()
+	a, clk := newAppWith(at(time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)))
 	ea, err := a.EpicAdd("box a", EpicAddOpts{Repos: []string{"me/r1"}})
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +41,7 @@ func TestPreviousActiveSuggest(t *testing.T) {
 // A currently-active box is not a return candidate (it needs no returning to),
 // and a closed box cannot be one (it cannot be activated).
 func TestPreviousActiveSuggestSkipsActiveAndClosed(t *testing.T) {
-	a, clk := newClockedApp()
+	a, clk := newAppWith(at(time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)))
 	ea, _ := a.EpicAdd("box a", EpicAddOpts{Repos: []string{"me/r1"}})
 	eb, _ := a.EpicAdd("box b", EpicAddOpts{Repos: []string{"me/r1"}})
 	ec, _ := a.EpicAdd("box c", EpicAddOpts{Repos: []string{"me/r2"}})
@@ -89,7 +79,7 @@ func TestPreviousActiveSuggestSkipsActiveAndClosed(t *testing.T) {
 // so this is the common case on older boards — the caller must say "unknown",
 // not guess.
 func TestPreviousActiveSuggestUnknown(t *testing.T) {
-	a, _ := newClockedApp()
+	a, _ := newAppWith(at(time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)))
 	ea, _ := a.EpicAdd("box a", EpicAddOpts{Repos: []string{"me/r1"}})
 	eb, _ := a.EpicAdd("box b", EpicAddOpts{Repos: []string{"me/r1"}})
 	_ = ea

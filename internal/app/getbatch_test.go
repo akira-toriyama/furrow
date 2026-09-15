@@ -6,14 +6,6 @@ import (
 )
 
 // itemIDs returns just the task ids of a GetBatch result, in order.
-func itemIDs(items []ShowItem) []string {
-	out := []string{}
-	for _, it := range items {
-		out = append(out, it.Task.ID)
-	}
-	return out
-}
-
 func TestGetBatchInputOrderAndDedupe(t *testing.T) {
 	a := newApp()
 	t1, _ := a.Add("first", AddOpts{})
@@ -26,7 +18,7 @@ func TestGetBatchInputOrderAndDedupe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := itemIDs(items), []string{t3.ID, t1.ID, t2.ID}; !reflect.DeepEqual(got, want) {
+	if got, want := idsOf(items), []string{t3.ID, t1.ID, t2.ID}; !reflect.DeepEqual(got, want) {
 		t.Errorf("items = %v, want %v", got, want)
 	}
 	if len(missing) != 0 {
@@ -45,7 +37,7 @@ func TestGetBatchPartialMiss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := itemIDs(items), []string{t1.ID, t2.ID}; !reflect.DeepEqual(got, want) {
+	if got, want := idsOf(items), []string{t1.ID, t2.ID}; !reflect.DeepEqual(got, want) {
 		t.Errorf("items = %v, want %v", got, want)
 	}
 	if want := []string{"t-nope1", "t-nope2"}; !reflect.DeepEqual(missing, want) {

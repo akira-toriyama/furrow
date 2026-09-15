@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -193,7 +194,7 @@ func TestCLIRepoCommandMutatesAndReportsChanged(t *testing.T) {
 	if !reflect.DeepEqual(res.After.Repos, []string{"akira-toriyama/furrow"}) {
 		t.Errorf("after repos = %v (short name should resolve)", res.After.Repos)
 	}
-	if !contains(res.Changed, "repos") {
+	if !slices.Contains(res.Changed, "repos") {
 		t.Errorf("changed should include repos, got %v", res.Changed)
 	}
 
@@ -202,7 +203,7 @@ func TestCLIRepoCommandMutatesAndReportsChanged(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatal(err)
 	}
-	if len(res.After.Repos) != 0 || !contains(res.Changed, "repos") {
+	if len(res.After.Repos) != 0 || !slices.Contains(res.Changed, "repos") {
 		t.Errorf("rm should empty repos + report the change: %+v %v", res.After.Repos, res.Changed)
 	}
 
@@ -261,13 +262,4 @@ func TestCLIRevisitNoRepoReason(t *testing.T) {
 	if !found {
 		t.Errorf("expected the no_repo reason, got %+v", rows[0].Revisit)
 	}
-}
-
-func contains(ss []string, s string) bool {
-	for _, x := range ss {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
