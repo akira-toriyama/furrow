@@ -11,48 +11,26 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
-
-// gitOrSkip mirrors fsstore/conflict_test.go's convention: these are real-git
-// tests, skipped where git is absent.
-func gitOrSkip(t *testing.T) string {
-	t.Helper()
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not on PATH")
-	}
-	return git
-}
-
-// runGitT runs one git command in dir, failing the test on error.
-func runGitT(t *testing.T, git, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command(git, args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-	return string(out)
-}
 
 // initRepo creates a git repo with committable identity and one base commit.
 func initRepo(t *testing.T, git string) string {
 	t.Helper()
 	dir := t.TempDir()
-	runGitT(t, git, dir, "init", "-q", "-b", "main")
-	runGitT(t, git, dir, "config", "user.name", "t")
-	runGitT(t, git, dir, "config", "user.email", "t@e")
+	gittest.RunGit(t, git, dir, "init", "-q", "-b", "main")
+	gittest.RunGit(t, git, dir, "config", "user.name", "t")
+	gittest.RunGit(t, git, dir, "config", "user.email", "t@e")
 	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, dir, "add", "-A")
-	runGitT(t, git, dir, "commit", "-q", "-m", "base")
+	gittest.RunGit(t, git, dir, "add", "-A")
+	gittest.RunGit(t, git, dir, "commit", "-q", "-m", "base")
 	return dir
 }
 
 func TestOpenOutsideGitIsValidation(t *testing.T) {
-	gitOrSkip(t)
+	gittest.GitOrSkip(t)
 	_, err := Open(context.Background(), t.TempDir())
 	if err == nil {
 		t.Fatal("Open outside a git repo must fail")
@@ -63,7 +41,7 @@ func TestOpenOutsideGitIsValidation(t *testing.T) {
 }
 
 func TestOpenResolvesToplevelFromSubdir(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	dir := initRepo(t, git)
 	sub := filepath.Join(dir, ".furrow")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
@@ -92,7 +70,7 @@ func TestOpenResolvesToplevelFromSubdir(t *testing.T) {
 // survive uncommitted — sweeping a user's notes into a sync commit is the
 // exact failure the pathspec exists to prevent.
 func TestCommitIsPathspecLimited(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	dir := initRepo(t, git)
 	fdir := filepath.Join(dir, ".furrow")
 	if err := os.MkdirAll(fdir, 0o755); err != nil {
@@ -117,7 +95,7 @@ func TestCommitIsPathspecLimited(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	status := runGitT(t, git, dir, "status", "--porcelain")
+	status := gittest.RunGit(t, git, dir, "status", "--porcelain")
 	if !strings.Contains(status, "notes.md") {
 		t.Errorf("notes.md must stay uncommitted, status:\n%s", status)
 	}
@@ -133,7 +111,7 @@ func TestCommitIsPathspecLimited(t *testing.T) {
 // files, and a variadic Commit of only the shard/meta paths leaves a modified
 // body dirty — the two primitives app.Sync's class-split is built on.
 func TestDirtyChangesTagsUntrackedAndScopesCommit(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	dir := initRepo(t, git)
 	fdir := filepath.Join(dir, ".furrow")
 	bdir := filepath.Join(fdir, "bodies")
@@ -178,7 +156,7 @@ func TestDirtyChangesTagsUntrackedAndScopesCommit(t *testing.T) {
 	if err := r.Commit(context.Background(), "meta only", ".furrow/meta.json"); err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(runGitT(t, git, dir, "status", "--porcelain", "--", ".furrow/bodies/t-1.md")) == "" {
+	if strings.TrimSpace(gittest.RunGit(t, git, dir, "status", "--porcelain", "--", ".furrow/bodies/t-1.md")) == "" {
 		t.Error("modified body must remain uncommitted after a meta-only commit")
 	}
 }
@@ -186,33 +164,33 @@ func TestDirtyChangesTagsUntrackedAndScopesCommit(t *testing.T) {
 // Push against a remote that moved is classified ErrNonFastForward — the push
 // failure Sync retries (pull once, push again).
 func TestPushClassifiesNonFastForward(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	origin := t.TempDir()
-	runGitT(t, git, origin, "init", "-q", "--bare", "-b", "main")
+	gittest.RunGit(t, git, origin, "init", "-q", "--bare", "-b", "main")
 
 	seed := initRepo(t, git)
-	runGitT(t, git, seed, "remote", "add", "origin", origin)
-	runGitT(t, git, seed, "push", "-q", "-u", "origin", "main")
+	gittest.RunGit(t, git, seed, "remote", "add", "origin", origin)
+	gittest.RunGit(t, git, seed, "push", "-q", "-u", "origin", "main")
 
 	cloneDir := filepath.Join(t.TempDir(), "b")
-	runGitT(t, git, filepath.Dir(cloneDir), "clone", "-q", origin, cloneDir)
-	runGitT(t, git, cloneDir, "config", "user.name", "t")
-	runGitT(t, git, cloneDir, "config", "user.email", "t@e")
+	gittest.RunGit(t, git, filepath.Dir(cloneDir), "clone", "-q", origin, cloneDir)
+	gittest.RunGit(t, git, cloneDir, "config", "user.name", "t")
+	gittest.RunGit(t, git, cloneDir, "config", "user.email", "t@e")
 
 	// Remote moves ahead (seed pushes a new commit)…
 	if err := os.WriteFile(filepath.Join(seed, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, seed, "add", "-A")
-	runGitT(t, git, seed, "commit", "-q", "-m", "ahead")
-	runGitT(t, git, seed, "push", "-q")
+	gittest.RunGit(t, git, seed, "add", "-A")
+	gittest.RunGit(t, git, seed, "commit", "-q", "-m", "ahead")
+	gittest.RunGit(t, git, seed, "push", "-q")
 
 	// …while the clone commits its own and pushes without pulling.
 	if err := os.WriteFile(filepath.Join(cloneDir, "b.txt"), []byte("b\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneDir, "add", "-A")
-	runGitT(t, git, cloneDir, "commit", "-q", "-m", "behind")
+	gittest.RunGit(t, git, cloneDir, "add", "-A")
+	gittest.RunGit(t, git, cloneDir, "commit", "-q", "-m", "behind")
 
 	r, err := Open(context.Background(), cloneDir)
 	if err != nil {
@@ -228,21 +206,21 @@ func TestPushClassifiesNonFastForward(t *testing.T) {
 }
 
 func TestMidOperationDetectsMerge(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	dir := initRepo(t, git)
 
 	// Build two diverging branches editing the same file, then start a merge
 	// that conflicts — MERGE_HEAD exists while it is unresolved.
-	runGitT(t, git, dir, "checkout", "-q", "-b", "x")
+	gittest.RunGit(t, git, dir, "checkout", "-q", "-b", "x")
 	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("from x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, dir, "commit", "-aqm", "x")
-	runGitT(t, git, dir, "checkout", "-q", "main")
+	gittest.RunGit(t, git, dir, "commit", "-aqm", "x")
+	gittest.RunGit(t, git, dir, "checkout", "-q", "main")
 	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("y\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, dir, "commit", "-aqm", "y")
+	gittest.RunGit(t, git, dir, "commit", "-aqm", "y")
 	cmd := exec.Command(git, "merge", "x")
 	cmd.Dir = dir
 	_ = cmd.Run() // expected to fail with a conflict
@@ -291,7 +269,7 @@ func TestIsTransientRace(t *testing.T) {
 // commits land locally or a fetch updates the tracking ref — exactly what
 // `furrow doctor` reports.
 func TestAheadBehind(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	ctx := context.Background()
 
 	t.Run("no upstream is a state, not an error", func(t *testing.T) {
@@ -311,15 +289,15 @@ func TestAheadBehind(t *testing.T) {
 
 	t.Run("counts local commits as ahead and fetched ones as behind", func(t *testing.T) {
 		origin := t.TempDir()
-		runGitT(t, git, origin, "init", "-q", "--bare", "-b", "main")
+		gittest.RunGit(t, git, origin, "init", "-q", "--bare", "-b", "main")
 		seed := initRepo(t, git)
-		runGitT(t, git, seed, "remote", "add", "origin", origin)
-		runGitT(t, git, seed, "push", "-q", "-u", "origin", "main")
+		gittest.RunGit(t, git, seed, "remote", "add", "origin", origin)
+		gittest.RunGit(t, git, seed, "push", "-q", "-u", "origin", "main")
 
 		cloneDir := filepath.Join(t.TempDir(), "b")
-		runGitT(t, git, filepath.Dir(cloneDir), "clone", "-q", origin, cloneDir)
-		runGitT(t, git, cloneDir, "config", "user.name", "t")
-		runGitT(t, git, cloneDir, "config", "user.email", "t@e")
+		gittest.RunGit(t, git, filepath.Dir(cloneDir), "clone", "-q", origin, cloneDir)
+		gittest.RunGit(t, git, cloneDir, "config", "user.name", "t")
+		gittest.RunGit(t, git, cloneDir, "config", "user.email", "t@e")
 
 		r, err := Open(ctx, cloneDir)
 		if err != nil {
@@ -334,18 +312,18 @@ func TestAheadBehind(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(cloneDir, "b.txt"), []byte("b\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		runGitT(t, git, cloneDir, "add", "-A")
-		runGitT(t, git, cloneDir, "commit", "-q", "-m", "local")
+		gittest.RunGit(t, git, cloneDir, "add", "-A")
+		gittest.RunGit(t, git, cloneDir, "commit", "-q", "-m", "local")
 
 		// The remote moves too (seed pushes), and the clone FETCHES (no rebase) —
 		// so the tracking ref knows, the way a real stale board does.
 		if err := os.WriteFile(filepath.Join(seed, "a.txt"), []byte("a\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		runGitT(t, git, seed, "add", "-A")
-		runGitT(t, git, seed, "commit", "-q", "-m", "remote")
-		runGitT(t, git, seed, "push", "-q")
-		runGitT(t, git, cloneDir, "fetch", "-q")
+		gittest.RunGit(t, git, seed, "add", "-A")
+		gittest.RunGit(t, git, seed, "commit", "-q", "-m", "remote")
+		gittest.RunGit(t, git, seed, "push", "-q")
+		gittest.RunGit(t, git, cloneDir, "fetch", "-q")
 
 		ahead, behind, hasUpstream, err = r.AheadBehind(ctx)
 		if err != nil || !hasUpstream {
@@ -392,13 +370,13 @@ func TestRunGitForcesCLocale(t *testing.T) {
 // reason died in runGit's buffer and the operator saw only pushed=false
 // (t-7kvj, measured on the projects board whose only gate is this hook).
 func TestPushCarriesHookStderrInDetails(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	origin := t.TempDir()
-	runGitT(t, git, origin, "init", "-q", "--bare", "-b", "main")
+	gittest.RunGit(t, git, origin, "init", "-q", "--bare", "-b", "main")
 
 	dir := initRepo(t, git)
-	runGitT(t, git, dir, "remote", "add", "origin", origin)
-	runGitT(t, git, dir, "push", "-q", "-u", "origin", "main")
+	gittest.RunGit(t, git, dir, "remote", "add", "origin", origin)
+	gittest.RunGit(t, git, dir, "push", "-q", "-u", "origin", "main")
 
 	hook := filepath.Join(dir, ".git", "hooks", "pre-push")
 	script := "#!/bin/sh\n" +
@@ -413,8 +391,8 @@ func TestPushCarriesHookStderrInDetails(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, dir, "add", "-A")
-	runGitT(t, git, dir, "commit", "-q", "-m", "blocked")
+	gittest.RunGit(t, git, dir, "add", "-A")
+	gittest.RunGit(t, git, dir, "commit", "-q", "-m", "blocked")
 
 	r, err := Open(context.Background(), dir)
 	if err != nil {
@@ -471,21 +449,21 @@ func TestIsNonFastForwardWordings(t *testing.T) {
 // body line that itself begins with `++` renders as `+++…` and must be content,
 // not a header (t-3t68).
 func TestAddedLinesIgnoresOperatorDiffPrefixConfig(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	origin := t.TempDir()
-	runGitT(t, git, origin, "init", "-q", "--bare", "-b", "main")
+	gittest.RunGit(t, git, origin, "init", "-q", "--bare", "-b", "main")
 	seed := initRepo(t, git)
-	runGitT(t, git, seed, "remote", "add", "origin", origin)
-	runGitT(t, git, seed, "push", "-q", "-u", "origin", "main")
-	runGitT(t, git, seed, "config", "diff.noprefix", "true")
-	runGitT(t, git, seed, "config", "diff.mnemonicPrefix", "true")
+	gittest.RunGit(t, git, seed, "remote", "add", "origin", origin)
+	gittest.RunGit(t, git, seed, "push", "-q", "-u", "origin", "main")
+	gittest.RunGit(t, git, seed, "config", "diff.noprefix", "true")
+	gittest.RunGit(t, git, seed, "config", "diff.mnemonicPrefix", "true")
 
 	body := filepath.Join(seed, "notes.md")
 	if err := os.WriteFile(body, []byte("++ looks like a header\n2026-09-15 activated\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, seed, "add", "-A")
-	runGitT(t, git, seed, "commit", "-q", "-m", "unpushed")
+	gittest.RunGit(t, git, seed, "add", "-A")
+	gittest.RunGit(t, git, seed, "commit", "-q", "-m", "unpushed")
 
 	r, err := Open(context.Background(), seed)
 	if err != nil {
@@ -505,7 +483,7 @@ func TestAddedLinesIgnoresOperatorDiffPrefixConfig(t *testing.T) {
 // makes Commit lose the same lock race the pull classifies as transient. It
 // used to come back as a terminal git-failed (t-cdx9).
 func TestCommitClassifiesIndexLockAsTransient(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	repo := initRepo(t, git)
 	if err := os.WriteFile(filepath.Join(repo, "x.txt"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 var testRebaseWait = retryPolicy{
@@ -469,5 +470,5 @@ func TestSyncCommitStageReportsAStaleIndexLock(t *testing.T) {
 	if err != nil || !p.Committed || !p.Pushed {
 		t.Fatalf("sync after the lock cleared: err=%v progress=%+v", err, p)
 	}
-	runGitT(t, git, cloneA, "log", "--oneline", "-1")
+	gittest.RunGit(t, git, cloneA, "log", "--oneline", "-1")
 }

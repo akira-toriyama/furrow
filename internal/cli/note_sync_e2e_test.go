@@ -2,12 +2,12 @@ package cli
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/app"
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 // The whole-stack proof of the touched-bodies journal (t-dw9v): `furrow note`
@@ -17,22 +17,11 @@ import (
 // until someone remembered `-b`, so the progress record agents are told to
 // keep in the body never left the machine.
 func TestNoteThenPlainSyncPublishesBody_EndToEndViaCLI(t *testing.T) {
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not on PATH")
-	}
+	git := gittest.GitOrSkip(t)
 	t.Setenv(app.EnvBoard, "")
 
 	origin := t.TempDir()
-	gitAt := func(dir string, args ...string) string {
-		cmd := exec.Command(git, args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return string(out)
-	}
+	gitAt := func(dir string, args ...string) string { return gittest.RunGit(t, git, dir, args...) }
 	gitAt(origin, "init", "-q", "--bare", "-b", "main")
 
 	boardRoot := filepath.Join(t.TempDir(), "central")

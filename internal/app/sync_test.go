@@ -13,55 +13,36 @@ import (
 	"time"
 
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 // These are the real-git two-clone e2e tests for `furrow sync`: what sync
 // promises is git's own behavior, so nothing here stubs git.
 
-func gitOrSkip(t *testing.T) string {
-	t.Helper()
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not on PATH")
-	}
-	return git
-}
-
-func runGitT(t *testing.T, git, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command(git, args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-	return string(out)
-}
-
 // setupClones builds origin (bare) + clone A (board initialized and pushed) +
 // clone B (cloned after, so it already has the board).
 func setupClones(t *testing.T) (git, cloneA, cloneB string) {
 	t.Helper()
-	git = gitOrSkip(t)
+	git = gittest.GitOrSkip(t)
 	origin := t.TempDir()
-	runGitT(t, git, origin, "init", "-q", "--bare", "-b", "main")
+	gittest.RunGit(t, git, origin, "init", "-q", "--bare", "-b", "main")
 
 	cloneA = filepath.Join(t.TempDir(), "a")
-	runGitT(t, git, filepath.Dir(cloneA), "clone", "-q", origin, cloneA)
+	gittest.RunGit(t, git, filepath.Dir(cloneA), "clone", "-q", origin, cloneA)
 	for _, kv := range [][2]string{{"user.name", "t"}, {"user.email", "t@e"}} {
-		runGitT(t, git, cloneA, "config", kv[0], kv[1])
+		gittest.RunGit(t, git, cloneA, "config", kv[0], kv[1])
 	}
 	if _, err := Init(cloneA); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneA, "add", "-A")
-	runGitT(t, git, cloneA, "commit", "-q", "-m", "board")
-	runGitT(t, git, cloneA, "push", "-q", "-u", "origin", "main")
+	gittest.RunGit(t, git, cloneA, "add", "-A")
+	gittest.RunGit(t, git, cloneA, "commit", "-q", "-m", "board")
+	gittest.RunGit(t, git, cloneA, "push", "-q", "-u", "origin", "main")
 
 	cloneB = filepath.Join(t.TempDir(), "b")
-	runGitT(t, git, filepath.Dir(cloneB), "clone", "-q", origin, cloneB)
+	gittest.RunGit(t, git, filepath.Dir(cloneB), "clone", "-q", origin, cloneB)
 	for _, kv := range [][2]string{{"user.name", "t"}, {"user.email", "t@e"}} {
-		runGitT(t, git, cloneB, "config", kv[0], kv[1])
+		gittest.RunGit(t, git, cloneB, "config", kv[0], kv[1])
 	}
 	return git, cloneA, cloneB
 }
@@ -205,8 +186,8 @@ func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
 		t.Errorf("details.paths = %v; must contain %s", paths, shardPath)
 	}
 
-	if strings.TrimSpace(runGitT(t, git, cloneB, "status", "--porcelain")) != "" {
-		t.Errorf("board must be clean after auto-abort:\n%s", runGitT(t, git, cloneB, "status", "--porcelain"))
+	if strings.TrimSpace(gittest.RunGit(t, git, cloneB, "status", "--porcelain")) != "" {
+		t.Errorf("board must be clean after auto-abort:\n%s", gittest.RunGit(t, git, cloneB, "status", "--porcelain"))
 	}
 	tk, _, err := openBoard(t, cloneB).Get(shared.ID)
 	if err != nil {
@@ -220,7 +201,7 @@ func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
 // Pre-flight: outside a git repo, sync is a validation error (exit 2) and the
 // progress object still comes back (all false).
 func TestSyncOutsideGitIsValidation(t *testing.T) {
-	gitOrSkip(t)
+	gittest.GitOrSkip(t)
 	dir := t.TempDir()
 	if _, err := Init(dir); err != nil {
 		t.Fatal(err)
@@ -243,18 +224,18 @@ func TestSyncRefusesMidMerge(t *testing.T) {
 	git, cloneA, _ := setupClones(t)
 
 	// Manufacture an unresolved merge in clone A on a plain file.
-	runGitT(t, git, cloneA, "checkout", "-q", "-b", "x")
+	gittest.RunGit(t, git, cloneA, "checkout", "-q", "-b", "x")
 	if err := os.WriteFile(filepath.Join(cloneA, "f.txt"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneA, "add", "-A")
-	runGitT(t, git, cloneA, "commit", "-qm", "x")
-	runGitT(t, git, cloneA, "checkout", "-q", "main")
+	gittest.RunGit(t, git, cloneA, "add", "-A")
+	gittest.RunGit(t, git, cloneA, "commit", "-qm", "x")
+	gittest.RunGit(t, git, cloneA, "checkout", "-q", "main")
 	if err := os.WriteFile(filepath.Join(cloneA, "f.txt"), []byte("y\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneA, "add", "-A")
-	runGitT(t, git, cloneA, "commit", "-qm", "y")
+	gittest.RunGit(t, git, cloneA, "add", "-A")
+	gittest.RunGit(t, git, cloneA, "commit", "-qm", "y")
 	cmd := exec.Command(git, "merge", "x")
 	cmd.Dir = cloneA
 	_ = cmd.Run() // conflicts; MERGE_HEAD left behind
@@ -281,15 +262,15 @@ func startStuckRebase(t *testing.T, git, dir string) {
 			t.Fatal(err)
 		}
 	}
-	runGitT(t, git, dir, "checkout", "-q", "-b", "topic")
+	gittest.RunGit(t, git, dir, "checkout", "-q", "-b", "topic")
 	write("c.txt", "topic\n")
-	runGitT(t, git, dir, "add", "-A")
-	runGitT(t, git, dir, "commit", "-qm", "topic change")
-	runGitT(t, git, dir, "checkout", "-q", "main")
+	gittest.RunGit(t, git, dir, "add", "-A")
+	gittest.RunGit(t, git, dir, "commit", "-qm", "topic change")
+	gittest.RunGit(t, git, dir, "checkout", "-q", "main")
 	write("c.txt", "main\n")
-	runGitT(t, git, dir, "add", "-A")
-	runGitT(t, git, dir, "commit", "-qm", "main change")
-	runGitT(t, git, dir, "checkout", "-q", "topic")
+	gittest.RunGit(t, git, dir, "add", "-A")
+	gittest.RunGit(t, git, dir, "commit", "-qm", "main change")
+	gittest.RunGit(t, git, dir, "checkout", "-q", "topic")
 	cmd := exec.Command(git, "rebase", "main") // add/add conflict — git stops mid-rebase
 	cmd.Dir = dir
 	_ = cmd.Run()
@@ -356,7 +337,7 @@ func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
 	}
 	// t1's modified body is left uncommitted and reported…
 	bodySpec := ".furrow/bodies/" + t1.ID + ".md"
-	if strings.TrimSpace(runGitT(t, git, cloneA, "status", "--porcelain", "--", bodySpec)) == "" {
+	if strings.TrimSpace(gittest.RunGit(t, git, cloneA, "status", "--porcelain", "--", bodySpec)) == "" {
 		t.Errorf("foreign body %s must stay dirty (uncommitted), but the tree is clean for it", bodySpec)
 	}
 	if !slices.Contains(p.PendingBodies, t1.ID) {
@@ -387,7 +368,7 @@ func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
 	if !slices.Contains(p2.CommittedBodies, t1.ID) || len(p2.PendingBodies) != 0 {
 		t.Errorf("opt-in sync: committed=%v pending=%v; want t1 committed, none pending", p2.CommittedBodies, p2.PendingBodies)
 	}
-	if got := strings.TrimSpace(runGitT(t, git, cloneA, "status", "--porcelain", "--", bodySpec)); got != "" {
+	if got := strings.TrimSpace(gittest.RunGit(t, git, cloneA, "status", "--porcelain", "--", bodySpec)); got != "" {
 		t.Errorf("t1 body must be clean after the opt-in sync, status: %q", got)
 	}
 	if !p2.Complete {
@@ -412,7 +393,7 @@ func TestSyncDefaultMessageGrammar(t *testing.T) {
 	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	subject := strings.TrimSpace(runGitT(t, git, cloneA, "log", "-1", "--format=%s"))
+	subject := strings.TrimSpace(gittest.RunGit(t, git, cloneA, "log", "-1", "--format=%s"))
 	if subject != ":card_file_box:(board) sync via furrow" {
 		t.Errorf("subject = %q, want %q", subject, ":card_file_box:(board) sync via furrow")
 	}
@@ -428,7 +409,7 @@ func TestSyncMessageOverride(t *testing.T) {
 	if _, err := a.Sync(context.Background(), SyncOpts{Message: ":card_file_box:(board) custom words"}); err != nil {
 		t.Fatal(err)
 	}
-	subject := strings.TrimSpace(runGitT(t, git, cloneA, "log", "-1", "--format=%s"))
+	subject := strings.TrimSpace(gittest.RunGit(t, git, cloneA, "log", "-1", "--format=%s"))
 	if subject != ":card_file_box:(board) custom words" {
 		t.Errorf("subject = %q", subject)
 	}
@@ -508,8 +489,8 @@ func TestSyncSkipsForeignFilesInStore(t *testing.T) {
 	if !slices.Equal(p.ForeignFiles, want) {
 		t.Errorf("ForeignFiles = %v; want %v", p.ForeignFiles, want)
 	}
-	committed := runGitT(t, git, cloneA, "show", "--name-only", "--format=", "HEAD")
-	tracked := runGitT(t, git, cloneA, "ls-files")
+	committed := gittest.RunGit(t, git, cloneA, "show", "--name-only", "--format=", "HEAD")
+	tracked := gittest.RunGit(t, git, cloneA, "ls-files")
 	for _, f := range junk {
 		if strings.Contains(committed, filepath.Base(f)) {
 			t.Errorf("%s must not be in the sync commit:\n%s", f, committed)
@@ -517,7 +498,7 @@ func TestSyncSkipsForeignFilesInStore(t *testing.T) {
 		if strings.Contains(tracked, filepath.Base(f)) {
 			t.Errorf("%s must not be tracked at all:\n%s", f, tracked)
 		}
-		if strings.TrimSpace(runGitT(t, git, cloneA, "status", "--porcelain", "--", f)) == "" {
+		if strings.TrimSpace(gittest.RunGit(t, git, cloneA, "status", "--porcelain", "--", f)) == "" {
 			t.Errorf("%s must remain dirty in the working tree (not swept, not deleted)", f)
 		}
 	}
@@ -546,14 +527,14 @@ func startConflictedCherryPick(t *testing.T, git, dir string) {
 			t.Fatal(err)
 		}
 	}
-	runGitT(t, git, dir, "checkout", "-q", "-b", "side")
+	gittest.RunGit(t, git, dir, "checkout", "-q", "-b", "side")
 	write("f.txt", "side\n")
-	runGitT(t, git, dir, "add", "-A")
-	runGitT(t, git, dir, "commit", "-qm", "side")
-	runGitT(t, git, dir, "checkout", "-q", "main")
+	gittest.RunGit(t, git, dir, "add", "-A")
+	gittest.RunGit(t, git, dir, "commit", "-qm", "side")
+	gittest.RunGit(t, git, dir, "checkout", "-q", "main")
 	write("f.txt", "main\n")
-	runGitT(t, git, dir, "add", "-A")
-	runGitT(t, git, dir, "commit", "-qm", "main")
+	gittest.RunGit(t, git, dir, "add", "-A")
+	gittest.RunGit(t, git, dir, "commit", "-qm", "main")
 	cmd := exec.Command(git, "cherry-pick", "side")
 	cmd.Dir = dir
 	_ = cmd.Run() // conflicts; CHERRY_PICK_HEAD left behind
@@ -595,19 +576,19 @@ func TestSyncRefusesMidCherryPickAndStagesNothing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cloneA, "f.txt"), []byte("resolved\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneA, "add", "f.txt")
+	gittest.RunGit(t, git, cloneA, "add", "f.txt")
 	_, err = a.Sync(context.Background(), SyncOpts{})
 	fe = core.AsError(err)
 	if fe == nil || fe.Kind != core.KindSyncOpInProgress {
 		t.Fatalf("post-add kind = %v, want %s (err: %v)", fe, core.KindSyncOpInProgress, err)
 	}
 	// The refusal must have staged NOTHING: only the operator's own f.txt.
-	if staged := strings.TrimSpace(runGitT(t, git, cloneA, "diff", "--cached", "--name-only")); staged != "f.txt" {
+	if staged := strings.TrimSpace(gittest.RunGit(t, git, cloneA, "diff", "--cached", "--name-only")); staged != "f.txt" {
 		t.Errorf("staged = %q, want only f.txt — board files must never enter the foreign operation", staged)
 	}
 
 	// Stage 3: the operator backs out; sync now proceeds and commits the board.
-	runGitT(t, git, cloneA, "cherry-pick", "--abort")
+	gittest.RunGit(t, git, cloneA, "cherry-pick", "--abort")
 	p, err := a.Sync(context.Background(), SyncOpts{})
 	if err != nil {
 		t.Fatalf("sync after abort: %v", err)
@@ -616,7 +597,7 @@ func TestSyncRefusesMidCherryPickAndStagesNothing(t *testing.T) {
 		t.Errorf("board must commit and push once the operation is gone: %+v", p)
 	}
 	// And the board commit is furrow's own, not a cherry-pick absorption.
-	if sub := strings.TrimSpace(runGitT(t, git, cloneA, "log", "-1", "--format=%s")); sub != DefaultSyncMessage {
+	if sub := strings.TrimSpace(gittest.RunGit(t, git, cloneA, "log", "-1", "--format=%s")); sub != DefaultSyncMessage {
 		t.Errorf("HEAD subject = %q, want the sync default %q", sub, DefaultSyncMessage)
 	}
 }
@@ -641,7 +622,7 @@ func TestAutoCommitSkipsMidOperation(t *testing.T) {
 	}
 	// f.txt legitimately sits in the index (the conflict's unmerged entries);
 	// what must NOT be there is anything of the board's.
-	if staged := runGitT(t, git, cloneA, "diff", "--cached", "--name-only"); strings.Contains(staged, ".furrow") {
+	if staged := gittest.RunGit(t, git, cloneA, "diff", "--cached", "--name-only"); strings.Contains(staged, ".furrow") {
 		t.Errorf("autocommit staged board files during a foreign operation:\n%s", staged)
 	}
 }
@@ -694,7 +675,7 @@ func TestSyncPublishesJournaledBodiesButNotHandEdits(t *testing.T) {
 	}
 
 	// The other machine reads the note's prose.
-	runGitT(t, git, cloneB, "pull", "-q")
+	gittest.RunGit(t, git, cloneB, "pull", "-q")
 	remote, err := os.ReadFile(filepath.Join(cloneB, ".furrow", "bodies", t1.ID+".md"))
 	if err != nil {
 		t.Fatal(err)
@@ -765,7 +746,7 @@ func TestSyncCommitCarriesAttributionTrailer(t *testing.T) {
 		t.Fatal(err)
 	}
 	trailerOf := func() string {
-		body := runGitT(t, git, cloneA, "log", "-1", "--format=%B")
+		body := gittest.RunGit(t, git, cloneA, "log", "-1", "--format=%B")
 		for _, l := range strings.Split(body, "\n") {
 			if strings.HasPrefix(l, "Furrow-sync: ") {
 				return l
@@ -794,7 +775,7 @@ func TestSyncCommitCarriesAttributionTrailer(t *testing.T) {
 	if _, err := a.Sync(context.Background(), SyncOpts{Message: ":card_file_box:(board) custom subject"}); err != nil {
 		t.Fatal(err)
 	}
-	subject := strings.TrimSpace(runGitT(t, git, cloneA, "log", "-1", "--format=%s"))
+	subject := strings.TrimSpace(gittest.RunGit(t, git, cloneA, "log", "-1", "--format=%s"))
 	if subject != ":card_file_box:(board) custom subject" {
 		t.Errorf("subject = %q, want the -m override", subject)
 	}

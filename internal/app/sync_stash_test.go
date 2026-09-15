@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 // seedTrackedFile commits a file OUTSIDE .furrow in clone A and pushes it, then
@@ -18,10 +19,10 @@ func seedTrackedFile(t *testing.T, git, cloneA, cloneB, name, content string) {
 	if err := os.WriteFile(filepath.Join(cloneA, name), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneA, "add", name)
-	runGitT(t, git, cloneA, "commit", "-q", "-m", "seed "+name)
-	runGitT(t, git, cloneA, "push", "-q")
-	runGitT(t, git, cloneB, "pull", "-q", "--rebase")
+	gittest.RunGit(t, git, cloneA, "add", name)
+	gittest.RunGit(t, git, cloneA, "commit", "-q", "-m", "seed "+name)
+	gittest.RunGit(t, git, cloneA, "push", "-q")
+	gittest.RunGit(t, git, cloneB, "pull", "-q", "--rebase")
 }
 
 // The defect this whole path exists for. `git rebase --autostash` re-applies the
@@ -40,8 +41,8 @@ func TestSyncReportsStrandedAutostashOnCleanRebase(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cloneA, "notes.md"), []byte("from A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneA, "commit", "-q", "-am", "A edits notes")
-	runGitT(t, git, cloneA, "push", "-q")
+	gittest.RunGit(t, git, cloneA, "commit", "-q", "-am", "A edits notes")
+	gittest.RunGit(t, git, cloneA, "push", "-q")
 
 	// B has its own uncommitted edit to the same file (sync never commits it — it
 	// is outside .furrow) plus a board change to sync.
@@ -85,7 +86,7 @@ func TestSyncReportsStrandedAutostashOnCleanRebase(t *testing.T) {
 	if !ok || d["pending_stash"] == nil {
 		t.Errorf("details must carry pending_stash, got %#v", fe.Details)
 	}
-	if out := runGitT(t, git, cloneB, "stash", "list"); !strings.Contains(out, "autostash") {
+	if out := gittest.RunGit(t, git, cloneB, "stash", "list"); !strings.Contains(out, "autostash") {
 		t.Errorf("the autostash entry must still exist for `git stash pop`: %q", out)
 	}
 }
@@ -101,8 +102,8 @@ func TestSyncPreflightExplainsUnmergedIndex(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cloneA, "notes.md"), []byte("from A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneA, "commit", "-q", "-am", "A edits notes")
-	runGitT(t, git, cloneA, "push", "-q")
+	gittest.RunGit(t, git, cloneA, "commit", "-q", "-am", "A edits notes")
+	gittest.RunGit(t, git, cloneA, "push", "-q")
 
 	if err := os.WriteFile(filepath.Join(cloneB, "notes.md"), []byte("from B\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -145,9 +146,9 @@ func TestSyncReportsPreExistingAutostashWithoutFailing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cloneB, "notes.md"), []byte("stranded\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	oid := strings.TrimSpace(runGitT(t, git, cloneB, "stash", "create"))
-	runGitT(t, git, cloneB, "checkout", "--", "notes.md")
-	runGitT(t, git, cloneB, "stash", "store", "-m", "autostash", oid)
+	oid := strings.TrimSpace(gittest.RunGit(t, git, cloneB, "stash", "create"))
+	gittest.RunGit(t, git, cloneB, "checkout", "--", "notes.md")
+	gittest.RunGit(t, git, cloneB, "stash", "store", "-m", "autostash", oid)
 
 	b := openBoard(t, cloneB)
 	if _, err := b.Add("unrelated work", AddOpts{}); err != nil {
@@ -174,7 +175,7 @@ func TestSyncIgnoresOperatorsOwnStash(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cloneB, "notes.md"), []byte("my wip\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneB, "stash", "push", "-q", "-m", "my own wip")
+	gittest.RunGit(t, git, cloneB, "stash", "push", "-q", "-m", "my own wip")
 
 	b := openBoard(t, cloneB)
 	if _, err := b.Add("unrelated work", AddOpts{}); err != nil {
@@ -221,7 +222,7 @@ func TestSyncRefusesToCommitBodyWithConflictMarkers(t *testing.T) {
 	if p.Committed {
 		t.Error("the guard runs BEFORE the commit: a refused sync must have changed nothing")
 	}
-	if out := runGitT(t, git, cloneA, "status", "--porcelain"); !strings.Contains(out, core.BodyPath(task.ID)) {
+	if out := gittest.RunGit(t, git, cloneA, "status", "--porcelain"); !strings.Contains(out, core.BodyPath(task.ID)) {
 		t.Errorf("the marked-up body must still be uncommitted: %q", out)
 	}
 	d, ok := fe.Details.(map[string]any)

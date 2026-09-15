@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 // These are real-git tests for post-mutation autocommit (AutoCommitFlush). They
@@ -22,14 +24,14 @@ import (
 // the board's enclosing dir.
 func setupACBoard(t *testing.T) (git, dir string) {
 	t.Helper()
-	git = gitOrSkip(t)
+	git = gittest.GitOrSkip(t)
 	dir = t.TempDir()
-	runGitT(t, git, dir, "init", "-q", "-b", "main")
+	gittest.RunGit(t, git, dir, "init", "-q", "-b", "main")
 	if _, err := Init(dir); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, dir, "add", "-A")
-	runGitT(t, git, dir, "commit", "-q", "-m", "board")
+	gittest.RunGit(t, git, dir, "add", "-A")
+	gittest.RunGit(t, git, dir, "commit", "-q", "-m", "board")
 	return git, dir
 }
 
@@ -45,7 +47,7 @@ func openAC(t *testing.T, dir string) *App {
 
 func headCount(t *testing.T, git, dir string) int {
 	t.Helper()
-	n, err := strconv.Atoi(strings.TrimSpace(runGitT(t, git, dir, "rev-list", "--count", "HEAD")))
+	n, err := strconv.Atoi(strings.TrimSpace(gittest.RunGit(t, git, dir, "rev-list", "--count", "HEAD")))
 	if err != nil {
 		t.Fatalf("rev-list --count HEAD: %v", err)
 	}
@@ -60,7 +62,7 @@ func headCount(t *testing.T, git, dir string) int {
 func commitFiles(t *testing.T, git, dir string) []string {
 	t.Helper()
 	var fs []string
-	for _, l := range strings.Split(strings.TrimSpace(runGitT(t, git, dir, "show", "--name-only", "--no-renames", "--format=", "HEAD")), "\n") {
+	for _, l := range strings.Split(strings.TrimSpace(gittest.RunGit(t, git, dir, "show", "--name-only", "--no-renames", "--format=", "HEAD")), "\n") {
 		if l = strings.TrimSpace(l); l != "" {
 			fs = append(fs, l)
 		}
@@ -70,7 +72,7 @@ func commitFiles(t *testing.T, git, dir string) []string {
 
 func statusPorcelain(t *testing.T, git, dir string) string {
 	t.Helper()
-	return strings.TrimSpace(runGitT(t, git, dir, "status", "--porcelain"))
+	return strings.TrimSpace(gittest.RunGit(t, git, dir, "status", "--porcelain"))
 }
 
 // A mutating command on an opted-in board produces exactly one commit carrying
@@ -107,7 +109,7 @@ func TestAutoCommitAddOneCommit(t *testing.T) {
 	// gitmoji grammar `:card_file_box:(board)` — the retired Conventional
 	// `chore(board):` token is glyph-rejected the moment a commit-msg hook lands
 	// on a board repo.
-	if subj := strings.TrimSpace(runGitT(t, git, dir, "log", "-1", "--format=%s")); subj != ":card_file_box:(board) furrow add "+task.ID {
+	if subj := strings.TrimSpace(gittest.RunGit(t, git, dir, "log", "-1", "--format=%s")); subj != ":card_file_box:(board) furrow add "+task.ID {
 		t.Errorf("subject = %q, want %q", subj, ":card_file_box:(board) furrow add "+task.ID)
 	}
 }
@@ -154,7 +156,7 @@ func TestAutoCommitNoteCommitsOwnBody(t *testing.T) {
 	if !res.Committed {
 		t.Fatalf("note must autocommit its own body edit: %+v", res)
 	}
-	if body := runGitT(t, git, dir, "show", "HEAD:.furrow/bodies/"+task.ID+".md"); !strings.Contains(body, "progress marker XYZ") {
+	if body := gittest.RunGit(t, git, dir, "show", "HEAD:.furrow/bodies/"+task.ID+".md"); !strings.Contains(body, "progress marker XYZ") {
 		t.Errorf("committed body must contain the note prose; got:\n%s", body)
 	}
 	if s := statusPorcelain(t, git, dir); s != "" {
@@ -196,7 +198,7 @@ func TestAutoCommitLeavesOtherSessionBody(t *testing.T) {
 	if !slices.Contains(res.PendingBodies, task.ID) {
 		t.Errorf("the other session's dirty body must be reported pending, got %+v", res.PendingBodies)
 	}
-	if committed := runGitT(t, git, dir, "show", "HEAD:.furrow/bodies/"+task.ID+".md"); strings.Contains(committed, "WIP from another session") {
+	if committed := gittest.RunGit(t, git, dir, "show", "HEAD:.furrow/bodies/"+task.ID+".md"); strings.Contains(committed, "WIP from another session") {
 		t.Errorf("autocommit must not sweep another session's WIP body into the commit")
 	}
 	if !strings.Contains(statusPorcelain(t, git, dir), "bodies/"+task.ID+".md") {
@@ -255,7 +257,7 @@ func TestAutoCommitArchiveSingleCommit(t *testing.T) {
 // leaves the mutation on disk (a non-zero exit would make an agent retry and
 // double-apply).
 func TestAutoCommitNonGitWarnsNoError(t *testing.T) {
-	gitOrSkip(t)
+	gittest.GitOrSkip(t)
 	dir := t.TempDir() // no `git init`
 	if _, err := Init(dir); err != nil {
 		t.Fatal(err)
@@ -278,9 +280,9 @@ func TestAutoCommitNonGitWarnsNoError(t *testing.T) {
 // (the standalone recipe's classic slip — forgetting `git init` in the board's
 // own dir), autocommit refuses rather than dropping board commits into that repo.
 func TestAutoCommitOwnershipGuardSkipsEnclosingRepo(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	dir := t.TempDir()
-	runGitT(t, git, dir, "init", "-q", "-b", "main") // enclosing repo at dir
+	gittest.RunGit(t, git, dir, "init", "-q", "-b", "main") // enclosing repo at dir
 	sub := filepath.Join(dir, "sub")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
@@ -348,7 +350,7 @@ func TestAutoCommitSkipsConflictMarkerBody(t *testing.T) {
 	if !strings.Contains(statusPorcelain(t, git, dir), "bodies/"+task.ID+".md") {
 		t.Errorf("a marker-carrying body must be left uncommitted")
 	}
-	if committed := runGitT(t, git, dir, "show", "HEAD:.furrow/bodies/"+task.ID+".md"); strings.Contains(committed, "<<<<<<<") {
+	if committed := gittest.RunGit(t, git, dir, "show", "HEAD:.furrow/bodies/"+task.ID+".md"); strings.Contains(committed, "<<<<<<<") {
 		t.Errorf("a conflict-marker body must never be committed")
 	}
 }

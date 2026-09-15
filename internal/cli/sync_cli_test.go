@@ -3,13 +3,13 @@ package cli
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 // `furrow sync` outside a git repo: validation exit (2), and the progress
@@ -114,18 +114,8 @@ func TestSyncOutputJSONShape(t *testing.T) {
 // when git is unavailable. sync can push/pull against origin for real.
 func initGitBoard(t *testing.T) string {
 	t.Helper()
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not installed")
-	}
-	gitT := func(dir string, args ...string) {
-		t.Helper()
-		c := exec.Command(git, args...)
-		c.Dir = dir
-		if b, err := c.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, b)
-		}
-	}
+	git := gittest.GitOrSkip(t)
+	gitT := func(dir string, args ...string) { gittest.RunGit(t, git, dir, args...) }
 	origin := t.TempDir()
 	gitT(origin, "init", "-q", "--bare", "-b", "main")
 	clone := filepath.Join(t.TempDir(), "clone")
@@ -181,20 +171,11 @@ func TestSyncSurfacesRevisitLine(t *testing.T) {
 // reach the operator verbatim on stderr, and machine callers via the
 // envelope's details.stderr.
 func TestSyncRelaysPushHookStderr(t *testing.T) {
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not on PATH")
-	}
+	git := gittest.GitOrSkip(t)
 	t.Setenv(app.EnvBoard, "")
 
 	origin := t.TempDir()
-	gitAt := func(dir string, args ...string) {
-		cmd := exec.Command(git, args...)
-		cmd.Dir = dir
-		if b, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, b)
-		}
-	}
+	gitAt := func(dir string, args ...string) { gittest.RunGit(t, git, dir, args...) }
 	gitAt(origin, "init", "-q", "--bare", "-b", "main")
 	boardRoot := filepath.Join(t.TempDir(), "central")
 	gitAt(filepath.Dir(boardRoot), "clone", "-q", origin, boardRoot)

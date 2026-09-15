@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 func findProblems(r *DoctorReport, code string) []int {
@@ -278,17 +280,17 @@ func TestDoctorGitAheadBehind(t *testing.T) {
 	if _, err := a.Add("from A", AddOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneA, "add", "-A")
-	runGitT(t, git, cloneA, "commit", "-q", "-m", "a")
-	runGitT(t, git, cloneA, "push", "-q")
+	gittest.RunGit(t, git, cloneA, "add", "-A")
+	gittest.RunGit(t, git, cloneA, "commit", "-q", "-m", "a")
+	gittest.RunGit(t, git, cloneA, "push", "-q")
 
 	b := openBoard(t, cloneB)
 	if _, err := b.Add("from B", AddOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneB, "add", "-A")
-	runGitT(t, git, cloneB, "commit", "-q", "-m", "b")
-	runGitT(t, git, cloneB, "fetch", "-q")
+	gittest.RunGit(t, git, cloneB, "add", "-A")
+	gittest.RunGit(t, git, cloneB, "commit", "-q", "-m", "b")
+	gittest.RunGit(t, git, cloneB, "fetch", "-q")
 
 	boardB := filepath.Join(cloneB, DirName)
 	writeGlobalConfig(t, boardEntry(boardB, "auto", filepath.Dir(cloneB)))
