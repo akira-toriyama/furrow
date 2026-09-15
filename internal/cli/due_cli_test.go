@@ -11,7 +11,36 @@ import (
 
 // yesterday/today/tomorrow as `--due` spellings, in the LOCAL zone the CLI reads
 // them in. Dates, not instants, so a run at 23:59:59 does not flip a case.
-func dayOffset(n int) string { return time.Now().AddDate(0, 0, n).Format("2006-01-02") }
+// frozenNow is the instant the date-sensitive tests run at: a local noon, so
+// the calendar day dayOffset writes into a --due and the day furrow reads
+// today/overdue against (the machine zone, on a board that declares none)
+// agree, and a test cannot straddle midnight between the two. Freeze the
+// clock (freezeClock) before asking for a day near today; +30 is safe unfrozen.
+var frozenNow = time.Date(2026, 6, 25, 12, 0, 0, 0, time.Local)
+
+type frozenClock struct{}
+
+func (frozenClock) Now() time.Time { return frozenNow }
+
+func freezeClock(t *testing.T) {
+	t.Helper()
+	testClock = frozenClock{}
+	t.Cleanup(func() { testClock = nil })
+}
+
+// dayOffset is the bare date n days from now, in the operator's zone: the
+// frozen instant once freezeClock ran, the wall clock otherwise. A day within a
+// week of today without a frozen clock is refused — that is the midnight flake.
+func dayOffset(t *testing.T, n int) string {
+	t.Helper()
+	now := time.Now()
+	if testClock != nil {
+		now = testClock.Now()
+	} else if n > -7 && n < 7 {
+		t.Fatalf("dayOffset(%d) needs freezeClock(t): the date is evaluated again at read time", n)
+	}
+	return now.AddDate(0, 0, n).Format("2006-01-02")
+}
 
 func TestCLIDueRoundTrip(t *testing.T) {
 	initStore(t)
@@ -61,8 +90,9 @@ func TestCLIDueRoundTrip(t *testing.T) {
 // A bare date is the WHOLE day: a task promised for today is not overdue at
 // 00:01 — the rule the whole feature turns on.
 func TestCLIDueDateOnlyIsEndOfDay(t *testing.T) {
+	freezeClock(t)
 	initStore(t)
-	addTask(t, "promised today", "-s", "waiting", "-r", "o/r", "--due", dayOffset(0))
+	addTask(t, "promised today", "-s", "waiting", "-r", "o/r", "--due", dayOffset(t, 0))
 
 	out, code := run(t, "lint")
 	if code != 0 {
@@ -76,7 +106,7 @@ func TestCLIDueDateOnlyIsEndOfDay(t *testing.T) {
 	}
 
 	// Yesterday, on the other hand, is an ERROR — lint exits 2.
-	late := addTask(t, "promised yesterday", "-s", "waiting", "-r", "o/r", "--due", dayOffset(-1))
+	late := addTask(t, "promised yesterday", "-s", "waiting", "-r", "o/r", "--due", dayOffset(t, -1))
 	out, code = run(t, "lint")
 	if code == 0 {
 		t.Fatalf("lint with an overdue task should be non-zero:\n%s", out)
@@ -167,6 +197,7 @@ func TestCLIDueRejectsBadSpellings(t *testing.T) {
 // brief LEADS with what has come due, and its JSON key is absent when nothing
 // has — never null, which a reader would trip over.
 func TestCLIBriefDueSection(t *testing.T) {
+	freezeClock(t)
 	initStore(t)
 
 	out, code := run(t, "--json", "brief")
@@ -180,10 +211,10 @@ func TestCLIBriefDueSection(t *testing.T) {
 		t.Errorf("brief JSON must never contain null:\n%s", out)
 	}
 
-	late := addTask(t, "promised yesterday", "-s", "waiting", "-r", "o/r", "--due", dayOffset(-1))
+	late := addTask(t, "promised yesterday", "-s", "waiting", "-r", "o/r", "--due", dayOffset(t, -1))
 	// An icebox task is PARKED: [due].ignore_lanes silences it here exactly as it
 	// does in lint, which is why this one must not show up below.
-	addTask(t, "promised today", "-s", "icebox", "-r", "o/r", "--due", dayOffset(0))
+	addTask(t, "promised today", "-s", "icebox", "-r", "o/r", "--due", dayOffset(t, 0))
 
 	out, code = run(t, "--json", "brief")
 	if code != 0 {
@@ -230,13 +261,14 @@ func TestCLIBriefDueSection(t *testing.T) {
 // filter at all) errors on the task regardless, so a scope that filtered the due
 // band made brief print a section of 1 above a lint ride-along counting 2.
 func TestCLIBriefDueIgnoresTheBoardRepoScope(t *testing.T) {
+	freezeClock(t)
 	checkout, _ := localBoardLayout(t, "default_repo = \"me/demo\"\n")
 	if err := os.Chdir(checkout); err != nil {
 		t.Fatal(err)
 	}
 
-	mine := addTask(t, "promised here", "-s", "waiting", "-r", "me/demo", "--due", dayOffset(-1))
-	theirs := addTask(t, "promised elsewhere", "-s", "waiting", "-r", "me/other", "--due", dayOffset(-2))
+	mine := addTask(t, "promised here", "-s", "waiting", "-r", "me/demo", "--due", dayOffset(t, -1))
+	theirs := addTask(t, "promised elsewhere", "-s", "waiting", "-r", "me/other", "--due", dayOffset(t, -2))
 	// `add` unions the board scope into repos, so strip it: this task must
 	// belong to me/other ALONE, which is the case under test.
 	if out, code := run(t, "repo", theirs, "--rm", "me/demo"); code != 0 {
@@ -296,9 +328,10 @@ func TestCLIBriefDueIgnoresTheBoardRepoScope(t *testing.T) {
 // `next` notes the arrived dates on STDERR: the promised work usually sits in a
 // lane next excludes, so it must be visible without polluting the array stdout.
 func TestCLINextDueHintIsStderrOnly(t *testing.T) {
+	freezeClock(t)
 	initStore(t)
 	addTask(t, "actionable", "-s", "ready", "-r", "o/r")
-	late := addTask(t, "promised yesterday", "-s", "waiting", "-r", "o/r", "--due", dayOffset(-1))
+	late := addTask(t, "promised yesterday", "-s", "waiting", "-r", "o/r", "--due", dayOffset(t, -1))
 
 	stdout, stderr, code := runSplit(t, "--json", "next")
 	if code != 0 {
@@ -321,9 +354,10 @@ func TestCLINextDueHintIsStderrOnly(t *testing.T) {
 // `ls` marks a dated row in the title cell, and marks a passed one differently —
 // the at-a-glance half of the same signal.
 func TestCLILsShowsDue(t *testing.T) {
+	freezeClock(t)
 	initStore(t)
-	addTask(t, "promised yesterday", "-s", "ready", "-r", "o/r", "--due", dayOffset(-1))
-	addTask(t, "promised later", "-s", "ready", "-r", "o/r", "--due", dayOffset(30))
+	addTask(t, "promised yesterday", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, -1))
+	addTask(t, "promised later", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, 30))
 	addTask(t, "undated", "-s", "ready", "-r", "o/r")
 
 	out, code := run(t, "ls", "-r", "o/r")
@@ -351,8 +385,9 @@ func TestCLILsShowsDue(t *testing.T) {
 // The lint codes are real registry members, so `--code`/`--exclude-code` accept
 // them — the contract that makes an ignore rule spellable at all.
 func TestCLILintDueCodeFiltering(t *testing.T) {
+	freezeClock(t)
 	initStore(t)
-	addTask(t, "promised yesterday", "-s", "waiting", "-r", "o/r", "--due", dayOffset(-1))
+	addTask(t, "promised yesterday", "-s", "waiting", "-r", "o/r", "--due", dayOffset(t, -1))
 
 	out, code := run(t, "lint", "--code", "due-overdue")
 	if code == 0 || !strings.Contains(out, "due-overdue") {
@@ -384,10 +419,11 @@ func TestCLIAddRejectsEmptyDue(t *testing.T) {
 // task in an exempt lane still shows its date, but never an alarm. The
 // finished-early case is the sharp one — the promise was kept.
 func TestCLIExemptLanesAreNeverRenderedOverdue(t *testing.T) {
+	freezeClock(t)
 	initStore(t)
-	open := addTask(t, "still open", "-s", "ready", "-r", "o/r", "--due", dayOffset(-1))
-	parked := addTask(t, "parked", "-s", "icebox", "-r", "o/r", "--due", dayOffset(-1))
-	shipped := addTask(t, "shipped early", "-s", "ready", "-r", "o/r", "--due", dayOffset(-1))
+	open := addTask(t, "still open", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, -1))
+	parked := addTask(t, "parked", "-s", "icebox", "-r", "o/r", "--due", dayOffset(t, -1))
+	shipped := addTask(t, "shipped early", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, -1))
 	if out, code := run(t, "done", shipped); code != 0 {
 		t.Fatalf("done exit = %d:\n%s", code, out)
 	}
@@ -424,6 +460,7 @@ func TestCLIExemptLanesAreNeverRenderedOverdue(t *testing.T) {
 // `--tree` is the same matched rows regrouped, so it must not be the one view
 // where a promise disappears.
 func TestCLITreeShowsDue(t *testing.T) {
+	freezeClock(t)
 	initStore(t)
 	epic, code := run(t, "--json", "epic", "add", "ops", "-r", "o/r")
 	if code != 0 {
@@ -435,7 +472,7 @@ func TestCLITreeShowsDue(t *testing.T) {
 	if err := json.Unmarshal([]byte(epic), &e); err != nil {
 		t.Fatalf("parse epic add: %v\n%s", err, epic)
 	}
-	id := addTask(t, "promised", "-s", "waiting", "-r", "o/r", "-e", e.ID, "--due", dayOffset(-1))
+	id := addTask(t, "promised", "-s", "waiting", "-r", "o/r", "-e", e.ID, "--due", dayOffset(t, -1))
 
 	out, code := run(t, "ls", "-r", "o/r", "--tree")
 	if code != 0 {

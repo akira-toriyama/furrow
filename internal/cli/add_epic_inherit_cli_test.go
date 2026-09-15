@@ -12,12 +12,6 @@ import (
 // follows the same rule with ONE note for the batch.
 // runSplitStdin is runSplit with a stdin feed — needed because --stdin reads
 // titles from the command's input stream.
-func runSplitStdin(t *testing.T, stdin string, args ...string) (string, string, int) {
-	t.Helper()
-	fe, so, se := execCLI(t, stdin, args...)
-	return so, se, exitOf(fe)
-}
-
 func TestCLIAddInheritsActiveEpic(t *testing.T) {
 	initStore(t)
 	// A box with a repo (activate requires one), then activate it.
@@ -68,7 +62,7 @@ func TestCLIAddInheritsActiveEpic(t *testing.T) {
 		t.Errorf("nothing inherited, nothing to disclose: %q", stderr)
 	}
 
-	so, se, code := runSplitStdin(t, "one\ntwo\n", "--json", "add", "--stdin")
+	so, se, code := runSplitIn(t, "one\ntwo\n", "--json", "add", "--stdin")
 	if code != 0 {
 		t.Fatalf("add --stdin exit %d:\n%s", code, so)
 	}
