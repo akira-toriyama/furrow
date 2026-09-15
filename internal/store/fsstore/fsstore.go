@@ -89,6 +89,7 @@ func (s *Store) Load() (*core.Index, error) {
 	if err != nil {
 		return nil, core.Internalf("index", "read tasks/: %v", err)
 	}
+	idx := &core.Index{SchemaVersion: ver}
 	tasks := make([]core.Task, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
@@ -103,8 +104,13 @@ func (s *Store) Load() (*core.Index, error) {
 			return nil, err
 		}
 		tasks = append(tasks, *t)
+		// Remember the shard as read, under its FILENAME: Save deletes and
+		// rewrites only what this index has met (see Save), and a misnamed shard
+		// is met under the name it has, not the id it carries.
+		idx.MarkSeen(strings.TrimSuffix(e.Name(), ".json"), b)
 	}
-	return &core.Index{SchemaVersion: ver, Tasks: tasks}, nil
+	idx.Tasks = tasks
+	return idx, nil
 }
 
 // BoardVersion returns the layout version meta.json DECLARES — the board's own
@@ -257,8 +263,8 @@ func (s *Store) PruneMetaExtras() ([]string, error) {
 }
 
 // Save splits the index into per-task shards under tasks/ and deletes the shards
-// of any ids no longer present. It does NOT write meta.json — it READS it
-// (gateWrite), and the only board it may stamp is a genuinely fresh one. Three
+// this index loaded and no longer holds. It does NOT write meta.json — it READS
+// it (gateWrite), and the only board it may stamp is a genuinely fresh one. Four
 // properties matter:
 //   - The board's layout version is an input, never an output: an ordinary write
 //     never raises it. That one line — stamping meta.json with the binary's
@@ -266,10 +272,24 @@ func (s *Store) PruneMetaExtras() ([]string, error) {
 //   - Determinism/no churn: each shard is serialized via the single
 //     core.MarshalTask path and written ONLY when its bytes differ from disk, so
 //     re-saving an untouched board rewrites nothing (zero git churn).
+//   - Only what THIS index changed: a task is rewritten only when its bytes
+//     moved from what Load read (Index.Seen), and a shard is deleted only when
+//     Load met it and the index dropped it — never "every file the index does
+//     not name". The store has no lock, so two processes routinely sit between
+//     each other's Load and Save; the old sweep (ListTaskIDs minus the index)
+//     deleted every shard the other process had just added — ten concurrent
+//     `furrow add` on one board left ZERO shards and ten exit 0s — and the old
+//     compare-against-disk rewrite put a stale copy over the other's edit of a
+//     task this process never touched. A shard this index has not met belongs
+//     to someone else and is left exactly as found.
 //   - Atomicity: every file is written tmp+rename, so a crash never leaves a
 //     half-written shard. A single-task change (the common case) is one shard =
 //     fully atomic; a bulk change is per-shard atomic (each shard independently
 //     valid and the operation is safely re-runnable).
+//
+// Afterward the index has met exactly what it wrote, so a second Save of the
+// same index (drop a task, Save again) still deletes — a literal Index that was
+// never loaded starts out having met nothing, and its first Save deletes nothing.
 //
 // index.json is never read or written — the abolished monolith stays abolished.
 func (s *Store) Save(idx *core.Index) error {
@@ -296,22 +316,25 @@ func (s *Store) Save(idx *core.Index) error {
 		if err != nil {
 			return err
 		}
+		if prev, ok := idx.Seen(t.ID); ok && bytes.Equal(prev, data) {
+			continue // untouched by this index: whatever is on disk now stands
+		}
 		if err := s.writeIfChanged(s.taskPath(t.ID), data); err != nil {
 			return err
 		}
+		idx.MarkSeen(t.ID, data)
 	}
 
-	// Drop the shards of ids that left the index (done->archive, etc.).
-	existing, err := s.ListTaskIDs()
-	if err != nil {
-		return err
-	}
-	for _, id := range existing {
-		if !want[id] {
-			if err := os.Remove(s.taskPath(id)); err != nil && !os.IsNotExist(err) {
-				return core.Internalf(id, "delete stale shard: %v", err)
-			}
+	// Drop the shards this index met and let go of (done->archive, rm, a
+	// misnamed shard now living under its id's own path) — and only those.
+	for _, stem := range idx.SeenStems() {
+		if want[stem] {
+			continue
 		}
+		if err := os.Remove(s.taskPath(stem)); err != nil && !os.IsNotExist(err) {
+			return core.Internalf(stem, "delete stale shard: %v", err)
+		}
+		idx.Forget(stem)
 	}
 	return nil
 }

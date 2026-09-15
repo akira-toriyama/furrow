@@ -73,9 +73,21 @@ const SchemaVersion = 10
 // because an in-memory field defaults to the binary's version at marshal time
 // (Canonicalize) and trusting it is exactly how a routine write once migrated a
 // shared board behind its owner's back.
+//
+// seen is the index's memory of the store: shard stem -> the bytes the two last
+// agreed on (Load read them, Save wrote them). It is what lets Save touch ONLY
+// what this index changed — rewrite a shard only when the task moved from those
+// bytes, delete a shard only when this index met it and no longer holds it — so
+// a shard another process wrote between our Load and our Save is neither
+// overwritten nor swept. Unexported on purpose: no marshaller can see it and no
+// caller outside the stores has business with it (MarkSeen/Seen/Forget/
+// SeenStems). A literal Index has met nothing, so saving one writes its tasks
+// and deletes nothing.
 type Index struct {
 	SchemaVersion int    `json:"schema_version"`
 	Tasks         []Task `json:"tasks"`
+
+	seen map[string][]byte
 }
 
 // Meta is .furrow/meta.json: the one board-wide schema version, deliberately

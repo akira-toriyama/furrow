@@ -1,6 +1,7 @@
 package memstore
 
 import (
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -18,9 +19,18 @@ import (
 // never produces — plus one lint test that was green only because a value of 9
 // survived a write it cannot survive on disk.
 //
+// The third is Save's ownership rule (t-msqv): a Save touches only what its own
+// index changed. fsstore's sweep used to delete every shard the index did not
+// name, so ten concurrent `furrow add` on one board left zero shards, and its
+// compare-against-disk rewrite put a stale copy over a co-writer's edit; the
+// double replaced its whole map, the same failure in one line. Both stores now
+// answer to the same two questions per shard — did THIS index meet it, and did
+// THIS index move it — so an app test on memstore sees exactly the survival a
+// second process gets on disk.
+//
 // This is deliberately NOT a port-wide contract suite over every method of
 // core.Store: that was weighed and rejected as premature mechanization (furrow
-// task t-0mmj). Two behaviors, two demonstrated failures.
+// task t-0mmj). Three behaviors, three demonstrated failures.
 
 type storeCase struct {
 	name string
@@ -144,4 +154,120 @@ func TestRepoReadsIsolateTimestampsLikeFsstore(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Ten indexes loaded from the same empty board, each adding one task and saved
+// in turn, must leave ten tasks: a shard an index never met is not its to
+// delete. Sequential on purpose — it is the exact interleaving ten processes
+// produce (every Load before any Save), reproduced deterministically, and the
+// old sweep failed it at N=2.
+func TestSaveNeverDeletesAShardItNeverMet(t *testing.T) {
+	for _, sc := range storeCases() {
+		t.Run(sc.name, func(t *testing.T) {
+			st := sc.make(t)
+			if err := st.Save(&core.Index{Tasks: []core.Task{parityTask("t-pre01", "already there")}}); err != nil {
+				t.Fatal(err)
+			}
+			const n = 10
+			idxs := make([]*core.Index, n)
+			for i := range idxs {
+				idx, err := st.Load()
+				if err != nil {
+					t.Fatal(err)
+				}
+				idxs[i] = idx
+			}
+			for i, idx := range idxs {
+				idx.Add(parityTask(fmt.Sprintf("t-add%02d", i), fmt.Sprintf("z%d", i)))
+				if err := st.Save(idx); err != nil {
+					t.Fatalf("save %d: %v", i, err)
+				}
+			}
+			got, err := st.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Tasks) != n+1 {
+				ids := make([]string, 0, len(got.Tasks))
+				for _, tk := range got.Tasks {
+					ids = append(ids, tk.ID)
+				}
+				t.Fatalf("after %d adds from separate loads: %d tasks survive, want %d: %v", n, len(got.Tasks), n+1, ids)
+			}
+		})
+	}
+}
+
+// Two indexes loaded at the same moment edit DIFFERENT tasks: each Save lands
+// its own edit and leaves the other's alone, because an index rewrites only a
+// task whose bytes it moved. A deletion by a co-writer stands the same way: an
+// index that did not touch the task does not put it back.
+func TestSaveRewritesOnlyWhatThisIndexMoved(t *testing.T) {
+	for _, sc := range storeCases() {
+		t.Run(sc.name, func(t *testing.T) {
+			st := sc.make(t)
+			if err := st.Save(&core.Index{Tasks: []core.Task{
+				parityTask("t-xxxxx", "x"), parityTask("t-yyyyy", "y"),
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			a, err := st.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, err := st.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ty, _ := b.Find("t-yyyyy")
+			ty.Title = "y by b"
+			if err := st.Save(b); err != nil {
+				t.Fatal(err)
+			}
+			tx, _ := a.Find("t-xxxxx")
+			tx.Title = "x by a"
+			if err := st.Save(a); err != nil { // a still holds the ORIGINAL y
+				t.Fatal(err)
+			}
+			got, err := st.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gx, _ := got.Find("t-xxxxx"); gx == nil || gx.Title != "x by a" {
+				t.Errorf("a's own edit did not land: %+v", gx)
+			}
+			if gy, _ := got.Find("t-yyyyy"); gy == nil || gy.Title != "y by b" {
+				t.Errorf("b's edit of the task a never touched was overwritten by a's stale copy: %+v", gy)
+			}
+
+			// c removes y; a (holding y untouched since its last Save) saves again.
+			c, err := st.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.Remove("t-yyyyy")
+			if err := st.Save(c); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.Save(a); err != nil {
+				t.Fatal(err)
+			}
+			got, err = st.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Has("t-yyyyy") {
+				t.Error("c's removal was undone by an index that never touched the task")
+			}
+			if !got.Has("t-xxxxx") {
+				t.Error("x vanished")
+			}
+		})
+	}
+}
+
+func parityTask(id, title string) core.Task {
+	now := time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)
+	return core.Task{ID: id, Title: title, Status: "inbox", Priority: 100,
+		Created: now, Updated: now, Body: core.BodyPath(id)}
 }

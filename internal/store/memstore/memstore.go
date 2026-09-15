@@ -4,6 +4,7 @@
 package memstore
 
 import (
+	"bytes"
 	"crypto/rand"
 	"fmt"
 	"sort"
@@ -103,11 +104,22 @@ func (s *Store) Load() (*core.Index, error) {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	idx := &core.Index{SchemaVersion: s.schemaVersion}
 	tasks := make([]core.Task, 0, len(ids))
 	for _, id := range ids {
 		tasks = append(tasks, cloneTask(s.tasks[id]))
+		// The bytes fsstore's Load would have read: the entry is already
+		// canonical (Save round-trips it through the marshaller), so marshalling
+		// the clone changes nothing observable and gives Save the same "did this
+		// index move the task?" question the real store asks.
+		data, err := core.MarshalTask(&tasks[len(tasks)-1])
+		if err != nil {
+			return nil, err
+		}
+		idx.MarkSeen(id, data)
 	}
-	return &core.Index{SchemaVersion: s.schemaVersion, Tasks: tasks}, nil
+	idx.Tasks = tasks
+	return idx, nil
 }
 
 // cloneTask deep-copies a task's slice and pointer fields (the struct copy
@@ -201,20 +213,36 @@ func (s *Store) Save(idx *core.Index) error {
 	if err := core.CheckUniqueIDs(idx); err != nil {
 		return err
 	}
-	next := make(map[string]core.Task, len(idx.Tasks))
+	// fsstore's contract, entry for shard: touch only what THIS index changed.
+	// An entry the index never met (another index's add) is neither replaced
+	// nor deleted, and a task whose bytes did not move from what Load handed
+	// out is left as the store holds it now — so a co-writer's edit of a task
+	// this index did not touch survives here exactly as it does on disk.
+	want := make(map[string]bool, len(idx.Tasks))
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
+		want[t.ID] = true
 		data, err := core.MarshalTask(t)
 		if err != nil {
 			return err
+		}
+		if prev, ok := idx.Seen(t.ID); ok && bytes.Equal(prev, data) {
+			continue
 		}
 		norm, err := core.UnmarshalTask(data)
 		if err != nil {
 			return err
 		}
-		next[norm.ID] = *norm
+		s.tasks[norm.ID] = *norm
+		idx.MarkSeen(t.ID, data)
 	}
-	s.tasks = next
+	for _, stem := range idx.SeenStems() {
+		if want[stem] {
+			continue
+		}
+		delete(s.tasks, stem)
+		idx.Forget(stem)
+	}
 	return nil
 }
 

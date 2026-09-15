@@ -691,6 +691,16 @@ This is what makes app-writes equal hand-edits byte-for-byte, and Save writes
 only the shards whose bytes changed (zero git churn on a no-op save). A golden
 round-trip test and `scripts/check-marshal-singlepath.sh` guard all three.
 
+**Save touches only what THIS index changed.** `Load` records the bytes of every
+shard it read on the `Index` (`MarkSeen`, keyed by filename stem); `Save`
+rewrites a task only when its bytes moved from those, deletes a shard only when
+`Load` met it and the index dropped it, and leaves a shard the index never met
+exactly as found. The store has no lock, and the old sweep ("every shard not in
+my index") deleted whatever another process had added between our Load and our
+Save — ten concurrent `furrow add` left zero shards, all exit 0 (t-msqv). Never
+reintroduce a `ListTaskIDs`-minus-index sweep or a compare-against-disk-only
+rewrite; `memstore` mirrors the rule and the parity tests pin both stores.
+
 **Unknown-key passthrough — the other half of the version gate.**
 `internal/core/passthrough.go`: `core.UnmarshalTask`/`UnmarshalRepo`/`UnmarshalMeta`
 park every **top-level** key the binary does not know in an **unexported** `extras`

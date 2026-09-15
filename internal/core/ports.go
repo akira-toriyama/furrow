@@ -19,10 +19,16 @@ type Store interface {
 	// error, so `furrow add` works in a fresh repo.
 	Load() (*Index, error)
 	// Save writes each task as its own shard (via core.MarshalTask) and deletes
-	// shards for ids no longer present — all atomically and writing only what
-	// changed. It does NOT raise the board's layout version: it refuses a board
-	// that does not already declare this binary's SchemaVersion (CheckWritable),
-	// and stamps meta.json only for a genuinely fresh store.
+	// the shards this index loaded and no longer holds — all atomically and
+	// touching ONLY what this index changed: a task is rewritten when its bytes
+	// moved from what Load read (Index.Seen), a shard is deleted when Load met
+	// it and the index dropped it, and a shard the index never met — another
+	// process's add or edit, landed between our Load and our Save — is left as
+	// found. The store has no lock; this rule is what makes two writers on one
+	// board lose nothing but a same-task race. It does NOT raise the board's
+	// layout version: it refuses a board that does not already declare this
+	// binary's SchemaVersion (CheckWritable), and stamps meta.json only for a
+	// genuinely fresh store.
 	//
 	// Save CANONICALIZES, in both directions, and callers rely on it: the stored
 	// task takes the on-disk shape, and idx's own tasks are normalized IN PLACE
