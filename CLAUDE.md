@@ -630,11 +630,14 @@ go test ./...                           # all packages
 
 ```sh
 sh scripts/check.sh   # the one command: marshaller + schema-write guards +
-                      # build/vet/test + golangci + schema/config/docs drift + a
-                      # CLI smoke + (if goreleaser & syft are installed) a
-                      # release dry-run. Green == green build/govulncheck CI; the
-                      # only CI-side extras are the TOML/workflow/commit-message
-                      # lints (taplo, zizmor, glyph). Run it before finishing.
+                      # build/vet/test + golangci (warns when its version is
+                      # not build.yml's pin) + govulncheck of source AND binary +
+                      # schema/config/docs drift + a CLI smoke + (if goreleaser &
+                      # syft are installed) a release dry-run + (if installed)
+                      # actionlint / taplo / zizmor. Green here is NOT green CI:
+                      # go-bite, the commit/PR-title lint (glyph) and repo-policy
+                      # run only in CI, and an uninstalled tool is skipped with a
+                      # note, not failed. Run it before finishing.
 ```
 
 Everything is verifiable without a terminal:
