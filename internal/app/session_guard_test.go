@@ -316,6 +316,7 @@ func TestSessionGuardCoversEveryTaskWrite(t *testing.T) {
 		"SetMany":         func() error { _, err := a.SetMany([]string{x.ID}, SetOpts{AddLabels: []string{"l"}}); return err },
 		"AppendBody":      func() error { _, err := a.AppendBody(x.ID, "applied"); return err },
 		"Attach":          func() error { _, err := a.Attach(x.ID, "shot.png", []byte("png")); return err },
+		"EditPath":        func() error { _, err := a.EditPath(x.ID); return err },
 	}
 	for name, w := range writes {
 		t.Run(name, func(t *testing.T) {
@@ -392,6 +393,8 @@ func TestSessionGuardCoversEpicWrites(t *testing.T) {
 	_, _, err = a.EpicNote(box.ID, "note")
 	wantSessionBusy(t, err, box.ID)
 	_, _, _, err = a.EpicActivate(box.ID, "")
+	wantSessionBusy(t, err, box.ID)
+	_, err = a.EditPath(box.ID)
 	wantSessionBusy(t, err, box.ID)
 	_, _, err = a.EpicSet(other.ID, EpicSetOpts{AddRepos: []string{"o/glyph"}})
 	wantSessionBusy(t, err, other.ID)

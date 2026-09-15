@@ -72,11 +72,25 @@ type EpicSetOpts struct {
 	Pinned   *bool
 }
 
-func (o EpicSetOpts) empty() bool {
-	return o.Title == nil && o.Goal == nil && len(o.SetMeta) == 0 && len(o.RmMeta) == 0 &&
-		len(o.AddLabels) == 0 && len(o.RmLabels) == 0 && len(o.AddRepos) == 0 && len(o.RmRepos) == 0 &&
-		o.Standing == nil && o.Pinned == nil
+// requested is the one table EpicSet's no-op refusal reads, in flag order —
+// the box twin of SetOpts.requested, and the same reason: the message that
+// listed the flags by hand forgot --standing/--pinned when v7 added them.
+func (o EpicSetOpts) requested() []optFlag {
+	return []optFlag{
+		{"--title", o.Title != nil},
+		{"--goal", o.Goal != nil},
+		{"--meta", len(o.SetMeta) > 0},
+		{"--rm-meta", len(o.RmMeta) > 0},
+		{"--add-label", len(o.AddLabels) > 0},
+		{"--rm-label", len(o.RmLabels) > 0},
+		{"--add-repo", len(o.AddRepos) > 0},
+		{"--rm-repo", len(o.RmRepos) > 0},
+		{"--standing", o.Standing != nil},
+		{"--pinned", o.Pinned != nil},
+	}
 }
+
+func (o EpicSetOpts) empty() bool { return !anyRequested(o.requested()) }
 
 // EpicAdd creates a box. It never sets Active: opening a box is a separate,
 // deliberate act (`furrow epic activate`), so creating one can never silently
@@ -263,12 +277,19 @@ func (a *App) EpicShow(ref string) (*EpicDetail, error) {
 // silent `updated` bump — the same rule Set follows for tasks.
 func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, error) {
 	if o.empty() {
-		return nil, nil, core.Validationf(ref, "epic set needs at least one change (--title / --goal / --meta / --rm-meta / --add-label / --rm-label / --add-repo / --rm-repo)")
+		return nil, nil, core.Validationf(ref, "epic set needs at least one change (%s)", flagNames(o.requested()))
 	}
 	if err := requireNonBlank(ref, "--add-label", o.AddLabels); err != nil {
 		return nil, nil, err
 	}
-	repos, err := a.resolveEpicRepos(o.AddRepos)
+	var universe []string
+	if len(o.AddRepos) > 0 || len(o.RmRepos) > 0 {
+		var err error
+		if universe, err = a.epicRepoUniverse(); err != nil {
+			return nil, nil, err
+		}
+	}
+	addRepos, err := resolveRepoArgs(o.AddRepos, "", universe)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -301,10 +322,21 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, error)
 		for _, k := range o.RmMeta {
 			delete(e.Meta, k)
 		}
+		// A removal resolves like an addition (the task side's Rerepo resolves
+		// both; this one took --rm-repo raw, so `--rm-repo widget` shed nothing
+		// and `--rm-repo nope` said nothing, exit 0 — t-8sgn), against the
+		// board's universe PLUS the box's own repos: the repo being shed may be
+		// one no task carries — a cross-repo box's extra, or the wrong scope
+		// fallback CLAUDE.md sends here to shed — and the board universe alone
+		// would call its short name unknown.
+		rmRepos, err := resolveRepoArgs(o.RmRepos, e.ID, sortedUnion(universe, e.Repos))
+		if err != nil {
+			return err
+		}
 		// labelDelta is the task-side set editor; reusing it keeps add/remove
 		// semantics (and their edge cases) identical across the two entities.
 		e.Labels = labelDelta(e.Labels, o.AddLabels, o.RmLabels)
-		e.Repos = labelDelta(e.Repos, repos, o.RmRepos)
+		e.Repos = labelDelta(e.Repos, addRepos, rmRepos)
 		return nil
 	})
 }
@@ -806,9 +838,27 @@ func (a *App) resolveEpicRepos(repos []string) ([]string, error) {
 	if len(repos) == 0 {
 		return nil, nil
 	}
+	universe, err := a.epicRepoUniverse()
+	if err != nil {
+		return nil, err
+	}
+	return resolveRepoArgs(repos, "", universe)
+}
+
+// epicRepoUniverse is what a box's repo args resolve against: every task's
+// repos plus the board's (repoUniverse), read in one load.
+func (a *App) epicRepoUniverse() ([]string, error) {
 	idx, err := a.Store.Load()
 	if err != nil {
 		return nil, err
 	}
-	return resolveRepoArgs(repos, "", repoUniverse(idx, a.BoardRepos))
+	return repoUniverse(idx, a.BoardRepos), nil
+}
+
+// sortedUnion is unionRepos in the sorted, deduped shape a resolver's
+// candidates are published in.
+func sortedUnion(a, b []string) []string {
+	out := unionRepos(a, b)
+	sort.Strings(out)
+	return out
 }

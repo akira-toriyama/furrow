@@ -2104,15 +2104,62 @@ type SetOpts struct {
 	ClearRepeat bool
 }
 
+// optFlag pairs a flag as the operator spells it with whether the options
+// requested it. An options struct lists its fields as these ONCE, and both
+// "is there anything to do?" and the refusal that names every flag read that
+// list — the hand-written message forgot --repeat/--clear-repeat (v10) and
+// --standing/--pinned (v7) in turn, each time a field was added to the struct
+// and to empty() but not to the prose (t-8sgn). TestSetOptsVocabulary pins
+// the table's length to the struct's field count.
+type optFlag struct {
+	name string
+	set  bool
+}
+
+func anyRequested(fs []optFlag) bool {
+	for _, f := range fs {
+		if f.set {
+			return true
+		}
+	}
+	return false
+}
+
+// flagNames renders the vocabulary for a refusal message: `a / b / c`.
+func flagNames(fs []optFlag) string {
+	names := make([]string, 0, len(fs))
+	for _, f := range fs {
+		names = append(names, f.name)
+	}
+	return strings.Join(names, " / ")
+}
+
+// requested is SetOpts' optFlag table, one entry per field, in flag order.
+func (o SetOpts) requested() []optFlag {
+	return []optFlag{
+		{"-s", o.Status != nil},
+		{"--priority", o.Priority != nil},
+		{"--before", o.Before != ""},
+		{"--after", o.After != ""},
+		{"--value", o.Value != nil},
+		{"--clear-value", o.ClearValue},
+		{"--effort", o.Effort != nil},
+		{"--clear-effort", o.ClearEffort},
+		{"--add-label", len(o.AddLabels) > 0},
+		{"--rm-label", len(o.RmLabels) > 0},
+		{"--add-repo", len(o.AddRepos) > 0},
+		{"--rm-repo", len(o.RmRepos) > 0},
+		{"-e", o.Epic != nil},
+		{"--due", o.Due != nil},
+		{"--clear-due", o.ClearDue},
+		{"--repeat", o.Repeat != nil},
+		{"--clear-repeat", o.ClearRepeat},
+	}
+}
+
 // empty reports whether o requests no change at all — Set rejects that rather
 // than silently touching only the `updated` stamp.
-func (o SetOpts) empty() bool {
-	return o.Status == nil && o.Priority == nil && o.Before == "" && o.After == "" &&
-		o.Value == nil && !o.ClearValue &&
-		o.Effort == nil && !o.ClearEffort && len(o.AddLabels) == 0 && len(o.RmLabels) == 0 &&
-		len(o.AddRepos) == 0 && len(o.RmRepos) == 0 &&
-		o.Epic == nil && o.Due == nil && !o.ClearDue && o.Repeat == nil && !o.ClearRepeat
-}
+func (o SetOpts) empty() bool { return !anyRequested(o.requested()) }
 
 // Set applies several triage edits to one task in a single load/save: move a
 // lane, position it (absolute priority, or relative to a lane-mate), set/clear
@@ -2194,7 +2241,7 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 		}
 	}
 	if o.empty() {
-		return core.Validationf(id, "set needs at least one change (-s / --priority / --before / --after / --value / --effort / --clear-value / --clear-effort / --add-label / --rm-label / --add-repo / --rm-repo / -e / --due / --clear-due)")
+		return core.Validationf(id, "set needs at least one change (%s)", flagNames(o.requested()))
 	}
 	if err := requireNonBlank(id, "--add-label", o.AddLabels); err != nil {
 		return err
@@ -2629,8 +2676,23 @@ func (a *App) EditPath(ref string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Guarded like every other write: the path handed out is for $EDITOR to
+	// write the body through, and the empty body minted below is a write of
+	// furrow's own — one that used to land in an occupied repo and ride the
+	// next sync (t-8sgn: the one write path on neither the guarded nor the
+	// exempt list).
 	if epic {
 		if id, err = a.ResolveEpic(ref); err != nil {
+			return "", err
+		}
+		e, ok, err := a.Store.LoadEpic(id)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", core.NotFound(id)
+		}
+		if err := a.guardRepos(id, e.Repos, ""); err != nil {
 			return "", err
 		}
 	} else {
@@ -2638,8 +2700,12 @@ func (a *App) EditPath(ref string) (string, error) {
 		if lerr != nil {
 			return "", lerr
 		}
-		if !idx.Has(id) {
+		t, i := idx.Find(id)
+		if i < 0 {
 			return "", a.notFoundTask(id)
+		}
+		if err := a.guardTask(t); err != nil {
+			return "", err
 		}
 	}
 	if !a.Store.BodyExists(id) {

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/akira-toriyama/furrow/internal/config"
+	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
@@ -36,6 +37,31 @@ func TestReviewTaskNotFound(t *testing.T) {
 	a, _ := revisitApp()
 	if _, err := a.ReviewTask("t-nope0"); err == nil {
 		t.Error("expected NotFound reviewing a missing task")
+	}
+}
+
+// The not-found a review returns for an ARCHIVED id carries the same archived
+// enrichment every other mutator's does (t-8sgn: it was the one bare miss).
+func TestReviewTaskNotFoundSaysArchived(t *testing.T) {
+	a := newFSApp(t)
+	tk, err := a.Add("retired", AddOpts{Repos: []string{"o/r"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Done(tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ArchiveIDs([]string{tk.ID}, false); err != nil {
+		t.Fatal(err)
+	}
+	_, err = a.ReviewTask(tk.ID)
+	fe := core.AsError(err)
+	if fe == nil || fe.Code != core.CodeNotFound {
+		t.Fatalf("want not-found, got %v", err)
+	}
+	d, _ := fe.Details.(map[string]any)
+	if d == nil || d["archived"] == nil {
+		t.Errorf("review's not-found must say the id is archived (details.archived), got %+v", fe)
 	}
 }
 

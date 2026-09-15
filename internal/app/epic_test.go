@@ -358,3 +358,29 @@ func TestEpicReopen(t *testing.T) {
 		t.Errorf("reopen on an open box must be exit 2, got %v", err)
 	}
 }
+
+// `epic set --rm-repo` resolves its argument exactly as --add-repo and the task
+// side do (t-8sgn: it took the raw string, so a short name shed nothing and an
+// unknown name said nothing, both exit 0) — against the board's universe plus
+// the box's OWN repos, since the repo being shed may be one no task carries.
+func TestEpicSetRmRepoResolvesLikeAddRepo(t *testing.T) {
+	a := newApp()
+	box := mustEpic(t, a, "box", EpicAddOpts{Repos: []string{"acme/widget", "acme/gadget"}})
+
+	_, after, err := a.EpicSet(box, EpicSetOpts{RmRepos: []string{"widget"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Repos) != 1 || after.Repos[0] != "acme/gadget" {
+		t.Errorf("a short --rm-repo must shed the box's own repo, got %v", after.Repos)
+	}
+
+	_, _, err = a.EpicSet(box, EpicSetOpts{RmRepos: []string{"nope"}})
+	fe := core.AsError(err)
+	if fe == nil || fe.Kind != core.KindRepoUnknown || fe.Code != core.CodeValidation {
+		t.Fatalf("an unknown --rm-repo must be exit 2 repo-unknown, got %v", err)
+	}
+	if len(fe.Candidates) == 0 || fe.Candidates[0] != "acme/gadget" {
+		t.Errorf("candidates must carry the box's repos, got %v", fe.Candidates)
+	}
+}

@@ -265,8 +265,11 @@ func newEditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// EditPath is guarded like every write, so an idle occupant's
+			// warning has to be drained here as the mutators drain it.
+			warn := sessionGuardExtra(a)
 			if jsonMode() {
-				emitObject(map[string]string{"path": path})
+				emitObject(mergeExtra(map[string]any{"path": path}, warn))
 				return nil
 			}
 			// Non-interactive: emit the path; the caller (or Claude) edits it.
