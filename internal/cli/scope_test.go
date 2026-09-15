@@ -138,21 +138,6 @@ func pointerRepoLayout(t *testing.T) (scoped, board *app.App) {
 }
 
 // runLs drives a real command line through cobra and returns (stdout, stderr).
-func runLs(t *testing.T, args ...string) (string, string) {
-	t.Helper()
-	var so, se bytes.Buffer
-	out, errOut = &so, &se
-	defer func() { out, errOut = os.Stdout, os.Stderr }()
-	rootCmd := newRootCmd()
-	rootCmd.SetArgs(args)
-	rootCmd.SetOut(&so)
-	rootCmd.SetErr(&se)
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("%v: %v", args, err)
-	}
-	return so.String(), se.String()
-}
-
 // TestLs_PointerScopesSilently drives a real `ls` through cobra against a
 // pointer layout. It asserts the scope contract end to end: the pointer scopes
 // reads to its repo (a task attached to another repo is filtered out), stdout
@@ -164,7 +149,7 @@ func TestLs_PointerScopesSilently(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	so, se := runLs(t, "ls")
+	so, se := mustSplit(t, "ls")
 	if strings.Contains(so, "furrow:") {
 		t.Errorf("scope banner leaked into stdout:\n%s", so)
 	}
@@ -197,7 +182,7 @@ func TestLs_TagFilterANDsWithScope(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, _ := runLs(t, "ls", "-l", "tag")
+	got, _ := mustSplit(t, "ls", "-l", "tag")
 	if !strings.Contains(got, "in scope tagged") {
 		t.Errorf("-l tag should keep the in-scope tagged task:\n%s", got)
 	}
@@ -208,7 +193,7 @@ func TestLs_TagFilterANDsWithScope(t *testing.T) {
 		t.Errorf("-l tag must still filter by the tag:\n%s", got)
 	}
 
-	whole, _ := runLs(t, "ls", "-r", "")
+	whole, _ := mustSplit(t, "ls", "-r", "")
 	for _, want := range []string{"only on board", "other tagged", "in scope tagged", "in scope plain"} {
 		if !strings.Contains(whole, want) {
 			t.Errorf("-r '' should show the whole board (missing %q):\n%s", want, whole)
@@ -227,14 +212,14 @@ func TestLs_ScopeHidesDraftsHint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	so, se := runLs(t, "ls")
+	so, se := mustSplit(t, "ls")
 	if strings.Contains(so, "a draft") {
 		t.Errorf("a draft must be hidden from the scoped read:\n%s", so)
 	}
 	if !strings.Contains(se, "draft(s) hidden") || !strings.Contains(se, "--drafts") {
 		t.Errorf("stderr should hint at the hidden draft, got:\n%s", se)
 	}
-	so, se = runLs(t, "ls", "--drafts")
+	so, se = mustSplit(t, "ls", "--drafts")
 	if !strings.Contains(so, "a draft") {
 		t.Errorf("--drafts should list the draft:\n%s", so)
 	}
@@ -356,11 +341,11 @@ func TestLs_BoardDefaultRepoMakesScopeCwdIndependent(t *testing.T) {
 	if err := os.Chdir(checkout); err != nil {
 		t.Fatal(err)
 	}
-	fromCheckout, _ := runLs(t, "ls")
+	fromCheckout, _ := mustSplit(t, "ls")
 	if err := os.Chdir(inside); err != nil {
 		t.Fatal(err)
 	}
-	fromInside, _ := runLs(t, "ls")
+	fromInside, _ := mustSplit(t, "ls")
 
 	if fromCheckout != fromInside {
 		t.Errorf("the same board answered differently by cwd:\n--- from %s ---\n%s\n--- from %s ---\n%s", checkout, fromCheckout, inside, fromInside)
@@ -378,11 +363,11 @@ func TestLs_WithoutBoardDefaultRepoTheViewsDiverge(t *testing.T) {
 	if err := os.Chdir(checkout); err != nil {
 		t.Fatal(err)
 	}
-	fromCheckout, _ := runLs(t, "ls")
+	fromCheckout, _ := mustSplit(t, "ls")
 	if err := os.Chdir(inside); err != nil {
 		t.Fatal(err)
 	}
-	fromInside, _ := runLs(t, "ls")
+	fromInside, _ := mustSplit(t, "ls")
 
 	if fromCheckout == fromInside {
 		t.Fatal("expected the historical asymmetry with no default_repo declared")
@@ -400,7 +385,7 @@ func TestLint_ReportsBoardDefaultRepoClamp(t *testing.T) {
 	if err := os.Chdir(inside); err != nil {
 		t.Fatal(err)
 	}
-	stdout, _ := runLs(t, "lint")
+	stdout, _ := mustSplit(t, "lint")
 	if !strings.Contains(stdout, "default_repo") || !strings.Contains(stdout, "config-clamp") {
 		t.Errorf("lint must name the clamped default_repo:\n%s", stdout)
 	}

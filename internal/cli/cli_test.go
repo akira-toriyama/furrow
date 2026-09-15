@@ -30,15 +30,15 @@ import (
 // its own buffers in before calling run keeps them afterward.
 func execCLI(t *testing.T, stdin string, args ...string) (fe *core.Error, stdout, stderr string) {
 	t.Helper()
-	var so, se bytes.Buffer
+	var outBuf, errBuf bytes.Buffer
 	prevOut, prevErr := out, errOut
-	out, errOut = &so, &se
+	out, errOut = &outBuf, &errBuf
 	defer func() { out, errOut = prevOut, prevErr }()
 
 	root := newRootCmd()
 	root.SetArgs(args)
-	root.SetOut(&so)
-	root.SetErr(&se)
+	root.SetOut(&outBuf)
+	root.SetErr(&errBuf)
 	root.SetIn(strings.NewReader(stdin))
 	err := root.Execute()
 	if err != nil {
@@ -46,48 +46,68 @@ func execCLI(t *testing.T, stdin string, args ...string) (fe *core.Error, stdout
 		// run before the buffers are read.
 		fe = classifyFailure(err)
 	}
-	return fe, so.String(), se.String()
-}
-
-// runCLI is execCLI for the tests that assert on stdout alone.
-func runCLI(t *testing.T, stdin string, args ...string) (*core.Error, string) {
-	t.Helper()
-	fe, stdout, _ := execCLI(t, stdin, args...)
-	return fe, stdout
-}
-
-// runSplit is execCLI for the tests that assert a note went to stderr while
-// stdout stayed a parseable array.
-func runSplit(t *testing.T, args ...string) (stdout, stderr string, code int) {
-	t.Helper()
-	fe, stdout, stderr := execCLI(t, "", args...)
-	return stdout, stderr, exitOf(fe)
+	return fe, outBuf.String(), errBuf.String()
 }
 
 // run executes furrow against args, returning stdout and the exit code
 // Execute would have produced.
 func run(t *testing.T, args ...string) (string, int) {
 	t.Helper()
-	fe, out := runCLI(t, "", args...)
-	return out, exitOf(fe)
+	return runIn(t, "", args...)
 }
 
-func runIn(t *testing.T, s string, args ...string) (string, int) {
+func runIn(t *testing.T, stdin string, args ...string) (string, int) {
 	t.Helper()
-	fe, out := runCLI(t, s, args...)
-	return out, exitOf(fe)
+	fe, stdout, _ := execCLI(t, stdin, args...)
+	return stdout, exitOf(fe)
 }
 
 // runErr returns the structured error (nil on success) plus stdout — for tests
 // that assert on Candidates, Details, and friends rather than the exit code.
 func runErr(t *testing.T, args ...string) (*core.Error, string) {
 	t.Helper()
-	return runCLI(t, "", args...)
+	return runErrIn(t, "", args...)
 }
 
-func runErrIn(t *testing.T, s string, args ...string) (*core.Error, string) {
+func runErrIn(t *testing.T, stdin string, args ...string) (*core.Error, string) {
 	t.Helper()
-	return runCLI(t, s, args...)
+	fe, stdout, _ := execCLI(t, stdin, args...)
+	return fe, stdout
+}
+
+// runSplit is for the tests that assert a note went to stderr while stdout
+// stayed a parseable array.
+func runSplit(t *testing.T, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	return runSplitIn(t, "", args...)
+}
+
+func runSplitIn(t *testing.T, stdin string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	fe, stdout, stderr := execCLI(t, stdin, args...)
+	return stdout, stderr, exitOf(fe)
+}
+
+// mustRun is run for a step the test only sets up with: a non-zero exit is
+// the test's failure, stdout is returned for the callers that read it.
+func mustRun(t *testing.T, args ...string) string {
+	t.Helper()
+	stdout, stderr, code := runSplit(t, args...)
+	if code != 0 {
+		t.Fatalf("%v exit = %d:\n%s%s", args, code, stdout, stderr)
+	}
+	return stdout
+}
+
+// mustSplit is mustRun keeping stderr apart, for the tests that assert a
+// disclosure landed there and nowhere else.
+func mustSplit(t *testing.T, args ...string) (stdout, stderr string) {
+	t.Helper()
+	stdout, stderr, code := runSplit(t, args...)
+	if code != 0 {
+		t.Fatalf("%v exit = %d:\n%s%s", args, code, stdout, stderr)
+	}
+	return stdout, stderr
 }
 
 func exitOf(fe *core.Error) int {

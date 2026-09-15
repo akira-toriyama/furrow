@@ -381,8 +381,8 @@ func assertRepeatTag(t *testing.T, out string, tagged, plain []string) {
 // the same day are the same row until one of them is marked.
 func TestCLILsShowsRepeat(t *testing.T) {
 	initStore(t)
-	series := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "--due", dayOffset(30), "--repeat", "daily")
-	dated := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "--due", dayOffset(30))
+	series := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, 30), "--repeat", "daily")
+	dated := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, 30))
 	bare := addTask(t, "no dates at all", "-s", "ready", "-r", "o/r")
 
 	out, code := run(t, "ls", "-r", "o/r")
@@ -406,8 +406,8 @@ func TestCLITreeShowsRepeat(t *testing.T) {
 	if err := json.Unmarshal([]byte(epic), &e); err != nil {
 		t.Fatalf("parse epic add: %v\n%s", err, epic)
 	}
-	series := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "-e", e.ID, "--due", dayOffset(30), "--repeat", "daily")
-	dated := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "-e", e.ID, "--due", dayOffset(30))
+	series := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "-e", e.ID, "--due", dayOffset(t, 30), "--repeat", "daily")
+	dated := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "-e", e.ID, "--due", dayOffset(t, 30))
 
 	out, code := run(t, "ls", "-r", "o/r", "--tree")
 	if code != 0 {
@@ -428,8 +428,8 @@ func TestCLITreeShowsRepeat(t *testing.T) {
 // off: the row it hands you is the row whose close writes another task.
 func TestCLINextAndRevisitShowRepeat(t *testing.T) {
 	initStore(t)
-	series := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "--due", dayOffset(30), "--repeat", "daily")
-	dated := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "--due", dayOffset(30))
+	series := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, 30), "--repeat", "daily")
+	dated := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, 30))
 
 	for _, cmd := range []string{"next", "revisit"} {
 		out, code := run(t, cmd, "-r", "o/r")
@@ -444,14 +444,15 @@ func TestCLINextAndRevisitShowRepeat(t *testing.T) {
 // due band is the only surface a date is guaranteed, while a rule has none —
 // a chore promised for next month reaches the session only as a `next` row.
 func TestCLIBriefBandsShowRepeat(t *testing.T) {
+	freezeClock(t)
 	initStore(t)
 	// The blocker sits in no band of its own: it is named only by the ← edge of
 	// the rows that wait on it, which the per-row assert must not read as a row.
 	blocker := addTask(t, "upstream answer", "-s", "waiting", "-r", "o/r")
-	lateSeries := addTask(t, "weekly review", "-s", "ready", "-r", "o/r", "--due", dayOffset(-1), "--repeat", "weekly")
-	lateOnce := addTask(t, "one-off overdue", "-s", "waiting", "-r", "o/r", "--due", dayOffset(-1))
-	nextSeries := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "--due", dayOffset(30), "--repeat", "daily")
-	blockedSeries := addTask(t, "monthly rotation", "-s", "ready", "-r", "o/r", "--due", dayOffset(30), "--repeat", "monthly", "--dep", blocker)
+	lateSeries := addTask(t, "weekly review", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, -1), "--repeat", "weekly")
+	lateOnce := addTask(t, "one-off overdue", "-s", "waiting", "-r", "o/r", "--due", dayOffset(t, -1))
+	nextSeries := addTask(t, "water the plants", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, 30), "--repeat", "daily")
+	blockedSeries := addTask(t, "monthly rotation", "-s", "ready", "-r", "o/r", "--due", dayOffset(t, 30), "--repeat", "monthly", "--dep", blocker)
 	blockedOnce := addTask(t, "ship the thing", "-s", "ready", "-r", "o/r", "--dep", blocker)
 
 	out, code := run(t, "brief")
@@ -471,7 +472,7 @@ func TestCLIBriefBandsShowRepeat(t *testing.T) {
 // defect in the other direction.
 func TestRepeatTagFollowsTheLiveOccurrence(t *testing.T) {
 	initStore(t)
-	out, code := run(t, "add", "water the plants", "--due", dayOffset(30), "--repeat", "daily")
+	out, code := run(t, "add", "water the plants", "--due", dayOffset(t, 30), "--repeat", "daily")
 	closed := addedID(t, out, code)
 	if out, code := run(t, "done", closed); code != 0 {
 		t.Fatalf("done exit %d: %s", code, out)

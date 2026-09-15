@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,47 +47,22 @@ func shadowedBoardLayout(t *testing.T) {
 func TestAdd_ShadowedScopeWarnsOnDraft(t *testing.T) {
 	shadowedBoardLayout(t)
 
-	var so, se bytes.Buffer
-	out, errOut = &so, &se
-	defer func() { out, errOut = os.Stdout, os.Stderr }()
-	root := newRootCmd()
-	root.SetArgs([]string{"add", "bare add here"})
-	root.SetOut(&so)
-	root.SetErr(&se)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("add: %v", err)
+	so, se := mustSplit(t, "add", "bare add here")
+	if !strings.Contains(se, "drafted") || !strings.Contains(se, "scope-shadowed") {
+		t.Errorf("stderr should carry the shadowed-draft warning, got:\n%s", se)
 	}
-	if !strings.Contains(se.String(), "drafted") || !strings.Contains(se.String(), "scope-shadowed") {
-		t.Errorf("stderr should carry the shadowed-draft warning, got:\n%s", se.String())
-	}
-	if strings.Contains(so.String(), "drafted —") {
-		t.Errorf("the warning must not leak into stdout:\n%s", so.String())
+	if strings.Contains(so, "drafted —") {
+		t.Errorf("the warning must not leak into stdout:\n%s", so)
 	}
 
 	// An explicit --draft is a DELIBERATE draft: no warning.
-	se.Reset()
-	root = newRootCmd()
-	root.SetArgs([]string{"add", "--draft", "meant to be a draft"})
-	root.SetOut(&so)
-	root.SetErr(&se)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("add --draft: %v", err)
-	}
-	if strings.Contains(se.String(), "drafted —") {
-		t.Errorf("--draft must not warn, stderr:\n%s", se.String())
+	if _, se := mustSplit(t, "add", "--draft", "meant to be a draft"); strings.Contains(se, "drafted —") {
+		t.Errorf("--draft must not warn, stderr:\n%s", se)
 	}
 
 	// An explicit -r attaches a repo — nothing drafted, nothing to warn about.
-	se.Reset()
-	root = newRootCmd()
-	root.SetArgs([]string{"add", "-r", "me/projects", "scoped by hand"})
-	root.SetOut(&so)
-	root.SetErr(&se)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("add -r: %v", err)
-	}
-	if strings.Contains(se.String(), "drafted —") {
-		t.Errorf("-r must not warn, stderr:\n%s", se.String())
+	if _, se := mustSplit(t, "add", "-r", "me/projects", "scoped by hand"); strings.Contains(se, "drafted —") {
+		t.Errorf("-r must not warn, stderr:\n%s", se)
 	}
 }
 
@@ -111,17 +85,8 @@ func TestAdd_PlainLocalBoardDoesNotWarn(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(prev) })
 
-	var so, se bytes.Buffer
-	out, errOut = &so, &se
-	defer func() { out, errOut = os.Stdout, os.Stderr }()
-	root := newRootCmd()
-	root.SetArgs([]string{"add", "classic repo-local task"})
-	root.SetOut(&so)
-	root.SetErr(&se)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("add: %v", err)
-	}
-	if strings.Contains(se.String(), "drafted —") {
-		t.Errorf("classic local board must not warn, stderr:\n%s", se.String())
+	_, se := mustSplit(t, "add", "classic repo-local task")
+	if strings.Contains(se, "drafted —") {
+		t.Errorf("classic local board must not warn, stderr:\n%s", se)
 	}
 }

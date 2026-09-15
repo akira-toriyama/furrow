@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,26 +9,10 @@ import (
 	"github.com/akira-toriyama/furrow/internal/config"
 )
 
-func runConfigCLI(t *testing.T, args ...string) (string, string, error) {
-	t.Helper()
-	var so, se bytes.Buffer
-	out, errOut = &so, &se
-	t.Cleanup(func() { out, errOut = os.Stdout, os.Stderr })
-	root := newRootCmd()
-	root.SetArgs(args)
-	root.SetOut(&so)
-	root.SetErr(&se)
-	err := root.Execute()
-	return so.String(), se.String(), err
-}
-
 func TestConfigPath_PrintsResolvedPath(t *testing.T) {
 	cfgHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", cfgHome)
-	so, _, err := runConfigCLI(t, "config", "path")
-	if err != nil {
-		t.Fatal(err)
-	}
+	so := mustRun(t, "config", "path")
 	if want := filepath.Join(cfgHome, "furrow", "config.toml"); strings.TrimSpace(so) != want {
 		t.Errorf("stdout = %q, want %q", strings.TrimSpace(so), want)
 	}
@@ -38,10 +21,7 @@ func TestConfigPath_PrintsResolvedPath(t *testing.T) {
 func TestConfigPath_JSON(t *testing.T) {
 	cfgHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", cfgHome)
-	so, _, err := runConfigCLI(t, "--json", "config", "path")
-	if err != nil {
-		t.Fatal(err)
-	}
+	so := mustRun(t, "--json", "config", "path")
 	want := filepath.Join(cfgHome, "furrow", "config.toml")
 	if !strings.Contains(so, `"path"`) || !strings.Contains(so, want) {
 		t.Errorf("json path output missing; got %q", so)
@@ -60,10 +40,7 @@ func TestConfigPath_SurfacesClampWarningOnStderr(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte("[[board]]\npath = \"/x/.furrow\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	so, se, err := runConfigCLI(t, "config", "path")
-	if err != nil {
-		t.Fatal(err)
-	}
+	so, se := mustSplit(t, "config", "path")
 	if !strings.Contains(se, "no scopes") {
 		t.Errorf("clamp warning should be on stderr; got stderr=%q", se)
 	}
@@ -89,10 +66,7 @@ func TestConfigInit_WritesPlaceholderTemplate(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(prev) })
 
-	so, _, err := runConfigCLI(t, "config", "init")
-	if err != nil {
-		t.Fatal(err)
-	}
+	so := mustRun(t, "config", "init")
 	if !strings.Contains(so, "wrote") {
 		t.Errorf("init should confirm it wrote the file; got %q", so)
 	}
@@ -106,7 +80,7 @@ func TestConfigInit_WritesPlaceholderTemplate(t *testing.T) {
 }
 
 func TestConfig_BareListsSubcommands(t *testing.T) {
-	so, se, _ := runConfigCLI(t, "config")
+	so, se, _ := runSplit(t, "config")
 	combined := so + se
 	if !strings.Contains(combined, "init") || !strings.Contains(combined, "path") {
 		t.Errorf("`furrow config` should list its subcommands; got stdout=%q stderr=%q", so, se)

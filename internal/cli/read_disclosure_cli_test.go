@@ -25,7 +25,7 @@ func TestSearch_ScopeHidesDraftsHint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	so, se := runLs(t, "search", "nix")
+	so, se := mustSplit(t, "search", "nix")
 	if strings.Contains(so, "nix draft ball") {
 		t.Errorf("the draft must be hidden from the scoped search:\n%s", so)
 	}
@@ -33,7 +33,7 @@ func TestSearch_ScopeHidesDraftsHint(t *testing.T) {
 		t.Errorf("stderr should disclose the hidden draft with the -r '' remedy, got:\n%s", se)
 	}
 
-	so, se = runLs(t, "search", "nix", "-r", "")
+	so, se = mustSplit(t, "search", "nix", "-r", "")
 	if !strings.Contains(so, "nix draft ball") {
 		t.Errorf("-r '' should surface the draft:\n%s", so)
 	}
@@ -42,7 +42,7 @@ func TestSearch_ScopeHidesDraftsHint(t *testing.T) {
 	}
 
 	// A search whose drafts do not match the term stays quiet.
-	_, se = runLs(t, "search", "scope")
+	_, se = mustSplit(t, "search", "scope")
 	if strings.Contains(se, "draft(s) hidden") {
 		t.Errorf("no matching draft was hidden, stderr:\n%s", se)
 	}
@@ -106,23 +106,23 @@ func TestCapDisclosure(t *testing.T) {
 		{"next", "-n", "1"},
 		{"search", "a", "-n", "1"},
 	} {
-		_, se := runLs(t, args...)
+		_, se := mustSplit(t, args...)
 		if !strings.Contains(se, "showing 1 of 3 (-n)") {
 			t.Errorf("%v: stderr should disclose the cap, got:\n%s", args, se)
 		}
 	}
 
 	// revisit: all three tasks carry no value/effort, so all three surface.
-	_, se := runLs(t, "revisit", "-n", "1")
+	_, se := mustSplit(t, "revisit", "-n", "1")
 	if !strings.Contains(se, "showing 1 of 3 (-n)") {
 		t.Errorf("revisit -n1: stderr should disclose the cap, got:\n%s", se)
 	}
 
-	_, se = runLs(t, "ls", "-n", "5")
+	_, se = mustSplit(t, "ls", "-n", "5")
 	if strings.Contains(se, "showing") {
 		t.Errorf("uncut ls must not hint, stderr:\n%s", se)
 	}
-	_, se = runLs(t, "ls", "-n", "3")
+	_, se = mustSplit(t, "ls", "-n", "3")
 	if strings.Contains(se, "showing") {
 		t.Errorf("-n == total must not hint, stderr:\n%s", se)
 	}
@@ -135,7 +135,7 @@ func TestCapDisclosure_TreeGroups(t *testing.T) {
 	mustRun(t, "epic", "add", "box two")
 	addTask(t, "unfiled")
 
-	_, se := runLs(t, "ls", "--tree", "-n", "1")
+	_, se := mustSplit(t, "ls", "--tree", "-n", "1")
 	if !strings.Contains(se, "of 3 groups (-n)") {
 		t.Errorf("tree cap should disclose groups, got:\n%s", se)
 	}
@@ -147,7 +147,7 @@ func TestCapDisclosure_EpicLs(t *testing.T) {
 	mustRun(t, "epic", "add", "box one")
 	mustRun(t, "epic", "add", "box two")
 
-	_, se := runLs(t, "epic", "ls", "-n", "1")
+	_, se := mustSplit(t, "epic", "ls", "-n", "1")
 	if !strings.Contains(se, "showing 1 of 2 (-n)") {
 		t.Errorf("epic ls -n1 should disclose the cap, got:\n%s", se)
 	}
@@ -161,7 +161,7 @@ func TestEpicLs_BoardScopeAppliesAndDiscloses(t *testing.T) {
 	mustRun(t, "epic", "add", "demo box", "-r", "me/demo")
 	mustRun(t, "epic", "add", "other box", "-r", "me/other")
 
-	so, se := runLs(t, "epic", "ls")
+	so, se := mustSplit(t, "epic", "ls")
 	if !strings.Contains(so, "demo box") {
 		t.Errorf("in-scope box missing:\n%s", so)
 	}
@@ -172,7 +172,7 @@ func TestEpicLs_BoardScopeAppliesAndDiscloses(t *testing.T) {
 		t.Errorf("stderr should disclose the hidden box(es) with the -r '' remedy, got:\n%s", se)
 	}
 
-	so, se = runLs(t, "epic", "ls", "-r", "")
+	so, se = mustSplit(t, "epic", "ls", "-r", "")
 	if !strings.Contains(so, "demo box") || !strings.Contains(so, "other box") {
 		t.Errorf("-r '' should list the whole board:\n%s", so)
 	}
@@ -189,7 +189,7 @@ func TestEpicLs_LabelCommaOR(t *testing.T) {
 	mustRun(t, "epic", "add", "box b", "-l", "bb")
 	mustRun(t, "epic", "add", "box c", "-l", "cc")
 
-	so, _ := runLs(t, "epic", "ls", "-l", "aa,bb")
+	so, _ := mustSplit(t, "epic", "ls", "-l", "aa,bb")
 	if !strings.Contains(so, "box a") || !strings.Contains(so, "box b") {
 		t.Errorf("-l aa,bb should OR both boxes:\n%s", so)
 	}
@@ -197,17 +197,10 @@ func TestEpicLs_LabelCommaOR(t *testing.T) {
 		t.Errorf("-l aa,bb must still filter:\n%s", so)
 	}
 
-	so, _ = runLs(t, "epic", "ls", "-l", "aa", "-l", "bb")
+	so, _ = mustSplit(t, "epic", "ls", "-l", "aa", "-l", "bb")
 	if !strings.Contains(so, "box a") || !strings.Contains(so, "box b") {
 		t.Errorf("repeated -l should union:\n%s", so)
 	}
 }
 
 // mustRun is run() asserting exit 0 (for setup steps whose output is noise).
-func mustRun(t *testing.T, args ...string) {
-	t.Helper()
-	out, code := run(t, args...)
-	if code != 0 {
-		t.Fatalf("%v exit = %d:\n%s", args, code, out)
-	}
-}

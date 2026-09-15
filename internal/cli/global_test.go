@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,24 +58,14 @@ func TestLs_GlobalBoardNoGitWarnOnStderr(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(prev) })
 
-	var so, se bytes.Buffer
-	out, errOut = &so, &se
-	defer func() { out, errOut = os.Stdout, os.Stderr }()
-	rootCmd := newRootCmd()
-	rootCmd.SetArgs([]string{"ls"})
-	rootCmd.SetOut(&so)
-	rootCmd.SetErr(&se)
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("ls: %v", err)
+	so, se := mustSplit(t, "ls")
+	if !strings.Contains(se, "no enclosing git repo") {
+		t.Errorf("missing no-git warning on stderr:\n%s", se)
 	}
-
-	if !strings.Contains(se.String(), "no enclosing git repo") {
-		t.Errorf("missing no-git warning on stderr:\n%s", se.String())
+	if strings.Contains(so, "no enclosing git repo") {
+		t.Errorf("warning leaked into stdout:\n%s", so)
 	}
-	if strings.Contains(so.String(), "no enclosing git repo") {
-		t.Errorf("warning leaked into stdout:\n%s", so.String())
-	}
-	if !strings.Contains(so.String(), "seed task") {
-		t.Errorf("board task missing from stdout:\n%s", so.String())
+	if !strings.Contains(so, "seed task") {
+		t.Errorf("board task missing from stdout:\n%s", so)
 	}
 }

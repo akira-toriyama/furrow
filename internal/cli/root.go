@@ -440,6 +440,11 @@ func unknownSubcommandErr(cmd *cobra.Command, sub string) *core.Error {
 // openApp discovers the .furrow store from the current directory. Any
 // discovery-time scope warnings (e.g. a central board activated with no
 // enclosing git repo for an auto label) go to stderr, so stdout stays pure data.
+// testClock, when set, replaces the wall clock of every App this process
+// opens. The in-package tests freeze it so a `--due` written "today" and read
+// back "today" cannot straddle midnight; production never sets it.
+var testClock core.Clock
+
 func openApp() (*app.App, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -448,6 +453,9 @@ func openApp() (*app.App, error) {
 	a, err := app.Open(cwd)
 	if err != nil {
 		return nil, err
+	}
+	if testClock != nil {
+		a.Clock = testClock
 	}
 	autoCommitApp = a // hand the resolved App to the root PersistentPostRunE autocommit hook
 	for _, w := range a.ScopeWarnings {
