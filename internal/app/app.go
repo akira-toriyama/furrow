@@ -1768,25 +1768,51 @@ func (a *App) SetTitle(id, title string) (*core.Task, error) {
 // title field (the source of truth) and the body's leading `# ` heading. Before
 // this, a title lived in both places with no command to change it, so a rename
 // meant hand-editing the shard AND the body — and once shards became
-// furrow-owned, hand-editing them was off-limits entirely. Retitle writes the
-// shard, then syncs the body heading. A body whose first line is not an H1 is
-// left untouched (there is no second home to drift); an empty body is seeded a
-// heading, mirroring add.
+// furrow-owned, hand-editing them was off-limits entirely. Retitle syncs the
+// body heading, then writes the shard — the prose paths' order (AddNote), so a
+// failed body write leaves the title where the heading still is. A body whose
+// first line is not an H1 is left untouched (there is no second home to drift);
+// an empty body is seeded a heading, mirroring add.
+//
+// A heading rewrite is PROSE and stamps `updated` unconditionally, like every
+// other body write: the shard's own bytes cannot see it, so a retitle to the
+// title the shard already holds — the case after a hand-edited heading drifted
+// — used to move the body and leave the clock alone, invisible to is:stale,
+// revisit and reconcile-gap (t-wdm8).
 func (a *App) Retitle(id, title string) (*core.Task, error) {
-	t, err := a.SetTitle(id, title)
+	title = core.NormalizeTitle(title)
+	if title == "" {
+		return nil, core.Validationf(id, "title must not be empty")
+	}
+	idx, err := a.load()
 	if err != nil {
+		return nil, err
+	}
+	t, i := idx.Find(id)
+	if i < 0 {
+		return nil, a.notFoundTask(id)
+	}
+	// Guarded BEFORE the body write (AddNote's rule): a refusal must not have
+	// already landed the heading.
+	if err := a.guardTask(t); err != nil {
 		return nil, err
 	}
 	body, err := a.Store.LoadBody(id)
 	if err != nil {
 		return nil, err
 	}
-	if next, changed := retitleHeading(body, t.Title); changed {
+	next, headingChanged := retitleHeading(body, title)
+	if headingChanged {
 		if err := a.saveBody(id, next); err != nil {
 			return nil, err
 		}
 	}
-	return t, nil
+	return a.mutateIn(idx, id, func(t *core.Task) {
+		t.Title = title
+		if headingChanged {
+			t.Updated = a.Clock.Now()
+		}
+	})
 }
 
 // retitleHeading rewrites body's leading ATX H1 heading to `# <title>`, returning
