@@ -400,20 +400,12 @@ func openMembersNotes(epicID string, members []app.EpicOpenMember) []string {
 // cap, for its reason: the count is exact, the line stays legible, and the full
 // list is the JSON open_members key.
 func namedMemberIDs(members []app.EpicOpenMember) string {
-	const maxNamed = 3
-	named := members
-	if len(named) > maxNamed {
-		named = named[:maxNamed]
-	}
-	ids := make([]string, len(named))
-	for i, m := range named {
+	n, more := capNames(len(members))
+	ids := make([]string, n)
+	for i, m := range members[:n] {
 		ids[i] = m.ID
 	}
-	s := strings.Join(ids, ", ")
-	if len(members) > len(named) {
-		s += fmt.Sprintf(", +%d more", len(members)-len(named))
-	}
-	return s
+	return strings.Join(ids, ", ") + more
 }
 
 // emitWithPreviousSuggest is done/deactivate's shared tail: the usual epic

@@ -98,26 +98,16 @@ func newLintCmd() *cobra.Command {
 				Severity:     severity,
 			})
 
-			switch {
-			case flagNDJSON:
-				// A problem stream is list-shaped, so --ndjson is one problem per
-				// compact line (an empty store simply emits nothing).
-				for _, p := range ps {
-					printNDJSONValue(p)
-				}
-			case flagJSON:
-				if ps == nil {
-					ps = []core.Problem{}
-				}
-				printJSON(ps)
-			default:
+			// A problem stream is list-shaped: emitList's contract (one per
+			// line, [] never null, the human table otherwise).
+			emitList(ps, func() {
 				if len(ps) == 0 {
 					fmt.Fprintln(out, "ok — no problems")
 				}
 				for _, p := range ps {
 					fmt.Fprintf(out, "%-5s  %-16s  %-8s  %s\n", p.Severity, p.Code, p.ID, p.Msg)
 				}
-			}
+			})
 			if core.HasErrors(ps) {
 				// Errors make lint fail (validation), but we already printed the
 				// findings, so return a quiet error that only sets the exit code.
