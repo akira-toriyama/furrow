@@ -640,31 +640,37 @@ func (c *queryCompiler) reach(starts []string, up bool) map[string]bool {
 			}
 		}
 	}
-	seen := map[string]bool{}
-	var frontier []string
+	// One closure PER start, unioned: a comma is OR, so `descendant-of:x,y`
+	// is x's descendants plus y's. The single shared walk that deleted every
+	// start at the end returned nothing for the commonest shape — y waiting on
+	// x — because y, x's only descendant, was also a start (t-hwav). A start
+	// is excluded from its OWN closure only (the named task is not its own
+	// descendant, as depends-on:X never matches X); reached from another
+	// start, it stays.
+	result := map[string]bool{}
 	for _, s := range starts {
-		if x, _ := c.idx.Find(s); x != nil {
-			frontier = append(frontier, x.ID)
+		x, _ := c.idx.Find(s)
+		if x == nil {
+			continue
 		}
-	}
-	starting := map[string]bool{}
-	for _, s := range frontier {
-		starting[s] = true
-	}
-	for len(frontier) > 0 {
-		id := frontier[len(frontier)-1]
-		frontier = frontier[:len(frontier)-1]
-		for _, next := range adj[id] {
-			if !seen[next] {
-				seen[next] = true
-				frontier = append(frontier, next)
+		seen := map[string]bool{}
+		frontier := []string{x.ID}
+		for len(frontier) > 0 {
+			id := frontier[len(frontier)-1]
+			frontier = frontier[:len(frontier)-1]
+			for _, next := range adj[id] {
+				if !seen[next] {
+					seen[next] = true
+					frontier = append(frontier, next)
+				}
 			}
 		}
+		delete(seen, x.ID)
+		for id := range seen {
+			result[id] = true
+		}
 	}
-	for s := range starting {
-		delete(seen, s)
-	}
-	return seen
+	return result
 }
 
 // matchWildcard matches s against a `*`-pattern: `*` spans any run (including

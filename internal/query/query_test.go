@@ -252,6 +252,13 @@ func TestParseErrors(t *testing.T) {
 		`label:`,              // qualifier without a value
 		`is:`,                 // is: without a flag
 		`has:`,                // has: without a field
+		`label:a,,b`,          // empty OR member (t-hwav: used to be dropped in silence)
+		`label:a,`,            // trailing empty member
+		`label:,a`,            // leading empty member
+		`-`,                   // a negation with no term (was free text "-")
+		`--`,                  // ditto
+		`,`,                   // an OR separator with no values (was free text ",")
+		`,,`,                  // ditto
 	}
 	for _, in := range bad {
 		if _, err := Parse(in); err == nil {
@@ -278,4 +285,37 @@ func FuzzParse(f *testing.F) {
 	f.Fuzz(func(t *testing.T, s string) {
 		_, _ = Parse(s) // must not panic; error is fine
 	})
+}
+
+// Every leading '-' negates and two cancel — `--status:done` is status:done,
+// not a qualifier on the field "-status" (t-hwav). A quoted dash or comma is
+// ordinary free text: the faults above are for the BARE punctuation only.
+func TestParseLeadingDashesAndQuotedPunctuation(t *testing.T) {
+	for _, tc := range []struct {
+		in    string
+		not   bool
+		field string
+	}{
+		{"status:done", false, "status"},
+		{"-status:done", true, "status"},
+		{"--status:done", false, "status"},
+		{"---status:done", true, "status"},
+	} {
+		q, err := Parse(tc.in)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", tc.in, err)
+		}
+		if len(q) != 1 || q[0].Not != tc.not || q[0].Field != tc.field {
+			t.Errorf("Parse(%q) = %+v, want not=%v field=%q", tc.in, q, tc.not, tc.field)
+		}
+	}
+	for _, in := range []string{`"-"`, `","`, `'-'`} {
+		q, err := Parse(in)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v — quoted punctuation is free text", in, err)
+		}
+		if len(q) != 1 || q[0].Kind != FreeText || q[0].Not {
+			t.Errorf("Parse(%q) = %+v, want one positive free-text term", in, q)
+		}
+	}
 }

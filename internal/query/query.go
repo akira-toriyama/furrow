@@ -180,11 +180,18 @@ func lex(s string) ([]rawTerm, error) {
 // string, stamped on every fault so the caller can point at the token.
 func parseTerm(raw string, off int) (Term, error) {
 	orig := raw
-	not := false
-	if strings.HasPrefix(raw, "-") && len(raw) > 1 {
-		not = true
-		raw = raw[1:]
+	// Every leading '-' is a negation, and two cancel: `--status:done` is
+	// status:done, not a qualifier on the field "-status" (one dash used to be
+	// stripped and the next kept as part of the field). A term that is ONLY
+	// dashes negates nothing — it is a fault, not the free text "-", which
+	// matched a due tag in every title and silently narrowed the read.
+	stripped := strings.TrimLeft(raw, "-")
+	dashes := len(raw) - len(stripped)
+	if dashes > 0 && stripped == "" {
+		return Term{}, &ParseError{Msg: "a bare '-' negates a term and names none; quote it (\"-\") to search for a dash", Term: orig, Offset: off}
 	}
+	not := dashes%2 == 1
+	raw = stripped
 
 	field, rest, hasColon := splitQualifier(raw)
 	if !hasColon {
@@ -197,6 +204,12 @@ func parseTerm(raw string, off int) (Term, error) {
 		}
 		if v.Text == "" {
 			return Term{}, &ParseError{Msg: "empty term", Term: orig, Offset: off}
+		}
+		if !v.Quoted && strings.Trim(v.Text, ",") == "" {
+			// The OR separator with nothing to separate: as free text it is a
+			// substring match on ',' — a title with a comma — which no reader
+			// typing `-q ,` meant.
+			return Term{}, &ParseError{Msg: "a bare ',' separates OR values and names none; quote it (\",\") to search for a comma", Term: orig, Offset: off}
 		}
 		return Term{Kind: FreeText, Not: not, Text: v.Text}, nil
 	}
@@ -340,7 +353,10 @@ func cutRange(s string) (lo, hi string, ok bool) {
 	return s, "", false
 }
 
-// splitOrList splits a value on top-level (unquoted) commas, unquoting each part.
+// splitOrList splits a value on top-level (unquoted) commas, unquoting each
+// part. An empty member (`a,,b`, `a,`, `,`) is a fault: it used to be dropped
+// in silence while `label:,` alone was refused, so the same typo was exit 2 or
+// a narrowed read depending on what stood beside it.
 func splitOrList(s string) ([]Value, error) {
 	var out []Value
 	var b strings.Builder
@@ -350,9 +366,10 @@ func splitOrList(s string) ([]Value, error) {
 		if err != nil {
 			return err
 		}
-		if v.Text != "" {
-			out = append(out, v)
+		if v.Text == "" {
+			return &ParseError{Msg: "empty value in a comma list"}
 		}
+		out = append(out, v)
 		b.Reset()
 		return nil
 	}
