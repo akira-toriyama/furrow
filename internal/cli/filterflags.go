@@ -11,14 +11,18 @@ import (
 // and --expect-updated before them (t-jbph): -l/-r/-e/-n/--archived/--since/
 // --until were hand-registered per command — six copies of -l's usage line,
 // three spellings of -r's, four of -n's — and the wordings had already
-// drifted apart in ways `--help` showed. A command asks for exactly the flags
-// it carries; the canonical usage lines live here and nowhere else.
+// drifted apart in ways `--help` showed (-s joined later: three byte-identical
+// copies outside the registrar, t-m31c). A command asks for exactly the flags
+// it carries; the canonical usage lines live here and nowhere else — the
+// write selector included, whose -l/-r mean "select" rather than "filter" and
+// so override the wording, never the registration.
 
 // filterFlags bundles the shared flag values for one command. Zero-valued
 // defaults apply except where a command pre-sets one before addFilterFlags
 // (brief sets limit=3 — the registrar takes the field's current value as the
 // flag default).
 type filterFlags struct {
+	status   []string
 	label    []string
 	repo     string
 	epic     string
@@ -48,6 +52,7 @@ func wantUsage(name, usage string) filterFlag { return filterFlag{name: name, us
 // The canonical usage lines — the best wording of what were 2-4 divergent
 // spellings each.
 const (
+	usageStatus   = "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)"
 	usageLabel    = "filter by label (OR; comma-separated or repeated -l, e.g. -l bug,urgent or -l bug -l urgent); a pure tag that ANDs with the board scope"
 	usageRepo     = "filter by repo (owner/repo or a unique short name; '' = whole board)"
 	usageEpic     = "only that epic's members (id, unique id prefix, or unique title substring; strict — no unfiled carve-out)"
@@ -70,6 +75,8 @@ func addFilterFlags(cmd *cobra.Command, f *filterFlags, flags ...filterFlag) {
 			return canonical
 		}
 		switch fl.name {
+		case "status":
+			cmd.Flags().StringArrayVarP(&f.status, "status", "s", nil, use(usageStatus))
 		case "label":
 			cmd.Flags().StringArrayVarP(&f.label, "label", "l", nil, use(usageLabel))
 		case "repo":

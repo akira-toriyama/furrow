@@ -107,47 +107,36 @@ func newEpicLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// The task reads' scope rule (scopedQuery), applied to boxes: the
-			// board's auto scope engages unless an explicit -r replaces it ('' =
-			// whole board). `epic ls` used to read the raw flag alone, so it was
-			// the ONE read whose population ignored the board scope — same
-			// board, same cwd, and brief's epic header disagreed with it.
-			resolved := ""
-			if a.DefaultRepo != "" && a.AutoFilter {
-				resolved = a.DefaultRepo
-			}
-			if cmd.Flags().Changed("repo") {
-				resolved = ""
-				if f.repo != "" {
-					if resolved, err = a.ResolveRepo(f.repo); err != nil {
-						return err
-					}
-				}
-			}
-			o := app.EpicQueryOpts{All: all, Label: joinOrFilter(f.label), Repo: resolved, Limit: f.limit}
-			items, err := a.EpicList(o)
+			// The task reads' scope rule, applied to boxes: EpicList takes one
+			// repo filter, so the board scope and an explicit -r collapse into it.
+			scope, repo, err := repoScope(cmd, a, f.repo)
 			if err != nil {
 				return err
 			}
+			if repo == "" {
+				repo = scope
+			}
+			o := app.EpicQueryOpts{All: all, Label: joinOrFilter(f.label), Repo: repo}
+			// One uncapped read; -n is a slice of it, so the cap note needs no
+			// second query.
+			matched, err := a.EpicList(o)
+			if err != nil {
+				return err
+			}
+			items := matched
+			if f.limit > 0 && len(items) > f.limit {
+				items = items[:f.limit]
+			}
 			// Disclose what the repo scope hid: a read never narrows silently
 			// (the drafts-hint rule, applied to boxes).
-			if resolved != "" {
+			if repo != "" {
 				u := o
-				u.Repo, u.Limit = "", 0
-				if board, err := a.EpicList(u); err == nil {
-					s := o
-					s.Limit = 0
-					if scoped, err := a.EpicList(s); err == nil && len(board) > len(scoped) {
-						fmt.Fprintf(errOut, "note: %d box(es) outside %s hidden — furrow epic ls -r ''\n", len(board)-len(scoped), resolved)
-					}
+				u.Repo = ""
+				if board, err := a.EpicList(u); err == nil && len(board) > len(matched) {
+					fmt.Fprintf(errOut, "note: %d box(es) outside %s hidden — furrow epic ls -r ''\n", len(board)-len(matched), repo)
 				}
 			}
-			hintCapped(len(items), f.limit, "", func() (int, error) {
-				u := o
-				u.Limit = 0
-				all, err := a.EpicList(u)
-				return len(all), err
-			})
+			hintCapped(len(items), f.limit, "", func() (int, error) { return len(matched), nil })
 			return emitEpicList(items)
 		},
 	}

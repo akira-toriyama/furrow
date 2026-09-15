@@ -28,19 +28,21 @@ import (
 //   - --expect-updated is refused beside a selection (one stamp = one read of
 //     ONE task, and a selection is however many the filters matched).
 type writeSelector struct {
+	filterFlags
 	query string
-	label []string
-	repo  string
 	yes   bool
 }
 
 // addSelectorFlags registers the selection flags on a write command. The -q
-// registrar is the read side's (addQueryFlag), so the help text and grammar
-// pointer can never fork from ls/next's.
+// registrar is the read side's (addQueryFlag) and -l/-r go through the shared
+// filter registrar, so the help text and grammar pointer can never fork from
+// ls/next's — the usage lines are overridden because here the flags SELECT
+// the targets of a write rather than filter a listing.
 func addSelectorFlags(cmd *cobra.Command, s *writeSelector) {
 	addQueryFlag(cmd, &s.query)
-	cmd.Flags().StringArrayVarP(&s.label, "label", "l", nil, "select by label instead of ids (OR; comma-separated or repeated -l); ANDs with -q/-r and the board scope")
-	cmd.Flags().StringVarP(&s.repo, "repo", "r", "", "select within this repo instead of the board scope (owner/repo or a unique short name; '' = whole board)")
+	addFilterFlags(cmd, &s.filterFlags,
+		wantUsage("label", "select by label instead of ids (OR; comma-separated or repeated -l); ANDs with -q/-r and the board scope"),
+		wantUsage("repo", "select within this repo instead of the board scope (owner/repo or a unique short name; '' = whole board)"))
 	cmd.Flags().BoolVar(&s.yes, "yes", false, "apply the -q/-l/-r selection (without it the selection only previews)")
 }
 

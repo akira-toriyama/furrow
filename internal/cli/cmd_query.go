@@ -12,7 +12,6 @@ import (
 
 func newLsCmd() *cobra.Command {
 	var (
-		status     []string
 		f          filterFlags
 		drafts     bool
 		sortBy     string
@@ -86,7 +85,7 @@ func newLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o.Status, o.Limit, o.Drafts = joinOrFilter(status), f.limit, drafts
+			o.Status, o.Limit, o.Drafts = joinOrFilter(f.status), f.limit, drafts
 			o.Sort, o.Reverse, o.Archived = sortBy, reverse, f.archived
 			o.Actionable, o.Blocked = actionable, blocked
 			o.Query = queryStr
@@ -141,9 +140,8 @@ func newLsCmd() *cobra.Command {
 			return emitListItems(a, items)
 		},
 	}
-	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
 	addFilterFlags(cmd, &f,
-		want("label"), want("repo"),
+		want("status"), want("label"), want("repo"),
 		// -n interacts with --sort here (the top N OF THE SORTED SET), a real
 		// behavioral difference the canonical line does not carry.
 		wantUsage("limit", "max rows (0 = all; with --sort, the top N)"),
@@ -594,7 +592,6 @@ func newRevisitCmd() *cobra.Command {
 
 func newStatsCmd() *cobra.Command {
 	var (
-		status   []string
 		f        filterFlags
 		queryStr string
 	)
@@ -637,7 +634,7 @@ func newStatsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o.Status = joinOrFilter(status)
+			o.Status = joinOrFilter(f.status)
 			o.Query = queryStr
 			if err := f.window(cmd, &o); err != nil {
 				return err
@@ -656,9 +653,8 @@ func newStatsCmd() *cobra.Command {
 			return emitStats(s)
 		},
 	}
-	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
 	addFilterFlags(cmd, &f,
-		want("label"), want("repo"), want("epic"),
+		want("status"), want("label"), want("repo"), want("epic"),
 		// stats' window MEANS more than ls's: besides filtering by updated it
 		// adds the created/closed flow section, which the canonical line
 		// cannot claim.
@@ -670,7 +666,6 @@ func newStatsCmd() *cobra.Command {
 
 func newSearchCmd() *cobra.Command {
 	var (
-		status   []string
 		f        filterFlags
 		queryStr string
 	)
@@ -711,7 +706,7 @@ func newSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o.Status, o.Limit = joinOrFilter(status), f.limit
+			o.Status, o.Limit = joinOrFilter(f.status), f.limit
 			o.Query = queryStr
 			o.Archived = f.archived
 			term := strings.Join(args, " ")
@@ -746,8 +741,7 @@ func newSearchCmd() *cobra.Command {
 			return emitSearch(hits)
 		},
 	}
-	cmd.Flags().StringArrayVarP(&status, "status", "s", nil, "filter by lane (OR; comma-separated or repeated -s, e.g. -s inbox,backlog or -s inbox -s backlog)")
-	addFilterFlags(cmd, &f, want("label"), want("repo"), want("limit"), want("epic"), want("archived"))
+	addFilterFlags(cmd, &f, want("status"), want("label"), want("repo"), want("limit"), want("epic"), want("archived"))
 	addQueryFlag(cmd, &queryStr)
 	return cmd
 }

@@ -1206,8 +1206,10 @@ looks it up in the board's `[alias]` table (via `app.DiscoverAliases`, a
 config-only read — no store load) and, on a hit, replaces the token with the
 alias's whitespace-split tokens and appends the rest of argv (git-style). A
 builtin always wins (the lookup is builtin-first), so a shadowing alias is inert
-and `cli.aliasShadowProblems` surfaces it as a `lint` warning (`alias-shadow`);
-the `internal/config` parse drops a blank-valued alias with a clamp warning.
+and `cli.aliasShadowProblems` raises it as a `lint` warning (`alias-shadow`),
+handed to `app.Lint` as an extra finding so it is leveled, filtered and sorted
+with the rest — the CLI never applies board lint policy itself; the
+`internal/config` parse drops a blank-valued alias with a clamp warning.
 Command knowledge stays in `internal/cli` (the layer that owns the command set),
 so this needs no new port.
 

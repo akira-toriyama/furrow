@@ -8,33 +8,44 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// scopedQuery resolves the board scope and the repo/epic filters for a read;
-// the batch mutators' write selector resolves through this same path, so a
-// selector matches exactly what the equivalent read lists. The board scope (a
-// pointer's or central board's DefaultRepo, honored when AutoFilter is on)
-// lands in ScopeRepo; the explicit -l value is a pure tag filter (Label) that
-// ANDs with the scope and never clears it. Scope control is -r only: an
-// explicit -r X replaces the board scope with a repo filter (X resolved
-// strictly — a full owner/repo, or a short name matching exactly one repo known
-// to the board), and -r "" means the whole board. -e resolves through the same
-// strict path `epic show` uses (exact id, unique id prefix, unique title
-// substring; a miss/ambiguity is exit 2 + candidates), so a typo never silently
-// returns []; a command without the flag passes "". The filtering stays silent
-// (stderr quiet, stdout pure data).
-func scopedQuery(cmd *cobra.Command, a *app.App, flagLabel, flagRepo, flagEpic string) (app.QueryOpts, error) {
-	o := app.QueryOpts{Label: flagLabel}
+// repoScope resolves the ONE scope control every read shares — task reads
+// through scopedQuery, `epic ls` directly (it used to carry its own copy, and
+// before that read the raw flag alone: the one read whose population ignored
+// the board scope, so brief's epic header disagreed with it). The board scope
+// (a pointer's or central board's DefaultRepo, honored when AutoFilter is on)
+// comes back as scope; an explicit -r X replaces it with repo (X resolved
+// strictly — a full owner/repo, or a short name matching exactly one repo
+// known to the board), and -r "" means the whole board. At most one of the
+// two is set.
+func repoScope(cmd *cobra.Command, a *app.App, flagRepo string) (scope, repo string, err error) {
 	if a.DefaultRepo != "" && a.AutoFilter {
-		o.ScopeRepo = a.DefaultRepo
+		scope = a.DefaultRepo
 	}
 	if cmd.Flags().Changed("repo") {
-		o.ScopeRepo = ""
+		scope = ""
 		if flagRepo != "" {
-			r, err := a.ResolveRepo(flagRepo)
-			if err != nil {
-				return o, err
+			if repo, err = a.ResolveRepo(flagRepo); err != nil {
+				return "", "", err
 			}
-			o.Repo = r
 		}
+	}
+	return scope, repo, nil
+}
+
+// scopedQuery resolves the board scope and the repo/epic filters for a read;
+// the batch mutators' write selector resolves through this same path, so a
+// selector matches exactly what the equivalent read lists. The scope lands in
+// ScopeRepo and an explicit -r in Repo (repoScope); the explicit -l value is a
+// pure tag filter (Label) that ANDs with the scope and never clears it. -e
+// resolves through the same strict path `epic show` uses (exact id, unique id
+// prefix, unique title substring; a miss/ambiguity is exit 2 + candidates), so
+// a typo never silently returns []; a command without the flag passes "". The
+// filtering stays silent (stderr quiet, stdout pure data).
+func scopedQuery(cmd *cobra.Command, a *app.App, flagLabel, flagRepo, flagEpic string) (app.QueryOpts, error) {
+	o := app.QueryOpts{Label: flagLabel}
+	var err error
+	if o.ScopeRepo, o.Repo, err = repoScope(cmd, a, flagRepo); err != nil {
+		return o, err
 	}
 	if flagEpic != "" {
 		id, err := a.ResolveEpic(flagEpic)
@@ -162,7 +173,7 @@ func hintCapped(shown, limit int, noun string, total func() (int, error)) {
 // running a furrow at the board's layer, not flag-daying the board from a
 // source build that ran ahead of it.
 func warnReadOnly(a *app.App) {
-	err := a.Store.Writable()
+	err := a.Writable()
 	if err == nil {
 		return
 	}

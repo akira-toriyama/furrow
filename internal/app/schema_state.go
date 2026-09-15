@@ -57,6 +57,12 @@ func (a *App) boardStores() []storeVersion {
 // It never fails. A board whose meta.json cannot be read is REPORTED as
 // unreadable, not raised — `board` is the last command that still works when the
 // board and the binary disagree, and CI reads it precisely then.
+// Writable is the hot store's write gate as a read: nil when this binary may
+// write the board, else the schema-upgrade-required / schema-too-new error a
+// write would fail with. The CLI's read-only disclosure asks here so it never
+// touches the store port itself.
+func (a *App) Writable() error { return a.Store.Writable() }
+
 func (a *App) schemaState() (version int, state string, writable bool) {
 	stores := a.boardStores()
 
