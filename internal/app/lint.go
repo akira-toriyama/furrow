@@ -271,11 +271,22 @@ func (a *App) Lint() ([]core.Problem, error) {
 	// the whole window. The write gate is already the hard stop — this is just the
 	// thing that makes the state visible before someone runs into it.
 	//
-	// schemaState covers BOTH stores (the archive carries its own meta.json), and
-	// it knows that an unstamped but EMPTY board is version 0 yet writable.
-	if bv, state, _ := a.schemaState(); state == SchemaOutdated {
-		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "schema-outdated", ID: "meta",
-			Msg: fmt.Sprintf("board is schema v%d; this furrow writes v%d — writes are refused until `furrow upgrade` runs (a flag day: bump every pinned caller FIRST)", bv, core.SchemaVersion)})
+	// Each store is judged on its own (the archive carries its own meta.json),
+	// and the finding names WHICH one: id `meta` is the board, `archive` its
+	// archive store — one row said "board is schema v3" for either, and an
+	// archive that fell behind read as the whole board being read-only
+	// (t-rns9). An unstamped but EMPTY store is version 0 yet writable, which
+	// Writable already knows.
+	for _, s := range a.boardStores() {
+		if s.Err != nil || s.Version > core.SchemaVersion || s.Store.Writable() == nil {
+			continue
+		}
+		id, what := "meta", "board"
+		if s.Store != a.Store {
+			id, what = "archive", "archive store"
+		}
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "schema-outdated", ID: id,
+			Msg: fmt.Sprintf("%s is schema v%d; this furrow writes v%d — writes are refused until `furrow upgrade` runs (a flag day: bump every pinned caller FIRST)", what, s.Version, core.SchemaVersion)})
 	}
 
 	// [lint.severity] board policy, applied BEFORE the sort so the ordering (and

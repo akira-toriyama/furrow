@@ -166,8 +166,13 @@ func warnReadOnly(a *app.App) {
 	if err == nil {
 		return
 	}
+	// Only the OUTDATED board earns the note: a too-new one refuses its own
+	// reads (that refusal names the fix), and a board whose meta.json cannot
+	// be read is about to fail this very read — a note promising "reads
+	// answer" in front of an exit 3 was a lie, and one with no versions in
+	// it (t-rns9).
 	fe := core.AsError(err)
-	if fe != nil && fe.Kind == core.KindSchemaTooNew {
+	if fe == nil || fe.Kind != core.KindSchemaUpgradeRequired {
 		return
 	}
 	versions := ""

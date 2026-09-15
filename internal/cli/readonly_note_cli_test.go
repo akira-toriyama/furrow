@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/internal/core"
 )
 
 // A board this binary cannot write says so on the READ side: one stderr line
@@ -81,5 +83,27 @@ func TestWritableBoardStaysQuiet(t *testing.T) {
 	}
 	if strings.Contains(se, "READ-ONLY") {
 		t.Errorf("writable board must not nag: stderr %q", se)
+	}
+}
+
+// A board whose meta.json cannot be read gets no READ-ONLY note: the read
+// itself fails with the meta error, and a note promising "reads answer" in
+// front of it — with no versions to name — was a lie (t-rns9).
+func TestUnreadableMetaGetsNoReadOnlyNote(t *testing.T) {
+	initStore(t)
+	addTask(t, "written while writable")
+	dir := os.Getenv("FURROW_DIR")
+	if err := os.WriteFile(filepath.Join(dir, "meta.json"), []byte("{ not json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fe, _, se := execCLI(t, "", "ls")
+	if fe == nil || fe.Code != core.CodeInternal {
+		t.Fatalf("ls on a garbled meta.json must fail with exit 3, got %+v", fe)
+	}
+	if strings.Contains(se, "READ-ONLY") {
+		t.Errorf("no READ-ONLY note may front a read that fails: %q", se)
+	}
+	if !strings.Contains(fe.Msg, "meta.json is unreadable") {
+		t.Errorf("the read's own error must be what the reader sees: %q", fe.Msg)
 	}
 }
