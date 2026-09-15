@@ -68,7 +68,7 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 					return err
 				}
 				bad := "no-such-box"
-				_, _, err = a.Set(task.ID, SetOpts{Epic: &bad})
+				_, _, _, err = a.Set(task.ID, SetOpts{Epic: &bad})
 				return err
 			},
 			wantFn: seedEpic,

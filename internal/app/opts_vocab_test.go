@@ -41,7 +41,7 @@ func TestSetRefusalNamesEveryFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = a.Set(tk.ID, SetOpts{})
+	_, _, _, err = a.Set(tk.ID, SetOpts{})
 	if err == nil {
 		t.Fatal("an empty set must be refused")
 	}

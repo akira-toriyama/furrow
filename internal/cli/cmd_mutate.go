@@ -301,7 +301,7 @@ func newDoneCmd() *cobra.Command {
 			if !cmd.Flags().Changed("note") {
 				rs, after := newSeriesReports(), []*core.Task(nil)
 				if err := emitMutationManyWith(cmd, a, "done", args, func() ([]*core.Task, error) {
-					ts, reps, err := a.DoneManySeries(args, nil)
+					ts, reps, err := a.DoneMany(args, nil)
 					rs.collect(ts, reps)
 					after = ts
 					return ts, err
@@ -321,7 +321,7 @@ func newDoneCmd() *cobra.Command {
 			rs, after := newSeriesReports(), []*core.Task(nil)
 			if err := emitMutationManyWith(cmd, a, "done", args,
 				func() ([]*core.Task, error) {
-					ts, reps, err := a.DoneManySeries(args, &text)
+					ts, reps, err := a.DoneMany(args, &text)
 					rs.collect(ts, reps)
 					after = ts
 					return ts, err
@@ -405,7 +405,7 @@ func newMoveCmd() *cobra.Command {
 			}
 			rs, after := newSeriesReports(), []*core.Task(nil)
 			if err := emitMutationManyWith(cmd, a, "moved", ids, func() ([]*core.Task, error) {
-				ts, reps, err := a.MoveManySeries(ids, lane, nil)
+				ts, reps, err := a.MoveMany(ids, lane, nil)
 				rs.collect(ts, reps)
 				after = ts
 				return ts, err
@@ -972,7 +972,7 @@ func newSetCmd() *cobra.Command {
 				rs, closed := newSeriesReports(), []*core.Task(nil)
 				if err := emitMutationManyWith(cmd, a, "set", args,
 					func() ([]*core.Task, error) {
-						ts, reps, err := a.SetManySeries(args, o)
+						ts, reps, err := a.SetMany(args, o)
 						rs.collect(ts, reps)
 						closed = ts
 						return ts, err
@@ -1003,7 +1003,7 @@ func newSetCmd() *cobra.Command {
 			rs, closed := newSeriesReports(), []*core.Task(nil)
 			if err := emitMutationManyWith(cmd, a, "set", args,
 				func() ([]*core.Task, error) {
-					t, ch, rep, err := a.SetSeries(args[0], o)
+					t, ch, rep, err := a.Set(args[0], o)
 					renumbered = ch
 					if err != nil {
 						return nil, err

@@ -114,7 +114,7 @@ func TestAddAndSetDue(t *testing.T) {
 	// Snooze: the offset is measured from NOW, never from the date already
 	// stored, so pushing an overdue task always lands it ahead.
 	spell := "+2d"
-	moved, _, err := a.Set(tk.ID, SetOpts{Due: &spell})
+	moved, _, _, err := a.Set(tk.ID, SetOpts{Due: &spell})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestAddAndSetDue(t *testing.T) {
 		t.Errorf("snoozed due = %s, want %s", moved.Due, want)
 	}
 
-	cleared, _, err := a.Set(tk.ID, SetOpts{ClearDue: true})
+	cleared, _, _, err := a.Set(tk.ID, SetOpts{ClearDue: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestDueRejectedBeforeWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	bad := "someday"
-	if _, _, err := a.Set(tk.ID, SetOpts{Due: &bad}); err == nil {
+	if _, _, _, err := a.Set(tk.ID, SetOpts{Due: &bad}); err == nil {
 		t.Error("set --due someday should have failed")
 	}
 	again, _, _ := a.Get(tk.ID)
@@ -169,10 +169,10 @@ func TestSetDueCountsAsAChange(t *testing.T) {
 	a := newDueApp(time.Date(2026, 8, 3, 3, 0, 0, 0, time.UTC))
 	tk, _ := a.Add("x", AddOpts{})
 	spell := "+1d"
-	if _, _, err := a.Set(tk.ID, SetOpts{Due: &spell}); err != nil {
+	if _, _, _, err := a.Set(tk.ID, SetOpts{Due: &spell}); err != nil {
 		t.Errorf("set --due alone: %v", err)
 	}
-	if _, _, err := a.Set(tk.ID, SetOpts{ClearDue: true}); err != nil {
+	if _, _, _, err := a.Set(tk.ID, SetOpts{ClearDue: true}); err != nil {
 		t.Errorf("set --clear-due alone: %v", err)
 	}
 }

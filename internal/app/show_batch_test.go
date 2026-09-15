@@ -39,7 +39,7 @@ func TestShowBatchRoutesAcrossEntities(t *testing.T) {
 	}
 
 	// The box's members ride along, exactly as `epic show` returns them.
-	if _, _, err := a.Set(tk.ID, SetOpts{Epic: strptr(epic)}); err != nil {
+	if _, _, _, err := a.Set(tk.ID, SetOpts{Epic: strptr(epic)}); err != nil {
 		t.Fatal(err)
 	}
 	entries, _, err = a.ShowBatch([]string{epic}, true)

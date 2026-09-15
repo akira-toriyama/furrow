@@ -270,7 +270,7 @@ func TestSetToDoneAlsoAdvancesTheSeries(t *testing.T) {
 	pred := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
 
 	done := a.Cfg.DoneLane
-	if _, _, err := a.Set(pred.ID, SetOpts{Status: &done}); err != nil {
+	if _, _, _, err := a.Set(pred.ID, SetOpts{Status: &done}); err != nil {
 		t.Fatal(err)
 	}
 	tasks, err := a.List(QueryOpts{})
@@ -349,14 +349,14 @@ func TestRepeatRefusesWhatItCannotAnchor(t *testing.T) {
 
 	t.Run("--clear-due on a repeating task", func(t *testing.T) {
 		task := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
-		if _, _, err := a.Set(task.ID, SetOpts{ClearDue: true}); err == nil {
+		if _, _, _, err := a.Set(task.ID, SetOpts{ClearDue: true}); err == nil {
 			t.Error("dropping the anchor of a live series was accepted")
 		}
 	})
 
 	t.Run("--clear-repeat then --clear-due is the way out", func(t *testing.T) {
 		task := mustAddRepeating(t, a, "水やり2", "2026-03-01", "monthly", AddOpts{})
-		if _, _, err := a.Set(task.ID, SetOpts{ClearRepeat: true, ClearDue: true}); err != nil {
+		if _, _, _, err := a.Set(task.ID, SetOpts{ClearRepeat: true, ClearDue: true}); err != nil {
 			t.Errorf("clearing both at once was refused: %v", err)
 		}
 	})
@@ -371,7 +371,7 @@ func TestSnoozeDoesNotMoveTheAnchor(t *testing.T) {
 	anchor := *task.RepeatAnchor
 
 	plus := "+3d"
-	snoozed, _, err := a.Set(task.ID, SetOpts{Due: &plus})
+	snoozed, _, _, err := a.Set(task.ID, SetOpts{Due: &plus})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +475,7 @@ func TestSetDoneHonorsTheRepeatEditInTheSameWrite(t *testing.T) {
 	t.Run("--clear-repeat ends the series instead of handing it on", func(t *testing.T) {
 		a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
 		task := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
-		if _, _, err := a.Set(task.ID, SetOpts{Status: &done, ClearRepeat: true}); err != nil {
+		if _, _, _, err := a.Set(task.ID, SetOpts{Status: &done, ClearRepeat: true}); err != nil {
 			t.Fatal(err)
 		}
 		tasks, err := a.List(QueryOpts{})
@@ -491,7 +491,7 @@ func TestSetDoneHonorsTheRepeatEditInTheSameWrite(t *testing.T) {
 		a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
 		task := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
 		weekly := "weekly"
-		closed, _, err := a.Set(task.ID, SetOpts{Status: &done, Repeat: &weekly})
+		closed, _, _, err := a.Set(task.ID, SetOpts{Status: &done, Repeat: &weekly})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -507,7 +507,7 @@ func TestSetDoneHonorsTheRepeatEditInTheSameWrite(t *testing.T) {
 	t.Run("a successor born beside other edits inherits the edited values", func(t *testing.T) {
 		a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
 		task := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
-		closed, _, err := a.Set(task.ID, SetOpts{Status: &done, AddLabels: []string{"chore"}})
+		closed, _, _, err := a.Set(task.ID, SetOpts{Status: &done, AddLabels: []string{"chore"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -589,7 +589,7 @@ func TestABatchOfClosesReservesItsOwnIDs(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		ids = append(ids, mustAddRepeating(t, a, "chore", "2026-03-01", "monthly", AddOpts{}).ID)
 	}
-	closed, reps, err := a.MoveManySeries(ids, a.Cfg.DoneLane, nil)
+	closed, reps, err := a.MoveMany(ids, a.Cfg.DoneLane, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -623,7 +623,7 @@ func TestBatchSetToDoneReportsEverySeries(t *testing.T) {
 		ids = append(ids, mustAddRepeating(t, a, "chore", "2026-03-01", "monthly", AddOpts{}).ID)
 	}
 	done := a.Cfg.DoneLane
-	_, reps, err := a.SetManySeries(ids, SetOpts{Status: &done})
+	_, reps, err := a.SetMany(ids, SetOpts{Status: &done})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -649,12 +649,12 @@ func TestSetRefusesARuleOnAnAlreadyClosedTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	rule := "monthly"
-	if _, _, err := a.Set(task.ID, SetOpts{Repeat: &rule}); err == nil {
+	if _, _, _, err := a.Set(task.ID, SetOpts{Repeat: &rule}); err == nil {
 		t.Error("a live rule was armed on a closed task")
 	}
 	// The same edit WITH a reopen is the supported way round.
 	lane := a.Cfg.DefaultLane
-	if _, _, err := a.Set(task.ID, SetOpts{Status: &lane, Repeat: &rule}); err != nil {
+	if _, _, _, err := a.Set(task.ID, SetOpts{Status: &lane, Repeat: &rule}); err != nil {
 		t.Errorf("reopening and binding in one write was refused: %v", err)
 	}
 }
@@ -743,7 +743,7 @@ func TestAnOperatorsOwnLeadingLinkSurvives(t *testing.T) {
 		t.Fatal(err)
 	}
 	rule := "monthly"
-	if _, _, err := a.Set(task.ID, SetOpts{Repeat: &rule}); err != nil {
+	if _, _, _, err := a.Set(task.ID, SetOpts{Repeat: &rule}); err != nil {
 		t.Fatal(err)
 	}
 	closed, err := a.Done(task.ID)
@@ -776,7 +776,7 @@ func TestReArmingAClosedTaskDoesNotMint(t *testing.T) {
 	}
 	done, rule := a.Cfg.DoneLane, "monthly"
 	for i := 0; i < 3; i++ {
-		if _, _, err := a.Set(task.ID, SetOpts{Status: &done, Repeat: &rule}); err == nil {
+		if _, _, _, err := a.Set(task.ID, SetOpts{Status: &done, Repeat: &rule}); err == nil {
 			t.Fatalf("attempt %d: arming a closed task was accepted", i+1)
 		}
 	}
@@ -912,7 +912,7 @@ func TestACloseSettlesTheWholeDayOfABareDateSeries(t *testing.T) {
 			task := mustAddRepeating(t, a, "水やり", c.due, c.rule, AddOpts{})
 			if c.snooze != "" {
 				snooze := c.snooze
-				if _, _, err := a.Set(task.ID, SetOpts{Due: &snooze}); err != nil {
+				if _, _, _, err := a.Set(task.ID, SetOpts{Due: &snooze}); err != nil {
 					t.Fatalf("snooze: %v", err)
 				}
 			}
@@ -1019,7 +1019,7 @@ func TestSuccessorInheritsTheEpicEvenWhenItIsClosed(t *testing.T) {
 	// Re-filing once carries the whole series, which is why the disclosure spells
 	// that remedy out rather than refusing the close.
 	open := mustEpic(t, a, "open box", EpicAddOpts{})
-	if _, _, err := a.Set(succ.ID, SetOpts{Epic: &open}); err != nil {
+	if _, _, _, err := a.Set(succ.ID, SetOpts{Epic: &open}); err != nil {
 		t.Fatalf("re-file: %v", err)
 	}
 	_, rep2, err := a.moveOne(succ.ID, a.Cfg.DoneLane)
@@ -1210,7 +1210,7 @@ func TestRepeatRefusalSubjectNamesOnlyAnExistingTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	bad := "every 0 weeks"
-	_, _, err = a.Set(tk.ID, SetOpts{Repeat: &bad})
+	_, _, _, err = a.Set(tk.ID, SetOpts{Repeat: &bad})
 	if fe := core.AsError(err); fe == nil || fe.Subject != tk.ID {
 		t.Errorf("set's refusal must name the existing task: %+v", fe)
 	}

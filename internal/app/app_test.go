@@ -609,7 +609,7 @@ func TestSetCombinedEdit(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("triage me", AddOpts{Status: "inbox"})
 
-	got, _, err := a.Set(tk.ID, SetOpts{Status: strp("ready"), Value: intp(4), Effort: intp(2), AddLabels: []string{"bug"}})
+	got, _, _, err := a.Set(tk.ID, SetOpts{Status: strp("ready"), Value: intp(4), Effort: intp(2), AddLabels: []string{"bug"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -617,7 +617,7 @@ func TestSetCombinedEdit(t *testing.T) {
 		t.Fatalf("set should apply every edit at once: %+v", got)
 	}
 
-	got, _, err = a.Set(tk.ID, SetOpts{ClearValue: true, RmLabels: []string{"bug"}})
+	got, _, _, err = a.Set(tk.ID, SetOpts{ClearValue: true, RmLabels: []string{"bug"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -625,10 +625,10 @@ func TestSetCombinedEdit(t *testing.T) {
 		t.Errorf("set --clear-value/--rm-label should unset: %+v", got)
 	}
 
-	if _, _, err := a.Set(tk.ID, SetOpts{}); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, _, _, err := a.Set(tk.ID, SetOpts{}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("empty set should be a validation error, got %v", err)
 	}
-	if _, _, err := a.Set(tk.ID, SetOpts{Status: strp("ghost")}); !hasLaneCandidates(a, err) {
+	if _, _, _, err := a.Set(tk.ID, SetOpts{Status: strp("ghost")}); !hasLaneCandidates(a, err) {
 		t.Errorf("set to an unknown lane should carry lane candidates, got %v", err)
 	}
 }
@@ -1144,7 +1144,7 @@ func TestMoveManyIsAllOrNothingInOneWrite(t *testing.T) {
 
 	// Happy path: results in input order, duplicates collapse to the first
 	// occurrence (the GetBatch convention).
-	got, err := a.MoveMany([]string{t1.ID, t2.ID, t1.ID}, "ready")
+	got, _, err := a.MoveMany([]string{t1.ID, t2.ID, t1.ID}, "ready", nil)
 	if err != nil {
 		t.Fatalf("MoveMany: %v", err)
 	}
@@ -1158,7 +1158,7 @@ func TestMoveManyIsAllOrNothingInOneWrite(t *testing.T) {
 	}
 
 	// DoneMany is MoveMany into the done lane: Closed stamps on every task.
-	done, err := a.DoneMany([]string{t2.ID, t3.ID})
+	done, _, err := a.DoneMany([]string{t2.ID, t3.ID}, nil)
 	if err != nil {
 		t.Fatalf("DoneMany: %v", err)
 	}
@@ -1171,7 +1171,7 @@ func TestMoveManyIsAllOrNothingInOneWrite(t *testing.T) {
 	// A missing id fails the WHOLE batch: exit 1, details.missing carries every
 	// miss, and the found ids are untouched (all-or-nothing — a write must never
 	// half-land the way a batch read may partially succeed).
-	_, err = a.MoveMany([]string{t1.ID, "t-nope", "t-nada"}, "backlog")
+	_, _, err = a.MoveMany([]string{t1.ID, "t-nope", "t-nada"}, "backlog", nil)
 	if core.ExitCode(err) != int(core.CodeNotFound) {
 		t.Fatalf("miss should be NotFound, got %v", err)
 	}
@@ -1185,7 +1185,7 @@ func TestMoveManyIsAllOrNothingInOneWrite(t *testing.T) {
 	}
 
 	// An unknown lane is the usual exit-2 candidates error, nothing written.
-	_, err = a.MoveMany([]string{t1.ID}, "reddy")
+	_, _, err = a.MoveMany([]string{t1.ID}, "reddy", nil)
 	if core.ExitCode(err) != int(core.CodeValidation) || len(core.AsError(err).Candidates) == 0 {
 		t.Errorf("unknown lane should be validation with candidates, got %v", err)
 	}
