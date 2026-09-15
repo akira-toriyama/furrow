@@ -538,7 +538,7 @@ user-level config. When you work with any furrow store:
   lenient unmarshal drops it, the marshaller writes the loss back — one `retitle`,
   one dead field, no error). So `core.Unmarshal*` now parks every unknown
   **top-level** key and `core.Marshal*` re-emits it, sorted, after the known ones —
-  in all **three** machine-written files: a task shard, a `repos/` review shard,
+  in all **four** machine-written files: a task shard, an `epics/` shard, a `repos/` review shard,
   and `meta.json`.
   Four things it does NOT mean, all load-bearing for an agent: (a) it is **not
   retroactive** — every furrow ≤ v0.9.0 still destroys those keys on write, so a
@@ -556,7 +556,7 @@ user-level config. When you work with any furrow store:
   removes an extra implicitly, because auto-deleting a key we don't understand IS
   the bug being fixed; the deliberate exit is `furrow tidy --unknown-keys`
   (preview first, `--yes` + the selector to apply). That is also why
-  `lint` must cover all three files and the published schemas all declare
+  `lint` must cover all four files and the published schemas all declare
   `additionalProperties: true`: the flip made the schema stop rejecting a typo, so
   `lint` is the only detector left. One more reason
   the shards are furrow's to write, not yours.
@@ -596,8 +596,8 @@ user-level config. When you work with any furrow store:
   planned: **ridge** (github.com/akira-toriyama/ridge, a charm-v2 TUI, a CLI/JSON
   client) and **loom** (github.com/akira-toriyama/loom, a from-scratch TUI
   framework, future/gated). Destructive ops guard themselves: `furrow archive`,
-  `furrow rm` / `epic rm`, and `furrow tidy` preview unless `--yes` (tidy also demands naming a class:
-  `--done-deps` / `--unknown-keys`).
+  `furrow rm` / `epic rm`, `furrow tidy`, `furrow upgrade` and `furrow migrate` preview unless `--yes` (tidy also demands naming a class:
+  `--done-deps` / `--unknown-keys`), as does a `-q`/`-l`/`-r` selection on `set`/`done`/`move`.
 
 ## What this is
 
@@ -694,7 +694,7 @@ struct-field key order, 2-space indent, `SetEscapeHTML(false)`, `[]` not null,
 sorted+deduped label/dep sets, UTC whole-second timestamps, trailing newline.
 This is what makes app-writes equal hand-edits byte-for-byte, and Save writes
 only the shards whose bytes changed (zero git churn on a no-op save). A golden
-round-trip test and `scripts/check-marshal-singlepath.sh` guard all three.
+round-trip test and `scripts/check-marshal-singlepath.sh` guard all four.
 
 **Save touches only what THIS index changed.** `Load` records the bytes of every
 shard it read on the `Index` (`MarkSeen`, keyed by filename stem); `Save`

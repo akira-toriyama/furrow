@@ -94,7 +94,7 @@ contract an agent does.
 | `internal/store/memstore` | In-memory `core.Store` for tests. A normal non-test package, so runtime code that must not touch disk could use it too (nothing does today). |
 | `internal/gitrepo` | git subprocess adapter behind `furrow sync`, `furrow doctor`'s freshness probe, and post-mutation autocommit (command assembly + error classification). Driven only through `internal/app`; the store files themselves stay fsstore-owned. |
 | `internal/claudecode` | Adapter over Claude Code's **private** session registry (`~/.claude/sessions/<pid>.json`, the transcript's mtime as activity and its last message record as the turn state; env `CLAUDECODE`/`CLAUDE_PID`/`CLAUDE_CODE_SESSION_ID`): implements the `core.SessionRegistry` port for the session write guard and identifies this process's session. The ONE place that knows the format — a format change is one file to fix — and best-effort by contract (a dead pid is dropped, an unparsable entry skipped and named for `doctor`, only a registry with nothing readable is an error). |
-| `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough), the in-memory `Marshal`, the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
+| `internal/core` | Pure domain: `Index`/`Task`/`ChecklistItem` structs, the `MarshalTask`/`MarshalEpic`/`MarshalRepo`/`MarshalMeta` serializers and their `Unmarshal*` inverses (incl. the unknown-key passthrough; there is no Index-level marshaller — the index's normal form is in-memory only, via `Canonicalize`), the `Store`/`Clock` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The JSON Schemas for a task shard, `meta.json`, a repo review shard, and an epic shard as Go constants; emitted by `furrow schema [task\|meta\|repo\|epic]`. |
 | `internal/migrate` | Pure parser (stdlib only) behind `furrow migrate`: hand-maintained `Task.md` in, tasks + LOUD warnings for anything unmappable out. The CLI wires it to the store; dry-run by default. |
 | `internal/recur` | Recurrence, as a leaf beside `query`: it compiles the short `--repeat` spellings into one RFC 5545 **RRULE line** and expands a stored rule to its next occurrence. It is the only package that imports the RRULE library, and the only one that knows the grammar — `internal/app` owns WHEN a rule advances (a close), never how it is read. It deliberately does NOT know furrow's date vocabulary: a trailing `until <date>` is resolved by the caller through the same parser `--due` uses, so the two can never become two date grammars. Validation is furrow's own, because the library's parse errors are not product-quality text. Five traps it exists to contain: an exhausted rule comes back as a ZERO time with no error (so every caller must look at the ok flag, not at err); a day-of-month past 28 SKIPS the months that lack it per RFC 5545 §3.3.10 rather than clamping, and February 29 skips whole YEARS instead, which `Skips` tells apart by the rule's shape (the months it can fire in) rather than by its FREQ; a raw line's DTSTART is DROPPED by the library's renderer and overwritten by the expander, so both doors refuse one (`Compile` off the parsed option, `Valid` off a fresh parse of the stored line — the rule the expander built always carries the anchor in that field); and an anchor the rule does not land on is never emitted as an occurrence — RFC 5545 §3.8.5.3 leaves that case undefined, so `OffLattice` reports it and the CLI says at bind time that the anchor stands outside the series; and the library builds its day grid from January 1 at LOCAL MIDNIGHT, so in a zone that springs forward *at* 00:00 (America/Santiago, America/Havana, Atlantic/Azores) every occurrence past the transition lands a day early — expansion therefore runs in a gap-free frame (the wall clock carried as if it were UTC) and each result is read back into the board's calendar, which this package takes as an explicit argument rather than off the anchor's own zone. |
@@ -128,10 +128,10 @@ The seams between the pure core and the outside world are interfaces declared in
 
 - **`Store`** — persists the per-task metadata shards and per-task bodies. It owns
   *all* path construction (callers never assemble `".furrow/bodies/<id>.md"` by
-  hand) and *all* atomicity. Methods: `Load`, `Save`, `BoardVersion`, `LoadMeta`,
-  `Writable`, `SetBoardVersion`, `LoadBody`, `SaveBody`, `SaveBodies`,
-  `BodyExists`, `ListBodyIDs`, `ListTaskIDs`, `SaveAsset`, `ListAssets`,
-  `NextID`. `BoardVersion` reads the layout version the board *declares*
+  hand) and *all* atomicity. The method set is the interface in
+  [`internal/core/ports.go`](../internal/core/ports.go) — task, epic, repo and
+  meta reads and writes, bodies, assets, ids — read it there rather than from
+  a list here (a list here drifted to 14 of 27). `BoardVersion` reads the layout version the board *declares*
   (ungated, so `furrow board` can diagnose a board nothing else can open), and is
   derived from **`LoadMeta`**, which returns `meta.json` *whole* — the version plus
   the unknown top-level keys the passthrough parked. That distinction is the point:
@@ -246,7 +246,7 @@ so an old binary hands a future field back exactly as it found it.
 
 Why it exists: the version gate below only fires when someone **bumps**
 `core.SchemaVersion`. If a future furrow adds a shard field and does not bump —
-because the change looks "additive" — `meta.json` still says v5, no gate fires
+because the change looks "additive" — `meta.json` still says vN, no gate fires
 anywhere, and an older binary reads the shard, drops the key it doesn't know
 (`encoding/json`'s lenient unmarshal), and writes the loss back on the next save.
 **One ordinary write, one destroyed field, no error.** The 2026-07-13 outage was
@@ -315,7 +315,7 @@ The honest limits, none of them papered over:
    visible — and so is its other cause, a typo in a hand-edited shard (`"lables"`),
    which stays until the operator prunes it (`furrow tidy --unknown-keys`):
    nothing removes an extra implicitly, because auto-deleting a key we do
-   not understand IS the bug being fixed. The warning covers **all three** written
+   not understand IS the bug being fixed. The warning covers **all four** written
    file kinds, and that is not tidiness: flipping their schemas to
    `additionalProperties: true` removed the only thing that ever rejected a typo in
    `meta.json` or a `repos/` shard, so a task-only lint would have shipped a
@@ -507,7 +507,7 @@ stable kebab-case `schema_state` (`current` | `outdated` | `too-new` |
 version **ungated** (`Store.BoardVersion`) and **reports** a mismatch instead of
 raising it. That is load-bearing, not a nicety: `board` is the last command that
 still works when board and binary disagree, which is what makes it usable as the
-CI pre-flight and the human's first diagnosis (`schema:   v5 (board) / v5
+CI pre-flight and the human's first diagnosis (`schema:   vN (board) / vN
 (binary) — writable`). `furrow lint` complements it with a `schema-outdated`
 **warning** (`SevWarn`, id `meta`) — warn, not error, because a read-only board
 is the legitimate middle of a flag day and must not red every repo's CI.
@@ -842,10 +842,10 @@ Registered in [`internal/cli/root.go`](../internal/cli/root.go), all built today
 except where noted:
 
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`,
-`board`, `boards`, `doctor`, `edit`, `note`, `attach`, `done`, `move`, `set`, `reorder`,
-`retitle`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`, `review`,
-`apply`, `sync`, `archive`, `unarchive`, `rm`, `tidy`, `upgrade`, `lint`, `config` (`init`/`path`/`set`), `schema`, `version`,
-`migrate`.
+`board`, `boards`, `doctor`, `edit`, `note`, `attach`, `done`, `move`, `reorder`,
+`retitle`, `set`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`, `review`,
+`apply`, `sync`, `archive`, `unarchive`, `rm`, `tidy`, `migrate`, `upgrade`, `lint`, `config` (`init`/`path`/`set`), `schema`, `version`
+(that order is `root.AddCommand`'s; the hidden `commands`/`vocab` are the generators' own).
 
 - **`set`** applies the routine triage edits — lane, POSITION (`--priority`, or
   `--before`/`--after` a task in the DESTINATION lane, so a cross-lane drop is
@@ -862,7 +862,7 @@ except where noted:
   Adding is acyclic (rejects self- and cycle-creating edges) and idempotent.
 - **`epic`** is the box entity's command group (`internal/cli/cmd_epic.go` →
   `internal/app/epic.go`, the same mutation-funnel shape as `repo`/`review`):
-  `add` / `ls` / `show` / `set` / `activate` / `deactivate` / `done` / `dep`.
+  `add` / `ls` / `show` / `set` / `activate` / `deactivate` / `done` / `reopen` / `rm` / `dep`.
   `set --standing/--pinned` (v7) flip the permanent-channel declarations: a
   standing box is exempt from revisit's epic_all_done/epic_dep_done/epic_stuck
   (untriaged deposits are its resting state), a pinned box's actionable tasks lead `next`/`brief` past the
@@ -1043,8 +1043,10 @@ except where noted:
   exit 0 under `--ndjson`. CLI JSON uses the same `SetEscapeHTML(false)` /
   2-space (indented) encoding as the shards.
 - Read filters: `--status`/`-s`, `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`,
-  `--drafts` on `ls`; `-l`/`-r`/`-n` on `next` and `revisit` (plus
-  `--stale-days` on `revisit`). The typed query `--query`/`-q` is on every
+  `--drafts`, `-e/--epic`, `--tree`, `--sort`/`--reverse`, `--since`/`--until`,
+  `--actionable`/`--blocked` and `--archived` on `ls`; `-l`/`-r`/`-n`, `-e`,
+  `--all-epics` and `--lanes` on `next`; `-l`/`-r`/`-n` and `--stale-days` on
+  `revisit` (each command's `--help` is the authority). The typed query `--query`/`-q` is on every
   filtering read — `ls`, `next`, `revisit`, `stats`, `search` — and ANDs with
   all of the above (it can only narrow, never widen a scoped board);
   `brief` is deliberately excluded, being a fixed session-orient read. The
@@ -1153,7 +1155,7 @@ dangling-link check read it, so the two features can never drift.
 ## Configuration
 
 `internal/config` reads `.furrow/config.toml` and produces an effective
-`Config`. furrow **only reads** this file — it never writes or regenerates it.
+`Config`. Every command reads this file; the one writer is `furrow config set` (a surgical, git-config-style edit — see below), and `furrow init` writes the template once.
 The policy is **clamp-don't-reject**: unknown keys are ignored (go-toml/v2
 default), out-of-range values fall back to a safe default, and each correction is
 collected as a warning that `furrow lint` surfaces. A *missing* file yields the
@@ -1384,4 +1386,4 @@ default (§ *Output, errors, and exit codes*).
 
 ---
 
-*(reviewed 2026-07-16)*
+
