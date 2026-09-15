@@ -151,8 +151,8 @@ stale_after_days = 14
 # when the turn is not known to have ended, it has been silent for more than
 # this many seconds — the ceiling that keeps a long tool call or an unanswered
 # permission prompt from refusing forever. A session whose transcript cannot
-# be found counts as busy. 0 turns refusals off: every clash is a warning (the
-# guard stays on).
+# be found is measured from its start under the same ceiling. 0 turns refusals
+# off: every clash is a warning (the guard stays on).
 busy_seconds = 300
 
 [alias]

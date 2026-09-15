@@ -42,11 +42,19 @@ func guardedApp(t *testing.T, idle time.Duration, unknown bool) (*App, string) {
 	now := a.Clock.Now()
 	glyph := fakeCheckout(t, t.TempDir(), "glyph", "o/glyph")
 	occ := core.Session{PID: 1, ID: "occ", Name: "glyph-ab", CWD: glyph, StartedAt: now.Add(-time.Hour)}
-	if !unknown {
+	selfStarted := now.Add(-10 * time.Minute)
+	if unknown {
+		// No transcript to read: the window runs from the start, so an
+		// occupant that began an hour ago would already be released — this
+		// fixture is the YOUNG unknown occupant, the one still inside it, and
+		// self starts after it so first-come-first-served still applies.
+		occ.StartedAt = now.Add(-10 * time.Second)
+		selfStarted = now.Add(-5 * time.Second)
+	} else {
 		occ.LastActive = now.Add(-idle)
 	}
 	a.Sessions = fakeRegistry{sessions: []core.Session{
-		{PID: 100, ID: "self", CWD: t.TempDir(), StartedAt: now.Add(-10 * time.Minute), LastActive: now},
+		{PID: 100, ID: "self", CWD: t.TempDir(), StartedAt: selfStarted, LastActive: now},
 		occ,
 	}}
 	a.Self = SessionRef{PID: 100, ID: "self"}
@@ -125,6 +133,26 @@ func TestSessionGuardUnknownActivityIsBusy(t *testing.T) {
 	fe := wantSessionBusy(t, err, "")
 	if !strings.Contains(fe.Msg, "activity unknown") {
 		t.Errorf("message should say the activity is unknown: %q", fe.Msg)
+	}
+}
+
+// An occupant with unknown activity is released past the window like any
+// other, measured from its start: a stale registry entry (transcript gone,
+// or a pid another process now wears) used to hold its repo forever (t-8bgb).
+func TestSessionGuardUnknownActivityIsReleasedPastTheWindow(t *testing.T) {
+	a, _ := guardedApp(t, 0, true)
+	reg := a.Sessions.(fakeRegistry)
+	for i := range reg.sessions {
+		if reg.sessions[i].ID == "occ" {
+			reg.sessions[i].StartedAt = a.Clock.Now().Add(-time.Hour)
+		}
+	}
+	a.Sessions = reg
+	if _, err := a.Add("x", AddOpts{Repos: []string{"o/glyph"}}); err != nil {
+		t.Fatalf("an hour-old occupant nobody has heard from must warn, not refuse: %v", err)
+	}
+	if len(a.TakeSessionWarn()) == 0 {
+		t.Error("the write went through without the idle-occupant warning")
 	}
 }
 
