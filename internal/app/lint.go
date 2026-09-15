@@ -65,7 +65,15 @@ func (a *App) LintErrorCounts() (LintErrorSummary, error) {
 // The filesystem-side checks mirror how the core rules are already split — one
 // named sweep per file kind, stitched here in dependency order: the store shape
 // yields the live id set the body scan resolves links against.
-func (a *App) Lint() ([]core.Problem, error) {
+//
+// extra are findings the caller owns (the CLI's alias-shadow rows need the
+// cobra tree, which this layer never sees); they are leveled, filtered and
+// sorted with the rest, so every consumer reads one list. Board policy is
+// applied HERE and nowhere later: [lint.severity] re-levels, then
+// [lint].ignore_codes drops — so `furrow lint`'s exit code and the sync/brief
+// ride-along count (LintErrorCounts) cannot disagree about an ignored error,
+// which they did while the CLI alone applied ignore_codes.
+func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 	idx, err := a.Store.Load()
 	if err != nil {
 		return nil, err
@@ -288,10 +296,12 @@ func (a *App) Lint() ([]core.Problem, error) {
 			Msg: fmt.Sprintf("%s is schema v%d; this furrow writes v%d — writes are refused until `furrow upgrade` runs (a flag day: bump every pinned caller FIRST)", what, s.Version, core.SchemaVersion)})
 	}
 
+	ps = append(ps, extra...)
 	// [lint.severity] board policy, applied BEFORE the sort so the ordering (and
 	// every consumer — the exit code, LintErrorCounts' sync line, --severity)
 	// sees the effective level, never the shipped one.
 	ps = core.ApplySeverity(ps, a.LintSeverityOverrides())
+	ps = core.FilterProblems(ps, core.ProblemFilter{IgnoreCodes: a.Cfg.LintIgnoreCodes})
 
 	sort.SliceStable(ps, func(i, j int) bool {
 		if ps[i].Severity != ps[j].Severity {
@@ -303,6 +313,29 @@ func (a *App) Lint() ([]core.Problem, error) {
 		return ps[i].Msg < ps[j].Msg
 	})
 	return ps, nil
+}
+
+// LintFilter is `furrow lint`'s narrowing: --code (allow-list),
+// --exclude-code (deny-list, wins) and --severity. Board policy
+// ([lint].ignore_codes, [lint.severity]) is not a filter — Lint applies it on
+// every run.
+type LintFilter struct {
+	Codes        []string
+	ExcludeCodes []string
+	Severity     string
+}
+
+// LintFiltered runs Lint with extra and narrows the result to f. hasErrors is
+// the exit-code decision, judged AFTER the filter: a problem filtered out is
+// as if lint never found it, so excluding the last error exits 0 and
+// --severity warn always does.
+func (a *App) LintFiltered(f LintFilter, extra ...core.Problem) (ps []core.Problem, hasErrors bool, err error) {
+	ps, err = a.Lint(extra...)
+	if err != nil {
+		return nil, false, err
+	}
+	ps = core.FilterProblems(ps, core.ProblemFilter{Codes: f.Codes, ExcludeCodes: f.ExcludeCodes, Severity: f.Severity})
+	return ps, core.HasErrors(ps), nil
 }
 
 // lintRecordKeys is the unknown-key sweep over the OTHER two machine-written

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/spf13/cobra"
 )
@@ -78,25 +79,16 @@ func newLintCmd() *cobra.Command {
 				}
 			}
 
-			ps, err := a.Lint()
+			// A board [alias] that shadows a builtin is inert; the CLI owns the
+			// command set, so it raises that finding and hands it to the app to
+			// level, filter and sort with the rest. The filter drives BOTH the
+			// printout AND the exit code — a problem removed by it is as if lint
+			// never found it (see the Long help).
+			ps, hasErrors, err := a.LintFiltered(app.LintFilter{Codes: codes, ExcludeCodes: exclude, Severity: severity},
+				aliasShadowProblems(cmd.Root(), a.Cfg.Alias)...)
 			if err != nil {
 				return err
 			}
-			// A board [alias] that shadows a builtin is inert; surface it here (the
-			// CLI owns the command set, so this warning can't live in app.Lint).
-			// Born after Lint() applied the [lint.severity] overrides, so they get
-			// their own pass — ApplySeverity is idempotent, but scoping it to the
-			// appended rows keeps Lint() the one place the app's findings are leveled.
-			ps = append(ps, core.ApplySeverity(aliasShadowProblems(cmd.Root(), a.Cfg.Alias), a.LintSeverityOverrides())...)
-
-			// Filter drives BOTH the printout AND the exit code below — a problem
-			// removed here is as if lint never found it (see the Long help).
-			ps = core.FilterProblems(ps, core.ProblemFilter{
-				IgnoreCodes:  a.Cfg.LintIgnoreCodes,
-				Codes:        codes,
-				ExcludeCodes: exclude,
-				Severity:     severity,
-			})
 
 			// A problem stream is list-shaped: emitList's contract (one per
 			// line, [] never null, the human table otherwise).
@@ -108,7 +100,7 @@ func newLintCmd() *cobra.Command {
 					fmt.Fprintf(out, "%-5s  %-16s  %-8s  %s\n", p.Severity, p.Code, p.ID, p.Msg)
 				}
 			})
-			if core.HasErrors(ps) {
+			if hasErrors {
 				// Errors make lint fail (validation), but we already printed the
 				// findings, so return a quiet error that only sets the exit code.
 				return &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: "lint found errors"}

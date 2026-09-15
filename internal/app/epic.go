@@ -164,7 +164,6 @@ type EpicQueryOpts struct {
 	All   bool   // include closed epics (default: open only)
 	Label string // tag filter — the task reads' -l semantics (comma = OR, exact match)
 	Repo  string // owner/repo filter, already resolved
-	Limit int
 }
 
 // EpicList returns the boxes matching o, sorted by epicRank then id — the order
@@ -207,9 +206,6 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 		}
 		return out[i].Epic.ID < out[j].Epic.ID
 	})
-	if o.Limit > 0 && len(out) > o.Limit {
-		out = out[:o.Limit]
-	}
 	return out, nil
 }
 
