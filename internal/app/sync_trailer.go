@@ -1,12 +1,14 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // syncTrailer is the attribution line a sync auto-commit appends below its
@@ -23,13 +25,18 @@ import (
 // dir comes last because a path may contain spaces and every field before it
 // stays machine-splittable. Each field is best-effort: one that cannot be read
 // is omitted rather than failing or slowing the sync.
-func syncTrailer(dir string) string {
+func syncTrailer(ctx context.Context, dir string) string {
+	// Attribution is telemetry: the ps(1) hops behind via= get one second in
+	// total and are dropped past it, so a stalled ps can never stall a sync
+	// (t-cdx9 — they ran with no ctx and no deadline).
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
 	parts := make([]string, 0, 4)
 	if h, err := os.Hostname(); err == nil && h != "" {
 		parts = append(parts, "host="+h)
 	}
 	parts = append(parts, "pid="+strconv.Itoa(os.Getpid()))
-	if chain := parentChain(4); len(chain) > 0 {
+	if chain := parentChain(ctx, 4); len(chain) > 0 {
 		parts = append(parts, "via="+strings.Join(chain, "<"))
 	}
 	if dir != "" {
@@ -45,14 +52,14 @@ func syncTrailer(dir string) string {
 // reads, no subprocess); elsewhere it asks ps(1) per hop. Any failure ends the
 // walk with what was gathered — attribution is telemetry, never a reason a
 // sync could fail or stall.
-func parentChain(max int) []string {
+func parentChain(ctx context.Context, max int) []string {
 	var chain []string
 	pid := os.Getppid()
 	for range max {
 		if pid <= 1 {
 			break
 		}
-		name, ppid, ok := procInfo(pid)
+		name, ppid, ok := procInfo(ctx, pid)
 		if !ok {
 			break
 		}
@@ -66,7 +73,7 @@ func parentChain(max int) []string {
 // is space-normalized (runs of whitespace become one "_"): macOS comms carry
 // spaces ("Code Helper (Plu"), and a space inside via= would break the
 // trailer's contract that every field before dir splits on spaces.
-func procInfo(pid int) (name string, ppid int, ok bool) {
+func procInfo(ctx context.Context, pid int) (name string, ppid int, ok bool) {
 	if runtime.GOOS == "linux" {
 		if name, ppid, ok = procInfoStat(pid); ok {
 			return name, ppid, true
@@ -75,7 +82,7 @@ func procInfo(pid int) (name string, ppid int, ok bool) {
 	}
 	// #nosec G204 -- fixed binary name; the only variable is a pid rendered
 	// from an int.
-	out, err := exec.Command("ps", "-o", "ppid=,ucomm=", "-p", strconv.Itoa(pid)).Output()
+	out, err := exec.CommandContext(ctx, "ps", "-o", "ppid=,ucomm=", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
 		return "", 0, false
 	}

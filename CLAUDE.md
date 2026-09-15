@@ -467,7 +467,8 @@ user-level config. When you work with any furrow store:
   waited out with a bounded backoff, handled by cause: a foreign rebase caught
   by the pre-flight, if still stuck past the budget, exits 3 with kind `sync-busy`
   — marked `retryable` in the envelope (re-run), NOT the do-not-retry `exit 2`; a
-  fetch/ref-lock race during the pull is retried and, if a lock still blocks
+  lock/ref race during the auto-commit (`git add`/`commit` take
+  `.git/index.lock`) or the pull is retried and, if a lock still blocks
   past the budget (a likely-stale `.git/*.lock`), fails terminally
   (`sync-lock-stale`) naming the lock to remove, NOT `sync-busy`. A co-writer
   that keeps winning the

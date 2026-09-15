@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -34,13 +36,13 @@ func scriptedErr(errs []error) func() error {
 	}
 }
 
-func TestPullWithRetry(t *testing.T) {
+func TestRetryTransient(t *testing.T) {
 	race := func() error {
-		return errors.Join(gitrepo.ErrTransientFetchRace, errors.New("cannot lock ref"))
+		return errors.Join(gitrepo.ErrTransientRace, errors.New("cannot lock ref"))
 	}
 	conflict := &core.Error{Code: core.CodeInternal, Kind: core.KindSyncConflict, Msg: "conflict"}
 
-	// the exact bounded-exponential sequence for testRebaseWait — pullWithRetry
+	// the exact bounded-exponential sequence for testRebaseWait — retryTransient
 	// must advance its OWN backoff via pol.next each iteration, not sit at base.
 	fullBackoff := []time.Duration{100, 200, 400, 800, 1600, 1600}
 	for i := range fullBackoff {
@@ -93,7 +95,7 @@ func TestPullWithRetry(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var sleeps []time.Duration
 			sleep := func(d time.Duration) error { sleeps = append(sleeps, d); return nil }
-			err := pullWithRetry(scriptedErr(tc.script), sleep, testRebaseWait, "/board")
+			err := retryTransient(scriptedErr(tc.script), sleep, testRebaseWait, "/board")
 
 			if len(sleeps) != tc.wantSleeps {
 				t.Errorf("sleeps = %d %v, want %d", len(sleeps), sleeps, tc.wantSleeps)
@@ -123,8 +125,8 @@ func TestPullWithRetry(t *testing.T) {
 			// The terminal exhaustion error must be a fresh error, no longer
 			// matching the transient sentinel — and never the retryable sync-busy,
 			// which would loop an agent forever on a stale lock.
-			if errors.Is(err, gitrepo.ErrTransientFetchRace) {
-				t.Errorf("returned error must not still satisfy errors.Is(ErrTransientFetchRace)")
+			if errors.Is(err, gitrepo.ErrTransientRace) {
+				t.Errorf("returned error must not still satisfy errors.Is(ErrTransientRace)")
 			}
 			if fe.Kind == core.KindSyncBusy || fe.Retryable {
 				t.Errorf("a persistent pull race must not classify as retryable sync-busy: %v", err)
@@ -234,8 +236,8 @@ func TestWaitForRebaseBackoffSequence(t *testing.T) {
 // A backoff cancelled mid-wait (a Ctrl-C during the transient-race retry) must
 // stop the loop and propagate the cancellation, NOT ride out the remaining budget
 // and then mislabel it a stale-lock failure.
-func TestPullWithRetryBailsWhenSleepCancelled(t *testing.T) {
-	race := func() error { return errors.Join(gitrepo.ErrTransientFetchRace, errors.New("cannot lock ref")) }
+func TestRetryTransientBailsWhenSleepCancelled(t *testing.T) {
+	race := func() error { return errors.Join(gitrepo.ErrTransientRace, errors.New("cannot lock ref")) }
 	var sleeps int
 	sleep := func(time.Duration) error { // cancelled on the 2nd backoff
 		sleeps++
@@ -244,7 +246,7 @@ func TestPullWithRetryBailsWhenSleepCancelled(t *testing.T) {
 		}
 		return nil
 	}
-	err := pullWithRetry(race, sleep, testRebaseWait, "/board")
+	err := retryTransient(race, sleep, testRebaseWait, "/board")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled (bail on the cancelled backoff)", err)
 	}
@@ -428,4 +430,44 @@ func TestPushWithRetryClassifiesTheExhaustedRace(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The auto-commit stage retries a held .git/index.lock like the pull does and,
+// past the budget, reports the same sync-lock-stale — not a raw git-failed with
+// retryable:false (t-cdx9: the pull half of the same sync classified it, the
+// commit half did not, and the stale-lock guidance itself names index.lock).
+func TestSyncCommitStageReportsAStaleIndexLock(t *testing.T) {
+	git, cloneA, _ := setupClones(t)
+	a := openBoard(t, cloneA)
+	if _, err := a.Add("lockme", AddOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(cloneA, ".git", "index.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	saved := defaultConcurrentWait
+	defaultConcurrentWait = retryPolicy{base: time.Millisecond, factor: 2, cap: 4 * time.Millisecond, max: 3}
+	t.Cleanup(func() { defaultConcurrentWait = saved })
+
+	p, err := a.Sync(context.Background(), SyncOpts{})
+	fe := core.AsError(err)
+	if fe == nil || fe.Kind != core.KindSyncLockStale {
+		t.Fatalf("sync under a held index.lock = %v (progress %+v), want kind sync-lock-stale", err, p)
+	}
+	if !strings.Contains(fe.Msg, "index.lock") {
+		t.Errorf("the message must name the lock to remove: %q", fe.Msg)
+	}
+	if p == nil || p.Committed {
+		t.Errorf("nothing may be committed under the lock: %+v", p)
+	}
+
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	p, err = a.Sync(context.Background(), SyncOpts{})
+	if err != nil || !p.Committed || !p.Pushed {
+		t.Fatalf("sync after the lock cleared: err=%v progress=%+v", err, p)
+	}
+	runGitT(t, git, cloneA, "log", "--oneline", "-1")
 }

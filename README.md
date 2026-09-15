@@ -677,7 +677,8 @@ taxonomy (with the git-level reasons) is in
   mid-flight is waited out with a bounded backoff and, if still going, exits 3
   with the **retryable** `sync-busy` (re-run — not the `exit 2` "fix the args"
   class — usually the other writer has finished by then; a rebase genuinely stuck
-  *here* is cleared with a manual `git rebase --abort`); a fetch/lock race is
+  *here* is cleared with a manual `git rebase --abort`); a lock/ref race — in the
+  auto-commit (`git add`/`commit` take `.git/index.lock`) or in the pull — is
   retried, and a lock still blocking past the budget (a likely-stale
   `.git/*.lock`) fails **terminally** (`sync-lock-stale`) naming the lock, rather
   than looping an agent on a `sync-busy` that will never clear. A co-writer that keeps winning

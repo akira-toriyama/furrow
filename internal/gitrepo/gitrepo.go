@@ -29,13 +29,15 @@ import (
 // the one push failure `furrow sync` retries (pull --rebase, push again).
 var ErrNonFastForward = errors.New("push rejected: non-fast-forward")
 
-// ErrTransientFetchRace marks a PullRebase failure caused by a concurrent
-// writer in a SHARED checkout — a co-located operator's/bot's `git fetch`
-// clobbering FETCH_HEAD or contending a ref/index lock while ours runs. It is
-// transient (the tree self-resolves within a second), so app.Sync rides it out
-// with bounded retries rather than failing; the sentinel is what tells "retry
-// this" apart from a real conflict or an ordinary failure.
-var ErrTransientFetchRace = errors.New("sync pull (fetch+rebase): transient concurrent-fetch race")
+// ErrTransientRace marks a git step that lost a concurrent writer's lock or
+// ref race in a shared checkout — a fetch or rebase clobbered by a co-writer's
+// fetch, or an add/commit refused while another process holds .git/index.lock.
+// The condition self-resolves within a second, so app.Sync retries whatever
+// carries it; only a race that outlives the whole budget is reported, as a
+// likely-stale lock. It was once fetch-only (ErrTransientRace), which
+// left the auto-commit stage returning a raw, non-retryable git-failed for
+// the very index.lock the stale-lock guidance names (t-cdx9).
+var ErrTransientRace = errors.New("git: transient concurrent-writer lock/ref race")
 
 // gitFailed classifies a failed git invocation (KindGitFailed, exit 3). The
 // message names the command and relays git's own words; there is no finer
@@ -295,10 +297,19 @@ func (r *Repo) Commit(ctx context.Context, message string, pathspecs ...string) 
 	if len(pathspecs) == 0 {
 		return nil
 	}
+	// Both steps take the index lock, so both can lose it to a co-writer in a
+	// shared checkout — classified exactly as the pull's fetch is, so the
+	// caller retries instead of surfacing a terminal git-failed.
 	if _, stderr, err := runGit(ctx, r.git, r.top, append([]string{"add", "--"}, pathspecs...)...); err != nil {
+		if isTransientRace(stderr) {
+			return fmt.Errorf("%w: git add: %s", ErrTransientRace, firstLine(stderr))
+		}
 		return gitFailed("git add: %s", firstLine(stderr))
 	}
 	if _, stderr, err := runGit(ctx, r.git, r.top, append([]string{"commit", "-q", "-m", message, "--"}, pathspecs...)...); err != nil {
+		if isTransientRace(stderr) {
+			return fmt.Errorf("%w: git commit: %s", ErrTransientRace, firstLine(stderr))
+		}
 		return gitFailed("git commit: %s", firstLine(stderr))
 	}
 	return nil
@@ -318,7 +329,7 @@ func (r *Repo) Commit(ctx context.Context, message string, pathspecs ...string) 
 // in-progress rebase, collects the paths, and aborts. A transient
 // concurrent-access race (a co-writer's fetch clobbering a ref/index lock, or
 // the residual multiple-branches window) leaves NO rebase in progress and is
-// returned wrapped in ErrTransientFetchRace so app.Sync retries it.
+// returned wrapped in ErrTransientRace so app.Sync retries it.
 //
 // A THIRD shape hides inside SUCCESS, and it is why the caller must probe the
 // stash afterwards (see app.Sync / StashEntries). git re-applies the autostash at
@@ -333,7 +344,7 @@ func (r *Repo) PullRebase(ctx context.Context) error {
 	// transiently lose a ref/index-lock race here — retryable, not fatal.
 	if _, stderr, err := runGit(ctx, r.git, r.top, "fetch", "-q"); err != nil {
 		if isTransientRace(stderr) {
-			return fmt.Errorf("%w: %s", ErrTransientFetchRace, firstLine(stderr))
+			return fmt.Errorf("%w: %s", ErrTransientRace, firstLine(stderr))
 		}
 		return gitFailed("git fetch: %s", firstLine(stderr))
 	}
@@ -342,7 +353,7 @@ func (r *Repo) PullRebase(ctx context.Context) error {
 	// abort); a transient race here left no rebase to abort, so classify it.
 	if _, stderr, err := runGit(ctx, r.git, r.top, "rebase", "--autostash", "-q", "@{u}"); err != nil {
 		if !r.RebaseInProgress(ctx) && isTransientRace(stderr) {
-			return fmt.Errorf("%w: %s", ErrTransientFetchRace, firstLine(stderr))
+			return fmt.Errorf("%w: %s", ErrTransientRace, firstLine(stderr))
 		}
 		return gitFailed("git rebase: %s", firstLine(stderr))
 	}
