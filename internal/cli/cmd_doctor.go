@@ -139,8 +139,11 @@ func printDoctorHuman(r *app.DoctorReport) {
 		fmt.Fprintln(out, "ok — no problems")
 		return
 	}
+	// The id column names WHAT the finding is about — for a board-level code
+	// the store path — so two boards' rows are never read as one board's
+	// (lint's row shape, t-b3dq).
 	for _, p := range r.Problems {
-		fmt.Fprintf(out, "%-5s  %-22s  %s\n", p.Severity, p.Code, p.Msg)
+		fmt.Fprintf(out, "%-5s  %-22s  %s  %s\n", p.Severity, p.Code, p.ID, p.Msg)
 	}
 	if r.Healthy {
 		fmt.Fprintln(out, "ok — notes only, no problems")
