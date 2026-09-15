@@ -156,7 +156,9 @@ newest. Raising the layout is therefore a **flag day** for every one of them, an
 a flag day cannot be a side effect. It was one, once: on 2026-07-13 a routine
 `furrow sync` from an unreleased source build migrated the shared central board
 3 → 4 because `Save` stamped `meta.json` with the binary's version on every
-write, and every pinned release in the fleet lost the board within the hour.
+write, and every pinned release in the fleet lost the board within the hour
+(v0.6.1, the version every repo's task-status CI pinned, reported "task not
+found" for every id; v0.7.0 exited 3).
 "Helpfully" auto-migrating is exactly the convenience that broke it.* The
 ordering the tool cannot enforce (it cannot see other repos' pins) is stated by
 the `upgrade` preview itself: release furrow → bump every caller's pin → then

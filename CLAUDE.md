@@ -196,9 +196,8 @@ gate (a NEWER board: `schema-too-new`, exit 3 — fix the binary);
 `schema-upgrade-required`, exit 2 — the board is stale, and the orient reads say
 so on stderr). So **an ordinary write never touches `meta.json`'s
 `schema_version`** (`fsstore.Save` stamps only a fresh, empty store);
-`scripts/check-schema-write-guard.sh` greps that back into place, because on
-2026-07-13 one routine sync from a source build migrated the shared board 3 → 4
-and every pinned release lost it at once. **The only raiser is `furrow
+`scripts/check-schema-write-guard.sh` greps that back into place (the
+2026-07-13 outage it answers is recorded in docs/non-goals.md). **The only raiser is `furrow
 upgrade`** (preview unless `--yes`; the `archive/` store too; idempotent on a
 current board) — a **flag day** with no downgrade (`git revert` on the board
 repo), whose ORDER is the human's: (1) release the furrow shipping the schema,

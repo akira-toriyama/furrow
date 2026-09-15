@@ -284,13 +284,11 @@ genuinely fresh, empty store (`furrow init`). A garbled `meta.json` is an
 **error** (exit 3, kind `internal`, subject `meta`), never a fallback to the
 binary's version — that fallback once quietly *disabled* the gate.
 
-This is the fix for a real outage: `fsstore.Save` used to stamp `meta.json` on
-every write, so on 2026-07-13 one routine `furrow sync` from an unreleased
-source build migrated the **shared** central board 3 → 4, and every pinned
-release in the fleet lost it at once (v0.6.1 reported "task not found" for every
-id; v0.7.0 exited 3). `scripts/check-schema-write-guard.sh` makes the regression
-un-writable. The half the gate cannot see — a field added WITHOUT a bump — is
-the passthrough's (above).
+This is the fix for a real outage — the 2026-07-13 side-effect migration of
+the shared board, recorded in [`non-goals.md`](non-goals.md#no-automatic-schema-migration)
+— and `scripts/check-schema-write-guard.sh` makes the regression un-writable.
+The half the gate cannot see — a field added WITHOUT a bump — is the
+passthrough's (above).
 
 ### `furrow upgrade` — the one raiser, and a flag day
 
