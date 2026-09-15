@@ -138,3 +138,36 @@ func TestCLILintCleanAfterAttach(t *testing.T) {
 		}
 	}
 }
+
+// TestCLILintJSONWithAliasTable pins t-8j5v: the shipped config template's own
+// [alias] example (`triage = "ls -s inbox"`), uncommented, made `lint --json`
+// print `ok — no problems` to stdout and `--ndjson` print prose — the shadow
+// check built a second root command mid-run, re-registering --json/--ndjson on
+// the package vars with their false defaults. A clean board with an alias must
+// answer `[]` and an empty --ndjson stream.
+func TestCLILintJSONWithAliasTable(t *testing.T) {
+	initStore(t)
+	addTask(t, "task", "-r", "o/r")
+	cfgPath := filepath.Join(os.Getenv(app.EnvDir), "config.toml")
+	f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("\ntriage = \"ls -s inbox\"\n")
+	f.Close()
+
+	out, code := run(t, "lint", "--json")
+	if code != 0 {
+		t.Fatalf("lint --json exit = %d:\n%s", code, out)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Errorf("lint --json on a clean board with [alias] = %q, want []", out)
+	}
+	out, code = run(t, "lint", "--ndjson")
+	if code != 0 {
+		t.Fatalf("lint --ndjson exit = %d:\n%s", code, out)
+	}
+	if out != "" {
+		t.Errorf("lint --ndjson on a clean board must emit nothing, got %q", out)
+	}
+}

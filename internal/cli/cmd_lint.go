@@ -87,7 +87,7 @@ func newLintCmd() *cobra.Command {
 			// Born after Lint() applied the [lint.severity] overrides, so they get
 			// their own pass — ApplySeverity is idempotent, but scoping it to the
 			// appended rows keeps Lint() the one place the app's findings are leveled.
-			ps = append(ps, core.ApplySeverity(aliasShadowProblems(a.Cfg.Alias), a.LintSeverityOverrides())...)
+			ps = append(ps, core.ApplySeverity(aliasShadowProblems(cmd.Root(), a.Cfg.Alias), a.LintSeverityOverrides())...)
 
 			// Filter drives BOTH the printout AND the exit code below — a problem
 			// removed here is as if lint never found it (see the Long help).
