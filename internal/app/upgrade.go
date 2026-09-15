@@ -240,9 +240,10 @@ func (a *App) countLinkRewrites(s Store, conv map[string]string) (int, error) {
 // sweep second, so the sweep covers the renamed bodies too; notes last, because
 // they already name the NEW ids and must not be swept.
 func (a *App) migrateBodiesApply(s Store, plans []core.V6Epic, conv map[string]string, drops []core.V6DroppedDep) (int, error) {
+	w := a.bodyWriterFor(s)
 	for _, pl := range plans {
 		if !s.BodyExists(pl.TaskID) {
-			if err := s.SaveBody(pl.Epic.ID, "# "+pl.Epic.Title+"\n"); err != nil {
+			if err := w.save(pl.Epic.ID, "# "+pl.Epic.Title+"\n"); err != nil {
 				return 0, err
 			}
 			continue
@@ -251,10 +252,10 @@ func (a *App) migrateBodiesApply(s Store, plans []core.V6Epic, conv map[string]s
 		if err != nil {
 			return 0, err
 		}
-		if err := s.SaveBody(pl.Epic.ID, body); err != nil {
+		if err := w.save(pl.Epic.ID, body); err != nil {
 			return 0, err
 		}
-		if err := s.DeleteBody(pl.TaskID); err != nil {
+		if err := w.del(pl.TaskID); err != nil {
 			return 0, err
 		}
 	}
@@ -272,7 +273,7 @@ func (a *App) migrateBodiesApply(s Store, plans []core.V6Epic, conv map[string]s
 		if n == 0 {
 			continue
 		}
-		if err := s.SaveBody(id, rewritten); err != nil {
+		if err := w.save(id, rewritten); err != nil {
 			return 0, err
 		}
 		total += n
@@ -293,9 +294,29 @@ func (a *App) migrateBodiesApply(s Store, plans []core.V6Epic, conv map[string]s
 		if body != "" {
 			body += "\n"
 		}
-		if err := s.SaveBody(d.TaskID, body+note); err != nil {
+		if err := w.save(d.TaskID, body+note); err != nil {
 			return 0, err
 		}
 	}
 	return total, nil
+}
+
+// bodyWriter is the pair of body writes migrateBodiesApply performs, chosen
+// per store. The HOT store's go through App.saveBody/deleteBody so they ride
+// the body journal: an upgrade's renamed, link-rewritten and annotated bodies
+// are tracked-modified files, and a plain `furrow sync` — the very command the
+// CLI tells the operator to run next — commits such a body only when the
+// journal names it, so they stayed in pending_bodies, unpublished (t-gqe6).
+// The archive store's bodies are machine-sync paths that sync commits on
+// sight, so they write the store directly.
+type bodyWriter struct {
+	save func(id, body string) error
+	del  func(id string) error
+}
+
+func (a *App) bodyWriterFor(s Store) bodyWriter {
+	if s == a.Store {
+		return bodyWriter{save: a.saveBody, del: a.deleteBody}
+	}
+	return bodyWriter{save: s.SaveBody, del: s.DeleteBody}
 }

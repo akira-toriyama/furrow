@@ -292,7 +292,10 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := a.Store.SaveBody(t.ID, body); err != nil {
+		// Through saveBody, so the restored body rides the journal: a retry of an
+		// interrupted unarchive finds the hot body already TRACKED, and a plain
+		// sync would otherwise leave it pending (t-gqe6).
+		if err := a.saveBody(t.ID, body); err != nil {
 			return nil, err
 		}
 		if !idx.Has(t.ID) { // idempotent: a retry won't double-add
