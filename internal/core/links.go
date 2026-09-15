@@ -51,48 +51,85 @@ func ExtractLinks(text string, re *regexp.Regexp) []string {
 // invents one).
 func stripCode(md string) string {
 	var b strings.Builder
+	eachProseLine(md, func(_ int, line string) {
+		b.WriteString(stripInlineCode(line))
+		b.WriteByte('\n')
+	})
+	return b.String()
+}
+
+// eachProseLine calls fn with every line of md that is OUTSIDE a fenced code
+// block, with its 0-based index; the fence delimiter lines themselves are not
+// prose either. It is the ONE fence scanner: ExtractLinks, RewriteLinks and
+// ConflictMarkerLines all read fences through it, so no two readers of a body
+// can disagree on what a fence hides (three hand-copied toggles did, t-q5fk).
+// A ``` or ~~~ line toggles; an unclosed fence runs to the end, as CommonMark
+// says it does.
+func eachProseLine(md string, fn func(i int, line string)) {
 	inFence := false
-	for _, line := range strings.Split(md, "\n") {
+	for i, line := range strings.Split(md, "\n") {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
 			inFence = !inFence
-			continue // drop the fence delimiter line itself
+			continue
 		}
 		if inFence {
 			continue
 		}
-		b.WriteString(stripInlineCode(line))
-		b.WriteByte('\n')
+		fn(i, line)
 	}
+}
+
+// stripInlineCode removes the inline code spans of one line, delimiters
+// included; the prose between them is kept.
+func stripInlineCode(line string) string {
+	var b strings.Builder
+	start := 0
+	for _, sp := range inlineCodeSpans(line) {
+		b.WriteString(line[start:sp[0]])
+		start = sp[1]
+	}
+	b.WriteString(line[start:])
 	return b.String()
 }
 
-// stripInlineCode removes backtick-delimited inline code spans from one line: a
-// run of N backticks opens, the next run of exactly N backticks closes, and the
-// whole span (delimiters included) is dropped. An unterminated opening run drops
-// the rest of the line.
-func stripInlineCode(line string) string {
-	var b strings.Builder
+// inlineCodeSpans returns the [start, end) byte ranges of one line's inline
+// code spans, delimiters included, by CommonMark's rule: a run of N backticks
+// opens a span, and the next run of EXACTLY N closes it. A run with no closer
+// is ordinary text — not the start of a span reaching to the end of the line —
+// and scanning resumes after it. It is the one inline-code walker: the strip
+// (ExtractLinks) and the keep (RewriteLinks) sides both read spans from it.
+// Two copies used to treat an unclosed run as code to the end of the line, so
+// a stray backtick — `x“ or “x` — hid every [[id]] after it and `furrow rm`
+// deleted a task the body still linked (t-q5fk).
+func inlineCodeSpans(line string) [][2]int {
+	var spans [][2]int
 	for i := 0; i < len(line); {
 		if line[i] != '`' {
-			b.WriteByte(line[i])
 			i++
 			continue
 		}
 		n := backtickRun(line, i)
 		j := i + n
 		for j < len(line) {
-			if line[j] == '`' && backtickRun(line, j) == n {
-				break
+			if line[j] == '`' {
+				m := backtickRun(line, j)
+				if m == n {
+					break
+				}
+				j += m
+				continue
 			}
 			j++
 		}
 		if j >= len(line) {
-			return b.String() // unterminated span: drop the tail
+			i += n // no closer: the run is literal text
+			continue
 		}
-		i = j + n // skip the span and its closing run
+		spans = append(spans, [2]int{i, j + n})
+		i = j + n
 	}
-	return b.String()
+	return spans
 }
 
 func backtickRun(s string, i int) int {
@@ -114,18 +151,9 @@ func backtickRun(s string, i int) int {
 func RewriteLinks(text string, re *regexp.Regexp, fn func(id string) (string, bool)) (string, int) {
 	n := 0
 	lines := strings.Split(text, "\n")
-	inFence := false
-	for li, line := range lines {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
-			inFence = !inFence
-			continue
-		}
-		if inFence {
-			continue
-		}
-		lines[li] = rewriteLinksOutsideInlineCode(line, re, fn, &n)
-	}
+	eachProseLine(text, func(i int, line string) {
+		lines[i] = rewriteLinksOutsideInlineCode(line, re, fn, &n)
+	})
 	return strings.Join(lines, "\n"), n
 }
 
@@ -144,10 +172,8 @@ func UnlinkIDs(text string, re *regexp.Regexp, ids map[string]bool) (string, int
 }
 
 // rewriteLinksOutsideInlineCode applies fn to the non-code segments of one
-// line, walking inline code spans with the same rules as stripInlineCode (a
-// run of N backticks opens, the next run of exactly N closes; an unterminated
-// run code-quotes the rest of the line) — but keeping the spans verbatim
-// instead of dropping them.
+// line — the spans inlineCodeSpans finds are kept verbatim, exactly the spans
+// stripInlineCode drops, so the two sides agree on which links are real.
 func rewriteLinksOutsideInlineCode(line string, re *regexp.Regexp, fn func(id string) (string, bool), n *int) string {
 	rewrite := func(seg string) string {
 		return re.ReplaceAllStringFunc(seg, func(m string) string {
@@ -161,27 +187,10 @@ func rewriteLinksOutsideInlineCode(line string, re *regexp.Regexp, fn func(id st
 	}
 	var b strings.Builder
 	start := 0
-	for i := 0; i < len(line); {
-		if line[i] != '`' {
-			i++
-			continue
-		}
-		run := backtickRun(line, i)
-		j := i + run
-		for j < len(line) {
-			if line[j] == '`' && backtickRun(line, j) == run {
-				break
-			}
-			j++
-		}
-		b.WriteString(rewrite(line[start:i]))
-		if j >= len(line) {
-			b.WriteString(line[i:]) // unterminated span: the tail is code
-			return b.String()
-		}
-		b.WriteString(line[i : j+run]) // the span, verbatim
-		i = j + run
-		start = i
+	for _, sp := range inlineCodeSpans(line) {
+		b.WriteString(rewrite(line[start:sp[0]]))
+		b.WriteString(line[sp[0]:sp[1]])
+		start = sp[1]
 	}
 	b.WriteString(rewrite(line[start:]))
 	return b.String()

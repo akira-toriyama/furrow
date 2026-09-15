@@ -23,6 +23,17 @@ func TestExtractLinks(t *testing.T) {
 		{"double-backtick code span is not a link", "use ``[[t-abc]]`` as an example", nil},
 		{"fenced block is not a link", "```\nexample: [[t-abc]]\n```", nil},
 		{"real link in prose survives a nearby code span", "see [[t-9zz]] but not `[[t-x]]`", []string{"t-9zz"}},
+		// A backtick run with no closer of the same length is ordinary text
+		// (CommonMark), not a span reaching the end of the line — the old walker
+		// hid every link after a stray backtick, and `furrow rm` deleted a task
+		// its body still pointed at (t-q5fk).
+		{"unclosed run before a link is literal", "a `x`` [[t-aaa]] still live?", []string{"t-aaa"}},
+		{"unclosed double run before a link is literal", "a ``x` [[t-bbb]]", []string{"t-bbb"}},
+		{"lone backtick before a link is literal", "stray ` then [[t-ccc]]", []string{"t-ccc"}},
+		// The closer is the NEXT run of the same length, wherever it is: here the
+		// first two lone backticks pair up around " then ", and the third has no
+		// partner — so both links are prose.
+		{"a lone run closes at the next lone run", "stray ` then `[[t-x]]` but [[t-ddd]]", []string{"t-x", "t-ddd"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -60,5 +71,13 @@ func TestUnlinkIDs(t *testing.T) {
 	}
 	if links := ExtractLinks(got, re); len(links) != 1 || links[0] != "t-bb" {
 		t.Errorf("links after unlink = %v, want [t-bb]", links)
+	}
+
+	// The rewrite side walks spans by the same rule as the read side: a link
+	// after an unclosed backtick run is live to both, so the unlink lands.
+	stray := "a `x`` [[t-aa]] end"
+	got, n = UnlinkIDs(stray, re, map[string]bool{"t-aa": true})
+	if want := "a `x`` t-aa end"; got != want || n != 1 {
+		t.Errorf("UnlinkIDs after a stray run = %q (n=%d), want %q (n=1)", got, n, want)
 	}
 }

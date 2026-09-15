@@ -19,38 +19,40 @@ var conflictMarkers = []byte{'<', '|', '=', '>'}
 // ConflictMarkerLines returns the 1-based line numbers (as an editor counts them)
 // of git conflict markers in text, in order. nil when the text is clean.
 //
-// Fenced code blocks are skipped, exactly as ExtractLinks does: a body that
-// DOCUMENTS what a conflict looks like writes the markers inside a ``` fence, and
-// an error-severity rule that fires on that would cry wolf on the very board whose
-// notes explain the rule. The cost is a real conflict whose markers land entirely
-// inside a fence going unreported — a deliberate trade, and the reason the guard is
-// not the only defence (the sync-side stash report is the other half).
+// `<<<<<<< `, `||||||| ` and `>>>>>>> ` are reported WHEREVER they stand, fence
+// or not: no markdown has a legitimate use for a run of seven at column 0, and
+// a conflict is exactly the thing that splits a fence — one side of the diff
+// carrying a ``` the other does not — so a rule that skipped fences went silent
+// on the real conflict it exists for (t-q5fk: one unpaired ~~~ above the
+// markers hid all three, and lint's ERROR and sync's commit refusal fell
+// together). Only the bare `=======` keeps the fence skip: it is the one shape
+// prose can innocently hold (a setext underline), so inside a fence it is
+// documentation. The cost of the stronger rule is that a body documenting what
+// a conflict looks like must indent its `<<<<<<<`/`>>>>>>>` or quote them
+// inline — the corpus held none at column 0 when the trade was reversed.
 func ConflictMarkerLines(text string) []int {
+	prose := map[int]bool{}
+	eachProseLine(text, func(i int, _ string) { prose[i] = true })
 	var lines []int
-	inFence := false
 	for i, line := range strings.Split(text, "\n") {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
-			inFence = !inFence
-			continue // the fence delimiter itself is never a marker
-		}
-		if inFence {
+		c, ok := conflictMarkerKind(line)
+		if !ok || (c == '=' && !prose[i]) {
 			continue
 		}
-		if isConflictMarker(line) {
-			lines = append(lines, i+1)
-		}
+		lines = append(lines, i+1)
 	}
 	return lines
 }
 
-// isConflictMarker matches one marker line: a run of EXACTLY 7 marker characters
-// at column 0, followed by a space (the ours/base/theirs label) or end-of-line
-// (the bare "======="). Both halves of that rule earn their keep — column 0 keeps
-// an inline `<<<<<<<` quoted in prose from matching, and the exact run of 7 keeps
-// a markdown setext underline ("=====", "=========") from matching, which is the
-// one shape a body might innocently contain.
-func isConflictMarker(line string) bool {
+// conflictMarkerKind matches one marker line and names WHICH marker it is
+// (the bare `=======` is the one that answers to a fence): a run of EXACTLY 7
+// marker characters at column 0, followed by a space (the ours/base/theirs
+// label) or end-of-line (the bare "======="). Both halves of that rule earn
+// their keep — column 0 keeps an inline `<<<<<<<` quoted in prose from
+// matching, and the exact run of 7 keeps a markdown setext underline ("=====",
+// "=========") from matching, which is the one shape a body might innocently
+// contain.
+func conflictMarkerKind(line string) (byte, bool) {
 	line = strings.TrimSuffix(line, "\r") // a CRLF body must still match
 	for _, c := range conflictMarkers {
 		n := 0
@@ -58,8 +60,8 @@ func isConflictMarker(line string) bool {
 			n++
 		}
 		if n == 7 && (len(line) == 7 || line[7] == ' ') {
-			return true
+			return c, true
 		}
 	}
-	return false
+	return 0, false
 }
