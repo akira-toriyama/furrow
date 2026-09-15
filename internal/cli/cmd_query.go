@@ -39,7 +39,10 @@ func newLsCmd() *cobra.Command {
 			"dependency); both AND with -s/-l/-r — e.g. `-s ready --blocked` is the\n" +
 			"ready rows that are actually stuck. -e <epic> keeps only that box's members\n" +
 			"(strict: the unfiled pile needs `-q no:epic`, not a box name).\n" +
-			"--json/--ndjson add actionable and blocked_by to each row.\n\n" +
+			"--json/--ndjson add actionable and blocked_by to each row. A dated row\n" +
+			"carries `due <when>` (or `overdue …`) in its title cell, and a repeating\n" +
+			"row a bare `repeats` beside it — every human view that renders a task as a\n" +
+			"task carries that tag, since closing such a row writes another task.\n\n" +
 			"--tree groups the rows by epic instead of a flat table: the active epic\n" +
 			"first, then open epics by id, then closed ones, then the unfiled group —\n" +
 			"or a single box's group when an <epic> argument is given. Every filter\n" +
@@ -365,10 +368,13 @@ func newNextCmd() *cobra.Command {
 			"([next].lanes in config.toml, default ready + in-progress) and with every\n" +
 			"dependency already in the done lane, in canonical order.\n\n" +
 			"On a board that has declared at least one epic, the result is ALSO scoped\n" +
-			"to the ACTIVE epic for the repo, plus tasks filed under no epic — the\n" +
-			"active box's tasks first, then the unfiled pile. With no active epic the\n" +
-			"result is deliberately EMPTY (exit 0, a stderr hint): pick a box with\n" +
-			"`furrow epic activate <id>`. -e <epic> reads one box explicitly (strict —\n" +
+			"to the ACTIVE epic for the repo, plus tasks filed under no epic — a\n" +
+			"PINNED box's actionable tasks first (the always-visible channel, whatever\n" +
+			"the scope), then the active box's, then the unfiled pile. With no active\n" +
+			"epic the result is deliberately EMPTY apart from the pinned band (exit 0,\n" +
+			"a stderr hint): pick a box with `furrow epic activate <id>`. A due date\n" +
+			"that has arrived is noted on stderr (`note: N due (M OVERDUE)`), never\n" +
+			"folded into the rows. -e <epic> reads one box explicitly (strict —\n" +
 			"no unfiled carve-out) and --all-epics ignores the scope entirely; a board\n" +
 			"with no epics at all is not participating and behaves classically. Use\n" +
 			"--repo to restrict to a repo (a unique short name works) and --label to\n" +

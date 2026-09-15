@@ -263,7 +263,26 @@ func newDoneCmd() *cobra.Command {
 			"appended to EVERY closed task's body as a new paragraph (the note command's\n" +
 			"contract — updated advances, nothing is deduped) and the envelope gains the\n" +
 			"same `appended` key. Pass `-` to read the note from stdin; an empty note is\n" +
-			"exit 2, never a silent plain close.",
+			"exit 2, never a silent plain close.\n\n" +
+			"Closing a REPEATING task is what advances its series: the next occurrence\n" +
+			"is written in the same all-or-nothing write and the rule handed over to\n" +
+			"it, so exactly one live task carries a series and re-closing (or reopen\n" +
+			"then close) mints nothing. The successor is born in the default lane with\n" +
+			"the body and checklist copied (boxes unchecked, the body as it stood before\n" +
+			"this close's --note) under a `previous: [[id]]` line, inheriting everything\n" +
+			"but what the close settled (closed, reviewed), what the rule computes\n" +
+			"(due), this run's deps and its position — the epic included, whatever\n" +
+			"state that box is in. Its due is the first occurrence after what the close\n" +
+			"SETTLES: for a bare-date series the whole local day of the later of now\n" +
+			"and the due, for a timed one the later of the two as instants — so an\n" +
+			"on-time or early close advances one step, a snoozed one never hands the\n" +
+			"same day back, and a late one jumps the lapsed cycles and says so:\n" +
+			"`<closed-id>  repeat: next due <when> (<new-id>) — N occurrence(s)\n" +
+			"skipped`, or `repeat: series complete` when the rule is spent. A close\n" +
+			"just past midnight settles the NEW day. --json carries `repeat`\n" +
+			"{created, due, skipped, completed} on the envelope. The calendar is the\n" +
+			"board's [due].timezone — undeclared, the zone of the machine that closes,\n" +
+			"which `furrow lint` errors on a shared board (repeat-no-timezone).",
 		Example: "  furrow done t-k3m9p\n" +
 			"  furrow done t-k3m9p --note \"→ continued in t-x7q2\"\n" +
 			"  furrow done t-k3m9p t-x7q2 t-9d4n   # triage sweep, one write\n" +
@@ -807,7 +826,10 @@ func newSetCmd() *cobra.Command {
 			"match exactly one known repo; removing the last repo leaves a first-class\n" +
 			"DRAFT), and file the task under\n" +
 			"an epic (-e), and set or clear the due date (--due/--clear-due, where\n" +
-			"--due +1d is the snooze) — instead of running move + reorder + value +\n" +
+			"--due +1d is the snooze, measured from now; on a repeating task it moves\n" +
+			"THIS occurrence only — the series anchor never moves — and --clear-due\n" +
+			"there is exit 2), and bind or drop a recurrence rule (--repeat, anchored to\n" +
+			"the due of the same write; --clear-repeat) — instead of running move + reorder + value +\n" +
 			"effort + label as separate commands. At least one change is required; an unknown lane is\n" +
 			"exit 2 with the configured lanes in candidates (like move/add) and an\n" +
 			"unresolvable -e epic exits 2 with the known boxes,\n" +
