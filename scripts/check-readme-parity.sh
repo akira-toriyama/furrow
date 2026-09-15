@@ -110,9 +110,12 @@ echo "ok — README board layout matches core.SchemaVersion ($code), literal and
 # doc must equal the const. A historic version belongs in prose ("the 2026-07-13
 # outage migrated 3 → 4"), never in the JSON-literal form. Unlike the README
 # check above, a doc with zero occurrences is fine — reorganizing the docs is
-# legitimate; contradicting the code is not.
+# legitimate; contradicting the code is not. CLAUDE.md is in the loop: it is
+# the one document every session reads in full, and it said 9 against a v10
+# board (2026-09-15) — the README's v3-against-v4 all over again, in the file
+# this guard was not reading.
 bad=""
-for f in README.md docs/*.md; do
+for f in README.md CLAUDE.md docs/*.md; do
   for v in $(sed -n 's/.*"schema_version"[: ]*\([0-9][0-9]*\).*/\1/p' "$f" | sort -u); do
     if [ "$v" != "$code" ]; then
       bad="$bad
