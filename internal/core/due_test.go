@@ -91,12 +91,14 @@ func TestDueProblems(t *testing.T) {
 	if len(ps) != 2 {
 		t.Fatalf("got %d problems, want 2: %+v", len(ps), ps)
 	}
-	// Sorted by id: t-rdy01 (today, warn) before t-wait1 (overdue, error).
-	if ps[0].ID != "t-rdy01" || ps[0].Code != "due-today" || ps[0].Severity != SevWarn {
-		t.Errorf("first problem = %+v, want a due-today warn on t-rdy01", ps[0])
+	// sortProblems' order — severity first, so the overdue ERROR leads the
+	// due-today warn whatever their ids (the rule's own sort once dropped the
+	// severity key and interleaved the two by id; t-2xqp).
+	if ps[0].ID != "t-wait1" || ps[0].Code != "due-overdue" || ps[0].Severity != SevError {
+		t.Errorf("first problem = %+v, want a due-overdue ERROR on t-wait1", ps[0])
 	}
-	if ps[1].ID != "t-wait1" || ps[1].Code != "due-overdue" || ps[1].Severity != SevError {
-		t.Errorf("second problem = %+v, want a due-overdue ERROR on t-wait1", ps[1])
+	if ps[1].ID != "t-rdy01" || ps[1].Code != "due-today" || ps[1].Severity != SevWarn {
+		t.Errorf("second problem = %+v, want a due-today warn on t-rdy01", ps[1])
 	}
 	// Both codes must be registered, or `lint --code due-overdue` would reject
 	// the very code lint emits.

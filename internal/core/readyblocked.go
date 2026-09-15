@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -63,11 +62,6 @@ func ReadyBlockedProblems(idx *Index, nextLanes, terminal, doneIDs map[string]bo
 				t.Status, strings.Join(open, ", "))})
 		}
 	}
-	sort.SliceStable(out, func(a, b int) bool {
-		if out[a].ID != out[b].ID {
-			return out[a].ID < out[b].ID
-		}
-		return out[a].Msg < out[b].Msg
-	})
+	sortProblems(out)
 	return out
 }

@@ -61,7 +61,7 @@ func TestConstructorsStampGenericKinds(t *testing.T) {
 		if c.err.Kind != c.kind {
 			t.Errorf("%s: kind = %q, want %q", c.name, c.err.Kind, c.kind)
 		}
-		if !IsErrorKind(c.err.Kind) {
+		if !errorKinds[c.err.Kind] {
 			t.Errorf("%s: kind %q is not registered", c.name, c.err.Kind)
 		}
 	}

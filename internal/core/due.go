@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"sort"
 	"time"
 )
 
@@ -112,11 +111,6 @@ func DueProblems(idx *Index, now time.Time, loc *time.Location, skipLanes map[st
 				"due today, %s", FormatDue(t, loc))})
 		}
 	}
-	sort.SliceStable(out, func(a, b int) bool {
-		if out[a].ID != out[b].ID {
-			return out[a].ID < out[b].ID
-		}
-		return out[a].Msg < out[b].Msg
-	})
+	sortProblems(out)
 	return out
 }

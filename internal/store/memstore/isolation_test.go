@@ -18,7 +18,7 @@ func TestLoadIsDeeplyIsolated(t *testing.T) {
 	s := New("t-", "e-", 5)
 	v := 4
 	closed := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
-	seed := &core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{{
+	seed := &core.Index{Tasks: []core.Task{{
 		ID: "t-00001", Title: "seeded", Status: "inbox",
 		Labels: []string{"b", "a"}, Repos: []string{"me/x"}, Deps: []string{"t-00002"},
 		Refs: []string{"a.go:1"}, Checklist: []core.ChecklistItem{{Text: "one"}},
@@ -74,7 +74,7 @@ func TestLoadIsDeeplyIsolated(t *testing.T) {
 // a caller that keeps mutating the saved index must not reach the store.
 func TestSaveIsDeeplyIsolated(t *testing.T) {
 	s := New("t-", "e-", 5)
-	idx := &core.Index{SchemaVersion: core.SchemaVersion, Tasks: []core.Task{{
+	idx := &core.Index{Tasks: []core.Task{{
 		ID: "t-00001", Title: "seeded", Status: "inbox", Labels: []string{"keep"},
 	}}}
 	if err := s.Save(idx); err != nil {

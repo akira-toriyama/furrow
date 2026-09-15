@@ -212,7 +212,7 @@ func RewriteV6Links(text string, conv map[string]string, idPrefix string) (strin
 	if len(conv) == 0 {
 		return text, 0
 	}
-	return RewriteLinks(text, LinkPattern(idPrefix), func(id string) (string, bool) {
+	return rewriteLinks(text, LinkPattern(idPrefix), func(id string) (string, bool) {
 		if eid, ok := conv[id]; ok {
 			return "[[" + eid + "]]", true
 		}

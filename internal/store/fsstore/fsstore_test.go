@@ -36,8 +36,11 @@ func TestLoadFreshIsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if idx.SchemaVersion != core.SchemaVersion || len(idx.Tasks) != 0 {
+	if len(idx.Tasks) != 0 {
 		t.Errorf("fresh store should load an empty index, got %+v", idx)
+	}
+	if v, err := s.BoardVersion(); err != nil || v != 0 {
+		t.Errorf("a fresh store declares no version yet (0 = no meta.json), got %d, %v", v, err)
 	}
 }
 

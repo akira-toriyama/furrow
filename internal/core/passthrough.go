@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
-	"sort"
 	"strings"
 )
 
@@ -147,11 +146,7 @@ func spliceExtras(obj []byte, extras Extras) ([]byte, error) {
 	if !bytes.HasSuffix(obj, []byte("}")) {
 		return nil, Internalf("", "cannot splice unknown keys into a non-object: %s", obj)
 	}
-	keys := make([]string, 0, len(extras))
-	for k := range extras {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := sortedKeys(extras)
 
 	out := bytes.NewBuffer(obj[:len(obj)-1])
 	empty := out.Len() == 1 // the object was "{}" — no comma before the first key
@@ -187,6 +182,14 @@ var (
 	metaKnownKeys = knownNames(Meta{})
 )
 
+// THE CONTRACT the four carriers (Task, Epic, RepoRecord, Meta) point at:
+// `extras` holds the top-level keys this binary does not know — a field
+// written by a NEWER furrow that did not bump SchemaVersion, so no version
+// gate fired; without the carrier one ordinary write would silently destroy
+// that field. It is UNEXPORTED, and structurally so: encoding/json cannot see
+// it, so it never surfaces as a literal "extras" key and never leaks into the
+// cli's --json views. nil when there were none, the normal case.
+//
 // encodeCanonicalWithExtras is the encoder every Marshal* runs: a value's known
 // fields plus the unknown keys it arrived with. It indents the finished document
 // in ONE pass so the byte recipe's indent rules live in exactly one place.
@@ -250,12 +253,7 @@ func extraKeys(e Extras) []string {
 	if len(e) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(e))
-	for k := range e {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+	return sortedKeys(e)
 }
 
 // ExtraKeys reports the keys this record carried that furrow does not know.
