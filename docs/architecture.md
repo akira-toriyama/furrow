@@ -867,11 +867,14 @@ except where noted:
   standing box is exempt from revisit's epic_all_done/epic_dep_done/epic_stuck
   (untriaged deposits are its resting state), a pinned box's actionable tasks lead `next`/`brief` past the
   active scope (EpicScope.Pinned — board-wide, holding no repo slot).
-  `epicWaiting` (`internal/app/tree.go`, beside `epicStuck`) is the third
-  derived box state, **waiting**: every non-terminal member done and a member
-  parked in a due-tracked terminal lane (`dueSkipLanes` decides — the done
-  lane and `[due].ignore_lanes` never count; the lane's NAME is never read)
-  with a due still ahead. It rides `EpicItem`/`EpicDetail` as `Waiting
+  The derived box states — progress, stuck, and the third, **waiting** — all
+  come out of `epicMemberStats` (`internal/app/tree.go`): ONE pass over the
+  full index yields every box's `epicStats`, and `ls --tree`, `epic ls`,
+  `epic show` and the revisit signals read theirs from that map (each used to
+  walk the index once per box). Waiting is every non-terminal member done and
+  a member parked in a due-tracked terminal lane (`dueSkipLanes` decides —
+  the done lane and `[due].ignore_lanes` never count; the lane's NAME is
+  never read) with a due still ahead. It rides `EpicItem`/`EpicDetail` as `Waiting
   {Until, Task}` (the earliest such due and its carrier; `waiting: {until,
   task}` in `--json`, `⏳ waiting until <due> (<task>)` on `epic ls`/`epic
   show`/`brief`), and `epicReasons` holds `epic_all_done` for it — "all N

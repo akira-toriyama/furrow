@@ -177,9 +177,7 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	counts := epicProgress(idx, a.Cfg.DoneLane)
-	doneIDs := a.doneSet(idx)
-	now := a.Clock.Now()
+	stats := a.epicMemberStats(idx, a.doneSet(idx), a.Clock.Now())
 
 	out := make([]EpicItem, 0, len(epics))
 	for i := range epics {
@@ -196,8 +194,9 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 		if o.Repo != "" && !anyRepoMatch(e.Repos, []string{o.Repo}) {
 			continue
 		}
-		out = append(out, EpicItem{Epic: e, Progress: counts[e.ID], Stuck: a.epicStuck(idx, e.ID, doneIDs),
-			OpenDeps: openEpicDeps(&e, epics), Waiting: a.epicWaiting(idx, e.ID, now)})
+		st := stats[e.ID]
+		out = append(out, EpicItem{Epic: e, Progress: st.progress(), Stuck: st.stuck(),
+			OpenDeps: openEpicDeps(&e, epics), Waiting: st.waiting()})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		ri, rj := epicRank(out[i].Epic), epicRank(out[j].Epic)
@@ -227,7 +226,8 @@ func epicRank(e core.Epic) int {
 
 // EpicShow resolves ref and returns the box with its members. It loads the
 // whole epic set (not just the one shard) so the dep edges can be resolved to
-// titles+states in the same read.
+// titles+states in the same read, and the index once — the members and every
+// roll-up come from that one snapshot.
 func (a *App) EpicShow(ref string) (*EpicDetail, error) {
 	epics, err := a.Store.LoadEpics()
 	if err != nil {
@@ -237,6 +237,18 @@ func (a *App) EpicShow(ref string) (*EpicDetail, error) {
 	if err != nil {
 		return nil, err
 	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	return a.epicDetailIn(idx, epics, id, true)
+}
+
+// epicDetailIn builds EpicShow's answer for an already-resolved id from the
+// caller's snapshots — EpicShow's engine, and what ShowBatch calls per box ref
+// so a batch of refs is still one index read and one epic read. withBody false
+// skips the body file.
+func (a *App) epicDetailIn(idx *core.Index, epics []core.Epic, id string, withBody bool) (*EpicDetail, error) {
 	byID := make(map[string]*core.Epic, len(epics))
 	for i := range epics {
 		byID[epics[i].ID] = &epics[i]
@@ -246,25 +258,25 @@ func (a *App) EpicShow(ref string) (*EpicDetail, error) {
 	for _, d := range e.Deps {
 		deps = append(deps, resolveEpicRef(byID, d))
 	}
-	idx, err := a.load()
+	tasks, err := a.matchIn(idx, QueryOpts{Epic: id})
 	if err != nil {
 		return nil, err
 	}
-	items, err := a.ListItems(QueryOpts{Epic: id})
-	if err != nil {
-		return nil, err
+	doneIDs := a.doneSet(idx)
+	body := ""
+	if withBody {
+		if body, err = a.Store.LoadBody(id); err != nil {
+			return nil, err
+		}
 	}
-	body, err := a.Store.LoadBody(id)
-	if err != nil {
-		return nil, err
-	}
+	st := a.epicMemberStats(idx, doneIDs, a.Clock.Now())[id]
 	return &EpicDetail{
 		Epic:     *e,
-		Progress: epicProgress(idx, a.Cfg.DoneLane)[id],
-		Stuck:    a.epicStuck(idx, id, a.doneSet(idx)),
-		Waiting:  a.epicWaiting(idx, id, a.Clock.Now()),
+		Progress: st.progress(),
+		Stuck:    st.stuck(),
+		Waiting:  st.waiting(),
 		Deps:     deps,
-		Tasks:    items,
+		Tasks:    a.listItemsIn(idx, tasks, doneIDs),
 		Body:     body,
 	}, nil
 }

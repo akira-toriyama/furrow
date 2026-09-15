@@ -83,11 +83,7 @@ type TreeNode struct {
 func (a *App) Tree(o QueryOpts, rootID string) ([]TreeGroup, error) {
 	limit := o.Limit
 	o.Limit = 0 // the limit is on groups, applied after they are built
-	tasks, err := a.List(o)
-	if err != nil {
-		return nil, err
-	}
-	idx, err := a.listIndex(o)
+	tasks, idx, err := a.listMatched(o)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +117,7 @@ func (a *App) Tree(o QueryOpts, rootID string) ([]TreeGroup, error) {
 	// Roll-ups run over the FULL index, never the filtered set, so `-s ready` can
 	// not make a box look 1/1 when it is 1/7. The filtered `members` map drives
 	// only what the tree DRAWS.
-	counts := epicProgress(idx, a.Cfg.DoneLane)
+	stats := a.epicMemberStats(idx, doneIDs, a.Clock.Now())
 
 	groups := make([]TreeGroup, 0, len(epics)+1)
 	for i := range epics {
@@ -129,12 +125,13 @@ func (a *App) Tree(o QueryOpts, rootID string) ([]TreeGroup, error) {
 		if rootID != "" && e.ID != rootID {
 			continue
 		}
-		p := counts[e.ID]
+		st := stats[e.ID]
+		p := st.progress()
 		groups = append(groups, TreeGroup{
 			Epic:     e,
 			Active:   e.Active,
 			Progress: &p,
-			Stuck:    a.epicStuck(idx, e.ID, doneIDs),
+			Stuck:    st.stuck(),
 			Tasks:    a.treeNodes(idx, members[e.ID], doneIDs),
 		})
 	}
@@ -197,7 +194,7 @@ func sortEpicGroups(gs []TreeGroup) {
 //     dep is history and is left out; always [] not nil).
 //
 // It is deliberately cheap (no epic lookup): epic-level roll-ups need the member
-// index and are computed once per read by epicProgress/epicStuck.
+// index and are computed once per read by epicMemberStats.
 func (a *App) factsFor(idx *core.Index, t *core.Task, doneIDs map[string]bool) (actionable bool, blockedBy []string) {
 	return a.actionable(idx, t, doneIDs), blockedDeps(t, doneIDs)
 }
@@ -214,28 +211,29 @@ func blockedDeps(t *core.Task, doneIDs map[string]bool) []string {
 	return out
 }
 
-// epicProgress tallies done/total per epic in ONE pass over the full index. It
-// replaces v5's recursive roll-up: with no nesting there is no subtree to walk,
-// no `seen` set, and no cycle to defend against — the flattening is the point of
-// making a box an entity instead of a task.
-func epicProgress(idx *core.Index, doneLane string) map[string]Progress {
-	out := map[string]Progress{}
-	for i := range idx.Tasks {
-		t := &idx.Tasks[i]
-		if t.Epic == "" {
-			continue
-		}
-		p := out[t.Epic]
-		p.Total++
-		if t.Status == doneLane {
-			p.Done++
-		}
-		out[t.Epic] = p
-	}
-	return out
+// epicStats is one box's member roll-up. Every box's stats come out of ONE
+// pass over the full index (epicMemberStats); the four consumers — progress,
+// stuck, waiting, and the revisit signals — used to walk the whole index once
+// per box each, O(boxes × tasks), and epicWaiting allocated the due-skip lane
+// set on every call.
+type epicStats struct {
+	Total      int // every member
+	Done       int // members in the done lane
+	Open       int // members in a non-terminal lane
+	Actionable int // open members `furrow next` would hand out
+	// wait is the earliest future due among members parked in a due-tracked
+	// terminal lane, before the "no open work" rule is applied; waiting()
+	// applies it.
+	wait *EpicWait
 }
 
-// epicStuck reports the org-mode "stuck project" state for a box: it has open
+// progress is the done/total roll-up `ls --tree`, `epic ls` and `epic show`
+// print. With no nesting there is no subtree to walk, no `seen` set, and no
+// cycle to defend against — the flattening is the point of making a box an
+// entity instead of a task.
+func (s epicStats) progress() Progress { return Progress{Done: s.Done, Total: s.Total} }
+
+// stuck is the org-mode "stuck project" state for a box: it has open
 // (non-terminal) members but not one of them is actionable. It is the state
 // `furrow next` structurally cannot show — next would simply return empty, and
 // "empty" reads as "nothing to do" rather than "everything here is blocked".
@@ -243,19 +241,15 @@ func epicProgress(idx *core.Index, doneLane string) map[string]Progress {
 // An epic with NO members is not stuck: declaring the box before filling it is a
 // legitimate first step, and nagging about it would train the reader to ignore
 // the signal.
-func (a *App) epicStuck(idx *core.Index, epicID string, doneIDs map[string]bool) bool {
-	open, actionable := 0, 0
-	for i := range idx.Tasks {
-		t := &idx.Tasks[i]
-		if t.Epic != epicID || a.Cfg.IsTerminal(t.Status) {
-			continue
-		}
-		open++
-		if a.actionable(idx, t, doneIDs) {
-			actionable++
-		}
+func (s epicStats) stuck() bool { return s.Open > 0 && s.Actionable == 0 }
+
+// waiting is the EpicWait for a box; nil when the box has open (non-terminal)
+// work — then it is not merely waiting — or no future-due parked member.
+func (s epicStats) waiting() *EpicWait {
+	if s.Open > 0 {
+		return nil
 	}
-	return open > 0 && actionable == 0
+	return s.wait
 }
 
 // EpicWait is the "parked until" state of a box: every non-terminal member is
@@ -274,28 +268,36 @@ type EpicWait struct {
 	Task  string    `json:"task"`
 }
 
-// epicWaiting computes EpicWait for a box; nil when the box has open
-// (non-terminal) work — then it is not merely waiting — or no future-due parked
-// member. A same-instant tie breaks by task id so the carrier is deterministic.
-func (a *App) epicWaiting(idx *core.Index, epicID string, now time.Time) *EpicWait {
+// epicMemberStats tallies every box's members in one pass over the full index.
+// A same-instant tie for the waiting carrier breaks by task id so it is
+// deterministic. A box with no members is absent from the map; the zero
+// epicStats reads as empty, which every consumer treats as "nothing to say".
+func (a *App) epicMemberStats(idx *core.Index, doneIDs map[string]bool, now time.Time) map[string]epicStats {
 	skip := a.dueSkipLanes()
-	var w *EpicWait
+	out := map[string]epicStats{}
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if t.Epic != epicID {
+		if t.Epic == "" {
 			continue
+		}
+		s := out[t.Epic]
+		s.Total++
+		if t.Status == a.Cfg.DoneLane {
+			s.Done++
 		}
 		if !a.Cfg.IsTerminal(t.Status) {
-			return nil
+			s.Open++
+			if a.actionable(idx, t, doneIDs) {
+				s.Actionable++
+			}
+		} else if !skip[t.Status] && t.Due != nil && t.Due.After(now) {
+			if s.wait == nil || t.Due.Before(s.wait.Until) || (t.Due.Equal(s.wait.Until) && t.ID < s.wait.Task) {
+				s.wait = &EpicWait{Until: *t.Due, Task: t.ID}
+			}
 		}
-		if skip[t.Status] || t.Due == nil || !t.Due.After(now) {
-			continue
-		}
-		if w == nil || t.Due.Before(w.Until) || (t.Due.Equal(w.Until) && t.ID < w.Task) {
-			w = &EpicWait{Until: *t.Due, Task: t.ID}
-		}
+		out[t.Epic] = s
 	}
-	return w
+	return out
 }
 
 // actionable is the task-level readiness test: the task sits in a next lane and

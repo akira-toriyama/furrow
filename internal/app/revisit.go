@@ -40,27 +40,13 @@ type EpicRevisitItem struct {
 // with >=1 dep, every one of them existing and closed — never on a broken
 // graph (a dangling dep is lint's epic-dep-missing) and never for the active
 // box (already open, nothing to nudge).
-func (a *App) epicReasons(e *core.Epic, idx *core.Index, epics []core.Epic, doneIDs map[string]bool, now time.Time, staleDays int) []core.RevisitReason {
+func (a *App) epicReasons(e *core.Epic, st epicStats, epics []core.Epic, now time.Time, staleDays int) []core.RevisitReason {
 	if !e.IsOpen() {
 		return nil
 	}
 	var out []core.RevisitReason
 
-	total, open, actionable := 0, 0, 0
-	for i := range idx.Tasks {
-		t := &idx.Tasks[i]
-		if t.Epic != e.ID {
-			continue
-		}
-		total++
-		if a.Cfg.IsTerminal(t.Status) {
-			continue
-		}
-		open++
-		if a.actionable(idx, t, doneIDs) {
-			actionable++
-		}
-	}
+	total, open, actionable := st.Total, st.Open, st.Actionable
 	switch {
 	case total == 0:
 		// A freshly declared box. Nothing to say.
@@ -77,7 +63,7 @@ func (a *App) epicReasons(e *core.Epic, idx *core.Index, epics []core.Epic, done
 		// (brief's due band, lint's due-overdue) take over once it arrives; a
 		// parked member with no due earns no such silence, since nobody could
 		// say what the box waits for.
-		if !e.Standing && a.epicWaiting(idx, e.ID, now) == nil {
+		if !e.Standing && st.waiting() == nil {
 			out = append(out, core.RevisitReason{Code: core.RevisitEpicAllDone,
 				Detail: fmt.Sprintf("all %d members done — consider closing", total)})
 		}
@@ -140,12 +126,18 @@ func (a *App) RevisitEpics(o QueryOpts, staleDays int) ([]EpicRevisitItem, error
 	if err != nil {
 		return nil, err
 	}
+	return a.revisitEpicsIn(idx, o, staleDays)
+}
+
+// revisitEpicsIn is RevisitEpics over the caller's index snapshot — what
+// RevisitSummary uses so `sync`'s nudge reads the board once.
+func (a *App) revisitEpicsIn(idx *core.Index, o QueryOpts, staleDays int) ([]EpicRevisitItem, error) {
 	epics, err := a.Store.LoadEpics()
 	if err != nil {
 		return nil, err
 	}
-	doneIDs := a.doneSet(idx)
 	now := a.Clock.Now()
+	stats := a.epicMemberStats(idx, a.doneSet(idx), now)
 	var out []EpicRevisitItem
 	for i := range epics {
 		e := &epics[i]
@@ -155,7 +147,7 @@ func (a *App) RevisitEpics(o QueryOpts, staleDays int) ([]EpicRevisitItem, error
 		if o.ScopeRepo != "" && o.Repo == "" && !anyRepoMatch(e.Repos, []string{o.ScopeRepo}) {
 			continue
 		}
-		if rs := a.epicReasons(e, idx, epics, doneIDs, now, staleDays); len(rs) > 0 {
+		if rs := a.epicReasons(e, stats[e.ID], epics, now, staleDays); len(rs) > 0 {
 			out = append(out, EpicRevisitItem{Epic: *e, Reasons: rs})
 		}
 	}
@@ -305,7 +297,7 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 	// The epic signals ride the same pass so `sync` reports boxes and tasks from
 	// one read. RevisitEpics owns the scope rules for boxes (a box's repos, not a
 	// task's), so it is called rather than re-implemented here.
-	eps, err := a.RevisitEpics(o, staleDays)
+	eps, err := a.revisitEpicsIn(idx, o, staleDays)
 	if err != nil {
 		return RevisitSummary{}, err
 	}

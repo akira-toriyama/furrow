@@ -158,12 +158,9 @@ func (a *App) ShowBatch(refs []string, withBody bool) ([]ShowEntry, []string, er
 			continue
 		}
 		seenID[id] = true
-		d, err := a.EpicShow(id)
+		d, err := a.epicDetailIn(idx, epics, id, withBody)
 		if err != nil {
 			return nil, nil, err
-		}
-		if !withBody {
-			d.Body = ""
 		}
 		out = append(out, ShowEntry{Epic: d})
 	}
@@ -349,10 +346,8 @@ func (a *App) List(o QueryOpts) ([]core.Task, error) {
 }
 
 // listMatched is List's engine, returning the matched+sorted+limited tasks AND
-// the loaded index — so ListItems can enrich the exact same result set without a
-// second load. The --actionable/--blocked derived-state filters apply here, BEFORE
-// the limit, so `-n` caps the filtered set (not the pre-filter one); computing
-// doneIDs is skipped unless one of those filters is set.
+// the loaded index — so ListItems (and Tree) can enrich the exact same result
+// set without a second load.
 func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 	if err := a.validateLaneFilter(o.Status); err != nil {
 		return nil, nil, err
@@ -364,6 +359,16 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	tasks, err := a.matchIn(idx, o)
+	return tasks, idx, err
+}
+
+// matchIn applies o to an already-loaded index: filter, -q, sort, limit. The
+// --actionable/--blocked derived-state filters apply here, BEFORE the limit, so
+// `-n` caps the filtered set (not the pre-filter one); computing doneIDs is
+// skipped unless one of those filters is set. Callers holding a snapshot
+// (EpicShow's member list) match against it here rather than loading again.
+func (a *App) matchIn(idx *core.Index, o QueryOpts) ([]core.Task, error) {
 	var doneIDs map[string]bool
 	if o.Actionable || o.Blocked {
 		doneIDs = a.doneSet(idx)
@@ -376,13 +381,13 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 	if o.Archived && o.Query != "" {
 		arc, err := a.archiveStore()
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		loadBody = arc.LoadBody
 	}
 	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, loadBody)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var out []core.Task
 	for i := range idx.Tasks {
@@ -399,7 +404,7 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 		if qpred != nil {
 			ok, err := qpred(t)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			if !ok {
 				continue
@@ -413,7 +418,7 @@ func (a *App) listMatched(o QueryOpts) ([]core.Task, *core.Index, error) {
 	if o.Limit > 0 && len(out) > o.Limit {
 		out = out[:o.Limit]
 	}
-	return out, idx, nil
+	return out, nil
 }
 
 // ListItem is a task plus the derived facts `ls` exposes on every row — the same
@@ -438,14 +443,19 @@ func (a *App) ListItems(o QueryOpts) ([]ListItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	doneIDs := a.doneSet(idx)
+	return a.listItemsIn(idx, tasks, a.doneSet(idx)), nil
+}
+
+// listItemsIn enriches tasks with the derived facts against the snapshot they
+// were matched in.
+func (a *App) listItemsIn(idx *core.Index, tasks []core.Task, doneIDs map[string]bool) []ListItem {
 	items := make([]ListItem, 0, len(tasks))
 	for i := range tasks {
 		t := &tasks[i]
 		actionable, blockedBy := a.factsFor(idx, t, doneIDs)
 		items = append(items, ListItem{Task: *t, Actionable: actionable, BlockedBy: blockedBy})
 	}
-	return items, nil
+	return items
 }
 
 // doneSet returns the ids in the done lane — the shared input to every readiness
