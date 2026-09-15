@@ -137,7 +137,7 @@ func TestBriefCarriesTheEpicHeaderAndLintRideAlong(t *testing.T) {
 		t.Fatal(err)
 	}
 	eid := e.ID
-	if _, _, err := a.Set(ids["ready-a"], SetOpts{Epic: &eid}); err != nil {
+	if _, _, _, err := a.Set(ids["ready-a"], SetOpts{Epic: &eid}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -182,7 +182,7 @@ func TestBriefCollapsesQuietPinnedChannels(t *testing.T) {
 	}
 	// One open member makes `live` a speaking channel; `quiet` stays empty.
 	eid := live.ID
-	if _, _, err := a.Set(ids["ready-a"], SetOpts{Epic: &eid}); err != nil {
+	if _, _, _, err := a.Set(ids["ready-a"], SetOpts{Epic: &eid}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -36,11 +36,11 @@ func TestBlankValuesAreRejectedEverywhere(t *testing.T) {
 		{"dep --add", func(a *App, id string) error { _, err := a.AddDeps(id, []string{""}); return err }},
 		{"dep --rm", func(a *App, id string) error { _, err := a.RemoveDeps(id, []string{""}); return err }},
 		{"set --add-label", func(a *App, id string) error {
-			_, _, err := a.Set(id, SetOpts{AddLabels: []string{""}})
+			_, _, _, err := a.Set(id, SetOpts{AddLabels: []string{""}})
 			return err
 		}},
 		{"set --rm-label", func(a *App, id string) error {
-			_, _, err := a.Set(id, SetOpts{RmLabels: []string{" "}})
+			_, _, _, err := a.Set(id, SetOpts{RmLabels: []string{" "}})
 			return err
 		}},
 	}

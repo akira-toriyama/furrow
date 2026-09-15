@@ -304,9 +304,9 @@ func TestSessionGuardJudgesBothSidesOfARepoEdit(t *testing.T) {
 	_, err = a.Rerepo(inGlyph.ID, nil, []string{"o/glyph"})
 	wantSessionBusy(t, err, inGlyph.ID)
 	// set --add-repo, single and batch.
-	_, _, err = a.Set(elsewhere.ID, SetOpts{AddRepos: []string{"o/glyph"}})
+	_, _, _, err = a.Set(elsewhere.ID, SetOpts{AddRepos: []string{"o/glyph"}})
 	wantSessionBusy(t, err, elsewhere.ID)
-	_, err = a.SetMany([]string{elsewhere.ID}, SetOpts{AddRepos: []string{"o/glyph"}})
+	_, _, err = a.SetMany([]string{elsewhere.ID}, SetOpts{AddRepos: []string{"o/glyph"}})
 	wantSessionBusy(t, err, elsewhere.ID)
 	// An edit that never touches the occupied repo passes.
 	if _, err := a.Relabel(elsewhere.ID, []string{"tag"}, nil); err != nil {
@@ -336,12 +336,12 @@ func TestSessionGuardCoversEveryTaskWrite(t *testing.T) {
 		"Relabel":         one(func() (*core.Task, error) { return a.Relabel(x.ID, []string{"l"}, nil) }),
 		"AddCheck":        one(func() (*core.Task, error) { return a.AddCheck(x.ID, "item") }),
 		"AddDeps":         one(func() (*core.Task, error) { return a.AddDeps(x.ID, []string{y.ID}) }),
-		"Set":             func() error { _, _, err := a.Set(x.ID, SetOpts{Status: strp("backlog")}); return err },
+		"Set":             func() error { _, _, _, err := a.Set(x.ID, SetOpts{Status: strp("backlog")}); return err },
 		"ReorderRelative": func() error { _, _, err := a.ReorderRelative(x.ID, y.ID, false); return err },
-		"MoveMany":        func() error { _, err := a.MoveMany([]string{x.ID, y.ID}, "backlog"); return err },
-		"DoneMany":        func() error { _, err := a.DoneMany([]string{x.ID}); return err },
+		"MoveMany":        func() error { _, _, err := a.MoveMany([]string{x.ID, y.ID}, "backlog", nil); return err },
+		"DoneMany":        func() error { _, _, err := a.DoneMany([]string{x.ID}, nil); return err },
 		"DoneManyNote":    func() error { _, err := a.DoneManyNote([]string{x.ID}, "bye"); return err },
-		"SetMany":         func() error { _, err := a.SetMany([]string{x.ID}, SetOpts{AddLabels: []string{"l"}}); return err },
+		"SetMany":         func() error { _, _, err := a.SetMany([]string{x.ID}, SetOpts{AddLabels: []string{"l"}}); return err },
 		"AppendBody":      func() error { _, err := a.AppendBody(x.ID, "applied"); return err },
 		"Attach":          func() error { _, err := a.Attach(x.ID, "shot.png", []byte("png")); return err },
 		"EditPath":        func() error { _, err := a.EditPath(x.ID); return err },

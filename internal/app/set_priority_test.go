@@ -11,7 +11,7 @@ func TestSetPriorityAbsolute(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("task", AddOpts{})
 
-	got, changes, err := a.Set(tk.ID, SetOpts{Priority: intp(42)})
+	got, changes, _, err := a.Set(tk.ID, SetOpts{Priority: intp(42)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestSetLanePlusRelativePositionIsOneWrite(t *testing.T) {
 	x, _ := a.Add("x", AddOpts{})                // inbox
 
 	// The cross-column drop: lane AND position land together.
-	got, changes, err := a.Set(x.ID, SetOpts{Status: strp("ready"), Before: c.ID})
+	got, changes, _, err := a.Set(x.ID, SetOpts{Status: strp("ready"), Before: c.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestSetRelativeRespaceReturnsRenumbered(t *testing.T) {
 	baseline, _, _ := a.Get(b.ID)
 
 	clk.t = clk.t.Add(time.Hour)
-	got, changes, err := a.Set(x.ID, SetOpts{Status: strp("ready"), Before: c.ID})
+	got, changes, _, err := a.Set(x.ID, SetOpts{Status: strp("ready"), Before: c.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestSetRelativeValidation(t *testing.T) {
 	// A relative target must sit in the DESTINATION lane — here no -s is given,
 	// so the destination is x's own lane (inbox), and b is not there. Nothing
 	// may be half-applied by the failure.
-	_, _, err := a.Set(x.ID, SetOpts{Before: b.ID})
+	_, _, _, err := a.Set(x.ID, SetOpts{Before: b.ID})
 	if fe := core.AsError(err); fe == nil || fe.Code != core.CodeValidation {
 		t.Fatalf("cross-lane target: err = %v, want validation", err)
 	}
@@ -98,17 +98,17 @@ func TestSetRelativeValidation(t *testing.T) {
 	}
 
 	// --priority and --before are exclusive; --before and --after too.
-	if _, _, err := a.Set(x.ID, SetOpts{Priority: intp(5), Before: b.ID}); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, _, _, err := a.Set(x.ID, SetOpts{Priority: intp(5), Before: b.ID}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("priority+before: err = %v, want validation", err)
 	}
-	if _, _, err := a.Set(x.ID, SetOpts{Before: b.ID, After: b.ID}); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, _, _, err := a.Set(x.ID, SetOpts{Before: b.ID, After: b.ID}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("before+after: err = %v, want validation", err)
 	}
 	// Self-reference and a missing target keep their reorder semantics.
-	if _, _, err := a.Set(x.ID, SetOpts{After: x.ID}); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, _, _, err := a.Set(x.ID, SetOpts{After: x.ID}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("self target: err = %v, want validation", err)
 	}
-	if _, _, err := a.Set(x.ID, SetOpts{After: "t-none"}); core.ExitCode(err) != int(core.CodeNotFound) {
+	if _, _, _, err := a.Set(x.ID, SetOpts{After: "t-none"}); core.ExitCode(err) != int(core.CodeNotFound) {
 		t.Errorf("missing target: err = %v, want not-found", err)
 	}
 }
@@ -127,7 +127,7 @@ func TestSetManyAppliesToAllInOneWrite(t *testing.T) {
 		ids = append(ids, task.ID)
 	}
 
-	got, err := a.SetMany(ids, SetOpts{Status: strp("ready"), Value: intp(4), AddLabels: []string{"triaged"}})
+	got, _, err := a.SetMany(ids, SetOpts{Status: strp("ready"), Value: intp(4), AddLabels: []string{"triaged"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestSetManyMissChangesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = a.SetMany([]string{keep.ID, "t-zzzz1", "t-zzzz2"}, SetOpts{Status: strp("ready")})
+	_, _, err = a.SetMany([]string{keep.ID, "t-zzzz1", "t-zzzz2"}, SetOpts{Status: strp("ready")})
 	if core.ExitCode(err) != int(core.CodeNotFound) {
 		t.Fatalf("a batch with misses should exit 1, got %v", err)
 	}
@@ -194,11 +194,11 @@ func TestSetManyRefusesPositionFlags(t *testing.T) {
 		"--before":   {Before: one.ID},
 		"--after":    {After: one.ID},
 	} {
-		if _, err := a.SetMany(ids, o); core.ExitCode(err) != int(core.CodeValidation) {
+		if _, _, err := a.SetMany(ids, o); core.ExitCode(err) != int(core.CodeValidation) {
 			t.Errorf("%s over 2 ids should be exit 2, got %v", name, err)
 		}
 	}
-	if _, err := a.SetMany([]string{two.ID}, SetOpts{Priority: intp(50)}); err != nil {
+	if _, _, err := a.SetMany([]string{two.ID}, SetOpts{Priority: intp(50)}); err != nil {
 		t.Errorf("a single id must still accept a position: %v", err)
 	}
 }
@@ -207,7 +207,7 @@ func TestSetManyRefusesPositionFlags(t *testing.T) {
 func TestSetManyDedupesIDs(t *testing.T) {
 	a := newApp()
 	task, _ := a.Add("dup", AddOpts{})
-	got, err := a.SetMany([]string{task.ID, task.ID}, SetOpts{Status: strp("ready")})
+	got, _, err := a.SetMany([]string{task.ID, task.ID}, SetOpts{Status: strp("ready")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -404,13 +404,3 @@ func nextOccurrenceClause(line string, anchor time.Time, loc *time.Location) str
 	}
 	return " — the next occurrence is " + next.Format(dueDateLayout)
 }
-
-// CompileRepeat exposes the spelling→RRULE compilation to a front-end that
-// wants to say something about a rule BEFORE the write (the CLI's
-// day-of-month note). It never writes; the authoritative compile still happens
-// on the write path, so the two cannot disagree.
-func CompileRepeat(a *App, spec string) (string, error) {
-	return recur.Compile(spec, func(text string) (time.Time, error) {
-		return ParseDue(text, a.Clock.Now(), a.loc())
-	})
-}

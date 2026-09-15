@@ -64,7 +64,7 @@ func TestNoOpMutationsLeaveUpdatedAlone(t *testing.T) {
 		}},
 		{name: "set with the values it already has", edit: func(a *App, id, _ string) error {
 			ready := "ready"
-			_, _, err := a.Set(id, SetOpts{Status: &ready, Value: intptr(3), Effort: intptr(2)})
+			_, _, _, err := a.Set(id, SetOpts{Status: &ready, Value: intptr(3), Effort: intptr(2)})
 			return err
 		}},
 		{name: "label --add one it already carries", edit: func(a *App, id, _ string) error {
@@ -190,7 +190,7 @@ func TestMoveManyStampsOnlyWhatMoved(t *testing.T) {
 	}
 	stayWas := updatedOf(t, a, stay.ID)
 	advance(t, a, time.Hour)
-	if _, err := a.MoveMany([]string{stay.ID, moves.ID}, "ready"); err != nil {
+	if _, _, err := a.MoveMany([]string{stay.ID, moves.ID}, "ready", nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := updatedOf(t, a, stay.ID); !got.Equal(stayWas) {

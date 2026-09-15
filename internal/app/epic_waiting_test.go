@@ -15,7 +15,7 @@ func park(t *testing.T, a *App, id, due string) {
 	if due != "" {
 		o.Due = strP(due)
 	}
-	if _, _, err := a.Set(id, o); err != nil {
+	if _, _, _, err := a.Set(id, o); err != nil {
 		t.Fatalf("park %s: %v", id, err)
 	}
 }
@@ -100,7 +100,7 @@ func TestWaitingBoxNeedsAFutureDueOnATrackedLaneAndNoOpenWork(t *testing.T) {
 
 	iced := mustEpic(t, a, "iced", EpicAddOpts{Repos: []string{"o/r"}})
 	ice := mustAddReady(t, a, "someday", iced)
-	if _, _, err := a.Set(ice, SetOpts{Status: strP("icebox"), Due: strP("2026-10-01")}); err != nil {
+	if _, _, _, err := a.Set(ice, SetOpts{Status: strP("icebox"), Due: strP("2026-10-01")}); err != nil {
 		t.Fatal(err)
 	}
 

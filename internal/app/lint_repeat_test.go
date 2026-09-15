@@ -240,7 +240,7 @@ func TestLintWarnsAnOrphanRepeatAnchor(t *testing.T) {
 		}
 		// The named fix has to actually work: --clear-repeat nils the anchor even
 		// with no rule to drop, and lint goes quiet.
-		if _, err := a.SetMany([]string{task.ID}, SetOpts{ClearRepeat: true}); err != nil {
+		if _, _, err := a.SetMany([]string{task.ID}, SetOpts{ClearRepeat: true}); err != nil {
 			t.Fatalf("the fix the message names: %v", err)
 		}
 		ps, err = a.Lint()

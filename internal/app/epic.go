@@ -603,40 +603,6 @@ func (a *App) EpicReopen(ref string) (*core.Epic, *core.Epic, error) {
 	})
 }
 
-// ActiveEpicFor returns the id of the epic active for repo, or "" when none is.
-// An empty repo means "any repo": it returns the single active epic when there is
-// exactly one board-wide, else "" — the board-wide read (`-r ”`) uses
-// ActiveEpicIDs instead.
-func (a *App) ActiveEpicFor(repo string) (string, error) {
-	ids, err := a.ActiveEpicIDs(repo)
-	if err != nil || len(ids) != 1 {
-		return "", err
-	}
-	return ids[0], nil
-}
-
-// ActiveEpicIDs returns every open+active epic id, optionally narrowed to those
-// naming repo. Sorted, so a caller's output never depends on store order.
-func (a *App) ActiveEpicIDs(repo string) ([]string, error) {
-	epics, err := a.Store.LoadEpics()
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for i := range epics {
-		e := &epics[i]
-		if !e.Active || !e.IsOpen() {
-			continue
-		}
-		if repo != "" && !anyRepoMatch(e.Repos, []string{repo}) {
-			continue
-		}
-		out = append(out, e.ID)
-	}
-	sort.Strings(out)
-	return out, nil
-}
-
 // EpicScope is how Next scoped (or will scope) a read — exposed so the CLI can
 // explain an empty result without re-deriving the rule.
 type EpicScope struct {

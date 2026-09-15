@@ -958,47 +958,6 @@ func (a *App) ShowBatch(refs []string, withBody bool) ([]ShowEntry, []string, er
 	return out, missing, nil
 }
 
-// Backlinks returns the tasks whose body mentions id via the [[id]] wiki-link
-// notation, in canonical order. It is the pull-side twin of GitHub's "mentioned
-// in" panel — no server, no rate limit, just a scan of the local bodies (cheap
-// at this scale; an index is YAGNI). A task's own body mentioning itself is not
-// a backlink, and an orphan body (no task) never surfaces since the result is
-// drawn from the index. NotFound when id is unknown.
-func (a *App) Backlinks(id string) ([]core.Task, error) {
-	idx, err := a.load()
-	if err != nil {
-		return nil, err
-	}
-	if !idx.Has(id) {
-		return nil, a.notFoundTask(id)
-	}
-	re := core.LinkPattern(a.Cfg.IDPrefix)
-	bodyIDs, err := a.Store.ListBodyIDs()
-	if err != nil {
-		return nil, err
-	}
-	mentioners := map[string]bool{}
-	for _, bid := range bodyIDs {
-		if bid == id {
-			continue // a body referring to itself is not a backlink
-		}
-		body, err := a.Store.LoadBody(bid)
-		if err != nil {
-			return nil, err
-		}
-		if contains(core.ExtractLinks(body, re), id) {
-			mentioners[bid] = true
-		}
-	}
-	var out []core.Task
-	for i := range idx.Tasks {
-		if mentioners[idx.Tasks[i].ID] {
-			out = append(out, idx.Tasks[i])
-		}
-	}
-	return out, nil
-}
-
 // BacklinksBatch is Backlinks for a set of ids in ONE board pass: a single
 // load plus a single body scan, regardless of how many ids are requested — so
 // `show <many ids> --backlinks` stays O(board), not O(ids × board). Each entry
@@ -1413,19 +1372,9 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 	return out, nil
 }
 
-// Move sets a task's lane. Moving into the done lane stamps Closed; moving out
-// of it clears Closed. Other terminal lanes (e.g. icebox) leave Closed alone —
-// parked is not the same as closed. Keying the stamp on Closed==nil (not on the
-// lane transition) also backfills a closed:null zombie: `done` on a task already
-// parked in the done lane with no timestamp now stamps one instead of no-opping.
-func (a *App) Move(id, lane string) (*core.Task, error) {
-	t, _, err := a.moveOne(id, lane)
-	return t, err
-}
-
-// moveOne is Move plus the series report a close produces when the task carries
-// a repeat rule (nil for every other move). Move drops it for the callers that
-// cannot render it.
+// moveOne moves one task and returns the series report a close produces when
+// the task carries a repeat rule (nil for every other move) — `apply`'s
+// per-directive close.
 func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 	if !a.Cfg.IsLane(lane) {
 		return nil, nil, a.unknownLaneErr(id, lane)
@@ -1472,9 +1421,6 @@ func (a *App) applyLane(t *core.Task, lane string) {
 	}
 }
 
-// Done moves a task into the done lane (and stamps Closed via Move).
-func (a *App) Done(id string) (*core.Task, error) { return a.Move(id, a.Cfg.DoneLane) }
-
 // CheckLane validates a lane name against the configured vocabulary — the
 // exit-2 candidates error move/add raise, exposed for a caller that must vet
 // the lane BEFORE other work (the CLI's selection preview: previewing a write
@@ -1486,21 +1432,7 @@ func (a *App) CheckLane(lane string) error {
 	return nil
 }
 
-// MoveMany sets the lane on several tasks in ONE index write, all-or-nothing:
-// every id is resolved before anything is touched, so a failed batch never
-// half-lands (a write must not partially succeed the way a batch READ may —
-// GetBatch's missing-is-data contract stops at mutations). An unknown lane is
-// the usual exit-2 candidates error; any missing ids fail the whole batch with
-// exit 1 and ALL of them in details.missing (the show batch shape, so agents
-// branch identically). Duplicates collapse to their first occurrence and
-// results come back in input order. The single Save is the point: a triage
-// sweep over five tasks is one write, not five.
-func (a *App) MoveMany(ids []string, lane string) ([]*core.Task, error) {
-	t, _, err := a.moveMany(ids, lane, "")
-	return t, err
-}
-
-// moveMany is MoveMany plus an optional note appended to every moved task's
+// moveMany is the batch move: an optional note appended to every moved task's
 // body (skipped when empty). Bodies are written only after every id has
 // resolved, so a failed batch touches neither lanes nor prose.
 func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*RepeatReport, error) {
@@ -1618,15 +1550,15 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 	return out, reps, nil
 }
 
-// MoveManySeries is the batch lane write plus the series reports a close
+// MoveMany is the batch lane write plus the series reports a close
 // produces — one entry per id, in the same order as the tasks, nil where the
-// task carried no recurrence rule. MoveMany / DoneMany / DoneManyNote are the
-// same write with the reports dropped, which is what a caller that cannot
-// render them wants.
+// task carried no recurrence rule. It is the ONE move entry point: the
+// single-id and report-less variants that once wrapped it were called by
+// tests alone and are gone (t-3gz4).
 // note is a POINTER so "no note asked for" and "an empty note asked for" stay
 // distinct: an empty `--note ""` is bad usage (exit 2), never a silent plain
 // close, and a `note != ""` test would have quietly turned it into one.
-func (a *App) MoveManySeries(ids []string, lane string, note *string) ([]*core.Task, []*RepeatReport, error) {
+func (a *App) MoveMany(ids []string, lane string, note *string) ([]*core.Task, []*RepeatReport, error) {
 	text := ""
 	if note != nil {
 		var err error
@@ -1637,77 +1569,10 @@ func (a *App) MoveManySeries(ids []string, lane string, note *string) ([]*core.T
 	return a.moveMany(ids, lane, text)
 }
 
-// DoneManySeries is MoveManySeries fixed to the done lane — the close path the
-// CLI renders series reports from.
-func (a *App) DoneManySeries(ids []string, note *string) ([]*core.Task, []*RepeatReport, error) {
-	return a.MoveManySeries(ids, a.Cfg.DoneLane, note)
-}
-
-// DoneMany moves several tasks into the done lane in one write (stamping
-// Closed on each via moveMany's applyLane).
-func (a *App) DoneMany(ids []string) ([]*core.Task, error) {
-	t, _, err := a.moveMany(ids, a.Cfg.DoneLane, "")
-	return t, err
-}
-
-// DoneNote closes a task AND appends a closing note to its body — the
-// done+note ritual ("→ continued in t-xxx", the close-time one-liner) as a
-// single command with one Updated stamp. The note follows AddNote's contract
-// (a new paragraph, never deduped); an empty note is bad usage, never a
-// silent plain close.
-func (a *App) DoneNote(id, note string) (*core.Task, error) {
-	note, err := normalizeNote(id, note)
-	if err != nil {
-		return nil, err
-	}
-	idx, err := a.load()
-	if err != nil {
-		return nil, err
-	}
-	t, i := idx.Find(id)
-	if i < 0 {
-		return nil, a.notFoundTask(id)
-	}
-	if err := a.guardTask(t); err != nil {
-		return nil, err
-	}
-	rep, succ, rerr := a.planRepeat(idx, t, t.Status, a.Cfg.DoneLane, a.Clock.Now(), nil)
-	if rerr != nil {
-		return nil, rerr
-	}
-	if rep != nil {
-		consumeRepeat(t)
-	}
-	// The successor's body and the note, in one write (moveMany's rule).
-	bodies := successorBodies([]*pendingSuccessor{succ})
-	next, err := a.appendedBody(id, note)
-	if err != nil {
-		return nil, err
-	}
-	bodies[id] = next
-	if err := a.saveBodies(bodies); err != nil {
-		return nil, err
-	}
-	a.applyLane(t, a.Cfg.DoneLane)
-	t.Updated = a.Clock.Now()
-	a.insertSuccessors(idx, []*pendingSuccessor{succ})
-	if err := a.Store.Save(idx); err != nil {
-		return nil, err
-	}
-	saved, _ := idx.Find(id)
-	return saved, nil
-}
-
-// DoneManyNote is DoneNote over a batch: the SAME note lands on every task's
-// body ("superseded by t-yyy", "shipped in repo#42") and the whole close is
-// one all-or-nothing index write, MoveMany's contract.
-func (a *App) DoneManyNote(ids []string, note string) ([]*core.Task, error) {
-	note, err := normalizeNote("", note)
-	if err != nil {
-		return nil, err
-	}
-	t, _, err := a.moveMany(ids, a.Cfg.DoneLane, note)
-	return t, err
+// DoneMany is MoveMany fixed to the done lane — the close path the CLI
+// renders series reports from; a `--note` rides in as note.
+func (a *App) DoneMany(ids []string, note *string) ([]*core.Task, []*RepeatReport, error) {
+	return a.MoveMany(ids, a.Cfg.DoneLane, note)
 }
 
 // Reorder sets a task's absolute priority.
@@ -1928,12 +1793,6 @@ func (a *App) RewordCheck(id string, item int, text string) (*core.Task, error) 
 	return a.mutateIn(idx, id, func(t *core.Task) { t.Checklist[item].Text = text })
 }
 
-// AddDep makes `id` depend on `dep` (id waits on dep). Both ids must exist, a
-// task may not depend on itself, and the edge must not create a cycle (dep must
-// not already depend on id, directly or transitively). Re-adding an existing
-// dep is a no-op; the marshaller keeps the dep list sorted and de-duplicated.
-func (a *App) AddDep(id, dep string) (*core.Task, error) { return a.AddDeps(id, []string{dep}) }
-
 // AddDeps adds several dependencies to `id` in one write (`dep a b c`). Every
 // dep is validated against the same contract AddDep enforced — must exist, must
 // not be `id` itself, must not create a cycle (checked against the graph as it
@@ -1982,10 +1841,6 @@ func (a *App) AddDeps(id string, deps []string) (*core.Task, error) {
 	saved, _ := idx.Find(id)
 	return saved, nil
 }
-
-// RemoveDep drops `dep` from `id`'s dependency list. It is a validation error
-// when id has no such dependency, so the result is never a silent no-op.
-func (a *App) RemoveDep(id, dep string) (*core.Task, error) { return a.RemoveDeps(id, []string{dep}) }
 
 // RemoveDeps drops several dependencies from `id` in one write. Each must be a
 // current dependency (else a validation error naming it — never a silent no-op),
@@ -2218,26 +2073,10 @@ func (o SetOpts) requested() []optFlag {
 // than silently touching only the `updated` stamp.
 func (o SetOpts) empty() bool { return !anyRequested(o.requested()) }
 
-// Set applies several triage edits to one task in a single load/save: move a
-// lane, position it (absolute priority, or relative to a lane-mate), set/clear
-// value and effort, add/remove labels, and re-file into an epic — so `set`
-// replaces the move+reorder+value+effort+label+epic dance without that many
-// separate writes (and `updated` stamps). Everything is validated up front (unknown lane → exit 2
-// with candidates like Move; a change that would strip the last label under
-// [labels].required → exit 2; a relative target outside the destination lane →
-// exit 2), then applied atomically — a relative placement that has to respace
-// the lane lands in the SAME write, and the neighbors' moves are returned for
-// the CLI's `renumbered` report (their Updated deliberately does not advance).
-// At least one change is required.
-func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, error) {
-	t, ch, _, err := a.SetSeries(id, o)
-	return t, ch, err
-}
-
-// SetSeries is Set plus the series report a `set -s done` produces when the
-// task carries a recurrence rule (nil for every other edit). Set drops it, for
-// the callers that cannot render it.
-func (a *App) SetSeries(id string, o SetOpts) (*core.Task, []core.PriorityChange, *RepeatReport, error) {
+// Set applies the edits to one task and returns the series report a
+// `set -s done` produces when the task carries a recurrence rule (nil for
+// every other edit).
+func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, *RepeatReport, error) {
 	if err := a.validateSetOpts(id, o); err != nil {
 		return nil, nil, nil, err
 	}
@@ -2318,26 +2157,11 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 	return nil
 }
 
-// SetMany applies the SAME SetOpts to several tasks in ONE index write,
-// all-or-nothing — the bulk-triage twin of MoveMany, and the write-side answer
-// to a GUI's multi-select. Every id is resolved before anything is touched, so a
-// batch with a miss changes NOTHING and exits 1 with every miss in
-// details.missing (MoveMany's contract, which is show's contract).
-//
-// The three POSITION flags are refused for two or more ids (exit 2): a position
-// is inherently about one task — `--before/--after` names a single neighbour,
-// and an absolute `--priority` applied to N tasks would deliberately tie them,
-// which the sparse-priority model treats as unordered. Refusing is reversible;
-// inventing an order would not be.
-func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, error) {
-	t, _, err := a.SetManySeries(ids, o)
-	return t, err
-}
-
-// SetManySeries is SetMany plus the per-id series reports, one entry per id in
-// the same order — the batch twin of SetSeries, so a bulk `set -s done` owes
-// the same receipt a single one does. A close is a close whatever the arity.
-func (a *App) SetManySeries(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, error) {
+// SetMany applies the same edits to every id in one write and returns the
+// per-id series reports, one entry per id in the same order — the batch twin
+// of Set, so a bulk `set -s done` owes the same receipt a single one does. A
+// close is a close whatever the arity.
+func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, error) {
 	if err := a.validateSetOpts("", o); err != nil {
 		return nil, nil, err
 	}
@@ -2567,11 +2391,6 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, re
 		return renumbered, nil, nil, err
 	}
 	return renumbered, successor, report, nil
-}
-
-// AddCheck appends a checklist item.
-func (a *App) AddCheck(id, text string) (*core.Task, error) {
-	return a.AddChecks(id, []string{text})
 }
 
 // AddChecks appends several checklist items in one write, so `check --add A
