@@ -59,9 +59,9 @@ import, not an ongoing sync) has been floated but is **not built** today.
 
 ### No sync daemon / server
 Multi-machine use is `furrow sync` — a **thin git wrapper** (auto-commit
-scoped to `.furrow/` — shards and `meta.json` always, a hand-edited
-`bodies/<id>.md` only when new or opted in with `-b`/`--all-bodies`, otherwise
-reported in `pending_bodies`; then `fetch` + `rebase --autostash @{u}`,
+scoped to `.furrow/` — the machine-written files always, a `bodies/<id>.md`
+when new, when furrow itself wrote it (the per-checkout journal), or when opted
+in with `-b`/`--all-bodies`, otherwise reported in `pending_bodies`; then `fetch` + `rebase --autostash @{u}`,
 `push`, abort-and-report on conflict) that the user or agent runs explicitly. There is no background process, no file
 watcher, no hosted relay, and none is planned: git is already the
 synchronization layer, and per-task shards already make concurrent writes
@@ -218,7 +218,7 @@ To keep this list honest about today's reality (not aspirations):
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
   `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, `--drafts`, and the typed
   query `-q` (which `next`, `revisit`, `stats` and `search` take too).
-  Destructive ops are guarded: `archive`, `rm` (and `epic rm`), `tidy`, and `upgrade` preview unless `--yes`.
+  Destructive ops are guarded: `archive`, `rm` (and `epic rm`), `tidy`, `upgrade`, and `migrate` preview unless `--yes`, as does a `-q`/`-l`/`-r` selection on `set`/`done`/`move`.
   Exit-code
   contract: `0` ok (an empty query result included) / `1` a specifically
   requested id not found / `2` bad-usage|validation / `3+`
@@ -242,7 +242,7 @@ To keep this list honest about today's reality (not aspirations):
 
 ---
 
-*(reviewed 2026-07-16 — rationales for "No MCP server" and "No Claude Code
+*(rationales for "No MCP server" and "No Claude Code
 plugin" rewritten for the repos pivot: the non-goals stand, but their old
 "local, single-repo / single-author" grounds became false once central boards
 went multi-repo and multi-machine.)* — When a non-goal changes, update this

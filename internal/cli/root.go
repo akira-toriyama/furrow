@@ -177,7 +177,7 @@ func newRootCmd() *cobra.Command {
 			"Structured metadata lives in one .furrow/tasks/<id>.json shard per task;\n" +
 			"long-form prose lives in .furrow/bodies/<id>.md. The bodies are YOURS — edit\n" +
 			"them by hand freely. Every other file furrow writes — tasks/*.json,\n" +
-			"repos/*.json, meta.json — is furrow-OWNED: NEVER hand-edit those. One\n" +
+			"epics/*.json, repos/*.json, meta.json — is furrow-OWNED: NEVER hand-edit those. One\n" +
 			"deterministic marshaller writes them, so a manual edit fights the next write\n" +
 			"and churns git; mutate through commands instead. Drive it from the CLI —\n" +
 			"furrow is CLI-only; any TUI/GUI is a separate front-end that speaks this\n" +
