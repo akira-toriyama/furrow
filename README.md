@@ -651,7 +651,8 @@ failure alike (empty lists omitted); **`complete`** — not `pushed` — is the
 log's exit point), and `incoming` classifies the task changes the pull brought
 IN — the other machines' and CI's writes, read off the pre-pull..post-pull
 shard diff: `created` / `closed` / `reopened` / `moved` / `refiled` /
-`archived` / `updated`, with the old and new lane or epic on the moves — also
+`archived` (the pulled tree holds its `archive/` copy) / `removed` (`furrow rm`:
+nothing to unarchive) / `updated`, with the old and new lane or epic on the moves — also
 rendered as one `incoming:` human line, so the CI that closed your in-progress
 task surfaces in the sync that pulled it, not on a later re-read.
 

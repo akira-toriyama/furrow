@@ -518,7 +518,8 @@ user-level config. When you work with any furrow store:
   **`incoming`** progress key classifies the task changes other machines and CI
   wrote — read off the pre-pull vs post-pull shard tree-diff, so your own
   auto-commit never appears — as `created` / `closed` / `reopened` / `moved` /
-  `refiled` / `archived` / `updated` (`{id, title, kind}`, plus `from`/`to`
+  `refiled` / `archived` (the pulled tree holds its `archive/` copy) / `removed`
+  (`furrow rm`: nothing to unarchive) / `updated` (`{id, title, kind}`, plus `from`/`to`
   carrying the old and new lane or epic on `moved`/`refiled`; a modification
   matching several classes takes the FIRST — a `done` both closes and moves,
   and reports `closed`), with one `incoming:` human line (≤3 ids named per

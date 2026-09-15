@@ -118,3 +118,51 @@ func TestClassifyIncomingEdit(t *testing.T) {
 		}
 	}
 }
+
+// A hot shard that vanished from the pulled tree is `archived` only when that
+// tree holds its archive/ copy; a `furrow rm` deletes the shard and leaves no
+// copy, and reporting it as archived pointed the reader at an unarchive with
+// nothing to restore (t-k0g9).
+func TestSyncIncomingTellsArchivedFromRemoved(t *testing.T) {
+	_, cloneA, cloneB := setupClones(t)
+	a := openBoard(t, cloneA)
+	kept, err := a.Add("to archive", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone, err := a.Add("to remove", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+
+	b := openBoard(t, cloneB)
+	if _, err := b.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Done(kept.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.ArchiveIDs([]string{kept.ID}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.RemoveTasks([]string{gone.ID}, RemoveOpts{Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatalf("A sync: %v (progress %+v)", err, p)
+	}
+	if ch := findIncoming(p.Incoming, kept.ID); ch == nil || ch.Kind != "archived" {
+		t.Errorf("incoming for the archived task = %+v, want archived (all: %+v)", ch, p.Incoming)
+	}
+	if ch := findIncoming(p.Incoming, gone.ID); ch == nil || ch.Kind != "removed" || ch.Title != "to remove" {
+		t.Errorf("incoming for the removed task = %+v, want removed with its title (all: %+v)", ch, p.Incoming)
+	}
+}

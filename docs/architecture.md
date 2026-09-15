@@ -966,7 +966,9 @@ except where noted:
   omitted when empty; `foreign_files` = non-furrow junk left uncommitted;
   `switches` = the epic activations this sync published; `incoming` = the task
   changes the pull brought in, classified from the pre-pull vs post-pull shard
-  tree-diff as created/closed/reopened/moved/refiled/archived/updated with the
+  tree-diff as created/closed/reopened/moved/refiled/archived/removed/updated
+  (archived when the pulled tree holds the shard's `archive/` copy, removed —
+  `furrow rm` — when it holds none) with the
   old and new lane/epic on the moves — the inbound twin of `switches`, so a
   sync says WHAT it pulled, not just `pulled: true`). `complete` is `false` whenever a body or stash is left pending (the
   stdout summary line names that count too), so a pushed-but-incomplete sync is
