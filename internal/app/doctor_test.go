@@ -310,3 +310,41 @@ func TestDoctorGitAheadBehind(t *testing.T) {
 		}
 	}
 }
+
+// The board the invocation actually resolves to — FURROW_DIR, or a repo-local
+// .furrow at cwd — is probed FIRST, whether or not a [[board]] names it, and
+// its findings carry ITS path. Doctor used to enumerate the user config's
+// entries only, so a FURROW_DIR board was never diagnosed and another board's
+// unnamed "schema v9" row read as the operator's own (t-b3dq).
+func TestDoctorProbesTheResolvedBoardFirst(t *testing.T) {
+	writeGlobalConfig(t, "")
+
+	envBoard := mustInitBoard(t, t.TempDir())
+	if err := os.WriteFile(filepath.Join(envBoard, "meta.json"), []byte("{\n  \"schema_version\": 9\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvDir, envBoard)
+	r := mustDoctor(t, "")
+	if len(r.Boards) == 0 || r.Boards[0].Store != envBoard {
+		t.Fatalf("the FURROW_DIR board must be boards[0], got %+v", r.Boards)
+	}
+	if r.Boards[0].SchemaState != SchemaOutdated {
+		t.Errorf("boards[0] schema state = %q, want outdated", r.Boards[0].SchemaState)
+	}
+	n := findProblems(r, "schema-outdated")
+	if len(n) != 1 || r.Problems[n[0]].ID != envBoard {
+		t.Errorf("schema-outdated must be about the resolved board: %+v", r.Problems)
+	}
+
+	// A repo-local board at cwd, with FURROW_DIR unset: same rule.
+	t.Setenv(EnvDir, "")
+	dir := t.TempDir()
+	local := mustInitBoard(t, dir)
+	r = mustDoctor(t, dir)
+	if len(r.Boards) == 0 || r.Boards[0].Store != local {
+		t.Fatalf("the repo-local board at cwd must be boards[0], got %+v", r.Boards)
+	}
+	if len(findProblems(r, "schema-outdated")) != 0 {
+		t.Errorf("a current board must not warn schema-outdated: %+v", r.Problems)
+	}
+}

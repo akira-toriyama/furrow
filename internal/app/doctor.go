@@ -151,8 +151,11 @@ func Doctor(ctx context.Context, cwd string, assertDirs []string) (*DoctorReport
 	}
 
 	r.Problems = append(r.Problems, envOverrideProblems(r.EnvDir, r.EnvBoard)...)
-	r.Problems = append(r.Problems, doctorBoards(ctx, r, path)...)
+	// Resolutions first: the board cwd (or an asserted dir) actually resolves
+	// to is the one the operator is asking about, and it is probed FIRST —
+	// whether or not a [[board]] entry names it (doctorResolvedBoards).
 	r.Problems = append(r.Problems, doctorResolutions(r, cwd, assertDirs)...)
+	r.Problems = append(r.Problems, doctorBoards(ctx, r, path)...)
 	r.Problems = append(r.Problems, doctorSessionRegistry()...)
 
 	sortDoctorProblems(r.Problems)
@@ -230,6 +233,7 @@ func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string) []core.P
 	}
 
 	cfgDir := filepath.Dir(cfgPath)
+	var configured []DoctorBoard
 	for _, b := range entries {
 		// Same resolution and the same wording `furrow boards` uses (one helper),
 		// rendered into doctor's sink. These are already surfaced by
@@ -244,13 +248,16 @@ func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string) []core.P
 		}
 		db := DoctorBoard{BoardEntry: entry, Git: DoctorGit{State: GitUnprobed}}
 		ps = append(ps, doctorBoardProblems(ctx, &db, cfgPath)...)
-		r.Boards = append(r.Boards, db)
+		configured = append(configured, db)
 	}
+	ps = append(ps, doctorOrderBoards(ctx, r, cfgPath, configured)...)
 
 	// The 2026-07-16 hole itself: a machine with furrow installed but no usable
 	// [[board]] — every checkout without its own .furrow/pointer is bare exit 2,
-	// and nothing on the machine says why. FURROW_BOARD substitutes for it.
-	if len(r.Boards) == 0 && r.EnvBoard == "" {
+	// and nothing on the machine says why. FURROW_BOARD substitutes for it; a
+	// FURROW_DIR board (now probed above) does NOT — it is a per-invocation
+	// redirect, and the config is still empty.
+	if len(configured) == 0 && r.EnvBoard == "" {
 		detail := ""
 		if _, err := os.Stat(cfgPath); err != nil {
 			detail = " (the config file does not exist)"
@@ -259,6 +266,68 @@ func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string) []core.P
 			Msg: fmt.Sprintf("no usable [[board]] is configured%s — checkouts without a local .furrow/pointer resolve to no board (bare exit 2); run `furrow config init`, then add a [[board]] with path (the central .furrow), repo = \"auto\", and scopes covering your checkouts", detail)})
 	}
 	return ps
+}
+
+// doctorOrderBoards fills r.Boards: the stores the invocation RESOLVES to
+// come first — FURROW_DIR, then cwd's and each asserted dir's resolution —
+// and the remaining [[board]] entries follow. A resolved store a [[board]]
+// entry also names keeps that entry's probe (its scopes drive the shadow
+// scan); one no entry names is probed bare. Doctor used to enumerate the
+// user config's entries ONLY, so a FURROW_DIR board or a repo-local .furrow
+// was never diagnosed: the findings that came back were another board's,
+// unnamed, and "board is schema v9" read as the operator's own board being
+// read-only (t-b3dq).
+func doctorOrderBoards(ctx context.Context, r *DoctorReport, cfgPath string, configured []DoctorBoard) []core.Problem {
+	var ps []core.Problem
+	var resolved []string
+	if r.EnvDir != "" {
+		if abs, err := filepath.Abs(r.EnvDir); err == nil {
+			if fi, err := os.Stat(abs); err == nil && fi.IsDir() {
+				resolved = append(resolved, abs)
+			}
+		}
+	}
+	for _, res := range r.Resolutions {
+		if res.Resolved {
+			resolved = append(resolved, res.Store)
+		}
+	}
+	for _, store := range resolved {
+		if doctorHasBoard(r, store) {
+			continue
+		}
+		placed := false
+		for _, db := range configured {
+			if db.Store == store {
+				r.Boards = append(r.Boards, db)
+				placed = true
+				break
+			}
+		}
+		if placed {
+			continue
+		}
+		entry := probeBoardEntry(store, []string{}, config.GlobalBoard{})
+		db := DoctorBoard{BoardEntry: entry, Git: DoctorGit{State: GitUnprobed}}
+		ps = append(ps, doctorBoardProblems(ctx, &db, cfgPath)...)
+		r.Boards = append(r.Boards, db)
+	}
+	for _, db := range configured {
+		if !doctorHasBoard(r, db.Store) {
+			r.Boards = append(r.Boards, db)
+		}
+	}
+	return ps
+}
+
+// doctorHasBoard reports whether r.Boards already carries the store.
+func doctorHasBoard(r *DoctorReport, store string) bool {
+	for _, b := range r.Boards {
+		if b.Store == store {
+			return true
+		}
+	}
+	return false
 }
 
 // doctorBoardProblems checks one probed board: on-disk existence, schema
