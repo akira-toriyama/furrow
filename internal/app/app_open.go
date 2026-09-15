@@ -116,30 +116,57 @@ func discover(startDir string) (resolution, error) {
 		}
 		return resolution{Dir: abs, Source: SourceEnv}, nil
 	}
-	dir, err := filepath.Abs(startDir)
-	if err != nil {
+	if _, err := filepath.Abs(startDir); err != nil {
 		return resolution{}, core.Internalf("", "resolve %q: %v", startDir, err)
 	}
-	for {
-		cand := filepath.Join(dir, DirName)
-		if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
-			return resolution{Dir: cand, Source: SourceLocal}, nil
+	// A local .furrow wins at each level, then a pointer; the nearest of
+	// either ends the walk.
+	dir, ok := walkUp(startDir, func(dir string) bool {
+		return isDir(filepath.Join(dir, DirName)) || isFile(filepath.Join(dir, PointerName))
+	})
+	if !ok { // reached the root: try the user-level default board, else give up
+		if res, ok, err := resolveGlobalBoard(startDir); err != nil {
+			return resolution{}, err
+		} else if ok {
+			return res, nil
 		}
-		ptr := filepath.Join(dir, PointerName)
-		if fi, err := os.Stat(ptr); err == nil && !fi.IsDir() {
-			return resolvePointer(dir, ptr)
+		return resolution{}, discoveryUnresolvedErr(startDir)
+	}
+	if cand := filepath.Join(dir, DirName); isDir(cand) {
+		return resolution{Dir: cand, Source: SourceLocal}, nil
+	}
+	return resolvePointer(dir, filepath.Join(dir, PointerName))
+}
+
+// walkUp climbs from start to the filesystem root and returns the first
+// directory probe accepts. Three walks carried this loop — discovery, the
+// nearest .furrow for `config init`, the nearest .git for the origin
+// derivation — each with its own Abs/Stat/Dir/parent==dir dance (t-y6ya).
+func walkUp(start string, probe func(dir string) bool) (string, bool) {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return "", false
+	}
+	for {
+		if probe(dir) {
+			return dir, true
 		}
 		parent := filepath.Dir(dir)
-		if parent == dir { // reached the root: try the user-level default board, else give up
-			if res, ok, err := resolveGlobalBoard(startDir); err != nil {
-				return resolution{}, err
-			} else if ok {
-				return res, nil
-			}
-			return resolution{}, discoveryUnresolvedErr(startDir)
+		if parent == dir {
+			return "", false
 		}
 		dir = parent
 	}
+}
+
+func isDir(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
+}
+
+func isFile(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
 }
 
 // discoveryUnresolvedErr is the walk's give-up error, and its remedy depends on

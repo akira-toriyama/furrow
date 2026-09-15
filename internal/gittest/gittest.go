@@ -14,6 +14,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"testing"
+
+	"github.com/akira-toriyama/furrow/internal/claudecode"
 )
 
 // isolatedConfig is the throwaway global git config the tests run under. It
@@ -83,4 +86,46 @@ func setEnv(kv map[string]string) (restore func()) {
 			}
 		}
 	}
+}
+
+// Main is the TestMain every real-git package shares: isolate, run, restore,
+// exit. Two packages carried the same twenty lines (t-y6ya).
+func Main(m *testing.M) {
+	restore, err := Isolate()
+	if err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	restore()
+	os.Exit(code)
+}
+
+// MainIsolated is Main for a package whose tests also read the machine's home
+// state: it points XDG_CONFIG_HOME at an empty dir (so the developer's real
+// ~/.config/furrow/config.toml is a clean no-op unless a test opts in with its
+// own t.Setenv), and unsets the Claude Code session env (a developer's `go
+// test` usually runs INSIDE a session, whose CLAUDECODE would arm the session
+// write guard against the live registry). app and cli carried the same
+// twenty-five lines each.
+func MainIsolated(m *testing.M) {
+	dir, err := os.MkdirTemp("", "furrow-xdg-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("XDG_CONFIG_HOME", dir); err != nil {
+		panic(err)
+	}
+	for _, k := range []string{claudecode.EnvActive, claudecode.EnvPID, claudecode.EnvSessionID, claudecode.EnvConfigDir} {
+		if err := os.Unsetenv(k); err != nil {
+			panic(err)
+		}
+	}
+	restore, err := Isolate()
+	if err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	restore()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
 }
