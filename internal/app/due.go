@@ -1,6 +1,8 @@
 package app
 
 import (
+	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -76,6 +78,11 @@ func ParseDue(s string, now time.Time, loc *time.Location) (time.Time, error) {
 		return time.Time{}, core.Validationf("", "--due needs a date (2026-08-04, 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d); to remove one use --clear-due")
 	}
 	if d, ok := parseRelativeOffset(s); ok {
+		if d == 0 {
+			// `+0d` is "now" — a promise already overdue as it is written, the
+			// degenerate case of "an offset always lands ahead" (t-qps2).
+			return time.Time{}, core.Validationf("", "--due %s is a zero offset, which promises this very second; spell today as its date (%s) or push it ahead (+1d)", strconv.Quote(s), now.In(loc).Format(dueDateLayout))
+		}
 		return now.Add(d), nil
 	}
 	if t, err := time.Parse(dueDateLayout, s); err == nil {
@@ -107,7 +114,37 @@ func ParseDue(s string, now time.Time, loc *time.Location) (time.Time, error) {
 			return t, nil
 		}
 	}
+	if why := calendarComplaint(s); why != "" {
+		return time.Time{}, core.Validationf("", "--due %s: %s", strconv.Quote(s), why)
+	}
 	return time.Time{}, core.Validationf("", "--due %s is not a date: use YYYY-MM-DD (the whole day), YYYY-MM-DDTHH:MM, an RFC3339 instant, or a signed offset like +1d/+2h", strconv.Quote(s))
+}
+
+var dueDayPrefix = regexp.MustCompile(`^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$`)
+
+// calendarComplaint explains a spelling whose SHAPE is a date but whose day
+// does not exist — 2026-02-29, 2026-04-31 — instead of "is not a date: use
+// YYYY-MM-DD", which was the format the operator had just typed (t-qps2).
+// "" when the shape is not a date at all.
+func calendarComplaint(s string) string {
+	m := dueDayPrefix.FindStringSubmatch(s)
+	if m == nil {
+		return ""
+	}
+	y, _ := strconv.Atoi(m[1])
+	mo, _ := strconv.Atoi(m[2])
+	d, _ := strconv.Atoi(m[3])
+	if mo < 1 || mo > 12 {
+		return fmt.Sprintf("there is no month %02d", mo)
+	}
+	last := time.Date(y, time.Month(mo)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	if d < 1 || d > last {
+		if mo == 2 && d == 29 {
+			return fmt.Sprintf("%d has no February 29 (not a leap year)", y)
+		}
+		return fmt.Sprintf("%s %d has %d days", time.Month(mo), y, last)
+	}
+	return ""
 }
 
 // parseDue is ParseDue bound to this app's clock and zone — the form every

@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -520,5 +521,29 @@ func TestDueBandOrdersInterleavedDaysThenBoardOrder(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("overdue band = %v,\nwant %v (oldest day first, board order within a day)", got, want)
+	}
+}
+
+// The refusal says WHY, in the operator's terms (t-qps2): a zero offset is a
+// promise for this very second, and a well-shaped date whose day does not
+// exist is named as such rather than told to use the format it already used.
+func TestParseDueSaysWhy(t *testing.T) {
+	now := time.Date(2026, 8, 3, 3, 0, 0, 0, time.UTC)
+	for _, tc := range []struct{ in, want string }{
+		{"+0d", "zero offset"},
+		{"+0h", "zero offset"},
+		{"2026-02-29", "2026 has no February 29"},
+		{"2026-04-31", "April 2026 has 30 days"},
+		{"2026-13-45", "no month 13"},
+		{"2026-02-29T10:30", "2026 has no February 29"},
+		{"08/04/2026", "is not a date"},
+	} {
+		_, err := ParseDue(tc.in, now, jst)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("ParseDue(%q) = %v, want a refusal saying %q", tc.in, err, tc.want)
+		}
+	}
+	if _, err := ParseDue("2028-02-29", now, jst); err != nil {
+		t.Errorf("a leap day in a leap year is a date: %v", err)
 	}
 }

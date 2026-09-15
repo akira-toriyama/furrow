@@ -308,27 +308,31 @@ func resetChecklist(items []core.ChecklistItem) []core.ChecklistItem {
 // A rule with no due is refused rather than anchored on now — a shard whose
 // stored anchor was invented is a shard that lies about what the operator asked
 // for, and the series would silently re-lattice the first time it was touched.
-func (a *App) bindRepeat(t *core.Task, spec string) error {
+//
+// subject tags a refusal: the task's id on `set` (it exists), "" on `add` and
+// an import — the id is minted before the rule is checked, and a refusal that
+// named it handed a tool an id no shard or body would ever carry (t-qps2).
+func (a *App) bindRepeat(subject string, t *core.Task, spec string) error {
 	if strings.TrimSpace(spec) == "" {
-		return core.Validationf(t.ID, "--repeat needs a rule (e.g. `monthly on 15`, `every 2 weeks on mon,thu`); use --clear-repeat to remove one")
+		return core.Validationf(subject, "--repeat needs a rule (e.g. `monthly on 15`, `every 2 weeks on mon,thu`); use --clear-repeat to remove one")
 	}
 	if t.Due == nil {
-		return core.Validationf(t.ID, "--repeat needs a --due: the date of the FIRST occurrence is what the rule counts from")
+		return core.Validationf(subject, "--repeat needs a --due: the date of the FIRST occurrence is what the rule counts from")
 	}
 	if a.Cfg.DefaultLane == a.Cfg.DoneLane {
 		// The successor is born in the default lane. If that IS the done lane it
 		// would be closed at birth holding a live rule — the state `add -s done
 		// --repeat` refuses — and nothing would ever fire it.
-		return core.Validationf(t.ID, "this board's default lane (%q) is its done lane, so a generated occurrence would be closed at birth — recurrence needs a board whose [lanes].default is open", a.Cfg.DefaultLane)
+		return core.Validationf(subject, "this board's default lane (%q) is its done lane, so a generated occurrence would be closed at birth — recurrence needs a board whose [lanes].default is open", a.Cfg.DefaultLane)
 	}
 	line, err := recur.Compile(spec, func(text string) (time.Time, error) {
 		return ParseDue(text, a.Clock.Now(), a.loc())
 	})
 	if err != nil {
-		return core.Validationf(t.ID, "%v", err)
+		return core.Validationf(subject, "%v", err)
 	}
 	if err := recur.Bindable(line, *t.Due, a.loc()); err != nil {
-		return core.Validationf(t.ID, "%v", err)
+		return core.Validationf(subject, "%v", err)
 	}
 	t.Repeat = line
 	anchor := *t.Due
