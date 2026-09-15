@@ -13,6 +13,7 @@ package gittest
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -22,9 +23,15 @@ import (
 // isolatedConfig is the throwaway global git config the tests run under. It
 // gives them a deterministic default branch (so an empty bare clone lands on
 // "main"), a committable identity (so `git commit` never fails for a missing
-// user.name/email), and gpgsign explicitly off (a developer's global
-// commit.gpgsign=true would block unattended commits). Nothing here reads the
-// host machine, so every test sees the same git behavior everywhere.
+// user.name/email), gpgsign explicitly off (a developer's global
+// commit.gpgsign=true would block unattended commits), and background
+// maintenance OFF: by default `git commit`, `push` (the receiving side) and
+// `fetch` each spawn `git maintenance run --auto --detach` (measured on git
+// 2.54: three detached children per commit+push+fetch), a process that
+// outlives the test and writes under .git/ while t.TempDir's RemoveAll runs —
+// the shape of ubuntu CI's `TempDir RemoveAll cleanup: … directory not empty`
+// flake (t-6jep). Nothing here reads the host machine, so every test sees the
+// same git behavior everywhere.
 const isolatedConfig = `[init]
 	defaultBranch = main
 [user]
@@ -32,6 +39,10 @@ const isolatedConfig = `[init]
 	email = t@e
 [commit]
 	gpgsign = false
+[gc]
+	auto = 0
+[maintenance]
+	auto = false
 `
 
 // Isolate points git at a throwaway global config and neutralizes the system
@@ -86,6 +97,30 @@ func setEnv(kv map[string]string) (restore func()) {
 			}
 		}
 	}
+}
+
+// GitOrSkip returns the git binary the real-git tests drive, skipping the test
+// where git is absent. app and gitrepo carried the same helper (t-8ep8).
+func GitOrSkip(t *testing.T) string {
+	t.Helper()
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not on PATH")
+	}
+	return git
+}
+
+// RunGit runs one git command in dir and returns its combined output, failing
+// the test on a non-zero exit with the output attached.
+func RunGit(t *testing.T, git, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(git, args...) //nolint:gosec // test helper: git is GitOrSkip's LookPath result, args are the test's own
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
 }
 
 // Main is the TestMain every real-git package shares: isolate, run, restore,

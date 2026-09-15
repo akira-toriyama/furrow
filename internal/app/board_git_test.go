@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 // `furrow board` is contractually the command that NEVER fails — the last one
@@ -38,8 +40,8 @@ func TestBoardGitStates(t *testing.T) {
 	}
 
 	// Committed but unpushed = ahead. With autocommit off, commit by hand.
-	runGitT(t, git, cloneA, "add", "-A")
-	runGitT(t, git, cloneA, "commit", "-q", "-m", "local work")
+	gittest.RunGit(t, git, cloneA, "add", "-A")
+	gittest.RunGit(t, git, cloneA, "commit", "-q", "-m", "local work")
 	g = openBoard(t, cloneA).Board().Git
 	if g.Ahead != 1 || g.Behind != 0 || g.Dirty {
 		t.Errorf("one unpushed commit should be ahead=1, clean: %+v", g)
@@ -68,12 +70,12 @@ func TestBoardGitNotARepo(t *testing.T) {
 // classifies — so without the explicit gate this reported `unavailable`, i.e.
 // "the probe broke", for a board that is merely new.
 func TestBoardGitFreshRepoIsNoUpstreamNotUnavailable(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	dir := t.TempDir()
 	if _, err := Init(dir); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, dir, "init", "-q", "-b", "main")
+	gittest.RunGit(t, git, dir, "init", "-q", "-b", "main")
 
 	g := openBoard(t, dir).Board().Git
 	if g.State != GitNoUpstream {
@@ -95,7 +97,7 @@ func TestBoardGitDirtyIsScopedToTheStore(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cloneA, "notes.md"), []byte("private\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runGitT(t, git, cloneA, "status", "--porcelain") // sanity: the file is really there
+	gittest.RunGit(t, git, cloneA, "status", "--porcelain") // sanity: the file is really there
 
 	if g := openBoard(t, cloneA).Board().Git; g.Dirty {
 		t.Errorf("a dirty file OUTSIDE .furrow must not mark the board dirty: %+v", g)
@@ -107,9 +109,9 @@ func TestBoardGitDirtyIsScopedToTheStore(t *testing.T) {
 // `<repo>/sub/.furrow` (or a FURROW_DIR of any name) matched nothing under the
 // constant and reported Dirty:false forever (t-3t68).
 func TestBoardGitDirtySeesANestedStore(t *testing.T) {
-	git := gitOrSkip(t)
+	git := gittest.GitOrSkip(t)
 	dir := t.TempDir()
-	runGitT(t, git, dir, "init", "-q", "-b", "main")
+	gittest.RunGit(t, git, dir, "init", "-q", "-b", "main")
 	sub := filepath.Join(dir, "sub")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 // TestTwoOperatorsAddNoGitConflict is the payoff of sharding: two operators on
@@ -15,24 +16,9 @@ import (
 // same sorted array and collided on the merge; with one shard per id they touch
 // disjoint files, so 3-way merge just takes both.
 func TestTwoOperatorsAddNoGitConflict(t *testing.T) {
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not on PATH")
-	}
+	git := gittest.GitOrSkip(t)
 	repo := t.TempDir()
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command(git, args...)
-		cmd.Dir = repo
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e",
-			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return string(out)
-	}
+	run := func(args ...string) string { return gittest.RunGit(t, git, repo, args...) }
 	// Some CI images default init.defaultBranch to main; pin it so branch names
 	// are predictable.
 	run("init", "-q", "-b", "base")

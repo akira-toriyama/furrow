@@ -2,13 +2,13 @@ package cli
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/app"
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 // TestAutoCommit_EndToEndViaCLI is the whole-stack proof: a user-config
@@ -18,10 +18,7 @@ import (
 // stashing the App, the mutatingCommands gate, the post-run hook firing on
 // success).
 func TestAutoCommit_EndToEndViaCLI(t *testing.T) {
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not on PATH")
-	}
+	git := gittest.GitOrSkip(t)
 	t.Setenv(app.EnvDir, "")
 	t.Setenv(app.EnvBoard, "")
 
@@ -32,15 +29,7 @@ func TestAutoCommit_EndToEndViaCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	board := filepath.Join(boardRoot, app.DirName)
-	gitAt := func(args ...string) string {
-		cmd := exec.Command(git, args...)
-		cmd.Dir = boardRoot
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return string(out)
-	}
+	gitAt := func(args ...string) string { return gittest.RunGit(t, git, boardRoot, args...) }
 	gitAt("init", "-q", "-b", "main")
 	gitAt("add", "-A")
 	gitAt("commit", "-q", "-m", "board")

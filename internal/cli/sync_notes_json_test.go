@@ -3,12 +3,12 @@ package cli
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/app"
+	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
 // The pending-bodies remedy prints under --json too (t-mygx): the machine
@@ -17,22 +17,11 @@ import (
 // branch — the one sync note pair that broke the "--json stdout + stderr
 // notes" pairing every other command keeps. stdout must stay pure JSON.
 func TestSyncJSONStillPrintsPendingBodiesRemedy(t *testing.T) {
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not on PATH")
-	}
+	git := gittest.GitOrSkip(t)
 	t.Setenv(app.EnvBoard, "")
 
 	origin := t.TempDir()
-	gitAt := func(dir string, args ...string) string {
-		cmd := exec.Command(git, args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return string(out)
-	}
+	gitAt := func(dir string, args ...string) string { return gittest.RunGit(t, git, dir, args...) }
 	gitAt(origin, "init", "-q", "--bare", "-b", "main")
 	boardRoot := filepath.Join(t.TempDir(), "central")
 	gitAt(filepath.Dir(boardRoot), "clone", "-q", origin, boardRoot)
