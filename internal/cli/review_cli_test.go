@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/app"
+
+	"github.com/akira-toriyama/furrow/internal/core"
 )
 
 // unreviewedLine names at most three repos (with day counts) and reports the
@@ -150,5 +152,31 @@ func TestReviewIDShapedRepoShortNameFallsThroughToRepo(t *testing.T) {
 
 	if _, code := run(t, "review", "t-zzzz9"); code != 1 {
 		t.Errorf("unknown id-shaped token exit = %d, want 1 (task not found)", code)
+	}
+}
+
+// `furrow review <archived-id>` is a not-found that says so — the same
+// archived enrichment (details.archived + the unarchive remedy) every other
+// mutator's miss carries. The dispatch used to compose a bare core.NotFound for
+// an id-shaped miss, and ReviewTask's own miss was bare too (t-8sgn).
+func TestCLIReviewArchivedIDSaysArchived(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "retired", "-r", "o/r")
+	if _, code := run(t, "done", id); code != 0 {
+		t.Fatal("done failed")
+	}
+	if _, code := run(t, "archive", id, "--yes"); code != 0 {
+		t.Fatal("archive failed")
+	}
+	fe, _ := runErr(t, "review", id)
+	if fe == nil || fe.Code != core.CodeNotFound {
+		t.Fatalf("want not-found, got %+v", fe)
+	}
+	d, _ := fe.Details.(map[string]any)
+	if d == nil || d["archived"] == nil {
+		t.Errorf("details.archived missing: %+v", fe)
+	}
+	if !strings.Contains(fe.Msg, "furrow unarchive "+id) {
+		t.Errorf("the miss must name the remedy, got %q", fe.Msg)
 	}
 }

@@ -15,7 +15,7 @@ func (a *App) ReviewTask(id string) (*core.Task, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return nil, core.NotFound(id)
+		return nil, a.notFoundTask(id)
 	}
 	now := a.Clock.Now()
 	t.Reviewed = &now

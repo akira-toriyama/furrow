@@ -78,8 +78,11 @@ func newReviewCmd() *cobra.Command {
 				return nil
 			}
 			if a.Cfg.IDPattern().MatchString(arg) {
-				if _, _, err := a.Get(arg); err == nil {
+				reviewTask := func() error {
 					return emitMutation(cmd, a, "reviewed", arg, func() (*core.Task, error) { return a.ReviewTask(arg) })
+				}
+				if _, _, err := a.Get(arg); err == nil {
+					return reviewTask()
 				}
 				if _, rerr := a.ResolveRepo(arg); rerr != nil {
 					// A task-id-shaped miss can still be a box on a board whose
@@ -87,7 +90,10 @@ func newReviewCmd() *cobra.Command {
 					if ok, eerr := a.RefTargetsEpic(arg); eerr == nil && ok {
 						return reviewEpic()
 					}
-					return core.NotFound(arg)
+					// A miss on every contract is the TASK's not-found, and the
+					// app builds it: ReviewTask's says when the id is archived
+					// (t-8sgn), which a core.NotFound composed here could not.
+					return reviewTask()
 				}
 			}
 			rec, err := a.ReviewRepo(arg, by == "agent")
