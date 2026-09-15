@@ -150,7 +150,7 @@ func (a *App) EpicAdd(title string, o EpicAddOpts) (*core.Epic, error) {
 	}
 	// Body first, then the shard: an interrupted create leaves at worst an orphan
 	// body file (which lint reports), never a shard pointing at nothing.
-	if err := a.Store.SaveBody(id, body); err != nil {
+	if err := a.saveBody(id, body); err != nil {
 		return nil, err
 	}
 	if err := a.Store.SaveEpic(&e); err != nil {
