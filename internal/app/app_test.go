@@ -1340,6 +1340,40 @@ func TestRetitle(t *testing.T) {
 	}
 }
 
+// A retitle to the title the shard already holds, after the body's heading
+// drifted (a hand edit), rewrites the heading — prose — and so advances
+// `updated`, like every other body write (t-wdm8: it used to leave the clock
+// alone because the shard's bytes never moved). The same call with the heading
+// already in step is the no-op it always was.
+func TestRetitleStampsUpdatedWhenOnlyTheHeadingMoves(t *testing.T) {
+	a := newApp()
+	clk := a.Clock.(*fixedClock)
+	tk, _ := a.Add("same", AddOpts{})
+	if err := a.Store.SaveBody(tk.ID, "# stale heading\n\nprose\n"); err != nil {
+		t.Fatal(err)
+	}
+	clk.t = clk.t.Add(time.Hour)
+	got, err := a.Retitle(tk.ID, "same")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, _ := a.Store.LoadBody(tk.ID); body != "# same\n\nprose\n" {
+		t.Errorf("heading not synced: %q", body)
+	}
+	if !got.Updated.Equal(clk.t) {
+		t.Errorf("updated = %v, want %v — a heading rewrite is prose and must stamp", got.Updated, clk.t)
+	}
+
+	clk.t = clk.t.Add(time.Hour)
+	again, err := a.Retitle(tk.ID, "same")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Updated.Equal(got.Updated) {
+		t.Errorf("a retitle that changed nothing advanced updated to %v", again.Updated)
+	}
+}
+
 func TestRetitleHeading(t *testing.T) {
 	cases := []struct {
 		name, body, title, want string
