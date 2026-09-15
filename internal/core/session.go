@@ -49,15 +49,20 @@ type SessionClash struct {
 // self (first come, first served: the earlier session owns the repo, so the
 // earlier session's own writes never clash), and (c) sits in a checkout whose
 // repo — repoOf(cwd), "" when underivable — is one the write touches. A clash
-// is Busy when the occupant's turn is not known to have ended AND its
-// LastActive is unknown or within busyWithin of now — an occupant whose
-// TurnEnded is set is idle however fresh its last write (the write that ended
-// the turn is the last thing it did), while a mid-turn occupant is still
-// released once it has been silent past busyWithin (a long tool call, or a
-// permission prompt nobody answers — the window is the ceiling that keeps a
-// refusal from being permanent); busyWithin <= 0 is the warn-only switch —
-// nothing is busy, unknown activity included, so an operator can turn
-// refusals off without turning the guard off.
+// is Busy when the occupant's turn is not known to have ended AND it has been
+// silent for at most busyWithin — measured from its LastActive, or, when its
+// activity is unknown (no transcript to read), from its StartedAt: an occupant
+// nobody has heard from since it started is released past the same window. An
+// occupant whose TurnEnded is set is idle however fresh its last write (the
+// write that ended the turn is the last thing it did), while a mid-turn
+// occupant is released once silent past busyWithin (a long tool call, or a
+// permission prompt nobody answers). The window is the CEILING that keeps a
+// refusal from being permanent, and it has to be one for every occupant:
+// "unknown activity = busy" with no ceiling made a stale registry entry whose
+// transcript was gone — or whose pid another process now wears — hold its
+// repo forever (t-8bgb). busyWithin <= 0 is the warn-only switch — nothing is
+// busy, unknown activity included, so an operator can turn refusals off
+// without turning the guard off.
 //
 // A self with a zero StartedAt cannot be ordered against anyone and yields no
 // clash: the caller decides what "self not in the registry" means (the app
@@ -86,7 +91,8 @@ func SessionClashes(self Session, others []Session, repoOf func(cwd string) stri
 		c := SessionClash{
 			Repo: repo, PID: o.PID, SessionID: o.ID, Name: o.Name, CWD: o.CWD,
 			StartedAt: o.StartedAt.UTC().Truncate(time.Second), TurnEnded: o.TurnEnded,
-			Busy: busyWithin > 0 && !o.TurnEnded,
+			// Unknown activity: the start is the last thing known about it.
+			Busy: busyWithin > 0 && !o.TurnEnded && now.Sub(o.StartedAt) <= busyWithin,
 		}
 		if !o.LastActive.IsZero() {
 			last := o.LastActive.UTC().Truncate(time.Second)

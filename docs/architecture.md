@@ -808,7 +808,8 @@ waiting for the human, however fresh that write is, since the closing message
 IS the last write (`turn_ended` in the clash; measured 2026-09-10: a session
 told "we're done" counted as working for the whole window, and the wait was
 about 4 minutes) — or when it has been silent past `[session].busy_seconds`;
-otherwise *busy* (mid-turn and recent, or no transcript found). The window is
+otherwise *busy* (mid-turn and recent; with no transcript to read, "recent"
+is measured from the session's start). The window is
 the ceiling on a mid-turn reading, not the signal: a long tool call or an
 unanswered permission prompt goes idle after it rather than refusing forever,
 and a tail the adapter cannot parse degrades to the window alone, never to

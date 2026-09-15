@@ -38,8 +38,17 @@ func TestSessionClashes(t *testing.T) {
 			[]Session{{PID: 1, ID: "a", CWD: "/w/glyph", StartedAt: earlier, LastActive: idle}},
 			[]string{"o/glyph"}, 5 * time.Minute,
 			[]SessionClash{{Repo: "o/glyph", PID: 1, Busy: false}}},
-		{"unknown activity is busy", self,
+		// Unknown activity is measured from the occupant's START under the same
+		// window: silent since an hour ago is released, silent since ten
+		// seconds ago (self started five seconds ago) is busy (t-8bgb: the
+		// former used to be busy forever).
+		{"unknown activity older than the window is released", self,
 			[]Session{{PID: 1, ID: "a", CWD: "/w/glyph", StartedAt: earlier}},
+			[]string{"o/glyph"}, 5 * time.Minute,
+			[]SessionClash{{Repo: "o/glyph", PID: 1, Busy: false}}},
+		{"unknown activity inside the window is busy",
+			Session{PID: 100, ID: "self", CWD: "/w/glyph", StartedAt: now.Add(-5 * time.Second)},
+			[]Session{{PID: 1, ID: "a", CWD: "/w/glyph", StartedAt: now.Add(-10 * time.Second)}},
 			[]string{"o/glyph"}, 5 * time.Minute,
 			[]SessionClash{{Repo: "o/glyph", PID: 1, Busy: true}}},
 		{"an occupant whose turn ended is idle however fresh its last write", self,
@@ -115,9 +124,20 @@ func TestSessionClashIdleFields(t *testing.T) {
 	if len(known) != 1 || known[0].IdleSeconds == nil || *known[0].IdleSeconds != 90 || known[0].LastActive == nil || known[0].Busy {
 		t.Fatalf("known activity: %+v", known)
 	}
+	// Unknown activity keeps its null idle fields, and the window is measured
+	// from the START: an occupant that began an hour ago and was never heard
+	// from is past a one-minute ceiling (t-8bgb: it used to be busy forever),
+	// while one that began ten seconds ago is still inside it.
 	unknown := SessionClashes(self, []Session{{PID: 2, CWD: "x", StartedAt: now.Add(-time.Hour)}}, repoOf, []string{"o/r"}, now, time.Minute)
-	if len(unknown) != 1 || unknown[0].IdleSeconds != nil || unknown[0].LastActive != nil || !unknown[0].Busy {
-		t.Fatalf("unknown activity: %+v", unknown)
+	if len(unknown) != 1 || unknown[0].IdleSeconds != nil || unknown[0].LastActive != nil || unknown[0].Busy {
+		t.Fatalf("unknown activity, started an hour ago: %+v", unknown)
+	}
+	young := SessionClashes(self, []Session{{PID: 2, CWD: "x", StartedAt: now.Add(-10 * time.Second)}}, repoOf, []string{"o/r"}, now, time.Minute)
+	if len(young) != 1 || young[0].IdleSeconds != nil || !young[0].Busy {
+		t.Fatalf("unknown activity, started ten seconds ago: %+v", young)
+	}
+	if off := SessionClashes(self, []Session{{PID: 2, CWD: "x", StartedAt: now.Add(-10 * time.Second)}}, repoOf, []string{"o/r"}, now, 0); len(off) != 1 || off[0].Busy {
+		t.Fatalf("busyWithin 0 is warn-only for unknown activity too: %+v", off)
 	}
 	if known[0].TurnEnded {
 		t.Fatalf("TurnEnded must mirror the session, not be inferred from idleness: %+v", known)

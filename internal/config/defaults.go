@@ -73,7 +73,8 @@ var (
 	// turn is idle at once, so the window only bounds the mid-turn reading:
 	// five minutes covers the ordinary gap between tool calls, and a long build
 	// or an unanswered permission prompt exceeding it demotes the refusal to a
-	// warning instead of refusing forever.
+	// warning instead of refusing forever. A session whose transcript cannot
+	// be read is measured from its start instead, under the same ceiling.
 	DefaultSessionBusySeconds = 300
 )
 
