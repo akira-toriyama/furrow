@@ -195,7 +195,7 @@ func (a *App) DueDisplayState(t *core.Task) string {
 	if t.Due == nil {
 		return core.DueNone
 	}
-	if a.dueSkipLanes()[t.Status] {
+	if t.Status == a.Cfg.DoneLane || a.Cfg.DueIgnoreLanes[t.Status] {
 		return core.DueLater
 	}
 	return core.DueStateOf(t, a.Clock.Now(), a.loc())
