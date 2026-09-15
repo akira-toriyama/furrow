@@ -56,10 +56,7 @@ func revisitLine(sum app.RevisitSummary, scope string) string {
 	// boxes prints a short nudge. EVERY epic key the summary counts must appear
 	// here: Empty() gates this line, so a key counted but not rendered would
 	// print a nudge that names nothing (measured with epic_review_due pre-fix).
-	for _, c := range []struct {
-		label string
-		ids   []string
-	}{{"epic_all_done", sum.EpicAllDone}, {"epic_stuck", sum.EpicStuck}, {"epic_stale", sum.EpicStale}, {"epic_dep_done", sum.EpicDepDone}, {"epic_review_due", sum.EpicReviewDue}} {
+	for _, c := range epicRevisitCounts(sum) {
 		if len(c.ids) > 0 {
 			line += fmt.Sprintf(", %d %s", len(c.ids), c.label)
 		}
@@ -75,18 +72,10 @@ func revisitLine(sum app.RevisitSummary, scope string) string {
 // owner/repo (21d), … — furrow review <repo>". At most three repos are named
 // (the store-sorted first few) so the line stays legible; the count is exact.
 func unreviewedLine(repos []app.UnreviewedRepo) string {
-	const maxNamed = 3
-	named := repos
-	if len(named) > maxNamed {
-		named = named[:maxNamed]
-	}
-	parts := make([]string, len(named))
-	for i, r := range named {
+	n, suffix := capNames(len(repos))
+	parts := make([]string, n)
+	for i, r := range repos[:n] {
 		parts[i] = fmt.Sprintf("%s (%dd)", r.Repo, r.Days)
-	}
-	suffix := ""
-	if len(repos) > len(named) {
-		suffix = fmt.Sprintf(", +%d more", len(repos)-len(named))
 	}
 	// Name the precondition inline: a bare `furrow review <repo>` records a HUMAN
 	// review (advancing this very clock), so an agent that blindly runs it fakes a
@@ -315,13 +304,9 @@ func incomingLine(changes []app.IncomingChange) string {
 		if len(group) == 0 {
 			continue
 		}
-		const maxNamed = 3
-		named := group
-		if len(named) > maxNamed {
-			named = named[:maxNamed]
-		}
-		ids := make([]string, len(named))
-		for i, c := range named {
+		n, more := capNames(len(group))
+		ids := make([]string, n)
+		for i, c := range group[:n] {
 			ids[i] = c.ID
 			if c.From != "" || c.To != "" {
 				from, to := c.From, c.To
@@ -336,11 +321,7 @@ func incomingLine(changes []app.IncomingChange) string {
 				ids[i] += " " + from + "→" + to
 			}
 		}
-		part := fmt.Sprintf("%d %s (%s", len(group), kind, strings.Join(ids, ", "))
-		if len(group) > len(named) {
-			part += fmt.Sprintf(", +%d more", len(group)-len(named))
-		}
-		parts = append(parts, part+")")
+		parts = append(parts, fmt.Sprintf("%d %s (%s%s)", len(group), kind, strings.Join(ids, ", "), more))
 	}
 	return "incoming: " + strings.Join(parts, ", ")
 }

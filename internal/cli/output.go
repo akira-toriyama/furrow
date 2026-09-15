@@ -58,10 +58,56 @@ func printNDJSONValue(v any) {
 	fmt.Fprint(out, b.String())
 }
 
-func printNDJSON(tasks []core.Task) {
-	for _, t := range tasks {
-		printNDJSONValue(t)
+// emitList is the one list-shaped emitter: --ndjson streams one view per
+// compact line, --json prints the array (nil normalized to [] — an empty
+// listing is a healthy result and must never read as null), and human mode
+// runs the renderer the caller hands it. Nine copies of this three-way switch
+// preceded it, one of them living in cmd_lint.go (t-3tq4).
+func emitList[T any](views []T, human func()) {
+	switch {
+	case flagNDJSON:
+		for _, v := range views {
+			printNDJSONValue(v)
+		}
+	case flagJSON:
+		if views == nil {
+			views = []T{}
+		}
+		printJSON(views)
+	default:
+		human()
 	}
+}
+
+// epicRevisitCounts is the revisit summary's five epic-level keys, labeled as
+// the JSON spells them, in one order for every renderer. EVERY epic key the
+// summary counts must appear here: Empty() gates the nudges that print these,
+// so a key counted but not rendered prints a nudge that names nothing
+// (measured with epic_review_due pre-fix). Two renderers carried the list,
+// one without that warning (t-3tq4).
+func epicRevisitCounts(sum app.RevisitSummary) []struct {
+	label string
+	ids   []string
+} {
+	return []struct {
+		label string
+		ids   []string
+	}{
+		{"epic_all_done", sum.EpicAllDone}, {"epic_stuck", sum.EpicStuck}, {"epic_stale", sum.EpicStale},
+		{"epic_dep_done", sum.EpicDepDone}, {"epic_review_due", sum.EpicReviewDue},
+	}
+}
+
+// capNames is the "name a few, count the rest" rule the human lines share:
+// the first maxNamed of n items are named and the remainder is a count. It
+// returns how many to name and the ", +N more" suffix ("" when none). Three
+// renderers carried the constant and the arithmetic (t-3tq4).
+func capNames(n int) (named int, more string) {
+	const maxNamed = 3
+	if n <= maxNamed {
+		return n, ""
+	}
+	return maxNamed, fmt.Sprintf(", +%d more", n-maxNamed)
 }
 
 // jsonMode reports whether machine output was requested in either form. It is
@@ -94,6 +140,17 @@ func isTTY() bool {
 // printTaskTable renders tasks as an aligned text table (human output). It is
 // deliberately plain (no box drawing) so it greps and copies cleanly.
 func printTaskTable(a *app.App, tasks []core.Task) {
+	printRows(a, tasks, nil)
+}
+
+// printRows is the one human task table: id, lane, priority and the title cell
+// — labels in [], repos in () so `ls | grep owner/repo` works, then the due
+// and repeat tags, which ride in the cell rather than as columns (a column
+// would widen every row on every board for a field only a few tasks carry).
+// glyphs, when given, is one leading state column per row (the flat `ls`);
+// nil is the glyph-less table every other list prints. Two copies differed by
+// that column alone (t-3tq4).
+func printRows(a *app.App, tasks []core.Task, glyphs []string) {
 	if len(tasks) == 0 {
 		fmt.Fprintln(out, "(no tasks)")
 		return
@@ -107,21 +164,27 @@ func printTaskTable(a *app.App, tasks []core.Task) {
 			wStatus = len(t.Status)
 		}
 	}
-	fmt.Fprintf(out, "%-*s  %-*s  %5s  %s\n", wID, "ID", wStatus, "STATUS", "PRIO", "TITLE")
-	for _, t := range tasks {
+	lead := func(g string) string {
+		if glyphs == nil {
+			return ""
+		}
+		return g + "  "
+	}
+	fmt.Fprintf(out, "%s%-*s  %-*s  %5s  %s\n", lead(" "), wID, "ID", wStatus, "STATUS", "PRIO", "TITLE")
+	for i, t := range tasks {
 		title := t.Title
 		if len(t.Labels) > 0 {
 			title += "  [" + strings.Join(t.Labels, ",") + "]"
 		}
-		// repos ride alongside the labels in (), so `ls | grep owner/repo` works.
 		if len(t.Repos) > 0 {
 			title += "  (" + strings.Join(t.Repos, ",") + ")"
 		}
-		// The due and repeat tags ride in the title cell like the labels and repos,
-		// not as their own columns: a column would widen every row on every board
-		// for a field only a few tasks carry.
 		title = withTags(title, dueTag(a, &t), repeatTag(&t))
-		fmt.Fprintf(out, "%-*s  %-*s  %5d  %s\n", wID, t.ID, wStatus, t.Status, t.Priority, title)
+		g := ""
+		if glyphs != nil {
+			g = glyphs[i]
+		}
+		fmt.Fprintf(out, "%s%-*s  %-*s  %5d  %s\n", lead(g), wID, t.ID, wStatus, t.Status, t.Priority, title)
 	}
 }
 
@@ -130,17 +193,7 @@ func printTaskTable(a *app.App, tasks []core.Task) {
 // query that matched nothing still succeeded. exit 1 is reserved for a
 // specifically requested id that does not exist (e.g. `show <id>`).
 func emitTasks(a *app.App, tasks []core.Task) error {
-	switch {
-	case flagNDJSON:
-		printNDJSON(tasks)
-	case flagJSON:
-		if tasks == nil {
-			tasks = []core.Task{}
-		}
-		printJSON(tasks)
-	default:
-		printTaskTable(a, tasks)
-	}
+	emitList(tasks, func() { printTaskTable(a, tasks) })
 	return nil
 }
 
@@ -178,24 +231,17 @@ func reasonFor(t core.Task) actionReason {
 // specifically requested id that is missing, e.g. `show`). An agent pipeline
 // under `set -e` must not treat "no work to pick up" as a failure.
 func emitActionable(a *app.App, tasks []core.Task) error {
-	switch {
-	case flagNDJSON:
-		for _, t := range tasks {
-			printNDJSONValue(actionableView{Task: t, Reason: reasonFor(t)})
-		}
-	case flagJSON:
-		views := make([]actionableView, 0, len(tasks))
-		for _, t := range tasks {
-			views = append(views, actionableView{Task: t, Reason: reasonFor(t)})
-		}
-		printJSON(views)
-	default:
+	views := make([]actionableView, 0, len(tasks))
+	for _, t := range tasks {
+		views = append(views, actionableView{Task: t, Reason: reasonFor(t)})
+	}
+	emitList(views, func() {
 		if len(tasks) == 0 {
 			fmt.Fprintln(out, "(nothing actionable)")
-			return nil
+			return
 		}
 		printTaskTable(a, tasks)
-	}
+	})
 	return nil
 }
 
@@ -211,24 +257,17 @@ type revisitView struct {
 // the shared one. Unlike `next`, an empty result is the healthy "nothing to
 // revisit" state and exits 0 — an agent pipeline must not treat it as an error.
 func emitRevisit(a *app.App, items []app.RevisitItem) error {
-	switch {
-	case flagNDJSON:
-		for _, it := range items {
-			printNDJSONValue(revisitView{Task: it.Task, Revisit: it.Reasons})
-		}
-	case flagJSON:
-		views := make([]revisitView, 0, len(items))
-		for _, it := range items {
-			views = append(views, revisitView{Task: it.Task, Revisit: it.Reasons})
-		}
-		printJSON(views)
-	default:
+	views := make([]revisitView, 0, len(items))
+	for _, it := range items {
+		views = append(views, revisitView{Task: it.Task, Revisit: it.Reasons})
+	}
+	emitList(views, func() {
 		tasks := make([]core.Task, 0, len(items))
 		for _, it := range items {
 			tasks = append(tasks, it.Task)
 		}
 		printTaskTable(a, tasks)
-	}
+	})
 	return nil
 }
 
@@ -245,20 +284,11 @@ type searchHitView struct {
 // with the snippet. A zero-match result is a healthy empty result (exit 0),
 // never a miss — the same contract as ls/next/revisit.
 func emitSearch(hits []app.SearchHit) error {
-	switch {
-	case flagNDJSON:
-		for _, h := range hits {
-			printNDJSONValue(searchHitView{Task: h.Task, MatchedField: h.MatchedField, Snippet: h.Snippet})
-		}
-	case flagJSON:
-		views := make([]searchHitView, 0, len(hits))
-		for _, h := range hits {
-			views = append(views, searchHitView{Task: h.Task, MatchedField: h.MatchedField, Snippet: h.Snippet})
-		}
-		printJSON(views)
-	default:
-		printSearchTable(hits)
+	views := make([]searchHitView, 0, len(hits))
+	for _, h := range hits {
+		views = append(views, searchHitView{Task: h.Task, MatchedField: h.MatchedField, Snippet: h.Snippet})
 	}
+	emitList(views, func() { printSearchTable(hits) })
 	return nil
 }
 
@@ -299,28 +329,23 @@ func printSearchTable(hits []app.SearchHit) {
 // core.Task is embedded, which is exactly why it must never grow a MarshalJSON:
 // Go would promote it here and every sibling field (actionable, blocked_by,
 // children) would silently vanish. See the note on core.Task.
-type treeView struct {
-	core.Task
-	Actionable bool     `json:"actionable"`
-	BlockedBy  []string `json:"blocked_by"`
-}
 
 // groupView is one epic's group in `ls --tree --json`. Epic is a pointer so the
 // trailing unfiled group serializes as `"epic": null` rather than a fabricated
 // empty box — a reader must be able to tell "no epic" from "an epic with blank
 // fields".
 type groupView struct {
-	Epic     *core.Epic    `json:"epic"`
-	Active   bool          `json:"active"`
-	Progress *app.Progress `json:"progress,omitempty"`
-	Stuck    bool          `json:"stuck"`
-	Tasks    []treeView    `json:"tasks"`
+	Epic     *core.Epic     `json:"epic"`
+	Active   bool           `json:"active"`
+	Progress *app.Progress  `json:"progress,omitempty"`
+	Stuck    bool           `json:"stuck"`
+	Tasks    []listItemView `json:"tasks"`
 }
 
-func toTreeViews(nodes []app.TreeNode) []treeView {
-	out := make([]treeView, 0, len(nodes))
+func toTreeViews(nodes []app.TreeNode) []listItemView {
+	out := make([]listItemView, 0, len(nodes))
 	for _, n := range nodes {
-		out = append(out, treeView{Task: n.Task, Actionable: n.Actionable, BlockedBy: n.BlockedBy})
+		out = append(out, listItemView{Task: n.Task, Actionable: n.Actionable, BlockedBy: n.BlockedBy})
 	}
 	return out
 }
@@ -345,17 +370,10 @@ func toGroupViews(groups []app.TreeGroup) []groupView {
 // grouping that was asked for).
 func emitTree(a *app.App, groups []app.TreeGroup) error {
 	views := toGroupViews(groups)
-	switch {
-	case flagNDJSON:
-		for _, v := range views {
-			printNDJSONValue(v)
-		}
-	case flagJSON:
-		printJSON(views)
-	default:
+	emitList(views, func() {
 		if len(views) == 0 {
 			fmt.Fprintln(out, "(no tasks)")
-			return nil
+			return
 		}
 		for i, g := range groups {
 			if i > 0 {
@@ -363,7 +381,7 @@ func emitTree(a *app.App, groups []app.TreeGroup) error {
 			}
 			printTreeGroup(a, g)
 		}
-	}
+	})
 	return nil
 }
 
@@ -457,20 +475,11 @@ func toListItemView(it app.ListItem) listItemView {
 // --ndjson one row per line, human an aligned table with a leading state glyph.
 // An empty listing is a healthy result (exit 0), never a miss.
 func emitListItems(a *app.App, items []app.ListItem) error {
-	switch {
-	case flagNDJSON:
-		for _, it := range items {
-			printNDJSONValue(toListItemView(it))
-		}
-	case flagJSON:
-		views := make([]listItemView, 0, len(items))
-		for _, it := range items {
-			views = append(views, toListItemView(it))
-		}
-		printJSON(views)
-	default:
-		printListItemTable(a, items)
+	views := make([]listItemView, 0, len(items))
+	for _, it := range items {
+		views = append(views, toListItemView(it))
 	}
+	emitList(views, func() { printListItemTable(a, items) })
 	return nil
 }
 
@@ -479,36 +488,13 @@ func emitListItems(a *app.App, items []app.ListItem) error {
 // rows are ready to pick up (★) and which are merely open (·). Plain, greppable
 // output.
 func printListItemTable(a *app.App, items []app.ListItem) {
-	if len(items) == 0 {
-		fmt.Fprintln(out, "(no tasks)")
-		return
-	}
-	wID, wStatus := len("ID"), len("STATUS")
+	tasks := make([]core.Task, 0, len(items))
+	glyphs := make([]string, 0, len(items))
 	for _, it := range items {
-		if len(it.Task.ID) > wID {
-			wID = len(it.Task.ID)
-		}
-		if len(it.Task.Status) > wStatus {
-			wStatus = len(it.Task.Status)
-		}
+		tasks = append(tasks, it.Task)
+		glyphs = append(glyphs, stateGlyph(a, it.Actionable, it.Task.Status))
 	}
-	fmt.Fprintf(out, "%s  %-*s  %-*s  %5s  %s\n", " ", wID, "ID", wStatus, "STATUS", "PRIO", "TITLE")
-	for _, it := range items {
-		t := it.Task
-		title := t.Title
-		if len(t.Labels) > 0 {
-			title += "  [" + strings.Join(t.Labels, ",") + "]"
-		}
-		if len(t.Repos) > 0 {
-			title += "  (" + strings.Join(t.Repos, ",") + ")"
-		}
-		// The due and repeat tags ride in the title cell like labels and repos,
-		// rather than as columns: a column would widen every row on every board for
-		// a field only a few tasks carry.
-		title = withTags(title, dueTag(a, &t), repeatTag(&t))
-		g := stateGlyph(a, it.Actionable, t.Status)
-		fmt.Fprintf(out, "%s  %-*s  %-*s  %5d  %s\n", g, wID, t.ID, wStatus, t.Status, t.Priority, title)
-	}
+	printRows(a, tasks, glyphs)
 }
 
 // taskRefView is one resolved edge (JSON shape): the referenced task's id, title,
@@ -812,18 +798,11 @@ func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, noBod
 		}
 		return showView(*entries[i].Task, mentionsAt(i), noBody, backlinks)
 	}
-	switch {
-	case flagNDJSON:
-		for i := range entries {
-			printNDJSONValue(view(i))
-		}
-	case flagJSON:
-		views := make([]any, 0, len(entries))
-		for i := range entries {
-			views = append(views, view(i))
-		}
-		printJSON(views)
-	default:
+	views := make([]any, 0, len(entries))
+	for i := range entries {
+		views = append(views, view(i))
+	}
+	emitList(views, func() {
 		for i := range entries {
 			if i > 0 {
 				fmt.Fprintln(out, "---")
@@ -838,7 +817,7 @@ func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, noBod
 				printTaskDetail(a, &entries[i].Task.Task, entries[i].Task.Body)
 			}
 		}
-	}
+	})
 }
 
 // humanTime renders a timestamp for HUMAN output in the viewer's local time
@@ -1067,10 +1046,17 @@ func printMutation(verb string, before, after *core.Task, extra map[string]any) 
 // be added twice or the batch path would quietly emit a different envelope from
 // the single one.
 func mutationEnvelope(before, after *core.Task, extra map[string]any) map[string]any {
+	return envelope(before, after, changedFields(before, after), extra)
+}
+
+// envelope is the {before, after, changed} shape every mutation's --json
+// carries, plus the caller's extras — assembled ONCE, so a key added to the
+// envelope is added for tasks and boxes alike (t-3tq4).
+func envelope(before, after any, changed []string, extra map[string]any) map[string]any {
 	m := map[string]any{
 		"before":  before,
 		"after":   after,
-		"changed": changedFields(before, after),
+		"changed": changed,
 	}
 	for k, v := range extra {
 		m[k] = v
@@ -1401,10 +1387,7 @@ func printBrief(b *app.BriefData, scope string) {
 		fmt.Fprintf(out, "%s  ← %s\n", row, strings.Join(it.BlockedBy, ", "))
 	}
 	fmt.Fprintf(out, "revisit: %d dep_done, %d stale", len(b.Revisit.DepDone), len(b.Revisit.Stale))
-	for _, c := range []struct {
-		label string
-		ids   []string
-	}{{"epic_all_done", b.Revisit.EpicAllDone}, {"epic_stuck", b.Revisit.EpicStuck}, {"epic_stale", b.Revisit.EpicStale}, {"epic_dep_done", b.Revisit.EpicDepDone}, {"epic_review_due", b.Revisit.EpicReviewDue}} {
+	for _, c := range epicRevisitCounts(b.Revisit) {
 		if n := len(c.ids); n > 0 {
 			fmt.Fprintf(out, ", %d %s", n, c.label)
 		}
@@ -1445,17 +1428,10 @@ func emitEpicList(items []app.EpicItem) error {
 	for _, it := range items {
 		views = append(views, toEpicView(it))
 	}
-	switch {
-	case flagNDJSON:
-		for _, v := range views {
-			printNDJSONValue(v)
-		}
-	case flagJSON:
-		printJSON(views)
-	default:
+	emitList(views, func() {
 		if len(views) == 0 {
 			fmt.Fprintln(out, "(no epics)")
-			return nil
+			return
 		}
 		for _, v := range views {
 			mark := " "
@@ -1486,7 +1462,7 @@ func emitEpicList(items []app.EpicItem) error {
 			}
 			fmt.Fprintln(out, line)
 		}
-	}
+	})
 	return nil
 }
 
@@ -1644,15 +1620,7 @@ func printEpicMutation(verb string, before, after *core.Epic, extra map[string]a
 // single assembly point for the shape, for the reason mutationEnvelope
 // documents on the task side: assembled twice, a new key gets added once.
 func epicMutationEnvelope(before, after *core.Epic, extra map[string]any) map[string]any {
-	m := map[string]any{
-		"before":  before,
-		"after":   after,
-		"changed": changedEpicFields(before, after),
-	}
-	for k, v := range extra {
-		m[k] = v
-	}
-	return m
+	return envelope(before, after, changedEpicFields(before, after), extra)
 }
 
 // changedEpicFields names the epic fields a mutation actually altered — the
