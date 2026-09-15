@@ -422,6 +422,16 @@ func TestQueryTransitiveGraph(t *testing.T) {
 	if got := ids("-descendant-of:" + ta.ID + " is:open"); len(got) != 2 {
 		t.Errorf("-descendant-of = %v, want the base + bystander", got)
 	}
+	// A comma is OR: the closures of every start, unioned. A start reached from
+	// another start stays in (t-hwav: the shared walk deleted every start at
+	// the end, so descendant-of:base,mid — mid being base's only next hop —
+	// returned nothing).
+	if got := ids("descendant-of:" + ta.ID + "," + tb.ID); !reflect.DeepEqual(got, []string{tb.ID, tc.ID}) {
+		t.Errorf("descendant-of base,mid = %v, want [%s %s]", got, tb.ID, tc.ID)
+	}
+	if got := ids("ancestor-of:" + tb.ID + "," + tc.ID); !reflect.DeepEqual(got, []string{ta.ID, tb.ID}) {
+		t.Errorf("ancestor-of mid,top = %v, want [%s %s]", got, ta.ID, tb.ID)
+	}
 }
 
 // TestQueryLabelWildcard pins the reserved `*` token (t-7th1 leg 4): a value
