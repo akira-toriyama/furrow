@@ -4,22 +4,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/akira-toriyama/furrow/internal/config"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // newSeededApp builds an App over a memstore with deterministic sequential ids
 // (t-00001, t-00002, …) so directive links can be built against known ids.
-func newSeededApp() *App {
-	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	st.SeedSequentialIDs()
-	clk := &fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)}
-	return NewWithStore(st, cfg, clk)
-}
-
 func bodyLink(id string) string {
 	return "https://github.com/akira-toriyama/projects/blob/main/.furrow/bodies/" + id + ".md"
 }

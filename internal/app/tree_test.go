@@ -7,18 +7,6 @@ import (
 // groupIDs names the groups a Tree call produced, in order, using "(none)" for
 // the trailing unfiled group — so a test can assert the ORDER, which is the one
 // property a map-backed implementation would get wrong intermittently.
-func groupIDs(gs []TreeGroup) []string {
-	out := make([]string, 0, len(gs))
-	for _, g := range gs {
-		if g.Epic == nil {
-			out = append(out, "(none)")
-			continue
-		}
-		out = append(out, g.Epic.ID)
-	}
-	return out
-}
-
 func taskTitles(g TreeGroup) []string {
 	out := make([]string, 0, len(g.Tasks))
 	for _, n := range g.Tasks {
@@ -59,7 +47,7 @@ func TestTreeGroupsAndOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupIDs(groups)
+	got := idsOf(groups)
 	want := []string{active, other, closed, "(none)"}
 	if len(got) != len(want) {
 		t.Fatalf("groups = %v, want %v", got, want)
@@ -87,7 +75,7 @@ func TestTreeKeepsUnfiledTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(groups) != 1 || groups[0].Epic != nil {
-		t.Fatalf("want a single unfiled group, got %v", groupIDs(groups))
+		t.Fatalf("want a single unfiled group, got %v", idsOf(groups))
 	}
 	if titles := taskTitles(groups[0]); len(titles) != 1 || titles[0] != "orphan" {
 		t.Errorf("unfiled group = %v, want [orphan]", titles)
@@ -170,7 +158,7 @@ func TestTreeSingleEpic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := groupIDs(groups); len(got) != 1 || got[0] != box {
+	if got := idsOf(groups); len(got) != 1 || got[0] != box {
 		t.Fatalf("groups = %v, want just %s", got, box)
 	}
 
@@ -179,7 +167,7 @@ func TestTreeSingleEpic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := groupIDs(byTitle); len(got) != 1 || got[0] != box {
+	if got := idsOf(byTitle); len(got) != 1 || got[0] != box {
 		t.Errorf("title-substring reference = %v, want just %s", got, box)
 	}
 

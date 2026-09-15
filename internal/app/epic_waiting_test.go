@@ -5,15 +5,12 @@ import (
 	"time"
 )
 
-// strP is a *string literal for SetOpts.
-func strP(s string) *string { return &s }
-
 // park moves a member into the waiting lane, optionally binding a due.
 func park(t *testing.T, a *App, id, due string) {
 	t.Helper()
-	o := SetOpts{Status: strP("waiting")}
+	o := SetOpts{Status: ptr("waiting")}
 	if due != "" {
-		o.Due = strP(due)
+		o.Due = ptr(due)
 	}
 	if _, _, _, err := a.Set(id, o); err != nil {
 		t.Fatalf("park %s: %v", id, err)
@@ -100,7 +97,7 @@ func TestWaitingBoxNeedsAFutureDueOnATrackedLaneAndNoOpenWork(t *testing.T) {
 
 	iced := mustEpic(t, a, "iced", EpicAddOpts{Repos: []string{"o/r"}})
 	ice := mustAddReady(t, a, "someday", iced)
-	if _, _, _, err := a.Set(ice, SetOpts{Status: strP("icebox"), Due: strP("2026-10-01")}); err != nil {
+	if _, _, _, err := a.Set(ice, SetOpts{Status: ptr("icebox"), Due: ptr("2026-10-01")}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -128,7 +125,7 @@ func TestWaitingBoxNeedsAFutureDueOnATrackedLaneAndNoOpenWork(t *testing.T) {
 func TestWaitingStandingBoxStaysQuiet(t *testing.T) {
 	a := newApp()
 	inbox := mustEpic(t, a, "mandate", EpicAddOpts{Repos: []string{"o/r"}})
-	setFlag(t, a, inbox, boolPtr(true), nil)
+	setFlag(t, a, inbox, ptr(true), nil)
 	park(t, a, mustAddReady(t, a, "check back", inbox), "2026-10-01")
 	if got := allDone(t, a); len(got) != 0 {
 		t.Errorf("standing must stay exempt: %v", got)

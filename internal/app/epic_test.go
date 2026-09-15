@@ -135,15 +135,13 @@ func TestEpicActivateRecordsTheSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsSubstring(body, "activated") {
+	if !strings.Contains(body, "activated") {
 		t.Errorf("the switch must be recorded in the body, got:\n%s", body)
 	}
-	if !containsSubstring(body, "asked for by the human at standup") {
+	if !strings.Contains(body, "asked for by the human at standup") {
 		t.Errorf("the reason must be recorded verbatim, got:\n%s", body)
 	}
 }
-
-func containsSubstring(hay, needle string) bool { return strings.Contains(hay, needle) }
 
 // ResolveEpic accepts the same spellings ResolveRepo does, and fails LOUDLY with
 // candidates rather than silently matching nothing — `-e` has to be as typo-safe

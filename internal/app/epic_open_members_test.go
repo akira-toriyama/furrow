@@ -2,28 +2,18 @@ package app
 
 import (
 	"testing"
-	"time"
 
-	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // newDatedApp is newApp with a board calendar declared, so a repeating member
 // can be created without tripping the shared-board timezone rule.
-func newDatedApp() *App {
-	cfg := config.Default()
-	cfg.DueTimezone = jst
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	return NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)})
-}
-
 // TestEpicOpenMembersCountsWhatEpicClosedWarnsAbout pins the disclosure's set to
 // core.EpicProblems' epic-closed set: non-terminal members only, with the
 // recurring ones distinguishable. A terminal member counted here would make
 // `epic done` report work lint is deliberately silent about.
 func TestEpicOpenMembersCountsWhatEpicClosedWarnsAbout(t *testing.T) {
-	a := newDatedApp()
+	a := newRepeatApp(defaultNow)
 	eid := mustEpic(t, a, "box", EpicAddOpts{})
 	chore := mustAddRepeating(t, a, "daily chore", "2026-06-26", "daily", AddOpts{Epic: eid})
 	plain := mustAdd(t, a, "plain member", AddOpts{Epic: eid, Status: "ready"})

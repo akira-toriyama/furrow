@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -110,7 +111,7 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 			if fe.Code != core.CodeValidation {
 				t.Errorf("code = %d, want %d (bad input, do not retry)", fe.Code, core.CodeValidation)
 			}
-			if !equalStrings(fe.Candidates, want) {
+			if !slices.Equal(fe.Candidates, want) {
 				t.Errorf("candidates = %v, want %v — an agent branches on this array", fe.Candidates, want)
 			}
 			if tc.inMsg != "" && !strings.Contains(fe.Msg, tc.inMsg) {
@@ -132,19 +133,7 @@ func TestWithPrefixfCopiesAndKeepsCandidates(t *testing.T) {
 	if got.Msg != `spec 2 ("title"): unknown lane` {
 		t.Errorf("Msg = %q", got.Msg)
 	}
-	if got.Code != base.Code || got.Kind != base.Kind || got.Subject != base.Subject || !equalStrings(got.Candidates, base.Candidates) {
+	if got.Code != base.Code || got.Kind != base.Kind || got.Subject != base.Subject || !slices.Equal(got.Candidates, base.Candidates) {
 		t.Errorf("WithPrefixf dropped a field: %+v", got)
 	}
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

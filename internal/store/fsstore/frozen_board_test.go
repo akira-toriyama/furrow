@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -170,7 +171,7 @@ func TestFrozenBoardParksUnknownKeys(t *testing.T) {
 	if i < 0 {
 		t.Fatal("the frozen board must still carry t-frzn1")
 	}
-	if got := task.ExtraKeys(); !equalStrings(got, []string{"blocked", "blocked_by"}) {
+	if got := task.ExtraKeys(); !slices.Equal(got, []string{"blocked", "blocked_by"}) {
 		t.Errorf("t-frzn1's unknown keys must be parked for lint to report: got %v", got)
 	}
 	if plain, j := idx.Find("t-frzn2"); j < 0 || len(plain.ExtraKeys()) != 0 {
@@ -185,21 +186,21 @@ func TestFrozenBoardParksUnknownKeys(t *testing.T) {
 	if len(epics) != 1 {
 		t.Fatalf("the frozen board must carry one epic, got %d", len(epics))
 	}
-	if got := epics[0].ExtraKeys(); !equalStrings(got, []string{"budget"}) {
+	if got := epics[0].ExtraKeys(); !slices.Equal(got, []string{"budget"}) {
 		t.Errorf("e-frzn1's unknown key must be parked: got %v", got)
 	}
 	meta, err := s.LoadMeta()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := meta.ExtraKeys(); !equalStrings(got, []string{"written_by"}) {
+	if got := meta.ExtraKeys(); !slices.Equal(got, []string{"written_by"}) {
 		t.Errorf("meta.json's unknown key must be parked too: got %v", got)
 	}
 	repos, err := s.ListRepos()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(repos) != 1 || !equalStrings(repos[0].ExtraKeys(), []string{"last_bot_reviewed"}) {
+	if len(repos) != 1 || !slices.Equal(repos[0].ExtraKeys(), []string{"last_bot_reviewed"}) {
 		t.Errorf("the repo review shard's unknown key must be parked: got %+v", repos)
 	}
 }
@@ -274,16 +275,4 @@ func keysOf(m map[string]snapshot) []string {
 	return out
 }
 
-func sameKeys(a, b map[string]snapshot) bool { return equalStrings(keysOf(a), keysOf(b)) }
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
+func sameKeys(a, b map[string]snapshot) bool { return slices.Equal(keysOf(a), keysOf(b)) }

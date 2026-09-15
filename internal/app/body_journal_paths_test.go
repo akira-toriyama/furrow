@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // Every body the upgrade writes on the HOT store is journaled: a renamed
@@ -38,7 +37,7 @@ func TestMigrateBodiesApplyJournalsHotStoreWrites(t *testing.T) {
 	}
 
 	a.bodiesTouched = nil
-	other := memstore.New("t-", "e-", 5)
+	other := newStore(a.Cfg)
 	for id, body := range map[string]string{"t-old00": "# old\n", "t-aaaaa": "see [[t-old00]]\n", "t-ddddd": "# d\n"} {
 		if err := other.SaveBody(id, body); err != nil {
 			t.Fatal(err)

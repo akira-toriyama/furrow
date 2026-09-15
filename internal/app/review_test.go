@@ -6,7 +6,6 @@ import (
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // TestReviewTaskStampsReviewedNotUpdated is the load-bearing invariant: a review
@@ -101,11 +100,8 @@ func TestReviewRepoTwoClocks(t *testing.T) {
 // human review surfaces (with a day count), a fresh review clears it, an
 // agent-only repo never nudges, and stale_after_days = 0 disables the nudge.
 func TestRevisitSummaryUnreviewedNudge(t *testing.T) {
-	cfg := config.Default()
-	cfg.ReviewStaleAfterDays = 14
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	clk := &fixedClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	a := NewWithStore(st, cfg, clk)
+	a, clk := newAppWith(at(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)),
+		withCfg(func(c *config.Config) { c.ReviewStaleAfterDays = 14 }))
 
 	a.ReviewRepo("o/reviewed", false) // human review at T0
 	a.ReviewRepo("o/agentonly", true) // agent-only: no human clock
@@ -130,7 +126,7 @@ func TestRevisitSummaryUnreviewedNudge(t *testing.T) {
 	}
 
 	clk.t = clk.t.AddDate(0, 0, 90)
-	cfg.ReviewStaleAfterDays = 0
+	a.Cfg.ReviewStaleAfterDays = 0
 	sum, _ = a.RevisitSummary(QueryOpts{}, 30)
 	if len(sum.Unreviewed) != 0 {
 		t.Errorf("with stale_after_days=0, Unreviewed = %+v, want empty (disabled)", sum.Unreviewed)
@@ -140,11 +136,8 @@ func TestRevisitSummaryUnreviewedNudge(t *testing.T) {
 // TestRevisitSummaryUnreviewedScoped: a set ScopeRepo limits the nudge to that
 // repo (the sync summary is repo-scoped).
 func TestRevisitSummaryUnreviewedScoped(t *testing.T) {
-	cfg := config.Default()
-	cfg.ReviewStaleAfterDays = 14
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	clk := &fixedClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	a := NewWithStore(st, cfg, clk)
+	a, clk := newAppWith(at(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)),
+		withCfg(func(c *config.Config) { c.ReviewStaleAfterDays = 14 }))
 
 	a.ReviewRepo("o/one", false)
 	a.ReviewRepo("o/two", false)

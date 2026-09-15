@@ -6,9 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/akira-toriyama/furrow/internal/config"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // App.Loc had no production assignment at all: it was declared as "the
@@ -76,10 +73,7 @@ func TestUndeclaredTimezoneKeepsTheProcessZone(t *testing.T) {
 // NewWithStore takes a Config too, so a dry-run or an in-memory App must read
 // the same calendar as the on-disk one it stands in for.
 func TestNewWithStoreHonorsTheConfiguredZone(t *testing.T) {
-	cfg := config.Default()
-	cfg.DueTimezone = jst
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	a := NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 8, 3, 3, 0, 0, 0, time.UTC)})
+	a := newRepeatApp(time.Date(2026, 8, 3, 3, 0, 0, 0, time.UTC))
 	if a.loc() != jst {
 		t.Errorf("loc() = %v, want the configured zone %v", a.loc(), jst)
 	}

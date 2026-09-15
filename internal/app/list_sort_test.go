@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -29,14 +30,6 @@ func seedUpdated(t *testing.T, a *App, when map[string]time.Time) {
 	}
 }
 
-func listIDs(tasks []core.Task) []string {
-	out := make([]string, len(tasks))
-	for i, t := range tasks {
-		out[i] = t.ID
-	}
-	return out
-}
-
 func TestListSortByUpdated(t *testing.T) {
 	a := newApp()
 	x, _ := a.Add("x", AddOpts{})
@@ -48,8 +41,8 @@ func TestListSortByUpdated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{y.ID, z.ID, x.ID}; !equalStrs(listIDs(got), want) {
-		t.Errorf("sort updated desc = %v, want %v", listIDs(got), want)
+	if want := []string{y.ID, z.ID, x.ID}; !slices.Equal(idsOf(got), want) {
+		t.Errorf("sort updated desc = %v, want %v", idsOf(got), want)
 	}
 }
 
@@ -60,35 +53,35 @@ func TestListSinceUntilWindow(t *testing.T) {
 	recent, _ := a.Add("recent", AddOpts{})
 	seedUpdated(t, a, map[string]time.Time{old.ID: julyUTC(1), mid.ID: julyUTC(5), recent.ID: julyUTC(10)})
 
-	got, err := a.List(QueryOpts{Since: tp(julyUTC(5))})
+	got, err := a.List(QueryOpts{Since: ptr(julyUTC(5))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids := listIDs(got); len(ids) != 2 || !contains(ids, mid.ID) || !contains(ids, recent.ID) {
+	if ids := idsOf(got); len(ids) != 2 || !contains(ids, mid.ID) || !contains(ids, recent.ID) {
 		t.Errorf("since july-5 should keep mid+recent, got %v", ids)
 	}
 
-	got, err = a.List(QueryOpts{Since: tp(julyUTC(4)), Until: tp(julyUTC(6))})
+	got, err = a.List(QueryOpts{Since: ptr(julyUTC(4)), Until: ptr(julyUTC(6))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids := listIDs(got); len(ids) != 1 || ids[0] != mid.ID {
+	if ids := idsOf(got); len(ids) != 1 || ids[0] != mid.ID {
 		t.Errorf("window july4..6 should keep only mid, got %v", ids)
 	}
 }
 
 func TestListSortLimitAppliesAfterOrdering(t *testing.T) {
 	a := newApp()
-	lo, _ := a.Add("lo", AddOpts{Value: ptrInt(1)})
-	hi, _ := a.Add("hi", AddOpts{Value: ptrInt(5)})
-	a.Add("mid", AddOpts{Value: ptrInt(3)})
+	lo, _ := a.Add("lo", AddOpts{Value: ptr(1)})
+	hi, _ := a.Add("hi", AddOpts{Value: ptr(5)})
+	a.Add("mid", AddOpts{Value: ptr(3)})
 
 	// top 2 by value should be hi(5) then mid(3), NOT the first 2 in canonical order.
 	got, err := a.List(QueryOpts{Sort: "value", Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids := listIDs(got); len(ids) != 2 || ids[0] != hi.ID {
+	if ids := idsOf(got); len(ids) != 2 || ids[0] != hi.ID {
 		t.Errorf("sort value + limit 2 should return the top 2 (hi first), got %v", ids)
 	}
 	_ = lo
@@ -128,26 +121,4 @@ func TestListNoSortKeepsCanonicalOrder(t *testing.T) {
 	if len(got) != 1 || got[0].ID != first.ID {
 		t.Fatalf("limit 1 should return the canonical first task %s, got %v", first.ID, idsOf(got))
 	}
-}
-
-func tp(t time.Time) *time.Time { return &t }
-func ptrInt(n int) *int         { return &n }
-func equalStrs(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func idsOf(ts []core.Task) []string {
-	out := make([]string, 0, len(ts))
-	for _, t := range ts {
-		out = append(out, t.ID)
-	}
-	return out
 }

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -12,22 +13,9 @@ import (
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 var idRe = regexp.MustCompile(`^t-[0-9a-z]{5}$`)
-
-// fixedClock is a deterministic Clock for tests.
-type fixedClock struct{ t time.Time }
-
-func (c *fixedClock) Now() time.Time { return c.t.UTC().Truncate(time.Second) }
-
-func newApp() *App {
-	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	clk := &fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)}
-	return NewWithStore(st, cfg, clk)
-}
 
 func TestAddAssignsRandomIDAndSparsePriority(t *testing.T) {
 	a := newApp()
@@ -112,8 +100,8 @@ func TestAddManyGeneratesUniqueIDs(t *testing.T) {
 func TestAddManyMatchesSingleAdd(t *testing.T) {
 	a := newApp()
 	specs := []AddSpec{
-		{Title: "alpha", AddOpts: AddOpts{Value: intptr(3), Effort: intptr(2)}},
-		{Title: "beta", AddOpts: AddOpts{Value: intptr(4), Effort: intptr(1)}},
+		{Title: "alpha", AddOpts: AddOpts{Value: ptr(3), Effort: ptr(2)}},
+		{Title: "beta", AddOpts: AddOpts{Value: ptr(4), Effort: ptr(1)}},
 	}
 	created, err := a.AddMany(specs)
 	if err != nil {
@@ -278,10 +266,7 @@ func TestDoneBackfillsClosedOnZombie(t *testing.T) {
 // Closed timestamp — the Move rewrite keys its stamp on Closed==nil, so a no-op
 // re-close must not refresh the date even as the clock advances.
 func TestDonePreservesOriginalClosed(t *testing.T) {
-	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	clk := &fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)}
-	a := NewWithStore(st, cfg, clk)
+	a, clk := newAppWith()
 
 	tk, _ := a.Add("finish me", AddOpts{Status: "ready"})
 	first, err := a.Done(tk.ID)
@@ -599,9 +584,6 @@ func hasLaneCandidates(a *App, err error) bool {
 	return fe != nil && fe.Code == core.CodeValidation && reflect.DeepEqual(fe.Candidates, a.Cfg.Lanes)
 }
 
-func intp(n int) *int       { return &n }
-func strp(s string) *string { return &s }
-
 // TestSetCombinedEdit pins t-kx76 (e): `set` applies lane+value+effort+labels in
 // one write, honors clear/rm, rejects an empty change, and validates the lane
 // like Move (unknown → candidates).
@@ -609,7 +591,7 @@ func TestSetCombinedEdit(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("triage me", AddOpts{Status: "inbox"})
 
-	got, _, _, err := a.Set(tk.ID, SetOpts{Status: strp("ready"), Value: intp(4), Effort: intp(2), AddLabels: []string{"bug"}})
+	got, _, _, err := a.Set(tk.ID, SetOpts{Status: ptr("ready"), Value: ptr(4), Effort: ptr(2), AddLabels: []string{"bug"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -628,7 +610,7 @@ func TestSetCombinedEdit(t *testing.T) {
 	if _, _, _, err := a.Set(tk.ID, SetOpts{}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("empty set should be a validation error, got %v", err)
 	}
-	if _, _, _, err := a.Set(tk.ID, SetOpts{Status: strp("ghost")}); !hasLaneCandidates(a, err) {
+	if _, _, _, err := a.Set(tk.ID, SetOpts{Status: ptr("ghost")}); !hasLaneCandidates(a, err) {
 		t.Errorf("set to an unknown lane should carry lane candidates, got %v", err)
 	}
 }
@@ -805,10 +787,7 @@ func TestCheckTogglesChecklist(t *testing.T) {
 }
 
 func TestLabelsRequiredEnforced(t *testing.T) {
-	cfg := config.Default()
-	cfg.LabelsRequired = true
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	a := NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
+	a, _ := newAppWith(withCfg(func(c *config.Config) { c.LabelsRequired = true }))
 
 	// add without a label -> validation error.
 	if _, err := a.Add("no label", AddOpts{Status: "ready"}); core.ExitCode(err) != int(core.CodeValidation) {
@@ -828,7 +807,7 @@ func TestLabelsRequiredEnforced(t *testing.T) {
 	ps, _ := a.Lint()
 	var found bool
 	for _, p := range ps {
-		if p.ID == "t-0099" && p.Severity == core.SevError && contains2(p.Msg, "label") {
+		if p.ID == "t-0099" && p.Severity == core.SevError && strings.Contains(p.Msg, "label") {
 			found = true
 		}
 	}
@@ -837,14 +816,11 @@ func TestLabelsRequiredEnforced(t *testing.T) {
 	}
 
 	// default config (not required) accepts a label-less add.
-	cfg2 := config.Default()
-	a2 := NewWithStore(memstore.New(cfg2.IDPrefix, "e-", cfg2.IDWidth), cfg2, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
+	a2 := newApp()
 	if _, err := a2.Add("fine", AddOpts{Status: "ready"}); err != nil {
 		t.Errorf("label-less add should succeed when not required, got %v", err)
 	}
 }
-
-func contains2(s, sub string) bool { return strings.Contains(s, sub) }
 
 func TestCheckOutOfRangeIsValidationError(t *testing.T) {
 	a := newApp()
@@ -933,20 +909,6 @@ func TestArchivableSelection(t *testing.T) {
 	}
 }
 
-// eqIDs compares two id slices for exact, in-order equality (Archivable yields
-// ids in index order, which is deterministic).
-func eqIDs(got, want []string) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for i := range got {
-		if got[i] != want[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func TestArchivableRepoFilter(t *testing.T) {
 	old := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	recent := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
@@ -960,16 +922,16 @@ func TestArchivableRepoFilter(t *testing.T) {
 	cutoff := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
 
 	// No repo filter: age-only, every aged done task (including the repo-less draft).
-	if got := Archivable(idx, "done", cutoff); !eqIDs(got, []string{"t-a", "t-b", "t-ab", "t-draft"}) {
+	if got := Archivable(idx, "done", cutoff); !slices.Equal(got, []string{"t-a", "t-b", "t-ab", "t-draft"}) {
 		t.Errorf("Archivable(no repo) = %v, want [t-a t-b t-ab t-draft]", got)
 	}
 	// -r owner/a: only aged done carrying owner/a — the multi-repo task counts,
 	// the repo-less draft does not.
-	if got := Archivable(idx, "done", cutoff, "owner/a"); !eqIDs(got, []string{"t-a", "t-ab"}) {
+	if got := Archivable(idx, "done", cutoff, "owner/a"); !slices.Equal(got, []string{"t-a", "t-ab"}) {
 		t.Errorf("Archivable(owner/a) = %v, want [t-a t-ab]", got)
 	}
 	// Multiple repos are a union (OR): a task in ANY listed repo qualifies.
-	if got := Archivable(idx, "done", cutoff, "owner/a", "owner/b"); !eqIDs(got, []string{"t-a", "t-b", "t-ab"}) {
+	if got := Archivable(idx, "done", cutoff, "owner/a", "owner/b"); !slices.Equal(got, []string{"t-a", "t-b", "t-ab"}) {
 		t.Errorf("Archivable(owner/a,owner/b) = %v, want [t-a t-b t-ab]", got)
 	}
 }
@@ -1237,10 +1199,7 @@ func TestRerefAddsRemovesIdempotentlyKeepingOrder(t *testing.T) {
 }
 
 func TestRelabelRespectsLabelsRequired(t *testing.T) {
-	cfg := config.Default()
-	cfg.LabelsRequired = true
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	a := NewWithStore(st, cfg, &fixedClock{t: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)})
+	a, _ := newAppWith(withCfg(func(c *config.Config) { c.LabelsRequired = true }))
 	tk, err := a.Add("x", AddOpts{Labels: []string{"only"}})
 	if err != nil {
 		t.Fatal(err)
@@ -1261,8 +1220,6 @@ func TestRelabelRespectsLabelsRequired(t *testing.T) {
 	}
 }
 
-func intptr(n int) *int { return &n }
-
 func TestSetValueAndEffort(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("estimate me", AddOpts{})
@@ -1270,7 +1227,7 @@ func TestSetValueAndEffort(t *testing.T) {
 		t.Fatalf("a fresh task must have unset value/effort: %+v", tk)
 	}
 
-	got, err := a.SetValue(tk.ID, intptr(4))
+	got, err := a.SetValue(tk.ID, ptr(4))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1278,7 +1235,7 @@ func TestSetValueAndEffort(t *testing.T) {
 		t.Errorf("after SetValue(4): value=%v effort=%v", got.Value, got.Effort)
 	}
 
-	got, err = a.SetEffort(tk.ID, intptr(2))
+	got, err = a.SetEffort(tk.ID, ptr(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1405,7 +1362,7 @@ func TestRetitleHeading(t *testing.T) {
 
 func TestAddWithEstimate(t *testing.T) {
 	a := newApp()
-	tk, err := a.Add("scoped", AddOpts{Value: intptr(3), Effort: intptr(2)})
+	tk, err := a.Add("scoped", AddOpts{Value: ptr(3), Effort: ptr(2)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1417,7 +1374,7 @@ func TestAddWithEstimate(t *testing.T) {
 func TestEstimateClampedOnRead(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("x", AddOpts{})
-	if _, err := a.SetValue(tk.ID, intptr(9)); err != nil { // out of range
+	if _, err := a.SetValue(tk.ID, ptr(9)); err != nil { // out of range
 		t.Fatal(err)
 	}
 	got, _, err := a.Get(tk.ID)
@@ -1446,7 +1403,7 @@ func TestLintWarnsOutOfRangeEstimate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored, err := a.SetValue(tk.ID, intptr(9))
+	stored, err := a.SetValue(tk.ID, ptr(9))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,14 +15,6 @@ func itemFor(items []ListItem, id string) *ListItem {
 	return nil
 }
 
-func ids(items []ListItem) []string {
-	out := make([]string, len(items))
-	for i := range items {
-		out[i] = items[i].Task.ID
-	}
-	return out
-}
-
 // TestListItemsDerivedFacts pins the per-row facts `ls` exposes: actionable (a
 // next lane + all deps done) and blocked_by (the undone deps). These must match
 // what `ls --tree` computes (same helper, factsFor), so the flat list and the
@@ -81,7 +73,7 @@ func TestListItemsActionableBlockedFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ids(act); len(got) != 1 || got[0] != gate {
+	if got := idsOf(act); len(got) != 1 || got[0] != gate {
 		t.Errorf("--actionable should keep only the gate: %v", got)
 	}
 
@@ -89,7 +81,7 @@ func TestListItemsActionableBlockedFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ids(blk); len(got) != 1 || got[0] != blocked {
+	if got := idsOf(blk); len(got) != 1 || got[0] != blocked {
 		t.Errorf("--blocked should keep only the blocked task: %v", got)
 	}
 
@@ -99,7 +91,7 @@ func TestListItemsActionableBlockedFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ids(scoped); len(got) != 1 || got[0] != blocked {
+	if got := idsOf(scoped); len(got) != 1 || got[0] != blocked {
 		t.Errorf("-s ready --blocked: %v", got)
 	}
 }

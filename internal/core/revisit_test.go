@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -11,18 +12,6 @@ func codesOf(rs []RevisitReason) []string {
 		out[i] = r.Code
 	}
 	return out
-}
-
-func eqStrs(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestRevisitReasons(t *testing.T) {
@@ -112,7 +101,7 @@ func TestRevisitReasons(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			got := RevisitReasons(c.task, now, c.staleDays, done)
-			if !eqStrs(codesOf(got), c.want) {
+			if !slices.Equal(codesOf(got), c.want) {
 				t.Errorf("codes = %v, want %v", codesOf(got), c.want)
 			}
 		})
@@ -122,7 +111,7 @@ func TestRevisitReasons(t *testing.T) {
 func TestRevisitReasonsDepDoneNamesDep(t *testing.T) {
 	now := time.Date(2026, time.June, 29, 12, 0, 0, 0, time.UTC)
 	done := map[string]bool{"t-d1": true}
-	rs := RevisitReasons(Task{Repos: []string{"o/r"}, Value: intptr(1), Effort: intptr(1), Updated: now, Deps: []string{"t-d1"}}, now, 30, done)
+	rs := RevisitReasons(Task{Repos: []string{"o/r"}, Value: ptr(1), Effort: ptr(1), Updated: now, Deps: []string{"t-d1"}}, now, 30, done)
 	if len(rs) != 1 || rs[0].Code != RevisitDepDone {
 		t.Fatalf("want one dep_done, got %v", rs)
 	}
@@ -136,7 +125,7 @@ func TestRevisitReasonsDepDoneOrder(t *testing.T) {
 	done := map[string]bool{"t-d1": true, "t-d2": true}
 	// The emitted order follows Deps, not the done map's iteration order — that is
 	// what makes this assertion deterministic at all.
-	rs := RevisitReasons(Task{Repos: []string{"o/r"}, Value: intptr(1), Effort: intptr(1), Updated: now, Deps: []string{"t-open", "t-d2", "t-d1"}}, now, 30, done)
+	rs := RevisitReasons(Task{Repos: []string{"o/r"}, Value: ptr(1), Effort: ptr(1), Updated: now, Deps: []string{"t-open", "t-d2", "t-d1"}}, now, 30, done)
 	want := []RevisitReason{
 		{Code: RevisitDepDone, Detail: "dep t-d2 is done"},
 		{Code: RevisitDepDone, Detail: "dep t-d1 is done"},
@@ -150,5 +139,3 @@ func TestRevisitReasonsDepDoneOrder(t *testing.T) {
 		}
 	}
 }
-
-func intptr(n int) *int { return &n }

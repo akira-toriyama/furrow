@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -111,7 +112,7 @@ func TestCLISetDueEnvelope(t *testing.T) {
 	}
 
 	mustEnv("--due", "2126-08-04")
-	if !contains(env.Changed, "due") {
+	if !slices.Contains(env.Changed, "due") {
 		t.Errorf("changed = %v, want it to name due", env.Changed)
 	}
 	first, _ := env.After["due"].(string)
@@ -120,7 +121,7 @@ func TestCLISetDueEnvelope(t *testing.T) {
 	}
 
 	mustEnv("--due", "+1d") // the snooze
-	if !contains(env.Changed, "due") {
+	if !slices.Contains(env.Changed, "due") {
 		t.Errorf("a snooze must report due as changed: %v", env.Changed)
 	}
 	if second, _ := env.After["due"].(string); second == first {
@@ -128,7 +129,7 @@ func TestCLISetDueEnvelope(t *testing.T) {
 	}
 
 	mustEnv("--clear-due")
-	if !contains(env.Changed, "due") {
+	if !slices.Contains(env.Changed, "due") {
 		t.Errorf("--clear-due must report due as changed: %v", env.Changed)
 	}
 	if _, ok := env.After["due"]; ok {

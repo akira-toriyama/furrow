@@ -8,7 +8,7 @@ import (
 )
 
 func TestSetBodyReplacesAndBumpsUpdated(t *testing.T) {
-	a, clk := appWithClock(time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC))
+	a, clk := newAppWith(at(time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)))
 	tk, err := a.Add("task", AddOpts{})
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestSetBodyReplacesAndBumpsUpdated(t *testing.T) {
 }
 
 func TestSetBodyValidation(t *testing.T) {
-	a, _ := appWithClock(time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)))
 	tk, _ := a.Add("task", AddOpts{})
 
 	// An empty/whitespace replacement is exit 2 — a body is never cleared by
@@ -59,7 +59,7 @@ func TestSetBodyValidation(t *testing.T) {
 }
 
 func TestEpicSetBodyReplacesAndBumpsUpdated(t *testing.T) {
-	a, clk := appWithClock(time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC))
+	a, clk := newAppWith(at(time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)))
 	e, err := a.EpicAdd("box", EpicAddOpts{})
 	if err != nil {
 		t.Fatal(err)

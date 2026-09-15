@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -69,7 +70,7 @@ func TestSingleTaskEditsLoadTheBoardOnce(t *testing.T) {
 		{"check --rm", func(a *App, id string) error { _, err := a.RemoveCheck(id, 1); return err }},
 		// Controls: these were already one load, and must stay that way.
 		{"move", func(a *App, id string) error { _, err := a.Move(id, "ready"); return err }},
-		{"value", func(a *App, id string) error { _, err := a.SetValue(id, intptr(3)); return err }},
+		{"value", func(a *App, id string) error { _, err := a.SetValue(id, ptr(3)); return err }},
 		{"retitle", func(a *App, id string) error { _, err := a.Retitle(id, "renamed"); return err }},
 	}
 	for _, c := range cases {
@@ -190,13 +191,13 @@ func TestRepoDeltaMatchesLabelAndRefDelta(t *testing.T) {
 	// there. Labels and repos are sorted sets; refs keep their user order (the
 	// re-added one moves to the end), which is the marshaller's rule, not this
 	// helper's.
-	if want := []string{"me/x", "me/y"}; !equalStrings(got.Repos, want) {
+	if want := []string{"me/x", "me/y"}; !slices.Equal(got.Repos, want) {
 		t.Errorf("repos = %v, want %v", got.Repos, want)
 	}
-	if want := []string{"b", "keep"}; !equalStrings(got.Labels, want) {
+	if want := []string{"b", "keep"}; !slices.Equal(got.Labels, want) {
 		t.Errorf("labels = %v, want %v", got.Labels, want)
 	}
-	if want := []string{"b.go:2", "a.go:1"}; !equalStrings(got.Refs, want) {
+	if want := []string{"b.go:2", "a.go:1"}; !slices.Equal(got.Refs, want) {
 		t.Errorf("refs = %v, want %v", got.Refs, want)
 	}
 }

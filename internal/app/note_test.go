@@ -5,22 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
-// appWithClock builds an App on a memstore whose clock the test can advance, so
-// a note's effect on Updated is observable (newApp's clock is fixed).
-func appWithClock(start time.Time) (*App, *fixedClock) {
-	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	clk := &fixedClock{t: start}
-	return NewWithStore(st, cfg, clk), clk
-}
-
 func TestAddNoteAppendsParagraphAndBumpsUpdated(t *testing.T) {
-	a, clk := appWithClock(time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC))
+	a, clk := newAppWith(at(time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)))
 	tk, err := a.Add("task", AddOpts{})
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +47,7 @@ func TestAddNoteAppendsParagraphAndBumpsUpdated(t *testing.T) {
 }
 
 func TestAddNoteValidation(t *testing.T) {
-	a, _ := appWithClock(time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)))
 	tk, _ := a.Add("task", AddOpts{})
 
 	if _, err := a.AddNote(tk.ID, "   \n\t "); err == nil {
@@ -79,7 +68,7 @@ func TestAddNoteValidation(t *testing.T) {
 // so lint's reconcile-gap fired on a task already reconciled in prose. A note
 // advances Updated, clearing the false positive.
 func TestAddNoteReconcilesStaleDep(t *testing.T) {
-	a, clk := appWithClock(time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC))
+	a, clk := newAppWith(at(time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)))
 
 	epic, _ := a.Add("epic", AddOpts{Status: "backlog"})
 	slice, _ := a.Add("slice", AddOpts{Status: "backlog"})

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/store/memstore"
@@ -39,9 +38,8 @@ func (s *proseFailStore) SaveBody(id, content string) error {
 
 func newProseFailApp() (*App, *proseFailStore) {
 	cfg := config.Default()
-	st := &proseFailStore{Store: memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)}
-	clk := &fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)}
-	return NewWithStore(st, cfg, clk), st
+	st := &proseFailStore{Store: newStore(cfg)}
+	return NewWithStore(st, cfg, &fixedClock{t: defaultNow}), st
 }
 
 // A `done <id>... --note` whose prose write fails closes nothing AND annotates

@@ -9,7 +9,7 @@ import (
 )
 
 func TestDoneNoteClosesAndAppendsInOneCall(t *testing.T) {
-	a, clk := appWithClock(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC))
+	a, clk := newAppWith(at(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)))
 	tk, err := a.Add("task", AddOpts{})
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestDoneNoteClosesAndAppendsInOneCall(t *testing.T) {
 }
 
 func TestDoneNoteValidation(t *testing.T) {
-	a, _ := appWithClock(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)))
 	tk, _ := a.Add("task", AddOpts{})
 
 	// An empty/whitespace note is bad usage — done without a note is a
@@ -55,7 +55,7 @@ func TestDoneNoteValidation(t *testing.T) {
 }
 
 func TestDoneManyNoteAppendsToEveryTask(t *testing.T) {
-	a, _ := appWithClock(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)))
 	t1, _ := a.Add("one", AddOpts{})
 	t2, _ := a.Add("two", AddOpts{})
 
@@ -78,7 +78,7 @@ func TestDoneManyNoteAppendsToEveryTask(t *testing.T) {
 }
 
 func TestDoneManyNoteIsAllOrNothing(t *testing.T) {
-	a, _ := appWithClock(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC))
+	a, _ := newAppWith(at(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)))
 	t1, _ := a.Add("one", AddOpts{})
 
 	_, err := a.DoneManyNote([]string{t1.ID, "t-nope"}, "note")

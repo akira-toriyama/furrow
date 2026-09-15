@@ -1,22 +1,12 @@
 package app
 
 import (
+	"slices"
 	"sort"
 	"testing"
-	"time"
-
-	"github.com/akira-toriyama/furrow/internal/config"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // revisitApp builds an app with a mutable clock so tests can age tasks.
-func revisitApp() (*App, *fixedClock) {
-	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	clk := &fixedClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	return NewWithStore(st, cfg, clk), clk
-}
-
 func codesByID(items []RevisitItem) map[string][]string {
 	m := map[string][]string{}
 	for _, it := range items {
@@ -29,8 +19,6 @@ func codesByID(items []RevisitItem) map[string][]string {
 	}
 	return m
 }
-
-func p(n int) *int { return &n }
 
 // Three of the epic signals, and the two states that must stay QUIET.
 //
@@ -97,14 +85,14 @@ func TestRevisitSignalsAndExclusions(t *testing.T) {
 	a, clk := revisitApp()
 
 	// At T0: a dependency we will finish, and a stale (but estimated) task.
-	dep, _ := a.Add("dep", AddOpts{Status: "ready", Value: p(1), Effort: p(1)})
+	dep, _ := a.Add("dep", AddOpts{Status: "ready", Value: ptr(1), Effort: ptr(1)})
 	a.Done(dep.ID) // dep -> done lane (terminal)
-	stale, _ := a.Add("stale", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}})
+	stale, _ := a.Add("stale", AddOpts{Status: "ready", Value: ptr(3), Effort: ptr(2), Repos: []string{"o/r"}})
 	a.Add("parked", AddOpts{Status: "icebox"}) // terminal; unset estimates
 
 	clk.t = clk.t.AddDate(0, 0, 60)
 	fresh, _ := a.Add("fresh-needs-est", AddOpts{Status: "ready", Repos: []string{"o/r"}}) // value+effort unset, fresh
-	user, _ := a.Add("dep-user", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
+	user, _ := a.Add("dep-user", AddOpts{Status: "ready", Value: ptr(3), Effort: ptr(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
 
 	items, err := a.Revisit(QueryOpts{}, 30)
 	if err != nil {
@@ -112,13 +100,13 @@ func TestRevisitSignalsAndExclusions(t *testing.T) {
 	}
 	got := codesByID(items)
 
-	if want := []string{"stale"}; !eq(got[stale.ID], want) {
+	if want := []string{"stale"}; !slices.Equal(got[stale.ID], want) {
 		t.Errorf("stale task: codes = %v, want %v", got[stale.ID], want)
 	}
-	if want := []string{"effort_unset", "value_unset"}; !eq(got[fresh.ID], want) {
+	if want := []string{"effort_unset", "value_unset"}; !slices.Equal(got[fresh.ID], want) {
 		t.Errorf("fresh-needs-est: codes = %v, want %v", got[fresh.ID], want)
 	}
-	if want := []string{"dep_done"}; !eq(got[user.ID], want) {
+	if want := []string{"dep_done"}; !slices.Equal(got[user.ID], want) {
 		t.Errorf("dep-user: codes = %v, want %v", got[user.ID], want)
 	}
 	// terminal (done dep, icebox parked) must never surface.
@@ -132,7 +120,7 @@ func TestRevisitSignalsAndExclusions(t *testing.T) {
 
 func TestRevisitStaleDaysZeroDisablesStale(t *testing.T) {
 	a, clk := revisitApp()
-	st, _ := a.Add("old-but-estimated", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}})
+	st, _ := a.Add("old-but-estimated", AddOpts{Status: "ready", Value: ptr(3), Effort: ptr(2), Repos: []string{"o/r"}})
 	clk.t = clk.t.AddDate(0, 0, 90)
 
 	items, _ := a.Revisit(QueryOpts{}, 0) // staleDays 0 disables stale
@@ -175,7 +163,7 @@ func TestRevisitCanonicalOrderAndLimitIdentity(t *testing.T) {
 	for i, it := range items {
 		gotOrder[i] = it.Task.ID
 	}
-	if want := []string{r1.ID, r2.ID, ip.ID}; !eq(gotOrder, want) {
+	if want := []string{r1.ID, r2.ID, ip.ID}; !slices.Equal(gotOrder, want) {
 		t.Errorf("revisit order = %v, want canonical %v", gotOrder, want)
 	}
 
@@ -190,27 +178,27 @@ func TestRevisitSummaryCountsScopedDepDoneAndStale(t *testing.T) {
 	a, clk := revisitApp()
 
 	// A dependency we finish, plus a stale in-scope task at T0.
-	dep, _ := a.Add("dep", AddOpts{Status: "ready", Value: p(1), Effort: p(1), Repos: []string{"o/r"}})
+	dep, _ := a.Add("dep", AddOpts{Status: "ready", Value: ptr(1), Effort: ptr(1), Repos: []string{"o/r"}})
 	a.Done(dep.ID) // -> done lane (terminal)
-	staleIn, _ := a.Add("stale-in", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}})
-	a.Add("stale-other", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"x/y"}}) // other repo
-	a.Add("stale-draft", AddOpts{Status: "ready", Value: p(3), Effort: p(2)})                         // draft (no repo)
-	a.Add("parked", AddOpts{Status: "icebox", Repos: []string{"o/r"}})                                // terminal
+	staleIn, _ := a.Add("stale-in", AddOpts{Status: "ready", Value: ptr(3), Effort: ptr(2), Repos: []string{"o/r"}})
+	a.Add("stale-other", AddOpts{Status: "ready", Value: ptr(3), Effort: ptr(2), Repos: []string{"x/y"}}) // other repo
+	a.Add("stale-draft", AddOpts{Status: "ready", Value: ptr(3), Effort: ptr(2)})                         // draft (no repo)
+	a.Add("parked", AddOpts{Status: "icebox", Repos: []string{"o/r"}})                                    // terminal
 
 	// Age everything 60d, then a fresh dependent (in scope) whose dep is done.
 	clk.t = clk.t.AddDate(0, 0, 60)
-	user, _ := a.Add("dep-user", AddOpts{Status: "ready", Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
+	user, _ := a.Add("dep-user", AddOpts{Status: "ready", Value: ptr(3), Effort: ptr(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
 
 	sum, err := a.RevisitSummary(QueryOpts{ScopeRepo: "o/r"}, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{user.ID}; !eq(sum.DepDone, want) {
+	if want := []string{user.ID}; !slices.Equal(sum.DepDone, want) {
 		t.Errorf("DepDone = %v, want %v", sum.DepDone, want)
 	}
 	// Only the in-scope stale task: other-repo, draft, terminal, and the fresh
 	// dependent (updated 0d ago) are all excluded.
-	if want := []string{staleIn.ID}; !eq(sum.Stale, want) {
+	if want := []string{staleIn.ID}; !slices.Equal(sum.Stale, want) {
 		t.Errorf("Stale = %v, want %v", sum.Stale, want)
 	}
 	if sum.Empty() {
@@ -220,7 +208,7 @@ func TestRevisitSummaryCountsScopedDepDoneAndStale(t *testing.T) {
 
 func TestRevisitSummaryStaleDaysZeroDisablesStale(t *testing.T) {
 	a, clk := revisitApp()
-	a.Add("old", AddOpts{Status: "ready", Value: p(1), Effort: p(1), Repos: []string{"o/r"}})
+	a.Add("old", AddOpts{Status: "ready", Value: ptr(1), Effort: ptr(1), Repos: []string{"o/r"}})
 	clk.t = clk.t.AddDate(0, 0, 90)
 
 	sum, err := a.RevisitSummary(QueryOpts{ScopeRepo: "o/r"}, 0)
@@ -240,20 +228,20 @@ func TestRevisitSummaryStaleDaysZeroDisablesStale(t *testing.T) {
 func TestRevisitSummaryMultiAndOverlap(t *testing.T) {
 	a, clk := revisitApp()
 
-	dep, _ := a.Add("dep", AddOpts{Status: "ready", Value: p(1), Effort: p(1), Repos: []string{"o/r"}})
+	dep, _ := a.Add("dep", AddOpts{Status: "ready", Value: ptr(1), Effort: ptr(1), Repos: []string{"o/r"}})
 	a.Done(dep.ID) // -> done lane (terminal)
 
 	// A dependent added at T0, aged 60d with nothing touching it afterwards:
 	// it goes stale AND has a done dep, so it must land in BOTH lists.
-	overlap, _ := a.Add("dep-user-overlap", AddOpts{Status: "ready", Priority: p(20), Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
+	overlap, _ := a.Add("dep-user-overlap", AddOpts{Status: "ready", Priority: ptr(20), Value: ptr(3), Effort: ptr(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
 
 	clk.t = clk.t.AddDate(0, 0, 60) // past the 30d threshold
 
 	// Two more dependents added AFTER the age jump (so they stay fresh — NOT
 	// stale), out of priority order, to isolate the DepDone-order check from
 	// staleness. Canonical order is lane-rank -> priority -> id.
-	second, _ := a.Add("dep-user-2", AddOpts{Status: "ready", Priority: p(50), Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
-	first, _ := a.Add("dep-user-1", AddOpts{Status: "ready", Priority: p(10), Value: p(3), Effort: p(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
+	second, _ := a.Add("dep-user-2", AddOpts{Status: "ready", Priority: ptr(50), Value: ptr(3), Effort: ptr(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
+	first, _ := a.Add("dep-user-1", AddOpts{Status: "ready", Priority: ptr(10), Value: ptr(3), Effort: ptr(2), Repos: []string{"o/r"}, Deps: []string{dep.ID}})
 
 	sum, err := a.RevisitSummary(QueryOpts{ScopeRepo: "o/r"}, 30)
 	if err != nil {
@@ -261,11 +249,11 @@ func TestRevisitSummaryMultiAndOverlap(t *testing.T) {
 	}
 
 	// Canonical order is lane-rank -> priority -> id: first(10) < overlap(20) < second(50).
-	if want := []string{first.ID, overlap.ID, second.ID}; !eq(sum.DepDone, want) {
+	if want := []string{first.ID, overlap.ID, second.ID}; !slices.Equal(sum.DepDone, want) {
 		t.Errorf("DepDone order = %v, want canonical %v", sum.DepDone, want)
 	}
 	// Only the aged task is stale — the two fresh dependents are not.
-	if want := []string{overlap.ID}; !eq(sum.Stale, want) {
+	if want := []string{overlap.ID}; !slices.Equal(sum.Stale, want) {
 		t.Errorf("Stale = %v, want %v", sum.Stale, want)
 	}
 
@@ -284,18 +272,6 @@ func TestRevisitSummaryMultiAndOverlap(t *testing.T) {
 	if !inList(sum.Stale, overlap.ID) {
 		t.Errorf("overlap task %s missing from Stale: %v", overlap.ID, sum.Stale)
 	}
-}
-
-func eq(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // The unreviewed repo clock must obey an EXPLICIT -r, not just the board scope.
@@ -330,10 +306,10 @@ func TestRevisitSummaryUnreviewedHonorsExplicitRepo(t *testing.T) {
 	if got := repos(QueryOpts{}); len(got) != 2 {
 		t.Errorf("a board-wide summary must report every stale repo, got %v", got)
 	}
-	if got := repos(QueryOpts{ScopeRepo: "o/r"}); !equalStrings(got, []string{"o/r"}) {
+	if got := repos(QueryOpts{ScopeRepo: "o/r"}); !slices.Equal(got, []string{"o/r"}) {
 		t.Errorf("board scope: got %v, want [o/r]", got)
 	}
-	if got := repos(QueryOpts{Repo: "o/r"}); !equalStrings(got, []string{"o/r"}) {
+	if got := repos(QueryOpts{Repo: "o/r"}); !slices.Equal(got, []string{"o/r"}) {
 		t.Errorf("explicit -r: got %v, want [o/r] — an explicit -r must scope the repo clock too", got)
 	}
 }

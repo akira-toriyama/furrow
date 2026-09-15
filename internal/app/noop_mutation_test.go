@@ -25,7 +25,7 @@ func noopSeed(t *testing.T) (*App, string, string) {
 	tk, err := a.Add("seed", AddOpts{
 		Status: "ready", Labels: []string{"keep"}, Repos: []string{"me/x"},
 		Refs: []string{"a.go:1"}, Deps: []string{dep.ID},
-		Value: intptr(3), Effort: intptr(2),
+		Value: ptr(3), Effort: ptr(2),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestNoOpMutationsLeaveUpdatedAlone(t *testing.T) {
 		}},
 		{name: "set with the values it already has", edit: func(a *App, id, _ string) error {
 			ready := "ready"
-			_, _, _, err := a.Set(id, SetOpts{Status: &ready, Value: intptr(3), Effort: intptr(2)})
+			_, _, _, err := a.Set(id, SetOpts{Status: &ready, Value: ptr(3), Effort: ptr(2)})
 			return err
 		}},
 		{name: "label --add one it already carries", edit: func(a *App, id, _ string) error {
@@ -80,11 +80,11 @@ func TestNoOpMutationsLeaveUpdatedAlone(t *testing.T) {
 			return err
 		}},
 		{name: "value re-set to the score it has", edit: func(a *App, id, _ string) error {
-			_, err := a.SetValue(id, intptr(3))
+			_, err := a.SetValue(id, ptr(3))
 			return err
 		}},
 		{name: "effort re-set to the score it has", edit: func(a *App, id, _ string) error {
-			_, err := a.SetEffort(id, intptr(2))
+			_, err := a.SetEffort(id, ptr(2))
 			return err
 		}},
 		{name: "repo --add one it already has", edit: func(a *App, id, _ string) error {
@@ -146,7 +146,7 @@ func TestRealMutationsStampUpdated(t *testing.T) {
 		name string
 		edit func(a *App, id, dep string) error
 	}{
-		{"value changed", func(a *App, id, _ string) error { _, err := a.SetValue(id, intptr(4)); return err }},
+		{"value changed", func(a *App, id, _ string) error { _, err := a.SetValue(id, ptr(4)); return err }},
 		{"value cleared", func(a *App, id, _ string) error { _, err := a.SetValue(id, nil); return err }},
 		{"moved to another lane", func(a *App, id, _ string) error { _, err := a.Move(id, "backlog"); return err }},
 		{"label added", func(a *App, id, _ string) error { _, err := a.Relabel(id, []string{"new"}, nil); return err }},

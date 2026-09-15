@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ func TestSetPriorityAbsolute(t *testing.T) {
 	a := newApp()
 	tk, _ := a.Add("task", AddOpts{})
 
-	got, changes, _, err := a.Set(tk.ID, SetOpts{Priority: intp(42)})
+	got, changes, _, err := a.Set(tk.ID, SetOpts{Priority: ptr(42)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +31,7 @@ func TestSetLanePlusRelativePositionIsOneWrite(t *testing.T) {
 	x, _ := a.Add("x", AddOpts{})                // inbox
 
 	// The cross-column drop: lane AND position land together.
-	got, changes, _, err := a.Set(x.ID, SetOpts{Status: strp("ready"), Before: c.ID})
+	got, changes, _, err := a.Set(x.ID, SetOpts{Status: ptr("ready"), Before: c.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +47,7 @@ func TestSetLanePlusRelativePositionIsOneWrite(t *testing.T) {
 }
 
 func TestSetRelativeRespaceReturnsRenumbered(t *testing.T) {
-	a, clk := appWithClock(time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC))
+	a, clk := newAppWith(at(time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)))
 	b, _ := a.Add("b", AddOpts{Status: "ready"})
 	c, _ := a.Add("c", AddOpts{Status: "ready"})
 	x, _ := a.Add("x", AddOpts{})
@@ -59,7 +60,7 @@ func TestSetRelativeRespaceReturnsRenumbered(t *testing.T) {
 	baseline, _, _ := a.Get(b.ID)
 
 	clk.t = clk.t.Add(time.Hour)
-	got, changes, _, err := a.Set(x.ID, SetOpts{Status: strp("ready"), Before: c.ID})
+	got, changes, _, err := a.Set(x.ID, SetOpts{Status: ptr("ready"), Before: c.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +99,7 @@ func TestSetRelativeValidation(t *testing.T) {
 	}
 
 	// --priority and --before are exclusive; --before and --after too.
-	if _, _, _, err := a.Set(x.ID, SetOpts{Priority: intp(5), Before: b.ID}); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, _, _, err := a.Set(x.ID, SetOpts{Priority: ptr(5), Before: b.ID}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("priority+before: err = %v, want validation", err)
 	}
 	if _, _, _, err := a.Set(x.ID, SetOpts{Before: b.ID, After: b.ID}); core.ExitCode(err) != int(core.CodeValidation) {
@@ -127,7 +128,7 @@ func TestSetManyAppliesToAllInOneWrite(t *testing.T) {
 		ids = append(ids, task.ID)
 	}
 
-	got, _, err := a.SetMany(ids, SetOpts{Status: strp("ready"), Value: intp(4), AddLabels: []string{"triaged"}})
+	got, _, err := a.SetMany(ids, SetOpts{Status: ptr("ready"), Value: ptr(4), AddLabels: []string{"triaged"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,7 @@ func TestSetManyAppliesToAllInOneWrite(t *testing.T) {
 		if task.ID != ids[i] {
 			t.Errorf("result %d = %s, want input order %s", i, task.ID, ids[i])
 		}
-		if task.Status != "ready" || task.Value == nil || *task.Value != 4 || !equalStrings(task.Labels, []string{"triaged"}) {
+		if task.Status != "ready" || task.Value == nil || *task.Value != 4 || !slices.Equal(task.Labels, []string{"triaged"}) {
 			t.Errorf("%s not fully set: %+v", task.ID, task)
 		}
 	}
@@ -161,14 +162,14 @@ func TestSetManyMissChangesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, err = a.SetMany([]string{keep.ID, "t-zzzz1", "t-zzzz2"}, SetOpts{Status: strp("ready")})
+	_, _, err = a.SetMany([]string{keep.ID, "t-zzzz1", "t-zzzz2"}, SetOpts{Status: ptr("ready")})
 	if core.ExitCode(err) != int(core.CodeNotFound) {
 		t.Fatalf("a batch with misses should exit 1, got %v", err)
 	}
 	fe := core.AsError(err)
 	det, _ := fe.Details.(map[string]any)
 	missing, _ := det["missing"].([]string)
-	if !equalStrings(missing, []string{"t-zzzz1", "t-zzzz2"}) {
+	if !slices.Equal(missing, []string{"t-zzzz1", "t-zzzz2"}) {
 		t.Errorf("details.missing = %v, want both misses", det["missing"])
 	}
 	after, _, err := a.Get(keep.ID)
@@ -190,7 +191,7 @@ func TestSetManyRefusesPositionFlags(t *testing.T) {
 	ids := []string{one.ID, two.ID}
 
 	for name, o := range map[string]SetOpts{
-		"--priority": {Priority: intp(50)},
+		"--priority": {Priority: ptr(50)},
 		"--before":   {Before: one.ID},
 		"--after":    {After: one.ID},
 	} {
@@ -198,7 +199,7 @@ func TestSetManyRefusesPositionFlags(t *testing.T) {
 			t.Errorf("%s over 2 ids should be exit 2, got %v", name, err)
 		}
 	}
-	if _, _, err := a.SetMany([]string{two.ID}, SetOpts{Priority: intp(50)}); err != nil {
+	if _, _, err := a.SetMany([]string{two.ID}, SetOpts{Priority: ptr(50)}); err != nil {
 		t.Errorf("a single id must still accept a position: %v", err)
 	}
 }
@@ -207,7 +208,7 @@ func TestSetManyRefusesPositionFlags(t *testing.T) {
 func TestSetManyDedupesIDs(t *testing.T) {
 	a := newApp()
 	task, _ := a.Add("dup", AddOpts{})
-	got, _, err := a.SetMany([]string{task.ID, task.ID}, SetOpts{Status: strp("ready")})
+	got, _, err := a.SetMany([]string{task.ID, task.ID}, SetOpts{Status: ptr("ready")})
 	if err != nil {
 		t.Fatal(err)
 	}

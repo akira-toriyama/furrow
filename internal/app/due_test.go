@@ -9,25 +9,14 @@ import (
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/memstore"
 )
 
 // jst is the operator zone these tests read wall-clock dates in — FIXED, never
 // time.Local, so a CI runner in UTC asserts the same instants.
-var jst = time.FixedZone("JST", 9*60*60)
-
 // newDueApp is newApp with the clock and the operator zone both pinned: the two
 // are deliberately different (UTC clock, +09:00 zone), which is the shape every
 // real invocation has (core.SystemClock is UTC) and the only shape that catches
 // a day boundary read off the clock instead of off the zone.
-func newDueApp(now time.Time) *App {
-	cfg := config.Default()
-	st := memstore.New(cfg.IDPrefix, "e-", cfg.IDWidth)
-	a := NewWithStore(st, cfg, &fixedClock{t: now})
-	a.Loc = jst
-	return a
-}
-
 func TestParseDue(t *testing.T) {
 	now := time.Date(2026, 8, 3, 3, 0, 0, 0, time.UTC) // 2026-08-03 12:00 JST
 	cases := []struct {

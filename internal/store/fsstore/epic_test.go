@@ -17,7 +17,7 @@ func epicStore(t *testing.T) (*Store, string) {
 	return New(root, gateLanes, "t-", "e-", 5), root
 }
 
-func sampleEpic(id, title string) *core.Epic {
+func epicNamed(id, title string) *core.Epic {
 	now := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	return &core.Epic{
 		ID:      id,
@@ -39,7 +39,7 @@ func TestSaveAndLoadEpic(t *testing.T) {
 	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err) // stamp meta.json so the write gate is satisfied
 	}
-	want := sampleEpic("e-k3m9", "旅行の準備")
+	want := epicNamed("e-k3m9", "旅行の準備")
 	if err := s.SaveEpic(want); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestLoadEpicsSortedByID(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"e-zzz9", "e-aaa1", "e-mmm5"} {
-		if err := s.SaveEpic(sampleEpic(id, id)); err != nil {
+		if err := s.SaveEpic(epicNamed(id, id)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -126,7 +126,7 @@ func TestSaveEpicIsZeroChurn(t *testing.T) {
 	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}
-	e := sampleEpic("e-k3m9", "box")
+	e := epicNamed("e-k3m9", "box")
 	if err := s.SaveEpic(e); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestSaveEpicIsZeroChurn(t *testing.T) {
 	// The sleep is what gives the mtime comparison teeth: without a gap, a real
 	// rewrite could land inside the same timestamp tick and read as a no-op.
 	time.Sleep(10 * time.Millisecond)
-	if err := s.SaveEpic(sampleEpic("e-k3m9", "box")); err != nil {
+	if err := s.SaveEpic(epicNamed("e-k3m9", "box")); err != nil {
 		t.Fatal(err)
 	}
 	after, err := os.Stat(path)
@@ -161,7 +161,7 @@ func TestSaveEpicRefusedOnOutdatedBoard(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "meta.json"), []byte("{\n  \"schema_version\": 1\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := s.SaveEpic(sampleEpic("e-k3m9", "box"))
+	err := s.SaveEpic(epicNamed("e-k3m9", "box"))
 	if err == nil {
 		t.Fatal("SaveEpic on an outdated board must be refused")
 	}
@@ -205,10 +205,10 @@ func TestDeleteEpic(t *testing.T) {
 	if err := s.Save(&core.Index{Tasks: []core.Task{}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveEpic(sampleEpic("e-gone", "gone")); err != nil {
+	if err := s.SaveEpic(epicNamed("e-gone", "gone")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveEpic(sampleEpic("e-stay", "stays")); err != nil {
+	if err := s.SaveEpic(epicNamed("e-stay", "stays")); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.DeleteEpic("e-gone"); err != nil {

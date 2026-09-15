@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,7 +39,7 @@ func TestCLIDoneAndMoveAcceptMultipleIds(t *testing.T) {
 		t.Fatalf("envelopes = %d, want 2", len(many))
 	}
 	for i, e := range many {
-		if e.After.Status != "ready" || !contains(e.Changed, "status") {
+		if e.After.Status != "ready" || !slices.Contains(e.Changed, "status") {
 			t.Errorf("envelope[%d] = %+v; want status ready + changed status", i, e)
 		}
 	}
