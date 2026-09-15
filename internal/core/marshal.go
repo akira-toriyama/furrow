@@ -328,7 +328,10 @@ func laneRankOf(rank map[string]int, lane string) int {
 
 // sortDedup returns the input sorted with duplicates removed. nil-safe; returns
 // a non-nil empty slice for an empty/nil input so the marshaller's [] invariant
-// holds.
+// holds. It sorts IN PLACE and returns a prefix of the same backing array — the
+// caller's slice is reordered and must not be relied on afterward (a copy per
+// call would be an allocation on every shard write, and memstore's Load already
+// clones what the store hands out).
 func sortDedup(ss []string) []string {
 	if len(ss) == 0 {
 		return []string{}
