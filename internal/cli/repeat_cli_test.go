@@ -614,3 +614,112 @@ func TestBindingAnOffLatticeAnchorSaysSo(t *testing.T) {
 		t.Errorf("`set --repeat` bound an off-lattice anchor silently:\n%s", se)
 	}
 }
+
+// The LAST occurrence of a bounded series carries its rule like every other
+// one, so a preview that tested the field alone promised a successor the apply
+// then did not create — the preview stating the opposite of the write.
+func TestApplyDryRunSaysWhenTheCloseWouldEndTheSeries(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "x", "--due", "2026-10-01", "--repeat", "daily for 2 times")
+	first := addedID(t, out, code)
+
+	// Closing the first occurrence mints the second, which is the last.
+	out, code = run(t, "done", first, "--json")
+	if code != 0 {
+		t.Fatalf("done exit %d: %s", code, out)
+	}
+	last := repeatCreated(t, out)
+
+	out, code = runIn(t, "SetStatus-task: "+last+" done\n", "apply", "--on", "merge", "--dry-run")
+	if code != 0 {
+		t.Fatalf("apply exit %d: %s", code, out)
+	}
+	if strings.Contains(out, "would also create the next occurrence") {
+		t.Errorf("the preview promised an occurrence the series has no room for:\n%s", out)
+	}
+	if !strings.Contains(out, "would complete the series") {
+		t.Errorf("the preview did not say the close would end the series:\n%s", out)
+	}
+
+	// --json says the same thing, in the shape a machine branches on.
+	out, code = runIn(t, "SetStatus-task: "+last+" done\n", "apply", "--on", "merge", "--dry-run", "--json")
+	if code != 0 {
+		t.Fatalf("apply --json exit %d: %s", code, out)
+	}
+	var res struct {
+		Outcomes []struct {
+			WillRepeat   bool `json:"will_repeat"`
+			WillComplete bool `json:"will_complete"`
+		} `json:"outcomes"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("apply --json: %v\n%s", err, out)
+	}
+	if len(res.Outcomes) != 1 || res.Outcomes[0].WillRepeat || !res.Outcomes[0].WillComplete {
+		t.Errorf("outcomes = %+v, want one {will_repeat:false, will_complete:true}", res.Outcomes)
+	}
+
+	// And the real apply agrees with its own preview.
+	out, code = runIn(t, "SetStatus-task: "+last+" done\n", "apply", "--on", "merge")
+	if code != 0 {
+		t.Fatalf("apply exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, "series complete") {
+		t.Errorf("the apply did not report the series ending:\n%s", out)
+	}
+}
+
+// repeatCreated is the successor id out of a `done --json` envelope.
+func repeatCreated(t *testing.T, out string) string {
+	t.Helper()
+	var envs []struct {
+		Repeat struct {
+			Created string `json:"created"`
+		} `json:"repeat"`
+	}
+	if err := json.Unmarshal([]byte(out), &envs); err != nil {
+		t.Fatalf("done --json: %v\n%s", err, out)
+	}
+	if len(envs) != 1 || envs[0].Repeat.Created == "" {
+		t.Fatalf("no successor in the done envelope:\n%s", out)
+	}
+	return envs[0].Repeat.Created
+}
+
+// The preview of a write that MINTS tasks is the row a close is launched from —
+// the case repeatTag exists for. Rendered without the shared row tags, a
+// repeating match and a one-off match were the same line, and `--yes` then
+// wrote a task the gate never named.
+func TestASelectionPreviewTagsTheRowsThatWillMintTasks(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "water the plants", "--due", "2026-10-01", "--repeat", "weekly")
+	repeating := addedID(t, out, code)
+	out, code = run(t, "add", "ship the thing", "--due", "2026-10-01")
+	oneOff := addedID(t, out, code)
+
+	for _, args := range [][]string{
+		{"done", "-q", "has:due"},
+		{"move", "-q", "has:due", "ready"},
+		{"set", "-q", "has:due", "--value", "3"},
+	} {
+		out, code := run(t, args...)
+		if code != 0 {
+			t.Fatalf("%v exit %d: %s", args, code, out)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			switch {
+			case strings.Contains(line, repeating):
+				if !strings.Contains(line, "repeats") {
+					t.Errorf("%v previewed the repeating row untagged: %q", args, line)
+				}
+				if !strings.Contains(line, "due 2026-10-01") {
+					t.Errorf("%v previewed the repeating row with no due: %q", args, line)
+				}
+			case strings.Contains(line, oneOff):
+				if strings.Contains(line, "repeats") {
+					t.Errorf("%v tagged a one-off row as repeating: %q", args, line)
+				}
+			}
+		}
+	}
+}

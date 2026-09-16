@@ -81,63 +81,9 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	}
 
 	rule := t.Repeat
-	// The anchor is expanded in the BOARD's calendar so occurrences keep their
-	// wall clock (23:59:59 stays 23:59:59 across a DST boundary). recur takes
-	// that calendar as its own argument; the conversion here is for the clock
-	// reading below, which decides what this close settles.
-	anchor := t.RepeatAnchor.In(a.loc())
 	anchorUTC := *t.RepeatAnchor
 
-	// Search from the occurrence being SETTLED, not from the wall clock. A bare
-	// `--due 2026-09-11` binds 23:59:59 local, so a close at 14:32 that asked for
-	// "the first occurrence after now" was handed back TODAY — the very instant
-	// just completed — and the series advanced only when the operator was late.
-	// A daily chore could never be cleared for the day, and a COUNT-bounded one
-	// could never spend its count.
-	//
-	// What a close settles depends on what the operator promised. A bare-date
-	// series (its anchor sits at 23:59:59 in the board's calendar) promises
-	// DAYS, so the close settles the whole board-calendar day of the later of
-	// now and the due: the day the work was done, or the day it was promised
-	// for while that is still ahead. Two failure modes of an instant rule fall out of
-	// that. A snooze (`set --due +1d`, the remedy `due-overdue` itself prints)
-	// lands the due off-lattice at 17:20, and "the first occurrence after
-	// 17:20" was that day's own 23:59:59 point. And a chore closed one
-	// afternoon late got a successor due that same night, which the next
-	// afternoon's close was late for again — every close late, forever, with a
-	// due-overdue ERROR on the board's gate each day. Settling the day heals
-	// the chain after one late close. Its cost is deliberate and documented: a
-	// close just past midnight settles the NEW day, so closing yesterday's
-	// daily at 00:10 consumes today's (re-date the successor with `set <id>
-	// --due <today>` when that is not what was meant).
-	//
-	// A timed series (`--due …T21:00`) promises INSTANTS and is settled as
-	// written: a close at 17:00 must not consume tonight's 21:00, so now stays
-	// an instant there.
-	//
-	// Day boundaries are the board's calendar. On a board that declares none,
-	// WHICH day a close settles depends on the closing machine's zone — the
-	// reason `lint` errors repeat-no-timezone on a shared board.
-	var after, lo, hi time.Time // the search start, and the lapse window (strictly between)
-	if h, m, s := anchor.Clock(); h == 23 && m == 59 && s == 59 {
-		loc := a.loc()
-		dueDay, settledDay := t.Due.In(loc), t.Due.In(loc)
-		if now.After(*t.Due) {
-			settledDay = now.In(loc)
-		}
-		// The wall-clock construction ParseDue binds with — never next-midnight
-		// minus a nanosecond or due+24h-1s, both of which misbehave on the days
-		// a zone skips or repeats an hour.
-		after = time.Date(settledDay.Year(), settledDay.Month(), settledDay.Day(), 23, 59, 59, 0, loc)
-		lo = time.Date(dueDay.Year(), dueDay.Month(), dueDay.Day(), 23, 59, 59, 0, loc)
-		hi = time.Date(settledDay.Year(), settledDay.Month(), settledDay.Day(), 0, 0, 0, 0, loc)
-	} else {
-		after = now
-		if t.Due.After(after) {
-			after = *t.Due
-		}
-		lo, hi = *t.Due, after
-	}
+	after, lo, hi := a.repeatWindow(t, now)
 	// What lapsed while the task sat open: the occurrences strictly between the
 	// one this close settles and the day (or instant) of the close — never the
 	// settled day's own point, never one still ahead. Reported on completion
@@ -197,6 +143,92 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	// instead, so one copy serves the whole series.
 	return &RepeatReport{Created: &id, Due: &due, Skipped: skipped},
 		&pendingSuccessor{task: successor, body: successorBody(body, t.ID)}, nil
+}
+
+// repeatWindow is what a close settles and what it jumped: the instant the
+// search for the next occurrence starts from, and the open interval (lo, hi)
+// whose occurrences lapsed while the task sat open. It EXPANDS nothing and
+// writes nothing, so a dry run can ask the same question a close does.
+//
+// Search from the occurrence being SETTLED, not from the wall clock. A bare
+// `--due 2026-09-11` binds 23:59:59 local, so a close at 14:32 that asked for
+// "the first occurrence after now" was handed back TODAY — the very instant
+// just completed — and the series advanced only when the operator was late.
+// A daily chore could never be cleared for the day, and a COUNT-bounded one
+// could never spend its count.
+//
+// What a close settles depends on what the operator promised. A bare-date
+// series (its anchor sits at 23:59:59 in the board's calendar) promises
+// DAYS, so the close settles the whole board-calendar day of the later of
+// now and the due: the day the work was done, or the day it was promised
+// for while that is still ahead. Two failure modes of an instant rule fall out of
+// that. A snooze (`set --due +1d`, the remedy `due-overdue` itself prints)
+// lands the due off-lattice at 17:20, and "the first occurrence after
+// 17:20" was that day's own 23:59:59 point. And a chore closed one
+// afternoon late got a successor due that same night, which the next
+// afternoon's close was late for again — every close late, forever, with a
+// due-overdue ERROR on the board's gate each day. Settling the day heals
+// the chain after one late close. Its cost is deliberate and documented: a
+// close just past midnight settles the NEW day, so closing yesterday's
+// daily at 00:10 consumes today's (re-date the successor with `set <id>
+// --due <today>` when that is not what was meant).
+//
+// A timed series (`--due …T21:00`) promises INSTANTS and is settled as
+// written: a close at 17:00 must not consume tonight's 21:00, so now stays
+// an instant there.
+//
+// Day boundaries are the board's calendar. On a board that declares none,
+// WHICH day a close settles depends on the closing machine's zone — the
+// reason `lint` errors repeat-no-timezone on a shared board.
+func (a *App) repeatWindow(t *core.Task, now time.Time) (after, lo, hi time.Time) {
+	// The anchor is expanded in the BOARD's calendar so occurrences keep their
+	// wall clock (23:59:59 stays 23:59:59 across a DST boundary). recur takes
+	// that calendar as its own argument; the conversion here is for the clock
+	// reading below, which decides what this close settles.
+	anchor := t.RepeatAnchor.In(a.loc())
+	if h, m, s := anchor.Clock(); h == 23 && m == 59 && s == 59 {
+		loc := a.loc()
+		dueDay, settledDay := t.Due.In(loc), t.Due.In(loc)
+		if now.After(*t.Due) {
+			settledDay = now.In(loc)
+		}
+		// The wall-clock construction ParseDue binds with — never next-midnight
+		// minus a nanosecond or due+24h-1s, both of which misbehave on the days
+		// a zone skips or repeats an hour.
+		after = time.Date(settledDay.Year(), settledDay.Month(), settledDay.Day(), 23, 59, 59, 0, loc)
+		lo = time.Date(dueDay.Year(), dueDay.Month(), dueDay.Day(), 23, 59, 59, 0, loc)
+		hi = time.Date(settledDay.Year(), settledDay.Month(), settledDay.Day(), 0, 0, 0, 0, loc)
+	} else {
+		after = now
+		if t.Due.After(after) {
+			after = *t.Due
+		}
+		lo, hi = *t.Due, after
+	}
+	return after, lo, hi
+}
+
+// repeatPreview is what a DRY RUN can say about the series a close would
+// advance: whether an occurrence follows, or whether the series would end
+// there. Both false means there is nothing to say — the task does not repeat,
+// or its rule is one the close would REFUSE, and a preview promises nothing it
+// cannot expand.
+//
+// The presence of a rule is not the question, though it reads like one: a
+// bounded rule's LAST occurrence carries `repeat` exactly like every other, so
+// a preview that tested the field announced a successor the apply then did not
+// create. Expanding is free — recur.Next is pure, and the close runs the same
+// call over the same window.
+func (a *App) repeatPreview(t *core.Task, now time.Time) (creates, completes bool) {
+	if t.Repeat == "" || t.Due == nil || t.RepeatAnchor == nil {
+		return false, false
+	}
+	after, _, _ := a.repeatWindow(t, now)
+	_, ok, err := recur.Next(t.Repeat, *t.RepeatAnchor, after, a.loc())
+	if err != nil {
+		return false, false
+	}
+	return ok, !ok
 }
 
 // pendingSuccessor is a generated occurrence that has not been committed yet:

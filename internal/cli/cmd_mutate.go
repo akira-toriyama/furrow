@@ -308,7 +308,7 @@ func newDoneCmd() *cobra.Command {
 					return err
 				}
 				if !sel.yes {
-					emitSelectPreview("close", tasks)
+					emitSelectPreview(a, "close", tasks)
 					return nil
 				}
 				if len(tasks) == 0 {
@@ -413,7 +413,7 @@ func newMoveCmd() *cobra.Command {
 					return err
 				}
 				if !sel.yes {
-					emitSelectPreview("move to "+lane, tasks)
+					emitSelectPreview(a, "move to "+lane, tasks)
 					return nil
 				}
 				if len(tasks) == 0 {
@@ -953,7 +953,7 @@ func newSetCmd() *cobra.Command {
 					return err
 				}
 				if !sel.yes {
-					emitSelectPreview("set", tasks)
+					emitSelectPreview(a, "set", tasks)
 					return nil
 				}
 				if len(tasks) == 0 {
