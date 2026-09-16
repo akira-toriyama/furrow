@@ -816,6 +816,15 @@ func TestAnOccurrenceKeepsItsDayWhenTheEveningHasAGap(t *testing.T) {
 			t.Errorf("occurrence %d = %s (%s), want a Saturday — a weekly rule recurs on its anchor's weekday",
 				i, next.Format(time.RFC3339), next.Weekday())
 		}
+		// Strictly after, every step. An occurrence clamped onto the gap day
+		// reads back as an earlier wall clock than the lattice point it came
+		// from, so a search that compared in the expander's frame handed the
+		// same day back and the series stood still — on a date that is a
+		// Saturday, which is why a weekday assertion alone cannot see it.
+		if !next.After(cur) {
+			t.Fatalf("occurrence %d = %s did not advance past %s — the series stands still",
+				i, next.Format(time.RFC3339), cur.Format(time.RFC3339))
+		}
 		cur = next
 	}
 	// The occurrence on the gap day itself is the last instant of that day the

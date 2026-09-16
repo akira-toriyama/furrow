@@ -222,3 +222,37 @@ func TestALateCloseOnAGapDayCountsEveryLapsedOccurrence(t *testing.T) {
 		t.Errorf("skipped = %d, want 2 (2026-09-04 and 2026-09-05)", rep.Skipped)
 	}
 }
+
+// A series must move every time it is closed. An occurrence that lands on a day
+// whose promised wall clock the zone skips is clamped onto that day's last
+// instant, and a search comparing in the expander's gap-free frame read that
+// back as still ahead of the close that had just settled it — so the close
+// minted a successor due the same evening, forever.
+func TestASeriesAdvancesAcrossADayWithASkippedEvening(t *testing.T) {
+	nuuk, err := time.LoadLocation("America/Nuuk")
+	if err != nil {
+		t.Skipf("no tzdata for America/Nuuk: %v", err)
+	}
+	a, _ := newAppWith(at(time.Date(2027, 3, 1, 12, 0, 0, 0, time.UTC)), zone(nuuk))
+	task := mustAddRepeating(t, a, "sat", "2027-03-20", "weekly", AddOpts{})
+
+	id, seen := task.ID, map[string]bool{}
+	for i := 0; i < 5; i++ {
+		_, rep, err := a.moveOne(id, a.Cfg.DoneLane)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rep == nil || rep.Created == nil || rep.Due == nil {
+			t.Fatalf("close %d minted nothing: %+v", i, rep)
+		}
+		day := rep.Due.In(nuuk).Format("2006-01-02")
+		if seen[day] {
+			t.Fatalf("close %d produced %s again — the series is standing still", i, day)
+		}
+		seen[day] = true
+		if wd := rep.Due.In(nuuk).Weekday(); wd != time.Saturday {
+			t.Errorf("close %d produced a %s (%s), want a Saturday", i, wd, day)
+		}
+		id = *rep.Created
+	}
+}
