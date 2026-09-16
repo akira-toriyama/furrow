@@ -78,3 +78,83 @@ func TestNewWithStoreHonorsTheConfiguredZone(t *testing.T) {
 		t.Errorf("loc() = %v, want the configured zone %v", a.loc(), jst)
 	}
 }
+
+// `"Local"` is the one value that LOADS and declares nothing: Go resolves it to
+// the running machine's zone. It therefore set DueTimezone non-nil — the exact
+// test lint reads to decide whether a shared board declared a calendar — so the
+// key silenced repeat-no-timezone while leaving every date bound to whichever
+// machine ran the command, which is the failure the key exists to close.
+func TestALocalTimezoneDeclaresNoCalendar(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, ".furrow", "config.toml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := strings.Replace(string(data), `# timezone = "Asia/Tokyo"`, `timezone = "Local"`, 1)
+	if declared == string(data) {
+		t.Fatal("the init template no longer carries a commented [due].timezone line")
+	}
+	if err := os.WriteFile(cfgPath, []byte(declared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	a := openBoard(t, dir)
+	if a.Loc != nil {
+		t.Errorf("Loc = %v — a machine's own zone was accepted as the board's calendar", a.Loc)
+	}
+	if a.Cfg.DueTimezoneName != "" {
+		t.Errorf("config zone name = %q, want empty: the board declared none", a.Cfg.DueTimezoneName)
+	}
+
+	// The clamp is loud, and the lint the key silenced is loud again.
+	if _, err := a.Add("weekly chore", AddOpts{Due: "2027-05-05", Repeat: "weekly"}); err != nil {
+		t.Fatal(err)
+	}
+	problems, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var clamp, noTZ bool
+	for _, p := range problems {
+		switch p.Code {
+		case "config-clamp":
+			clamp = clamp || strings.Contains(p.Msg, "due.timezone")
+		case "repeat-no-timezone":
+			noTZ = true
+		}
+	}
+	if !clamp {
+		t.Errorf("no config-clamp problem named due.timezone: %+v", problems)
+	}
+	if !noTZ {
+		t.Error("repeat-no-timezone stayed silent on a shared board whose only declaration was the machine's own zone")
+	}
+}
+
+// A zone that IS a calendar still lands, including UTC — the declaration a CI
+// board makes on purpose.
+func TestARealZoneIsStillDeclarable(t *testing.T) {
+	for _, name := range []string{"Asia/Tokyo", "UTC"} {
+		dir := t.TempDir()
+		if _, err := Init(dir); err != nil {
+			t.Fatal(err)
+		}
+		cfgPath := filepath.Join(dir, ".furrow", "config.toml")
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		declared := strings.Replace(string(data), `# timezone = "Asia/Tokyo"`, `timezone = "`+name+`"`, 1)
+		if err := os.WriteFile(cfgPath, []byte(declared), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		a := openBoard(t, dir)
+		if a.Loc == nil || a.Cfg.DueTimezoneName != name {
+			t.Errorf("%s: Loc=%v name=%q — a declarable calendar was clamped away", name, a.Loc, a.Cfg.DueTimezoneName)
+		}
+	}
+}

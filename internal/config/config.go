@@ -295,10 +295,24 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// [due].timezone: the board's calendar. Unset keeps the process zone, which
 	// is what every board did before the key existed, so adding it rewrites no
 	// behaviour until someone declares one.
+	//
+	// "Local" is the one name that loads and declares nothing: Go resolves it to
+	// the RUNNING MACHINE's zone, so a config.toml — a file that is committed and
+	// shared — carrying it still binds a different instant on every machine, and
+	// a UTC CI runner still settles a different day than the operator. Worse, it
+	// set DueTimezone non-nil, which is exactly the test `lint` reads to decide
+	// whether a shared board declared a calendar at all: the key silenced
+	// repeat-no-timezone while changing nothing it warns about. It is clamped
+	// away like any other value the reader cannot honour, leaving the board
+	// undeclared and the lint loud.
 	if r.Due.Timezone != "" {
-		if loc, err := time.LoadLocation(r.Due.Timezone); err != nil {
+		loc, err := time.LoadLocation(r.Due.Timezone)
+		switch {
+		case err != nil:
 			warn = append(warn, fmt.Sprintf("due.timezone %q is not a loadable IANA zone name; using the process zone", r.Due.Timezone))
-		} else {
+		case loc == time.Local:
+			warn = append(warn, fmt.Sprintf("due.timezone %q names the zone of whichever machine runs the command, not a calendar a board can declare; name an IANA zone (or UTC) — the board is read as declaring none", r.Due.Timezone))
+		default:
 			c.DueTimezone = loc
 			c.DueTimezoneName = r.Due.Timezone
 		}

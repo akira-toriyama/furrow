@@ -130,7 +130,8 @@ older_than_days = 30
 # committed and shared: a bare --due date binds the END of that day, and "that
 # day" has to mean one thing whether the operator's machine or a UTC CI runner
 # writes it. A name that will not load falls back to the process zone with a
-# warning that furrow lint surfaces. A shared board that carries a REPEATING
+# warning that furrow lint surfaces, and so does "Local" — it names the running
+# machine, which is the absence of a calendar, not one. A shared board that carries a REPEATING
 # task needs one: its series is expanded, and the day a close settles is
 # chosen, in the zone of whichever machine closes it, so a UTC CI runner lands
 # a weekly/monthly occurrence a day off for anyone bound in another zone —
