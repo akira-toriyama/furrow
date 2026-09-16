@@ -86,8 +86,15 @@ type ApplyOutcome struct {
 	Repeat *RepeatReport `json:"repeat,omitempty"`
 	// WillRepeat marks a DRY-RUN directive that would also create the next
 	// occurrence. The preview cannot name an id — nothing is generated — but
-	// reporting the close as a plain lane move hid that a task is coming.
+	// reporting the close as a plain lane move hid that a task is coming. It is
+	// the EXPANDED answer, not "does this shard carry a rule": a bounded
+	// series' last occurrence carries one and creates nothing.
 	WillRepeat bool `json:"will_repeat,omitempty"`
+	// WillComplete is its other half: a DRY-RUN close that would END the series.
+	// Reported for the same reason RepeatReport.Completed is — without it a
+	// machine cannot tell the last occurrence of a series from a task that never
+	// repeated, since both would carry neither key.
+	WillComplete bool `json:"will_complete,omitempty"`
 }
 
 // ApplyResult is the full report — the JSON output of `furrow apply`. DryRun
@@ -212,7 +219,9 @@ func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMod
 		}
 	case dryRun:
 		out.Action, out.To = "moved", target
-		out.WillRepeat = target == a.Cfg.DoneLane && t.Repeat != "" && t.Status != a.Cfg.DoneLane
+		if target == a.Cfg.DoneLane && t.Status != a.Cfg.DoneLane {
+			out.WillRepeat, out.WillComplete = a.repeatPreview(t, a.Clock.Now())
+		}
 	default:
 		moved, rep, err := a.moveOne(d.ID, target)
 		if err != nil {

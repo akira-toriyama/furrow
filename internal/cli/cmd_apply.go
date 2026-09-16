@@ -124,6 +124,12 @@ func printApplyResult(a *app.App, res app.ApplyResult) {
 			if o.WillRepeat {
 				fmt.Fprintf(out, "%s  would also create the next occurrence\n", o.ID)
 			}
+			// The other outcome of the same close, said for the reason the real
+			// path says it: an operator who reads only "would move → done" cannot
+			// tell a chore that carries on from one that stops here.
+			if o.WillComplete {
+				fmt.Fprintf(out, "%s  would complete the series — no further occurrences\n", o.ID)
+			}
 			if r := o.Repeat; r != nil && (r.Completed || (r.Created != nil && r.Due != nil)) {
 				fmt.Fprintf(out, "%s  %s\n", o.ID, seriesLine(a, r))
 			}

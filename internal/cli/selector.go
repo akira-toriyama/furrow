@@ -108,7 +108,7 @@ func taskIDs(tasks []core.Task) []string {
 // OBJECT, distinguishable by dry_run from the apply's envelope array), human
 // mode lists the matches and names the re-run. action is the whole verb
 // phrase ("close", "move to ready", "set").
-func emitSelectPreview(action string, tasks []core.Task) {
+func emitSelectPreview(a *app.App, action string, tasks []core.Task) {
 	if tasks == nil {
 		tasks = []core.Task{} // array shape, never null
 	}
@@ -118,7 +118,13 @@ func emitSelectPreview(action string, tasks []core.Task) {
 	}
 	fmt.Fprintf(out, "would %s %d task(s)\n", action, len(tasks))
 	for _, t := range tasks {
-		fmt.Fprintf(out, "  %s  [%s] %s\n", t.ID, t.Status, t.Title)
+		// The shared row tags, because this row IS a task rendered as a task —
+		// and it is the row a close is launched from, which is the case
+		// repeatTag exists for. Untagged, the gate on a write that MINTS tasks
+		// showed a repeating match and a one-off match as the same line.
+		fmt.Fprintf(out, "  %s\n", withTags(
+			fmt.Sprintf("%s  [%s] %s", t.ID, t.Status, t.Title),
+			dueTag(a, &t), repeatTag(&t)))
 	}
 	if len(tasks) > 0 {
 		fmt.Fprintln(out, "re-run with --yes to apply")
