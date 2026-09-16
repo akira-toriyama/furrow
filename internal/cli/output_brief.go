@@ -102,7 +102,7 @@ type briefBlockedView struct {
 // printBrief renders the session-orient read: JSON/NDJSON as one object (the
 // single-object command convention), human mode as a compact dashboard WITHOUT
 // bodies (prose is --json's payload for agents; a human runs `show`).
-func printBrief(b *app.BriefData, scope string) {
+func printBrief(a *app.App, b *app.BriefData, scope string) {
 	if jsonMode() {
 		v := briefView{
 			Repo:          scope,
@@ -154,11 +154,11 @@ func printBrief(b *app.BriefData, scope string) {
 	if !b.Due.Empty() {
 		fmt.Fprintf(out, "due (%d):\n", b.Due.Total())
 		for _, it := range b.Due.Overdue {
-			row := fmt.Sprintf("  ! %s  %-12s %s  (overdue %s)", it.Task.ID, it.Task.Status, it.Task.Title, humanTime(*it.Task.Due))
+			row := fmt.Sprintf("  ! %s  %-12s %s  (overdue %s)", it.Task.ID, it.Task.Status, it.Task.Title, calendarTime(a, *it.Task.Due))
 			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
 		}
 		for _, it := range b.Due.Today {
-			row := fmt.Sprintf("  · %s  %-12s %s  (today %s)", it.Task.ID, it.Task.Status, it.Task.Title, humanTime(*it.Task.Due))
+			row := fmt.Sprintf("  · %s  %-12s %s  (today %s)", it.Task.ID, it.Task.Status, it.Task.Title, calendarTime(a, *it.Task.Due))
 			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
 		}
 	}
@@ -174,7 +174,7 @@ func printBrief(b *app.BriefData, scope string) {
 				line += "  ⏳ waits: " + strings.Join(it.OpenDeps, ", ")
 			}
 			if it.Waiting != nil {
-				line += "  " + waitingUntil(it.Waiting)
+				line += "  " + waitingUntil(a, it.Waiting)
 			}
 			fmt.Fprintln(out, line)
 		}

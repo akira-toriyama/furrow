@@ -96,9 +96,9 @@ skipped rather than quietly minting one task per lapsed month.*
 The consequences are deliberate, not gaps: a repeating task you never close
 NEVER piles up (there is only ever one open occurrence), and the next due is
 computed from the series anchor as the first occurrence after what the close
-settles — on a bare-date series the whole local day of the later of now and
-the due, so a snoozed or late close never hands the same day back — so an
-on-time close advances exactly one step and a late one moves you forward
+settles — on a bare-date series the whole board-calendar day of the later of
+now and the due, so a snoozed or late close never hands the same day back — so
+an on-time close advances exactly one step and a late one moves you forward
 rather than into a backlog you did not accrue.
 
 ## Storage format

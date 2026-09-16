@@ -34,7 +34,7 @@ func toEpicView(it app.EpicItem) epicView {
 	return epicView{Epic: it.Epic, Progress: it.Progress, Stuck: it.Stuck, OpenDeps: it.OpenDeps, Waiting: it.Waiting}
 }
 
-func emitEpicList(items []app.EpicItem) error {
+func emitEpicList(a *app.App, items []app.EpicItem) error {
 	views := make([]epicView, 0, len(items))
 	for _, it := range items {
 		views = append(views, toEpicView(it))
@@ -66,7 +66,7 @@ func emitEpicList(items []app.EpicItem) error {
 				line += "  ⏳ waits: " + strings.Join(v.OpenDeps, ", ")
 			}
 			if v.Waiting != nil {
-				line += "  " + waitingUntil(v.Waiting)
+				line += "  " + waitingUntil(a, v.Waiting)
 			}
 			if v.Goal != "" {
 				line += "\n    goal: " + v.Goal
@@ -156,7 +156,7 @@ func printEpicDetail(a *app.App, d *app.EpicDetail) {
 		fmt.Fprintln(out, "          ⚠ stuck — open members but none actionable")
 	}
 	if d.Waiting != nil {
-		fmt.Fprintf(out, "          %s — open work done, a parked member's due still ahead\n", waitingUntil(d.Waiting))
+		fmt.Fprintf(out, "          %s — open work done, a parked member's due still ahead\n", waitingUntil(a, d.Waiting))
 	}
 	if len(d.Epic.Labels) > 0 {
 		fmt.Fprintf(out, "labels:   %s\n", strings.Join(d.Epic.Labels, ", "))

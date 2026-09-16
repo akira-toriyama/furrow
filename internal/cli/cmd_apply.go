@@ -61,7 +61,7 @@ func newApplyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			printApplyResult(res)
+			printApplyResult(a, res)
 			if code := res.WorstCode(); code != int(core.CodeOK) {
 				// Non-blocking by contract: stdout already carries the full report;
 				// this exit lets the workflow comment + fail the (non-required) job.
@@ -101,7 +101,7 @@ func readBodyText(cmd *cobra.Command, path string) (string, error) {
 // printApplyResult renders the apply report: the whole ApplyResult object in
 // machine mode (indented under --json, one compact line under --ndjson), else
 // one human line per directive.
-func printApplyResult(res app.ApplyResult) {
+func printApplyResult(a *app.App, res app.ApplyResult) {
 	if jsonMode() {
 		emitObject(res)
 		return
@@ -125,7 +125,7 @@ func printApplyResult(res app.ApplyResult) {
 				fmt.Fprintf(out, "%s  would also create the next occurrence\n", o.ID)
 			}
 			if r := o.Repeat; r != nil && (r.Completed || (r.Created != nil && r.Due != nil)) {
-				fmt.Fprintf(out, "%s  %s\n", o.ID, seriesLine(r))
+				fmt.Fprintf(out, "%s  %s\n", o.ID, seriesLine(a, r))
 			}
 		case "annotated":
 			fmt.Fprintf(out, "%s  %s\n", o.ID, annotated)

@@ -23,11 +23,11 @@ import (
 // job), and a negated term therefore INCLUDES the unset — `-closed:<2026-01-01`
 // keeps the still-open tasks, matching how negation treats unset estimates.
 //
-// A bare day is a UTC day for the four machine stamps and the OPERATOR's local
+// A bare day is a UTC day for the four machine stamps and the BOARD's calendar
 // day for `due` — see parseDateScalar. That is not an inconsistency to tidy
 // away: `due` is the one date a human types (`--due 2026-08-04` binds the end of
-// that day where they are), so a UTC day would make `-q due:2026-08-04` unable
-// to find what `--due 2026-08-04` had just written.
+// that day in the board's calendar), so a UTC day would make `-q due:2026-08-04`
+// unable to find what `--due 2026-08-04` had just written.
 
 // dateBound is one date scalar as an inclusive [lo, hi] instant interval: a
 // bare YYYY-MM-DD covers its whole UTC day (hi = 23:59:59, the last whole
@@ -40,7 +40,7 @@ type dateBound struct {
 }
 
 // parseDateScalar binds one date scalar at compile time. Three spellings:
-// YYYY-MM-DD (a whole day — UTC for the machine stamps, the operator's local day
+// YYYY-MM-DD (a whole day — UTC for the machine stamps, the board's calendar day
 // for `due`, see below), RFC3339 (an exact instant), and a signed
 // relative offset ±N{m,h,d,w} from now — JQL's units, where m is MINUTES, not
 // months ("-2w" = two weeks ago). Anything else is exit 2 (query-type).
@@ -51,10 +51,10 @@ func (c *queryCompiler) parseDateScalar(field, s string) (dateBound, error) {
 	}
 	if d, err := time.Parse("2006-01-02", s); err == nil {
 		// `due` is the one date a HUMAN authors, in wall clock, through this same
-		// CLI (`--due 2026-08-04` = the end of that day where they are). A UTC day
-		// here would mean `-q due:2026-08-04` could not find what `--due 2026-08-04`
-		// had just written — the tool disagreeing with itself — so a bare day for
-		// this field is the operator's local day. The machine stamps
+		// CLI (`--due 2026-08-04` = the end of that day in the board's calendar). A
+		// UTC day here would mean `-q due:2026-08-04` could not find what `--due
+		// 2026-08-04` had just written — the tool disagreeing with itself — so a bare
+		// day for this field is the board's calendar day. The machine stamps
 		// (created/updated/closed/reviewed) stay UTC days: nobody types those.
 		if field == "due" {
 			loc := c.app.loc()

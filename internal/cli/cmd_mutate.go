@@ -273,9 +273,9 @@ func newDoneCmd() *cobra.Command {
 			"but what the close settled (closed, reviewed), what the rule computes\n" +
 			"(due), this run's deps and its position — the epic included, whatever\n" +
 			"state that box is in. Its due is the first occurrence after what the close\n" +
-			"SETTLES: for a bare-date series the whole local day of the later of now\n" +
-			"and the due, for a timed one the later of the two as instants — so an\n" +
-			"on-time or early close advances one step, a snoozed one never hands the\n" +
+			"SETTLES: for a bare-date series the whole board-calendar day of the later\n" +
+			"of now and the due, for a timed one the later of the two as instants — so\n" +
+			"an on-time or early close advances one step, a snoozed one never hands the\n" +
 			"same day back, and a late one jumps the lapsed cycles and says so:\n" +
 			"`<closed-id>  repeat: next due <when> (<new-id>) — N occurrence(s)\n" +
 			"skipped`, or `repeat: series complete` when the rule is spent. A close\n" +
@@ -327,7 +327,7 @@ func newDoneCmd() *cobra.Command {
 				}, rs.annotate); err != nil {
 					return err
 				}
-				rs.print(after)
+				rs.print(a, after)
 				return nil
 			}
 			text, terr := readTextArg(cmd, note)
@@ -354,7 +354,7 @@ func newDoneCmd() *cobra.Command {
 				}); err != nil {
 				return err
 			}
-			rs.print(after)
+			rs.print(a, after)
 			return nil
 		},
 	}
@@ -431,7 +431,7 @@ func newMoveCmd() *cobra.Command {
 			}, rs.annotate); err != nil {
 				return err
 			}
-			rs.print(after)
+			rs.print(a, after)
 			return nil
 		},
 	}
@@ -1015,7 +1015,7 @@ func newSetCmd() *cobra.Command {
 					return err
 				}
 				noteBoundRules(a, cmd.Flags().Changed("repeat"), closed, rs)
-				rs.print(closed)
+				rs.print(a, closed)
 				return nil
 			}
 			// One id still emits a one-element ARRAY (the always-array rule —
@@ -1058,7 +1058,7 @@ func newSetCmd() *cobra.Command {
 			// without it the successor it just minted is invisible until a later
 			// read, and a machine could not tell it from a task that never repeated.
 			noteBoundRules(a, cmd.Flags().Changed("repeat"), closed, rs)
-			rs.print(closed)
+			rs.print(a, closed)
 			return nil
 		},
 	}
@@ -1310,7 +1310,7 @@ func (s *seriesReports) annotate(t *core.Task) map[string]any {
 // the same rule the batch envelopes follow, that the runtime argv length must
 // not fork the output shape. The JSON path already carries the same facts on
 // each envelope.
-func (s *seriesReports) print(tasks []*core.Task) {
+func (s *seriesReports) print(a *app.App, tasks []*core.Task) {
 	if jsonMode() {
 		return
 	}
@@ -1319,7 +1319,7 @@ func (s *seriesReports) print(tasks []*core.Task) {
 		if r == nil {
 			continue
 		}
-		fmt.Fprintf(out, "%s  %s\n", t.ID, seriesLine(r))
+		fmt.Fprintf(out, "%s  %s\n", t.ID, seriesLine(a, r))
 	}
 }
 
@@ -1327,10 +1327,10 @@ func (s *seriesReports) print(tasks []*core.Task) {
 // with `apply`, so the two closes that mint a successor say the same thing.
 // A spent series still names what lapsed: a late close is exactly what runs a
 // bounded one out.
-func seriesLine(r *app.RepeatReport) string {
+func seriesLine(a *app.App, r *app.RepeatReport) string {
 	line := "repeat: series complete — no further occurrences"
 	if !r.Completed {
-		line = fmt.Sprintf("repeat: next due %s (%s)", humanTime(*r.Due), *r.Created)
+		line = fmt.Sprintf("repeat: next due %s (%s)", calendarTime(a, *r.Due), *r.Created)
 	}
 	if r.Skipped > 0 {
 		line += fmt.Sprintf(" — %d occurrence(s) skipped", r.Skipped)

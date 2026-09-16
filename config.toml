@@ -124,7 +124,10 @@ older_than_days = 30
 # task needs one: its series is expanded, and the day a close settles is
 # chosen, in the zone of whichever machine closes it, so a UTC CI runner lands
 # a weekly/monthly occurrence a day off for anyone bound in another zone —
-# furrow lint errors repeat-no-timezone until the calendar is declared.
+# furrow lint errors repeat-no-timezone until the calendar is declared. It is
+# also the zone every calendar-bound value is PRINTED in — a due, a repeat
+# anchor — so a row carries the date the board promised wherever it is read;
+# event stamps (created/updated/closed) stay in the reader's own zone.
 # timezone = "Asia/Tokyo"
 
 [revisit]
