@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -156,5 +157,68 @@ func TestARealZoneIsStillDeclarable(t *testing.T) {
 		if a.Loc == nil || a.Cfg.DueTimezoneName != name {
 			t.Errorf("%s: Loc=%v name=%q — a declarable calendar was clamped away", name, a.Loc, a.Cfg.DueTimezoneName)
 		}
+	}
+}
+
+// A bare day on `due` is the board's calendar day, and its lower bound has to
+// be an instant the calendar actually has. Where a zone skips its own midnight,
+// time.Date resolves that construction onto 23:00 the day BEFORE — an hour of
+// the previous day inside the window, which is exactly where a bare `--due`
+// binds. The selector then returned the previous day's task for `due:<gap-day>`
+// and, comparing `<` against the same bound, hid it from `due:<gap-day` too.
+func TestABareDueDayStartsWhereTheCalendarStartsIt(t *testing.T) {
+	scl, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Skipf("no tzdata for America/Santiago: %v", err)
+	}
+	// Santiago springs forward at 00:00 on 2026-09-06: local midnight is missing.
+	a, _ := newAppWith(at(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)), zone(scl))
+	fifth, err := a.Add("fifth", AddOpts{Due: "2026-09-05"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sixth, err := a.Add("sixth", AddOpts{Due: "2026-09-06"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		q    string
+		want []string
+	}{
+		{"due:2026-09-06", []string{sixth.ID}},
+		{"due:<2026-09-06", []string{fifth.ID}},
+		{"due:2026-09-05", []string{fifth.ID}},
+		{"due:>=2026-09-06", []string{sixth.ID}},
+	} {
+		got, err := a.List(QueryOpts{Query: c.q})
+		if err != nil {
+			t.Fatalf("List(%q): %v", c.q, err)
+		}
+		if ids := idsOf(got); !slices.Equal(ids, c.want) {
+			t.Errorf("-q %q = %v, want %v", c.q, ids, c.want)
+		}
+	}
+}
+
+// The lapse window a close reports reads the same boundary: with `hi` built
+// from a midnight the zone skips, CountBetween stopped an hour early and lost
+// the occurrence that fell at 23:59:59 the evening before.
+func TestALateCloseOnAGapDayCountsEveryLapsedOccurrence(t *testing.T) {
+	scl, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Skipf("no tzdata for America/Santiago: %v", err)
+	}
+	// 12:00 local on 2026-09-06, the day whose midnight does not exist.
+	a, _ := newAppWith(at(time.Date(2026, 9, 6, 15, 0, 0, 0, time.UTC)), zone(scl))
+	pred := mustAddRepeating(t, a, "chore", "2026-09-03", "daily", AddOpts{})
+	_, rep, err := a.moveOne(pred.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep == nil {
+		t.Fatal("no series report")
+	}
+	if rep.Skipped != 2 {
+		t.Errorf("skipped = %d, want 2 (2026-09-04 and 2026-09-05)", rep.Skipped)
 	}
 }

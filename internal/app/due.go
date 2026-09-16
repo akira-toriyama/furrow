@@ -43,6 +43,27 @@ func (a *App) loc() *time.Location {
 	return a.Loc
 }
 
+// dayStart is the first instant of a calendar day in loc — the lower bound of
+// "that whole day", and the twin of the 23:59:59 upper bound ParseDue binds.
+//
+// It is NOT time.Date(y, mo, d, 0, 0, 0, 0, loc). Where a zone SKIPS its own
+// midnight — America/Santiago, America/Havana, Atlantic/Azores, Asia/Beirut and
+// Africa/Cairo each do, once a year, through 2036 — Go resolves that
+// construction BACKWARD onto 23:00 the day BEFORE, so a window built from it
+// starts an hour early and admits the previous day's 23:59:59, which is exactly
+// where a bare `--due` lands. On such a day the day begins at the transition,
+// and the zone's offsets on either side of it name that instant: noon always
+// exists, so its offset is the one in force after the transition.
+func dayStart(y int, mo time.Month, d int, loc *time.Location) time.Time {
+	start := time.Date(y, mo, d, 0, 0, 0, 0, loc)
+	if sy, smo, sd := start.Date(); sy == y && smo == mo && sd == d {
+		return start
+	}
+	_, before := start.Zone()
+	_, after := time.Date(y, mo, d, 12, 0, 0, 0, loc).Zone()
+	return start.Add(time.Duration(after-before) * time.Second)
+}
+
 // Calendar is loc() for the presentation layer: the zone a CALENDAR-BOUND value
 // has to be rendered in.
 //

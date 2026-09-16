@@ -197,7 +197,12 @@ func (a *App) repeatWindow(t *core.Task, now time.Time) (after, lo, hi time.Time
 		// a zone skips or repeats an hour.
 		after = time.Date(settledDay.Year(), settledDay.Month(), settledDay.Day(), 23, 59, 59, 0, loc)
 		lo = time.Date(dueDay.Year(), dueDay.Month(), dueDay.Day(), 23, 59, 59, 0, loc)
-		hi = time.Date(settledDay.Year(), settledDay.Month(), settledDay.Day(), 0, 0, 0, 0, loc)
+		// dayStart rather than a midnight, for the reason the comment just above
+		// gives: on a day whose local midnight the zone skips, time.Date lands on
+		// 23:00 the day BEFORE, and the lapse window then stops an hour early —
+		// dropping the occurrence that fell at 23:59:59 the previous evening and
+		// under-reporting `skipped` by one.
+		hi = dayStart(settledDay.Year(), settledDay.Month(), settledDay.Day(), loc)
 	} else {
 		after = now
 		if t.Due.After(after) {

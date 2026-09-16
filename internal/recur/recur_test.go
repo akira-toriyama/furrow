@@ -793,3 +793,59 @@ func TestZeroCountIsRefusedRatherThanDropped(t *testing.T) {
 		t.Errorf("Compile = %q, %v; want FREQ=DAILY;COUNT=3", got, err)
 	}
 }
+
+// A rule promises a DAY. The Greenland zones spring forward AT 23:00, so a
+// lattice point at 23:59:59 has no instant of its own once a year — and pushing
+// it forward to the first instant that does exist crossed midnight, handing a
+// Saturday chore out on a Sunday. The backward reading is 22:59:59 that same
+// evening, which is the day the rule named.
+func TestAnOccurrenceKeepsItsDayWhenTheEveningHasAGap(t *testing.T) {
+	nuuk, err := time.LoadLocation("America/Nuuk")
+	if err != nil {
+		t.Skipf("no tzdata for America/Nuuk: %v", err)
+	}
+	// 2027-03-20 is a Saturday; the zone's gap falls on 2027-03-27, the next one.
+	anchor := time.Date(2027, 3, 20, 23, 59, 59, 0, nuuk)
+	cur := anchor
+	for i := 0; i < 4; i++ {
+		next, ok, err := Next("FREQ=WEEKLY", anchor, cur, nuuk)
+		if err != nil || !ok {
+			t.Fatalf("Next after %s: ok=%v err=%v", cur.Format(time.RFC3339), ok, err)
+		}
+		if next.Weekday() != time.Saturday {
+			t.Errorf("occurrence %d = %s (%s), want a Saturday — a weekly rule recurs on its anchor's weekday",
+				i, next.Format(time.RFC3339), next.Weekday())
+		}
+		cur = next
+	}
+	// The occurrence on the gap day itself is the last instant of that day the
+	// zone has, which is where the same board's `--due 2027-03-27` also lands.
+	got, _, err := Next("FREQ=WEEKLY", anchor, time.Date(2027, 3, 26, 0, 0, 0, 0, nuuk), nuuk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2027, 3, 27, 23, 59, 59, 0, nuuk); !got.Equal(want) {
+		t.Errorf("the gap day's occurrence = %s, want %s (what a bare --due for that day binds)",
+			got.Format(time.RFC3339), want.Format(time.RFC3339))
+	}
+}
+
+// A zone that skips local MIDNIGHT is the other half of the same rule, and it
+// still resolves forward: the backward answer there falls off the promised day
+// altogether.
+func TestAnOccurrenceMovesForwardWhenMidnightItselfIsMissing(t *testing.T) {
+	scl, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Skipf("no tzdata for America/Santiago: %v", err)
+	}
+	// Santiago springs forward at 00:00 on 2026-09-06; a rule landing at 00:30
+	// that day has no instant of its own.
+	anchor := time.Date(2026, 8, 30, 0, 30, 0, 0, scl)
+	got, ok, err := Next("FREQ=WEEKLY", anchor, time.Date(2026, 9, 5, 0, 0, 0, 0, scl), scl)
+	if err != nil || !ok {
+		t.Fatalf("Next: ok=%v err=%v", ok, err)
+	}
+	if y, mo, d := got.Date(); y != 2026 || mo != time.September || d != 6 {
+		t.Errorf("occurrence = %s, want it on 2026-09-06 — the day the rule named", got.Format(time.RFC3339))
+	}
+}
