@@ -415,11 +415,25 @@ func Next(line string, anchor, after time.Time, loc *time.Location) (time.Time, 
 	if err != nil {
 		return time.Time{}, false, err
 	}
-	next := r.After(naked(after, loc), false)
-	if next.IsZero() {
-		return time.Time{}, false, nil
+	// "Strictly after" is decided in the CALENDAR, which is where `after` was
+	// measured — not in the gap-free frame the library expands in. The two frames
+	// agree on every day but one: where the zone skips the wall clock a rule
+	// lands on, zoned() clamps the occurrence onto that day's last instant, which
+	// reads back as an EARLIER wall clock than the lattice point it came from.
+	// Compared in the frame, such an occurrence still looked ahead of a close
+	// that had just settled it, so the close handed back the very day it closed —
+	// and a weekly series stood on one date forever, every close minting a
+	// successor due the same evening.
+	for cur := naked(after, loc); ; {
+		next := r.After(cur, false)
+		if next.IsZero() {
+			return time.Time{}, false, nil
+		}
+		if z := zoned(next, loc); z.After(after) {
+			return z, true, nil
+		}
+		cur = next
 	}
-	return zoned(next, loc), true, nil
 }
 
 // CountBetween reports how many occurrences fall strictly between lo and hi.
@@ -433,19 +447,25 @@ func CountBetween(line string, anchor, lo, hi time.Time, loc *time.Location) (in
 	if err != nil {
 		return 0, err
 	}
-	// The window is compared against occurrences the library hands back, so it
-	// crosses into their frame with them.
-	lo, hi = naked(lo, loc), naked(hi, loc)
+	// The window is read in the CALENDAR it was measured in, for the reason Next
+	// gives: the two frames disagree by the skipped hour on the days a zone skips
+	// one, and the occurrence that landed on such a day would then be counted on
+	// the wrong side of an edge.
+	//
 	// Iterate rather than materialize: Between allocates the whole slice, which a
 	// pathological stored rule can make enormous. Walking stops at hi.
 	n := 0
 	next := r.Iterator()
 	for {
 		t, ok := next()
-		if !ok || !t.Before(hi) {
+		if !ok {
 			break
 		}
-		if t.After(lo) {
+		z := zoned(t, loc)
+		if !z.Before(hi) {
+			break
+		}
+		if z.After(lo) {
 			n++
 		}
 	}
