@@ -97,26 +97,28 @@ func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, noBod
 // repeatAnchorNote names the series start beside the rule. Without it the rule
 // alone cannot be read: FREQ=MONTHLY says nothing about WHICH day, which lives
 // in the anchor the rule is expanded from.
-func repeatAnchorNote(t *core.Task) string {
+func repeatAnchorNote(a *app.App, t *core.Task) string {
 	if t.RepeatAnchor == nil {
 		return ""
 	}
-	return " (since " + humanTime(*t.RepeatAnchor) + ")"
+	return " (since " + calendarTime(a, *t.RepeatAnchor) + ")"
 }
 
 // dueDetail renders a due stamp for the `show` block: the local timestamp plus
 // the state, so "when" and "is that a problem?" are one line instead of a date
 // the reader has to compare against today by hand. Empty when there is no date.
 //
-// The zone and the clock are the process's own (time.Local / time.Now) — the
-// same pair humanTime already renders every other timestamp with. The app layer
-// is where an injected clock matters (lint/brief must be reproducible); a
-// rendered marker is read by a human, now, on this machine.
+// The clock is the process's own (time.Now) — a rendered marker is read by a
+// human, now, on this machine; the app layer is where an injected clock matters
+// (lint/brief must be reproducible). The ZONE is the board's, because a due is a
+// promise the board made in its calendar: reading it in the viewer's zone put
+// "(today)" next to tomorrow's date on any board whose calendar sits west of the
+// reader.
 func dueDetail(a *app.App, t *core.Task) string {
 	if t.Due == nil {
 		return ""
 	}
-	s := humanTime(*t.Due)
+	s := calendarTime(a, *t.Due)
 	switch a.DueDisplayState(t) {
 	case core.DueOverdue:
 		s += "  (overdue)"
@@ -165,7 +167,7 @@ func printTaskDetail(a *app.App, t *core.Task, body string) {
 		fmt.Fprintf(out, "  %s %s\n", box, c.Text)
 	}
 	if t.Repeat != "" {
-		fmt.Fprintf(out, "repeat:   %s%s\n", t.Repeat, repeatAnchorNote(t))
+		fmt.Fprintf(out, "repeat:   %s%s\n", t.Repeat, repeatAnchorNote(a, t))
 	}
 	if d := dueDetail(a, t); d != "" {
 		fmt.Fprintf(out, "due:      %s\n", d)

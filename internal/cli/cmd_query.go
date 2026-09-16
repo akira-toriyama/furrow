@@ -517,7 +517,7 @@ func newBriefCmd() *cobra.Command {
 			if scope == "" {
 				scope = o.ScopeRepo
 			}
-			printBrief(b, scope)
+			printBrief(a, b, scope)
 			return nil
 		},
 	}

@@ -68,7 +68,7 @@ func newRmCmd() *cobra.Command {
 			for _, t := range rep.Tasks {
 				fmt.Fprintf(out, "  %s  %s\n", t.ID, t.Title)
 			}
-			printSeriesEnd(rep.Tasks, rep.DryRun)
+			printSeriesEnd(a, rep.Tasks, rep.DryRun)
 			printReferences(rep.References, rep.DryRun)
 			printAssetTransfer(rep.Assets, rep.DryRun, "deleted", "the store")
 			if rep.DryRun {
@@ -147,7 +147,7 @@ func rmVerb(dry bool) string {
 // while the preview exists precisely to disclose what the deletion destroys.
 //
 // `epic rm` has no twin: a box holds no rule.
-func printSeriesEnd(tasks []core.Task, dry bool) {
+func printSeriesEnd(a *app.App, tasks []core.Task, dry bool) {
 	for i := range tasks {
 		t := &tasks[i]
 		if t.Repeat == "" {
@@ -157,7 +157,7 @@ func printSeriesEnd(tasks []core.Task, dry bool) {
 		// A rule with no due is only reachable from a shard furrow did not write
 		// (`lint` names it repeat-invalid); the disclosure still stands without it.
 		if t.Due != nil {
-			when = ", due " + humanTime(*t.Due)
+			when = ", due " + calendarTime(a, *t.Due)
 		}
 		if dry {
 			fmt.Fprintf(out, "repeat: %s carries a series (%s%s) — removing it ends the series; no successor is minted\n", t.ID, t.Repeat, when)

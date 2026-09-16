@@ -43,6 +43,19 @@ func (a *App) loc() *time.Location {
 	return a.Loc
 }
 
+// Calendar is loc() for the presentation layer: the zone a CALENDAR-BOUND value
+// has to be rendered in.
+//
+// A due and a repeat anchor are not instants an operator happens to read from
+// somewhere — they are a promise the board made in ITS calendar ("the end of the
+// 20th"), and lint, brief and recur all classify them there. Rendered in the
+// viewer's zone instead, the same stamp prints a different DATE: `show` put
+// "(today)" beside tomorrow, and `ls` disagreed with the `lint` line about the
+// same task. Event instants (created/updated/closed/reviewed, a commit time) are
+// NOT calendar-bound and stay in the viewer's zone, where they line up with git
+// log.
+func (a *App) Calendar() *time.Location { return a.loc() }
+
 // ParseDue binds a `--due` spelling to an instant. now anchors the relative
 // offsets; loc is the zone a zoneless spelling is read in. Four shapes:
 //

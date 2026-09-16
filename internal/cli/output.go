@@ -142,20 +142,41 @@ func stateGlyph(a *app.App, actionable bool, status string) string {
 	}
 }
 
-// humanTime renders a timestamp for HUMAN output in the viewer's local time
+// humanTime renders an EVENT INSTANT for HUMAN output in the viewer's local time
 // zone with an explicit offset (e.g. "2026-07-17 12:22 +09:00"), so `show`
 // lines up with `git log` instead of reading as a phantom UTC midnight. Storage
 // and the --json/--ndjson views stay UTC RFC3339 (mustJSON) — this is
 // presentation only, applied inline so the caller's *core.Task is never mutated.
+//
+// "When did this happen" is what belongs here: created, updated, closed,
+// reviewed, a commit time. A due and a repeat anchor are calendar-bound and go
+// through calendarTime instead.
 func humanTime(t time.Time) string {
 	return t.Local().Format(core.TimeLayout)
 }
 
+// calendarTime renders a CALENDAR-BOUND stamp — a due, a repeat anchor — in the
+// BOARD's calendar (app.Calendar), with the same explicit offset humanTime
+// carries, which is what makes the two visibly different calendars rather than
+// one silently wrong one.
+//
+// The board declares that calendar ([due].timezone) precisely so a date does not
+// depend on the machine reading it: `--due 2026-09-20` binds the end of the 20th
+// THERE, and lint, brief's bands and recur's lattice all read it back there. A
+// viewer's-zone rendering of the same instant prints a different DATE east of it
+// — "(today)" beside tomorrow's date, an `ls` row a day off from the `lint` line
+// about the same task. On a board that declares no calendar this is time.Local,
+// exactly as before.
+func calendarTime(a *app.App, t time.Time) string {
+	return t.In(a.Calendar()).Format(core.TimeLayout)
+}
+
 // waitingUntil renders a box's EpicWait for the human rows: the earliest parked
-// due in local time (the same humanTime `show` prints a task's due with) and
-// the member carrying it, so "until when" and "on whose account" are one glance.
-func waitingUntil(w *app.EpicWait) string {
-	return fmt.Sprintf("⏳ waiting until %s (%s)", humanTime(w.Until), w.Task)
+// due in the board's calendar (the same calendarTime `show` prints a task's due
+// with) and the member carrying it, so "until when" and "on whose account" are
+// one glance.
+func waitingUntil(a *app.App, w *app.EpicWait) string {
+	return fmt.Sprintf("⏳ waiting until %s (%s)", calendarTime(a, w.Until), w.Task)
 }
 
 // dueTag is dueDetail's one-cell form for a table row: "due 2026-08-04 10:30",
@@ -163,6 +184,10 @@ func waitingUntil(w *app.EpicWait) string {
 // already wide, and `show` carries the exact stamp); the two spellings share the
 // substring "due", so one grep finds every dated row and a longer one finds only
 // the late ones.
+//
+// The date is read in the board's calendar, like the word beside it: a row that
+// classified in one zone and printed in another said "due" and a date that the
+// same board's lint line did not agree with.
 func dueTag(a *app.App, t *core.Task) string {
 	if t.Due == nil {
 		return ""
@@ -171,7 +196,7 @@ func dueTag(a *app.App, t *core.Task) string {
 	if a.DueDisplayState(t) == core.DueOverdue {
 		word = "overdue"
 	}
-	return word + " " + t.Due.Local().Format("2006-01-02 15:04")
+	return word + " " + t.Due.In(a.Calendar()).Format("2006-01-02 15:04")
 }
 
 // repeatTag marks a row whose close MINTS the next occurrence. A fixed word,

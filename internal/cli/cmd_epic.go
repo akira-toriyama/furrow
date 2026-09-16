@@ -137,7 +137,7 @@ func newEpicLsCmd() *cobra.Command {
 				}
 			}
 			hintCapped(len(items), f.limit, "", func() (int, error) { return len(matched), nil })
-			return emitEpicList(items)
+			return emitEpicList(a, items)
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "include closed epics")
