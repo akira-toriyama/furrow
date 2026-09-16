@@ -60,7 +60,10 @@ func (c *queryCompiler) parseDateScalar(field, s string) (dateBound, error) {
 			loc := c.app.loc()
 			y, mo, dd := d.Date()
 			return dateBound{
-				lo: time.Date(y, mo, dd, 0, 0, 0, 0, loc),
+				// dayStart, not a midnight: a zone that skips its own midnight
+				// resolves that construction onto the day before, and the window
+				// then admits (and `<` then excludes) a task promised for it.
+				lo: dayStart(y, mo, dd, loc),
 				hi: time.Date(y, mo, dd, 23, 59, 59, 0, loc),
 			}, nil
 		}

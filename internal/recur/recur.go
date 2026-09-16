@@ -576,15 +576,27 @@ func naked(t time.Time, loc *time.Location) time.Time {
 // zoned is naked's inverse: the wall clock t carries, read back in loc.
 //
 // A wall clock the zone SKIPS has no instant of its own, and time.Date resolves
-// one either way depending on the sign of the offset. The backward answer lands
-// on the PREVIOUS DAY — the defect this frame exists to remove — so a reading
-// that came back earlier than it was asked for is pushed on to the first instant
-// that does exist, which keeps the occurrence on the day the rule promised.
+// one BACKWARD, onto the offset in force before the transition. What the rule
+// promised is a DAY, so that is what is kept — and which answer keeps it depends
+// on where in the day the zone's gap falls:
+//
+//   - The gap is inside the day (America/Nuuk, America/Godthab and
+//     America/Scoresbysund spring forward AT 23:00, so 23:00-23:59 is missing
+//     once a year). The backward answer is 22:59:59 that same evening, which is
+//     the promised day; pushing it forward instead landed it at 00:59:59 the
+//     NEXT day, and a `weekly` chore anchored on a Saturday handed out a Sunday.
+//   - The gap swallows local midnight (America/Santiago, America/Havana,
+//     Atlantic/Azores). The backward answer falls off the promised day
+//     altogether, and the first instant that exists — the transition — is the
+//     one to take.
 func zoned(t time.Time, loc *time.Location) time.Time {
 	y, mo, d := t.Date()
 	h, mi, s := t.Clock()
 	got := time.Date(y, mo, d, h, mi, s, 0, loc)
 	if !naked(got, loc).Before(t) {
+		return got
+	}
+	if gy, gmo, gd := got.Date(); gy == y && gmo == mo && gd == d {
 		return got
 	}
 	// got sits before the gap, so the offset it carries is the one in force
