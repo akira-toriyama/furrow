@@ -104,8 +104,8 @@ func repeatAnchorNote(a *app.App, t *core.Task) string {
 	return " (since " + calendarTime(a, *t.RepeatAnchor) + ")"
 }
 
-// dueDetail renders a due stamp for the `show` block: the local timestamp plus
-// the state, so "when" and "is that a problem?" are one line instead of a date
+// dueDetail renders a due stamp for the `show` block: the board-calendar
+// timestamp plus the state, so "when" and "is that a problem?" are one line instead of a date
 // the reader has to compare against today by hand. Empty when there is no date.
 //
 // The clock is the process's own (time.Now) — a rendered marker is read by a

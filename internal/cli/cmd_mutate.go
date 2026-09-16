@@ -273,9 +273,9 @@ func newDoneCmd() *cobra.Command {
 			"but what the close settled (closed, reviewed), what the rule computes\n" +
 			"(due), this run's deps and its position — the epic included, whatever\n" +
 			"state that box is in. Its due is the first occurrence after what the close\n" +
-			"SETTLES: for a bare-date series the whole local day of the later of now\n" +
-			"and the due, for a timed one the later of the two as instants — so an\n" +
-			"on-time or early close advances one step, a snoozed one never hands the\n" +
+			"SETTLES: for a bare-date series the whole board-calendar day of the later\n" +
+			"of now and the due, for a timed one the later of the two as instants — so\n" +
+			"an on-time or early close advances one step, a snoozed one never hands the\n" +
 			"same day back, and a late one jumps the lapsed cycles and says so:\n" +
 			"`<closed-id>  repeat: next due <when> (<new-id>) — N occurrence(s)\n" +
 			"skipped`, or `repeat: series complete` when the rule is spent. A close\n" +

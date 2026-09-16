@@ -97,9 +97,9 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	//
 	// What a close settles depends on what the operator promised. A bare-date
 	// series (its anchor sits at 23:59:59 in the board's calendar) promises
-	// DAYS, so the close settles the whole local day of the later of now and
-	// the due: the day the work was done, or the day it was promised for while
-	// that is still ahead. Two failure modes of an instant rule fall out of
+	// DAYS, so the close settles the whole board-calendar day of the later of
+	// now and the due: the day the work was done, or the day it was promised
+	// for while that is still ahead. Two failure modes of an instant rule fall out of
 	// that. A snooze (`set --due +1d`, the remedy `due-overdue` itself prints)
 	// lands the due off-lattice at 17:20, and "the first occurrence after
 	// 17:20" was that day's own 23:59:59 point. And a chore closed one
