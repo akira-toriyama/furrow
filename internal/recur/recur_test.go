@@ -680,3 +680,116 @@ func TestOffLatticeReportsTheRulesOwnFirstDate(t *testing.T) {
 		t.Error("an unparseable rule was reported as off-lattice")
 	}
 }
+
+// A MONTHLY rule's INTERVAL decides which months it visits, so a day only the
+// months it never visits lack is not a day it skips. `every 6 months on 31`
+// reaches January and July, both of which have a 31st — the note that said
+// otherwise also prescribed `on last`, a remedy for a rule that was already
+// landing every time.
+func TestSkipsNarrowsToTheMonthsAnIntervalReaches(t *testing.T) {
+	jan31 := time.Date(2026, 1, 31, 23, 59, 59, 0, jst)
+	jan30 := time.Date(2026, 1, 30, 23, 59, 59, 0, jst)
+	apr30 := time.Date(2026, 4, 30, 23, 59, 59, 0, jst)
+	mar31 := time.Date(2026, 3, 31, 23, 59, 59, 0, jst)
+	for _, c := range []struct {
+		name   string
+		spec   string
+		anchor time.Time
+		want   Skip
+	}{
+		{"every 6 months on 31 from January", "every 6 months on 31", jan31, Skip{}},
+		{"every 12 months on 30 from April", "every 12 months on 30", apr30, Skip{}},
+		// January, May, September — every one of them has a 30th.
+		{"a bare every-4-months anchored on the 30th", "every 4 months", jan30, Skip{}},
+		// March and September: September has no 31st, so this one really skips.
+		{"every 6 months on 31 from March", "every 6 months on 31", mar31, Skip{Day: 31, Period: Months}},
+		// January, May, September again — September has no 31st.
+		{"every 4 months on 31 from January", "every 4 months on 31", jan31, Skip{Day: 31, Period: Months}},
+		// Coprime with 12, so the lattice reaches every month after all.
+		{"every 5 months on 31 from January", "every 5 months on 31", jan31, Skip{Day: 31, Period: Months}},
+		{"plain monthly on 31 still skips", "monthly on 31", jan31, Skip{Day: 31, Period: Months}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			line, err := Compile(c.spec, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			skip, ok := Skips(line, c.anchor, jst)
+			if !ok {
+				skip = Skip{}
+			}
+			if skip != c.want {
+				t.Errorf("Skips(%q anchored %s) = (%+v, %v), want %+v",
+					line, c.anchor.Format("2006-01-02"), skip, ok, c.want)
+			}
+			if c.want == (Skip{}) {
+				assertEveryOccurrenceLands(t, line, c.anchor)
+			}
+		})
+	}
+}
+
+// assertEveryOccurrenceLands walks the series and fails if any period is
+// skipped — the fact a silent Skips is claiming.
+func assertEveryOccurrenceLands(t *testing.T, line string, anchor time.Time) {
+	t.Helper()
+	want := anchor.Day()
+	cur := anchor
+	for i := 0; i < 8; i++ {
+		next, ok, err := Next(line, anchor, cur, jst)
+		if err != nil || !ok {
+			t.Fatalf("Next(%q) after %s: ok=%v err=%v", line, cur.Format("2006-01-02"), ok, err)
+		}
+		if next.Day() != want {
+			t.Fatalf("occurrence %d of %q is %s — the rule does skip, so the note was right",
+				i, line, next.Format("2006-01-02"))
+		}
+		cur = next
+	}
+}
+
+// A rule that fires in February alone misses a whole YEAR when it names the
+// 29th, whatever spelling gets it there — the leap-day note and its remedy,
+// not the monthly `on last` one.
+func TestAnIntervalConfinedToFebruarySkipsYears(t *testing.T) {
+	feb29 := time.Date(2028, 2, 29, 23, 59, 59, 0, jst)
+	line, err := Compile("every 12 months on 29", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	skip, ok := Skips(line, feb29, jst)
+	if !ok || skip != (Skip{Day: 29, Period: Years}) {
+		t.Errorf("Skips(%q anchored on a February 29) = (%+v, %v), want ({29 Years}, true): the rule visits February and nothing else", line, skip, ok)
+	}
+}
+
+// BYMONTH filters the months the frequency reaches; it does not add any. A
+// February named by a rule whose lattice never reaches February is not a month
+// the rule skips.
+func TestByMonthCannotNameAMonthTheLatticeMisses(t *testing.T) {
+	jan31 := time.Date(2026, 1, 31, 23, 59, 59, 0, jst)
+	if skip, ok := Skips("FREQ=MONTHLY;INTERVAL=2;BYMONTH=1,2;BYMONTHDAY=31", jan31, jst); ok {
+		t.Errorf("Skips = (%+v, true); the odd-month lattice never reaches February, so nothing is skipped", skip)
+	}
+}
+
+// COUNT=0 is the one count the parsed option cannot hold: it is spelled with
+// the same zero as "no terminator", so it passed every check and the term was
+// dropped on the way to disk — a bounded rule stored as an endless one, at exit
+// 0. It is refused like every other spelling of the same mistake.
+func TestZeroCountIsRefusedRatherThanDropped(t *testing.T) {
+	for _, spec := range []string{
+		"FREQ=DAILY;COUNT=0",
+		"RRULE:FREQ=WEEKLY;COUNT=0",
+		"FREQ=MONTHLY;COUNT=00;BYMONTHDAY=15",
+	} {
+		line, err := Compile(spec, nil)
+		if err == nil {
+			t.Errorf("Compile(%q) = %q, want a refusal — the COUNT term is gone from what would be stored", spec, line)
+		}
+	}
+	// A count that is a count still compiles, and keeps its term.
+	if got, err := Compile("FREQ=DAILY;COUNT=3", nil); err != nil || got != "FREQ=DAILY;COUNT=3" {
+		t.Errorf("Compile = %q, %v; want FREQ=DAILY;COUNT=3", got, err)
+	}
+}

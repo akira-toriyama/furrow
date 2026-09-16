@@ -53,6 +53,23 @@ var ordinals = map[string]int{"1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "5th": 5, 
 
 var everyRe = regexp.MustCompile(`^every ([0-9]+) (day|days|week|weeks|month|months|year|years)$`)
 
+// countTermRe reads the COUNT term out of a raw RRULE line — the one place a
+// zero count survives, since the parsed option cannot hold one.
+var countTermRe = regexp.MustCompile(`(?:^|;)COUNT=([+-]?[0-9]+)(?:;|$)`)
+
+// namedCount is the count a raw line spells, and whether it spelled one at all.
+func namedCount(raw string) (int, bool) {
+	m := countTermRe.FindStringSubmatch(raw)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
 // The two terminator introducers, matched case-insensitively on the ORIGINAL
 // spelling so every index is a valid byte offset into it.
 var (
@@ -118,10 +135,6 @@ func Compile(spec string, resolveDate func(string) (time.Time, error)) (string, 
 	if err := refuseDtstart(opt); err != nil {
 		return "", err
 	}
-	if opt.Count < 0 {
-		return "", fmt.Errorf("a count must be a positive whole number, got %d", opt.Count)
-	}
-
 	// Round-trip through the library: it both validates the combination and
 	// gives the canonical spelling that goes on disk.
 	r, err := rrule.NewRRule(*opt)
@@ -225,9 +238,20 @@ func parseHead(head string) (*rrule.ROption, error) {
 
 	// A raw RRULE line, for anything the short grammar cannot say.
 	if strings.Contains(h, "=") {
-		opt, err := rrule.StrToROption(strings.ToUpper(strings.TrimPrefix(head, "RRULE:")))
+		raw := strings.ToUpper(strings.TrimPrefix(head, "RRULE:"))
+		opt, err := rrule.StrToROption(raw)
 		if err != nil {
 			return nil, fmt.Errorf("not a usable RRULE line: %v", err)
+		}
+		// The COUNT term has to be read off the TEXT, because rrule.ROption
+		// spells "COUNT=0" and "no COUNT at all" with the same zero value. Left
+		// to the struct, a zero passes the terminator checks below (they read the
+		// same zero as "no terminator"), RRuleString() drops the term on the way
+		// to disk, and the operator's bounded rule is stored — at exit 0 — as an
+		// endless one. `daily for 0 times` is refused; this is the same mistake
+		// in the other spelling.
+		if n, ok := namedCount(raw); ok && n < 1 {
+			return nil, fmt.Errorf("a count must be a positive whole number, got %d", n)
 		}
 		return opt, nil
 	}
@@ -708,20 +732,67 @@ func selectsNoDay(opt *rrule.ROption) bool {
 		len(opt.Byyearday) == 0 && len(opt.Byweekno) == 0
 }
 
-// firingMonths is the months a rule can fire in. BYMONTH says so outright;
-// otherwise only a YEARLY rule that names no day narrows to one — measured
+// firingMonths is the months a rule can fire in: the months its FREQUENCY
+// reaches, narrowed by BYMONTH where it names any.
+//
+// BYMONTH is a FILTER, not a source — a month it names that the frequency's
+// own lattice never reaches is not a month the rule fires in
+// (`FREQ=MONTHLY;INTERVAL=2;BYMONTH=1,2` anchored in January fires in January
+// alone), so taking BYMONTH outright reported a skip for a February the rule
+// never visits.
+func firingMonths(opt *rrule.ROption, anchor time.Time) []int {
+	months := freqMonths(opt, anchor)
+	if len(opt.Bymonth) == 0 {
+		return months
+	}
+	reached := make(map[int]bool, len(months))
+	for _, m := range months {
+		reached[m] = true
+	}
+	var out []int
+	for _, m := range opt.Bymonth {
+		if reached[m] {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// freqMonths is the months the frequency alone reaches, before BYMONTH narrows
+// them.
+//
+// A YEARLY rule that names no day narrows to the anchor's month — measured
 // against the library, a YEARLY rule WITH a BYMONTHDAY expands across all
 // twelve months exactly like a MONTHLY one (`FREQ=YEARLY;BYMONTHDAY=29`
 // anchored in January fires next in March), so it skips the Februarys, not the
 // years.
-func firingMonths(opt *rrule.ROption, anchor time.Time) []int {
-	if len(opt.Bymonth) > 0 {
-		return opt.Bymonth
-	}
+//
+// A MONTHLY rule's INTERVAL is the other narrowing, and the one that was
+// missed: `every 6 months on 31` reaches January and July, both of which have a
+// 31st, so it never skips a month — yet the note said it did, and prescribed
+// `on last` for a rule that always lands.
+func freqMonths(opt *rrule.ROption, anchor time.Time) []int {
 	if opt.Freq == rrule.YEARLY && len(opt.Bymonthday) == 0 {
 		return []int{int(anchor.Month())}
 	}
+	if opt.Freq == rrule.MONTHLY && opt.Interval > 1 {
+		return intervalMonths(int(anchor.Month()), opt.Interval)
+	}
 	return everyMonth
+}
+
+// intervalMonths walks a MONTHLY rule's INTERVAL from the anchor's month until
+// it comes back round: 12/gcd(interval,12) months of the year, every one of
+// which the rule fires in. An interval coprime with 12 reaches all twelve, which
+// is why the caller cannot shortcut on the interval's size.
+func intervalMonths(start, interval int) []int {
+	seen := make(map[int]bool, 12)
+	var out []int
+	for m := start; !seen[m]; m = (m-1+interval)%12 + 1 {
+		seen[m] = true
+		out = append(out, m)
+	}
+	return out
 }
 
 var everyMonth = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
