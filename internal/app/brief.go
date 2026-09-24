@@ -43,8 +43,14 @@ type BriefData struct {
 	Next      []ShowItem
 	NextTotal int // actionable count BEFORE the display cap — a cap must never hide the size of the queue
 	Blocked   []ListItem
-	Revisit   RevisitSummary
-	Drafts    int // repo-less tasks, board-wide by definition (a draft has no repo, so no scope can own it)
+	// BlockedTotal is the same count across every OPEN lane in this scope. The
+	// band above is deliberately next-lane only — a dep blocking nothing in
+	// flight is not this session's problem — but a lane filter must not hide the
+	// size of what it skipped (the NextTotal/PinnedQuiet rule). Terminal lanes
+	// stay out: a closed or parked row's unmet dep is nobody's work to unblock.
+	BlockedTotal int
+	Revisit      RevisitSummary
+	Drafts       int // repo-less tasks, board-wide by definition (a draft has no repo, so no scope can own it)
 	// Lint is the error-count ride-along sync also prints (LintErrorCounts —
 	// errors only, by code). Best-effort: a lint failure zeroes it rather than
 	// failing the orientation read.
@@ -80,6 +86,17 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 	bo.Status = strings.Join(a.Cfg.NextLanes, ",")
 	bo.Blocked = true
 	blocked, err := a.ListItems(bo)
+	if err != nil {
+		return nil, err
+	}
+
+	// The same read with the lane filter widened to every open lane, so the
+	// band can print what its own scope left out instead of a bare 0.
+	to := o
+	to.Limit = 0
+	to.Status = strings.Join(openLanes(a.Cfg.Lanes, a.Cfg.IsTerminal), ",")
+	to.Blocked = true
+	blockedAll, err := a.ListItems(to)
 	if err != nil {
 		return nil, err
 	}
@@ -166,8 +183,20 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		Next:          picks,
 		NextTotal:     total,
 		Blocked:       blocked,
+		BlockedTotal:  len(blockedAll),
 		Revisit:       sum,
 		Drafts:        len(drafts),
 		Lint:          lint,
 	}, nil
+}
+
+// openLanes is the configured lane order minus the terminal ones, in order.
+func openLanes(lanes []string, isTerminal func(string) bool) []string {
+	open := make([]string, 0, len(lanes))
+	for _, l := range lanes {
+		if !isTerminal(l) {
+			open = append(open, l)
+		}
+	}
+	return open
 }

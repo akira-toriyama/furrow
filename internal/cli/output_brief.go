@@ -35,7 +35,8 @@ func epicRevisitCounts(sum app.RevisitSummary) []struct {
 // read. Each section keeps the shape of the command it summarizes: next
 // entries are show's taskView (task + body_text), blocked entries carry ls's
 // blocked_by, revisit is sync's RevisitSummary. next_total is the uncapped
-// actionable count, so a -n cap never silently hides the queue size.
+// actionable count and blocked_total the all-open-lanes blocked count, so
+// neither the -n cap nor the next-lane band silently hides its own size.
 type briefView struct {
 	Repo string `json:"repo"`
 	// active is the open+active epic(s) next scopes to ([], never null);
@@ -60,8 +61,12 @@ type briefView struct {
 	Next      []taskView         `json:"next"`
 	NextTotal int                `json:"next_total"`
 	Blocked   []briefBlockedView `json:"blocked"`
-	Revisit   app.RevisitSummary `json:"revisit"`
-	Drafts    int                `json:"drafts"`
+	// blocked_total is the blocked count across every OPEN lane in the same
+	// scope — the next_total pattern applied to a lane filter rather than a cap,
+	// so `blocked: []` can never read as "nothing on this board is stuck".
+	BlockedTotal int                `json:"blocked_total"`
+	Revisit      app.RevisitSummary `json:"revisit"`
+	Drafts       int                `json:"drafts"`
 	// lint mirrors sync's ride-along: omitted when clean, error counts by code
 	// otherwise.
 	Lint *app.LintErrorSummary `json:"lint,omitempty"`
@@ -110,6 +115,7 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 			EpicsDeclared: b.EpicsDeclared,
 			Next:          make([]taskView, 0, len(b.Next)),
 			NextTotal:     b.NextTotal,
+			BlockedTotal:  b.BlockedTotal,
 			Due:           toBriefDueView(b.Due),
 			Blocked:       make([]briefBlockedView, 0, len(b.Blocked)),
 			Revisit:       b.Revisit,
@@ -198,7 +204,11 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 		row := fmt.Sprintf("  ★ %s  %-12s %s", it.Task.ID, it.Task.Status, it.Task.Title)
 		fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
 	}
-	fmt.Fprintf(out, "blocked (%d):\n", len(b.Blocked))
+	// The band names its own lanes and the all-open-lanes count beside them: a
+	// bare "blocked (0)" once read as "nothing is stuck" on a board where most
+	// open work was waiting on a dep outside these lanes.
+	fmt.Fprintf(out, "blocked (%d in %s / %d in all open lanes):\n",
+		len(b.Blocked), strings.Join(a.Cfg.NextLanes, "+"), b.BlockedTotal)
 	if len(b.Blocked) == 0 {
 		fmt.Fprintln(out, "  (none)")
 	}

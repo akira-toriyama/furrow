@@ -208,3 +208,61 @@ func TestBriefCollapsesQuietPinnedChannels(t *testing.T) {
 		t.Errorf("after closing the member: Pinned = %+v, PinnedQuiet = %d, want 0 listed / 2 quiet", b.Pinned, b.PinnedQuiet)
 	}
 }
+
+// TestBriefBlockedTotalSpansEveryOpenLane pins the asymmetry the band once had:
+// `blocked` is next-lane only by design, so the count beside it has to cover
+// every OPEN lane or a board whose stuck work sits in backlog reports zero.
+// Terminal lanes stay out — a parked or closed row's unmet dep is nobody's work.
+func TestBriefBlockedTotalSpansEveryOpenLane(t *testing.T) {
+	a, _ := newAppWith(at(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)))
+	add := func(title string, o AddOpts) string {
+		t.Helper()
+		tk, err := a.Add(title, o)
+		if err != nil {
+			t.Fatalf("add %s: %v", title, err)
+		}
+		return tk.ID
+	}
+	gate := add("the gate", AddOpts{Status: "ready", Repos: []string{"o/r"}})
+	inBand := add("blocked in a next lane", AddOpts{Status: "ready", Repos: []string{"o/r"}, Deps: []string{gate}})
+	add("blocked in backlog", AddOpts{Status: "backlog", Repos: []string{"o/r"}, Deps: []string{gate}})
+	add("blocked but parked", AddOpts{Status: "icebox", Repos: []string{"o/r"}, Deps: []string{gate}})
+
+	b, err := a.Brief(QueryOpts{}, 3, 0)
+	if err != nil {
+		t.Fatalf("Brief: %v", err)
+	}
+	if len(b.Blocked) != 1 || b.Blocked[0].Task.ID != inBand {
+		t.Fatalf("blocked band = %+v; want only the next-lane row %s", b.Blocked, inBand)
+	}
+	if b.BlockedTotal != 2 {
+		t.Errorf("BlockedTotal = %d, want 2 (the ready and the backlog row; the icebox one is terminal)", b.BlockedTotal)
+	}
+}
+
+// TestBriefBlockedTotalKeepsTheReadScope: the count widens the LANE filter and
+// nothing else. Widening the repo scope too would quote work this session
+// cannot act on, and `brief` prints its scope on the first line.
+func TestBriefBlockedTotalKeepsTheReadScope(t *testing.T) {
+	a, _ := newAppWith(at(time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)))
+	add := func(title string, o AddOpts) string {
+		t.Helper()
+		tk, err := a.Add(title, o)
+		if err != nil {
+			t.Fatalf("add %s: %v", title, err)
+		}
+		return tk.ID
+	}
+	gate := add("the gate", AddOpts{Status: "ready", Repos: []string{"o/r"}})
+	add("blocked here", AddOpts{Status: "backlog", Repos: []string{"o/r"}, Deps: []string{gate}})
+	other := add("gate elsewhere", AddOpts{Status: "ready", Repos: []string{"o/other"}})
+	add("blocked elsewhere", AddOpts{Status: "backlog", Repos: []string{"o/other"}, Deps: []string{other}})
+
+	b, err := a.Brief(QueryOpts{Repo: "o/r"}, 3, 0)
+	if err != nil {
+		t.Fatalf("Brief: %v", err)
+	}
+	if b.BlockedTotal != 1 {
+		t.Errorf("BlockedTotal under -r o/r = %d, want 1 (the other repo's stuck row is out of scope)", b.BlockedTotal)
+	}
+}

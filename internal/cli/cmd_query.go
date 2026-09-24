@@ -483,7 +483,9 @@ func newBriefCmd() *cobra.Command {
 			"(next's predicate) WITH their bodies (show's body_text — the follow-up read\n" +
 			"folded in), plus next_total, the uncapped count, so the cap never hides the\n" +
 			"queue size; `blocked` = next-lane tasks with an unsatisfied dep and their\n" +
-			"blocked_by (started or queued work that plain `next` deliberately hides);\n" +
+			"blocked_by (started or queued work that plain `next` deliberately hides),\n" +
+			"beside blocked_total, the same count over every OPEN lane, so the band's\n" +
+			"own lane filter never reads as \"nothing on this board is stuck\";\n" +
 			"`revisit` = the summary sync reports ({dep_done, stale, …} id arrays);\n" +
 			"`drafts` = the repo-less count, board-wide by definition (a draft has no\n" +
 			"repo, so no scope can own it); `lint` = sync's error-count ride-along\n" +
