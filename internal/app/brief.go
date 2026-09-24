@@ -1,6 +1,10 @@
 package app
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/akira-toriyama/furrow/internal/core"
+)
 
 // BriefData is the one-shot session-orient read (`furrow brief`): what to pick
 // up (next, WITH bodies — the show follow-up folded in), what is in flight but
@@ -42,7 +46,15 @@ type BriefData struct {
 	Due       DueSummary
 	Next      []ShowItem
 	NextTotal int // actionable count BEFORE the display cap — a cap must never hide the size of the queue
-	Blocked   []ListItem
+	// NextHidden is what the cap dropped, counted per lane in [lanes].order —
+	// the total alone once misled: the picks follow canonical order, whose lane
+	// order puts in-progress after ready, so a board with -n or more ready
+	// tasks ALWAYS drops its in-flight work off the band, and a session that
+	// stopped at brief started a second task beside the one already open
+	// (t-xzxm, furrow-test 2026-09-15). Naming the lane is what tells "3 more
+	// like these" from "your own started work is below the fold".
+	NextHidden []StatCount
+	Blocked    []ListItem
 	// BlockedTotal is the same count across every OPEN lane in this scope. The
 	// band above is deliberately next-lane only — a dep blocking nothing in
 	// flight is not this session's problem — but a lane filter must not hide the
@@ -69,7 +81,9 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		return nil, err
 	}
 	total := len(nextTasks)
+	var hidden []StatCount
 	if nextLimit > 0 && len(nextTasks) > nextLimit {
+		hidden = hiddenByLane(nextTasks[nextLimit:], a.Cfg.Lanes)
 		nextTasks = nextTasks[:nextLimit]
 	}
 	ids := make([]string, 0, len(nextTasks))
@@ -182,6 +196,7 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		Due:           due,
 		Next:          picks,
 		NextTotal:     total,
+		NextHidden:    hidden,
 		Blocked:       blocked,
 		BlockedTotal:  len(blockedAll),
 		Revisit:       sum,
@@ -199,4 +214,21 @@ func openLanes(lanes []string, isTerminal func(string) bool) []string {
 		}
 	}
 	return open
+}
+
+// hiddenByLane tallies the rows a cap dropped, per lane in [lanes].order
+// (stats' laneHistogram, minus the zero rows: a tally of what was hidden
+// has no use for the lanes that lost nothing).
+func hiddenByLane(dropped []core.Task, lanes []string) []StatCount {
+	counts := map[string]int{}
+	for i := range dropped {
+		counts[dropped[i].Status]++
+	}
+	var out []StatCount
+	for _, row := range laneHistogram(lanes, counts) {
+		if row.Count > 0 {
+			out = append(out, row)
+		}
+	}
+	return out
 }

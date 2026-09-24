@@ -486,7 +486,12 @@ func newBriefCmd() *cobra.Command {
 			"`next` = the top -n actionable tasks\n" +
 			"(next's predicate) WITH their bodies (show's body_text — the follow-up read\n" +
 			"folded in), plus next_total, the uncapped count, so the cap never hides the\n" +
-			"queue size; `blocked` = next-lane tasks with an unsatisfied dep and their\n" +
+			"queue size, and next_hidden, what the cap dropped tallied per lane (omitted\n" +
+			"when nothing was): canonical order lists in-progress after ready, so with\n" +
+			"-n or more ready tasks the cap drops the work already in flight FIRST —\n" +
+			"\"1 in-progress hidden\" is the line that stops a session from starting a\n" +
+			"second task beside the one it left open (`furrow next` lists them all);\n" +
+			"`blocked` = next-lane tasks with an unsatisfied dep and their\n" +
 			"blocked_by (started or queued work that plain `next` deliberately hides),\n" +
 			"beside blocked_total, the same count over every OPEN lane, so the band's\n" +
 			"own lane filter never reads as \"nothing on this board is stuck\";\n" +
