@@ -84,6 +84,10 @@ func (a *App) UnfiledImportWarning(p ImportPlan, statuses []string) string {
 type AddSpec struct {
 	Title string
 	AddOpts
+	// ID is a pre-minted id (AddBatch's, drawn through uniqueIDExcluding so the
+	// batch can reference itself before the write); "" lets addMany mint one.
+	// Internal: no front-end may choose an id.
+	ID string
 }
 
 // AddMany creates several tasks and saves the index ONCE, so a migrate import is
@@ -126,6 +130,12 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 	// fails before the first body hits disk (single Add's contract).
 	now := a.Clock.Now()
 	inheritedEpic, inheritComputed := "", false
+	preminted := map[string]bool{}
+	for _, s := range specs {
+		if s.ID != "" {
+			preminted[s.ID] = true
+		}
+	}
 	dues := make([]*time.Time, len(specs))
 	for i, s := range specs {
 		// Fold the title exactly as single Add does. A bulk title is ordinary user
@@ -183,12 +193,13 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 			return nil, specf(err)
 		}
 		specs[i].Repos = a.withBoardRepo(repos, s.Draft)
-		// A dep must pre-exist (validated against the pre-batch index):
-		// batch ids are minted below, so an intra-batch reference is impossible —
-		// a dangling one would silently drop the task out of `next`. Checked after
-		// repo resolution so the error precedence matches single Add.
+		// A dep must pre-exist (validated against the pre-batch index) or name an
+		// id this batch pre-minted (AddBatch, which resolves keys to ids before
+		// calling here) — a dangling one would silently drop the task out of
+		// `next`. Checked after repo resolution so the error precedence matches
+		// single Add.
 		for _, dep := range s.Deps {
-			if !idx.Has(dep) {
+			if !idx.Has(dep) && !preminted[dep] {
 				return nil, specf(core.Validationf("", "dependency %q does not exist", dep))
 			}
 		}
@@ -242,9 +253,11 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 		if lane == "" {
 			lane = a.Cfg.DefaultLane
 		}
-		id, err := a.uniqueID(idx)
-		if err != nil {
-			return nil, err
+		id := s.ID
+		if id == "" {
+			if id, err = a.uniqueIDExcluding(idx, preminted); err != nil {
+				return nil, err
+			}
 		}
 		var prio int
 		if s.Priority != nil {
