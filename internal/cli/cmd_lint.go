@@ -27,8 +27,10 @@ func newLintCmd() *cobra.Command {
 			"git conflict markers left in a body — conflict-marker, a half-merged progress\n" +
 			"record (error; `furrow sync` refuses to commit one, this catches the ones\n" +
 			"already on the board), dangling [[id]] body links (warn), reconcile gaps — an open task whose done\n" +
-			"dependency closed after its last update (warn), asset hygiene — dangling\n" +
-			"refs, orphan and oversized assets (warn), an outdated board layout —\n" +
+			"dependency closed after its last update (warn), asset hygiene — a body's\n" +
+			"asset reference whose file is missing (asset-missing), orphan and\n" +
+			"oversized assets (warn; a task's `refs` entries are verbatim pointers —\n" +
+			"file:line or URL — and are NEVER checked for existence), an outdated board layout —\n" +
 			"schema-outdated, i.e. writes are refused until `furrow upgrade` runs (warn,\n" +
 			"never an error: a read-only board is the legitimate middle of a flag day), and\n" +
 			"config clamp warnings.\n" +

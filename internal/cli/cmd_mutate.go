@@ -1179,7 +1179,7 @@ func newRefCmd() *cobra.Command {
 	}
 	// StringArray, not StringSlice: a ref is free text (a URL keeps its query
 	// commas, a path may carry a quote), so each value is stored verbatim.
-	cmd.Flags().StringArrayVar(&add, "add", nil, "ref to add (file:line or URL; verbatim; repeatable)")
+	cmd.Flags().StringArrayVar(&add, "add", nil, "ref to add (file:line or URL; verbatim, never checked for existence; repeatable)")
 	cmd.Flags().StringArrayVar(&rm, "rm", nil, "ref to remove (exact match; verbatim; repeatable)")
 	addExpectUpdatedFlag(cmd)
 	return cmd
