@@ -62,7 +62,7 @@ func newLsCmd() *cobra.Command {
 			"  furrow ls --since 2026-07-08   # touched on/after a date\n" +
 			"  furrow ls --sort value -n5     # top 5 by value\n" +
 			"  furrow ls --drafts        # only repo-less draft tasks\n" +
-			"  furrow ls --actionable    # only ★ (what `furrow next` would hand you)\n" +
+			"  furrow ls --actionable    # only ★ — board-wide, unlike `furrow next`'s focus\n" +
 			"  furrow ls -s ready --blocked   # ready rows that are actually stuck\n" +
 			"  furrow ls -q 'is:actionable value:>=4'   # typed query (see -q below)\n" +
 			"  furrow ls -q 'label:cli,dx -status:done updated:>=-2w'\n" +
@@ -153,7 +153,7 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sortBy, "sort", "", "reorder by updated|created|value|effort (default: canonical lane->priority->id)")
 	cmd.Flags().BoolVar(&reverse, "reverse", false, "reverse the --sort direction (oldest/lowest first; unset value/effort stay last)")
 	cmd.Flags().BoolVar(&tree, "tree", false, "group the rows by epic (★ = actionable now); with an <epic> argument, just that box's group")
-	cmd.Flags().BoolVar(&actionable, "actionable", false, "only tasks 'furrow next' would hand you now (★: a next lane, every dep done); ANDs with -s/-l/-r")
+	cmd.Flags().BoolVar(&actionable, "actionable", false, "only ★ rows (a next lane, every dep done) — board-wide, so a superset of 'furrow next', which also scopes to the active epic; ANDs with -s/-l/-r")
 	cmd.Flags().BoolVar(&blocked, "blocked", false, "only tasks with an unsatisfied dependency (a non-empty blocked_by); ANDs with -s/-l/-r")
 	addQueryFlag(cmd, &queryStr)
 	// A task cannot be both actionable (all deps done) and blocked (a dep undone),
