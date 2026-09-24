@@ -79,7 +79,17 @@ func addFromBatch(cmd *cobra.Command, a *app.App, src string, shared app.AddOpts
 	}
 	drafted := len(created) > 0 && len(created[0].Repos) == 0
 	warnShadowedDraft(a, shared.Draft, drafted)
-	noteInheritedEpic(cmd, created)
+	// Only the lines that named no epic of their own inherited the active one;
+	// a line with an explicit epic is exactly the `-e` case and must not be
+	// disclosed as inherited (a batch of 100 filed lines used to print the
+	// note, naming the last line's box as "the active epic").
+	var inherited []core.Task
+	for i := range created {
+		if specs[i].Epic == "" && !specs[i].NoEpic {
+			inherited = append(inherited, created[i])
+		}
+	}
+	noteInheritedEpic(cmd, inherited)
 	noteRepeatBinds(a, created)
 	views := make([]keyedTaskView, 0, len(created))
 	for i := range created {
