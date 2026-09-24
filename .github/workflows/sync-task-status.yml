@@ -276,7 +276,15 @@ jobs:
             exit 0
           fi
           git add -A
-          git commit -q -m ":robot: chore(status): ${REF} ${MODE}"
+          # The subject carries a sigil for the same reason furrow's own
+          # auto-commits do: a board repo can only close its glyph
+          # v1-acceptance window once nothing still writes sigil-less history
+          # into it, and this workflow writes to the board on every PR across
+          # the fleet. `=` because a status change moves no version. The
+          # retired Conventional `chore(status):` token is gone with it —
+          # measured 2026-09-24: the old subject exits 3 against a
+          # `glyph init --gemoji` config with no window, this one exits 0.
+          git commit -q -m ":robot:(status)= ${REF} ${MODE}"
 
           # Publish with `furrow sync`, not a hand-rolled push loop.
           #
