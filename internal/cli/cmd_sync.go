@@ -155,8 +155,8 @@ func newSyncCmd() *cobra.Command {
 			"never reads as fully published. `incoming` classifies the task changes the\n" +
 			"pull brought IN — the other machines' and CI's writes, from the pre-pull vs\n" +
 			"post-pull shard diff: created / closed / reopened / moved / refiled /\n" +
-			"archived / updated, with the old and new lane or epic on the moves — and\n" +
-			"prints as one \"incoming:\" line, so the CI that closed your in-progress\n" +
+			"archived / removed / updated, with the old and new lane or epic on the moves\n" +
+			"— and prints as one \"incoming:\" line, so the CI that closed your in-progress\n" +
 			"task surfaces in the sync that pulled it, not on a later re-read. After a successful sync it also reports a\n" +
 			"revisit summary (repo-scoped counts of tasks with a done dependency or gone\n" +
 			"stale, plus any repos whose human review is older than [review].stale_after_days\n" +
@@ -280,16 +280,14 @@ func pushStderr(err error) string {
 	return s
 }
 
-// incomingKinds is the render order of the incoming line's groups — the
-// classifier's own priority order (see app.IncomingChange), so the line reads
-// most-consequential first.
-var incomingKinds = []string{"created", "closed", "reopened", "moved", "refiled", "archived", "updated"}
-
 // incomingLine renders what the pull brought in as one line, grouped by kind:
 // "incoming: 2 created (t-a, t-b), 1 moved (t-c ready→in-progress)". At most
 // three ids are named per kind (+N more, same cap as unreviewedLine) so a
 // CI-heavy pull stays one legible line; the counts are exact and the full list
-// is the JSON `incoming` key. Empty -> "" (quiet when nothing came in).
+// is the JSON `incoming` key. The group order is app.IncomingKindList(), the
+// classifier's own vocabulary, so a kind it learns cannot go unrendered here.
+// Nothing to say -> "" (quiet), including the case where no change fell into a
+// renderable group: the bare "incoming: " that printed instead was t-31r8.
 func incomingLine(changes []app.IncomingChange) string {
 	if len(changes) == 0 {
 		return ""
@@ -299,7 +297,7 @@ func incomingLine(changes []app.IncomingChange) string {
 		byKind[c.Kind] = append(byKind[c.Kind], c)
 	}
 	var parts []string
-	for _, kind := range incomingKinds {
+	for _, kind := range app.IncomingKindList() {
 		group := byKind[kind]
 		if len(group) == 0 {
 			continue
@@ -322,6 +320,9 @@ func incomingLine(changes []app.IncomingChange) string {
 			}
 		}
 		parts = append(parts, fmt.Sprintf("%d %s (%s%s)", len(group), kind, strings.Join(ids, ", "), more))
+	}
+	if len(parts) == 0 {
+		return ""
 	}
 	return "incoming: " + strings.Join(parts, ", ")
 }

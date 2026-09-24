@@ -19,10 +19,34 @@ func TestIncomingLineRendering(t *testing.T) {
 		{ID: "t-1", Kind: "created"},
 		{ID: "t-4", Kind: "refiled", From: "", To: "e-9"},
 		{ID: "t-2", Kind: "created"},
+		{ID: "t-6", Kind: "removed"},
+		{ID: "t-5", Kind: "archived"},
 	})
-	want := "incoming: 2 created (t-1, t-2), 1 moved (t-3 backlog→ready), 1 refiled (t-4 unfiled→e-9)"
+	want := "incoming: 2 created (t-1, t-2), 1 moved (t-3 backlog→ready), " +
+		"1 refiled (t-4 unfiled→e-9), 1 archived (t-5), 1 removed (t-6)"
 	if got != want {
 		t.Errorf("incomingLine = %q, want %q", got, want)
+	}
+}
+
+// Every kind the classifier can assign renders: the render order IS
+// app.IncomingKindList(), so a kind added to the vocabulary cannot fall out of
+// the human line the way `removed` did between #360 and t-31r8.
+func TestIncomingLineRendersEveryKind(t *testing.T) {
+	for _, kind := range app.IncomingKindList() {
+		want := fmt.Sprintf("incoming: 1 %s (t-x)", kind)
+		if got := incomingLine([]app.IncomingChange{{ID: "t-x", Kind: kind}}); got != want {
+			t.Errorf("incomingLine(%s) = %q, want %q", kind, got, want)
+		}
+	}
+}
+
+// A pull whose only change is unrenderable stays quiet. Before t-31r8 a
+// `removed` change built zero groups and still printed the bare prefix
+// "incoming: " — a line with nothing after it.
+func TestIncomingLineQuietWhenNoGroupRenders(t *testing.T) {
+	if got := incomingLine([]app.IncomingChange{{ID: "t-x", Kind: "not-a-kind"}}); got != "" {
+		t.Errorf("incomingLine(unknown kind) = %q, want \"\"", got)
 	}
 }
 
