@@ -467,7 +467,10 @@ func newEpicDepCmd() *cobra.Command {
 			"dep: `epic activate` warns about a still-open dep and proceeds, a dep on a\n" +
 			"closed epic is simply satisfied, and `furrow revisit` raises epic_dep_done\n" +
 			"when every box this one waited on is closed — its turn to open. Parallel\n" +
-			"branches need no feature: two epics sharing a dep are two branches.\n\n" +
+			"branches need no feature: two epics sharing a dep are two branches. Task\n" +
+			"deps are never checked against it: a task edge may run either way across\n" +
+			"boxes (a box's dep says when the box opens, not what its members may wait\n" +
+			"on), and `furrow lint` has no finding for the crossing.\n\n" +
 			"With --list, don't mutate — read the neighborhood in BOTH directions: what\n" +
 			"it waits on (depends_on) and what waits on it (blocks), each resolved to\n" +
 			"id+title+state.",
