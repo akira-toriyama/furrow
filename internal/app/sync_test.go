@@ -796,3 +796,39 @@ func TestMachineSyncPathSkipsStagingFiles(t *testing.T) {
 		t.Error("nor under the archive store")
 	}
 }
+
+// A deleted shard is a change sync must publish: `git add -- <gone path>`
+// refuses a file that no longer exists, so the first `furrow rm` (or a
+// rebuild that empties the store) killed every later sync with "pathspec did
+// not match any files" — the rebuild of furrow-test hit it on 2026-09-24.
+func TestSyncCommitsDeletedShards(t *testing.T) {
+	git, cloneA, _ := setupClones(t)
+	a := openBoard(t, cloneA)
+	task, err := a.Add("removed, deletion left unstaged", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged, err := a.Add("removed, deletion staged by git rm", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+	if _, err := openBoard(t, cloneA).RemoveTasks([]string{task.ID, staged.ID}, RemoveOpts{Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	// A staged deletion is the shape a rebuild leaves (`git rm` of the old
+	// shards); `git add` refuses such a path outright.
+	gittest.RunGit(t, git, cloneA, "add", "-A", "--", ".furrow/tasks/"+staged.ID+".json", ".furrow/bodies/"+staged.ID+".md")
+	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatalf("sync after rm: %v (progress %+v)", err, p)
+	}
+	if !p.Committed || !p.Pushed {
+		t.Errorf("the deletion must be committed and pushed, got %+v", p)
+	}
+	if out := gittest.RunGit(t, git, cloneA, "status", "--porcelain", "--", ".furrow"); strings.TrimSpace(out) != "" {
+		t.Errorf("tree must be clean after sync, got:\n%s", out)
+	}
+}

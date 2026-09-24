@@ -38,7 +38,9 @@ func partitionSync(spec string, changes []gitrepo.Change, opts SyncOpts) (commit
 	for _, ch := range changes {
 		if body, isBody := strings.CutPrefix(ch.Path, bodiesPrefix); isBody && strings.HasSuffix(body, ".md") && !strings.Contains(body, "/") {
 			id := strings.TrimSuffix(body, ".md")
-			if ch.Untracked || opts.AllBodies || named[id] {
+			// A deleted body is never an operator's WIP: only rm / archive /
+			// an emptied store removes one, so it rides with its shard.
+			if ch.Untracked || ch.Deleted || opts.AllBodies || named[id] {
 				commitPaths = append(commitPaths, ch.Path)
 				committedBodies = append(committedBodies, id)
 			} else {

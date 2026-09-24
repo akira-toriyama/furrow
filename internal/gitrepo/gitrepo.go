@@ -152,6 +152,7 @@ func (r *Repo) RebaseInProgress(ctx context.Context) bool {
 type Change struct {
 	Path      string
 	Untracked bool
+	Deleted   bool // gone from the working tree (staged or not): a removal to publish
 }
 
 // DirtyChanges enumerates the working-tree changes under pathspec — the guard
@@ -181,7 +182,7 @@ func (r *Repo) DirtyChanges(ctx context.Context, pathspec string) ([]Change, err
 		if i := strings.Index(path, " -> "); i >= 0 {
 			path = path[i+len(" -> "):]
 		}
-		changes = append(changes, Change{Path: filepath.ToSlash(path), Untracked: l[0] == '?' && l[1] == '?'})
+		changes = append(changes, Change{Path: filepath.ToSlash(path), Untracked: l[0] == '?' && l[1] == '?', Deleted: l[0] == 'D' || l[1] == 'D'})
 	}
 	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
 	return changes, nil
@@ -297,14 +298,27 @@ func (r *Repo) Commit(ctx context.Context, message string, pathspecs ...string) 
 	if len(pathspecs) == 0 {
 		return nil
 	}
+	// Only paths still present in the working tree are `git add`ed: a path
+	// that is gone (a shard `furrow rm` deleted, a store a rebuild emptied)
+	// is refused by add as "did not match any files" once its deletion is
+	// staged, while `git commit -- <path>` records the removal either way —
+	// measured 2026-09-24, when the first deleted shard killed every sync.
+	var present []string
+	for _, p := range pathspecs {
+		if _, err := os.Stat(filepath.Join(r.top, filepath.FromSlash(p))); err == nil {
+			present = append(present, p)
+		}
+	}
 	// Both steps take the index lock, so both can lose it to a co-writer in a
 	// shared checkout — classified exactly as the pull's fetch is, so the
 	// caller retries instead of surfacing a terminal git-failed.
-	if _, stderr, err := runGit(ctx, r.git, r.top, append([]string{"add", "--"}, pathspecs...)...); err != nil {
-		if isTransientRace(stderr) {
-			return fmt.Errorf("%w: git add: %s", ErrTransientRace, firstLine(stderr))
+	if len(present) > 0 {
+		if _, stderr, err := runGit(ctx, r.git, r.top, append([]string{"add", "--"}, present...)...); err != nil {
+			if isTransientRace(stderr) {
+				return fmt.Errorf("%w: git add: %s", ErrTransientRace, firstLine(stderr))
+			}
+			return gitFailed("git add: %s", firstLine(stderr))
 		}
-		return gitFailed("git add: %s", firstLine(stderr))
 	}
 	if _, stderr, err := runGit(ctx, r.git, r.top, append([]string{"commit", "-q", "-m", message, "--"}, pathspecs...)...); err != nil {
 		if isTransientRace(stderr) {
