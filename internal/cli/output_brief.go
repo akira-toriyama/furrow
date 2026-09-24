@@ -57,10 +57,16 @@ type briefView struct {
 	// actionable/blocked_by). It leads the object because it leads the printed
 	// dashboard, and struct order IS key order; omitted entirely when nothing is
 	// due, so the pre-v8 shape is unchanged on a board that dates nothing.
-	Due       *briefDueView      `json:"due,omitempty"`
-	Next      []taskView         `json:"next"`
-	NextTotal int                `json:"next_total"`
-	Blocked   []briefBlockedView `json:"blocked"`
+	Due       *briefDueView `json:"due,omitempty"`
+	Next      []taskView    `json:"next"`
+	NextTotal int           `json:"next_total"`
+	// next_hidden is what -n dropped, tallied per lane in [lanes].order and
+	// omitted when the cap did not bite — next_total says how many, this says
+	// WHAT: the lane order puts in-progress after ready, so the cap
+	// structurally drops the work already in flight first, and a session must
+	// see "1 in-progress hidden" to know not to start a second task.
+	NextHidden []laneCountView    `json:"next_hidden,omitempty"`
+	Blocked    []briefBlockedView `json:"blocked"`
 	// blocked_total is the blocked count across every OPEN lane in the same
 	// scope — the next_total pattern applied to a lane filter rather than a cap,
 	// so `blocked: []` can never read as "nothing on this board is stuck".
@@ -141,6 +147,9 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 		for _, it := range b.Next {
 			v.Next = append(v.Next, taskView{Task: it.Task, BodyText: it.Body})
 		}
+		for _, h := range b.NextHidden {
+			v.NextHidden = append(v.NextHidden, laneCountView{Lane: h.Key, Count: h.Count})
+		}
 		for _, it := range b.Blocked {
 			blockedBy := it.BlockedBy
 			if blockedBy == nil {
@@ -193,7 +202,10 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 			fmt.Fprintf(out, "epic: 📌 +%d quiet pinned (no open members)\n", b.PinnedQuiet)
 		}
 	}
-	fmt.Fprintf(out, "next (%d/%d):\n", len(b.Next), b.NextTotal)
+	// The header names what the cap dropped, by lane: "3/5" alone reads as
+	// "three of the same", while "1 in-progress" below the fold is the one
+	// row a session must not overlook.
+	fmt.Fprintf(out, "next (%d/%d%s):\n", len(b.Next), b.NextTotal, hiddenByLane(b.NextHidden))
 	if len(b.Next) == 0 {
 		fmt.Fprintln(out, "  (none)")
 	}
@@ -232,4 +244,19 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 	if b.Lint.Errors > 0 {
 		fmt.Fprintln(out, lintLine(b.Lint))
 	}
+}
+
+// hiddenByLane renders next_hidden for the band header: "" when the cap did
+// not bite, else " — N hidden by -n: 1 ready, 1 in-progress" in lane order.
+func hiddenByLane(hidden []app.StatCount) string {
+	if len(hidden) == 0 {
+		return ""
+	}
+	total := 0
+	parts := make([]string, 0, len(hidden))
+	for _, h := range hidden {
+		total += h.Count
+		parts = append(parts, fmt.Sprintf("%d %s", h.Count, h.Key))
+	}
+	return fmt.Sprintf(" — %d hidden by -n: %s", total, strings.Join(parts, ", "))
 }
