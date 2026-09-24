@@ -167,7 +167,15 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 	// Printed only when there is something to say — an empty band every session
 	// would train the eye to skip the place the dates land.
 	if !b.Due.Empty() {
-		fmt.Fprintf(out, "due (%d):\n", b.Due.Total())
+		// On a board with boxes the band says it is not scoped to the focus the
+		// next band obeys: a due-today task outside the active epic appears here
+		// and not below, and a drill session read the two bands as one scope
+		// (t-kvsa). A board with no boxes has no focus to differ from.
+		scopeNote := ""
+		if b.EpicsDeclared {
+			scopeNote = ", every epic"
+		}
+		fmt.Fprintf(out, "due (%d%s):\n", b.Due.Total(), scopeNote)
 		for _, it := range b.Due.Overdue {
 			row := fmt.Sprintf("  ! %s  %-12s %s  (overdue %s)", it.Task.ID, it.Task.Status, it.Task.Title, calendarTime(a, *it.Task.Due))
 			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
