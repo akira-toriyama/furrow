@@ -198,3 +198,41 @@ func TestCLIEpicShowCarriesTheBody(t *testing.T) {
 		t.Errorf("human epic show must print the body:\n%s", out)
 	}
 }
+
+// TestCLIBriefBlockedBandNamesItsScope: the band once printed a bare
+// "blocked (0)" on a board whose open work was mostly waiting on a dep, which
+// read as "nothing is stuck". Both surfaces must now carry the wider count.
+func TestCLIBriefBlockedBandNamesItsScope(t *testing.T) {
+	initStore(t)
+	gate := addTask(t, "the gate", "-s", "ready", "-r", "o/r")
+	addTask(t, "blocked in backlog", "-s", "backlog", "-r", "o/r", "--dep", gate)
+	addTask(t, "blocked but parked", "-s", "icebox", "-r", "o/r", "--dep", gate)
+
+	out, code := run(t, "brief")
+	if code != 0 {
+		t.Fatalf("brief exit = %d:\n%s", code, out)
+	}
+	// Nothing is blocked inside ready+in-progress, but one open row is.
+	want := "blocked (0 in ready+in-progress / 1 in all open lanes):"
+	if !strings.Contains(out, want) {
+		t.Errorf("human band must name its lanes and the wider count.\nwant line: %s\ngot:\n%s", want, out)
+	}
+
+	jout, code := run(t, "--json", "brief")
+	if code != 0 {
+		t.Fatalf("brief --json exit = %d:\n%s", code, jout)
+	}
+	var b struct {
+		Blocked      []map[string]any `json:"blocked"`
+		BlockedTotal int              `json:"blocked_total"`
+	}
+	if err := json.Unmarshal([]byte(jout), &b); err != nil {
+		t.Fatalf("parse brief --json: %v\n%s", err, jout)
+	}
+	if len(b.Blocked) != 0 {
+		t.Errorf("blocked = %+v, want empty (nothing stuck in a next lane)", b.Blocked)
+	}
+	if b.BlockedTotal != 1 {
+		t.Errorf("blocked_total = %d, want 1 (the backlog row; the icebox one is terminal)", b.BlockedTotal)
+	}
+}
