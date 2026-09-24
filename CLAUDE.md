@@ -202,7 +202,9 @@ upgrade`** (preview unless `--yes`; the `archive/` store too; idempotent on a
 current board) — a **flag day** with no downgrade (`git revert` on the board
 repo), whose ORDER is the human's: (1) release the furrow shipping the schema,
 (2) bump every caller's `sync-task-status.yml@vX.Y.Z` pin and that workflow's
-`furrow-version` default, (3) only THEN `furrow upgrade --yes` + `furrow sync`.
+`furrow-version` default, (3) only THEN `furrow upgrade --yes` + `furrow sync` —
+on the `projects` board AND on `akira-toriyama/furrow-test` (README links it as
+the worked example; a stale one is read-only for the reader who follows the link).
 
 ## Conventions
 
