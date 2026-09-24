@@ -37,6 +37,13 @@ var incomingKinds = []string{
 	incomingRefiled, incomingArchived, incomingRemoved, incomingUpdated,
 }
 
+// IncomingKindList returns the vocabulary in that order — the machine source
+// behind `furrow vocab incoming-kinds` AND the group order every presentation
+// layer must render. One exported door, because the alternative was a second
+// hand-kept copy in internal/cli that drifted: the kind added here by #360 was
+// rendered by nobody until t-31r8 (`removed` fell out of the human line).
+func IncomingKindList() []string { return append([]string(nil), incomingKinds...) }
+
 // IncomingChange is one pulled-in task change: the task, its title (resolved
 // from the shard so the summary is readable without a second command), and a
 // kind (the vocabulary above). From/To carry the old and new lane for moved

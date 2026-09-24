@@ -526,6 +526,7 @@ complete|query-presence||README.md|^- \*\*presence\*\*|^- \*\*computed flags\*\*
 complete|query-is||README.md|^- \*\*computed flags\*\*|^- \*\*free text\*\*
 complete|repeat-spellings||README.md|^- \*\*`add`\*\*|^- \*\*`ls`\*\*
 complete|incoming-kinds||README.md|^`switches` names any `epic activate` records|^$
+complete|incoming-kinds||internal/cli/cmd_sync.go|^.*progress object \{committed, pulled|^.*revisit summary \(repo-scoped counts
 subset|lint-codes|^[a-z]+(-[a-z]+)+$|README.md|^- \*\*`lint`\*\* — every finding carries|^- \*\*`migrate`\*\*
 # doctor-codes is registered in `furrow vocab` but deliberately UNCLAIMED: every
 # doc region that names doctor codes (README's doctor bullet, CLAUDE.md's,

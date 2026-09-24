@@ -34,7 +34,7 @@ func Vocabularies() map[string][]string {
 		"query-presence":       append([]string(nil), presenceVocab...),
 		"query-is":             append([]string(nil), stateVocab...),
 		"repeat-spellings":     append([]string(nil), recur.Spellings...),
-		"incoming-kinds":       append([]string(nil), incomingKinds...),
+		"incoming-kinds":       IncomingKindList(),
 	}
 }
 
