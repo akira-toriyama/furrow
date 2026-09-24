@@ -372,7 +372,11 @@ func newNextCmd() *cobra.Command {
 			"PINNED box's actionable tasks first (the always-visible channel, whatever\n" +
 			"the scope), then the active box's, then the unfiled pile. With no active\n" +
 			"epic the result is deliberately EMPTY apart from the pinned band (exit 0,\n" +
-			"a stderr hint): pick a box with `furrow epic activate <id>`. A due date\n" +
+			"a stderr hint): pick a box with `furrow epic activate <id>`. The scope is\n" +
+			"next's definition, not a silent filter: when it leaves actionable tasks\n" +
+			"out (members of other boxes), one stderr line counts them (`note: N\n" +
+			"actionable task(s) in other box(es) hidden …`) and names --all-epics as\n" +
+			"the escape, so a scoped read is never mistaken for the whole board. A due date\n" +
 			"that has arrived is noted on stderr (`note: N due (M OVERDUE)`), never\n" +
 			"folded into the rows. -e <epic> reads one box explicitly (strict —\n" +
 			"no unfiled carve-out) and --all-epics ignores the scope entirely; a board\n" +

@@ -78,6 +78,12 @@ func labelDidYouMean(cmd *cobra.Command, a *app.App, o app.QueryOpts, n int) err
 //   - an active epic is STUCK (open members, none actionable): next structurally
 //     cannot show why it skipped the focus (it just returns rescue tasks or
 //     nothing), so it says so — unblocking the box is the day's move.
+//   - the scope left actionable tasks out (members of other boxes): one line
+//     with the count and the escape (--all-epics). The focus is next's
+//     definition, not a filter, but the root contract — a read never narrows
+//     silently — holds for it too: on a 100-task board the scope hid a
+//     value-5/effort-1 task and two independent sessions read `next`'s four
+//     rows as the whole actionable set (t-ga1k, 2026-09-15).
 //
 // It is quiet whenever the scope did not engage (-e, --all-epics, an epic-less
 // board), so the classic read stays byte-identical.
@@ -86,6 +92,7 @@ func hintEpicScope(a *app.App, o app.QueryOpts, tasks []core.Task) {
 	if err != nil || !scope.Engaged {
 		return
 	}
+	hidden := hiddenByFocus(a, o)
 	if len(scope.Active) == 0 {
 		where := o.Repo
 		if where == "" {
@@ -97,11 +104,14 @@ func hintEpicScope(a *app.App, o app.QueryOpts, tasks []core.Task) {
 		// A pinned channel can populate the result even with nothing active, so
 		// the wording must not call a non-empty listing "empty".
 		if len(tasks) > 0 {
-			fmt.Fprintf(errOut, "note: no active epic for %s — these are the PINNED box(es)' tasks only; pick a focus with `furrow epic ls` + `furrow epic activate <id>`\n", where)
+			fmt.Fprintf(errOut, "note: no active epic for %s — these are the PINNED box(es)' tasks only (%d actionable in other box(es) hidden); pick a focus with `furrow epic ls` + `furrow epic activate <id>`\n", where, hidden)
 		} else {
-			fmt.Fprintf(errOut, "note: no active epic for %s, so next is deliberately empty — pick a box with `furrow epic ls` + `furrow epic activate <id>` (--all-epics reads the whole board)\n", where)
+			fmt.Fprintf(errOut, "note: no active epic for %s, so next is deliberately empty (%d actionable in other box(es) hidden) — pick a box with `furrow epic ls` + `furrow epic activate <id>` (--all-epics reads the whole board)\n", where, hidden)
 		}
 		return
+	}
+	if hidden > 0 {
+		fmt.Fprintf(errOut, "note: %d actionable task(s) in other box(es) hidden by the active-epic scope — furrow next --all-epics\n", hidden)
 	}
 	items, err := a.EpicList(app.EpicQueryOpts{})
 	if err != nil {
@@ -113,6 +123,28 @@ func hintEpicScope(a *app.App, o app.QueryOpts, tasks []core.Task) {
 				it.Epic.ID, it.Epic.Title, it.Epic.ID)
 		}
 	}
+}
+
+// hiddenByFocus counts the actionable tasks the active-epic scope keeps out of
+// a `next` read: the same query with the scope lifted (--all-epics) minus the
+// scoped population, both uncapped so -n cannot skew the difference. Every
+// other filter (-r, -l, -q, --lanes) rides along, so the count is exactly what
+// `furrow next --all-epics` would add. A load error counts as nothing hidden —
+// the note is advisory and the read already succeeded.
+func hiddenByFocus(a *app.App, o app.QueryOpts) int {
+	scoped := o
+	scoped.Limit = 0
+	whole := scoped
+	whole.AllEpics = true
+	in, err := a.Next(scoped)
+	if err != nil {
+		return 0
+	}
+	all, err := a.Next(whole)
+	if err != nil || len(all) <= len(in) {
+		return 0
+	}
+	return len(all) - len(in)
 }
 
 // hintHiddenDrafts prints the single stderr hint line when a repo-scoped read
