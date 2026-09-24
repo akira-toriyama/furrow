@@ -159,6 +159,15 @@ func newLsCmd() *cobra.Command {
 	// A task cannot be both actionable (all deps done) and blocked (a dep undone),
 	// so combining them would always be empty — refuse it rather than mislead.
 	cmd.MarkFlagsMutuallyExclusive("actionable", "blocked")
+	// `--all` is the spelling every other CLI uses for "the whole list"; here
+	// the whole list is the absence of caps, in two axes. Name both rather
+	// than leave a bare "unknown flag" (a drill session had to open --help).
+	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		if msg := err.Error(); strings.HasPrefix(msg, "unknown flag: --all") {
+			return core.Validationf("", "%s — ls has no --all: `-n 0` lifts the row cap (the default is already every row), `-r ''` lifts the board's repo scope, `--archived` reads the archive", msg)
+		}
+		return err
+	})
 	return cmd
 }
 

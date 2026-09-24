@@ -662,7 +662,9 @@ func newCheckCmd() *cobra.Command {
 		Use:   "check <id> [item-index]",
 		Short: "Toggle, add, remove, or reword a checklist item",
 		Long: "Edit a task's checklist. With no mode flag, mark the item at the given\n" +
-			"zero-based index done (--off unchecks). --add appends one or more items\n" +
+			"zero-based index done (--off unchecks); an index is a position in the\n" +
+			"CURRENT list, so after --rm every item below it moves up by one — remove\n" +
+			"from the highest index down. --add appends one or more items\n" +
 			"(repeatable, text verbatim). --rm deletes the item at the index. --reword\n" +
 			"replaces the text of the item at the index (keeping its done state). The\n" +
 			"mode flags are mutually exclusive; an out-of-range index is exit 2.",
@@ -837,7 +839,8 @@ func newSetCmd() *cobra.Command {
 			"--due +1d is the snooze, measured from now; on a repeating task it moves\n" +
 			"THIS occurrence only — the series anchor never moves — and --clear-due\n" +
 			"there is exit 2), and bind or drop a recurrence rule (--repeat, anchored to\n" +
-			"the due of the same write; --clear-repeat) — instead of running move + reorder + value +\n" +
+			"the due of the same write — so `--due <date> --repeat <rule>` in ONE write is\n" +
+			"how a series is re-anchored, --due alone never is; --clear-repeat) — instead of running move + reorder + value +\n" +
 			"effort + label as separate commands. At least one change is required; an unknown lane is\n" +
 			"exit 2 with the configured lanes in candidates (like move/add) and an\n" +
 			"unresolvable -e epic exits 2 with the known boxes,\n" +
