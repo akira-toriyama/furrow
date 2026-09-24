@@ -112,16 +112,13 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 	return &created[0], nil
 }
 
-// uniqueID draws random ids from the store until one is not already present in
-// idx. AddMany appends each created task to idx before the next call, so this
-// also keeps a batch internally unique. Ids are random, so the first draw almost
-// always wins; the cap turns a pathological store into a loud error rather than
-// an infinite loop.
-func (a *App) uniqueID(idx *core.Index) (string, error) { return a.uniqueIDExcluding(idx, nil) }
-
-// uniqueIDExcluding is uniqueID that also avoids ids a caller has already handed
-// out in this same write but not yet inserted — the case a pre-pass creates,
-// where the index cannot yet answer for its own batch.
+// uniqueIDExcluding draws random ids from the store until one is present
+// neither in idx nor in reserved — the ids a caller has already handed out in
+// this same write but not yet inserted (AddBatch's pre-pass, where the index
+// cannot yet answer for its own batch; addMany appends each created task to
+// idx before the next draw, so a plain batch stays unique through idx alone).
+// Ids are random, so the first draw almost always wins; the cap turns a
+// pathological store into a loud error rather than an infinite loop.
 func (a *App) uniqueIDExcluding(idx *core.Index, reserved map[string]bool) (string, error) {
 	for i := 0; i < 100; i++ {
 		id, err := a.Store.NextID()

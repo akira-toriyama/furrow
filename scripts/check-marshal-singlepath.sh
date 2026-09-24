@@ -16,6 +16,10 @@ cd "$(dirname "$0")/.."
 #                                    session registry — into its own struct;
 #                                    furrow never writes it back, so there is no
 #                                    unknown key to lose and no shard type in reach)
+#   - internal/cli/add_batch.go     (decodes the CALLER's NDJSON — `add --batch`'s
+#                                    input — into its own line struct, the same
+#                                    shape as claudecode: an unknown field is exit
+#                                    2, never parked, and no shard type is in reach)
 #   - *_test.go                     (tests may encode freely)
 #
 # DECODERS are guarded too, and that is not symmetry for its own sake: a raw
@@ -27,6 +31,7 @@ hits="$(grep -rnE 'json\.(Marshal|NewEncoder|Unmarshal|NewDecoder)' --include='*
   | grep -v '_test.go' \
   | grep -vE 'internal/core/(marshal|passthrough)\.go' \
   | grep -vE 'internal/cli/output\.go' \
+  | grep -vE 'internal/cli/add_batch\.go' \
   | grep -vE 'internal/claudecode/' || true)"
 
 if [ -n "$hits" ]; then

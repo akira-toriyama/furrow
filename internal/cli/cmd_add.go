@@ -26,17 +26,32 @@ func newAddCmd() *cobra.Command {
 		body       string
 		checks     []string
 		stdin      bool
+		batch      string
 		epicRef    string
 		due        string
 		repeatSpec string
 	)
 	cmd := &cobra.Command{
 		Use:   "add <title>...",
-		Short: "Add a task (or many with --stdin)",
+		Short: "Add a task (or many with --stdin / --batch)",
 		Long: "Add a task. The id is assigned automatically (frozen, never reused) and a\n" +
 			"bodies/<id>.md file is created, seeded with the title as a heading.\n\n" +
 			"With --stdin, read one title per line from stdin and create them all in a\n" +
 			"single write (blank lines skipped); the shared flags apply to every task.\n\n" +
+			"With --batch <file|->, read NDJSON — one JSON object per line, one task each\n" +
+			"— and create them all in a single write with per-task fields: title (required),\n" +
+			"status, priority, value, effort, labels, repos, draft, epic (\"\" = unfiled on\n" +
+			"purpose), deps, refs, body, checklist, due, repeat, and key. An unknown field\n" +
+			"is exit 2 with the vocabulary in candidates. The shared flags are the\n" +
+			"defaults: a scalar field on the line replaces the flag's value, a list field\n" +
+			"(labels, repos, deps, refs, checklist) unions with it. `key` names the line\n" +
+			"INSIDE the batch only: a dep may cite another line's key instead of an id,\n" +
+			"and a [[key]] in a title, body, or checklist item becomes [[id]] once ids\n" +
+			"are minted — so an epic with a dependency graph is written in one file, in\n" +
+			"any order, with no id known in advance. Keys never reach the board; --json\n" +
+			"echoes each task's key beside it, which is how a caller learns the ids. A\n" +
+			"duplicate key, a key that is an existing id, a dep naming neither an id nor a\n" +
+			"key, or a dep cycle inside the batch is exit 2 and writes nothing.\n\n" +
 			"--due promises the task for an instant: `2026-08-04` (that WHOLE day — it\n" +
 			"binds 23:59:59 in the board's calendar, so the day never starts out\n" +
 			"overdue), `2026-08-04T10:30`, an RFC3339 instant, or a signed offset such\n" +
@@ -58,7 +73,8 @@ func newAddCmd() *cobra.Command {
 			"  furrow add \"Fix flaky sync test\" -s ready -l bug --value 4 --effort 2\n" +
 			"  furrow add \"Cross-repo epic\" -r akira-toriyama/furrow -r akira-toriyama/cifail\n" +
 			"  furrow add \"Check the nightly run landed\" -s waiting --due 2026-08-04T10:30\n" +
-			"  git grep -l TODO | furrow add --stdin -l chore   # one task per line",
+			"  git grep -l TODO | furrow add --stdin -l chore   # one task per line\n" +
+			"  furrow add --batch plan.ndjson -e travel --json   # per-task fields, keys for deps and [[links]]",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -70,6 +86,12 @@ func newAddCmd() *cobra.Command {
 			// per line) also consumes stdin, so the two cannot both read it.
 			if body == "-" && stdin {
 				return core.Validationf("", "cannot combine --stdin with --body - (stdin has a single stream)")
+			}
+			if batch != "" && stdin {
+				return core.Validationf("", "cannot combine --batch with --stdin (one bulk input per call)")
+			}
+			if batch == "-" && body == "-" {
+				return core.Validationf("", "cannot combine --batch - with --body - (stdin has a single stream)")
 			}
 			// An empty --due is exit 2 here for the same reason it is on `set`: a
 			// caller interpolating an unset variable (`--due "$WHEN"`) means a bug,
@@ -108,8 +130,14 @@ func newAddCmd() *cobra.Command {
 				}
 				return addFromStdin(cmd, a, opts)
 			}
+			if batch != "" {
+				if len(args) > 0 {
+					return core.Validationf("", "cannot combine --batch with title arguments")
+				}
+				return addFromBatch(cmd, a, batch, opts)
+			}
 			if len(args) == 0 {
-				return core.Validationf("", "provide a title, or --stdin to read titles from stdin")
+				return core.Validationf("", "provide a title, --stdin to read titles from stdin, or --batch <file|-> for NDJSON")
 			}
 			// Resolve `--body -` (read stdin) for the single-task path; the --stdin
 			// path was excluded above, so body is otherwise a literal here.
@@ -147,6 +175,7 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&body, "body", "", "initial body markdown ('-' reads stdin; default: a heading from the title)")
 	cmd.Flags().StringArrayVar(&checks, "check", nil, "seed an unchecked checklist item (repeatable; text verbatim)")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "read one task title per line from stdin; create all in one write")
+	cmd.Flags().StringVar(&batch, "batch", "", "read NDJSON (one task object per line; '-' = stdin) with per-task fields and batch-local keys for deps and [[links]]; create all in one write")
 	// A title that begins with '-' (e.g. `add --ndjson-ish title`) is parsed as a
 	// flag → "unknown flag". Steer the caller to the `--` separator instead of a
 	// bare cobra usage error, so an agent recovers without guessing.
