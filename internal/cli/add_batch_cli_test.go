@@ -109,3 +109,55 @@ func TestCLIAddBatchFromFileHumanTable(t *testing.T) {
 		t.Fatalf("exit %d, out:\n%s", code, out)
 	}
 }
+
+// A batch line that names its own epic is the `-e` case: nothing was
+// inherited, so the note must name only the lines that carried no epic — and
+// stay silent when every line filed itself. Caught rebuilding furrow-test:
+// 100 lines, each with an epic, printed "filed under active epic <last
+// line's box> (inherited)".
+func TestCLIAddBatchInheritedEpicNoteCountsOnlyBareLines(t *testing.T) {
+	initStore(t)
+	var box struct {
+		ID string `json:"id"`
+	}
+	out, code := run(t, "--json", "epic", "add", "focus box", "--repo", "o/r")
+	if code != 0 {
+		t.Fatalf("epic add exit %d:\n%s", code, out)
+	}
+	if err := json.Unmarshal([]byte(out), &box); err != nil {
+		t.Fatal(err)
+	}
+	out, code = run(t, "--json", "epic", "add", "other box", "--repo", "o/r")
+	if code != 0 {
+		t.Fatalf("epic add exit %d:\n%s", code, out)
+	}
+	var other struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(out), &other); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := run(t, "epic", "activate", box.ID); code != 0 {
+		t.Fatalf("epic activate exit %d", code)
+	}
+
+	// Every line filed: no inheritance, no note.
+	in := "{\"title\":\"a\",\"epic\":\"other box\"}\n{\"title\":\"b\",\"epic\":\"other box\"}\n"
+	so, se, code := runSplitIn(t, in, "--json", "add", "--batch", "-", "-r", "o/r")
+	if code != 0 {
+		t.Fatalf("add --batch exit %d:\n%s\n%s", code, so, se)
+	}
+	if strings.Contains(se, "filed under") {
+		t.Errorf("every line named its epic; nothing was inherited: %q", se)
+	}
+
+	// One bare line among filed ones: one note, naming the ACTIVE box.
+	in = "{\"title\":\"c\",\"epic\":\"other box\"}\n{\"title\":\"d\"}\n"
+	so, se, code = runSplitIn(t, in, "--json", "add", "--batch", "-", "-r", "o/r")
+	if code != 0 {
+		t.Fatalf("add --batch exit %d:\n%s\n%s", code, so, se)
+	}
+	if strings.Count(se, "filed under active epic "+box.ID) != 1 || strings.Contains(se, other.ID) {
+		t.Errorf("want one note naming %s and never %s, got: %q", box.ID, other.ID, se)
+	}
+}
