@@ -248,6 +248,10 @@ func newDoneCmd() *cobra.Command {
 			"details.missing (the show batch shape). --json is ALWAYS an array of\n" +
 			"{before,after,changed} envelopes, one per id (a single id is a one-element\n" +
 			"array); --ndjson streams one envelope per line.\n\n" +
+			"A close settles the TASK, not its checklist: unticked items neither block\n" +
+			"nor warn (the checklist is the task's own breakdown, and what a close asserts\n" +
+			"is the body's completion condition), so read `furrow show <id>` — its\n" +
+			"`checklist: N/M` line is the tally — before deciding a task is done.\n\n" +
 			"Instead of enumerating ids, SELECT the targets with the read side's own\n" +
 			"filters: -q (the ls/next typed query, same grammar), -l, and -r, which AND\n" +
 			"together under the board scope exactly as in ls — so `furrow ls <flags>`\n" +
@@ -375,6 +379,10 @@ func newMoveCmd() *cobra.Command {
 			"configured lanes in candidates. --json is ALWAYS an array of\n" +
 			"{before,after,changed} envelopes, one per id (a single id is a one-element\n" +
 			"array); --ndjson streams one envelope per line.\n\n" +
+			"A close settles the TASK, not its checklist: unticked items neither block\n" +
+			"nor warn (the checklist is the task's own breakdown, and what a close asserts\n" +
+			"is the body's completion condition), so read `furrow show <id>` — its\n" +
+			"`checklist: N/M` line is the tally — before deciding a task is done.\n\n" +
 			"Instead of enumerating ids, SELECT the targets with the read side's own\n" +
 			"filters — -q/-l/-r, ANDed under the board scope exactly as in ls (then\n" +
 			"`move <flags> <lane>` takes just the lane). The selection previews until\n" +
