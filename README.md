@@ -361,6 +361,8 @@ furrow needs no MCP server and no plugin — the plain CLI **is** the agent inte
 - **Use `--json` for machine reads (and writes).** JSON is written to **stdout only**; logs, confirmations, and errors go to **stderr**, so piping stdout into `jq` is always clean. `--ndjson` is the compact one-value-per-line form and is honored on every command that emits JSON (mutations and reports included), so a line-oriented agent never gets a silent human-prose degrade. Filters: `--status/-s`, `--label/-l`, `--repo/-r`, `--limit/-n` (a comma within `-s`/`-l` is OR within that field).
 - **Batch by id with `show <id>... --no-body`.** Cross-checking a specific id set (audit sweeps, dependency checks) is one process, metadata only — no `body_text` bloating the output. Add `--ndjson` for an arity-independent one-task-per-line shape; a partial miss still emits the found tasks and reports the rest in `details.missing`.
 
+- **Read a board at working scale before writing one: [furrow-test](https://github.com/akira-toriyama/furrow-test).** A hundred tasks in five boxes with 178 dependency edges, plus the logs of fresh sessions acting on it read-only (its `docs/drills.md`) — where a real board trips an agent, and what removed each trip.
+
 furrow is **non-interactive by default** — it never prompts. **Destructive operations preview unless `--yes`** — the one list: `archive`, `rm`, `epic rm`, `tidy`, `upgrade`, `migrate`, and a `-q`/`-l`/`-r` selection on `set`/`done`/`move`.
 
 **Exit codes:**
