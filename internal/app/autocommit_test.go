@@ -105,12 +105,12 @@ func TestAutoCommitAddOneCommit(t *testing.T) {
 			t.Errorf("commit files = %v, want it to contain %s", files, want)
 		}
 	}
-	// The full subject is pinned, not just the command echo: the prefix is the
-	// gitmoji grammar `:card_file_box:(board)` — the retired Conventional
-	// `chore(board):` token is glyph-rejected the moment a commit-msg hook lands
-	// on a board repo.
-	if subj := strings.TrimSpace(gittest.RunGit(t, git, dir, "log", "-1", "--format=%s")); subj != ":card_file_box:(board) furrow add "+task.ID {
-		t.Errorf("subject = %q, want %q", subj, ":card_file_box:(board) furrow add "+task.ID)
+	// The full subject is pinned, not just the command echo: the prefix is
+	// `:card_file_box:(board)=`, sigil included. Drop the sigil and `furrow add`
+	// is the first command to go red on a board repo that has closed its
+	// v1-acceptance window — fixing sync.go alone does not cover this path.
+	if subj := strings.TrimSpace(gittest.RunGit(t, git, dir, "log", "-1", "--format=%s")); subj != ":card_file_box:(board)= furrow add "+task.ID {
+		t.Errorf("subject = %q, want %q", subj, ":card_file_box:(board)= furrow add "+task.ID)
 	}
 }
 

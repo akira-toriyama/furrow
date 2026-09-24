@@ -11,10 +11,16 @@ import (
 )
 
 // DefaultSyncMessage is the auto-commit message `furrow sync` uses when
-// --message is not given: the gitmoji-driven grammar `<:gitmoji:>(<scope>)
-// <subject>`, and :card_file_box: = no version bump, which is exactly right for
-// board data.
-const DefaultSyncMessage = ":card_file_box:(board) sync via furrow"
+// --message is not given. The grammar is `<:gitmoji:>[(<scope>)]<sigil>
+// <subject>`: the `=` sigil is what declares no version bump (the gitmoji
+// decides nothing), and no bump is exactly right for board data.
+//
+// The sigil is NOT optional. A sigil-less subject lints clean only inside a
+// board repo's v1-acceptance window, so emitting one holds that migration
+// window open forever. Measured 2026-09-24 against a throwaway repo with
+// `glyph init --gemoji` and no window: the sigil-less literal exits 3, this one
+// exits 0.
+const DefaultSyncMessage = ":card_file_box:(board)= sync via furrow"
 
 // SyncOpts controls one Sync. Message overrides the auto-commit subject. Bodies
 // names task ids whose hand-edited bodies/<id>.md this sync should commit — on a
