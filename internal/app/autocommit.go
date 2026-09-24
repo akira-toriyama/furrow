@@ -186,8 +186,9 @@ func (a *App) dropMarkedBodies(spec string, commitPaths, committedBodies []strin
 	return paths, bodies
 }
 
-// autoCommitMessage builds autocommit's commit subject: the gitmoji-driven
-// `:card_file_box:(board)` (no version bump, right for board data), naming the
+// autoCommitMessage builds autocommit's commit subject: the prefix
+// `:card_file_box:(board)=`, whose `=` sigil carries the no-bump (see
+// DefaultSyncMessage for why the sigil is not optional), naming the
 // command and any task ids it targeted so `git log` reads as a furrow audit
 // trail. It is DISTINCT from DefaultSyncMessage ("sync via furrow") so a manual
 // sync and an autocommit are tellable apart in history. Only id-shaped args are
@@ -209,5 +210,5 @@ func autoCommitMessage(cmd, idPrefix string, args []string) string {
 			subject += " " + strings.Join(ids, " ")
 		}
 	}
-	return ":card_file_box:(board) " + subject
+	return ":card_file_box:(board)= " + subject
 }

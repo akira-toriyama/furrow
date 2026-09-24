@@ -379,11 +379,12 @@ func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
 	}
 }
 
-// A plain sync (no --message) commits under the gitmoji-grammar default,
-// `:card_file_box:(board) sync via furrow`. The literal is pinned here on
-// purpose: the previous default carried the retired Conventional
-// `chore(board):` token, which glyph lint rejects — a latent exit-3 for every
-// sync the moment a commit-msg hook lands on a board repo.
+// A plain sync (no --message) commits under the grammar default,
+// `:card_file_box:(board)= sync via furrow`. The literal is pinned here on
+// purpose: both earlier defaults were glyph-rejected — the Conventional
+// `chore(board):` token outright, and the sigil-less gitmoji form everywhere a
+// board repo has closed its v1-acceptance window. Either is a latent exit-3 for
+// every sync once a commit-msg hook lands on a board repo.
 func TestSyncDefaultMessageGrammar(t *testing.T) {
 	git, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
@@ -394,8 +395,8 @@ func TestSyncDefaultMessageGrammar(t *testing.T) {
 		t.Fatal(err)
 	}
 	subject := strings.TrimSpace(gittest.RunGit(t, git, cloneA, "log", "-1", "--format=%s"))
-	if subject != ":card_file_box:(board) sync via furrow" {
-		t.Errorf("subject = %q, want %q", subject, ":card_file_box:(board) sync via furrow")
+	if subject != ":card_file_box:(board)= sync via furrow" {
+		t.Errorf("subject = %q, want %q", subject, ":card_file_box:(board)= sync via furrow")
 	}
 }
 
@@ -406,11 +407,11 @@ func TestSyncMessageOverride(t *testing.T) {
 	if _, err := a.Add("x", AddOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Sync(context.Background(), SyncOpts{Message: ":card_file_box:(board) custom words"}); err != nil {
+	if _, err := a.Sync(context.Background(), SyncOpts{Message: ":card_file_box:(board)= custom words"}); err != nil {
 		t.Fatal(err)
 	}
 	subject := strings.TrimSpace(gittest.RunGit(t, git, cloneA, "log", "-1", "--format=%s"))
-	if subject != ":card_file_box:(board) custom words" {
+	if subject != ":card_file_box:(board)= custom words" {
 		t.Errorf("subject = %q", subject)
 	}
 }
@@ -772,11 +773,11 @@ func TestSyncCommitCarriesAttributionTrailer(t *testing.T) {
 	if _, err := a.Add("y", AddOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Sync(context.Background(), SyncOpts{Message: ":card_file_box:(board) custom subject"}); err != nil {
+	if _, err := a.Sync(context.Background(), SyncOpts{Message: ":card_file_box:(board)= custom subject"}); err != nil {
 		t.Fatal(err)
 	}
 	subject := strings.TrimSpace(gittest.RunGit(t, git, cloneA, "log", "-1", "--format=%s"))
-	if subject != ":card_file_box:(board) custom subject" {
+	if subject != ":card_file_box:(board)= custom subject" {
 		t.Errorf("subject = %q, want the -m override", subject)
 	}
 	trailerOf()
