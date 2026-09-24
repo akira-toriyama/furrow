@@ -159,6 +159,19 @@ func printTaskDetail(a *app.App, t *core.Task, body string) {
 	if len(t.Refs) > 0 {
 		fmt.Fprintf(out, "refs:     %s\n", strings.Join(t.Refs, ", "))
 	}
+	// The tally leads the items: "which of twelve boxes are ticked" is what a
+	// closer asks, and counting boxes by eye is where three drill sessions on
+	// a hundred-task board stopped (t-c7kw). JSON carries the items; the
+	// count is derived, never stored.
+	if n := len(t.Checklist); n > 0 {
+		done := 0
+		for _, c := range t.Checklist {
+			if c.Done {
+				done++
+			}
+		}
+		fmt.Fprintf(out, "checklist: %d/%d\n", done, n)
+	}
 	for _, c := range t.Checklist {
 		box := "[ ]"
 		if c.Done {
