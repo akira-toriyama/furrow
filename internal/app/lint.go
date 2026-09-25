@@ -223,6 +223,11 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 	// about the day boundary or the skipped lanes.
 	ps = append(ps, core.DueProblems(idx, a.Clock.Now(), a.loc(), a.dueSkipLanes(), a.Cfg.Terminal)...)
 
+	// due-inversion (warn): a dated task waiting on a dep promised for a later
+	// instant — its date is broken on paper before any work is late. The same
+	// skip set as the two due findings, applied to both ends of the edge.
+	ps = append(ps, core.DueInversionProblems(idx, a.loc(), a.dueSkipLanes())...)
+
 	// Provenance ([lint].provenance_markers, OFF by default): warn on an open,
 	// non-terminal task whose body carries none of the board's provenance
 	// markers. The rule exists because a tracker entry is read as FACT by every

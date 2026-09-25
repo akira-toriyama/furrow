@@ -20,8 +20,10 @@ func newLintCmd() *cobra.Command {
 		Short: "Check index<->body consistency, lanes, deps, links, assets, and config",
 		Long: "Validate the store: id shape and uniqueness, status lanes, body path, the\n" +
 			"index<->body 1:1 mapping, dep references and dependency cycles — dep-cycle\n" +
-			"(error), the epic linkage — an open task filed under no box once the board\n" +
-			"has any (epic-required, error), under a missing box (epic-missing, error),\n" +
+			"(error), a dated task waiting on a dependency promised later than its own\n" +
+			"due (due-inversion, warn), the epic linkage — an open task filed under no\n" +
+			"box once the board has any (epic-required, error), under a missing box\n" +
+			"(epic-missing, error),\n" +
 			"or under a closed one (epic-closed, warn: the box closed with work left\n" +
 			"under it), and cycles in the epic dep graph (epic-dep-cycle, error),\n" +
 			"git conflict markers left in a body — conflict-marker, a half-merged progress\n" +

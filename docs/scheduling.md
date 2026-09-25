@@ -134,7 +134,8 @@ A task can carry a **due** stamp (`furrow add --due` / `furrow set --due`), but
 furrow never pushes: nothing fires at the promised instant. The date is surfaced
 by the two reads that already exist — `furrow brief` LEADS with it (the session
 you start is where it lands), and `furrow lint` finds it (`due-overdue` is an
-error, `due-today` a warning). **Both are board-wide**: `lint` has no repo filter
+error, `due-today` a warning, and `due-inversion` — a dated task waiting on a
+dependency promised later than itself — a warning too). **Both are board-wide**: `lint` has no repo filter
 at all, and brief's band drops every AUTOMATIC narrowing (the epic focus, the
 lane filter, the cwd-derived board repo scope), so the two count the same set and
 a digest built on either sees the whole promise whichever repo you are sitting

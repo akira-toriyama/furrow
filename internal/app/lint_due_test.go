@@ -165,3 +165,35 @@ func TestLintDueOverdueRemedyFollowsTheLane(t *testing.T) {
 		t.Errorf("terminal-lane remedy = %q, want the chase and the close, never \"do it\"", m)
 	}
 }
+
+// due-inversion through App.Lint (t-e19e): the shipped skip set (done plus
+// [due].ignore_lanes) silences a parked or settled dep, and re-dating the dep
+// to the task's own day clears the warn.
+func TestLintDueInversion(t *testing.T) {
+	a := newDueApp(time.Date(2026, 8, 4, 3, 0, 0, 0, time.UTC))
+	dep, _ := a.Add("the input", AddOpts{Status: "ready", Due: "2026-09-15"})
+	task, _ := a.Add("the work", AddOpts{Status: "backlog", Due: "2026-09-10", Deps: []string{dep.ID}})
+	parked, _ := a.Add("parked input", AddOpts{Status: "icebox", Due: "2026-09-30"})
+	a.Add("waits on a parked date", AddOpts{Status: "backlog", Due: "2026-09-10", Deps: []string{parked.ID}}) //nolint:errcheck // asserted via lint below
+
+	ps, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := problemsWithCode(ps, "due-inversion")
+	if len(inv) != 1 || inv[0].ID != task.ID || inv[0].Severity != core.SevWarn || !strings.Contains(inv[0].Msg, dep.ID) {
+		t.Fatalf("due-inversion = %+v, want one warn on %s naming %s", inv, task.ID, dep.ID)
+	}
+
+	due := "2026-09-10"
+	if _, _, _, err := a.Set(dep.ID, SetOpts{Due: &due}); err != nil {
+		t.Fatal(err)
+	}
+	ps, err = a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv := problemsWithCode(ps, "due-inversion"); len(inv) != 0 {
+		t.Errorf("after re-dating the dep to the task's day: %+v, want none", inv)
+	}
+}
