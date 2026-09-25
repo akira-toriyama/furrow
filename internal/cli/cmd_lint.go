@@ -34,7 +34,11 @@ func newLintCmd() *cobra.Command {
 			"schema-outdated, i.e. writes are refused until `furrow upgrade` runs (warn,\n" +
 			"never an error: a read-only board is the legitimate middle of a flag day), and\n" +
 			"config clamp warnings.\n" +
-			"Exits 2 if any errors are found; warnings alone exit 0.\n\n" +
+			"Exits 2 if any errors are found; warnings alone exit 0. --json prints the\n" +
+			"findings as ONE top-level array of {severity, code, id, message} on stdout\n" +
+			"(empty when the board is clean); with an error among them the exit-2\n" +
+			"envelope goes to stderr beside it — read stdout for the findings and the\n" +
+			"exit code for the verdict.\n\n" +
 			"Every problem carries a stable kebab-case `code` — branch on that, never on the\n" +
 			"message (the `id` field is contextual: a task id, an asset name, an\n" +
 			"`owner/repo`, `meta`, `alias`, `archive`, `config`, or `global-config`).\n\n" +
