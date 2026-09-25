@@ -42,8 +42,10 @@ func newLintCmd() *cobra.Command {
 			"envelope goes to stderr beside it — read stdout for the findings and the\n" +
 			"exit code for the verdict.\n\n" +
 			"Every problem carries a stable kebab-case `code` — branch on that, never on the\n" +
-			"message (the `id` field is contextual: a task id, an asset name, an\n" +
-			"`owner/repo`, `meta`, `alias`, `archive`, `config`, or `global-config`).\n\n" +
+			"message (the `id` field is contextual: a task id, an epic id, a shard\n" +
+			"filename stem (shard-misnamed), an asset name, an `owner/repo`, `meta`,\n" +
+			"`alias`, `archive`, `config`, `global-config`, or `board` — the id of the\n" +
+			"folded epic-no-active row that names several idle repos).\n\n" +
 			"Narrow the output with --code (allow-list), --exclude-code (deny-list; wins\n" +
 			"over --code), and --severity error|warn (exact level). An unknown --code /\n" +
 			"--exclude-code token is exit 2 with the known codes as candidates (a closed\n" +

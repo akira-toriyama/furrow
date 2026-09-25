@@ -14,8 +14,9 @@ import (
 // neither the vocabulary nor the exit rule is universal to the type.
 //
 // Code is a stable kebab-case classifier for machine triage — the id field is
-// contextual (a task id, an asset name, an owner/repo, or a literal like
-// "config"/"global-config"/"alias"/"archive"/"meta"), so an agent branches on
+// contextual (a task id, an epic id, a shard filename stem, an asset name, an
+// owner/repo, or a literal like "config"/"global-config"/"alias"/"archive"/
+// "meta"/"board"), so an agent branches on
 // Code, never regexes the message prose. The closed vocabulary is lintCodes in
 // lint_filter.go — read it with LintCodeList(). It is deliberately NOT
 // re-listed here: the copy that used to live in this comment had drifted three
