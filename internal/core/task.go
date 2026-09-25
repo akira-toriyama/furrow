@@ -192,7 +192,7 @@ type Task struct {
 	Checklist []ChecklistItem `json:"checklist"`
 	Created   time.Time       `json:"created"`
 	Updated   time.Time       `json:"updated"`
-	Closed    *time.Time      `json:"closed"` // nil (-> null) while open; set when moved to a terminal lane
+	Closed    *time.Time      `json:"closed"` // nil (-> null) while open; stamped by the DONE lane alone (parked lanes are terminal and leave it nil)
 	// Reviewed is when a human last reviewed this task (a `furrow review <id>`
 	// stamp), tracked SEPARATELY from Updated: reviewing changes no content, so
 	// it must not bump `updated` and disturb staleness/`--sort updated`. A
