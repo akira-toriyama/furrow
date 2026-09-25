@@ -230,6 +230,10 @@ func newShowCmd() *cobra.Command {
 			"(the body_text key in JSON) — the lean metadata-only read for agents. When\n" +
 			"some ids are missing, the found tasks are still emitted and the not-found\n" +
 			"error carries details.missing, so a partial read is never wasted.\n" +
+			"A checklist prints its tally (checklist: N/M) and then one row per item,\n" +
+			"each led by its zero-based index — the position `furrow check` takes, so\n" +
+			"the number beside a row is the argument that ticks it (--json carries no\n" +
+			"index: the array position is the index).\n" +
 			"An id may name an EPIC: store membership routes each one (never the id's\n" +
 			"prefix), and a box is rendered as the box view `furrow epic show` prints —\n" +
 			"goal, member roll-up, body — so a mixed batch's --json array carries one\n" +
@@ -498,11 +502,14 @@ func newBriefCmd() *cobra.Command {
 			"`next` = the top -n actionable tasks\n" +
 			"(next's predicate) WITH their bodies (show's body_text — the follow-up read\n" +
 			"folded in), plus next_total, the uncapped count, so the cap never hides the\n" +
-			"queue size, and next_hidden, what the cap dropped tallied per lane (omitted\n" +
-			"when nothing was): canonical order lists in-progress after ready, so with\n" +
-			"-n or more ready tasks the cap drops the work already in flight FIRST —\n" +
-			"\"1 in-progress hidden\" is the line that stops a session from starting a\n" +
-			"second task beside the one it left open (`furrow next` lists them all);\n" +
+			"queue size, and next_hidden, what the cap dropped per lane WITH the ids\n" +
+			"(omitted when nothing was; the human band prints them as one … row per\n" +
+			"lane under the picks): canonical order lists in-progress after ready, so\n" +
+			"with -n or more ready tasks the cap drops the work already in flight\n" +
+			"FIRST — \"1 in-progress hidden\" is the line that stops a session from\n" +
+			"starting a second task beside the one it left open, and the ids are what\n" +
+			"tell a hidden row from the one the due band flagged without re-reading\n" +
+			"(`furrow next` lists them all);\n" +
 			"`blocked` = next-lane tasks with an unsatisfied dep and their\n" +
 			"blocked_by (started or queued work that plain `next` deliberately hides),\n" +
 			"beside blocked_total, the same count over every OPEN lane, so the band's\n" +
