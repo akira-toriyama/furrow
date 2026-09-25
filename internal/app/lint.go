@@ -221,7 +221,7 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 	// surfaced it. `brief` leads with the same set (App.Due), and both go through
 	// core.DueStateOf, so the session-start read and the checker cannot disagree
 	// about the day boundary or the skipped lanes.
-	ps = append(ps, core.DueProblems(idx, a.Clock.Now(), a.loc(), a.dueSkipLanes())...)
+	ps = append(ps, core.DueProblems(idx, a.Clock.Now(), a.loc(), a.dueSkipLanes(), a.Cfg.Terminal)...)
 
 	// Provenance ([lint].provenance_markers, OFF by default): warn on an open,
 	// non-terminal task whose body carries none of the board's provenance

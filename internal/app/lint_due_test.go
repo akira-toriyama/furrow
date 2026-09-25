@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -136,5 +137,31 @@ func TestLintDueIgnoresEpicScope(t *testing.T) {
 	}
 	if over := problemsWithCode(ps, "due-overdue"); len(over) != 1 || over[0].ID != parked.ID {
 		t.Errorf("due-overdue = %+v, want %s (a box nobody activated)", over, parked.ID)
+	}
+}
+
+// The remedy follows the lane (t-8dtm, furrow-test drills 3 and 4): a task
+// parked in a terminal lane is not being worked, so "do it" is the one remedy
+// that is wrong there — its date is a reminder to chase whoever it waits on —
+// while an open lane is offered the work itself. Both name the close, because
+// a finished wait is closed from where it sits.
+func TestLintDueOverdueRemedyFollowsTheLane(t *testing.T) {
+	a := newDueApp(time.Date(2026, 8, 4, 3, 0, 0, 0, time.UTC))
+	open, _ := a.Add("open and late", AddOpts{Status: "ready", Due: "2026-08-01"})
+	parked, _ := a.Add("waiting on a reply", AddOpts{Status: "waiting", Due: "2026-08-01"})
+
+	ps, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := map[string]string{}
+	for _, p := range problemsWithCode(ps, "due-overdue") {
+		msgs[p.ID] = p.Msg
+	}
+	if m := msgs[open.ID]; !strings.Contains(m, "do it, close it (`furrow done "+open.ID+"`)") || strings.Contains(m, "parked") {
+		t.Errorf("open-lane remedy = %q, want the work and the close, no chase", m)
+	}
+	if m := msgs[parked.ID]; !strings.Contains(m, `parked in "waiting"`) || !strings.Contains(m, "chase or escalate, close it (`furrow done "+parked.ID+"`)") || strings.Contains(m, "do it") {
+		t.Errorf("terminal-lane remedy = %q, want the chase and the close, never \"do it\"", m)
 	}
 }

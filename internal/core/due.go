@@ -94,7 +94,13 @@ func FormatDue(t *Task, loc *time.Location) string {
 // default). Terminal lanes as a class are deliberately NOT skipped — a board may
 // mark `waiting` terminal, and a waiting task is the archetype of one that still
 // needs the reminder.
-func DueProblems(idx *Index, now time.Time, loc *time.Location, skipLanes map[string]bool) []Problem {
+//
+// terminal is the caller's lane vocabulary (as in ReadyBlockedProblems) and only
+// shapes the REMEDY: a task parked in a terminal lane is not being worked, so its
+// date is a reminder to chase whoever it waits on, and "do it" is the one remedy
+// that is wrong there. The same overdue state in an open lane offers the work
+// itself. Closing is named in both — a finished wait is closed from where it sits.
+func DueProblems(idx *Index, now time.Time, loc *time.Location, skipLanes, terminal map[string]bool) []Problem {
 	var out []Problem
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
@@ -103,9 +109,15 @@ func DueProblems(idx *Index, now time.Time, loc *time.Location, skipLanes map[st
 		}
 		switch DueStateOf(t, now, loc) {
 		case DueOverdue:
-			out = append(out, Problem{SevError, "due-overdue", t.ID, fmt.Sprintf(
-				"due %s has passed — do it, or push the date (`furrow set %s --due +1d`) / drop it (`--clear-due`)",
-				FormatDue(t, loc), t.ID)})
+			msg := fmt.Sprintf(
+				"due %s has passed — do it, close it (`furrow done %s`), or push the date (`furrow set %s --due +1d`) / drop it (`--clear-due`)",
+				FormatDue(t, loc), t.ID, t.ID)
+			if terminal[t.Status] {
+				msg = fmt.Sprintf(
+					"due %s has passed while the task is parked in %q, where the date is a reminder rather than work to do — chase or escalate, close it (`furrow done %s`), or push the date (`furrow set %s --due +1d`) / drop it (`--clear-due`)",
+					FormatDue(t, loc), t.Status, t.ID, t.ID)
+			}
+			out = append(out, Problem{SevError, "due-overdue", t.ID, msg})
 		case DueToday:
 			out = append(out, Problem{SevWarn, "due-today", t.ID, fmt.Sprintf(
 				"due today, %s", FormatDue(t, loc))})

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -79,6 +80,7 @@ func TestDueProblems(t *testing.T) {
 
 	idx := &Index{Tasks: []Task{
 		{ID: "t-wait1", Status: "waiting", Due: &past},    // terminal, but NOT skipped
+		{ID: "t-rdy00", Status: "ready", Due: &past},      // open lane, overdue -> the work itself
 		{ID: "t-rdy01", Status: "ready", Due: &todayLate}, // due today -> warn
 		{ID: "t-rdy02", Status: "ready", Due: &later},     // not yet -> nothing
 		{ID: "t-rdy03", Status: "ready"},                  // no date -> nothing
@@ -86,19 +88,32 @@ func TestDueProblems(t *testing.T) {
 		{ID: "t-ice01", Status: "icebox", Due: &past},     // parked -> skipped
 	}}
 	skip := map[string]bool{"done": true, "icebox": true}
+	terminal := map[string]bool{"done": true, "icebox": true, "waiting": true}
 
-	ps := DueProblems(idx, now, jst, skip)
-	if len(ps) != 2 {
-		t.Fatalf("got %d problems, want 2: %+v", len(ps), ps)
+	ps := DueProblems(idx, now, jst, skip, terminal)
+	if len(ps) != 3 {
+		t.Fatalf("got %d problems, want 3: %+v", len(ps), ps)
 	}
-	// sortProblems' order — severity first, so the overdue ERROR leads the
+	// sortProblems' order — severity first, so the overdue ERRORs lead the
 	// due-today warn whatever their ids (the rule's own sort once dropped the
 	// severity key and interleaved the two by id; t-2xqp).
-	if ps[0].ID != "t-wait1" || ps[0].Code != "due-overdue" || ps[0].Severity != SevError {
-		t.Errorf("first problem = %+v, want a due-overdue ERROR on t-wait1", ps[0])
+	if ps[0].ID != "t-rdy00" || ps[0].Code != "due-overdue" || ps[0].Severity != SevError {
+		t.Errorf("first problem = %+v, want a due-overdue ERROR on t-rdy00", ps[0])
 	}
-	if ps[1].ID != "t-rdy01" || ps[1].Code != "due-today" || ps[1].Severity != SevWarn {
-		t.Errorf("second problem = %+v, want a due-today warn on t-rdy01", ps[1])
+	if ps[1].ID != "t-wait1" || ps[1].Code != "due-overdue" || ps[1].Severity != SevError {
+		t.Errorf("second problem = %+v, want a due-overdue ERROR on t-wait1", ps[1])
+	}
+	if ps[2].ID != "t-rdy01" || ps[2].Code != "due-today" || ps[2].Severity != SevWarn {
+		t.Errorf("third problem = %+v, want a due-today warn on t-rdy01", ps[2])
+	}
+	// The remedy follows the lane: an open lane is offered the work, a terminal
+	// lane the chase — "do it" is wrong for a task nobody is working — and both
+	// name the close, because a finished wait is closed from where it sits.
+	if open := ps[0].Msg; !strings.Contains(open, "do it, close it (`furrow done t-rdy00`)") || strings.Contains(open, "parked") {
+		t.Errorf("open-lane remedy = %q, want the work, the close and the date, no chase", open)
+	}
+	if parked := ps[1].Msg; !strings.Contains(parked, `parked in "waiting"`) || !strings.Contains(parked, "chase or escalate, close it (`furrow done t-wait1`)") || strings.Contains(parked, "do it") {
+		t.Errorf("terminal-lane remedy = %q, want the chase and the close, never \"do it\"", parked)
 	}
 	// Both codes must be registered, or `lint --code due-overdue` would reject
 	// the very code lint emits.
@@ -115,7 +130,7 @@ func TestDueProblemsWithNoSkippedLanes(t *testing.T) {
 	now := time.Date(2026, 8, 4, 12, 0, 0, 0, jst).UTC()
 	past := now.Add(-48 * time.Hour)
 	idx := &Index{Tasks: []Task{{ID: "t-done1", Status: "done", Due: &past}}}
-	if ps := DueProblems(idx, now, jst, nil); len(ps) != 1 {
+	if ps := DueProblems(idx, now, jst, nil, nil); len(ps) != 1 {
 		t.Errorf("got %d problems, want 1 (nothing skipped): %+v", len(ps), ps)
 	}
 }
