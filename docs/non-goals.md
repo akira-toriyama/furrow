@@ -101,6 +101,39 @@ now and the due, so a snoozed or late close never hands the same day back — so
 an on-time close advances exactly one step and a late one moves you forward
 rather than into a backlog you did not accrue.
 
+### No cancelled close
+`furrow done` is the only way a task stops being open, and it stamps the one
+`closed` whether the completion condition was met or the premise behind the task
+went away. There is no cancelled lane that closes, no resolution or close-reason
+field, no second glyph in `ls`, and an epic's `N/M` counts every done member:
+why a task closed is prose, written by `done --note "<why>"` in the same
+command and found by `search` or `-q`.
+
+*Every close does the same three things — it settles the task for `next` and for
+whatever waits on it, ages it into `archive`, and lands in `stats`'s throughput
+window — and a cancellation wants all three. The one bit a cancelled close would
+add (achieved, or not) has no reader here: furrow keeps no velocity, burn-down
+or cycle-time figure for it to feed; `N/M` is how much of a box is settled
+rather than how much was achieved, and the box's own "all N members done" signal
+fires when nothing is open, however each member got there; the box itself is
+two-valued, since `epic done` records no reason either. The bit's one
+behavioural question — whether a cancelled dependency releases what waits on it
+— is one no tracker we compared documents an answer to: Jira, Linear, GitHub
+Issues and Azure Boards all carry the bit, and none of their docs say what it
+does to a blocked dependent; Asana's task is a single `completed` boolean, as
+this one is. Carrying it would cost a shard field, and with it a flag day for
+every pinned binary — or a `closed` stamp on a second lane, which an older
+binary (its config reader drops the key it does not know) would neither archive
+nor clear on the way out, with no lint to say so.*
+
+The other two ways a task leaves the working set stay separate verbs on purpose:
+the **icebox** lane parks it (still open, never archived, its dates silent) and
+**rm** withdraws a filing that should not have been made. What would reopen this
+is a measured case, not a preference: a session acting on a cancelled dependency
+as if it had landed. The shape then is GitHub's — a close reason the done task
+carries, read by `revisit`'s `dep_done` and by `N/M` — never a lane.
+
+
 ## Storage format
 
 The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
