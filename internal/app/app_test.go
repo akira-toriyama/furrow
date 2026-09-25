@@ -740,10 +740,10 @@ func titlesOf(ts []core.Task) []string {
 // turned into exit 2, so the drop had outlived its own rationale.
 func TestChecklistEditSurface(t *testing.T) {
 	a := newApp()
-	if _, err := a.Add("blank step", AddOpts{Checklist: []string{"one", "", "two"}}); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, err := a.Add("blank step", AddOpts{Checklist: UncheckedItems([]string{"one", "", "two"})}); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("a blank --check must be exit 2, like check --add, got %v", err)
 	}
-	tk, err := a.Add("has steps", AddOpts{Checklist: []string{"one", "two", "three"}})
+	tk, err := a.Add("has steps", AddOpts{Checklist: UncheckedItems([]string{"one", "two", "three"})})
 	if err != nil {
 		t.Fatal(err)
 	}

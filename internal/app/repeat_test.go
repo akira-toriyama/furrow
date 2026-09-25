@@ -41,7 +41,7 @@ func TestCloseGeneratesTheNextOccurrence(t *testing.T) {
 	v, e := 4, 2
 	pred := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{
 		Labels: []string{"chore"}, Refs: []string{"docs/x.md:1"},
-		Value: &v, Effort: &e, Checklist: []string{"tap on", "tap off"},
+		Value: &v, Effort: &e, Checklist: UncheckedItems([]string{"tap on", "tap off"}),
 	})
 	if _, err := a.Check(pred.ID, 1, true); err != nil {
 		t.Fatalf("tick a box: %v", err)

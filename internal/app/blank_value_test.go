@@ -20,7 +20,10 @@ func TestBlankValuesAreRejectedEverywhere(t *testing.T) {
 	}{
 		{"add -l", func(a *App, _ string) error { _, err := a.Add("x", AddOpts{Labels: []string{"bug", ""}}); return err }},
 		{"add --ref", func(a *App, _ string) error { _, err := a.Add("x", AddOpts{Refs: []string{" "}}); return err }},
-		{"add --check", func(a *App, _ string) error { _, err := a.Add("x", AddOpts{Checklist: []string{""}}); return err }},
+		{"add --check", func(a *App, _ string) error {
+			_, err := a.Add("x", AddOpts{Checklist: UncheckedItems([]string{""})})
+			return err
+		}},
 		{"add --dep", func(a *App, _ string) error { _, err := a.Add("x", AddOpts{Deps: []string{""}}); return err }},
 		{"add -r", func(a *App, _ string) error { _, err := a.Add("x", AddOpts{Repos: []string{""}}); return err }},
 		{"add --stdin -l", func(a *App, _ string) error {

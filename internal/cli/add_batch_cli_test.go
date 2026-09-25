@@ -78,6 +78,10 @@ func TestCLIAddBatchRefusals(t *testing.T) {
 		{"with a title arg", `{"title":"x"}`, []string{"extra"}, "cannot combine --batch with title arguments"},
 		{"with --body -", `{"title":"x"}`, []string{"--body", "-"}, "single stream"},
 		{"empty input", "\n\n", nil, "no task objects"},
+		{"checklist object with a foreign key", `{"title":"x","checklist":[{"text":"a","dne":true}]}`, nil, "checklist entry"},
+		{"checklist object without text", `{"title":"x","checklist":[{"done":true}]}`, nil, `needs "text"`},
+		{"checklist entry of the wrong type", `{"title":"x","checklist":[1]}`, nil, "checklist entry"},
+		{"checklist object with a blank text", `{"title":"x","checklist":[{"text":" ","done":true}]}`, nil, "--check"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -159,5 +163,53 @@ func TestCLIAddBatchInheritedEpicNoteCountsOnlyBareLines(t *testing.T) {
 	}
 	if strings.Count(se, "filed under active epic "+box.ID) != 1 || strings.Contains(se, other.ID) {
 		t.Errorf("want one note naming %s and never %s, got: %q", box.ID, other.ID, se)
+	}
+}
+
+// A line's checklist entry may be the shard's own item object, ticked or not,
+// beside plain strings — the round trip a board exported with its progress
+// needs — and --json hands the ticks back.
+func TestCLIAddBatchChecklistObjectItems(t *testing.T) {
+	initStore(t)
+	in := `{"key":"k","title":"ticked seed","checklist":["plain","plain",{"text":"done already","done":true},{"text":"object, unticked"},{"text":"[[k]] self link","done":true}]}` + "\n"
+	stdout, stderr, code := runSplitIn(t, in, "--json", "add", "--batch", "-", "-r", "o/r", "--check", "from the flag")
+	if code != 0 {
+		t.Fatalf("add --batch exit %d:\n%s\n%s", code, stdout, stderr)
+	}
+	var rows []struct {
+		ID        string `json:"id"`
+		Checklist []struct {
+			Text string `json:"text"`
+			Done bool   `json:"done"`
+		} `json:"checklist"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &rows); err != nil {
+		t.Fatalf("parse: %v\n%s", err, stdout)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	got := rows[0].Checklist
+	want := []struct {
+		text string
+		done bool
+	}{
+		{"from the flag", false}, // the shared flag's item comes first
+		{"plain", false},         // a repeated text adds nothing
+		{"done already", true},
+		{"object, unticked", false},
+		{"[[" + rows[0].ID + "]] self link", true},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("checklist = %+v, want %d items", got, len(want))
+	}
+	for i := range want {
+		if got[i].Text != want[i].text || got[i].Done != want[i].done {
+			t.Errorf("item %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	show, _ := run(t, "show", rows[0].ID)
+	if !strings.Contains(show, "checklist: 2/5") || !strings.Contains(show, "[x] done already") {
+		t.Errorf("show must tally the seeded ticks:\n%s", show)
 	}
 }

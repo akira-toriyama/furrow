@@ -21,22 +21,53 @@ import (
 // shared flag, an explicit `"epic": ""` means unfiled on purpose (add's
 // `-e ”`), and a list field unions with the flag's values.
 type batchLine struct {
-	Key       string   `json:"key"`
-	Title     string   `json:"title"`
-	Status    *string  `json:"status"`
-	Priority  *int     `json:"priority"`
-	Value     *int     `json:"value"`
-	Effort    *int     `json:"effort"`
-	Labels    []string `json:"labels"`
-	Repos     []string `json:"repos"`
-	Draft     *bool    `json:"draft"`
-	Epic      *string  `json:"epic"`
-	Deps      []string `json:"deps"`
-	Refs      []string `json:"refs"`
-	Body      *string  `json:"body"`
-	Checklist []string `json:"checklist"`
-	Due       *string  `json:"due"`
-	Repeat    *string  `json:"repeat"`
+	Key       string       `json:"key"`
+	Title     string       `json:"title"`
+	Status    *string      `json:"status"`
+	Priority  *int         `json:"priority"`
+	Value     *int         `json:"value"`
+	Effort    *int         `json:"effort"`
+	Labels    []string     `json:"labels"`
+	Repos     []string     `json:"repos"`
+	Draft     *bool        `json:"draft"`
+	Epic      *string      `json:"epic"`
+	Deps      []string     `json:"deps"`
+	Refs      []string     `json:"refs"`
+	Body      *string      `json:"body"`
+	Checklist []batchCheck `json:"checklist"`
+	Due       *string      `json:"due"`
+	Repeat    *string      `json:"repeat"`
+}
+
+// batchCheck is one checklist entry of a batch line: a JSON string is an
+// unticked item (the `--check` spelling), and the shard's own item object
+// {"text", "done"} seeds the tick too — a board exported with its ticks reads
+// back with them. The object is decoded strictly: a key the shard's item does
+// not have is exit 2, the batch's rule for an unknown field. Neither form is
+// a shard read — the caller's input is decoded into its own struct, the same
+// shape as the line itself (see scripts/check-marshal-singlepath.sh).
+type batchCheck core.ChecklistItem
+
+func (c *batchCheck) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		*c = batchCheck{Text: text}
+		return nil
+	}
+	var obj struct {
+		Text *string `json:"text"`
+		Done *bool   `json:"done"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&obj); err != nil {
+		return fmt.Errorf("checklist entry %s: want a string or {\"text\": ..., \"done\": true|false}: %v", strings.TrimSpace(string(data)), err)
+	}
+	if obj.Text == nil {
+		return fmt.Errorf("checklist entry %s: the item object needs \"text\"", strings.TrimSpace(string(data)))
+	}
+	*c = batchCheck{Text: *obj.Text, Done: obj.Done != nil && *obj.Done}
+	return nil
 }
 
 // batchFields is the closed field vocabulary — the JSON names of batchLine.
@@ -187,8 +218,25 @@ func (l batchLine) merge(shared app.AddOpts) app.AddOpts {
 	o.Repos = unionStrings(shared.Repos, l.Repos)
 	o.Deps = unionStrings(shared.Deps, l.Deps)
 	o.Refs = unionStrings(shared.Refs, l.Refs)
-	o.Checklist = unionStrings(shared.Checklist, l.Checklist)
+	o.Checklist = unionChecks(shared.Checklist, l.Checklist)
 	return o
+}
+
+// unionChecks is unionStrings for checklist items, keyed by text: the flag's
+// items first, then the line's entries whose text is new — an entry repeating
+// a flag's text adds nothing, tick included, exactly as a repeated label adds
+// nothing. nil in, nil out, for the same reason as unionStrings.
+func unionChecks(a []core.ChecklistItem, b []batchCheck) []core.ChecklistItem {
+	if len(a) == 0 && len(b) == 0 {
+		return nil
+	}
+	out := append([]core.ChecklistItem(nil), a...)
+	for _, c := range b {
+		if !slices.ContainsFunc(out, func(it core.ChecklistItem) bool { return it.Text == c.Text }) {
+			out = append(out, core.ChecklistItem(c))
+		}
+	}
+	return out
 }
 
 // unionStrings appends b's entries not already in a, order preserved; nil in,
