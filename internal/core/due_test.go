@@ -146,3 +146,49 @@ func TestFormatDue(t *testing.T) {
 		t.Errorf("FormatDue with no date = %q, want empty", got)
 	}
 }
+
+// due-inversion: a dated task waiting on a dep promised LATER than itself. One
+// finding per task naming every such dep; the skip set silences both ends of
+// the edge (a done or parked date is not a live promise) and an undated dep
+// says nothing. The seed of the furrow-test board carried one such edge until
+// a rebuild found it by hand (t-fejrz → t-ehf4f) — the case this check is for.
+func TestDueInversionProblems(t *testing.T) {
+	mar10 := time.Date(2026, 3, 10, 12, 0, 0, 0, jst).UTC()
+	mar15 := time.Date(2026, 3, 15, 12, 0, 0, 0, jst).UTC()
+	mar20 := time.Date(2026, 3, 20, 12, 0, 0, 0, jst).UTC()
+	idx := &Index{Tasks: []Task{
+		{ID: "t-inv01", Status: "ready", Due: &mar10, Deps: []string{"t-late1", "t-late2", "t-early", "t-nodue", "t-parkd", "t-done1", "t-gone"}},
+		{ID: "t-late1", Status: "backlog", Due: &mar15},                           // later -> named
+		{ID: "t-late2", Status: "ready", Due: &mar20},                             // later -> named
+		{ID: "t-early", Status: "ready", Due: &mar10},                             // same instant -> fine
+		{ID: "t-nodue", Status: "ready"},                                          // undated -> silent
+		{ID: "t-parkd", Status: "icebox", Due: &mar20},                            // parked -> skipped
+		{ID: "t-done1", Status: "done", Due: &mar20},                              // settled -> skipped
+		{ID: "t-ok001", Status: "ready", Due: &mar20, Deps: []string{"t-late1"}},  // dep earlier -> fine
+		{ID: "t-park2", Status: "icebox", Due: &mar10, Deps: []string{"t-late2"}}, // the task itself parked -> skipped
+		{ID: "t-undat", Status: "ready", Deps: []string{"t-late2"}},               // no due of its own -> silent
+	}}
+	skip := map[string]bool{"done": true, "icebox": true}
+
+	ps := DueInversionProblems(idx, jst, skip)
+	if len(ps) != 1 {
+		t.Fatalf("got %d problems, want 1: %+v", len(ps), ps)
+	}
+	p := ps[0]
+	if p.ID != "t-inv01" || p.Code != "due-inversion" || p.Severity != SevWarn {
+		t.Errorf("problem = %+v, want a due-inversion warn on t-inv01", p)
+	}
+	for _, want := range []string{"due 2026-03-10 12:00 +09:00", "t-late1 (due 2026-03-15 12:00 +09:00)", "t-late2 (due 2026-03-20 12:00 +09:00)", "`furrow set t-inv01 --due <date>`", "`furrow dep t-inv01 <dep> --rm`"} {
+		if !strings.Contains(p.Msg, want) {
+			t.Errorf("message %q lacks %q", p.Msg, want)
+		}
+	}
+	for _, silent := range []string{"t-early", "t-nodue", "t-parkd", "t-done1", "t-gone"} {
+		if strings.Contains(p.Msg, silent) {
+			t.Errorf("message names %s, which is not an inverted live promise: %q", silent, p.Msg)
+		}
+	}
+	if !IsLintCode(p.Code) {
+		t.Errorf("code %q is not in the lint-code registry", p.Code)
+	}
+}

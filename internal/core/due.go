@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -122,6 +123,47 @@ func DueProblems(idx *Index, now time.Time, loc *time.Location, skipLanes, termi
 			out = append(out, Problem{SevWarn, "due-today", t.ID, fmt.Sprintf(
 				"due today, %s", FormatDue(t, loc))})
 		}
+	}
+	sortProblems(out)
+	return out
+}
+
+// DueInversionProblems reports each dated task that waits on a dependency
+// promised for a LATER instant than its own due (`due-inversion`, warn): the
+// task cannot close before the dep it waits on, so its date is broken on paper
+// before any work is late. One finding per task, naming every inverted dep with
+// its date — the remedy is per task (re-date one side, or drop the edge).
+// skipLanes is the set DueProblems takes, applied to BOTH ends of the edge: a
+// date in the done lane or a parked lane is not a live promise, and a parked dep
+// is already ready-blocked's finding. A dep with no date is silent here —
+// nothing says when it lands, so nothing contradicts. The seed of the board at
+// akira-toriyama/furrow-test carried one such edge (t-fejrz → t-ehf4f) until a
+// rebuild found it by hand; this is the check that would have said so.
+func DueInversionProblems(idx *Index, loc *time.Location, skipLanes map[string]bool) []Problem {
+	byID := make(map[string]*Task, len(idx.Tasks))
+	for i := range idx.Tasks {
+		byID[idx.Tasks[i].ID] = &idx.Tasks[i]
+	}
+	var out []Problem
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if t.Due == nil || skipLanes[t.Status] {
+			continue
+		}
+		var later []string
+		for _, dep := range t.Deps {
+			d, ok := byID[dep]
+			if !ok || d.Due == nil || skipLanes[d.Status] || !d.Due.After(*t.Due) {
+				continue
+			}
+			later = append(later, fmt.Sprintf("%s (due %s)", d.ID, FormatDue(d, loc)))
+		}
+		if len(later) == 0 {
+			continue
+		}
+		out = append(out, Problem{SevWarn, "due-inversion", t.ID, fmt.Sprintf(
+			"due %s, but it waits on %s, promised later — a task cannot close before the dep it waits on: re-date one side (`furrow set %s --due <date>`) or drop the edge (`furrow dep %s <dep> --rm`)",
+			FormatDue(t, loc), strings.Join(later, ", "), t.ID, t.ID)})
 	}
 	sortProblems(out)
 	return out
