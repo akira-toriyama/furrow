@@ -662,12 +662,13 @@ func newCheckCmd() *cobra.Command {
 		Use:   "check <id> [item-index]",
 		Short: "Toggle, add, remove, or reword a checklist item",
 		Long: "Edit a task's checklist. With no mode flag, mark the item at the given\n" +
-			"zero-based index done (--off unchecks); an index is a position in the\n" +
-			"CURRENT list, so after --rm every item below it moves up by one — remove\n" +
-			"from the highest index down. --add appends one or more items\n" +
-			"(repeatable, text verbatim). --rm deletes the item at the index. --reword\n" +
-			"replaces the text of the item at the index (keeping its done state). The\n" +
-			"mode flags are mutually exclusive; an out-of-range index is exit 2.",
+			"zero-based index done (--off unchecks) — the index is the number `show`\n" +
+			"prints beside each row; an index is a position in the CURRENT list, so\n" +
+			"after --rm every item below it moves up by one — remove from the highest\n" +
+			"index down. --add appends one or more items (repeatable, text verbatim).\n" +
+			"--rm deletes the item at the index. --reword replaces the text of the item\n" +
+			"at the index (keeping its done state). The mode flags are mutually\n" +
+			"exclusive; an out-of-range index is exit 2.",
 		Example: "  furrow check t-k3m9p 0            # mark item 0 done\n" +
 			"  furrow check t-k3m9p 0 --off     # uncheck item 0\n" +
 			"  furrow check t-k3m9p --add \"write tests\" --add \"update docs\"\n" +

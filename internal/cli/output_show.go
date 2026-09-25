@@ -6,6 +6,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/internal/app"
@@ -171,13 +172,19 @@ func printTaskDetail(a *app.App, t *core.Task, body string) {
 			}
 		}
 		fmt.Fprintf(out, "checklist: %d/%d\n", done, n)
-	}
-	for _, c := range t.Checklist {
-		box := "[ ]"
-		if c.Done {
-			box = "[x]"
+		// The index beside each row is the argument `check` takes. Without it
+		// every session counted rows by hand and then opened `check --help` to
+		// learn the base (every drill run from the fifth on, t-fsvt). The
+		// column is as wide as the last index, so a list past ten rows stays
+		// aligned. JSON carries no index: the array position IS the index.
+		width := len(strconv.Itoa(n - 1))
+		for i, c := range t.Checklist {
+			box := "[ ]"
+			if c.Done {
+				box = "[x]"
+			}
+			fmt.Fprintf(out, "  %*d  %s %s\n", width, i, box, c.Text)
 		}
-		fmt.Fprintf(out, "  %s %s\n", box, c.Text)
 	}
 	if t.Repeat != "" {
 		fmt.Fprintf(out, "repeat:   %s%s\n", t.Repeat, repeatAnchorNote(a, t))

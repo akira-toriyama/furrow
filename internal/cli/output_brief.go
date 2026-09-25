@@ -60,12 +60,14 @@ type briefView struct {
 	Due       *briefDueView `json:"due,omitempty"`
 	Next      []taskView    `json:"next"`
 	NextTotal int           `json:"next_total"`
-	// next_hidden is what -n dropped, tallied per lane in [lanes].order and
-	// omitted when the cap did not bite — next_total says how many, this says
-	// WHAT: the lane order puts in-progress after ready, so the cap
+	// next_hidden is what -n dropped, per lane in [lanes].order with the ids,
+	// and omitted when the cap did not bite — next_total says how many, this
+	// says WHAT: the lane order puts in-progress after ready, so the cap
 	// structurally drops the work already in flight first, and a session must
-	// see "1 in-progress hidden" to know not to start a second task.
-	NextHidden []laneCountView    `json:"next_hidden,omitempty"`
+	// see "1 in-progress hidden" to know not to start a second task; the ids
+	// are what let it match a hidden row against the due band without a
+	// second read (four drills in one run re-ran `next` for that, t-fsvt).
+	NextHidden []hiddenLaneView   `json:"next_hidden,omitempty"`
 	Blocked    []briefBlockedView `json:"blocked"`
 	// blocked_total is the blocked count across every OPEN lane in the same
 	// scope — the next_total pattern applied to a lane filter rather than a cap,
@@ -100,6 +102,16 @@ func toBriefDueView(d app.DueSummary) *briefDueView {
 		v.Today = append(v.Today, toListItemView(it))
 	}
 	return v
+}
+
+// hiddenLaneView is one next_hidden row: the lane, how many rows the cap
+// dropped from it, and their ids in canonical order — count beside ids, the
+// stats window's {created, created_ids} shape, so a consumer that only
+// tallies keeps its integer and one that needs to name a row has it.
+type hiddenLaneView struct {
+	Lane  string   `json:"lane"`
+	Count int      `json:"count"`
+	IDs   []string `json:"ids"`
 }
 
 // briefBlockedView is a brief blocked entry: the task plus what is in the way.
@@ -148,7 +160,7 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 			v.Next = append(v.Next, taskView{Task: it.Task, BodyText: it.Body})
 		}
 		for _, h := range b.NextHidden {
-			v.NextHidden = append(v.NextHidden, laneCountView{Lane: h.Key, Count: h.Count})
+			v.NextHidden = append(v.NextHidden, hiddenLaneView{Lane: h.Lane, Count: len(h.IDs), IDs: h.IDs})
 		}
 		for _, it := range b.Blocked {
 			blockedBy := it.BlockedBy
@@ -224,6 +236,13 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 		row := fmt.Sprintf("  ★ %s  %-12s %s", it.Task.ID, it.Task.Status, it.Task.Title)
 		fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
 	}
+	// What the cap dropped, one row per lane under the picks: the ids stay
+	// off the header (a board with sixty actionable tasks would push it past
+	// five hundred bytes) and are never truncated (a "+N more" tail would
+	// send the reader straight back to `next` for the one id it hides).
+	for _, h := range b.NextHidden {
+		fmt.Fprintf(out, "  … %s: %s\n", h.Lane, strings.Join(h.IDs, ", "))
+	}
 	// The band names its own lanes and the all-open-lanes count beside them: a
 	// bare "blocked (0)" once read as "nothing is stuck" on a board where most
 	// open work was waiting on a dep outside these lanes.
@@ -256,15 +275,16 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 
 // hiddenByLane renders next_hidden for the band header: "" when the cap did
 // not bite, else " — N hidden by -n: 1 ready, 1 in-progress" in lane order.
-func hiddenByLane(hidden []app.StatCount) string {
+// The ids are the … rows under the band, not the header's.
+func hiddenByLane(hidden []app.HiddenLane) string {
 	if len(hidden) == 0 {
 		return ""
 	}
 	total := 0
 	parts := make([]string, 0, len(hidden))
 	for _, h := range hidden {
-		total += h.Count
-		parts = append(parts, fmt.Sprintf("%d %s", h.Count, h.Key))
+		total += len(h.IDs)
+		parts = append(parts, fmt.Sprintf("%d %s", len(h.IDs), h.Lane))
 	}
 	return fmt.Sprintf(" — %d hidden by -n: %s", total, strings.Join(parts, ", "))
 }
