@@ -836,11 +836,15 @@ func newSetCmd() *cobra.Command {
 			"match exactly one known repo; removing the last repo leaves a first-class\n" +
 			"DRAFT), and file the task under\n" +
 			"an epic (-e), and set or clear the due date (--due/--clear-due, where\n" +
-			"--due +1d is the snooze, measured from now; on a repeating task it moves\n" +
-			"THIS occurrence only — the series anchor never moves — and --clear-due\n" +
-			"there is exit 2), and bind or drop a recurrence rule (--repeat, anchored to\n" +
-			"the due of the same write — so `--due <date> --repeat <rule>` in ONE write is\n" +
-			"how a series is re-anchored, --due alone never is; --clear-repeat) — instead of running move + reorder + value +\n" +
+			"--due +1d is the snooze, measured from now, and a bare date or datetime is\n" +
+			"read in the board's [due].timezone — an RFC3339 instant carries its own\n" +
+			"zone, and `ls --json` prints stored dues as UTC instants; on a repeating\n" +
+			"task it moves THIS occurrence only — the series anchor never moves — and\n" +
+			"--clear-due there is exit 2), and bind or drop a recurrence rule (--repeat,\n" +
+			"anchored to the due of the same write — so `--due <date> --repeat <rule>`\n" +
+			"in ONE write is how a series is re-anchored, --due alone never is, and\n" +
+			"--repeat alone re-anchors the rule to the due the task already carries;\n" +
+			"--clear-repeat) — instead of running move + reorder + value +\n" +
 			"effort + label as separate commands. At least one change is required; an unknown lane is\n" +
 			"exit 2 with the configured lanes in candidates (like move/add) and an\n" +
 			"unresolvable -e epic exits 2 with the known boxes,\n" +

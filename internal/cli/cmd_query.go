@@ -30,7 +30,9 @@ func newLsCmd() *cobra.Command {
 			"YYYY-MM-DD, or a full RFC3339 instant; a bare --until includes the whole\n" +
 			"day). --sort reorders by updated|created|value|effort (newest/highest\n" +
 			"first; --reverse flips it, and an unset value/effort stays last either\n" +
-			"way); with --sort, -n takes the top N of the sorted set.\n\n" +
+			"way); with --sort, -n takes the top N of the sorted set. With no -s, every\n" +
+			"lane is listed — done and the terminal lanes included — and the default -n\n" +
+			"is already every row: -s, -l, -r and -q only narrow (there is no --all).\n\n" +
 			"Every row carries a one-character state glyph: ★ actionable (a next lane,\n" +
 			"every dep done — ready to pick up; `furrow next` additionally scopes to the\n" +
 			"active epic, so ★ is a superset of what next hands you), ✓ done, ~ parked\n" +
