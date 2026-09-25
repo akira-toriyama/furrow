@@ -3,6 +3,8 @@ package app
 import (
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/internal/core"
 )
 
 // AddBatch resolves the batch's own names before the write: a dep may cite a
@@ -15,7 +17,7 @@ func TestAddBatchResolvesKeysToIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	created, keys, err := a.AddBatch([]BatchSpec{
-		{Key: "serve", AddSpec: AddSpec{Title: "serve dinner", AddOpts: AddOpts{Deps: []string{"cook", existing.ID}, Body: "after [[cook]] and [[" + existing.ID + "]]", Checklist: []string{"plates from [[cook]]"}}}},
+		{Key: "serve", AddSpec: AddSpec{Title: "serve dinner", AddOpts: AddOpts{Deps: []string{"cook", existing.ID}, Body: "after [[cook]] and [[" + existing.ID + "]]", Checklist: []core.ChecklistItem{{Text: "plates from [[cook]]"}}}}},
 		{Key: "cook", AddSpec: AddSpec{Title: "cook — see [[serve]]"}},
 		{AddSpec: AddSpec{Title: "no key at all"}},
 	})
@@ -78,5 +80,37 @@ func TestAddBatchRefusesBadReferences(t *testing.T) {
 				t.Errorf("a refused batch must write nothing: %d -> %d tasks", len(before), len(after))
 			}
 		})
+	}
+}
+
+// A batch line seeds a TICKED item through the shard's own item shape — the
+// export/regenerate round trip of a board that carries progress — and the key
+// rewrite reaches the item's text whatever its state.
+func TestAddBatchChecklistItemsKeepDone(t *testing.T) {
+	a := newApp()
+	created, _, err := a.AddBatch([]BatchSpec{
+		{Key: "cook", AddSpec: AddSpec{Title: "cook"}},
+		{Key: "serve", AddSpec: AddSpec{Title: "serve", AddOpts: AddOpts{Checklist: []core.ChecklistItem{
+			{Text: "plates from [[cook]]", Done: true},
+			{Text: "pour water"},
+		}}}},
+	})
+	if err != nil {
+		t.Fatalf("AddBatch: %v", err)
+	}
+	cook, serve := created[0], created[1]
+	got := serve.Checklist
+	if len(got) != 2 || !got[0].Done || got[1].Done {
+		t.Fatalf("checklist = %+v, want the first item ticked and the second not", got)
+	}
+	if got[0].Text != "plates from [["+cook.ID+"]]" {
+		t.Errorf("a ticked item's [[key]] must be rewritten too: %q", got[0].Text)
+	}
+	stored, _, err := a.Get(serve.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.Checklist[0].Done {
+		t.Errorf("the tick must reach the store: %+v", stored.Checklist)
 	}
 }

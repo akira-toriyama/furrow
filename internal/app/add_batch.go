@@ -113,9 +113,9 @@ func (a *App) AddBatch(specs []BatchSpec) ([]core.Task, []string, error) {
 		spec.Title = rewrite(spec.Title)
 		spec.Body = rewrite(spec.Body)
 		if len(spec.Checklist) > 0 {
-			items := make([]string, len(spec.Checklist))
+			items := make([]core.ChecklistItem, len(spec.Checklist))
 			for j, c := range spec.Checklist {
-				items[j] = rewrite(c)
+				items[j] = core.ChecklistItem{Text: rewrite(c.Text), Done: c.Done}
 			}
 			spec.Checklist = items
 		}

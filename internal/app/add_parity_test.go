@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/akira-toriyama/furrow/internal/core"
 )
 
 // `add` and `add --stdin` are the same command with a different input shape, so
@@ -27,7 +29,14 @@ func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 		{
 			name:  "checklist seeds",
 			title: "with checks",
-			opts:  AddOpts{Checklist: []string{"step one", "step two"}},
+			opts:  AddOpts{Checklist: UncheckedItems([]string{"step one", "step two"})},
+		},
+		{
+			// A ticked seed (a batch line's item object) must land ticked on both
+			// paths — the same field, so the same silent-drop class.
+			name:  "ticked checklist seed",
+			title: "with a tick",
+			opts:  AddOpts{Checklist: []core.ChecklistItem{{Text: "done already", Done: true}, {Text: "still open"}}},
 		},
 		{
 			name:  "estimates and type",

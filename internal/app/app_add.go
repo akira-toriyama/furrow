@@ -7,20 +7,38 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// seedChecklist turns repeatable --check values into shard checklist items.
-// Add and AddMany BOTH call it: the bulk path used to omit Checklist from its
-// task literal entirely, so `add --stdin --check x` silently created an empty
-// checklist while the identical single add stored the item — the same
-// silent-drop divergence as t-ek9y (--type) and t-adx9 (--value/--effort).
-// One function, one behavior. Blanks never reach here: requireNonBlank rejects
-// them up front, the same way `check --add ""` is exit 2.
-func seedChecklist(texts []string) []core.ChecklistItem {
+// UncheckedItems is the `--check` spelling of a checklist seed: every text an
+// unticked item. The batch path builds its items itself (a line may tick one).
+func UncheckedItems(texts []string) []core.ChecklistItem {
+	if len(texts) == 0 {
+		return nil
+	}
 	out := make([]core.ChecklistItem, 0, len(texts))
 	for _, text := range texts {
 		out = append(out, core.ChecklistItem{Text: text})
 	}
-	if len(out) == 0 {
+	return out
+}
+
+// seedChecklist copies the seed items into the shard. Add and AddMany BOTH
+// call it: the bulk path used to omit Checklist from its task literal
+// entirely, so `add --stdin --check x` silently created an empty checklist
+// while the identical single add stored the item — the same silent-drop
+// divergence as t-ek9y (--type) and t-adx9 (--value/--effort). One function,
+// one behavior. Blanks never reach here: requireNonBlank rejects them up
+// front, the same way `check --add ""` is exit 2.
+func seedChecklist(items []core.ChecklistItem) []core.ChecklistItem {
+	if len(items) == 0 {
 		return nil
+	}
+	return append([]core.ChecklistItem(nil), items...)
+}
+
+// checklistTexts is the blank check's view of a seed: the texts alone.
+func checklistTexts(items []core.ChecklistItem) []string {
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		out = append(out, it.Text)
 	}
 	return out
 }
@@ -56,12 +74,14 @@ type AddOpts struct {
 	// Repeat is the raw `--repeat` spelling (see recur.Compile), anchored to
 	// this task's own Due — which is therefore required alongside it.
 	Repeat string
-	// Checklist seeds unchecked checklist items at creation (repeatable --check).
-	// A plain `add --body '- [ ] x'` does NOT populate the shard's checklist —
-	// the body is prose — so this makes a seed-time checklist first-class. Blank
-	// entries are dropped; text is taken verbatim (commas included), like
-	// `check --add`.
-	Checklist []string
+	// Checklist seeds checklist items at creation: `--check` texts arrive
+	// unticked (UncheckedItems), and only a batch line may seed a ticked one
+	// (its `{"text", "done"}` object — the shard's own item shape — so a board
+	// exported with its ticks reads back with them). A plain `add --body '- [ ]
+	// x'` does NOT populate the shard's checklist — the body is prose — so this
+	// makes a seed-time checklist first-class. A blank text is exit 2 (never
+	// dropped); text is taken verbatim (commas included), like `check --add`.
+	Checklist []core.ChecklistItem
 	// Draft marks the task as deliberately repo-less (repos == [], the
 	// issue-draft analogue). It conflicts with explicit Repos, and it
 	// suppresses exactly the board-scope repo union (see withBoardRepo) — the
@@ -88,7 +108,7 @@ func (o AddOpts) requireNonBlankValues(id string) error {
 		{"-r/--repo", o.Repos},
 		{"--ref", o.Refs},
 		{"--dep", o.Deps},
-		{"--check", o.Checklist},
+		{"--check", checklistTexts(o.Checklist)},
 	} {
 		if err := requireNonBlank(id, f.flag, f.vals); err != nil {
 			return err

@@ -44,14 +44,18 @@ func newAddCmd() *cobra.Command {
 			"purpose), deps, refs, body, checklist, due, repeat, and key. An unknown field\n" +
 			"is exit 2 with the vocabulary in candidates. The shared flags are the\n" +
 			"defaults: a scalar field on the line replaces the flag's value, a list field\n" +
-			"(labels, repos, deps, refs, checklist) unions with it. `key` names the line\n" +
-			"INSIDE the batch only: a dep may cite another line's key instead of an id,\n" +
-			"and a [[key]] in a title, body, or checklist item becomes [[id]] once ids\n" +
-			"are minted — so an epic with a dependency graph is written in one file, in\n" +
-			"any order, with no id known in advance. Keys never reach the board; --json\n" +
-			"echoes each task's key beside it, which is how a caller learns the ids. A\n" +
-			"duplicate key, a key that is an existing id, a dep naming neither an id nor a\n" +
-			"key, or a dep cycle inside the batch is exit 2 and writes nothing.\n\n" +
+			"(labels, repos, deps, refs, checklist) unions with it. A checklist entry is\n" +
+			"a string (an unticked item) or the shard's own item object\n" +
+			"{\"text\": \"...\", \"done\": true}, so a board exported with its ticks reads\n" +
+			"back with them; a key the object does not have is exit 2, like an unknown\n" +
+			"field. `key` names the line INSIDE the batch only: a dep may cite another\n" +
+			"line's key instead of an id, and a [[key]] in a title, body, or checklist\n" +
+			"item becomes [[id]] once ids are minted — so an epic with a dependency\n" +
+			"graph is written in one file, in any order, with no id known in advance.\n" +
+			"Keys never reach the board; --json echoes each task's key beside it, which\n" +
+			"is how a caller learns the ids. A duplicate key, a key that is an existing\n" +
+			"id, a dep naming neither an id nor a key, or a dep cycle inside the batch\n" +
+			"is exit 2 and writes nothing.\n\n" +
 			"--due promises the task for an instant: `2026-08-04` (that WHOLE day — it\n" +
 			"binds 23:59:59 in the board's calendar, so the day never starts out\n" +
 			"overdue), `2026-08-04T10:30`, an RFC3339 instant, or a signed offset such\n" +
@@ -105,7 +109,7 @@ func newAddCmd() *cobra.Command {
 			}
 			opts := app.AddOpts{
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
-				Deps: deps, Refs: refs, Body: body, Checklist: checks,
+				Deps: deps, Refs: refs, Body: body, Checklist: app.UncheckedItems(checks),
 				Epic: epicRef, Due: due, Repeat: repeatSpec,
 				// An explicit `-e ''` means "unfiled, on purpose" — suppress the
 				// active-epic inheritance a bare add gets.
