@@ -26,6 +26,12 @@ go.work.sum
 /.reference/
 /tmp/
 
+# Playwright MCP writes its console logs and page snapshots into the CWD of
+# whatever session drove the browser, so they land in whichever repo was open.
+# Six of them reached main in #169 before anyone noticed. Nothing here is an
+# input to a build or a test — the artifacts are per-run and regenerable.
+/.playwright-mcp/
+
 # No local board in this code repo — its tasks live on the central board
 # (akira-toriyama/projects), per CLAUDE.md. Gitignored so a stray `furrow init`
 # run from the repo root can never be committed into the code repo again.
