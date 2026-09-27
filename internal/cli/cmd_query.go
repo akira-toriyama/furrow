@@ -234,6 +234,25 @@ func newShowCmd() *cobra.Command {
 			"each led by its zero-based index — the position `furrow check` takes, so\n" +
 			"the number beside a row is the argument that ticks it (--json carries no\n" +
 			"index: the array position is the index).\n" +
+			"deps and epic NAME what they point at rather than repeating a bare id.\n" +
+			"The deps line leads with an N/M tally counting the deps in the board's\n" +
+			"done lane, which it names (so a board that renamed the lane reads\n" +
+			"\"1/2 shipped\") — all of them there is what lets the task move — and then\n" +
+			"one row per dep in `furrow dep --list`'s own shape:\n" +
+			"id  [lane]  title, or [?] for an id this store cannot resolve (lint's\n" +
+			"dep-missing). The epic line carries the box's title, annotated (closed)\n" +
+			"when it is one. Under --archived both answer from the ARCHIVE SNAPSHOT\n" +
+			"alone, so they agree with `furrow ls --archived`: a dep still in the live\n" +
+			"store is outside that snapshot and reads [?]. The box title resolves on\n" +
+			"both reads, since boxes are never archived.\n" +
+			"The two surfaces divide it this way: the HUMAN output resolves edges\n" +
+			"for legibility, while JSON keeps the ids plus the one CONCLUSION a\n" +
+			"caller cannot compute from a single read. So --json adds actionable and\n" +
+			"blocked_by — the two derived keys `furrow ls --json` has always carried,\n" +
+			"computed by the same helper, which makes --no-body --json key-for-key an\n" +
+			"ls row — and NOT a resolved dep array: `furrow dep --list --json` is that\n" +
+			"shape, and a dep's title and lane are one `show <deps...> --no-body\n" +
+			"--json` away. --no-body trims the PROSE, never the facts.\n" +
 			"An id may name an EPIC: store membership routes each one (never the id's\n" +
 			"prefix), and a box is rendered as the box view `furrow epic show` prints —\n" +
 			"goal, member roll-up, body — so a mixed batch's --json array carries one\n" +

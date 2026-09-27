@@ -13,10 +13,60 @@ import (
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
-// taskView is the JSON shape for `show`: the task plus its resolved body text.
+// showFacts are the derived facts every `show` JSON shape carries beside the
+// stored ones: the same two keys, computed by the same app helper (factsFor),
+// that `ls`, `next`, `--tree` and `brief` have always put on a task row.
+//
+// The precedent this follows is t-pqme's, read in the other direction. There the
+// rule was "machine readers were already served — every --json row carries
+// repeat/repeat_anchor — so this is a human-output defect and no JSON contract
+// moves". Here they were NOT served: `show --json` named a task's deps as bare
+// ids and nothing else, so the one read that gives a WHOLE task was the only one
+// from which "can this move?" could not be answered (t-3acv). The human block
+// now prints each dep's lane; leaving JSON behind would recreate the divergence
+// t-pqme is remembered for.
+//
+// Deliberately NOT a resolved dep array: `deps` already names the edges and
+// `dep --list --json` is the resolved-both-directions shape. A second spelling
+// of the same edge set in a second command is a drift surface; blocked_by is the
+// CONCLUSION, which is what a caller of `show` lacked.
+//
+// All four view shapes carry the pair, --no-body included: that flag trims the
+// PROSE, never the facts, and the lean metadata read is precisely the one an
+// agent uses to decide what to pick up.
+//
+// The embed goes LAST in every shape but metaView, so each keeps the key ORDER
+// it had and the new keys append — the shard rule's reasoning (a new field goes
+// at the end) applied to a view. metaView is the exception on purpose: with no
+// view extras to follow, Task-then-facts is listItemView's own order, which is
+// what "key-for-key an ls row" means.
+type showFacts struct {
+	Actionable bool     `json:"actionable"`
+	BlockedBy  []string `json:"blocked_by"`
+}
+
+func factsOf(it app.ShowItem) showFacts {
+	return showFacts{Actionable: it.Actionable, BlockedBy: it.BlockedBy}
+}
+
+// taskView is task + body_text, and nothing else. `brief --json` embeds it for
+// its next[] rows (output_brief.go), so it is SHARED and must stay exactly that
+// shape: the facts `show` adds live in showTaskView, not here. Widening this
+// type silently added actionable/blocked_by to brief's rows — built without the
+// facts, so they read `false` and `null` on picks that are actionable by
+// construction. A shape two commands emit is changed on purpose or not at all.
 type taskView struct {
 	core.Task
 	BodyText string `json:"body_text"`
+}
+
+// showTaskView is `show`'s default shape: taskView's fields plus the derived
+// facts. core.Task is EMBEDDED, so it must never grow a MarshalJSON — body_text
+// and the showFacts siblings would silently vanish (the listItemView discipline).
+type showTaskView struct {
+	core.Task
+	BodyText string `json:"body_text"`
+	showFacts
 }
 
 // metaBacklinkView is `show --no-body --backlinks`: metadata plus mentioned_by,
@@ -24,21 +74,33 @@ type taskView struct {
 type metaBacklinkView struct {
 	core.Task
 	MentionedBy []mentionRef `json:"mentioned_by"`
+	showFacts
+}
+
+// metaView is `show --no-body`: the bare task plus the derived facts. It is
+// deliberately NOT a bare core.Task any more — the facts are what `ls --json`
+// puts on the same task, and the lean metadata read is exactly the one an agent
+// uses to decide what to pick up.
+type metaView struct {
+	core.Task
+	showFacts
 }
 
 // showView picks the JSON shape for one `show` result. Body and backlinks are
-// each opt-in/out; an omitted facet means its key is absent, and with both
-// off the shape is a bare task — identical to a `ls` element.
+// each opt-in/out; an omitted facet means its key is absent, and with both off
+// the shape is the task plus its derived facts — key-for-key a `ls` element
+// (listItemView), which is what makes `show --no-body --json` a drop-in for the
+// row an agent would otherwise have re-fetched through `ls`.
 func showView(it app.ShowItem, mentions []core.Task, noBody, backlinks bool) any {
 	switch {
 	case noBody && backlinks:
-		return metaBacklinkView{Task: it.Task, MentionedBy: toMentionRefs(mentions)}
+		return metaBacklinkView{Task: it.Task, showFacts: factsOf(it), MentionedBy: toMentionRefs(mentions)}
 	case noBody:
-		return it.Task
+		return metaView{Task: it.Task, showFacts: factsOf(it)}
 	case backlinks:
-		return backlinkView{Task: it.Task, BodyText: it.Body, MentionedBy: toMentionRefs(mentions)}
+		return backlinkView{Task: it.Task, showFacts: factsOf(it), BodyText: it.Body, MentionedBy: toMentionRefs(mentions)}
 	default:
-		return taskView{Task: it.Task, BodyText: it.Body}
+		return showTaskView{Task: it.Task, showFacts: factsOf(it), BodyText: it.Body}
 	}
 }
 
@@ -87,9 +149,9 @@ func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, noBod
 				continue
 			}
 			if backlinks {
-				printTaskDetailWithBacklinks(a, &entries[i].Task.Task, entries[i].Task.Body, mentionsAt(i))
+				printTaskDetailWithBacklinks(a, entries[i].Task, entries[i].Task.Body, mentionsAt(i))
 			} else {
-				printTaskDetail(a, &entries[i].Task.Task, entries[i].Task.Body)
+				printTaskDetail(a, entries[i].Task, entries[i].Task.Body)
 			}
 		}
 	})
@@ -129,14 +191,38 @@ func dueDetail(a *app.App, t *core.Task) string {
 	return s
 }
 
+// epicDetailLine renders the `epic:` value: the membership id followed by the
+// box's title, so reading one task no longer means a second `epic show` to learn
+// which box "e-k3m9" is (t-3acv; six drill runs and an independent refutation
+// agent each stopped at the bare id). A CLOSED box is annotated, an open one is
+// not — the dueDetail rule: spend the width on the abnormal state, since an open
+// box is what every filed task is supposed to have. ref is nil when the
+// membership names no box at all; the bare id is then the honest rendering, and
+// lint's epic-missing is what calls it a defect.
+func epicDetailLine(id string, ref *app.EpicRef) string {
+	if ref == nil || ref.Title == "" {
+		return id
+	}
+	line := id + "  " + ref.Title
+	if ref.State != "" && ref.State != "open" {
+		line += "  (" + ref.State + ")"
+	}
+	return line
+}
+
 // printTaskDetail renders a single task's human detail block for `show`. JSON
 // and NDJSON are handled one layer up in emitShow/showView (which is where the
 // --no-body / --backlinks shape lives), so this is the human path only.
-func printTaskDetail(a *app.App, t *core.Task, body string) {
+//
+// It takes the whole ShowItem, not a bare *core.Task, because the two lines that
+// name OTHER entities (epic, deps) must print what those entities ARE, which the
+// shard's bare ids cannot say — see epicDetailLine and the deps block.
+func printTaskDetail(a *app.App, it *app.ShowItem, body string) {
+	t := &it.Task
 	fmt.Fprintf(out, "%s  %s\n", t.ID, t.Title)
 	fmt.Fprintf(out, "status:   %s\n", t.Status)
 	if t.Epic != "" {
-		fmt.Fprintf(out, "epic:     %s\n", t.Epic)
+		fmt.Fprintf(out, "epic:     %s\n", epicDetailLine(t.Epic, it.EpicRef))
 	}
 	fmt.Fprintf(out, "priority: %d\n", t.Priority)
 	if t.Value != nil {
@@ -155,7 +241,24 @@ func printTaskDetail(a *app.App, t *core.Task, body string) {
 		fmt.Fprintf(out, "repos:    %s\n", strings.Join(t.Repos, ", "))
 	}
 	if len(t.Deps) > 0 {
-		fmt.Fprintf(out, "deps:     %s\n", strings.Join(t.Deps, ", "))
+		// The tally is the checklist's (t-c7kw): a derived N/M a reader would
+		// otherwise compute by eye, and here it IS the question — all deps done
+		// is what lets the task move. Its unsatisfied half is blocked_by,
+		// computed by the app helper every other view already uses, so `show`
+		// cannot disagree with `ls`, `next`, `--tree` or `brief` about what is
+		// in the way.
+		//
+		// The rows go through printTaskRefs — `dep --list`'s OWN renderer, not a
+		// copy of it. Two functions drawing one edge shape is how the two reads
+		// would drift apart again, which is the defect this closes; a dangling
+		// id therefore keeps that renderer's `[?]` too.
+		// The word is the board's DONE LANE, not the literal "done": a board
+		// that renamed it (`[lanes] done = "shipped"`) printed `1/2 done` above
+		// a `[shipped]` row — measured. stateGlyph reads Cfg.DoneLane for the
+		// same reason, and blocked_by is computed against it, so spelling it
+		// twice is how the tally and its own rows come to disagree.
+		fmt.Fprintf(out, "deps:     %d/%d %s\n", len(t.Deps)-len(it.BlockedBy), len(t.Deps), a.Cfg.DoneLane)
+		printTaskRefs(it.Deps)
 	}
 	if len(t.Refs) > 0 {
 		fmt.Fprintf(out, "refs:     %s\n", strings.Join(t.Refs, ", "))
@@ -218,6 +321,7 @@ type backlinkView struct {
 	core.Task
 	BodyText    string       `json:"body_text"`
 	MentionedBy []mentionRef `json:"mentioned_by"`
+	showFacts
 }
 
 // toMentionRefs trims mentioning tasks to the id/title/status an agent needs
@@ -233,8 +337,8 @@ func toMentionRefs(mentions []core.Task) []mentionRef {
 // printTaskDetailWithBacklinks renders `show --backlinks`'s human block: the
 // usual detail plus a "Mentioned in" section. JSON/NDJSON go through
 // emitShow/showView (backlinkView), so this is the human path only.
-func printTaskDetailWithBacklinks(a *app.App, t *core.Task, body string, mentions []core.Task) {
-	printTaskDetail(a, t, body)
+func printTaskDetailWithBacklinks(a *app.App, it *app.ShowItem, body string, mentions []core.Task) {
+	printTaskDetail(a, it, body)
 	fmt.Fprintf(out, "\nMentioned in:\n")
 	refs := toMentionRefs(mentions)
 	if len(refs) == 0 {

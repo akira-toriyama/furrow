@@ -190,6 +190,21 @@ func resolveEpicRef(byID map[string]*core.Epic, id string) EpicRef {
 	return EpicRef{ID: e.ID, Title: e.Title, State: state}
 }
 
+// epicRefFor resolves a MEMBERSHIP id (a task's Epic) against the loaded epic
+// set — resolveEpicRef's slice-input twin, for the one caller that holds epics
+// as a slice and needs exactly one lookup. A membership naming no box yields
+// nil rather than a blank-titled ref: `show` falls back to printing the bare id,
+// and lint's epic-missing owns calling that a defect.
+func epicRefFor(epics []core.Epic, id string) *EpicRef {
+	for i := range epics {
+		if epics[i].ID == id {
+			r := resolveEpicRef(map[string]*core.Epic{id: &epics[i]}, id)
+			return &r
+		}
+	}
+	return nil
+}
+
 // openEpicDeps returns the deps of e that exist and are still OPEN — the
 // unsatisfied edges, sorted. What `epic activate` warns with, `epic ls`
 // surfaces as waits, and epic_dep_done requires to be empty. A dangling dep is
