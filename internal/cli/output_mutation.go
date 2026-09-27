@@ -152,6 +152,9 @@ func changedFields(before, after *core.Task) []string {
 	if !timeEq(before.RepeatAnchor, after.RepeatAnchor) {
 		ch = append(ch, "repeat_anchor")
 	}
+	if before.Anchor != after.Anchor {
+		ch = append(ch, "anchor")
+	}
 	return ch
 }
 

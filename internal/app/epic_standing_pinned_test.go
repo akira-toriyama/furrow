@@ -10,7 +10,7 @@ import (
 // the CLI drives.
 func setFlag(t *testing.T, a *App, id string, standing, pinned *bool) {
 	t.Helper()
-	if _, _, err := a.EpicSet(id, EpicSetOpts{Standing: standing, Pinned: pinned}); err != nil {
+	if _, _, _, err := a.EpicSet(id, EpicSetOpts{Standing: standing, Pinned: pinned}); err != nil {
 		t.Fatalf("epic set %s: %v", id, err)
 	}
 }

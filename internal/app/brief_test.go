@@ -176,7 +176,7 @@ func TestBriefCollapsesQuietPinnedChannels(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{quiet.ID, live.ID} {
-		if _, _, err := a.EpicSet(id, EpicSetOpts{Standing: tr(true), Pinned: tr(true)}); err != nil {
+		if _, _, _, err := a.EpicSet(id, EpicSetOpts{Standing: tr(true), Pinned: tr(true)}); err != nil {
 			t.Fatal(err)
 		}
 	}

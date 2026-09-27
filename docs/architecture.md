@@ -342,7 +342,7 @@ A `.furrow/` store directory contains:
   bodies/<id>.md       prose, one file per task OR epic (hand/agent editable;
                          ids are prefix-disjoint, so one directory is unambiguous)
   bodies/assets/       <id>-<sanitized-name>, written ONLY via Store.SaveAsset
-  meta.json            {"schema_version": 10} — MarshalMeta; stamped only on a
+  meta.json            {"schema_version": 11} — MarshalMeta; stamped only on a
                          fresh store (`init`) or by `furrow upgrade`; an ordinary
                          Save READS it (the write gate) and leaves it alone
   repos/<owner>__<repo>.json   one review shard per repo — MarshalRepo

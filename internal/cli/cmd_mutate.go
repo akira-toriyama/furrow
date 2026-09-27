@@ -844,11 +844,13 @@ func newSetCmd() *cobra.Command {
 		dueShift    string
 		repeatSpec  string
 		clearRepeat bool
+		anchorRef   string
+		clearAnchor bool
 		sel         writeSelector
 	)
 	cmd := &cobra.Command{
 		Use:   "set [<id>...]",
-		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, repos, epic, due, repeat)",
+		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, repos, epic, due, repeat, anchor)",
 		Long: "Combine the routine triage edits into a single write: move a lane (-s),\n" +
 			"position the task (--priority, or --before/--after a task in the destination\n" +
 			"lane — so a cross-lane drop is lane + position in ONE write), set or clear\n" +
@@ -875,7 +877,18 @@ func newSetCmd() *cobra.Command {
 			"anchored to the due of the same write — so `--due <date> --repeat <rule>`\n" +
 			"in ONE write is how a series is re-anchored, --due alone never is, and\n" +
 			"--repeat alone re-anchors the rule to the due the task already carries;\n" +
-			"--clear-repeat) — instead of running move + reorder + value +\n" +
+			"--clear-repeat), and mark the due as FOLLOWING a box's day (--anchor <epic>:\n" +
+			"the box must already carry one, `furrow epic set --anchor YYYY-MM-DD`; when\n" +
+			"that day moves, this due moves with it by the same calendar-day delta —\n" +
+			"the reschedule, one command instead of a --due-shift per guess. The\n" +
+			"pointer needs a due (a task with none is refused, every undated id in\n" +
+			"details.undated, nothing written — promise one in the same write with\n" +
+			"--due) and never sits beside a repeat rule (a series follows its own\n" +
+			"repeat_anchor; details.repeating); --clear-due drops it with the due;\n" +
+			"--clear-anchor drops it alone, the due stays. `show` prints the due as\n" +
+			"D-N against the box's day; `-q anchor:<epic>` / `has:anchor` select the\n" +
+			"followers, `has:due no:anchor` the dates the other side or the calendar\n" +
+			"fixed) — instead of running move + reorder + value +\n" +
 			"effort + label as separate commands. At least one change is required; an unknown lane is\n" +
 			"exit 2 with the configured lanes in candidates (like move/add) and an\n" +
 			"unresolvable -e epic exits 2 with the known boxes,\n" +
@@ -911,8 +924,10 @@ func newSetCmd() *cobra.Command {
 			"  furrow set t-k3m9p --due 2026-08-04     # promise it for that whole day\n" +
 			"  furrow set t-k3m9p --due +1d            # snooze a day from now\n" +
 			"  furrow set t-k3m9p --due-shift +7d      # a week later than it is now promised for\n" +
-			"  furrow set -q 'due:>=2026-10-14 -label:fixed' --due-shift +7d        # preview: old → new per row\n" +
 			"  furrow set -q 'id:t-k3m9p,t-x1y2z' -r '' --due-shift -1d   # ids, previewed via -q id: (-r '' = whole board)\n" +
+			"  furrow set t-k3m9p --due 2026-11-07 --anchor e-v0zd   # promised for D-14 of the box's day, and follows it\n" +
+			"  furrow set -q 'epic:e-v0zd has:due no:repeat' --anchor e-v0zd   # preview: mark the dues that follow the box's day\n" +
+			"  furrow ls -q 'has:due no:anchor'        # the dates the other side (or the calendar) fixed\n" +
 			"  furrow set t-k3m9p --clear-value --rm-label wip\n" +
 			"  furrow set -q 'status:inbox label:bug' -e e-v0zd        # preview\n" +
 			"  furrow set -q 'status:inbox label:bug' -e e-v0zd --yes  # one write",
@@ -969,6 +984,10 @@ func newSetCmd() *cobra.Command {
 			if cmd.Flags().Changed("due-shift") {
 				o.DueShift = &dueShift
 			}
+			if cmd.Flags().Changed("anchor") {
+				o.Anchor = &anchorRef
+			}
+			o.ClearAnchor = clearAnchor
 			// subject names the task in a flag-validation error; a -q/-l/-r
 			// selection has no single task to blame, so it stays "".
 			subject := ""
@@ -985,6 +1004,9 @@ func newSetCmd() *cobra.Command {
 			if f := cmd.Flags().Lookup("due-shift"); f != nil && f.Changed && strings.TrimSpace(dueShift) == "" {
 				return core.Validationf(subject, "--due-shift was given an empty value; pass a signed offset like +7d")
 			}
+			if f := cmd.Flags().Lookup("anchor"); f != nil && f.Changed && strings.TrimSpace(anchorRef) == "" {
+				return core.Validationf(subject, "--anchor was given an empty value; pass the epic whose day the due follows, or use --clear-anchor to remove it")
+			}
 			if err := emptyFlagErr(cmd, subject, "before", "after", "add-label", "rm-label", "add-repo", "rm-repo", "status"); err != nil {
 				return err
 			}
@@ -999,7 +1021,7 @@ func newSetCmd() *cobra.Command {
 				// shows a write the apply would refuse: an edit must exist (the
 				// app's own at-least-one-change rule), and a -s lane must be real.
 				hasEdit := o.Status != nil || o.Value != nil || o.Effort != nil || o.Epic != nil || o.Due != nil ||
-					o.DueShift != nil ||
+					o.DueShift != nil || o.Anchor != nil || o.ClearAnchor ||
 					o.ClearValue || o.ClearEffort || o.ClearDue || o.ClearRepeat || o.Repeat != nil ||
 					len(o.AddLabels) > 0 || len(o.RmLabels) > 0 ||
 					len(o.AddRepos) > 0 || len(o.RmRepos) > 0
@@ -1022,6 +1044,19 @@ func newSetCmd() *cobra.Command {
 						key:     "refused",
 						why:     "cannot be shifted",
 						remedy:  "narrow the selection to the rows that can be shifted (-q has:due) — --yes would exit 2",
+					}
+				}
+				if o.Anchor != nil {
+					// The pointer's two invariants, so the preview marks the rows
+					// --yes would refuse (undated unless --due rides along,
+					// repeating unless --clear-repeat does) instead of promising
+					// them; the epic itself is resolved by the apply.
+					tail = &previewTail{
+						tag:     func(t *core.Task) string { return anchorPreviewTag(t, o) },
+						refused: func(t *core.Task) bool { return anchorPreviewTag(t, o) != "" },
+						key:     "refused",
+						why:     "cannot follow an anchor",
+						remedy:  "narrow the selection to the rows that can follow (-q 'has:due no:repeat') — --yes would exit 2",
 					}
 				}
 				tasks, err := sel.resolve(cmd, a)
@@ -1159,9 +1194,14 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dueShift, "due-shift", "", "move the due each task already carries by a signed offset: +7d, -1w, +2h (m/h/d/w; days and weeks are calendar days in the board's zone, hours and minutes exact); refused on a task with no due")
 	cmd.Flags().StringVar(&repeatSpec, "repeat", "", "recur when closed: daily | every 2 weeks on mon,thu | monthly on last fri | ... (the task must carry a due; a raw RRULE line also works, minus a DTSTART)")
 	cmd.Flags().BoolVar(&clearRepeat, "clear-repeat", false, "stop this task recurring (drops the rule and its anchor)")
+	cmd.Flags().StringVar(&anchorRef, "anchor", "", "make the due follow this epic's day (id, unique prefix, or unique title substring; the box must carry one): when the day moves, so does the due; needs a due, refused beside --repeat")
+	cmd.Flags().BoolVar(&clearAnchor, "clear-anchor", false, "stop the due following a box's day (the due stays)")
 	// Without this the rebind is silently discarded: applySet's switch puts
 	// --clear-repeat first, so `--repeat X --clear-repeat` looked like it took.
 	cmd.MarkFlagsMutuallyExclusive("repeat", "clear-repeat")
+	cmd.MarkFlagsMutuallyExclusive("anchor", "clear-anchor")
+	cmd.MarkFlagsMutuallyExclusive("anchor", "clear-due")
+	cmd.MarkFlagsMutuallyExclusive("anchor", "repeat")
 	// StringSlice, not StringArray: these edit the SAME field `label --add` does
 	// (cmd_mutate.go's newLabelCmd), and comma is how every label surface splits —
 	// `-l a,b` is OR on reads. As StringArray, `set --add-label "a,b"` stored the
@@ -1197,6 +1237,20 @@ func shiftPreviewTag(a *app.App, t *core.Task, spelling string) string {
 		return "lands outside years 1..9999 — refused"
 	}
 	return "→ " + shifted.In(a.Calendar()).Format("2006-01-02 15:04")
+}
+
+// anchorPreviewTag is the preview row's verdict on `set -q --anchor`: "" for a
+// row the apply would mark, else why it would be refused — no due (unless the
+// same write promises one) or a repeat rule (unless the same write drops it).
+// previewTail.refused reads the non-empty case.
+func anchorPreviewTag(t *core.Task, o app.SetOpts) string {
+	switch {
+	case t.Due == nil && o.Due == nil:
+		return "no due — refused"
+	case t.Repeat != "" && !o.ClearRepeat:
+		return "repeats — refused"
+	}
+	return ""
 }
 
 // emptyFlagErr names a flag that WAS passed but carried nothing pflag kept — a

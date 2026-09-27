@@ -52,7 +52,7 @@ func TestSetRefusalNamesEveryFlag(t *testing.T) {
 	}
 
 	box := mustEpic(t, a, "box", EpicAddOpts{})
-	_, _, err = a.EpicSet(box, EpicSetOpts{})
+	_, _, _, err = a.EpicSet(box, EpicSetOpts{})
 	if err == nil {
 		t.Fatal("an empty epic set must be refused")
 	}

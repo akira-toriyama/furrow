@@ -70,15 +70,19 @@ type References struct {
 	Links    []LinkRef   `json:"links"`     // live [[id]] links in any body
 	Members  []MemberRef `json:"members"`   // tasks filed under a target epic
 	EpicDeps []DepEdge   `json:"epic_deps"` // epic dep edges naming a target epic
+	// Followers are the tasks whose due follows a target epic's day (their
+	// `anchor` names it) — a second pointer from task to box, severed like
+	// membership: the pointer is dropped, the due stays where it is.
+	Followers []MemberRef `json:"followers"`
 }
 
 func newReferences() References {
-	return References{Deps: []DepEdge{}, Links: []LinkRef{}, Members: []MemberRef{}, EpicDeps: []DepEdge{}}
+	return References{Deps: []DepEdge{}, Links: []LinkRef{}, Members: []MemberRef{}, EpicDeps: []DepEdge{}, Followers: []MemberRef{}}
 }
 
 // Empty reports whether nothing references the targets.
 func (r References) Empty() bool {
-	return len(r.Deps)+len(r.Links)+len(r.Members)+len(r.EpicDeps) == 0
+	return len(r.Deps)+len(r.Links)+len(r.Members)+len(r.EpicDeps)+len(r.Followers) == 0
 }
 
 // Summary is the one-line human rendering the refusal message carries.
@@ -107,6 +111,13 @@ func (r References) Summary() string {
 	}
 	if n := len(r.EpicDeps); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d epic dep edge(s) from %s", n, strings.Join(uniqueFrom(r.EpicDeps), ", ")))
+	}
+	if n := len(r.Followers); n > 0 {
+		ids := make([]string, 0, n)
+		for _, m := range r.Followers {
+			ids = append(ids, m.Task)
+		}
+		parts = append(parts, fmt.Sprintf("%d follower(s) of its anchor: %s", n, strings.Join(ids, ", ")))
 	}
 	return strings.Join(parts, "; ")
 }
@@ -279,6 +290,9 @@ func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 		if idx.Tasks[i].Epic == id {
 			refs.Members = append(refs.Members, MemberRef{Task: idx.Tasks[i].ID, Epic: id})
 		}
+		if idx.Tasks[i].Anchor == id {
+			refs.Followers = append(refs.Followers, MemberRef{Task: idx.Tasks[i].ID, Epic: id})
+		}
 	}
 	for i := range epics {
 		if epics[i].ID == id {
@@ -320,6 +334,9 @@ func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 	for i := range idx.Tasks {
 		if idx.Tasks[i].Epic == id {
 			idx.Tasks[i].Epic = ""
+		}
+		if idx.Tasks[i].Anchor == id {
+			idx.Tasks[i].Anchor = ""
 		}
 	}
 	if err := a.Store.Save(idx); err != nil {
@@ -434,6 +451,11 @@ func (a *App) guardReferenceOwners(idx *core.Index, epics []core.Epic, refs Refe
 			return err
 		}
 	}
+	for _, m := range refs.Followers {
+		if err := guardOwner(m.Task); err != nil {
+			return err
+		}
+	}
 	for _, d := range refs.EpicDeps {
 		if err := guardOwner(d.From); err != nil {
 			return err
@@ -456,7 +478,7 @@ func referencedErr(subject string, refs References) *core.Error {
 		Kind:    core.KindReferenced,
 		Subject: subject,
 		Msg: fmt.Sprintf("still referenced — %s; drop the references first, or pass --force to sever them "+
-			"(dep edges dropped, [[links]] de-linked to the bare id, members unfiled)", refs.Summary()),
+			"(dep edges dropped, [[links]] de-linked to the bare id, members unfiled, followers unpointed — their dues stay)", refs.Summary()),
 		Details: map[string]any{"references": refs},
 	}
 }

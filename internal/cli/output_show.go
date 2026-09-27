@@ -210,6 +210,28 @@ func epicDetailLine(id string, ref *app.EpicRef) string {
 	return line
 }
 
+// anchorDetailLine renders the `anchor:` value: the box the due follows, its
+// title, its day, and the due as a D-N count against that day — the
+// derivation furrow never stores, computed here from due − anchor in the
+// board's calendar. ref is nil when the pointer names no box (the bare id,
+// lint's anchor-missing) and Date is "" when the box has no day (anchor-unset).
+func anchorDetailLine(a *app.App, t *core.Task, ref *app.AnchorRef) string {
+	if ref == nil {
+		return t.Anchor
+	}
+	line := epicDetailLine(t.Anchor, &ref.EpicRef)
+	if ref.Date == "" {
+		return line + "  (no day set on the box)"
+	}
+	line += "  " + ref.Date
+	if t.Due != nil {
+		if days, err := core.AnchorOffsetDays(ref.Date, *t.Due, a.Calendar()); err == nil {
+			line += "  (due at " + core.FormatAnchorOffset(days) + ")"
+		}
+	}
+	return line
+}
+
 // printTaskDetail renders a single task's human detail block for `show`. JSON
 // and NDJSON are handled one layer up in emitShow/showView (which is where the
 // --no-body / --backlinks shape lives), so this is the human path only.
@@ -294,6 +316,9 @@ func printTaskDetail(a *app.App, it *app.ShowItem, body string) {
 	}
 	if d := dueDetail(a, t); d != "" {
 		fmt.Fprintf(out, "due:      %s\n", d)
+	}
+	if t.Anchor != "" {
+		fmt.Fprintf(out, "anchor:   %s\n", anchorDetailLine(a, t, it.AnchorRef))
 	}
 	fmt.Fprintf(out, "created:  %s\n", humanTime(t.Created))
 	fmt.Fprintf(out, "updated:  %s\n", humanTime(t.Updated))

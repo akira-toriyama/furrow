@@ -30,6 +30,7 @@ func newAddCmd() *cobra.Command {
 		epicRef    string
 		due        string
 		repeatSpec string
+		anchorRef  string
 	)
 	cmd := &cobra.Command{
 		Use:   "add <title>...",
@@ -107,10 +108,13 @@ func newAddCmd() *cobra.Command {
 			if cmd.Flags().Changed("repeat") && strings.TrimSpace(repeatSpec) == "" {
 				return core.Validationf("", "--repeat was given an empty value; pass a rule, or drop the flag to create the task without one")
 			}
+			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchorRef) == "" {
+				return core.Validationf("", "--anchor was given an empty value; pass the epic whose day the due follows, or drop the flag")
+			}
 			opts := app.AddOpts{
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
 				Deps: deps, Refs: refs, Body: body, Checklist: app.UncheckedItems(checks),
-				Epic: epicRef, Due: due, Repeat: repeatSpec,
+				Epic: epicRef, Due: due, Repeat: repeatSpec, Anchor: anchorRef,
 				// An explicit `-e ''` means "unfiled, on purpose" — suppress the
 				// active-epic inheritance a bare add gets.
 				NoEpic: cmd.Flags().Changed("epic") && epicRef == "",
@@ -174,6 +178,8 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "epic to file this task under (id, unique id prefix, or unique title substring; default: the scope's single active epic, '' stays unfiled)")
 	cmd.Flags().StringVar(&due, "due", "", "promise this for a date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d")
 	cmd.Flags().StringVar(&repeatSpec, "repeat", "", "recur when closed: daily | every 2 weeks on mon,thu | monthly on last fri | ... (needs --due; a raw RRULE line also works, minus a DTSTART — --due is the series start)")
+	cmd.Flags().StringVar(&anchorRef, "anchor", "", "make the due follow this epic's day (the box must carry one; needs --due, refused beside --repeat): when the day moves, so does the due")
+	cmd.MarkFlagsMutuallyExclusive("anchor", "repeat")
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
 	cmd.Flags().StringArrayVar(&refs, "ref", nil, "reference (file:line or URL; verbatim; repeatable)")
 	cmd.Flags().StringVar(&body, "body", "", "initial body markdown ('-' reads stdin; default: a heading from the title)")

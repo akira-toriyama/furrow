@@ -211,12 +211,12 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 			if it.Waiting != nil {
 				line += "  " + waitingUntil(a, it.Waiting)
 			}
-			fmt.Fprintln(out, line)
+			fmt.Fprintln(out, withTags(line, anchorTag(&it.Epic)))
 		}
 		// The pinned channels ride under the focus line: their tasks lead next,
 		// so the header must say which boxes injected them.
 		for _, it := range b.Pinned {
-			fmt.Fprintf(out, "epic: 📌 %s  %d/%d  %s\n", it.Epic.ID, it.Progress.Done, it.Progress.Total, it.Epic.Title)
+			fmt.Fprintln(out, withTags(fmt.Sprintf("epic: 📌 %s  %d/%d  %s", it.Epic.ID, it.Progress.Done, it.Progress.Total, it.Epic.Title), anchorTag(&it.Epic)))
 		}
 		if b.PinnedQuiet > 0 {
 			fmt.Fprintf(out, "epic: 📌 +%d quiet pinned (no open members)\n", b.PinnedQuiet)

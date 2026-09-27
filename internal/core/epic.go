@@ -131,6 +131,20 @@ type Epic struct {
 	// a board that reviews no boxes rewrites no shards.
 	Reviewed *time.Time `json:"reviewed,omitempty"`
 
+	// Anchor is the box's own calendar day (schema v11) — the event, the
+	// release, the deadline every derived date counts back from — as a bare
+	// YYYY-MM-DD, or "" for a box that has none. A DAY, not an instant: the
+	// derived dues are the instants, and "D-14" is a count of days. Its readers
+	// are `epic set --anchor <new day>`, which moves every task whose Anchor
+	// names this box by the day delta, `show`, which renders a follower's due as
+	// D-N against it, and the epic rows of `epic ls`/`brief`, so a session sees
+	// the one date the box hangs from at its first read. A box carries at most
+	// one; a project with several dates is several boxes. Meta was where this
+	// lived before v11 (`event_date`), and Meta's contract is that furrow never
+	// interprets it — which is exactly why the reschedule could not. omitempty,
+	// so a board that anchors no box keeps its exact pre-v11 bytes.
+	Anchor string `json:"anchor,omitempty"`
+
 	// extras: the unknown-key passthrough's carrier — passthrough.go states
 	// the contract once; Task's comment carries the MarshalJSON rule.
 	extras Extras
