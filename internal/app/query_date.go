@@ -98,6 +98,12 @@ func parseRelativeOffset(s string) (time.Duration, bool) {
 	default:
 		return 0, false
 	}
+	// Digits only between the sign and the unit: strconv.Atoi takes a sign of
+	// its own, so `++7d` read as +7d and `-+7d` as -7d — a typo that silently
+	// inverted the direction of a write, first seen as a bulk `--due-shift`.
+	if s[1] < '0' || s[1] > '9' {
+		return 0, false
+	}
 	n, err := strconv.Atoi(s[1 : len(s)-1])
 	if err != nil || n < 0 {
 		return 0, false

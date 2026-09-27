@@ -484,3 +484,207 @@ func TestCLITreeShowsDue(t *testing.T) {
 		}
 	}
 }
+
+// --due-shift moves the due each task already carries; the human line echoes
+// the instant it bound, and the JSON envelope's after.due is the before plus
+// the offset — never an instant measured from now (that is --due's snooze).
+func TestCLISetDueShift(t *testing.T) {
+	initStore(t)
+	id := addTask(t, "venue booking", "-s", "ready", "-r", "o/r", "--due", "2126-11-21T21:30")
+
+	stdout := mustRun(t, "set", id, "--due-shift", "+7d")
+	want := time.Date(2126, 11, 28, 21, 30, 0, 0, time.Local)
+	if !strings.Contains(stdout, "due "+want.Format("2006-01-02 15:04")) {
+		t.Errorf("the set line should echo the shifted due %s:\n%s", want.Format("2006-01-02 15:04"), stdout)
+	}
+
+	out, code := run(t, "--json", "set", id, "--due-shift", "-1w")
+	if code != 0 {
+		t.Fatalf("set --due-shift -1w exit = %d:\n%s", code, out)
+	}
+	var env struct {
+		Before  map[string]any `json:"before"`
+		After   map[string]any `json:"after"`
+		Changed []string       `json:"changed"`
+	}
+	if err := json.Unmarshal(showOne(t, out), &env); err != nil {
+		t.Fatalf("parse set --json: %v\n%s", err, out)
+	}
+	if !slices.Contains(env.Changed, "due") {
+		t.Errorf("changed = %v, want it to name due", env.Changed)
+	}
+	before, _ := time.Parse(time.RFC3339, env.Before["due"].(string))
+	after, _ := time.Parse(time.RFC3339, env.After["due"].(string))
+	if !after.Equal(before.AddDate(0, 0, -7)) {
+		t.Errorf("after.due = %s, want before (%s) minus a week", after, before)
+	}
+	if !after.Equal(time.Date(2126, 11, 21, 21, 30, 0, 0, time.Local)) {
+		t.Errorf("the wall clock must survive the round trip: after.due = %s", after.In(time.Local))
+	}
+
+	// A plain --due still echoes what it bound: the bare date is the END of the day.
+	stdout = mustRun(t, "set", id, "--due", "2126-12-01")
+	if !strings.Contains(stdout, "due 2126-12-01 23:59") {
+		t.Errorf("the set line should echo the bound due:\n%s", stdout)
+	}
+}
+
+// The refusals: no due to shift (the id named, in details.undated), a shift
+// beside --due/--clear-due, an empty or zero or absolute spelling — every one
+// exit 2 with nothing written.
+func TestCLISetDueShiftRefusals(t *testing.T) {
+	initStore(t)
+	dated := addTask(t, "dated", "-s", "ready", "-r", "o/r", "--due", "2126-11-21")
+	undated := addTask(t, "undated", "-s", "ready", "-r", "o/r")
+	stamp := func(id string) string {
+		var task struct {
+			Updated string `json:"updated"`
+			Due     string `json:"due"`
+		}
+		out := mustRun(t, "--json", "show", id)
+		if err := json.Unmarshal(showOne(t, out), &task); err != nil {
+			t.Fatalf("parse show: %v\n%s", err, out)
+		}
+		return task.Updated + " " + task.Due
+	}
+	wasDated, wasUndated := stamp(dated), stamp(undated)
+
+	fe, out := runErr(t, "set", undated, "--due-shift", "+1d")
+	if fe == nil || fe.Code != 2 {
+		t.Fatalf("shifting an undated task should be exit 2, got %v:\n%s", fe, out)
+	}
+	if fe.Subject != undated {
+		t.Errorf("subject = %q, want the undated task", fe.Subject)
+	}
+	details, _ := fe.Details.(map[string]any)
+	if got, _ := details["undated"].([]string); !slices.Equal(got, []string{undated}) {
+		t.Errorf("details.undated = %v, want [%s]", details["undated"], undated)
+	}
+
+	// The batch is all-or-nothing: the dated task is not shifted when the
+	// undated one refuses, and the refusal names every undated id.
+	fe, out = runErr(t, "set", dated, undated, "--due-shift", "+1d")
+	if fe == nil || fe.Code != 2 {
+		t.Fatalf("a batch with an undated task should be exit 2, got %v:\n%s", fe, out)
+	}
+	if fe.Subject != "" {
+		t.Errorf("a batch refusal has no single subject, got %q", fe.Subject)
+	}
+
+	for _, args := range [][]string{
+		{"set", dated, "--due-shift", "+1d", "--due", "2126-01-01"},
+		{"set", dated, "--due-shift", "+1d", "--clear-due"},
+		{"set", dated, "--due-shift", ""},
+		{"set", dated, "--due-shift", "+0d"},
+		{"set", dated, "--due-shift", "2126-01-01"},
+		{"set", dated, "--due-shift", "7d"},
+	} {
+		fe, out := runErr(t, args...)
+		if fe == nil {
+			t.Errorf("%v should have failed:\n%s", args, out)
+			continue
+		}
+		if fe.Code != 2 {
+			t.Errorf("%v exit = %d, want 2 (validation)", args, fe.Code)
+		}
+	}
+	if got := stamp(dated); got != wasDated {
+		t.Errorf("a refused shift wrote the dated task: %s -> %s", wasDated, got)
+	}
+	if got := stamp(undated); got != wasUndated {
+		t.Errorf("a refused shift wrote the undated task: %s -> %s", wasUndated, got)
+	}
+}
+
+// A -q selection previews the shift as old → new per row and names the rows
+// the apply would refuse; `-q 'id:…'` is how an explicit id list gets that
+// preview. --yes over dated rows applies each from its own stamp.
+func TestCLISetDueShiftPreview(t *testing.T) {
+	initStore(t)
+	a := addTask(t, "venue booking", "-s", "ready", "-r", "o/r", "--due", "2126-11-21T21:30")
+	b := addTask(t, "menu tasting", "-s", "ready", "-r", "o/r", "--due", "2126-11-20")
+	c := addTask(t, "undated", "-s", "ready", "-r", "o/r")
+
+	// With an undated row in the selection the preview must not promise the
+	// write: the count line says 0 will be written, the row is marked, and the
+	// closing line is the remedy rather than the re-run.
+	sel := "id:" + a + "," + b + "," + c
+	stdout, stderr := mustSplit(t, "set", "-q", sel, "--due-shift", "+7d")
+	for _, want := range []string{
+		"would set 0 of 3 task(s): 1 cannot be shifted, and the write is all-or-nothing",
+		"due 2126-11-21 21:30  → 2126-11-28 21:30",
+		"due 2126-11-20 23:59  → 2126-11-27 23:59",
+		c + "  [ready] undated  no due — refused",
+		"narrow the selection to the rows that can be shifted (-q has:due) — --yes would exit 2",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("preview lacks %q:\n%s%s", want, stdout, stderr)
+		}
+	}
+	if strings.Contains(stdout, "re-run with --yes") {
+		t.Errorf("a preview the apply would refuse must not invite the re-run:\n%s", stdout)
+	}
+	out := mustRun(t, "--json", "show", a)
+	var shown struct {
+		Due string `json:"due"`
+	}
+	if err := json.Unmarshal(showOne(t, out), &shown); err != nil {
+		t.Fatalf("parse show --json: %v\n%s", err, out)
+	}
+	if got, _ := time.Parse(time.RFC3339, shown.Due); !got.Equal(time.Date(2126, 11, 21, 21, 30, 0, 0, time.Local)) {
+		t.Errorf("a preview must not write: due = %s", shown.Due)
+	}
+
+	// JSON keeps the documented object shape and names the refused ids.
+	out = mustRun(t, "--json", "set", "-q", sel, "--due-shift", "+7d")
+	var preview struct {
+		DryRun  bool             `json:"dry_run"`
+		Tasks   []map[string]any `json:"tasks"`
+		Refused []string         `json:"refused"`
+	}
+	if err := json.Unmarshal([]byte(out), &preview); err != nil || !preview.DryRun || len(preview.Tasks) != 3 {
+		t.Errorf("JSON preview = %s (err %v), want {dry_run: true, tasks: [3], refused}", out, err)
+	}
+	if !slices.Equal(preview.Refused, []string{c}) {
+		t.Errorf("JSON preview refused = %v, want [%s]", preview.Refused, c)
+	}
+
+	// A landing past year 9999 is the other refusal, and the preview says so
+	// too instead of drawing an arrow to a date no due can hold.
+	// A morning clock, so the stored UTC instant stays inside year 9999 in
+	// every machine zone the suite may run in; the shift still lands past it.
+	far := addTask(t, "far", "-s", "ready", "-r", "o/r", "--due", "9999-12-31T09:00")
+	stdout = mustRun(t, "set", "-q", "id:"+far, "--due-shift", "+1d")
+	if !strings.Contains(stdout, "lands outside years 1..9999 — refused") || strings.Contains(stdout, "re-run with --yes") {
+		t.Errorf("an out-of-range landing should be marked refused:\n%s", stdout)
+	}
+	if fe, _ := runErr(t, "set", far, "--due-shift", "+1d"); fe == nil || fe.Code != 2 {
+		t.Errorf("an out-of-range landing should be exit 2 validation, got %v", fe)
+	}
+
+	// Narrowed to dated rows the preview is the ordinary one: a count, the
+	// re-run hint, no undated key.
+	stdout = mustRun(t, "set", "-q", sel+" has:due", "--due-shift", "+7d")
+	if !strings.Contains(stdout, "would set 2 task(s)") || !strings.Contains(stdout, "re-run with --yes") {
+		t.Errorf("a dated-only preview should count and invite the re-run:\n%s", stdout)
+	}
+	out = mustRun(t, "--json", "set", "-q", sel+" has:due", "--due-shift", "+7d")
+	if strings.Contains(out, `"refused"`) {
+		t.Errorf("a dated-only JSON preview must not carry refused:\n%s", out)
+	}
+
+	// The apply refuses the whole selection while an undated row is in it…
+	fe, _ := runErr(t, "set", "-q", sel, "--due-shift", "+7d", "--yes")
+	if fe == nil || fe.Code != 2 {
+		t.Fatalf("--yes over an undated row should be exit 2, got %v", fe)
+	}
+	// …and narrowed to dated rows, shifts each from its own stamp.
+	stdout = mustRun(t, "set", "-q", sel+" has:due", "--due-shift", "+7d", "--yes")
+	if !strings.Contains(stdout, "due 2126-11-28 21:30") || !strings.Contains(stdout, "due 2126-11-27 23:59") {
+		t.Errorf("the applied lines should echo each shifted due:\n%s", stdout)
+	}
+	out = mustRun(t, "--json", "show", c)
+	if strings.Contains(out, `"due"`) {
+		t.Errorf("the undated task must stay undated:\n%s", out)
+	}
+}

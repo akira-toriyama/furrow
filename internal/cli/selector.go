@@ -103,30 +103,69 @@ func taskIDs(tasks []core.Task) []string {
 	return ids
 }
 
+// previewTail is what a write-specific preview adds to the generic one: a tag
+// per human row (what THIS write would make of the row — a shifted due — which
+// a listing of the matches alone cannot say), and the rows the all-or-nothing
+// apply would REFUSE. A preview must not promise a write the apply will not
+// make, so with any refused row the count line says 0 will be written, the
+// closing line names the remedy instead of the re-run, and the JSON object
+// carries the refused ids under key beside {dry_run, tasks}.
+type previewTail struct {
+	tag     func(*core.Task) string // per-row tag, after the due; "" for none
+	refused func(*core.Task) bool   // a row that makes --yes exit 2
+	key     string                  // JSON key for the refused ids
+	why     string                  // what such a row lacks ("carry no due to shift")
+	remedy  string                  // the human closing line when any row is refused
+}
+
 // emitSelectPreview renders the would-be write without performing it —
 // archive's preview contract: JSON/NDJSON emit {dry_run: true, tasks} (an
 // OBJECT, distinguishable by dry_run from the apply's envelope array), human
 // mode lists the matches and names the re-run. action is the whole verb
-// phrase ("close", "move to ready", "set").
-func emitSelectPreview(a *app.App, action string, tasks []core.Task) {
+// phrase ("close", "move to ready", "set"); tail is nil for a write that has
+// nothing to add to the generic rendering.
+func emitSelectPreview(a *app.App, action string, tasks []core.Task, tail *previewTail) {
 	if tasks == nil {
 		tasks = []core.Task{} // array shape, never null
 	}
+	var refused []string
+	if tail != nil && tail.refused != nil {
+		for i := range tasks {
+			if tail.refused(&tasks[i]) {
+				refused = append(refused, tasks[i].ID)
+			}
+		}
+	}
 	if jsonMode() {
-		emitObject(map[string]any{"dry_run": true, "tasks": tasks})
+		obj := map[string]any{"dry_run": true, "tasks": tasks}
+		if len(refused) > 0 {
+			obj[tail.key] = refused
+		}
+		emitObject(obj)
 		return
 	}
-	fmt.Fprintf(out, "would %s %d task(s)\n", action, len(tasks))
+	if len(refused) > 0 {
+		fmt.Fprintf(out, "would %s 0 of %d task(s): %d %s, and the write is all-or-nothing\n", action, len(tasks), len(refused), tail.why)
+	} else {
+		fmt.Fprintf(out, "would %s %d task(s)\n", action, len(tasks))
+	}
 	for _, t := range tasks {
 		// The shared row tags, because this row IS a task rendered as a task —
 		// and it is the row a close is launched from, which is the case
 		// repeatTag exists for. Untagged, the gate on a write that MINTS tasks
 		// showed a repeating match and a one-off match as the same line.
+		extra := ""
+		if tail != nil && tail.tag != nil {
+			extra = tail.tag(&t)
+		}
 		fmt.Fprintf(out, "  %s\n", withTags(
 			fmt.Sprintf("%s  [%s] %s", t.ID, t.Status, t.Title),
-			dueTag(a, &t), repeatTag(&t)))
+			dueTag(a, &t), extra, repeatTag(&t)))
 	}
-	if len(tasks) > 0 {
+	switch {
+	case len(refused) > 0:
+		fmt.Fprintln(out, tail.remedy)
+	case len(tasks) > 0:
 		fmt.Fprintln(out, "re-run with --yes to apply")
 	}
 }
