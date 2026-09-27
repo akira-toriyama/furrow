@@ -1,7 +1,8 @@
 // The task table: the rows `ls`, `next` and `revisit` print, and the JSON
-// views that ride beside them (actionable reasons, revisit signals). Row
-// tags (due/repeat glyphs) live in output.go — every view that renders a task
-// as a task shares them, so a new tag is added there, not here.
+// views that ride beside them (actionable reasons, revisit signals — the
+// latter also end `revisit`'s human rows). Row tags (due/repeat glyphs) live
+// in output.go — every view that renders a task as a task shares them, so a
+// new tag is added there, not here.
 
 package cli
 
@@ -16,7 +17,7 @@ import (
 // printTaskTable renders tasks as an aligned text table (human output). It is
 // deliberately plain (no box drawing) so it greps and copies cleanly.
 func printTaskTable(a *app.App, tasks []core.Task) {
-	printRows(a, tasks, nil)
+	printRows(a, tasks, nil, nil)
 }
 
 // printRows is the one human task table: id, lane, priority and the title cell
@@ -25,8 +26,13 @@ func printTaskTable(a *app.App, tasks []core.Task) {
 // would widen every row on every board for a field only a few tasks carry).
 // glyphs, when given, is one leading state column per row (the flat `ls`);
 // nil is the glyph-less table every other list prints. Two copies differed by
-// that column alone (t-3tq4).
-func printRows(a *app.App, tasks []core.Task, glyphs []string) {
+// that column alone (t-3tq4). trail, when given, is one per-row trailer
+// printed after the tags as `  ← <trail>` — the row's WHY (`revisit`'s
+// signals), the same edge brief's blocked band ends its rows with; an empty
+// string ends the row plainly. It is a trailer, not a column: the title cell
+// is unbounded, so nothing after it can align, and a header would name a
+// column that is not there.
+func printRows(a *app.App, tasks []core.Task, glyphs, trail []string) {
 	if len(tasks) == 0 {
 		fmt.Fprintln(out, "(no tasks)")
 		return
@@ -59,6 +65,9 @@ func printRows(a *app.App, tasks []core.Task, glyphs []string) {
 		g := ""
 		if glyphs != nil {
 			g = glyphs[i]
+		}
+		if trail != nil && trail[i] != "" {
+			title += "  ← " + trail[i]
 		}
 		fmt.Fprintf(out, "%s%-*s  %-*s  %5d  %s\n", lead(g), wID, t.ID, wStatus, t.Status, t.Priority, title)
 	}
@@ -128,10 +137,30 @@ type revisitView struct {
 	Revisit []core.RevisitReason `json:"revisit"`
 }
 
+// signalTrailer is the human row's rendering of a task's revisit signals:
+// `code: detail` pairs joined by `; ` (a detail is a sentence, so the id
+// separator `, ` would read as part of it), in the order the JSON carries them.
+// The detail rides with the code because the code alone misleads: `dep_done`
+// was read as "every dep is done" in seven drill runs running, and only
+// `--json` said it meant one dep — the row now names that dep.
+func signalTrailer(rs []core.RevisitReason) string {
+	parts := make([]string, 0, len(rs))
+	for _, r := range rs {
+		if r.Detail == "" {
+			parts = append(parts, r.Code)
+			continue
+		}
+		parts = append(parts, r.Code+": "+r.Detail)
+	}
+	return strings.Join(parts, "; ")
+}
+
 // emitRevisit renders `revisit` results. In --json / --ndjson it attaches the
 // reasons to each task so an agent sees exactly what to fix; the human table is
-// the shared one. Unlike `next`, an empty result is the healthy "nothing to
-// revisit" state and exits 0 — an agent pipeline must not treat it as an error.
+// the shared one with each row ending `← code: detail` — the same reasons, so
+// the table alone says WHY a row is here. Unlike `next`, an empty result is the
+// healthy "nothing to revisit" state and exits 0 — an agent pipeline must not
+// treat it as an error.
 func emitRevisit(a *app.App, items []app.RevisitItem) error {
 	views := make([]revisitView, 0, len(items))
 	for _, it := range items {
@@ -139,10 +168,12 @@ func emitRevisit(a *app.App, items []app.RevisitItem) error {
 	}
 	emitList(views, func() {
 		tasks := make([]core.Task, 0, len(items))
+		trail := make([]string, 0, len(items))
 		for _, it := range items {
 			tasks = append(tasks, it.Task)
+			trail = append(trail, signalTrailer(it.Reasons))
 		}
-		printTaskTable(a, tasks)
+		printRows(a, tasks, nil, trail)
 	})
 	return nil
 }

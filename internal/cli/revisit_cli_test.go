@@ -151,3 +151,50 @@ func TestCLIRevisitConfigStaleDaysDefault(t *testing.T) {
 		t.Errorf("config [revisit].stale_days should surface the aged task as stale:\n%s", out)
 	}
 }
+
+// TestCLIRevisitHumanRowsEndWithSignals pins the human table's trailer: every
+// row ends `← code: detail` (several signals joined by `; `), the same reasons
+// --json attaches. The row is still ONE line per task, so `revisit | grep <id>`
+// yields the signal with it. Seven drill runs in a row read a bare `dep_done`
+// row as "every dep is done" and reached for --json to learn it meant one dep;
+// the row now names that dep.
+func TestCLIRevisitHumanRowsEndWithSignals(t *testing.T) {
+	initStore(t)
+	gate := addTask(t, "gate", "-s", "ready", "--value", "3", "--effort", "2", "-r", "o/r")
+	other := addTask(t, "still open", "-s", "ready", "--value", "3", "--effort", "2", "-r", "o/r")
+	waits := addTask(t, "waits on gate and other", "-s", "ready", "--value", "3", "--effort", "2", "-r", "o/r")
+	if _, code := run(t, "dep", waits, gate, other); code != 0 {
+		t.Fatalf("dep exit = %d", code)
+	}
+	if _, code := run(t, "done", gate); code != 0 {
+		t.Fatalf("done exit = %d", code)
+	}
+	unest := addTask(t, "needs estimates", "-s", "ready", "-r", "o/r")
+
+	out, code := run(t, "revisit")
+	if code != 0 {
+		t.Fatalf("revisit exit = %d:\n%s", code, out)
+	}
+	rowOf := func(id string) string {
+		t.Helper()
+		var hits []string
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, id) {
+				hits = append(hits, line)
+			}
+		}
+		if len(hits) != 1 {
+			t.Fatalf("%s should be exactly one row (grep-able), got %d:\n%s", id, len(hits), out)
+		}
+		return hits[0]
+	}
+	if row, want := rowOf(waits), "  ← dep_done: dep "+gate+" is done"; !strings.HasSuffix(row, want) {
+		t.Errorf("dep_done row should end %q (naming the ONE done dep), got:\n%s", want, row)
+	}
+	if row, want := rowOf(unest), "  ← value_unset: value estimate missing; effort_unset: effort estimate missing"; !strings.HasSuffix(row, want) {
+		t.Errorf("multi-signal row should end %q, got:\n%s", want, row)
+	}
+	if strings.Contains(out, other) {
+		t.Errorf("a task with no signal must not surface (%s):\n%s", other, out)
+	}
+}

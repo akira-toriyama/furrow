@@ -47,5 +47,5 @@ func printListItemTable(a *app.App, items []app.ListItem) {
 		tasks = append(tasks, it.Task)
 		glyphs = append(glyphs, stateGlyph(a, it.Actionable, it.Task.Status))
 	}
-	printRows(a, tasks, glyphs)
+	printRows(a, tasks, glyphs, nil)
 }
