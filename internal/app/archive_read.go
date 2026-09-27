@@ -43,6 +43,19 @@ func (a *App) listIndex(o QueryOpts) (*core.Index, error) {
 // GetBatchArchived is GetBatch against the archive store — the read side of
 // `show --archived`. A missing archive dir loads as an empty index, so an id
 // that was never archived simply comes back in missing.
+//
+// The derived facts come from the ARCHIVE SNAPSHOT ALONE, which is what makes
+// this read agree with `ls --archived` (a.listIndex makes the same choice). The
+// tempting alternative — resolve dep edges across both stores so an edge from
+// retired work into live work renders its real lane instead of `[?]` — was
+// built and measured, and it split the board's answer in two: with an archived
+// task whose only dep was done and still hot, `ls --archived` reported
+// blocked_by [that dep] while `show --archived` reported [], and the human
+// block printed `deps: 1/1 done` where the archive alone says 0/1. Two reads
+// disagreeing about one task is the defect this whole change exists to close,
+// so the union is refused and `[?]` is accepted: it is the honest answer for a
+// snapshot read, and it matches `dep --list`, which will not resolve an
+// archived id either (exit 1, not found).
 func (a *App) GetBatchArchived(ids []string, withBody bool) ([]ShowItem, []string, error) {
 	arc, err := a.archiveStore()
 	if err != nil {
@@ -52,7 +65,31 @@ func (a *App) GetBatchArchived(ids []string, withBody bool) ([]ShowItem, []strin
 	if err != nil {
 		return nil, nil, err
 	}
-	return getBatchFrom(idx, arc.LoadBody, ids, withBody)
+	items, missing, err := a.getBatchFrom(idx, nil, arc.LoadBody, ids, withBody)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The box title is the one fact that DOES cross the line, and for a reason
+	// the deps do not share: boxes are never archived, so the live epic store is
+	// not "the other snapshot" — it is the only store a box has ever lived in,
+	// and no listing read renders a box title to disagree with. Read at most
+	// once, and only when something in the batch is actually filed.
+	var epics []core.Epic
+	loaded := false
+	for i := range items {
+		if items[i].Task.Epic == "" {
+			continue
+		}
+		if !loaded {
+			// Best effort, exactly as the hot read's task branch is: an
+			// unreadable box store must not turn a retired task's read into an
+			// error, and a nil ref falls back to the bare id.
+			epics, _ = a.Store.LoadEpics()
+			loaded = true
+		}
+		items[i].EpicRef = epicRefFor(epics, items[i].Task.Epic)
+	}
+	return items, missing, nil
 }
 
 // notFoundTask builds the single-id task not-found error, enriched when the id

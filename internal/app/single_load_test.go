@@ -14,8 +14,9 @@ import (
 // level up).
 type loadSpy struct {
 	Store
-	loads  int
-	onLoad func(n int, idx *core.Index)
+	loads     int
+	epicLoads int
+	onLoad    func(n int, idx *core.Index)
 }
 
 func (s *loadSpy) Load() (*core.Index, error) {
@@ -28,6 +29,16 @@ func (s *loadSpy) Load() (*core.Index, error) {
 		s.onLoad(s.loads, idx)
 	}
 	return idx, nil
+}
+
+// LoadEpics is counted separately: `show`'s task branch resolves a membership
+// id to its box title, and that is the ONE read on which a task-only `show`
+// touches epics/ at all. The cost claim it rests on — at most one epic-store
+// read per batch, none when nothing in the batch is filed — is only a claim
+// until something counts.
+func (s *loadSpy) LoadEpics() ([]core.Epic, error) {
+	s.epicLoads++
+	return s.Store.LoadEpics()
 }
 
 func spyApp(t *testing.T) (*App, *loadSpy) {
@@ -199,5 +210,43 @@ func TestRepoDeltaMatchesLabelAndRefDelta(t *testing.T) {
 	}
 	if want := []string{"b.go:2", "a.go:1"}; !slices.Equal(got.Refs, want) {
 		t.Errorf("refs = %v, want %v", got.Refs, want)
+	}
+}
+
+// `show`'s task branch resolves a membership id to its box title, which is the
+// only reason a task-only read touches epics/ at all. The batch pays for that
+// AT MOST ONCE however many filed tasks it names, and NOT AT ALL when nothing
+// in it is filed — otherwise the title would cost one store read per id on
+// furrow's most-used read.
+func TestShowBatchReadsTheEpicStoreAtMostOncePerBatch(t *testing.T) {
+	a, spy := spyApp(t)
+	box := mustEpic(t, a, "box", EpicAddOpts{})
+	unfiled := mustAdd(t, a, "unfiled", AddOpts{Status: "ready"})
+	filedA := mustAdd(t, a, "filed A", AddOpts{Epic: box, Status: "ready"})
+	filedB := mustAdd(t, a, "filed B", AddOpts{Epic: box, Status: "ready"})
+
+	spy.epicLoads = 0
+	if _, _, err := a.ShowBatch([]string{unfiled.ID}, false); err != nil {
+		t.Fatal(err)
+	}
+	if spy.epicLoads != 0 {
+		t.Errorf("a batch of unfiled tasks must not read epics/; read %d times", spy.epicLoads)
+	}
+
+	spy.epicLoads = 0
+	items, _, err := a.ShowBatch([]string{filedA.ID, filedB.ID, unfiled.ID}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spy.epicLoads != 1 {
+		t.Errorf("two filed tasks in one batch must cost ONE epic-store read, got %d", spy.epicLoads)
+	}
+	for _, e := range items {
+		if e.Task == nil || e.Task.Task.Epic == "" {
+			continue
+		}
+		if e.Task.EpicRef == nil || e.Task.EpicRef.Title != "box" {
+			t.Errorf("%s: the membership must resolve to its box title, got %+v", e.Task.Task.ID, e.Task.EpicRef)
+		}
 	}
 }

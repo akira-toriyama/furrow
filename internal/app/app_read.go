@@ -29,10 +29,38 @@ func (a *App) Get(id string) (*core.Task, string, error) {
 }
 
 // ShowItem is one result of GetBatch: a task plus its body (empty when the
-// batch was read without bodies).
+// batch was read without bodies) and the derived facts a reader needs to act on
+// it without a second command.
+//
+// Deps / Actionable / BlockedBy mirror what the box already had: EpicDetail
+// resolves an epic's dep edges so `epic show` can print what it waits on
+// "without a second read", and ListItem carries actionable/blocked_by on every
+// `ls`, `next`, `--tree`, `brief` and `epic show` member row. A TASK read
+// through `show` was the one entity left handing back bare ids — six drill runs
+// and an independent refutation agent each stopped there and retyped
+// `dep --list` (t-3acv). The raw id set still rides in Task.Deps, exactly as it
+// rides in Epic.Deps beside EpicDetail.Deps.
+//
+// Every field here is derived from the index the task was found in, so it costs
+// map lookups, not IO — EpicRef is the one exception (the epic store is a
+// separate read) and is filled only by the callers that hold it.
 type ShowItem struct {
 	Task core.Task
 	Body string
+	// Deps are Task.Deps resolved to id+title+lane, in the task's own dep
+	// order. A dangling id keeps its place with an empty Title/Status, so a
+	// broken edge is reported rather than dropped (lint's dep-missing owns
+	// calling it a defect).
+	Deps []TaskRef
+	// EpicRef resolves Task.Epic to id+title. Nil when the task is unfiled OR
+	// when the caller had no epic store to resolve against — a renderer must
+	// fall back to the bare Task.Epic id, never print a blank title.
+	EpicRef *EpicRef
+	// Actionable and BlockedBy are factsFor's answer for this task: whether
+	// `next` would hand it out, and which of its deps are not done yet.
+	// BlockedBy is always non-nil ([] not null).
+	Actionable bool
+	BlockedBy  []string
 }
 
 // GetBatch resolves a set of ids in one index load: the found tasks come back
@@ -46,22 +74,38 @@ func (a *App) GetBatch(ids []string, withBody bool) ([]ShowItem, []string, error
 	if err != nil {
 		return nil, nil, err
 	}
-	return getBatchFrom(idx, a.Store.LoadBody, ids, withBody)
+	return a.getBatchFrom(idx, nil, a.Store.LoadBody, ids, withBody)
 }
 
-// getBatchFrom resolves ids against idx in input order (duplicates collapse to
-// their first occurrence, misses collected), loading each found task's body via
-// loadBody when withBody. It is the shared core of the hot GetBatch and the
-// archive GetBatchArchived, so both reads behave identically.
-func getBatchFrom(idx *core.Index, loadBody func(string) (string, error), ids []string, withBody bool) ([]ShowItem, []string, error) {
+// getBatchFrom resolves ids in input order (duplicates collapse to their first
+// occurrence, misses collected), loading each found task's body via loadBody
+// when withBody. It is the shared core of the hot GetBatch and the archive
+// GetBatchArchived, so the two reads differ only in the indexes handed to it.
+//
+// findIdx is the store the REQUESTED ids are looked up in; resolveIdx is what
+// their dep edges are resolved against. They are the same index on the hot path
+// and differ for `show --archived`, where the requested task must come from the
+// archive alone (asking for an archived id must not hand back a live task) while
+// its deps may legitimately live in either store — an edge from a retired task
+// into live work is ordinary, and resolving it against the archive alone would
+// render a real task as `[?]`, which is the spelling reserved for an id naming
+// nothing. Pass nil for resolveIdx to resolve in findIdx.
+//
+// doneIDs is hoisted out of the loop — one pass over the index per batch, not
+// per id.
+func (a *App) getBatchFrom(findIdx, resolveIdx *core.Index, loadBody func(string) (string, error), ids []string, withBody bool) ([]ShowItem, []string, error) {
+	if resolveIdx == nil {
+		resolveIdx = findIdx
+	}
 	items, missing := []ShowItem{}, []string{}
 	seen := map[string]bool{}
+	doneIDs := a.doneSet(resolveIdx)
 	for _, id := range ids {
 		if seen[id] {
 			continue
 		}
 		seen[id] = true
-		t, i := idx.Find(id)
+		t, i := findIdx.Find(id)
 		if i < 0 {
 			missing = append(missing, id)
 			continue
@@ -74,9 +118,22 @@ func getBatchFrom(idx *core.Index, loadBody func(string) (string, error), ids []
 			}
 			body = b
 		}
-		items = append(items, ShowItem{Task: *t, Body: body})
+		items = append(items, a.showItem(resolveIdx, t, body, doneIDs))
 	}
 	return items, missing, nil
+}
+
+// showItem builds one ShowItem with its derived facts resolved against idx. The
+// single constructor for the type, so the batch reads and ShowBatch's per-ref
+// path cannot drift on what "resolved" means. EpicRef is left nil here: the
+// epic store is a separate read the caller owns.
+func (a *App) showItem(idx *core.Index, t *core.Task, body string, doneIDs map[string]bool) ShowItem {
+	deps := make([]TaskRef, 0, len(t.Deps))
+	for _, depID := range t.Deps {
+		deps = append(deps, resolveTaskRef(idx, depID))
+	}
+	actionable, blockedBy := a.factsFor(idx, t, doneIDs)
+	return ShowItem{Task: *t, Body: body, Deps: deps, Actionable: actionable, BlockedBy: blockedBy}
 }
 
 // ShowEntry is one result of ShowBatch: exactly one of Task / Epic is set. A
@@ -119,8 +176,22 @@ func (a *App) ShowBatch(refs []string, withBody bool) ([]ShowEntry, []string, er
 	var (
 		epics       []core.Epic
 		epicsLoaded bool
+		epicsErr    error
 	)
+	// The epic store is read AT MOST ONCE per batch, whichever branch needs it
+	// first: a ref that named no task (the box lookup) or a found task that is
+	// filed (its epic's title). A batch of unfiled tasks never touches it. The
+	// outcome is memoised INCLUDING the failure, so a corrupt store is not
+	// re-read once per ref.
+	loadEpicsOnce := func() ([]core.Epic, error) {
+		if !epicsLoaded {
+			epics, epicsErr = a.Store.LoadEpics()
+			epicsLoaded = true
+		}
+		return epics, epicsErr
+	}
 	out, missing := []ShowEntry{}, []string{}
+	doneIDs := a.doneSet(idx)
 	seenRef, seenID := map[string]bool{}, map[string]bool{}
 	for _, ref := range refs {
 		if seenRef[ref] {
@@ -138,14 +209,28 @@ func (a *App) ShowBatch(refs []string, withBody bool) ([]ShowEntry, []string, er
 					return nil, nil, err
 				}
 			}
-			out = append(out, ShowEntry{Task: &ShowItem{Task: *t, Body: body}})
+			item := a.showItem(idx, t, body, doneIDs)
+			if t.Epic != "" {
+				// BEST EFFORT, and the asymmetry with the branch below is the
+				// point: reading a TASK never touched epics/ before this, so an
+				// unreadable box store must not turn `show <task>` (furrow's most
+				// used read) into an exit 2 — measured: it did, until this
+				// swallow. The title is a legibility gain, not a fact the task
+				// depends on; without it the line falls back to the bare id it
+				// printed for nine schema versions. `epic ls`, `epic show` and
+				// `lint` are where a corrupt shard is SUPPOSED to surface, and
+				// the box-ref branch below still returns the error, because
+				// there the store IS the answer. Same contract as
+				// ArchivedContains: no enrichment, never a different error.
+				if es, eerr := loadEpicsOnce(); eerr == nil {
+					item.EpicRef = epicRefFor(es, t.Epic)
+				}
+			}
+			out = append(out, ShowEntry{Task: &item})
 			continue
 		}
-		if !epicsLoaded {
-			if epics, err = a.Store.LoadEpics(); err != nil {
-				return nil, nil, err
-			}
-			epicsLoaded = true
+		if _, err := loadEpicsOnce(); err != nil {
+			return nil, nil, err
 		}
 		id, rerr := a.resolveEpicIn(ref, epics)
 		if rerr != nil {
