@@ -154,6 +154,17 @@ func emitMutationWith(cmd *cobra.Command, a *app.App, verb, id string, mutate fu
 // into THAT task's envelope — the batch twin of emitMutationWith's annotate (done --note
 // surfaces `appended` on each, a single-id set its `clamped`/`renumbered`).
 func emitMutationManyWith(cmd *cobra.Command, a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error), annotate func(after *core.Task) map[string]any) error {
+	return emitMutationManyTagged(cmd, a, verb, ids, mutate, annotate, nil)
+}
+
+// emitMutationManyTagged is emitMutationManyWith with a per-task row tag on the
+// HUMAN line: what the write just made of a field the reader asked to change,
+// so a `set --due`/`--due-shift` echoes the instant it bound (in the board's
+// calendar, the form every row renders a due in) instead of leaving the caller
+// to `show` it back — seven drill runs computed the resulting dates by hand
+// because nothing echoed them. nil tags nothing; JSON is untouched, its
+// envelopes already carry before/after.
+func emitMutationManyTagged(cmd *cobra.Command, a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error), annotate func(after *core.Task) map[string]any, tag func(*core.Task) string) error {
 	expected, guard, gerr := expectUpdatedArg(cmd, strings.Join(ids, ","))
 	if gerr != nil {
 		return gerr
@@ -216,7 +227,11 @@ func emitMutationManyWith(cmd *cobra.Command, a *app.App, verb string, ids []str
 		return nil
 	}
 	for _, t := range after {
-		fmt.Fprintf(out, "%s %s  %s\n", verb, t.ID, t.Title)
+		line := fmt.Sprintf("%s %s  %s", verb, t.ID, t.Title)
+		if tag != nil {
+			line = withTags(line, tag(t))
+		}
+		fmt.Fprintln(out, line)
 	}
 	return nil
 }
@@ -316,7 +331,7 @@ func newDoneCmd() *cobra.Command {
 					return err
 				}
 				if !sel.yes {
-					emitSelectPreview(a, "close", tasks)
+					emitSelectPreview(a, "close", tasks, nil)
 					return nil
 				}
 				if len(tasks) == 0 {
@@ -425,7 +440,7 @@ func newMoveCmd() *cobra.Command {
 					return err
 				}
 				if !sel.yes {
-					emitSelectPreview(a, "move to "+lane, tasks)
+					emitSelectPreview(a, "move to "+lane, tasks, nil)
 					return nil
 				}
 				if len(tasks) == 0 {
@@ -826,6 +841,7 @@ func newSetCmd() *cobra.Command {
 		after       string
 		due         string
 		clearDue    bool
+		dueShift    string
 		repeatSpec  string
 		clearRepeat bool
 		sel         writeSelector
@@ -845,7 +861,17 @@ func newSetCmd() *cobra.Command {
 			"read in the board's [due].timezone — an RFC3339 instant carries its own\n" +
 			"zone, and `ls --json` prints stored dues as UTC instants; on a repeating\n" +
 			"task it moves THIS occurrence only — the series anchor never moves — and\n" +
-			"--clear-due there is exit 2), and bind or drop a recurrence rule (--repeat,\n" +
+			"--clear-due there is exit 2; --due-shift +7d instead moves the due each\n" +
+			"task ALREADY carries by that offset — the reschedule, when the date the\n" +
+			"promises were derived from moved: every selected due keeps its distance\n" +
+			"to its neighbours, where one shared --due would flatten them onto a\n" +
+			"single instant. Units m/h/d/w: days and weeks are calendar days in the\n" +
+			"board's zone, so the wall clock survives a DST boundary (a clock the\n" +
+			"target day skips lands the gap's width later, never earlier); minutes\n" +
+			"and hours are exact. A task with no due is refused, every undated id\n" +
+			"named in details.undated and nothing written, and it never rides with\n" +
+			"--due/--clear-due; on a repeating task it, too, moves this occurrence\n" +
+			"only), and bind or drop a recurrence rule (--repeat,\n" +
 			"anchored to the due of the same write — so `--due <date> --repeat <rule>`\n" +
 			"in ONE write is how a series is re-anchored, --due alone never is, and\n" +
 			"--repeat alone re-anchors the rule to the due the task already carries;\n" +
@@ -869,7 +895,14 @@ func newSetCmd() *cobra.Command {
 			"as the same single all-or-nothing write, matches-nothing is exit 0 with a\n" +
 			"stderr note, and it refuses to combine with ids, --expect-updated, or the\n" +
 			"position flags (a position places ONE task) — the full contract is\n" +
-			"spelled out in `furrow done --help`.",
+			"spelled out in `furrow done --help`. With --due-shift the human preview\n" +
+			"prints each row's current due and the one it would get (→); a row with\n" +
+			"no due is marked refused, the count line then says 0 will be written\n" +
+			"and JSON adds `refused`, since --yes would exit 2. An explicit id list\n" +
+			"gets that preview through `-q 'id:<a>,<b>'` — under the board scope,\n" +
+			"so add -r '' to see every id the id form would write; there is no\n" +
+			"dry-run flag on the id form. A `set` that wrote a due echoes it on the\n" +
+			"human line, in the board's calendar.",
 		Example: "  furrow set t-k3m9p -s ready --value 4 --effort 2 --add-label bug\n" +
 			"  furrow set t-k3m9p -s ready --before t-x1y2z\n" +
 			"  furrow set t-k3m9p -e e-v0zd\n" +
@@ -877,6 +910,9 @@ func newSetCmd() *cobra.Command {
 			"  furrow set t-a1 t-b2 t-c3 --add-repo owner/app   # bulk attach, one write\n" +
 			"  furrow set t-k3m9p --due 2026-08-04     # promise it for that whole day\n" +
 			"  furrow set t-k3m9p --due +1d            # snooze a day from now\n" +
+			"  furrow set t-k3m9p --due-shift +7d      # a week later than it is now promised for\n" +
+			"  furrow set -q 'due:>=2026-10-14 -label:fixed' --due-shift +7d        # preview: old → new per row\n" +
+			"  furrow set -q 'id:t-k3m9p,t-x1y2z' -r '' --due-shift -1d   # ids, previewed via -q id: (-r '' = whole board)\n" +
 			"  furrow set t-k3m9p --clear-value --rm-label wip\n" +
 			"  furrow set -q 'status:inbox label:bug' -e e-v0zd        # preview\n" +
 			"  furrow set -q 'status:inbox label:bug' -e e-v0zd --yes  # one write",
@@ -930,6 +966,9 @@ func newSetCmd() *cobra.Command {
 			if cmd.Flags().Changed("due") {
 				o.Due = &due
 			}
+			if cmd.Flags().Changed("due-shift") {
+				o.DueShift = &dueShift
+			}
 			// subject names the task in a flag-validation error; a -q/-l/-r
 			// selection has no single task to blame, so it stays "".
 			subject := ""
@@ -942,6 +981,9 @@ func newSetCmd() *cobra.Command {
 			// name the flag that DOES mean "remove it".
 			if f := cmd.Flags().Lookup("due"); f != nil && f.Changed && strings.TrimSpace(due) == "" {
 				return core.Validationf(subject, "--due was given an empty value; pass a date, or use --clear-due to remove it")
+			}
+			if f := cmd.Flags().Lookup("due-shift"); f != nil && f.Changed && strings.TrimSpace(dueShift) == "" {
+				return core.Validationf(subject, "--due-shift was given an empty value; pass a signed offset like +7d")
 			}
 			if err := emptyFlagErr(cmd, subject, "before", "after", "add-label", "rm-label", "add-repo", "rm-repo", "status"); err != nil {
 				return err
@@ -957,6 +999,7 @@ func newSetCmd() *cobra.Command {
 				// shows a write the apply would refuse: an edit must exist (the
 				// app's own at-least-one-change rule), and a -s lane must be real.
 				hasEdit := o.Status != nil || o.Value != nil || o.Effort != nil || o.Epic != nil || o.Due != nil ||
+					o.DueShift != nil ||
 					o.ClearValue || o.ClearEffort || o.ClearDue || o.ClearRepeat || o.Repeat != nil ||
 					len(o.AddLabels) > 0 || len(o.RmLabels) > 0 ||
 					len(o.AddRepos) > 0 || len(o.RmRepos) > 0
@@ -968,12 +1011,25 @@ func newSetCmd() *cobra.Command {
 						return err
 					}
 				}
+				var tail *previewTail
+				if o.DueShift != nil {
+					if err := app.CheckDueShift(*o.DueShift); err != nil {
+						return err
+					}
+					tail = &previewTail{
+						tag:     func(t *core.Task) string { return shiftPreviewTag(a, t, *o.DueShift) },
+						refused: func(t *core.Task) bool { return !strings.HasPrefix(shiftPreviewTag(a, t, *o.DueShift), "→") },
+						key:     "refused",
+						why:     "cannot be shifted",
+						remedy:  "narrow the selection to the rows that can be shifted (-q has:due) — --yes would exit 2",
+					}
+				}
 				tasks, err := sel.resolve(cmd, a)
 				if err != nil {
 					return err
 				}
 				if !sel.yes {
-					emitSelectPreview(a, "set", tasks)
+					emitSelectPreview(a, "set", tasks, tail)
 					return nil
 				}
 				if len(tasks) == 0 {
@@ -1007,12 +1063,19 @@ func newSetCmd() *cobra.Command {
 				}
 				return map[string]any{"clamped": clamped}
 			}
+			// The due a write bound is echoed on the human line: the one field
+			// whose stored value the caller could not have typed (a snooze is
+			// from now, a shift from a stamp they may not have read).
+			var dueEcho func(*core.Task) string
+			if o.Due != nil || o.DueShift != nil {
+				dueEcho = func(t *core.Task) string { return dueTag(a, t) }
+			}
 			if len(args) > 1 {
 				// A close is a close whatever the arity: the batch arm owes the
 				// same series receipt the single-id one gives, on stdout and in
 				// every envelope.
 				rs, closed := newSeriesReports(), []*core.Task(nil)
-				if err := emitMutationManyWith(cmd, a, "set", args,
+				if err := emitMutationManyTagged(cmd, a, "set", args,
 					func() ([]*core.Task, error) {
 						ts, reps, err := a.SetMany(args, o)
 						rs.collect(ts, reps)
@@ -1031,7 +1094,7 @@ func newSetCmd() *cobra.Command {
 							return nil
 						}
 						return extra
-					}); err != nil {
+					}, dueEcho); err != nil {
 					return err
 				}
 				noteBoundRules(a, cmd.Flags().Changed("repeat"), closed, rs)
@@ -1043,7 +1106,7 @@ func newSetCmd() *cobra.Command {
 			// single-task renumbered extra needs this separate path.
 			var renumbered []core.PriorityChange
 			rs, closed := newSeriesReports(), []*core.Task(nil)
-			if err := emitMutationManyWith(cmd, a, "set", args,
+			if err := emitMutationManyTagged(cmd, a, "set", args,
 				func() ([]*core.Task, error) {
 					t, ch, rep, err := a.Set(args[0], o)
 					renumbered = ch
@@ -1071,7 +1134,7 @@ func newSetCmd() *cobra.Command {
 						return nil
 					}
 					return extra
-				}); err != nil {
+				}, dueEcho); err != nil {
 				return err
 			}
 			// `set -s done` closes like `done` does, so it owes the same receipt:
@@ -1093,6 +1156,7 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&clearEffort, "clear-effort", false, "clear the effort estimate")
 	cmd.Flags().StringVar(&due, "due", "", "set the due date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d (the snooze)")
 	cmd.Flags().BoolVar(&clearDue, "clear-due", false, "clear the due date")
+	cmd.Flags().StringVar(&dueShift, "due-shift", "", "move the due each task already carries by a signed offset: +7d, -1w, +2h (m/h/d/w; days and weeks are calendar days in the board's zone, hours and minutes exact); refused on a task with no due")
 	cmd.Flags().StringVar(&repeatSpec, "repeat", "", "recur when closed: daily | every 2 weeks on mon,thu | monthly on last fri | ... (the task must carry a due; a raw RRULE line also works, minus a DTSTART)")
 	cmd.Flags().BoolVar(&clearRepeat, "clear-repeat", false, "stop this task recurring (drops the rule and its anchor)")
 	// Without this the rebind is silently discarded: applySet's switch puts
@@ -1109,11 +1173,30 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&rmRepos, "rm-repo", nil, "detach a repo (same forms; removing the last one leaves a draft; repeatable)")
 	cmd.MarkFlagsMutuallyExclusive("value", "clear-value")
 	cmd.MarkFlagsMutuallyExclusive("effort", "clear-effort")
-	cmd.MarkFlagsMutuallyExclusive("due", "clear-due")
+	cmd.MarkFlagsMutuallyExclusive("due", "clear-due", "due-shift")
 	cmd.MarkFlagsMutuallyExclusive("priority", "before", "after")
 	addSelectorFlags(cmd, &sel)
 	addExpectUpdatedFlag(cmd)
 	return cmd
+}
+
+// shiftPreviewTag is the preview row's answer to "where does --due-shift land
+// this one": the due it would carry after the write, in the board's calendar
+// like dueTag beside it, so the row reads as one before → after pair. A row
+// the apply would refuse says so instead — no due to shift, or a landing
+// outside the years a due can hold (the spelling itself was vetted before the
+// preview, so that is the one error ShiftDue can still return here) — because
+// the preview must not promise a write the apply will not make. Every refusal
+// starts without the arrow; previewTail.refused reads that.
+func shiftPreviewTag(a *app.App, t *core.Task, spelling string) string {
+	if t.Due == nil {
+		return "no due — refused"
+	}
+	shifted, err := app.ShiftDue(*t.Due, spelling, a.Calendar())
+	if err != nil {
+		return "lands outside years 1..9999 — refused"
+	}
+	return "→ " + shifted.In(a.Calendar()).Format("2006-01-02 15:04")
 }
 
 // emptyFlagErr names a flag that WAS passed but carried nothing pflag kept — a

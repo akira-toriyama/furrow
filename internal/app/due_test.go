@@ -536,3 +536,197 @@ func TestParseDueSaysWhy(t *testing.T) {
 		t.Errorf("a leap day in a leap year is a date: %v", err)
 	}
 }
+
+// --due-shift moves a due from the stamp it carries, never from now: days and
+// weeks are calendar days in the board's zone (the wall clock survives a DST
+// boundary), minutes and hours are exact durations.
+func TestShiftDue(t *testing.T) {
+	la, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Skip("no tzdata for America/Los_Angeles")
+	}
+	eod := time.Date(2026, 3, 7, 23, 59, 59, 0, la) // the night before spring-forward
+	cases := []struct {
+		name string
+		in   string
+		due  time.Time
+		want time.Time
+	}{
+		{"a day keeps the wall clock across spring-forward", "+1d", eod, time.Date(2026, 3, 8, 23, 59, 59, 0, la)},
+		{"a week is seven calendar days", "+1w", eod, time.Date(2026, 3, 14, 23, 59, 59, 0, la)},
+		{"a negative shift dates it earlier", "-2d", eod, time.Date(2026, 3, 5, 23, 59, 59, 0, la)},
+		{"hours are exact, so 24h over the 23-hour day lands an hour later on the clock", "+24h", eod, eod.Add(24 * time.Hour)},
+		{"minutes are exact", "+30m", eod, eod.Add(30 * time.Minute)},
+		{"a timed due keeps its time", "+7d", time.Date(2026, 11, 21, 21, 30, 0, 0, jst), time.Date(2026, 11, 28, 21, 30, 0, 0, jst)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := ShiftDue(c.due, c.in, c.due.Location())
+			if err != nil {
+				t.Fatalf("ShiftDue(%q): %v", c.in, err)
+			}
+			if !got.Equal(c.want) {
+				t.Errorf("ShiftDue(%s, %q) = %s, want %s", c.due, c.in, got.In(c.due.Location()), c.want)
+			}
+		})
+	}
+	for _, bad := range []string{"", "  ", "+0d", "-0w", "7d", "+7", "2026-01-01", "+1x", "+d", "++7d", "-+7d"} {
+		if _, err := ShiftDue(eod, bad, la); err == nil {
+			t.Errorf("ShiftDue(%q) should be refused", bad)
+		}
+	}
+	// Past the shard's year range is the caller's input, refused as validation
+	// rather than surfacing from the marshaller as an internal error.
+	for _, c := range []struct {
+		due time.Time
+		in  string
+	}{
+		{time.Date(9999, 12, 31, 23, 59, 59, 0, jst), "+1d"},
+		{time.Date(1, 1, 1, 12, 0, 0, 0, jst), "-1d"},
+	} {
+		_, err := ShiftDue(c.due, c.in, jst)
+		if ce, ok := err.(*core.Error); !ok || ce.Code != core.CodeValidation {
+			t.Errorf("ShiftDue(%s, %q): got %v, want a validation refusal", c.due, c.in, err)
+		}
+	}
+}
+
+// A calendar-day shift onto a wall clock the target day SKIPS lands the gap's
+// width later, never earlier — the dayStart hazard: time.Date resolves a
+// skipped clock backward, which put "+1d" an hour early (02:30 → 01:30) or on
+// the same calendar day (00:30 → 23:30 the day before, where a zone springs
+// forward at midnight).
+func TestShiftDueSkippedWallClock(t *testing.T) {
+	cases := []struct {
+		zone     string
+		due      string // wall clock in zone, RFC3339 minus the offset
+		in, want string
+	}{
+		{"America/Los_Angeles", "2026-03-07T02:30:00", "+1d", "2026-03-08 03:30"},
+		{"America/Santiago", "2026-09-05T00:30:00", "+1d", "2026-09-06 01:30"},
+		{"America/Havana", "2026-03-07T00:30:00", "+1d", "2026-03-08 01:30"},
+		{"America/Los_Angeles", "2026-03-09T02:30:00", "-1d", "2026-03-08 03:30"},
+		// Zones where Go resolves the skipped clock FORWARD: already the landing,
+		// so no second gap is added on top.
+		{"Asia/Beirut", "2026-03-28T00:30:00", "+1d", "2026-03-29 01:30"},
+		{"Australia/Lord_Howe", "2026-10-03T02:15:00", "+1d", "2026-10-04 02:45"},
+	}
+	for _, c := range cases {
+		loc, err := time.LoadLocation(c.zone)
+		if err != nil {
+			t.Skipf("no tzdata for %s", c.zone)
+		}
+		due, err := time.ParseInLocation("2006-01-02T15:04:05", c.due, loc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := ShiftDue(due, c.in, loc)
+		if err != nil {
+			t.Fatalf("ShiftDue(%s %s, %q): %v", c.zone, c.due, c.in, err)
+		}
+		if s := got.In(loc).Format("2006-01-02 15:04"); s != c.want {
+			t.Errorf("%s: %s %s = %s, want %s (the gap's width later, never earlier)", c.zone, c.due, c.in, s, c.want)
+		}
+		if !got.After(due) == (c.in[0] == '+') {
+			t.Errorf("%s: %s %s moved the wrong way: %s", c.zone, c.due, c.in, got.In(loc))
+		}
+	}
+}
+
+// `set --due-shift` is measured from the task's own stamp, is refused on an
+// undated task before anything is written, never rides with --due/--clear-due,
+// and on a repeating task moves this occurrence only — the anchor stays, and
+// `--due-shift <off> --repeat <rule>` re-anchors on the shifted due, exactly
+// the --due contract.
+func TestSetDueShift(t *testing.T) {
+	now := time.Date(2026, 8, 3, 3, 0, 0, 0, time.UTC)
+	a := newRepeatApp(now)
+	tk, err := a.Add("venue", AddOpts{Due: "2026-11-21T21:30"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shift := "+7d"
+	moved, _, _, err := a.Set(tk.ID, SetOpts{DueShift: &shift})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2026, 11, 28, 21, 30, 0, 0, jst); !moved.Due.Equal(want) {
+		t.Errorf("shifted due = %s, want %s (from the stamp, not from now)", moved.Due.In(jst), want)
+	}
+
+	plain, _ := a.Add("plain", AddOpts{})
+	_, _, _, err = a.Set(plain.ID, SetOpts{DueShift: &shift})
+	ce, ok := err.(*core.Error)
+	if !ok || ce.Code != core.CodeValidation {
+		t.Fatalf("shifting an undated task: got %v, want a validation refusal", err)
+	}
+	if ce.Subject != plain.ID {
+		t.Errorf("subject = %q, want %s", ce.Subject, plain.ID)
+	}
+	if d, _ := ce.Details.(map[string]any); !reflect.DeepEqual(d["undated"], []string{plain.ID}) {
+		t.Errorf("details.undated = %v, want [%s]", ce.Details, plain.ID)
+	}
+	if again, _, _ := a.Get(plain.ID); !again.Updated.Equal(plain.Updated) || again.Due != nil {
+		t.Errorf("a refused shift wrote the task: %v", again)
+	}
+
+	date := "2026-12-01"
+	if _, _, _, err := a.Set(tk.ID, SetOpts{DueShift: &shift, Due: &date}); err == nil {
+		t.Error("--due-shift beside --due should be refused")
+	}
+	if _, _, _, err := a.Set(tk.ID, SetOpts{DueShift: &shift, ClearDue: true}); err == nil {
+		t.Error("--due-shift beside --clear-due should be refused")
+	}
+
+	rule := "weekly"
+	bound, _, _, err := a.Set(tk.ID, SetOpts{Repeat: &rule})
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := *bound.RepeatAnchor
+	shifted, _, _, err := a.Set(tk.ID, SetOpts{DueShift: &shift})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2026, 12, 5, 21, 30, 0, 0, jst); !shifted.Due.Equal(want) {
+		t.Errorf("shifted occurrence = %s, want %s", shifted.Due.In(jst), want)
+	}
+	if !shifted.RepeatAnchor.Equal(anchor) {
+		t.Errorf("a shift moved the series anchor: %s -> %s", anchor, *shifted.RepeatAnchor)
+	}
+	re, _, _, err := a.Set(tk.ID, SetOpts{DueShift: &shift, Repeat: &rule})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !re.RepeatAnchor.Equal(*re.Due) || re.Due.Equal(anchor) {
+		t.Errorf("--due-shift with --repeat should re-anchor on the shifted due: due %s, anchor %s", re.Due.In(jst), re.RepeatAnchor.In(jst))
+	}
+}
+
+// The batch is all-or-nothing and names every undated id up front, so a
+// selection can be narrowed in one edit instead of one refusal per retry.
+func TestSetManyDueShiftIsAllOrNothing(t *testing.T) {
+	a := newDueApp(time.Date(2026, 8, 3, 3, 0, 0, 0, time.UTC))
+	x, _ := a.Add("x", AddOpts{Due: "2026-11-21"})
+	y, _ := a.Add("y", AddOpts{})
+	z, _ := a.Add("z", AddOpts{})
+	shift := "+1d"
+	_, _, err := a.SetMany([]string{x.ID, y.ID, z.ID}, SetOpts{DueShift: &shift})
+	ce, ok := err.(*core.Error)
+	if !ok || ce.Code != core.CodeValidation || ce.Subject != "" {
+		t.Fatalf("got %v, want a subject-less validation refusal", err)
+	}
+	if d, _ := ce.Details.(map[string]any); !reflect.DeepEqual(d["undated"], []string{y.ID, z.ID}) {
+		t.Errorf("details.undated = %v, want [%s %s]", ce.Details, y.ID, z.ID)
+	}
+	if again, _, _ := a.Get(x.ID); !again.Due.Equal(*x.Due) {
+		t.Errorf("the dated task was written by a refused batch: %s -> %s", x.Due, again.Due)
+	}
+	out, _, err := a.SetMany([]string{x.ID}, SetOpts{DueShift: &shift})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2026, 11, 22, 23, 59, 59, 0, jst); !out[0].Due.Equal(want) {
+		t.Errorf("shifted = %s, want %s", out[0].Due.In(jst), want)
+	}
+}

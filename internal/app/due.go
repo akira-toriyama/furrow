@@ -188,6 +188,114 @@ func (a *App) parseDue(s string) (time.Time, error) {
 	return ParseDue(s, a.Clock.Now(), a.loc())
 }
 
+// dueShift is a parsed `--due-shift`: a calendar day count (the d/w units,
+// applied in the board's calendar) or an exact duration (m/h). Exactly one is
+// non-zero — the unit decides which, and the two are not interchangeable: a day
+// is 23 or 25 hours long twice a year, and a due shifted "+1d" across that has
+// to keep its wall clock, not its hour count (the same reason ParseDue builds a
+// bare date as a wall-clock 23:59:59 rather than midnight + 24h - 1s).
+type dueShift struct {
+	days int
+	dur  time.Duration
+}
+
+// parseDueShift reads a `--due-shift` spelling: the signed ±N{m,h,d,w} the
+// snooze and the `-q` date bounds already take (parseRelativeOffset), so the
+// three cannot drift apart — only the BASE differs, and that difference is the
+// flag. A zero shift is refused like `--due +0d`: it moves nothing and would
+// only stamp `updated`.
+func parseDueShift(s string) (dueShift, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return dueShift{}, core.Validationf("", "--due-shift needs a signed offset like +7d, -1w or +2h (units m/h/d/w)")
+	}
+	d, ok := parseRelativeOffset(s)
+	if !ok {
+		return dueShift{}, core.Validationf("", "--due-shift %s is not an offset: use a signed ±N with a unit m/h/d/w (+7d, -1w, +2h) — an absolute date is --due's job", strconv.Quote(s))
+	}
+	if d == 0 {
+		return dueShift{}, core.Validationf("", "--due-shift %s is a zero offset, which moves nothing", strconv.Quote(s))
+	}
+	switch s[len(s)-1] {
+	case 'd', 'w':
+		return dueShift{days: int(d / (24 * time.Hour))}, nil
+	}
+	return dueShift{dur: d}, nil
+}
+
+// apply moves due by the shift: calendar days keep the wall clock in loc (a
+// 23:59:59 stays 23:59:59, a 21:30 stays 21:30, across a DST boundary too);
+// a duration is exact arithmetic.
+//
+// A wall clock the target day SKIPS (02:30 on a spring-forward day; 00:30 where
+// a zone springs forward at midnight — Santiago, Havana, the Azores) is the
+// dayStart hazard again: time.Date's choice of side is not guaranteed, and in
+// most zones it resolves BACKWARD, onto the previous offset, so "+1d" landed an
+// hour early, or on the same calendar day, and a "-1d" did not bring it back.
+// The day begins at the transition, so the promise lands the gap's width AFTER
+// the requested clock — 03:30 for a requested 02:30 — never before it. A
+// backward resolution shows a clock EARLIER than the one asked for and is pushed
+// across by the gap's width (the offsets on either side are read a few hours
+// out, where the clock exists); a forward one (Asia/Beirut, Australia/Lord_Howe)
+// already shows that landing and is left alone — pushing it too overshot by a
+// second gap.
+func (sh dueShift) apply(due time.Time, loc *time.Location) time.Time {
+	if sh.days == 0 {
+		return due.Add(sh.dur)
+	}
+	local := due.In(loc)
+	h, m, s := local.Clock()
+	got := time.Date(local.Year(), local.Month(), local.Day()+sh.days, h, m, s, local.Nanosecond(), loc)
+	if gh, gm, gs := got.Clock(); gh != h || gm != m || gs != s {
+		asked := time.Date(local.Year(), local.Month(), local.Day()+sh.days, h, m, s, 0, time.UTC)
+		shown := time.Date(got.Year(), got.Month(), got.Day(), gh, gm, gs, 0, time.UTC)
+		if shown.Before(asked) {
+			_, before := got.Add(-3 * time.Hour).Zone()
+			_, after := got.Add(3 * time.Hour).Zone()
+			got = got.Add(time.Duration(after-before) * time.Second)
+		}
+	}
+	return got
+}
+
+// CheckDueShift vets a `--due-shift` spelling without a due to apply it to —
+// what a selection preview needs, so it never shows a write the apply would
+// refuse for its spelling.
+func CheckDueShift(s string) error {
+	_, err := parseDueShift(s)
+	return err
+}
+
+// ShiftDue moves a due by a `--due-shift` spelling, measured from the due the
+// task ALREADY carries. That base is the one thing that separates it from
+// `--due +7d`, and it is the whole reason the two are different flags rather
+// than one spelling with a rule about which base applies: the snooze answers
+// "push this out of my way" (from now, so an already-overdue task always lands
+// ahead — the case the `due-overdue` remedy is written for), while a shift
+// answers "the date these were derived from moved" (from each stamp, so a set
+// of promises keeps its shape — the 21:30 stays 21:30 and the day-before stays
+// the day before, where a shared `--due` would flatten them all onto one
+// instant). One flag choosing its base per task would answer a different
+// question for the overdue rows of the same selection, silently. loc is the
+// board's calendar, the zone a calendar day is counted in.
+func ShiftDue(due time.Time, s string, loc *time.Location) (time.Time, error) {
+	if loc == nil {
+		loc = time.UTC
+	}
+	sh, err := parseDueShift(s)
+	if err != nil {
+		return time.Time{}, err
+	}
+	shifted := sh.apply(due, loc)
+	// The shard's RFC3339 stamp holds years 1..9999; a shift past that is the
+	// caller's input, not a broken binary, so it is refused here as validation
+	// rather than surfacing from the marshaller as an internal error.
+	if y := shifted.Year(); y < 1 || y > 9999 {
+		return time.Time{}, core.Validationf("", "--due-shift %s lands in year %d, outside the 1..9999 a due can hold", strconv.Quote(s), y)
+	}
+	return shifted, nil
+}
+
 // resolveDue binds a set's `--due` spelling to ONE instant for the whole call,
 // so `set <a> <b> <c> --due +1d` promises all three for the same moment instead
 // of drifting a second apart across the loop. nil when the call sets no date

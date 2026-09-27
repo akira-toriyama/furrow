@@ -5,6 +5,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -171,6 +172,15 @@ type SetOpts struct {
 	// untouched; ClearDue removes it and wins, exactly like ClearValue over Value.
 	Due      *string
 	ClearDue bool
+	// DueShift is the raw `--due-shift` spelling (see ShiftDue): a signed offset
+	// applied to the due each task ALREADY carries, so a bulk shift keeps the
+	// selection's shape — the counterpart of Due's one-instant-for-all. It never
+	// rides with Due or ClearDue (three ways to say where the date goes), and a
+	// task with no due is refused rather than dated from now (that would be the
+	// snooze under the other flag's name). On a repeating task it moves THIS
+	// occurrence only, exactly as Due does; `--due-shift <off> --repeat <rule>`
+	// is the re-anchor, since the rule binds to the due as this write leaves it.
+	DueShift *string
 	// Repeat is the raw `--repeat` spelling (see recur.Compile). A non-nil
 	// pointer binds or rebinds the rule, anchoring it to the task's due AFTER
 	// this same call's `--due` is applied — so `set --due <d> --repeat <r>` is
@@ -227,6 +237,7 @@ func (o SetOpts) requested() []optFlag {
 		{"-e", o.Epic != nil},
 		{"--due", o.Due != nil},
 		{"--clear-due", o.ClearDue},
+		{"--due-shift", o.DueShift != nil},
 		{"--repeat", o.Repeat != nil},
 		{"--clear-repeat", o.ClearRepeat},
 	}
@@ -292,6 +303,15 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 			return err
 		}
 	}
+	if o.DueShift != nil {
+		if o.Due != nil || o.ClearDue {
+			return core.Validationf(id, "--due-shift moves the due the task already carries; it cannot ride with --due or --clear-due, which replace it")
+		}
+		// Same reason as --due above: the spelling is refused before any write.
+		if err := CheckDueShift(*o.DueShift); err != nil {
+			return err
+		}
+	}
 	if o.empty() {
 		return core.Validationf(id, "set needs at least one change (%s)", flagNames(o.requested()))
 	}
@@ -337,6 +357,20 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 	order, err := a.resolveBatch(idx, ids, "set")
 	if err != nil {
 		return nil, nil, err
+	}
+	if o.DueShift != nil {
+		// All-or-nothing, like a miss: every undated id is named up front so a
+		// selection can be narrowed in one edit, instead of the first one
+		// aborting the write and the second surfacing on the retry.
+		var undated []string
+		for _, id := range order {
+			if t, _ := idx.Find(id); t.Due == nil {
+				undated = append(undated, id)
+			}
+		}
+		if len(undated) > 0 {
+			return nil, nil, undatedShiftErr(undated, len(order))
+		}
 	}
 	var successors []*pendingSuccessor
 	reports := map[string]*RepeatReport{}
@@ -469,6 +503,16 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, re
 		// from now rather than from a stamp that may already be days in the past.
 		d := *due
 		t.Due = &d
+	case o.DueShift != nil:
+		// Per task, from ITS stamp — the one place the two due flags part ways.
+		if t.Due == nil {
+			return nil, nil, nil, undatedShiftErr([]string{id}, 1)
+		}
+		shifted, err := ShiftDue(*t.Due, *o.DueShift, a.loc())
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		t.Due = &shifted
 	}
 	switch {
 	case o.ClearRepeat:
@@ -553,6 +597,22 @@ func (a *App) resolveBatch(idx *core.Index, ids []string, verb string) ([]string
 		return nil, a.batchMissingErr(missing, len(order)+len(missing), verb)
 	}
 	return order, nil
+}
+
+// undatedShiftErr is `--due-shift` on a task that carries no due: there is no
+// stamp to move, and dating it from now would be the snooze wearing the other
+// flag's name. Refused all-or-nothing like a batch miss, with every undated id
+// in details.undated; subject is the task when there is exactly one.
+func undatedShiftErr(undated []string, total int) *core.Error {
+	subject := ""
+	if total == 1 {
+		subject = undated[0]
+	}
+	return &core.Error{
+		Code: core.CodeValidation, Kind: core.KindValidation, Subject: subject,
+		Msg:     fmt.Sprintf("%d of %d task(s) carry no due to shift — nothing was set; narrow the selection to dated tasks (-q has:due) or promise one first (--due <date>)", len(undated), total),
+		Details: map[string]any{"undated": undated},
+	}
 }
 
 // collectBatch is the batch mutators' result: the saved tasks and their series
