@@ -591,11 +591,14 @@ func newRevisitCmd() *cobra.Command {
 		Long: "List the open tasks worth a fresh judgment, the read-only counterpart to\n" +
 			"`next`. A task surfaces when it is a draft (no repo), an estimate is unset\n" +
 			"(value/effort), it has gone stale (no update within [revisit].stale_days),\n" +
-			"or a dependency is already done. --json/--ndjson attach the reasons per task\n" +
-			"so an agent can fix them with the setters (repo/value/effort/dep); this\n" +
-			"command never mutates. Drafts surface regardless of the board scope. An\n" +
-			"empty result is healthy and exits 0. Use --repo to restrict to a repo and\n" +
-			"--stale-days to override the staleness window (0 disables it).\n\n" +
+			"or a dependency is already done. Every row ends `← code: detail` (several\n" +
+			"signals joined by `; `) — `dep_done: dep t-xxxx is done` names the ONE dep\n" +
+			"that closed, not all of them; the task may still be blocked. --json/--ndjson\n" +
+			"attach the same reasons per task as a `revisit` array so an agent can fix\n" +
+			"them with the setters (repo/value/effort/dep); this command never mutates.\n" +
+			"Drafts surface regardless of the board scope. An empty result is healthy\n" +
+			"and exits 0. Use --repo to restrict to a repo and --stale-days to override\n" +
+			"the staleness window (0 disables it).\n\n" +
 			"-q ANDs a typed query onto the surfaced set — the same language as `ls -q`\n" +
 			"— narrowing WHICH flagged tasks come back (`revisit -q 'label:cli'`); a\n" +
 			"task still needs at least one revisit signal to appear. Within -q,\n" +
