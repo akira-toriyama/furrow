@@ -187,6 +187,13 @@ type SetOpts struct {
 	// one coherent write. ClearRepeat removes rule and anchor and wins.
 	Repeat      *string
 	ClearRepeat bool
+	// Anchor is the raw `--anchor` reference: the box whose day this task's
+	// due follows (resolveAnchorRef — the box must exist and carry a day). It
+	// needs a due on the task (in this write or already there) and refuses a
+	// repeat rule; ClearAnchor drops the pointer and wins. ClearDue drops the
+	// pointer too: a due that is gone has nothing left to follow.
+	Anchor      *string
+	ClearAnchor bool
 }
 
 // optFlag pairs a flag as the operator spells it with whether the options
@@ -240,6 +247,8 @@ func (o SetOpts) requested() []optFlag {
 		{"--due-shift", o.DueShift != nil},
 		{"--repeat", o.Repeat != nil},
 		{"--clear-repeat", o.ClearRepeat},
+		{"--anchor", o.Anchor != nil},
+		{"--clear-anchor", o.ClearAnchor},
 	}
 }
 
@@ -262,6 +271,10 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, *Rep
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	anchor, err := a.resolveAnchor(o)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	var (
 		renumbered []core.PriorityChange
 		successor  *pendingSuccessor
@@ -272,7 +285,7 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, *Rep
 	// a `-s done` mints goes in through the post hook — inserting moves the
 	// index's backing array, so it must wait until every task pointer is dead.
 	saved, err := a.mutateInPost(idx, id, func(*core.Task) error {
-		renumbered, successor, report, err = a.applySet(idx, id, o, due, nil)
+		renumbered, successor, report, err = a.applySet(idx, id, o, due, anchor, nil)
 		return err
 	}, func(idx *core.Index) error {
 		return a.flushSuccessors(idx, []*pendingSuccessor{successor})
@@ -310,6 +323,18 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 		// Same reason as --due above: the spelling is refused before any write.
 		if err := CheckDueShift(*o.DueShift); err != nil {
 			return err
+		}
+	}
+	if o.Anchor != nil {
+		switch {
+		case o.ClearAnchor:
+			return core.Validationf(id, "--anchor and --clear-anchor say two different things about what the due follows; pass one")
+		case o.ClearDue:
+			return core.Validationf(id, "--anchor names what the due follows; it cannot ride with --clear-due, which removes the due")
+		case o.Repeat != nil:
+			return core.Validationf(id, "a repeating task follows its own repeat_anchor, not a box's day; --anchor and --repeat cannot ride together")
+		case strings.TrimSpace(*o.Anchor) == "":
+			return core.Validationf(id, "--anchor needs an epic (the box whose day this due follows); use --clear-anchor to remove one")
 		}
 	}
 	if o.empty() {
@@ -350,6 +375,10 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 	if err != nil {
 		return nil, nil, err
 	}
+	anchor, err := a.resolveAnchor(o)
+	if err != nil {
+		return nil, nil, err
+	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, nil, err
@@ -372,13 +401,34 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 			return nil, nil, undatedShiftErr(undated, len(order))
 		}
 	}
+	if anchor != "" {
+		// The same up-front, all-or-nothing scan for the two states a follower
+		// cannot be in: no due (unless this write promises one) and a repeat
+		// rule (unless this write drops it).
+		var undated, repeating []string
+		for _, id := range order {
+			t, _ := idx.Find(id)
+			if t.Due == nil && due == nil {
+				undated = append(undated, id)
+			}
+			if t.Repeat != "" && !o.ClearRepeat {
+				repeating = append(repeating, id)
+			}
+		}
+		if len(undated) > 0 {
+			return nil, nil, undatedAnchorErr(undated, len(order))
+		}
+		if len(repeating) > 0 {
+			return nil, nil, repeatingAnchorErr(repeating, len(order))
+		}
+	}
 	var successors []*pendingSuccessor
 	reports := map[string]*RepeatReport{}
 	reservedIDs := map[string]bool{}
 	for _, id := range order {
 		t, _ := idx.Find(id)
 		reposBefore := append([]string(nil), t.Repos...)
-		_, succ, rep, serr := a.applySet(idx, id, o, due, reservedIDs)
+		_, succ, rep, serr := a.applySet(idx, id, o, due, anchor, reservedIDs)
 		if serr != nil {
 			return nil, nil, serr
 		}
@@ -402,8 +452,10 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 
 // applySet mutates one task in an ALREADY-LOADED index and returns any respace
 // the relative placement caused. It saves nothing: the caller owns the write, so
-// a batch is one Save. id must already resolve.
-func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, reserved map[string]bool) ([]core.PriorityChange, *pendingSuccessor, *RepeatReport, error) {
+// a batch is one Save. id must already resolve. anchor is the resolved epic id
+// a `--anchor` names ("" when the write does not set one), resolved once by the
+// caller (resolveAnchor) so a batch cannot fan out into N epic reads.
+func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, anchor string, reserved map[string]bool) ([]core.PriorityChange, *pendingSuccessor, *RepeatReport, error) {
 	var successor *pendingSuccessor
 	var report *RepeatReport
 	relRef, relBefore := o.Before, true
@@ -496,7 +548,10 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, re
 	}
 	switch {
 	case o.ClearDue:
+		// A due that is gone has nothing left to follow: the pointer goes with
+		// it rather than lingering as an anchor-undated warn.
 		t.Due = nil
+		t.Anchor = ""
 	case due != nil:
 		// The instant the CALLER resolved (resolveDue), not a fresh parse: a bulk
 		// set must stamp every task with the same promise, and `--due +1d` snoozes
@@ -528,6 +583,23 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, re
 	// ending the series or inventing a start.
 	if t.Repeat != "" && t.Due == nil {
 		return nil, nil, nil, core.Validationf(id, "task %s repeats, so it must keep a due date — drop the rule first with `furrow set %s --clear-repeat`", id, id)
+	}
+	switch {
+	case o.ClearAnchor:
+		t.Anchor = ""
+	case anchor != "":
+		t.Anchor = anchor
+	}
+	// The follower invariants, checked on the END state so every ordering of
+	// the flags in one write is judged the same: a pointer needs a due to move
+	// and cannot sit beside a rule (a series follows its own repeat_anchor).
+	// The batch path names every offender up front (SetMany); this is the
+	// single-id refusal and the batch's per-task backstop.
+	if t.Anchor != "" && t.Due == nil {
+		return nil, nil, nil, undatedAnchorErr([]string{id}, 1)
+	}
+	if t.Anchor != "" && t.Repeat != "" {
+		return nil, nil, nil, repeatingAnchorErr([]string{id}, 1)
 	}
 	if o.Epic != nil {
 		// Already validated in validateSetOpts; resolve again to store the ID, not
@@ -573,6 +645,20 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, re
 		return renumbered, nil, nil, err
 	}
 	return renumbered, successor, report, nil
+}
+
+// resolveAnchor binds a set's `--anchor` reference to the epic id it names,
+// once per call (resolveAnchorRef's rules: the box exists and carries a day).
+// "" when the call sets none.
+func (a *App) resolveAnchor(o SetOpts) (string, error) {
+	if o.Anchor == nil {
+		return "", nil
+	}
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return "", err
+	}
+	return a.resolveAnchorRef(*o.Anchor, epics)
 }
 
 // resolveBatch is the batch mutators' id resolution: the ids deduped to their

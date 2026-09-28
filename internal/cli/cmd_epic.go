@@ -41,6 +41,7 @@ func newEpicAddCmd() *cobra.Command {
 		labels []string
 		repos  []string
 		body   string
+		anchor string
 	)
 	cmd := &cobra.Command{
 		Use:   "add <title>",
@@ -52,7 +53,12 @@ func newEpicAddCmd() *cobra.Command {
 			"title already says it (\"make curry\") gains nothing from restating it, so\n" +
 			"furrow neither requires a goal nor lints its absence.\n\n" +
 			"--meta k=v is free-form: furrow stores it, round-trips it, and never\n" +
-			"interprets or indexes it. Read it back with `epic show --json | jq`.",
+			"interprets or indexes it. Read it back with `epic show --json | jq`.\n\n" +
+			"--anchor YYYY-MM-DD is the box's own calendar day — the event, the\n" +
+			"release, the deadline its members' dates count back from. Tasks whose\n" +
+			"due follows it are marked with `set --anchor <this epic>`; when the day\n" +
+			"moves (`epic set --anchor <new day>`) every follower's due moves with\n" +
+			"it. See `furrow epic set --help`.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -63,8 +69,11 @@ func newEpicAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchor) == "" {
+				return core.Validationf("", "--anchor was given an empty value; pass a calendar day (2026-11-21), or drop the flag to create the box without one")
+			}
 			e, err := a.EpicAdd(args[0], app.EpicAddOpts{
-				Goal: goal, Meta: m, Labels: labels, Repos: repos, Body: body,
+				Goal: goal, Meta: m, Labels: labels, Repos: repos, Body: body, Anchor: anchor,
 			})
 			if err != nil {
 				return err
@@ -82,6 +91,7 @@ func newEpicAddCmd() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable; comma-separated)")
 	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "owner/repo this box spans (repeatable; comma-separated)")
 	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (default: a heading from the title)")
+	cmd.Flags().StringVar(&anchor, "anchor", "", "the box's calendar day (YYYY-MM-DD) that its followers' dues are derived from")
 	return cmd
 }
 
@@ -172,6 +182,11 @@ func newEpicShowCmd() *cobra.Command {
 
 func newEpicSetCmd() *cobra.Command {
 	var (
+		anchor      string
+		clearAnchor bool
+		yes         bool
+	)
+	var (
 		title     string
 		goal      string
 		meta      []string
@@ -185,8 +200,32 @@ func newEpicSetCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "set <epic>",
-		Short: "Edit an epic's title, goal, meta, labels, repos, or its standing/pinned declarations",
-		Long: "Edit a box's metadata. --standing and --pinned (v7) are the two PERMANENT-\n" +
+		Short: "Edit an epic's title, goal, meta, labels, repos, anchor day, or its standing/pinned declarations",
+		Long: "Edit a box's metadata.\n\n" +
+			"--anchor YYYY-MM-DD sets or MOVES the box's calendar day — the one date\n" +
+			"its derived dates count back from (an event, a release, a deadline).\n" +
+			"Tasks whose due follows it carry `anchor: <this epic>` (`furrow set\n" +
+			"--anchor <epic>`; `-q anchor:<epic>` lists them, `-q has:due no:anchor`\n" +
+			"the dates the other side or the calendar fixed). A FIRST set moves\n" +
+			"nothing: the dues the followers already carry are their distances from\n" +
+			"the day being declared. A later set that changes the day is the\n" +
+			"reschedule: every open follower's due shifts by the calendar-day delta\n" +
+			"(--due-shift's rule, so a 13:20 stays 13:20 across a DST boundary), a\n" +
+			"done follower keeps its due (history) and is listed as kept, and the\n" +
+			"write is all-or-nothing — a follower with no due or with a repeat rule\n" +
+			"refuses the whole move, every such id in details.undated /\n" +
+			"details.repeating (lint names them first: anchor-undated,\n" +
+			"anchor-on-repeat). A move PREVIEWS until --yes, one row per follower\n" +
+			"with its due before and after ({dry_run: true, anchor: {epic, from, to,\n" +
+			"days, moves, kept}} in JSON); with --yes, or when no due moves, the write\n" +
+			"lands and the envelope carries the same object under `anchor`. The same\n" +
+			"day again is a no-op. --clear-anchor drops the day; followers keep their\n" +
+			"pointer, are named in the envelope's anchor.followers and warned by lint\n" +
+			"(anchor-unset) until they are re-pointed or cleared (`furrow set -q\n" +
+			"'anchor:<epic>' -r '' --clear-anchor --yes`). The derivation itself is\n" +
+			"never stored: a due stays one absolute instant, and `show` prints a\n" +
+			"follower's D-N against the box's day.\n\n" +
+			"--standing and --pinned (v7) are the two PERMANENT-\n" +
 			"channel declarations: a standing box is exempt from the lifecycle nags\n" +
 			"(revisit's epic_all_done / epic_dep_done / epic_stuck) and instead\n" +
 			"carries the review cadence — once `furrow review <epic-ref>` has stamped\n" +
@@ -198,6 +237,11 @@ func newEpicSetCmd() *cobra.Command {
 			"with --standing=false / --pinned=false — an omitted flag never touches the\n" +
 			"stored value. Which boxes carry them is an operating convention, not\n" +
 			"furrow's: furrow stays name-independent.",
+		Example: "  furrow epic add \"会場\" --anchor 2026-11-21             # the event day\n" +
+			"  furrow set -q 'epic:e-v0zd has:due' --anchor e-v0zd --yes  # mark the dues that follow it\n" +
+			"  furrow epic set e-v0zd --anchor 2026-11-28              # the day moved: preview every follower's old → new due\n" +
+			"  furrow epic set e-v0zd --anchor 2026-11-28 --yes        # apply, one write\n" +
+			"  furrow epic set e-v0zd --clear-anchor                   # drop the day (followers keep their pointer, disclosed)",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -208,10 +252,20 @@ func newEpicSetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchor) == "" {
+				return core.Validationf(args[0], "--anchor was given an empty value; pass a calendar day (2026-11-21), or use --clear-anchor to remove it")
+			}
+			if yes && !cmd.Flags().Changed("anchor") {
+				return core.Validationf(args[0], "--yes confirms the follower dues an --anchor move shifts; without --anchor there is nothing to preview")
+			}
 			o := app.EpicSetOpts{
 				SetMeta: m, RmMeta: rmMeta,
 				AddLabels: addLabels, RmLabels: rmLabels,
 				AddRepos: addRepos, RmRepos: rmRepos,
+				ClearAnchor: clearAnchor,
+			}
+			if cmd.Flags().Changed("anchor") {
+				o.Anchor = &anchor
 			}
 			if cmd.Flags().Changed("title") {
 				o.Title = &title
@@ -225,7 +279,35 @@ func newEpicSetCmd() *cobra.Command {
 			if cmd.Flags().Changed("pinned") {
 				o.Pinned = &pinned
 			}
-			return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicSet(args[0], o) })
+			// A move is a write to every follower, so it previews like a `set -q`
+			// selection until --yes: the plan is computed the way the write
+			// computes it (PlanAnchor), and a plan that moves nothing — a first
+			// set, the same day — needs no confirmation.
+			if o.Anchor != nil && !yes {
+				plan, err := a.PlanAnchor(args[0], anchor)
+				if err != nil {
+					return err
+				}
+				if len(plan.Moves) > 0 {
+					emitAnchorPreview(a, plan)
+					return nil
+				}
+			}
+			before, after, plan, err := a.EpicSet(args[0], o)
+			if err != nil {
+				return err
+			}
+			var extra map[string]any
+			if plan != nil {
+				extra = map[string]any{"anchor": plan}
+			}
+			if err := emitEpicMutationResult(before, after, extra); err != nil {
+				return err
+			}
+			if plan != nil {
+				printAnchorReport(a, plan)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "rename the epic")
@@ -238,6 +320,10 @@ func newEpicSetCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&rmRepos, "rm-repo", nil, "detach an owner/repo (repeatable; comma-separated)")
 	cmd.Flags().BoolVar(&standing, "standing", false, "declare a permanent box (exempt from epic_all_done/epic_dep_done; --standing=false clears)")
 	cmd.Flags().BoolVar(&pinned, "pinned", false, "surface this box's actionable tasks in next/brief regardless of the active scope (--pinned=false clears)")
+	cmd.Flags().StringVar(&anchor, "anchor", "", "set or move the box's calendar day (YYYY-MM-DD); a move shifts every follower's due by the day delta, previewed until --yes")
+	cmd.Flags().BoolVar(&clearAnchor, "clear-anchor", false, "drop the box's day (followers keep their pointer and are disclosed)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "apply the follower due moves an --anchor change previews")
+	cmd.MarkFlagsMutuallyExclusive("anchor", "clear-anchor")
 	return cmd
 }
 

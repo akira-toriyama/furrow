@@ -192,7 +192,7 @@ func TestEpicSetEditsAndRefusesNoOp(t *testing.T) {
 	box := mustEpic(t, a, "box", EpicAddOpts{Meta: map[string]string{"place": "here"}})
 
 	goal := "done when the pamphlet is printed"
-	_, after, err := a.EpicSet(box, EpicSetOpts{
+	_, after, _, err := a.EpicSet(box, EpicSetOpts{
 		Goal:    &goal,
 		SetMeta: map[string]string{"span": "aug"},
 		RmMeta:  []string{"place"},
@@ -209,7 +209,7 @@ func TestEpicSetEditsAndRefusesNoOp(t *testing.T) {
 	if _, ok := after.Meta["place"]; ok {
 		t.Errorf("meta key not removed: %v", after.Meta)
 	}
-	if _, _, err := a.EpicSet(box, EpicSetOpts{}); err == nil {
+	if _, _, _, err := a.EpicSet(box, EpicSetOpts{}); err == nil {
 		t.Error("an empty set must be refused, not a silent updated bump")
 	}
 }
@@ -365,7 +365,7 @@ func TestEpicSetRmRepoResolvesLikeAddRepo(t *testing.T) {
 	a := newApp()
 	box := mustEpic(t, a, "box", EpicAddOpts{Repos: []string{"acme/widget", "acme/gadget"}})
 
-	_, after, err := a.EpicSet(box, EpicSetOpts{RmRepos: []string{"widget"}})
+	_, after, _, err := a.EpicSet(box, EpicSetOpts{RmRepos: []string{"widget"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func TestEpicSetRmRepoResolvesLikeAddRepo(t *testing.T) {
 		t.Errorf("a short --rm-repo must shed the box's own repo, got %v", after.Repos)
 	}
 
-	_, _, err = a.EpicSet(box, EpicSetOpts{RmRepos: []string{"nope"}})
+	_, _, _, err = a.EpicSet(box, EpicSetOpts{RmRepos: []string{"nope"}})
 	fe := core.AsError(err)
 	if fe == nil || fe.Kind != core.KindRepoUnknown || fe.Code != core.CodeValidation {
 		t.Fatalf("an unknown --rm-repo must be exit 2 repo-unknown, got %v", err)

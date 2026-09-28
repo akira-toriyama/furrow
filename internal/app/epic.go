@@ -51,6 +51,10 @@ type EpicAddOpts struct {
 	Labels []string
 	Repos  []string
 	Body   string // initial body markdown; "" seeds a heading from the title
+	// Anchor is the box's calendar day (core.AnchorLayout); "" declares none.
+	// Validated like `epic set --anchor`, and with no members yet nothing can
+	// move, so it is a plain field write.
+	Anchor string
 }
 
 // EpicSetOpts are the edits `furrow epic set` applies. A nil pointer leaves the
@@ -70,6 +74,14 @@ type EpicSetOpts struct {
 	// default.
 	Standing *bool
 	Pinned   *bool
+	// Anchor sets or MOVES the box's day (core.AnchorLayout). A move — the box
+	// already had a different day — shifts every open follower's due by the
+	// calendar-day delta in the same call (planAnchorIn), which is the one
+	// write where a box's field changes a task's; the CLI previews it until
+	// --yes. ClearAnchor drops the day and wins, leaving the followers'
+	// pointers in place and disclosed (AnchorPlan.Followers).
+	Anchor      *string
+	ClearAnchor bool
 }
 
 // requested is the one table EpicSet's no-op refusal reads, in flag order —
@@ -87,6 +99,8 @@ func (o EpicSetOpts) requested() []optFlag {
 		{"--rm-repo", len(o.RmRepos) > 0},
 		{"--standing", o.Standing != nil},
 		{"--pinned", o.Pinned != nil},
+		{"--anchor", o.Anchor != nil},
+		{"--clear-anchor", o.ClearAnchor},
 	}
 }
 
@@ -107,6 +121,14 @@ func (a *App) EpicAdd(title string, o EpicAddOpts) (*core.Epic, error) {
 		if strings.TrimSpace(k) == "" {
 			return nil, core.Validationf("", "--meta key must not be empty")
 		}
+	}
+	anchor := ""
+	if o.Anchor != "" {
+		day, err := core.ParseAnchor(o.Anchor)
+		if err != nil {
+			return nil, core.Validationf("", "--anchor %s", strings.TrimPrefix(err.Error(), "anchor "))
+		}
+		anchor = day.Format(core.AnchorLayout)
 	}
 
 	epics, err := a.Store.LoadEpics()
@@ -140,7 +162,7 @@ func (a *App) EpicAdd(title string, o EpicAddOpts) (*core.Epic, error) {
 	now := a.Clock.Now()
 	e := core.Epic{
 		ID: id, Title: title, Goal: strings.TrimSpace(o.Goal),
-		Labels: o.Labels, Repos: repos, Meta: o.Meta,
+		Labels: o.Labels, Repos: repos, Meta: o.Meta, Anchor: anchor,
 		Created: now, Updated: now, Body: core.BodyPath(id),
 	}
 
@@ -283,25 +305,45 @@ func (a *App) epicDetailIn(idx *core.Index, epics []core.Epic, id string, withBo
 
 // EpicSet applies the metadata edits. A no-op request is exit 2 rather than a
 // silent `updated` bump — the same rule Set follows for tasks.
-func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, error) {
+//
+// The third result is the anchor report: nil unless --anchor/--clear-anchor
+// was requested, else what the day change did to the followers (AnchorPlan).
+// A MOVE is two store writes — the box first, then the followers' index — and
+// deliberately in that order: should the second fail, the box already says
+// the new day and the followers still sit on the old one, which the operator
+// repairs with one visible `set -q 'anchor:<epic>' --due-shift ±Nd`; the
+// other order would leave a re-run of the same command moving them twice.
+func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *AnchorPlan, error) {
 	if o.empty() {
-		return nil, nil, core.Validationf(ref, "epic set needs at least one change (%s)", flagNames(o.requested()))
+		return nil, nil, nil, core.Validationf(ref, "epic set needs at least one change (%s)", flagNames(o.requested()))
+	}
+	if o.Anchor != nil && o.ClearAnchor {
+		return nil, nil, nil, core.Validationf(ref, "--anchor and --clear-anchor say two different things about the box's day; pass one")
 	}
 	if err := requireNonBlank(ref, "--add-label", o.AddLabels); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var universe []string
 	if len(o.AddRepos) > 0 || len(o.RmRepos) > 0 {
 		var err error
 		if universe, err = a.epicRepoUniverse(); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	addRepos, err := resolveRepoArgs(o.AddRepos, "", universe)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return a.mutateEpic(ref, func(e *core.Epic) error {
+	var (
+		idx  *core.Index
+		plan *AnchorPlan
+	)
+	if o.Anchor != nil || o.ClearAnchor {
+		if idx, err = a.load(); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	before, after, err := a.mutateEpic(ref, func(e *core.Epic) error {
 		if o.Title != nil {
 			t := core.NormalizeTitle(*o.Title)
 			if strings.TrimSpace(t) == "" {
@@ -345,8 +387,37 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, error)
 		// semantics (and their edge cases) identical across the two entities.
 		e.Labels = labelDelta(e.Labels, o.AddLabels, o.RmLabels)
 		e.Repos = labelDelta(e.Repos, addRepos, rmRepos)
+		switch {
+		case o.ClearAnchor:
+			plan = newAnchorPlan(e.ID)
+			plan.From = e.Anchor
+			plan.Followers = a.anchorFollowers(idx, e.ID)
+			e.Anchor = ""
+		case o.Anchor != nil:
+			p, err := a.planAnchorIn(idx, e, *o.Anchor)
+			if err != nil {
+				return err
+			}
+			// The followers are writes too, judged by the session guard before
+			// the box lands — a refusal here saves nothing.
+			if err := a.guardRepos(e.ID, followerRepos(idx, p), ""); err != nil {
+				return err
+			}
+			plan = p
+			e.Anchor = p.To
+		}
 		return nil
 	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if plan != nil && len(plan.Moves) > 0 {
+		applyAnchorMoves(idx, plan, a.Clock.Now())
+		if err := a.Store.Save(idx); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	return before, after, plan, nil
 }
 
 // EpicActivate opens a box for work. This is where the per-repo single-active

@@ -37,6 +37,7 @@ type batchLine struct {
 	Checklist []batchCheck `json:"checklist"`
 	Due       *string      `json:"due"`
 	Repeat    *string      `json:"repeat"`
+	Anchor    *string      `json:"anchor"`
 }
 
 // batchCheck is one checklist entry of a batch line: a JSON string is an
@@ -73,7 +74,7 @@ func (c *batchCheck) UnmarshalJSON(data []byte) error {
 // batchFields is the closed field vocabulary — the JSON names of batchLine.
 // An unknown field is exit 2 with this list in candidates (config set's
 // rule: a typo must not silently create a task without the field).
-var batchFields = []string{"key", "title", "status", "priority", "value", "effort", "labels", "repos", "draft", "epic", "deps", "refs", "body", "checklist", "due", "repeat"}
+var batchFields = []string{"key", "title", "status", "priority", "value", "effort", "labels", "repos", "draft", "epic", "deps", "refs", "body", "checklist", "due", "repeat", "anchor"}
 
 // keyedTaskView is a created task with the batch key it was declared under —
 // the ONE place a key is visible after the write, since shards never carry
@@ -213,6 +214,9 @@ func (l batchLine) merge(shared app.AddOpts) app.AddOpts {
 	}
 	if l.Repeat != nil {
 		o.Repeat = *l.Repeat
+	}
+	if l.Anchor != nil {
+		o.Anchor = *l.Anchor
 	}
 	o.Labels = unionStrings(shared.Labels, l.Labels)
 	o.Repos = unionStrings(shared.Repos, l.Repos)

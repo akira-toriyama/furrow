@@ -211,7 +211,7 @@ func TestEpicNoOpLeavesUpdatedAloneButProseStamps(t *testing.T) {
 		t.Fatal(err)
 	}
 	advance(t, a, time.Hour)
-	if _, _, err := a.EpicSet(e.ID, EpicSetOpts{Goal: &goal}); err != nil {
+	if _, _, _, err := a.EpicSet(e.ID, EpicSetOpts{Goal: &goal}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := a.EpicShow(e.ID)

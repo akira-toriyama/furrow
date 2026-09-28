@@ -97,6 +97,10 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 		return nil, err
 	}
 	ps = append(ps, core.EpicProblems(idx, epics, a.Cfg.Terminal, a.Cfg.EpicIDPattern())...)
+	// The anchor pair's integrity (anchor-*): every state here is one the
+	// write paths refuse, so a finding is a hand-edit or a merge — and the two
+	// a move would refuse on (undated, repeating) are named here first.
+	ps = append(ps, core.AnchorProblems(idx, epics, a.Cfg.DoneLane)...)
 	for _, e := range epics {
 		if p, ok := unknownKeyProblem(e.ID, "epic shard "+core.EpicPath(e.ID), e.ExtraKeys()); ok {
 			ps = append(ps, p)

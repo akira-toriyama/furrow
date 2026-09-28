@@ -56,6 +56,10 @@ type ShowItem struct {
 	// when the caller had no epic store to resolve against — a renderer must
 	// fall back to the bare Task.Epic id, never print a blank title.
 	EpicRef *EpicRef
+	// AnchorRef resolves Task.Anchor to the box it names and that box's day,
+	// under the same nil rule as EpicRef: absent pointer, or no epic store to
+	// resolve against, and the renderer prints the bare id.
+	AnchorRef *AnchorRef
 	// Actionable and BlockedBy are factsFor's answer for this task: whether
 	// `next` would hand it out, and which of its deps are not done yet.
 	// BlockedBy is always non-nil ([] not null).
@@ -210,6 +214,12 @@ func (a *App) ShowBatch(refs []string, withBody bool) ([]ShowEntry, []string, er
 				}
 			}
 			item := a.showItem(idx, t, body, doneIDs)
+			if t.Anchor != "" {
+				// Same best-effort rule as the epic title below.
+				if es, eerr := loadEpicsOnce(); eerr == nil {
+					item.AnchorRef = anchorRefFor(es, t.Anchor)
+				}
+			}
 			if t.Epic != "" {
 				// BEST EFFORT, and the asymmetry with the branch below is the
 				// point: reading a TASK never touched epics/ before this, so an

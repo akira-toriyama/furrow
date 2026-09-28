@@ -74,6 +74,10 @@ type AddOpts struct {
 	// Repeat is the raw `--repeat` spelling (see recur.Compile), anchored to
 	// this task's own Due — which is therefore required alongside it.
 	Repeat string
+	// Anchor is the raw `--anchor` reference: the box whose day this task's due
+	// follows, resolved by resolveAnchorRef (the box exists and carries a day).
+	// It needs a Due and refuses Repeat, exactly as `set --anchor` does.
+	Anchor string
 	// Checklist seeds checklist items at creation: `--check` texts arrive
 	// unticked (UncheckedItems), and only a batch line may seed a ticked one
 	// (its `{"text", "done"}` object — the shard's own item shape — so a board

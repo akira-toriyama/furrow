@@ -137,6 +137,7 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 		}
 	}
 	dues := make([]*time.Time, len(specs))
+	var epicsForAnchor []core.Epic
 	for i, s := range specs {
 		// Fold the title exactly as single Add does. A bulk title is ordinary user
 		// input (`furrow add --stdin`, a migrate import), not a hand-edited shard,
@@ -234,6 +235,27 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 			}
 			dues[i] = &d
 		}
+		// The anchor pointer resolves against the epic set read once for the
+		// batch, and its two invariants (a due to follow with, no repeat rule)
+		// are judged here so a bad spec fails before the first body hits disk.
+		if s.Anchor != "" {
+			if epicsForAnchor == nil {
+				if epicsForAnchor, err = a.Store.LoadEpics(); err != nil {
+					return nil, err
+				}
+			}
+			resolved, err := a.resolveAnchorRef(s.Anchor, epicsForAnchor)
+			if err != nil {
+				return nil, specf(err)
+			}
+			if dues[i] == nil {
+				return nil, specf(core.Validationf("", "--anchor needs a --due: the pointer says what the due follows, and there is no due"))
+			}
+			if s.Repeat != "" {
+				return nil, specf(core.Validationf("", "a repeating task follows its own repeat_anchor, not a box's day; --anchor and --repeat cannot ride together"))
+			}
+			specs[i].Anchor = resolved
+		}
 	}
 
 	// One guard call for the whole batch, on the union of every spec's repos
@@ -271,7 +293,7 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 			Labels: s.Labels, Repos: s.Repos, Deps: s.Deps, Refs: s.Refs,
 			Checklist: seedChecklist(s.Checklist),
 			Created:   now, Updated: now, Body: core.BodyPath(id),
-			Epic: s.Epic, Due: dues[i],
+			Epic: s.Epic, Due: dues[i], Anchor: s.Anchor,
 		}
 		// Mirror Add: a task born in the done lane is closed at birth, so bulk
 		// `add --stdin -s done` doesn't leak the same closed:null zombie. A

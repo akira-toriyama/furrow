@@ -17,7 +17,7 @@ import (
 // the deps DAG walked to a fixpoint; the v5 parent hierarchy they were first
 // sketched against is gone, and epic membership is the epic: qualifier).
 var qualifierVocab = []string{
-	"status", "lane", "epic", "label", "repo", "id", "title", "body",
+	"status", "lane", "epic", "anchor", "label", "repo", "id", "title", "body",
 	"value", "effort", "priority", "roi",
 	"created", "updated", "closed", "reviewed", "due",
 	"depends-on", "blocks", "descendant-of", "ancestor-of",
@@ -25,7 +25,7 @@ var qualifierVocab = []string{
 
 // presenceVocab is the field set has:/no: accept.
 var presenceVocab = []string{
-	"label", "repo", "epic", "value", "effort", "deps", "refs", "checklist", "closed", "reviewed", "body", "due", "repeat",
+	"label", "repo", "epic", "value", "effort", "deps", "refs", "checklist", "closed", "reviewed", "body", "due", "repeat", "anchor",
 }
 
 // stateVocab is the is: flag set.
@@ -267,6 +267,11 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 				// The live occurrence of a series is the only task that carries
 				// the rule, so has:repeat is "the recurring work on this board".
 				return t.Repeat != ""
+			case "anchor":
+				// The dues that follow a box's day — the reschedule's moving
+				// side; `has:due no:anchor` is the other side, the dates the
+				// other side or the calendar fixed.
+				return t.Anchor != ""
 			case "body":
 				// Non-whitespace body content. Note `add` seeds every body with
 				// a heading, so no:body means a body someone deliberately
@@ -322,6 +327,13 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 		// gives candidates on a typo).
 		vals := valTexts(term.Values)
 		return neg(func(t *core.Task) bool { return contains(vals, t.Epic) }), nil
+
+	case "anchor":
+		// The tasks whose due follows a box's day — exact epic ids, lenient
+		// like epic: (lint's anchor-missing owns the dangling pointer; the
+		// strict spelling is `set --anchor`, which resolves with candidates).
+		vals := valTexts(term.Values)
+		return neg(func(t *core.Task) bool { return contains(vals, t.Anchor) }), nil
 
 	case "label":
 		// A value containing `*` is a wildcard (the v2 token reserved since v1):

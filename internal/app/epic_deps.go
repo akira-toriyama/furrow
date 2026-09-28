@@ -190,6 +190,27 @@ func resolveEpicRef(byID map[string]*core.Epic, id string) EpicRef {
 	return EpicRef{ID: e.ID, Title: e.Title, State: state}
 }
 
+// AnchorRef is EpicRef plus the box's day — what `show` needs to render a
+// follower's due as D-N: the box it follows, and the day it counts from ("" when
+// the box has no anchor, which lint's anchor-unset owns calling a defect).
+type AnchorRef struct {
+	EpicRef
+	Date string
+}
+
+// anchorRefFor resolves a task's Anchor pointer against the loaded epic set —
+// epicRefFor's twin for the second pointer a task can carry. Nil when the id
+// names no box, so the renderer falls back to the bare id.
+func anchorRefFor(epics []core.Epic, id string) *AnchorRef {
+	for i := range epics {
+		if epics[i].ID == id {
+			r := resolveEpicRef(map[string]*core.Epic{id: &epics[i]}, id)
+			return &AnchorRef{EpicRef: r, Date: epics[i].Anchor}
+		}
+	}
+	return nil
+}
+
 // epicRefFor resolves a MEMBERSHIP id (a task's Epic) against the loaded epic
 // set — resolveEpicRef's slice-input twin, for the one caller that holds epics
 // as a slice and needs exactly one lookup. A membership naming no box yields

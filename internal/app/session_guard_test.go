@@ -416,7 +416,7 @@ func TestSessionGuardCoversEpicWrites(t *testing.T) {
 		other, _ = a.EpicAdd("other", EpicAddOpts{Repos: []string{"o/furrow"}})
 	})
 	title := "renamed"
-	_, _, err = a.EpicSet(box.ID, EpicSetOpts{Title: &title})
+	_, _, _, err = a.EpicSet(box.ID, EpicSetOpts{Title: &title})
 	wantSessionBusy(t, err, box.ID)
 	_, _, err = a.EpicNote(box.ID, "note")
 	wantSessionBusy(t, err, box.ID)
@@ -424,9 +424,9 @@ func TestSessionGuardCoversEpicWrites(t *testing.T) {
 	wantSessionBusy(t, err, box.ID)
 	_, err = a.EditPath(box.ID)
 	wantSessionBusy(t, err, box.ID)
-	_, _, err = a.EpicSet(other.ID, EpicSetOpts{AddRepos: []string{"o/glyph"}})
+	_, _, _, err = a.EpicSet(other.ID, EpicSetOpts{AddRepos: []string{"o/glyph"}})
 	wantSessionBusy(t, err, other.ID)
-	if _, _, err := a.EpicSet(other.ID, EpicSetOpts{Title: &title}); err != nil {
+	if _, _, _, err := a.EpicSet(other.ID, EpicSetOpts{Title: &title}); err != nil {
 		t.Fatalf("a box in an unoccupied repo edits freely: %v", err)
 	}
 }

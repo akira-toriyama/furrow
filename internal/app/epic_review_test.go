@@ -60,7 +60,7 @@ func TestEpicReviewDueCadence(t *testing.T) {
 	standing, _ := a.EpicAdd("standing box", EpicAddOpts{})
 	plain, _ := a.EpicAdd("ordinary box", EpicAddOpts{})
 	yes := true
-	if _, _, err := a.EpicSet(standing.ID, EpicSetOpts{Standing: &yes}); err != nil {
+	if _, _, _, err := a.EpicSet(standing.ID, EpicSetOpts{Standing: &yes}); err != nil {
 		t.Fatal(err)
 	}
 

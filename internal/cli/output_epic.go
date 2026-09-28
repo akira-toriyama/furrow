@@ -68,6 +68,7 @@ func emitEpicList(a *app.App, items []app.EpicItem) error {
 			if v.Waiting != nil {
 				line += "  " + waitingUntil(a, v.Waiting)
 			}
+			line = withTags(line, anchorTag(&v.Epic))
 			if v.Goal != "" {
 				line += "\n    goal: " + v.Goal
 			}
@@ -151,6 +152,9 @@ func printEpicDetail(a *app.App, d *app.EpicDetail) {
 		state += ", standing"
 	}
 	fmt.Fprintf(out, "state:    %s\n", state)
+	if d.Epic.Anchor != "" {
+		fmt.Fprintf(out, "anchor:   %s\n", d.Epic.Anchor)
+	}
 	fmt.Fprintf(out, "progress: %d/%d\n", d.Progress.Done, d.Progress.Total)
 	if d.Stuck {
 		fmt.Fprintln(out, "          ⚠ stuck — open members but none actionable")
@@ -275,7 +279,88 @@ func changedEpicFields(before, after *core.Epic) []string {
 	if !timeEq(before.Reviewed, after.Reviewed) {
 		ch = append(ch, "reviewed")
 	}
+	if before.Anchor != after.Anchor {
+		ch = append(ch, "anchor")
+	}
 	return ch
+}
+
+// anchorTag marks a box row with its day — the one date a session orienting
+// on the box needs before anything else, so it rides the `epic ls` and `brief`
+// rows rather than waiting for `epic show`.
+func anchorTag(e *core.Epic) string {
+	if e.Anchor == "" {
+		return ""
+	}
+	return "anchor " + e.Anchor
+}
+
+// anchorMoveRow is one follower's line in a move's preview and report: the
+// task as a task (id, lane, title) and its due before → after, in the board's
+// calendar, the shape a `set -q --due-shift` preview row has.
+func anchorMoveRow(a *app.App, m app.DueMove) string {
+	return fmt.Sprintf("  %s  [%s] %s  due %s → %s", m.ID, m.Status, m.Title,
+		m.From.In(a.Calendar()).Format("2006-01-02 15:04"), m.To.In(a.Calendar()).Format("2006-01-02 15:04"))
+}
+
+// anchorDelta renders the day change: `2026-11-21 → 2026-11-28 (+7d)`.
+func anchorDelta(p *app.AnchorPlan) string {
+	return fmt.Sprintf("%s → %s (%+dd)", p.From, p.To, p.Days)
+}
+
+// emitAnchorPreview renders an `epic set --anchor` move without performing it
+// — the selection-preview contract: JSON is {dry_run: true, anchor: <plan>}
+// (an OBJECT, told from the applied envelope by dry_run), human mode lists
+// every follower's old → new due, the done ones kept, and names the re-run.
+func emitAnchorPreview(a *app.App, p *app.AnchorPlan) {
+	if jsonMode() {
+		emitObject(map[string]any{"dry_run": true, "anchor": p})
+		return
+	}
+	fmt.Fprintf(out, "would move %d due(s) that follow %s: anchor %s\n", len(p.Moves), p.Epic, anchorDelta(p))
+	for _, m := range p.Moves {
+		fmt.Fprintln(out, anchorMoveRow(a, m))
+	}
+	printAnchorKept(p)
+	fmt.Fprintln(out, "re-run with --yes to apply")
+}
+
+// printAnchorReport is the human tail of an applied `epic set --anchor` /
+// `--clear-anchor`: what the day did to the followers, after the `<id>
+// <title>` line. A first set and a same-day set say so in one line; a move
+// lists every row it wrote (the preview's rows, now past tense); a clear
+// discloses the followers left pointing at a box with no day. JSON carries
+// the same plan under the envelope's `anchor` key, so this prints nothing
+// there.
+func printAnchorReport(a *app.App, p *app.AnchorPlan) {
+	if jsonMode() {
+		return
+	}
+	switch {
+	case p.To == "":
+		fmt.Fprintf(out, "anchor cleared (was %s)\n", p.From)
+		if n := len(p.Followers); n > 0 {
+			fmt.Fprintf(errOut, "note: %d task(s) still follow %s, which now has no day — lint warns anchor-unset until they are re-pointed or cleared: furrow set -q 'anchor:%s' -r '' --clear-anchor --yes\n", n, p.Epic, p.Epic)
+		}
+	case p.From == "":
+		fmt.Fprintf(out, "anchor %s\n", p.To)
+	case p.From == p.To:
+		fmt.Fprintf(out, "anchor %s (unchanged)\n", p.To)
+	default:
+		fmt.Fprintf(out, "anchor %s: moved %d due(s)\n", anchorDelta(p), len(p.Moves))
+		for _, m := range p.Moves {
+			fmt.Fprintln(out, anchorMoveRow(a, m))
+		}
+		printAnchorKept(p)
+	}
+}
+
+// printAnchorKept names the done followers a move left alone — a write never
+// narrows silently, and "kept" is a narrowing the reader must be able to see.
+func printAnchorKept(p *app.AnchorPlan) {
+	if n := len(p.Kept); n > 0 {
+		fmt.Fprintf(out, "  %d done follower(s) keep their due (history): %s\n", n, strings.Join(p.Kept, ", "))
+	}
 }
 
 func metaEq(a, b map[string]string) bool {

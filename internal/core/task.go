@@ -27,7 +27,15 @@ import (
 // release (the fleet's task-status CI). Order matters — release furrow, bump
 // every caller's pin, THEN `furrow upgrade --yes` the board. Bump only on a
 // read-breaking layout change, and update docs/schema/ + goldens in the same
-// change. v9 = the per-epic `reviewed` timestamp (omitempty): `furrow review
+// change. v11 = the anchor pair: an epic's `anchor` (the calendar day its
+// followers' dues are derived from) and a task's `anchor` (the epic whose day
+// its due follows). `epic set --anchor` moves every follower's due by the day
+// delta and `-q anchor:` / `has:anchor` select on it, so a binary that merely
+// PRESERVED the pair would leave a moved date behind on every task it wrote —
+// and report the board clean. Both are omitempty, so a board that anchors
+// nothing keeps its exact pre-v11 bytes and no shard rewrites on upgrade.
+// v10 = the per-task `repeat` rule and its `repeat_anchor` (a close writes the
+// next occurrence). v9 = the per-epic `reviewed` timestamp (omitempty): `furrow review
 // <epic-ref>` stamps it and revisit's epic_review_due reads it — the STANDING
 // box's review cadence on the [review].stale_after_days clock. An older binary
 // would PRESERVE the stamp but silently never nag, and a `furrow review` run
@@ -59,7 +67,7 @@ import (
 // write the loss back. v3 = shards whose tasks carry the required first-class
 // repos set (the repos pivot). v2 = per-task shards (tasks/<id>.json) +
 // meta.json (v1 was the monolithic index.json).
-const SchemaVersion = 10
+const SchemaVersion = 11
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into
@@ -260,6 +268,29 @@ type Task struct {
 	// overdue remedy hands the operator — would silently re-lattice every later
 	// occurrence. With the anchor held apart, a snooze moves this occurrence only.
 	RepeatAnchor *time.Time `json:"repeat_anchor,omitempty"`
+
+	// Anchor is the epic whose anchor day this task's due FOLLOWS (schema v11):
+	// an epic id, or "" for a due that follows nothing — the default, and what
+	// every dated task on every board was before v11. It is the reschedule's
+	// one bit: when the box's day moves (`epic set --anchor`), every follower's
+	// due moves by the same calendar-day delta and every other due stays where
+	// the other side, or the calendar, put it. The derivation itself (D-14) is
+	// NOT stored — Due stays the one absolute instant every reader already
+	// understands, and the offset is due − anchor whenever a renderer wants it —
+	// so an anchored task reads, sorts and lints exactly as a dated one does.
+	//
+	// The marker sits on the MOVING side on purpose: a follower forgotten is a
+	// stale date that `due-overdue` names, where a "fixed" marker forgotten
+	// would be a deadline the other side never set, moved silently. Pointing at
+	// a box rather than being a bool is what lets one day serve several boxes
+	// (a venue box's event date, followed by the menu and prep boxes' tasks).
+	//
+	// Write-path invariants (lint's anchor-* rules backstop a hand-edit): a
+	// follower carries a due (nothing else can move) and never a repeat rule (a
+	// series follows its own repeat_anchor), and the box it names has an anchor
+	// at the time the task is marked. It lives at the END of the struct per the
+	// shard-shape rule.
+	Anchor string `json:"anchor,omitempty"`
 
 	// extras: the unknown-key passthrough's carrier (passthrough.go states the
 	// contract once). *** Task must NEVER grow a MarshalJSON method *** — the

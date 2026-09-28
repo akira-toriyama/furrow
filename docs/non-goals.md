@@ -101,6 +101,37 @@ now and the due, so a snoozed or late close never hands the same day back — so
 an on-time close advances exactly one step and a late one moves you forward
 rather than into a backlog you did not accrue.
 
+### No stored offset, no cascade
+A box can carry a calendar day (`epic --anchor`, board layout v11) and a task's
+due can **follow** it (`set --anchor <epic>`): when the day moves, every
+follower's due moves by the same calendar-day delta, in one previewed write.
+That is the whole of the schedule model. A due stays one absolute instant; no
+task stores "D-14" and no read recomputes a date from an offset; nothing
+propagates along a dependency edge; a box's day is never rolled up from its
+members' dates.
+
+*The reschedule that asked for this (a one-day event, ~90 tasks, the day
+slipping a week) needed exactly one thing the board lacked: a way to say which
+dues follow the day and which the other side or the calendar fixed — 76 of 91
+dated tasks moved, 15 stayed, and the line between them lived in prose a session
+had to grep. A pointer on the moving side answers that. A stored offset would
+answer it too, at the cost of making every reader of `due` compute — an old
+binary, `lint`, `brief`, a shard read by `jq` would each show a different date
+until they all learned the arithmetic — for a derivation `show` can print from
+the two stamps it already has. Cascade through deps is the MS Project / Smartsheet
+/ Asana "auto-shift" family, and every tool that has it also has a mode to turn it
+off, because a dependency says what waits on what, not that the waiter's date is
+derived from the blocker's: on this board the fixed dates sit downstream of the
+derived ones as often as upstream, and `due-inversion` is the warn that says a
+derived date crossed a fixed one — the state the operator then resolves with the
+other side, not one furrow should paper over by moving the fixed date. Roll-up is
+Jira Plans' answer and it does not persist there either.*
+
+What would reopen this is a measured case, not a preference: a board whose
+followers hang from several days at once (a task at D-14 of one box and D+3 of
+another), or a reschedule where the delta genuinely differs per task. The shape
+then is a per-task offset beside the pointer — never a due computed on read.
+
 ### No cancelled close
 `furrow done` is the only way a task stops being open, and it stamps the one
 `closed` whether the completion condition was met or the premise behind the task
@@ -138,7 +169,7 @@ carries, read by `revisit`'s `dep_done` and by `N/M` — never a lane.
 
 The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
 (structured metadata, machine-written) + `.furrow/meta.json`
-(`{"schema_version": 10}`, the board-wide layout version) +
+(`{"schema_version": 11}`, the board-wide layout version) +
 `.furrow/bodies/<id>.md` (long-form prose, hand/agent
 editable) + `.furrow/bodies/assets/` (media copied in by `furrow attach` as
 collision-free `<id>-<name>` files, referenced from the body by a relative

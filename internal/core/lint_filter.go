@@ -17,6 +17,11 @@ package core
 // emitted code is missing here.
 var lintCodes = map[string]bool{
 	"alias-shadow":         true,
+	"anchor-invalid":       true,
+	"anchor-missing":       true,
+	"anchor-on-repeat":     true,
+	"anchor-undated":       true,
+	"anchor-unset":         true,
 	"archive-backlog":      true,
 	"asset-missing":        true,
 	"blank-entry":          true,
