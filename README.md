@@ -233,15 +233,16 @@ furrow ls --json | jq 'map(select(.value and .effort)) | sort_by(-(.value / .eff
 furrow revisit -r furrow --json | jq '.[] | {id, revisit: [.revisit[].code]}'
 ```
 
-### Attaching images and media
+### Attaching files
 
-A task body is plain Markdown, so you can attach a screenshot or diagram by committing the file alongside the bodies and linking it with a **relative path**:
+A task body is plain Markdown, so you can attach a screenshot, a diagram or a received document (a PDF quote, an email) by committing the file alongside the bodies and linking it with a **relative path**:
 
 ```markdown
 ![repro](assets/t-0001-bug.png)
+[quote](assets/t-0001-quote.pdf)
 ```
 
-`furrow attach <id> <file>` does exactly that (copies into `bodies/assets/` as `<id>-<name>` and links it). It renders wherever Markdown does, not in the terminal. Keep screenshots small and scrub secrets (git history is permanent); track large media with **Git LFS** before the first commit; `furrow lint` warns on a missing, orphan or ≥5 MiB asset.
+`furrow attach <id> <file>` does exactly that (copies into `bodies/assets/` as `<id>-<name>` and links it). It takes **any kind of file** — furrow never inspects the type: images embed inline, everything else (video, PDF, any document) becomes a plain link. It renders wherever Markdown does, not in the terminal. A file that should stay where it is, outside the board, is a `ref` (`furrow ref <id> --add <path>`), not an asset. Keep screenshots small and scrub secrets (git history is permanent); track large files with **Git LFS** before the first commit; `furrow lint` warns on a missing, orphan or ≥5 MiB asset.
 
 ---
 
@@ -268,7 +269,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `doctor [dir...]` | Diagnose this machine's board setup: config, boards, scopes, git freshness | — |
 | `edit <id>` | Edit a task's or epic's markdown body in $EDITOR, or replace it with --body | `--body`, `--expect-updated` |
 | `note <id> <text>` | Append a paragraph to a task's or epic's body and advance its updated time | `--expect-updated` |
-| `attach <id> <file>` | Attach a media file to a task (copies into bodies/assets/, links it from the body) | — |
+| `attach <id> <file>` | Attach a file of any kind to a task (copies into bodies/assets/, links it from the body) | — |
 | `done [<id>...]` | Move tasks into the done lane (stamps closed) | `--expect-updated`, `-l/--label`, `--note`, `-q/--query`, `-r/--repo`, `--yes` |
 | `move [<id>...] <lane>` | Move tasks to a lane | `--expect-updated`, `-l/--label`, `-q/--query`, `-r/--repo`, `--yes` |
 | `reorder <id> [<priority>]` | Set a task's priority — absolute, or relative with --before/--after | `--after`, `--before`, `--expect-updated` |
@@ -314,7 +315,7 @@ Global flags: `--json` and `--ndjson` are honored **wherever furrow emits JSON**
 
 ### Command notes
 
-The generated table is the machine-guaranteed surface; these are the behavior contracts that don't fit a one-liner. (Commands whose whole story fits their table row — `init`, `retitle`, `label`, `schema`, `version` — have no entry, and `attach`, `sync`, `upgrade`, and `config` have their own sections: [attachments](#attaching-images-and-media), [multi-machine sync](#multi-machine-furrow-sync), [the layout gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it), [the central board](#central-board).)
+The generated table is the machine-guaranteed surface; these are the behavior contracts that don't fit a one-liner. (Commands whose whole story fits their table row — `init`, `retitle`, `label`, `schema`, `version` — have no entry, and `attach`, `sync`, `upgrade`, and `config` have their own sections: [attachments](#attaching-files), [multi-machine sync](#multi-machine-furrow-sync), [the layout gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it), [the central board](#central-board).)
 
 - **`add`** — one task per stdin line with `--stdin`; **`--batch <file|->`** reads NDJSON with per-task fields and a batch-local `key`, so a dep may cite another line's key and a `[[key]]` in a title, body, or checklist item becomes `[[id]]` once ids are minted — an epic with a dependency graph is one file, written in any order, and `--json` echoes each task's key beside it (shards never carry keys; an unknown field, a bad reference, or an in-batch cycle is exit 2 and writes nothing); `--check` seeds checklist items, and a batch line's `checklist` entry is a string (unticked) or the shard's own `{"text", "done"}` item object, so an exported board reads back with its ticks (a key the item does not have is exit 2); an out-of-range `--value`/`--effort` clamps to 1..5 with a note; a title starting with `-` needs `--`; `-e/--epic` files it under a box (id, unique prefix or unique title substring — a miss is exit 2 with `candidates`; unfiled is legal at add time and a `lint` error while open). `--due` promises the task for a date (`2026-08-04` = that whole day, `2026-08-04T10:30`, an RFC3339 instant, or `+1d`). **`--repeat` makes it recur** (board layout v10): a short spelling — `daily`, `every <n> days`, `weekly`, `weekly on <days>`, `every <n> weeks on <days>`, `monthly`, `monthly on <day-of-month>`, `monthly on last`, `monthly on <nth> <weekday>`, `monthly on last <weekday>`, `every <n> months on <day-of-month>`, `yearly`, `every <n> years` — optionally ending in `until <date>` or `for <n> times`, or a raw RRULE line (never with a `DTSTART`: the series starts at the `--due` it requires, and that first date is the immovable anchor). An anchor off the rule's lattice is one live occurrence outside the series, a day past 28 skips the months that lack it and February 29 the years that lack one; each says so at bind time. `furrow add --help` is the contract; only a **close** advances a series (`done`). **`--anchor <epic>`** makes the due FOLLOW that box's day (board layout v11; the box must already carry one, needs `--due`, refused beside `--repeat`) — see `set` and `epic`; a batch line takes it as `anchor`.
 - **`ls`** — canonical `lane -> priority -> id` order; `--drafts` shows only repo-less tasks (bypasses the board scope); `--since`/`--until` window by `updated`; `--sort updated|created|value|effort` (`--reverse` flips; with a sort, `-n` is the top N); `--archived` reads the archive store. Every flat row carries a state glyph — ★ actionable, ✓ done, ~ parked, · open but not available — and `--json` adds `actionable`/`blocked_by`; `--actionable`/`--blocked` filter on it, `-e <epic>` on box membership (strict; the unfiled pile is `-q no:epic`). **`--tree`** groups the same rows by epic (active first, open by id, closed, then unfiled — or one box with an `<epic>` argument), built over what matched so it never shows fewer tasks; `-n` caps groups; each group carries `progress` (over the full board) and `stuck`. A dated row carries `due …`/`overdue …` in its title cell and a repeating one a bare `repeats` beside it — on every human view that renders a task as a task, because closing that row writes another task (`search`'s snippet column is the one exception).

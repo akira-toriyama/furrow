@@ -12,15 +12,20 @@ import (
 func newAttachCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "attach <id> <file>",
-		Short: "Attach a media file to a task (copies into bodies/assets/, links it from the body)",
-		Long: "Copy an image or video into the task's asset area (.furrow/bodies/assets/<id>-*)\n" +
-			"and append a relative markdown reference to the task body. Because the body is a\n" +
-			"committed .md, the whole attach lands in git from the terminal alone — no web\n" +
-			"session, no external upload. Images embed inline (![...]); other media link.\n" +
+		Short: "Attach a file of any kind to a task (copies into bodies/assets/, links it from the body)",
+		Long: "Copy a file into the task's asset area (.furrow/bodies/assets/<id>-*) and append a\n" +
+			"relative markdown reference to the task body. Any kind of file: a screenshot, a\n" +
+			"video, a received PDF or quote, an email, a log — furrow never inspects the type,\n" +
+			"so whatever git can hold, attach can hold. Because the body is a committed .md,\n" +
+			"the whole attach lands in git from the terminal alone — no web session, no\n" +
+			"external upload. Images (png/jpg/gif/webp/svg/bmp/avif) embed inline (![...]);\n" +
+			"every other file is a plain link ([...]). A file that should stay where it is\n" +
+			"(outside the board) is a ref, not an asset: `furrow ref <id> --add <path>`.\n" +
 			"LFS-independent: if .gitattributes tracks the extension, git-lfs handles the blob\n" +
 			"transparently.",
-		Example: "  furrow attach t-k3m9p ./screenshot.png",
-		Args:    cobra.ExactArgs(2),
+		Example: "  furrow attach t-k3m9p ./screenshot.png\n" +
+			"  furrow attach t-k3m9p ./received/quote.pdf",
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
