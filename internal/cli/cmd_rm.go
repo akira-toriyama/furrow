@@ -19,8 +19,10 @@ const rmLongTail = "It is NOT `archive`: archive RETIRES done work into .furrow/
 	"target something still points at is refused — exit 2, kind `referenced`,\n" +
 	"every reference in details.references — unless --force, which SEVERS them:\n" +
 	"a dep edge is dropped, a live [[id]] link is de-linked to the bare id (the\n" +
-	"prose keeps its words), a member is unfiled, an epic dep is dropped. Severing\n" +
-	"never advances `updated` (bookkeeping, not progress). The id is never reused.\n" +
+	"prose keeps its words), a member is unfiled, an epic dep is dropped, and a\n" +
+	"follower's anchor is dropped (its due stays the absolute instant it was).\n" +
+	"Severing never advances `updated` (bookkeeping, not progress). The id is\n" +
+	"never reused.\n" +
 	"Guarded like every write (the session write guard), on the targets and on\n" +
 	"every entity --force edits; the deletion is one furrow-owned change, so a plain\n" +
 	"`furrow sync` (or autocommit) publishes it."
@@ -87,8 +89,9 @@ func newEpicRmCmd() *cobra.Command {
 		Use:   "rm <epic>",
 		Short: "Delete an epic outright — withdraw a box, never close one (preview unless --yes)",
 		Long: "Delete a box — the record itself, not `epic done`. Its references are its\n" +
-			"members (each task's `epic` field), the boxes whose deps name it, and the live\n" +
-			"[[e-…]] links in any body but its own.\n\n" + rmLongTail + "\n\n" +
+			"members (each task's `epic` field), the followers of its day (each task's\n" +
+			"`anchor` field), the boxes whose deps name it, and the live [[e-…]] links in\n" +
+			"any body but its own.\n\n" + rmLongTail + "\n\n" +
 			"--json prints one report: {dry_run, force, epic, references, assets}. An unfiled\n" +
 			"member is what `lint`'s epic-required then names — refile it with `set -e`.",
 		Example: "  furrow epic rm e-k3m9                 # preview\n" +
@@ -124,7 +127,7 @@ func newEpicRmCmd() *cobra.Command {
 }
 
 func addRmFlags(cmd *cobra.Command, force, yes *bool) {
-	cmd.Flags().BoolVar(force, "force", false, "sever what still references the target (dep edges, [[links]], members) instead of refusing")
+	cmd.Flags().BoolVar(force, "force", false, "sever what still references the target (dep edges, [[links]], members, epic deps, anchors) instead of refusing")
 	cmd.Flags().BoolVar(yes, "yes", false, "actually delete (required; otherwise dry-run)")
 }
 
@@ -187,6 +190,9 @@ func printReferences(r app.References, dry bool) {
 	}
 	for _, d := range r.EpicDeps {
 		fmt.Fprintf(out, "  epic dep %s -> %s\n", d.From, d.To)
+	}
+	for _, f := range r.Followers {
+		fmt.Fprintf(out, "  follower %s of %s (anchor dropped)\n", f.Task, f.Epic)
 	}
 	for _, l := range r.Links {
 		fmt.Fprintf(out, "  link     %s [[%s]]\n", core.BodyPath(l.Body), l.To)

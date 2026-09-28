@@ -11,8 +11,10 @@ import (
 // a set value/effort, labels that are unsorted AND duplicated (must
 // sort+dedupe), populated deps/refs/checklist, an open task (closed == null),
 // a set reviewed timestamp (the non-null pointer path, while closed exercises
-// the null one), and a set due stamp, which pins that `due` is written last
-// among the known keys.
+// the null one), and a set due stamp, which pins where `due` lands in the key
+// order. It is last in this golden only because the keys after it are unset:
+// `anchor` is the last known key (board layout v11), so a field added later
+// goes after IT, not after `due`.
 func sampleTask() *Task {
 	mk := func(y int, mo time.Month, d int) time.Time {
 		return time.Date(y, mo, d, 1, 2, 3, 0, time.UTC)
