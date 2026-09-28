@@ -241,3 +241,49 @@ func TestRmKeepsAssetAnotherBodyShows(t *testing.T) {
 		t.Errorf("the last holder's preview must show the file going: %+v", rep.Assets)
 	}
 }
+
+// A follower's anchor is the second pointer from task to box, so it alone makes
+// `epic rm` refuse — and the human output has to NAME what --force severed.
+// printReferences rendered four of the five reference kinds when v11 added the
+// fifth, so the severed followers were visible only in --json and in the
+// refusal message: a reader of the apply could not learn that a due had stopped
+// following the box.
+func TestEpicRmNamesSeveredFollowers(t *testing.T) {
+	initStore(t)
+	box := addEpicWithAnchor(t, "box", "2026-11-21")
+	dated := addTask(t, "dated", "--due", "2026-11-14", "--anchor", box)
+
+	fe, _ := runErr(t, "epic", "rm", box, "--yes")
+	if fe == nil || fe.Kind != core.KindReferenced {
+		t.Fatalf("a box whose only pointer is a follower must refuse: got %v", fe)
+	}
+	if !strings.Contains(fe.Msg, dated) {
+		t.Errorf("refusal does not name the follower %s:\n%s", dated, fe.Msg)
+	}
+
+	// the preview names it too, before anything is written
+	prev, code := run(t, "epic", "rm", box, "--force")
+	if code != 0 {
+		t.Fatalf("epic rm --force preview: exit %d\n%s", code, prev)
+	}
+	if !strings.Contains(prev, "follower ") || !strings.Contains(prev, dated) {
+		t.Errorf("preview does not name the follower it would sever:\n%s", prev)
+	}
+
+	out, code := run(t, "epic", "rm", box, "--force", "--yes")
+	if code != 0 {
+		t.Fatalf("epic rm --force --yes: exit %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "follower ") || !strings.Contains(out, dated) {
+		t.Errorf("apply does not name the follower it severed:\n%s", out)
+	}
+
+	// severed means the pointer is dropped and the due stays put
+	shown, _ := run(t, "show", dated, "--json", "--no-body")
+	if strings.Contains(shown, box) {
+		t.Errorf("anchor survived epic rm --force:\n%s", shown)
+	}
+	if !strings.Contains(shown, "2026-11-14") {
+		t.Errorf("severing moved the due:\n%s", shown)
+	}
+}

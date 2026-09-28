@@ -262,8 +262,9 @@ func (a *App) RemoveTasks(ids []string, o RemoveOpts) (*RemoveTasksReport, error
 // RemoveEpic deletes one box — shard, body, and the assets nothing else still
 // holds — resolving ref like every
 // epic command (exact id, unique prefix, unique title substring). Its
-// references are its members (the `epic` field of each), the boxes whose deps
-// name it, and the live [[e-id]] links in any body but its own.
+// references are its members (the `epic` field of each), the followers of its
+// day (the `anchor` field of each), the boxes whose deps name it, and the live
+// [[e-id]] links in any body but its own.
 func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 	id, err := a.ResolveEpic(ref)
 	if err != nil {

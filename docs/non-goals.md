@@ -284,7 +284,7 @@ To keep this list honest about today's reality (not aspirations):
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
   `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, `--drafts`, and the typed
   query `-q` (which `next`, `revisit`, `stats` and `search` take too).
-  Destructive ops are guarded: `archive`, `rm` (and `epic rm`), `tidy`, `upgrade`, and `migrate` preview unless `--yes`, as does a `-q`/`-l`/`-r` selection on `set`/`done`/`move`.
+  Destructive ops are guarded: `archive`, `rm` (and `epic rm`), `tidy`, `upgrade`, `migrate`, and a day move on `epic set --anchor` preview unless `--yes`, as does a `-q`/`-l`/`-r` selection on `set`/`done`/`move`.
   Exit-code
   contract: `0` ok (an empty query result included) / `1` a specifically
   requested id not found / `2` bad-usage|validation / `3+`
