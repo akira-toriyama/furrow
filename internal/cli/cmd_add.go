@@ -42,8 +42,9 @@ func newAddCmd() *cobra.Command {
 			"With --batch <file|->, read NDJSON — one JSON object per line, one task each\n" +
 			"— and create them all in a single write with per-task fields: title (required),\n" +
 			"status, priority, value, effort, labels, repos, draft, epic (\"\" = unfiled on\n" +
-			"purpose), deps, refs, body, checklist, due, repeat, and key. An unknown field\n" +
-			"is exit 2 with the vocabulary in candidates. The shared flags are the\n" +
+			"purpose), deps, refs, body, checklist, due, repeat, anchor (the epic whose\n" +
+			"day the due follows) and key. An unknown field is exit 2 with the\n" +
+			"vocabulary in candidates. The shared flags are the\n" +
 			"defaults: a scalar field on the line replaces the flag's value, a list field\n" +
 			"(labels, repos, deps, refs, checklist) unions with it. A checklist entry is\n" +
 			"a string (an unticked item) or the shard's own item object\n" +
