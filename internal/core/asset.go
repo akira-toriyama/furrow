@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-// Media attachments. furrow stores attached images/video as plain files under
+// Attachments. furrow stores attached files of any kind (images, video,
+// documents such as a PDF or an email) as plain files under
 // bodies/assets/<id>-<name> and references them from the task body with a
 // relative markdown link. These helpers own the pure naming and rendering
 // policy (filesystem- and markdown-safe names, collision-free suffixing, image
@@ -46,9 +47,9 @@ func AssetRef(name string) string { return "assets/" + name }
 var imageExts = []string{".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"}
 
 // AttachLine renders the markdown line that references an attached asset from a
-// task body. Images are embedded (![alt](ref)); everything else — video, other
-// media — is a plain link ([alt](ref)), because GitHub and most renderers do
-// not inline video from a relative path.
+// task body. Images are embedded (![alt](ref)); everything else — video, a PDF,
+// any document — is a plain link ([alt](ref)), because GitHub and most
+// renderers do not inline video or documents from a relative path.
 func AttachLine(alt, ref string) string {
 	lower := strings.ToLower(ref)
 	for _, ext := range imageExts {

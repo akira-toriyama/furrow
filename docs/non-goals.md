@@ -171,7 +171,7 @@ The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
 (structured metadata, machine-written) + `.furrow/meta.json`
 (`{"schema_version": 11}`, the board-wide layout version) +
 `.furrow/bodies/<id>.md` (long-form prose, hand/agent
-editable) + `.furrow/bodies/assets/` (media copied in by `furrow attach` as
+editable) + `.furrow/bodies/assets/` (files of any kind copied in by `furrow attach` as
 collision-free `<id>-<name>` files, referenced from the body by a relative
 markdown line — the explicit binary exception, delegated to git(-lfs); the
 non-binary, clean-git-diff arguments below concern the structured store) +

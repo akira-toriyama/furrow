@@ -2,7 +2,7 @@ package app
 
 import "github.com/akira-toriyama/furrow/internal/core"
 
-// AttachResult reports the outcome of attaching a media file to a task, so the
+// AttachResult reports the outcome of attaching a file to a task, so the
 // CLI can echo the stored path/reference back to the caller (agents want the
 // path they can view and the exact body line added).
 type AttachResult struct {
@@ -13,11 +13,13 @@ type AttachResult struct {
 	Line string // the markdown line appended to the body
 }
 
-// Attach copies a media file (srcName + its bytes) into the task's asset area
+// Attach copies a file (srcName + its bytes) into the task's asset area
 // (bodies/assets/<id>-*) and appends a markdown reference line to the task's
-// body. The id must exist. It is LFS-independent: a plain file copy plus a body
-// edit, so git-lfs (if configured via .gitattributes) transparently handles the
-// blob and furrow needs no LFS awareness.
+// body. The id must exist. The file's kind is deliberately never inspected —
+// an image, a video, a PDF, an email are all just bytes to copy; only the
+// rendered line differs (core.AttachLine). It is LFS-independent: a plain file
+// copy plus a body edit, so git-lfs (if configured via .gitattributes)
+// transparently handles the blob and furrow needs no LFS awareness.
 //
 // The id is validated before anything is written, so a bad id fails cleanly
 // (exit 1) and never leaves a stray asset. Reuses AppendBody, so the reference

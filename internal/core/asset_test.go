@@ -43,6 +43,11 @@ func TestAttachLine(t *testing.T) {
 	if got := AttachLine("clip.mp4", "assets/t-1-clip.mp4"); got != "[clip.mp4](assets/t-1-clip.mp4)" {
 		t.Errorf("video line = %q", got)
 	}
+	// a document is not refused and not embedded: the same plain link as video
+	// (what `attach --help` promises for "every other file")
+	if got := AttachLine("quote.pdf", "assets/t-1-quote.pdf"); got != "[quote.pdf](assets/t-1-quote.pdf)" {
+		t.Errorf("document line = %q", got)
+	}
 	// extension match is case-insensitive
 	if got := AttachLine("SHOT.PNG", "assets/t-1-SHOT.PNG"); got != "![SHOT.PNG](assets/t-1-SHOT.PNG)" {
 		t.Errorf("uppercase image line = %q", got)
