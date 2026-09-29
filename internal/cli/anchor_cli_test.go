@@ -269,6 +269,14 @@ func TestAnchorSelectorsAndRows(t *testing.T) {
 	if strings.Contains(following, fixed) {
 		t.Errorf("anchor: selected the fixed date:\n%s", following)
 	}
+	// The drill's exact miss (t-5mcm): a unique title substring resolves as -e
+	// resolves it — the same rows, not 0 rows at exit 0.
+	if bySub := mustRun(t, "ls", "-q", "anchor:会場", "-r", "", "-n", "0"); bySub != following {
+		t.Errorf("anchor:会場 should list what anchor:%s lists:\n%s\n---\n%s", epic, bySub, following)
+	}
+	if fe, _ := runErr(t, "ls", "-q", "anchor:e-nope0"); fe == nil || fe.Code != 2 || fe.Kind != "epic-not-found" || len(fe.Candidates) == 0 {
+		t.Errorf("anchor: on an unknown box is exit 2 epic-not-found with candidates: %+v", fe)
+	}
 	fixedRows := mustRun(t, "ls", "-q", "has:due no:anchor", "-r", "", "-n", "0")
 	if !strings.Contains(fixedRows, fixed) || strings.Contains(fixedRows, follower) {
 		t.Errorf("has:due no:anchor is the fixed side:\n%s", fixedRows)

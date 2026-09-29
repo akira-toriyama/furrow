@@ -4,6 +4,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/akira-toriyama/furrow/internal/core"
 )
 
 // Comma is OR on EVERY qualifier — the rule README and the glossary state
@@ -67,9 +69,10 @@ func TestQueryIsUnfiled(t *testing.T) {
 	}
 }
 
-// epic:<id> selects a box's members, and is lenient on an unknown id (like id:):
-// a box that does not exist simply has no members, and `furrow lint` owns
-// reporting the dangling reference. The STRICT path is the -e flag.
+// epic:<ref> selects a box's members, the ref resolved exactly as -e resolves
+// it (t-5mcm): an unknown box is exit 2 epic-not-found with the box ids as
+// candidates, never 0 rows — the dangling pointer a SHARD may carry stays
+// lint's (epic-missing) to report, a ref a QUERY names must resolve.
 func TestQueryEpicQualifier(t *testing.T) {
 	a := newApp()
 	box := mustEpic(t, a, "a box", EpicAddOpts{})
@@ -82,8 +85,11 @@ func TestQueryEpicQualifier(t *testing.T) {
 	if got := qTitles(t, a, "epic:"+box); !slices.Equal(got, []string{"filed"}) {
 		t.Errorf("epic:%s = %v, want [filed]", box, got)
 	}
-	if got := qTitles(t, a, "epic:e-ghost"); len(got) != 0 {
-		t.Errorf("epic:e-ghost = %v, want no matches (lenient, not an error)", got)
+	if got := qTitles(t, a, "epic:'a box'"); !slices.Equal(got, []string{"filed"}) {
+		t.Errorf("epic:'a box' (title substring, as -e) = %v, want [filed]", got)
+	}
+	if e := qErr(t, a, "epic:e-ghost"); e.Code != core.CodeValidation || e.Kind != core.KindEpicNotFound || !slices.Contains(e.Candidates, box) {
+		t.Errorf("epic:e-ghost = exit %d kind %q candidates %v, want exit 2 epic-not-found naming %s", e.Code, e.Kind, e.Candidates, box)
 	}
 }
 

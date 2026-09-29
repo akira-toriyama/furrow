@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -78,14 +79,92 @@ func (a *App) queryPredShared(raw string, idx *core.Index, staleDays int, loadBo
 // cache. Bodies are loaded on demand and only by terms that read them, so a
 // query with no text-over-body term never pays for a single body read.
 type queryCompiler struct {
-	app       *App
-	idx       *core.Index
-	now       time.Time
-	staleDays int
-	loadBody  func(string) (string, error)
-	doneIDs   map[string]bool
-	bodies    map[string]string
-	bodyErr   error
+	app         *App
+	idx         *core.Index
+	now         time.Time
+	staleDays   int
+	loadBody    func(string) (string, error)
+	doneIDs     map[string]bool
+	bodies      map[string]string
+	bodyErr     error
+	epics       []core.Epic
+	epicsLoaded bool
+}
+
+// epicList loads the board's boxes once per query — only a term that resolves
+// an epic ref (epic:/anchor:) pays for the read.
+func (c *queryCompiler) epicList() ([]core.Epic, error) {
+	if !c.epicsLoaded {
+		epics, err := c.app.Store.LoadEpics()
+		if err != nil {
+			return nil, err
+		}
+		c.epics, c.epicsLoaded = epics, true
+	}
+	return c.epics, nil
+}
+
+// resolveEpicRefs binds an OR-set of epic refs through the SAME resolution -e
+// uses (resolveEpicIn: exact id, else unique id prefix, else unique case-folded
+// title substring), so `-q epic:X` cannot disagree with `-e X`: a miss is exit 2
+// epic-not-found with every box id in candidates, an ambiguous ref is
+// epic-ambiguous with the contenders, each stamped with the term's position
+// like every other binder fault. The exact-id-only, silent-on-a-miss form this
+// replaces answered `anchor:会場` (a unique title substring the sibling flags
+// resolve) with 0 rows at exit 0, which a drill session read as "nothing is
+// anchored" and started re-pointing 80 dues by hand (t-5mcm). A dangling
+// pointer on a SHARD stays lint's to report (epic-missing, anchor-missing);
+// the ref a QUERY names must resolve.
+func (c *queryCompiler) resolveEpicRefs(term query.Term) ([]string, error) {
+	epics, err := c.epicList()
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(term.Values))
+	for _, v := range term.Values {
+		id, err := c.app.resolveEpicIn(v.Text, epics)
+		if err != nil {
+			var ce *core.Error
+			if errors.As(err, &ce) {
+				return nil, termErr(ce, term, nil)
+			}
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// resolveTaskRefs binds an OR-set of task refs against the index being read:
+// exact ids, every one present — the contract `furrow dep` holds its <dep>
+// arguments to (a dependency that "does not exist" is exit 2, nothing written).
+// Task ids resolve by prefix or title nowhere in furrow (a random suffix makes
+// a typo a miss, not a near-miss), so a miss carries no candidates; it carries
+// the misses in details.missing and, when one is a RETIRED task, the ids in
+// details.archived with the --archived hint, as a batch write's miss does.
+// Until t-5mcm an unknown id here matched nothing at exit 0 —
+// `depends-on:t-typo` answering "nothing waits on it".
+func (c *queryCompiler) resolveTaskRefs(term query.Term) ([]string, error) {
+	ids := make([]string, 0, len(term.Values))
+	var missing []string
+	for _, v := range term.Values {
+		if _, i := c.idx.Find(v.Text); i < 0 {
+			missing = append(missing, v.Text)
+			continue
+		}
+		ids = append(ids, v.Text)
+	}
+	if len(missing) == 0 {
+		return ids, nil
+	}
+	extra := map[string]any{"missing": missing}
+	msg := fmt.Sprintf("%s: unknown task id(s) %s — a task ref is an existing id, spelled exactly", term.Field, strings.Join(missing, ", "))
+	if arch := c.app.ArchivedContains(missing); len(arch) > 0 {
+		extra["archived"] = arch
+		msg += fmt.Sprintf(" (%s archived — read the archive with --archived, or restore with `furrow unarchive`)", strings.Join(arch, ", "))
+	}
+	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: msg}
+	return nil, termErr(e, term, extra)
 }
 
 // body returns t's body, loading it once per id. A store failure is parked in
@@ -111,9 +190,9 @@ func (c *queryCompiler) body(t *core.Task) string {
 
 // compileQuery parses raw -q text and binds it to a predicate over the loaded
 // index. Validation faults (bad grammar, unknown field/flag, an operator on a
-// non-ordered field, an unknown lane/type value, a malformed date) are exit-2
-// errors carrying a stable kebab id and, where the input almost resolved,
-// candidates. A nil predicate is returned only with a non-nil error; an empty
+// non-ordered field, an unknown lane/type value, a malformed date, a ref that
+// resolves to no epic/repo/task) are exit-2 errors carrying a stable kebab id
+// and, where the input almost resolved, candidates. A nil predicate is returned only with a non-nil error; an empty
 // query compiles to a match-everything predicate. The second return is the
 // compiler's cached body reader (see queryPredShared).
 func (a *App) compileQuery(raw string, idx *core.Index, staleDays int, loadBody func(string) (string, error)) (taskPred, func(*core.Task) (string, error), error) {
@@ -321,18 +400,25 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 		return neg(func(t *core.Task) bool { return contains(vals, t.Status) }), nil
 
 	case "epic":
-		// Exact epic ids. Lenient on an unknown id (like id:): an epic that does
-		// not exist simply has no members, and `furrow lint` owns reporting the
-		// dangling reference. The CLI's -e flag is the strict path (ResolveEpic
-		// gives candidates on a typo).
-		vals := valTexts(term.Values)
+		// A box's members. The ref resolves as -e does (resolveEpicRefs);
+		// membership is then an exact-id test.
+		vals, err := c.resolveEpicRefs(term)
+		if err != nil {
+			return nil, err
+		}
 		return neg(func(t *core.Task) bool { return contains(vals, t.Epic) }), nil
 
 	case "anchor":
-		// The tasks whose due follows a box's day — exact epic ids, lenient
-		// like epic: (lint's anchor-missing owns the dangling pointer; the
-		// strict spelling is `set --anchor`, which resolves with candidates).
-		vals := valTexts(term.Values)
+		// The tasks whose due follows a box's day. The ref resolves as -e does
+		// (resolveEpicRefs) — NOT as `set --anchor` does: that write also
+		// demands the box carry a day, because a due cannot follow a day never
+		// declared; a read must still list the followers of a box whose day
+		// was cleared, which is exactly the `set -q 'anchor:<epic>'
+		// --clear-anchor` the clear's own stderr note prescribes.
+		vals, err := c.resolveEpicRefs(term)
+		if err != nil {
+			return nil, err
+		}
 		return neg(func(t *core.Task) bool { return contains(vals, t.Anchor) }), nil
 
 	case "label":
@@ -386,16 +472,24 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	case "depends-on":
 		// t waits on any named id (the named task blocks t) — the Deps edge
 		// read from the dependent's side, Index.Dependents' membership test.
-		vals := valTexts(term.Values)
+		// Every named id must exist (resolveTaskRefs).
+		vals, err := c.resolveTaskRefs(term)
+		if err != nil {
+			return nil, err
+		}
 		return neg(func(t *core.Task) bool { return anyContains(t.Deps, vals) }), nil
 
 	case "blocks":
 		// t blocks any named id — the same edge read from the other side:
-		// t ∈ X.Deps. Each named X is resolved once at compile; an unknown id
-		// blocks nothing (lenient, exit 0).
+		// t ∈ X.Deps. Each named X is resolved once at compile, and every one
+		// must exist (resolveTaskRefs).
+		vals, err := c.resolveTaskRefs(term)
+		if err != nil {
+			return nil, err
+		}
 		blocked := map[string]bool{}
-		for _, v := range term.Values {
-			if x, _ := c.idx.Find(v.Text); x != nil {
+		for _, id := range vals {
+			if x, _ := c.idx.Find(id); x != nil {
 				for _, d := range x.Deps {
 					blocked[d] = true
 				}
@@ -406,16 +500,23 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	case "descendant-of":
 		// depends-on's transitive twin: t (transitively) waits on any named id —
 		// X's descendants are everything DOWNSTREAM of it in the deps DAG. The
-		// closure is computed once at compile (O(edges)); an unknown id has no
-		// descendants (lenient, like blocks:); the named task itself is not its
-		// own descendant, mirroring how depends-on:X never matches X.
-		set := c.reach(valTexts(term.Values), false)
-		return neg(func(t *core.Task) bool { return set[t.ID] }), nil
+		// closure is computed once at compile (O(edges)); every named id must
+		// exist (resolveTaskRefs); the named task itself is not its own
+		// descendant, mirroring how depends-on:X never matches X.
+		vals, err := c.resolveTaskRefs(term)
+		if err != nil {
+			return nil, err
+		}
+		return neg(func(t *core.Task) bool { return c.reach(vals, false)[t.ID] }), nil
 
 	case "ancestor-of":
 		// blocks' transitive twin: t is anything any named id (transitively)
 		// waits on — X's ancestors are UPSTREAM, the work that must land first.
-		set := c.reach(valTexts(term.Values), true)
+		vals, err := c.resolveTaskRefs(term)
+		if err != nil {
+			return nil, err
+		}
+		set := c.reach(vals, true)
 		return neg(func(t *core.Task) bool { return set[t.ID] }), nil
 
 	case "title":

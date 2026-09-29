@@ -94,6 +94,10 @@ func TestLsQueryErrors(t *testing.T) {
 		{"status:>ready", "query-type"},
 		{"value:notanumber", "query-type"},
 		{`title:'unterminated`, "query-parse"},
+		{"epic:e-nope0", "epic-not-found"},
+		{"anchor:e-nope0", "epic-not-found"},
+		{"blocks:t-nope0", "validation"},
+		{"depends-on:t-nope0", "validation"},
 	}
 	for _, c := range cases {
 		fe, _ := runErr(t, "ls", "-q", c.query)
@@ -110,6 +114,22 @@ func TestLsQueryErrors(t *testing.T) {
 	fe, _ := runErr(t, "ls", "-q", "status:nope")
 	if fe == nil || fe.Code != core.CodeValidation || len(fe.Candidates) == 0 {
 		t.Errorf("status:nope should be exit 2 with lane candidates, got %+v", fe)
+	}
+
+	// A ref that resolves to nothing is the sibling flag's fault (t-5mcm): an
+	// epic ref misses with the box ids as candidates (as -e does), a task ref
+	// with the misses in details.missing (as dep refuses an unknown <dep>).
+	box := addEpic(t, "a box", "-r", "o/r")
+	fe, _ = runErr(t, "ls", "-q", "epic:e-nope0")
+	if fe == nil || fe.Code != core.CodeValidation || !slices.Contains(fe.Candidates, box) {
+		t.Errorf("epic:e-nope0 should carry the box ids as candidates, got %+v", fe)
+	}
+	fe, _ = runErr(t, "ls", "-q", "descendant-of:t-nope0")
+	if fe == nil || fe.Code != core.CodeValidation {
+		t.Fatalf("descendant-of:t-nope0 should be exit 2, got %+v", fe)
+	}
+	if d, _ := fe.Details.(map[string]any); d["missing"] == nil {
+		t.Errorf("descendant-of:t-nope0 should name the miss in details.missing, got %+v", fe)
 	}
 }
 

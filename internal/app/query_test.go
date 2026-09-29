@@ -186,14 +186,20 @@ func TestQueryIsStale(t *testing.T) {
 }
 
 // TestQueryGraph pins the direct-edge graph qualifiers: epic: (membership),
-// depends-on: and blocks: (the two directions of the Deps edge), and the lenient
-// unknown-id contract (0 rows, exit 0).
+// depends-on: and blocks: (the two directions of the Deps edge), and the ref
+// contract each shares with its sibling flag (t-5mcm): an epic ref resolves as
+// -e does (exact id, unique id prefix, unique case-folded title substring; a
+// miss is exit 2 epic-not-found with the box ids as candidates, an ambiguity
+// epic-ambiguous with the contenders), and a task ref must exist (exit 2
+// validation, the misses in details.missing). Neither answers a bad ref with
+// 0 rows at exit 0 any more.
 //
 // parent:/child-of: are gone with the hierarchy; epic: is the grouping spelling
 // that replaced them.
 func TestQueryGraph(t *testing.T) {
 	a := newApp()
-	box := mustEpic(t, a, "the box", EpicAddOpts{})
+	box := mustEpic(t, a, "alpha box", EpicAddOpts{})
+	other := mustEpic(t, a, "beta box", EpicAddOpts{})
 	mustAdd(t, a, "p", AddOpts{})
 	c1 := mustAdd(t, a, "c1", AddOpts{Epic: box})
 	c2 := mustAdd(t, a, "c2", AddOpts{Epic: box, Deps: []string{c1.ID}})
@@ -204,14 +210,14 @@ func TestQueryGraph(t *testing.T) {
 		want []string
 	}{
 		{"epic:" + box, []string{"c1", "c2"}},
+		{"epic:ALPHA", []string{"c1", "c2"}},       // unique title substring, case-folded — what -e resolves
+		{"epic:'alpha box'", []string{"c1", "c2"}}, // quoting only protects the space; the value still resolves
 		{"-epic:" + box, []string{"d3", "p"}},
+		{"epic:" + box + "," + other, []string{"c1", "c2"}}, // comma = OR, each ref resolved
 		{"depends-on:" + c1.ID, []string{"c2", "d3"}},
 		{"depends-on:" + c2.ID, []string{"d3"}},
 		{"depends-on:" + c1.ID + "," + c2.ID, []string{"c2", "d3"}}, // comma = OR
 		{"blocks:" + c2.ID, []string{"c1"}},
-		{"blocks:t-nope0", []string{}}, // unknown id blocks nothing — lenient
-		{"depends-on:t-nope0", []string{}},
-		{"epic:e-nope0", []string{}},
 	}
 	for _, c := range cases {
 		if got := qTitles(t, a, c.q); !slices.Equal(got, c.want) {
@@ -225,6 +231,40 @@ func TestQueryGraph(t *testing.T) {
 	}
 	if got := qTitles(t, a, "blocks:"+tasks[0].ID); !slices.Equal(got, []string{"c1", "c2"}) {
 		t.Errorf("blocks:d3 = %v, want [c1 c2]", got)
+	}
+
+	// A ref that resolves to nothing is exit 2 with the term's position, never
+	// 0 rows: the sibling flag's own kind for an epic ref, validation with the
+	// misses for a task ref (all-or-nothing, as `dep` refuses a whole batch).
+	for _, c := range []struct{ q, kind string }{
+		{"epic:e-nope0", core.KindEpicNotFound},
+		{"epic:box", core.KindEpicAmbiguous},
+		{"anchor:e-nope0", core.KindEpicNotFound},
+		{"anchor:box", core.KindEpicAmbiguous},
+		{"blocks:t-nope0", core.KindValidation},
+		{"depends-on:t-nope0", core.KindValidation},
+		{"descendant-of:t-nope0", core.KindValidation},
+		{"ancestor-of:t-nope0", core.KindValidation},
+		{"depends-on:" + c1.ID + ",t-nope0", core.KindValidation},
+	} {
+		ce := qErr(t, a, c.q)
+		if ce.Code != core.CodeValidation || ce.Kind != c.kind {
+			t.Errorf("-q %q = exit %d kind %q, want exit 2 kind %q", c.q, ce.Code, ce.Kind, c.kind)
+		}
+		if d, _ := ce.Details.(map[string]any); d["term"] == nil {
+			t.Errorf("-q %q: no term in details: %+v", c.q, ce.Details)
+		}
+	}
+	if ce := qErr(t, a, "epic:e-nope0"); !slices.Contains(ce.Candidates, box) || !slices.Contains(ce.Candidates, other) {
+		t.Errorf("epic:e-nope0 candidates = %v, want both boxes", ce.Candidates)
+	}
+	if ce := qErr(t, a, "epic:box"); len(ce.Candidates) != 2 || !slices.Contains(ce.Candidates, box) || !slices.Contains(ce.Candidates, other) {
+		t.Errorf("epic:box candidates = %v, want the two contenders", ce.Candidates)
+	}
+	ce := qErr(t, a, "depends-on:"+c1.ID+",t-nope0")
+	d, _ := ce.Details.(map[string]any)
+	if missing, _ := d["missing"].([]string); !slices.Equal(missing, []string{"t-nope0"}) || len(ce.Candidates) != 0 {
+		t.Errorf("task-ref miss details = %+v candidates = %v, want missing [t-nope0] and no candidates", ce.Details, ce.Candidates)
 	}
 }
 
@@ -415,8 +455,10 @@ func TestQueryTransitiveGraph(t *testing.T) {
 	if got := ids("depends-on:" + ta.ID); !reflect.DeepEqual(got, []string{tb.ID}) {
 		t.Errorf("depends-on base = %v, want [%s]", got, tb.ID)
 	}
-	if got := ids("descendant-of:t-nope1"); len(got) != 0 {
-		t.Errorf("unknown id should have an empty closure, got %v", got)
+	// An unknown start is a fault, not an empty closure (t-5mcm; TestQueryGraph
+	// pins the kind and details).
+	if _, err := a.List(QueryOpts{Query: "descendant-of:t-nope1"}); err == nil {
+		t.Errorf("descendant-of on an unknown id should fail, not answer an empty closure")
 	}
 	// negation composes like every other term.
 	if got := ids("-descendant-of:" + ta.ID + " is:open"); len(got) != 2 {
