@@ -586,11 +586,16 @@ func TestSearchQuerySharesBodyCache(t *testing.T) {
 func TestQueryRefCarriedLiteral(t *testing.T) {
 	a := newApp()
 	mustAdd(t, a, "bystander", AddOpts{})
+	// A live box whose TITLE mentions the ghost id must not shadow the
+	// carried pointer (the literal outranks the title-substring pass).
+	mustEpic(t, a, "follow-up to e-ghost1", EpicAddOpts{})
 	idx, err := a.load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	idx.Add(core.Task{ID: "t-carr1", Title: "carrier", Status: "ready", Priority: 100, Deps: []string{"t-ghost1"}, Epic: "e-ghost1", Anchor: "e-ghost1", Body: core.BodyPath("t-carr1")})
+	// The suffix holds an 'o', which the id alphabet lacks, so it never
+	// collides with a generated id.
+	idx.Add(core.Task{ID: "t-carro", Title: "carrier", Status: "ready", Priority: 100, Deps: []string{"t-ghost1"}, Epic: "e-ghost1", Anchor: "e-ghost1", Body: core.BodyPath("t-carro")})
 	if err := a.Store.Save(idx); err != nil {
 		t.Fatal(err)
 	}

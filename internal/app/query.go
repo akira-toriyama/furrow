@@ -107,6 +107,8 @@ type queryCompiler struct {
 	epics       []core.Epic
 	epicsLoaded bool
 	targets     map[string]bool
+	otherIdx    *core.Index
+	otherLoaded bool
 }
 
 // body returns t's body, loading it once per id. A store failure is parked in
@@ -190,11 +192,12 @@ func carries(idx *core.Index, field, literal string) bool {
 	return false
 }
 
-// resolveEpicRefs binds an OR-set of epic refs through the SAME resolution -e
-// uses (resolveEpicIn: exact id, else unique id prefix, else unique case-folded
-// title substring), so `-q epic:X` cannot disagree with `-e X`; failing that, a
-// literal this snapshot (or a union read's other snapshot) already carries in
-// the field resolves as itself (carries). Anything else is exit 2: a miss is
+// resolveEpicRefs binds an OR-set of epic refs: an exact pointer the snapshot
+// carries in the field resolves as itself (carries — the literal fallback,
+// ranked with an exact id), else the SAME resolution -e uses (resolveEpicIn:
+// exact id, else unique id prefix, else unique case-folded title substring),
+// so `-q epic:X` cannot disagree with `-e X`, else a pointer the other store
+// carries (other). Anything else is exit 2: a miss is
 // epic-not-found with every box id in candidates and the ref in
 // details.missing, an ambiguous ref epic-ambiguous with the contenders, each
 // stamped with the term's position like every other binder fault. The
@@ -210,12 +213,22 @@ func (c *queryCompiler) resolveEpicRefs(term query.Term) ([]string, error) {
 	}
 	ids := make([]string, 0, len(term.Values))
 	for _, v := range term.Values {
+		// An exact pointer this snapshot carries outranks the resolver's
+		// prefix and title-substring passes: a live box whose TITLE mentions a
+		// removed box's id must not shadow the tasks still pointing at it, or
+		// the repair `set -q epic:<gone> -e <new>` would preview 0 rows (the
+		// refutation pass measured it) and, with members, re-file the wrong
+		// ones. An exact id and its carried literal name the same box.
+		if carries(c.idx, term.Field, v.Text) {
+			ids = append(ids, v.Text)
+			continue
+		}
 		id, err := c.app.resolveEpicIn(v.Text, epics)
 		if err == nil {
 			ids = append(ids, id)
 			continue
 		}
-		if carries(c.idx, term.Field, v.Text) || (c.wider != nil && carries(c.wider, term.Field, v.Text)) {
+		if o := c.other(); o != nil && carries(o, term.Field, v.Text) {
 			ids = append(ids, v.Text)
 			continue
 		}
@@ -228,9 +241,11 @@ func (c *queryCompiler) resolveEpicRefs(term query.Term) ([]string, error) {
 			extra["missing"] = []string{v.Text}
 			if term.Field == "anchor" {
 				// The likeliest slip, the one `set --anchor` catches too: the
-				// value is the box's DAY, but the pointer names the box.
+				// value is the box's DAY, but the pointer names the box. The
+				// kind and the candidates stay — a consumer branching on
+				// epic-not-found still lands here.
 				if _, perr := core.ParseAnchor(v.Text); perr == nil {
-					ce = core.Validationf("", "anchor: names the BOX whose day the due follows (an epic id or ref), not the day itself — `due:%s` selects by date, and the day lives on the box (`furrow epic set <epic> --anchor %s`)", v.Text, v.Text)
+					ce.Msg += fmt.Sprintf(" — anchor: names the BOX whose day the due follows, not the day itself: `due:%s` selects by date, and the day lives on the box (`furrow epic set <epic> --anchor %s`)", v.Text, v.Text)
 				}
 			}
 		}
@@ -255,10 +270,10 @@ func refIDs(refs []taskRef) []string {
 }
 
 // resolveTaskRefs binds an OR-set of task refs. A ref names a task of this
-// snapshot, an id this snapshot's tasks carry as a dep (depTargets), a task
-// or dep of a union read's other snapshot (wider), or — established on a miss,
-// one index load — a task of the other store (the archive under a live read,
-// the live board under an archived one). Anything else is exit 2 validation
+// snapshot, an id this snapshot's tasks carry as a dep (depTargets), or —
+// established on a miss, one index load — a task the other store holds or
+// carries (other: the archive under a live read, the live board under an
+// archived one, the other snapshot of a union read). Anything else is exit 2 validation
 // with the misses in details.missing: the contract `furrow dep` holds its
 // <dep> arguments to (a dependency that "does not exist" is exit 2, nothing
 // written). Task ids resolve by prefix or title nowhere in furrow (a random
@@ -275,8 +290,6 @@ func (c *queryCompiler) resolveTaskRefs(term query.Term) ([]taskRef, error) {
 			refs = append(refs, taskRef{id: id, here: true})
 		case c.depTargets()[id]:
 			refs = append(refs, taskRef{id: id})
-		case c.wider != nil && (c.wider.Has(id) || carries(c.wider, "deps", id)):
-			refs = append(refs, taskRef{id: id})
 		default:
 			unplaced = append(unplaced, id)
 		}
@@ -284,10 +297,10 @@ func (c *queryCompiler) resolveTaskRefs(term query.Term) ([]taskRef, error) {
 	if len(unplaced) == 0 {
 		return refs, nil
 	}
-	elsewhere := c.otherStoreHas(unplaced)
+	other := c.other()
 	var missing []string
 	for _, id := range unplaced {
-		if contains(elsewhere, id) {
+		if other != nil && (other.Has(id) || carries(other, "deps", id)) {
 			refs = append(refs, taskRef{id: id})
 		} else {
 			missing = append(missing, id)
@@ -301,28 +314,46 @@ func (c *queryCompiler) resolveTaskRefs(term query.Term) ([]taskRef, error) {
 	return nil, termErr(e, term, map[string]any{"missing": missing})
 }
 
-// otherStoreHas reports which of ids are tasks of the store this read is NOT
-// scanning — the archive under a live read, the live board under an archived
-// one — one index load, paid only on a miss. A union read has already
-// consulted its other snapshot (wider), so nothing is loaded twice: nil.
-func (c *queryCompiler) otherStoreHas(ids []string) []string {
-	switch {
-	case c.wider != nil:
-		return nil
-	case !c.archived:
-		return c.app.ArchivedContains(ids)
+// other returns the snapshot this read is NOT scanning: the union read's other
+// snapshot when the caller passed one (wider), else the archive under a live
+// read or the live board under an archived one, loaded once per compile and
+// only on a miss (a disk read). nil when there is none — an in-memory store
+// has no archive. It answers EXISTENCE (does the other store hold or carry
+// this ref), which is what lets a ref resolve to a true empty here; it never
+// feeds a snapshot read's answer, except in a union read, where findTask and
+// reach read the other snapshot's edges too because the union promised both.
+func (c *queryCompiler) other() *core.Index {
+	if c.wider != nil {
+		return c.wider
 	}
-	hot, err := c.app.load()
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, id := range ids {
-		if hot.Has(id) {
-			out = append(out, id)
+	if !c.otherLoaded {
+		c.otherLoaded = true
+		if c.archived {
+			if hot, err := c.app.load(); err == nil {
+				c.otherIdx = hot
+			}
+		} else {
+			c.otherIdx = c.app.archiveIndex()
 		}
 	}
-	return out
+	return c.otherIdx
+}
+
+// findTask is Index.Find over the snapshot and, in a union read, the other
+// snapshot too — the named task's own deps are readable wherever the union
+// holds it, so `stats --since -q blocks:<live>` reaches the archived dep the
+// live pass cannot match and the archive pass, reading the live task's deps
+// from the other snapshot, does.
+func (c *queryCompiler) findTask(id string) *core.Task {
+	if t, _ := c.idx.Find(id); t != nil {
+		return t
+	}
+	if c.wider != nil {
+		if t, _ := c.wider.Find(id); t != nil {
+			return t
+		}
+	}
+	return nil
 }
 
 // edgeRefs is resolveTaskRefs for the two qualifiers that read the NAMED
@@ -332,7 +363,8 @@ func (c *queryCompiler) otherStoreHas(ids []string) []string {
 // defect that rule closes). A ref that resolved but is not here is exit 2
 // saying where its edges ARE readable (details.outside, plus details.archived
 // or details.live) — unless this is a union read whose other snapshot holds
-// it as a task, where that pass answers and this one contributes nothing for it.
+// it as a task: the union promised both, so its deps are read from there
+// (findTask) and each pass matches its own tasks.
 func (c *queryCompiler) edgeRefs(term query.Term) ([]string, error) {
 	refs, err := c.resolveTaskRefs(term)
 	if err != nil {
@@ -342,10 +374,9 @@ func (c *queryCompiler) edgeRefs(term query.Term) ([]string, error) {
 	var outside []string
 	for _, r := range refs {
 		switch {
-		case r.here:
+		case r.here, c.wider != nil && c.wider.Has(r.id):
+			// a union read reads the other snapshot's task too (findTask)
 			ids = append(ids, r.id)
-		case c.wider != nil && c.wider.Has(r.id):
-			// the union read's other pass reads this task's edges
 		default:
 			outside = append(outside, r.id)
 		}
@@ -355,21 +386,25 @@ func (c *queryCompiler) edgeRefs(term query.Term) ([]string, error) {
 	}
 	extra := map[string]any{"outside": outside}
 	msg := fmt.Sprintf("%s: %s is not a task of this snapshot, so its own deps cannot be read here", term.Field, strings.Join(outside, ", "))
-	elsewhere := c.otherStoreHas(outside)
-	var dangling []string
+	var elsewhere, dangling []string
+	other := c.other()
 	for _, id := range outside {
-		if !contains(elsewhere, id) {
+		if other != nil && other.Has(id) {
+			elsewhere = append(elsewhere, id)
+		} else {
 			dangling = append(dangling, id)
 		}
 	}
+	// The hint names a read that HAS the flag: stats, next, revisit and the
+	// write selectors take -q but not --archived.
 	switch {
 	case len(elsewhere) == 0:
 	case c.archived:
 		extra["live"] = elsewhere
-		msg += fmt.Sprintf("; %s is on the live board — read its edges without --archived", strings.Join(elsewhere, ", "))
+		msg += fmt.Sprintf("; %s is on the live board — read its edges with `furrow ls -q '%s'` or `furrow show <id>`", strings.Join(elsewhere, ", "), term.Raw)
 	default:
 		extra["archived"] = elsewhere
-		msg += fmt.Sprintf("; %s is archived — read its edges with --archived (`furrow show <id> --archived` names them too)", strings.Join(elsewhere, ", "))
+		msg += fmt.Sprintf("; %s is archived — read its edges with `furrow ls --archived -q '%s'` or `furrow show <id> --archived`", strings.Join(elsewhere, ", "), term.Raw)
 	}
 	if len(dangling) > 0 {
 		msg += fmt.Sprintf("; %s is a task of no store, carried here as a dep only (lint: dep-missing)", strings.Join(dangling, ", "))
@@ -693,7 +728,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 		}
 		blocked := map[string]bool{}
 		for _, id := range ids {
-			if x, _ := c.idx.Find(id); x != nil {
+			if x := c.findTask(id); x != nil {
 				for _, d := range x.Deps {
 					blocked[d] = true
 				}
@@ -950,16 +985,25 @@ func anyRepoMatch(repos, vals []string) bool {
 // their own closure. A visited set makes a cycle (possible on disk; lint's
 // dep-cycle owns reporting it) terminate instead of hanging the read.
 func (c *queryCompiler) reach(starts []string, up bool) map[string]bool {
+	// The edges are the snapshot's and, in a union read, the other snapshot's
+	// too: a chain that crosses the archive (live → retired → live) is one
+	// DAG to the union, and each pass then matches its own tasks.
 	adj := map[string][]string{}
-	for i := range c.idx.Tasks {
-		t := &c.idx.Tasks[i]
-		for _, d := range t.Deps {
-			if up {
-				adj[t.ID] = append(adj[t.ID], d)
-			} else {
-				adj[d] = append(adj[d], t.ID)
+	edges := func(idx *core.Index) {
+		for i := range idx.Tasks {
+			t := &idx.Tasks[i]
+			for _, d := range t.Deps {
+				if up {
+					adj[t.ID] = append(adj[t.ID], d)
+				} else {
+					adj[d] = append(adj[d], t.ID)
+				}
 			}
 		}
+	}
+	edges(c.idx)
+	if c.wider != nil {
+		edges(c.wider)
 	}
 	// One closure PER start, unioned: a comma is OR, so `descendant-of:x,y`
 	// is x's descendants plus y's. The single shared walk that deleted every

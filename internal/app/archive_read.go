@@ -121,13 +121,13 @@ func (a *App) batchMissingErr(missing []string, total int, verb string) *core.Er
 	return &core.Error{Code: core.CodeNotFound, Kind: core.KindNotFound, Msg: msg, Details: details}
 }
 
-// ArchivedContains returns the subset of ids present in the archive store, in
-// input order — used to enrich a hot-store not-found error with a "retry with
-// --archived" hint. It is best-effort: a non-file-backed store or a missing
-// archive dir means "nothing archived" (nil), never an error, so the hint path
-// never turns a plain miss into a failure of a different kind.
-func (a *App) ArchivedContains(ids []string) []string {
-	if a.Dir == "" || len(ids) == 0 {
+// archiveIndex loads the archive store's index, best-effort: a non-file-backed
+// store, a missing archive dir or an unreadable one all read as nil, never an
+// error — it backs the "is this retired?" checks (ArchivedContains, a query's
+// ref miss), where a failure to look must not turn a plain miss into a failure
+// of a different kind.
+func (a *App) archiveIndex() *core.Index {
+	if a.Dir == "" {
 		return nil
 	}
 	arc, err := a.archiveStore()
@@ -136,6 +136,21 @@ func (a *App) ArchivedContains(ids []string) []string {
 	}
 	idx, err := arc.Load()
 	if err != nil {
+		return nil
+	}
+	return idx
+}
+
+// ArchivedContains returns the subset of ids present in the archive store, in
+// input order — used to enrich a hot-store not-found error with a "retry with
+// --archived" hint (archiveIndex's best-effort contract: nothing archived on
+// any failure to look).
+func (a *App) ArchivedContains(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	idx := a.archiveIndex()
+	if idx == nil {
 		return nil
 	}
 	var out []string

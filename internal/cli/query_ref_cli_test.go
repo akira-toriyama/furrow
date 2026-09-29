@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,6 +25,7 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 	mustRun(t, "done", upstream)
 	retired := addTask(t, "retired", "--dep", upstream)
 	live := addTask(t, "live, waits on the retired one", "--dep", retired)
+	z := addTask(t, "z, waits on live", "--dep", live)
 	mustRun(t, "done", retired)
 	mustRun(t, "archive", retired, "--yes")
 
@@ -32,18 +34,19 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 	if got := lsIDs(t, "-q", "depends-on:"+retired); len(got) != 1 || got[0] != live {
 		t.Errorf("depends-on:<archived> = %v, want [%s]", got, live)
 	}
-	if got := lsIDs(t, "-q", "descendant-of:"+retired); len(got) != 1 || got[0] != live {
-		t.Errorf("descendant-of:<archived> = %v, want [%s]", got, live)
+	if got := lsIDs(t, "-q", "descendant-of:"+retired); len(got) != 2 || !slices.Contains(got, live) || !slices.Contains(got, z) {
+		t.Errorf("descendant-of:<archived> = %v, want [%s %s]", got, live, z)
 	}
 	fe, _ := runErr(t, "ls", "-q", "blocks:"+retired)
-	if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "with --archived") {
-		t.Fatalf("blocks:<archived> should be exit 2 pointing at --archived, got %+v", fe)
+	if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "ls --archived -q") {
+		t.Fatalf("blocks:<archived> should be exit 2 pointing at ls --archived, got %+v", fe)
 	}
 	if d, _ := fe.Details.(map[string]any); d["outside"] == nil || d["archived"] == nil || d["term"] != "blocks:"+retired {
 		t.Errorf("blocks:<archived> details = %+v, want outside + archived + term", d)
 	}
-	// `live` waits on the retired task alone; in the hot snapshot that dep is
-	// not a task, so blocks:<live> is a true empty, not a fault.
+	// `live` waits on the retired task alone: an edge into the archive is
+	// retired, hence done, work — nothing live blocks it — so blocks:<live>
+	// is a true empty, not a fault (README's "graph" bullet says so).
 	if got := lsIDs(t, "-q", "blocks:"+live); len(got) != 0 {
 		t.Errorf("blocks:<live> = %v, want [] (its only dep is archived)", got)
 	}
@@ -56,7 +59,7 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 		t.Errorf("--archived depends-on:<live> = %v, want [%s]", got, retired)
 	}
 	fe, _ = runErr(t, "ls", "--archived", "-q", "blocks:"+upstream)
-	if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "without --archived") {
+	if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "furrow ls -q") {
 		t.Fatalf("--archived blocks:<live> should be exit 2 pointing at the live board, got %+v", fe)
 	}
 	if d, _ := fe.Details.(map[string]any); d["live"] == nil {
@@ -77,20 +80,62 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 		}
 	}
 
-	// stats' window unions both snapshots, so a ref either one holds passes
-	// both passes (it used to exit 2 on every board with the graph fields);
-	// the distributions are still the hot board's, so a task whose own edges
-	// are only in the archive is refused exactly as `ls` refuses it.
-	for _, q := range []string{"depends-on:" + upstream, "depends-on:" + retired, "blocks:" + upstream, "descendant-of:" + retired, "ancestor-of:" + live} {
-		if fe, out := runErr(t, "stats", "--since", "2020-01-01", "-q", q); fe != nil {
-			t.Errorf("stats --since -q %q = %+v\n%s", q, fe, out)
+	// stats' window unions both snapshots (it used to exit 2 on every board
+	// with the graph fields): a ref either one holds passes both passes, and
+	// the walk follows the union's edges — the chain upstream ← retired ←
+	// live ← z crosses the archive twice and is one DAG to the window. The
+	// distributions are still the hot board's, so a task whose own edges are
+	// only in the archive is refused exactly as `ls` refuses it.
+	window := func(q string) string {
+		t.Helper()
+		out, code := run(t, "--json", "stats", "--since", "2020-01-01", "-q", q)
+		if code != 0 {
+			t.Fatalf("stats --since -q %q exit = %d:\n%s", q, code, out)
+		}
+		return out
+	}
+	for _, c := range []struct {
+		q    string
+		want []string
+	}{
+		{"depends-on:" + upstream, []string{retired}},
+		{"depends-on:" + retired, []string{live}},
+		{"blocks:" + live, []string{retired}},
+		{"blocks:" + upstream, nil},
+		{"descendant-of:" + upstream, []string{retired, live, z}},
+		{"ancestor-of:" + z, []string{live, retired, upstream}},
+	} {
+		out := window(c.q)
+		for _, id := range c.want {
+			if !strings.Contains(out, id) {
+				t.Errorf("stats --since -q %q window lacks %s:\n%s", c.q, id, out)
+			}
 		}
 	}
-	if fe, _ := runErr(t, "stats", "--since", "2020-01-01", "-q", "blocks:"+retired); fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "with --archived") {
+	if fe, _ := runErr(t, "stats", "--since", "2020-01-01", "-q", "blocks:"+retired); fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "ls --archived -q") {
 		t.Errorf("stats -q blocks:<archived> should refuse as ls does, got %+v", fe)
 	}
 	if fe, _ := runErr(t, "stats", "--since", "2020-01-01", "-q", "blocks:t-nope0"); fe == nil || fe.Code != core.CodeValidation {
 		t.Errorf("stats --since -q blocks:t-nope0 should still be exit 2, got %+v", fe)
+	}
+
+	// An id no store holds as a task but the archive still carries as a dep
+	// (`rm` does not see archived references) exists to the read: the live
+	// board's dependents are a true empty, the archive's are the answer, and
+	// stats' hot-only compile no longer refuses what its window returns.
+	p := addTask(t, "p, removed after q retired")
+	q := addTask(t, "q, waits on p", "--dep", p)
+	mustRun(t, "done", q)
+	mustRun(t, "archive", q, "--yes")
+	mustRun(t, "rm", p, "--yes")
+	if got := lsIDs(t, "-q", "depends-on:"+p); len(got) != 0 {
+		t.Errorf("depends-on:<rm'd, carried by the archive> = %v, want []", got)
+	}
+	if got := lsIDs(t, "--archived", "-q", "depends-on:"+p); len(got) != 1 || got[0] != q {
+		t.Errorf("--archived depends-on:<rm'd> = %v, want [%s]", got, q)
+	}
+	if out := window("depends-on:" + p); !strings.Contains(out, q) {
+		t.Errorf("stats --since -q depends-on:<rm'd> window lacks %s:\n%s", q, out)
 	}
 }
 
@@ -119,8 +164,10 @@ func TestQueryRefFaultDetails(t *testing.T) {
 			t.Errorf("ls -q %q details = %+v, want term + offset %v", c.q, d, c.offset)
 		}
 	}
+	// The day slip keeps the resolver's kind and candidates, with the hint
+	// appended — a consumer branching on epic-not-found still lands here.
 	fe, _ := runErr(t, "ls", "-q", "anchor:2026-11-21")
-	if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "names the BOX") {
-		t.Errorf("anchor:<day> should say the pointer names the box, got %+v", fe)
+	if fe == nil || fe.Code != core.CodeValidation || fe.Kind != "epic-not-found" || !strings.Contains(fe.Msg, "names the BOX") {
+		t.Errorf("anchor:<day> should be epic-not-found saying the pointer names the box, got %+v", fe)
 	}
 }
