@@ -76,11 +76,12 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 		t.Errorf("--archived depends-on:<live, uncarried> details = %+v, want missing + live", d)
 	}
 
-	// A miss in EVERY store is still the fault, the misses named.
-	for _, args := range [][]string{{"ls", "-q", "depends-on:t-nope0"}, {"ls", "--archived", "-q", "ancestor-of:t-nope0"}} {
+	// A miss in EVERY store is still the fault, the misses named — and in a
+	// mixed list the id no store knows is called out beside the hint.
+	for _, args := range [][]string{{"ls", "-q", "depends-on:t-nope0"}, {"ls", "--archived", "-q", "ancestor-of:t-nope0"}, {"ls", "-q", "depends-on:" + retired + ",t-nope0"}} {
 		fe, _ := runErr(t, args...)
-		if fe == nil || fe.Code != core.CodeValidation {
-			t.Fatalf("%v should be exit 2, got %+v", args, fe)
+		if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "no store knows t-nope0") {
+			t.Fatalf("%v should be exit 2 saying no store knows t-nope0, got %+v", args, fe)
 		}
 		if d, _ := fe.Details.(map[string]any); d["missing"] == nil {
 			t.Errorf("%v details = %+v, want missing", args, d)

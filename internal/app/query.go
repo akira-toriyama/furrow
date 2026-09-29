@@ -251,18 +251,52 @@ func (c *queryCompiler) resolveEpicRef(field string, v query.Value, epics []core
 		total += carriers(c.wider, field, lit)
 	}
 	carried := total > 0
+	var byTitle []string
+	for i := range epics {
+		if strings.EqualFold(epics[i].Title, lit) {
+			byTitle = append(byTitle, epics[i].ID)
+		}
+	}
+	sort.Strings(byTitle)
+	// The pointer's own story, for the ambiguity messages: how many tasks
+	// carry it (both snapshots in a union read), lint's name for the dangling
+	// pointer where lint looks (the live board's own carriers), and how the
+	// carriers are selected — the quoted spelling, unless the pointer is also
+	// a box's whole title (then quoting is the same two targets again: name
+	// the box by id, and the carriers by what names them) or only the other
+	// store's tasks carry it (then the read that lists them).
+	pointer := fmt.Sprintf("%d task(s) carry it as a pointer (no live box answers to it", total)
+	if !c.archived && here > 0 {
+		pointer += fmt.Sprintf(" — lint's %s-missing", field)
+	}
+	pointer += ")"
+	carriersBy := fmt.Sprintf("quote it (%s:'%s') for the carriers", field, lit)
+	switch {
+	case here == 0:
+		side, read := "the archive's", "--archived "
+		if c.archived {
+			side, read = "the live board's", ""
+		}
+		carriersBy = fmt.Sprintf("only %s tasks carry it — `furrow ls %s-q \"%s:'%s'\"` lists them", side, read, field, lit)
+	case len(byTitle) > 0:
+		carriersBy = "the pointer is also a whole title, so it has no -q spelling of its own"
+		if !c.archived {
+			carriersBy += fmt.Sprintf(" — `furrow lint` names its carriers (%s-missing)", field)
+		}
+	}
 	if v.Quoted {
 		// Exact only, in the order a reader can always spell: the pointer
-		// itself (a box is still nameable by its id, so the pointer never
-		// needs a second spelling), else the whole title.
-		if carried {
-			return lit, nil
-		}
-		var byTitle []string
-		for i := range epics {
-			if strings.EqualFold(epics[i].Title, lit) {
-				byTitle = append(byTitle, epics[i].ID)
+		// itself (a box is still nameable by its id), else the whole title —
+		// and a pointer that IS a whole title is the two targets again.
+		switch {
+		case carried && len(byTitle) > 0:
+			return "", &core.Error{
+				Code: core.CodeValidation, Kind: core.KindEpicAmbiguous,
+				Msg:        fmt.Sprintf("epic %q is ambiguous: %s, and it is also the whole title of box %s — name the box by id; %s", lit, pointer, strings.Join(byTitle, ", "), carriersBy),
+				Candidates: append([]string{lit}, byTitle...),
 			}
+		case carried:
+			return lit, nil
 		}
 		switch len(byTitle) {
 		case 1:
@@ -270,7 +304,6 @@ func (c *queryCompiler) resolveEpicRef(field string, v query.Value, epics []core
 		case 0:
 			return "", c.hintOtherCarriers(field, lit, epicNotFound(lit, epics))
 		default:
-			sort.Strings(byTitle)
 			return "", &core.Error{Code: core.CodeValidation, Kind: core.KindEpicAmbiguous, Msg: fmt.Sprintf("epic %q is ambiguous (%s)", lit, strings.Join(byTitle, ", ")), Candidates: byTitle}
 		}
 	}
@@ -282,26 +315,18 @@ func (c *queryCompiler) resolveEpicRef(field string, v query.Value, epics []core
 	} else if !errors.As(err, &rerr) {
 		return "", &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: err.Error()}
 	}
-	// The pointer's own story, for the ambiguity messages: how many tasks
-	// carry it (both snapshots in a union read), and lint's name for the
-	// dangling pointer where lint looks — the live board's own carriers.
-	pointer := fmt.Sprintf("%d task(s) carry it as a pointer (no box answers to it", total)
-	if !c.archived && here > 0 {
-		pointer += fmt.Sprintf(" — lint's %s-missing", field)
-	}
-	pointer += ")"
 	switch {
 	case hit != "" && !carried:
 		return hit, nil
 	case hit != "":
 		return "", &core.Error{
 			Code: core.CodeValidation, Kind: core.KindEpicAmbiguous,
-			Msg:        fmt.Sprintf("epic %q is ambiguous: %s, and it also names box %s — quote it (%s:'%s') for the carriers, or name the box by id", lit, pointer, hit, field, lit),
+			Msg:        fmt.Sprintf("epic %q is ambiguous: %s, and it also names box %s — name the box by id; %s", lit, pointer, hit, carriersBy),
 			Candidates: []string{lit, hit},
 		}
 	case carried && rerr.Kind == core.KindEpicAmbiguous:
 		rerr.Candidates = append([]string{lit}, rerr.Candidates...)
-		rerr.Msg = fmt.Sprintf("epic %q is ambiguous: %s, and it also matches boxes %s — quote it (%s:'%s') for the carriers, or name a box by id", lit, pointer, strings.Join(rerr.Candidates[1:], ", "), field, lit)
+		rerr.Msg = fmt.Sprintf("epic %q is ambiguous: %s, and it also matches boxes %s — name a box by id; %s", lit, pointer, strings.Join(rerr.Candidates[1:], ", "), carriersBy)
 		return "", rerr
 	case carried:
 		return lit, nil
@@ -415,11 +440,27 @@ func (c *queryCompiler) resolveTaskRefs(term query.Term) ([]taskRef, error) {
 	if c.wider == nil {
 		hint = c.whereElse(term, missing, extra)
 	}
-	if hint == "" {
-		hint = "; no store knows it — a task ref is an existing id, spelled exactly"
+	// The ids the other store neither holds nor carries are known nowhere —
+	// said for them alone in a mixed list, and for the whole list when the
+	// hint found nothing.
+	var nowhere []string
+	for _, id := range missing {
+		if !contains(anyStrings(extra["archived"]), id) && !contains(anyStrings(extra["live"]), id) && !contains(anyStrings(extra["carried_elsewhere"]), id) {
+			nowhere = append(nowhere, id)
+		}
+	}
+	if len(nowhere) > 0 {
+		hint += fmt.Sprintf("; no store knows %s — a task ref is an existing id, spelled exactly", strings.Join(nowhere, ", "))
 	}
 	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: msg + hint}
 	return nil, termErr(e, term, extra)
+}
+
+// anyStrings reads a details value back as the []string it was filed as; nil
+// for an absent key.
+func anyStrings(v any) []string {
+	ss, _ := v.([]string)
+	return ss
 }
 
 // whereElse words a miss's hint from the other store — the ids it holds, and
