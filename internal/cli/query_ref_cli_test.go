@@ -128,10 +128,11 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 			}
 		}
 	}
-	// stats' own distributions compile union-aware too, so the archived task's
-	// edges are readable there: blocks:<retired> reaches its live dep.
-	if ids := window("blocks:" + retired); !slices.Contains(ids, upstream) {
-		t.Errorf("stats --since -q blocks:<archived> window = %v, lacks %s", ids, upstream)
+	// stats' distributions are the hot board's, so a task whose own edges are
+	// only in the archive is refused exactly as `ls` refuses it — the window
+	// alone unions.
+	if fe, _ := runErr(t, "stats", "--since", "2020-01-01", "-q", "blocks:"+retired); fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "ls --archived -q") {
+		t.Errorf("stats -q blocks:<archived> should refuse as ls does, got %+v", fe)
 	}
 	if fe, _ := runErr(t, "stats", "--since", "2020-01-01", "-q", "blocks:t-nope0"); fe == nil || fe.Code != core.CodeValidation {
 		t.Errorf("stats --since -q blocks:t-nope0 should still be exit 2, got %+v", fe)
@@ -139,10 +140,10 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 
 	// An id no store holds as a task but the archive still carries as a dep
 	// (`rm` does not see archived references): the live snapshot does not
-	// know it, so a live read is exit 2 naming the archive's tasks as the
-	// carriers (details.carried_elsewhere, no lint hint — lint judges the
-	// live board alone), the archive's read is the answer, and stats, the
-	// union read, returns it in the window.
+	// know it, so a live read — stats' distributions included — is exit 2
+	// naming the archive's tasks as the carriers (details.carried_elsewhere,
+	// no lint hint: lint judges the live board alone); the archive's read is
+	// the answer.
 	p := addTask(t, "p, removed after q retired")
 	q := addTask(t, "q, waits on p", "--dep", p)
 	mustRun(t, "done", q)
@@ -161,8 +162,8 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 	if got := lsIDs(t, "--archived", "-q", "depends-on:"+p); len(got) != 1 || got[0] != q {
 		t.Errorf("--archived depends-on:<rm'd> = %v, want [%s]", got, q)
 	}
-	if ids := window("depends-on:" + p); !slices.Contains(ids, q) {
-		t.Errorf("stats --since -q depends-on:<rm'd> window = %v, lacks %s", ids, q)
+	if fe, _ := runErr(t, "stats", "--since", "2020-01-01", "-q", "depends-on:"+p); fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "the archive's tasks carry") {
+		t.Errorf("stats -q depends-on:<rm'd, carried by the archive> should refuse as ls does, got %+v", fe)
 	}
 }
 

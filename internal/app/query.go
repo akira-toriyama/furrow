@@ -223,8 +223,9 @@ func epicNotFound(ref string, epics []core.Epic) *core.Error {
 // snapshot carries. Unquoted, it is the SAME resolution -e uses (resolveEpicIn:
 // exact id, else unique id prefix, else unique case-folded title substring),
 // so `-q epic:X` cannot disagree with `-e X`; quoted, it is exact only — the
-// id, the whole title (case-folded, as title:'…' is whole-field), or the
-// pointer itself — which is how a pointer named in candidates is selected.
+// id, else the pointer itself, else the whole title (case-folded, as
+// title:'…' is whole-field) — which is how a pointer named in candidates is
+// selected, even one that spells a box's whole title (the box has its id).
 // Beyond -e: a pointer the snapshot (or a union read's other snapshot) carries
 // in the field but no box answers to resolves as that literal — the carriers,
 // non-empty by construction, which keeps `set -q epic:<gone> -e <new>` and
@@ -244,10 +245,19 @@ func (c *queryCompiler) resolveEpicRef(field string, v query.Value, epics []core
 			return lit, nil
 		}
 	}
-	carried := carries(c.idx, field, lit) || (c.wider != nil && carries(c.wider, field, lit))
-	var hit string
-	var rerr *core.Error
+	here := carriers(c.idx, field, lit)
+	total := here
+	if c.wider != nil {
+		total += carriers(c.wider, field, lit)
+	}
+	carried := total > 0
 	if v.Quoted {
+		// Exact only, in the order a reader can always spell: the pointer
+		// itself (a box is still nameable by its id, so the pointer never
+		// needs a second spelling), else the whole title.
+		if carried {
+			return lit, nil
+		}
 		var byTitle []string
 		for i := range epics {
 			if strings.EqualFold(epics[i].Title, lit) {
@@ -255,44 +265,54 @@ func (c *queryCompiler) resolveEpicRef(field string, v query.Value, epics []core
 			}
 		}
 		switch len(byTitle) {
-		case 0:
-			rerr = epicNotFound(lit, epics)
 		case 1:
-			hit = byTitle[0]
+			return byTitle[0], nil
+		case 0:
+			return "", c.hintOtherCarriers(field, lit, epicNotFound(lit, epics))
 		default:
 			sort.Strings(byTitle)
-			rerr = &core.Error{Code: core.CodeValidation, Kind: core.KindEpicAmbiguous, Msg: fmt.Sprintf("epic %q is ambiguous (%s)", lit, strings.Join(byTitle, ", ")), Candidates: byTitle}
-		}
-	} else {
-		id, err := c.app.resolveEpicIn(lit, epics)
-		if err == nil {
-			hit = id
-		} else if !errors.As(err, &rerr) {
-			return "", &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: err.Error()}
+			return "", &core.Error{Code: core.CodeValidation, Kind: core.KindEpicAmbiguous, Msg: fmt.Sprintf("epic %q is ambiguous (%s)", lit, strings.Join(byTitle, ", ")), Candidates: byTitle}
 		}
 	}
-	lint := ""
-	if !c.archived {
-		lint = fmt.Sprintf(" — lint's %s-missing", field)
+	var hit string
+	var rerr *core.Error
+	id, err := c.app.resolveEpicIn(lit, epics)
+	if err == nil {
+		hit = id
+	} else if !errors.As(err, &rerr) {
+		return "", &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: err.Error()}
 	}
+	// The pointer's own story, for the ambiguity messages: how many tasks
+	// carry it (both snapshots in a union read), and lint's name for the
+	// dangling pointer where lint looks — the live board's own carriers.
+	pointer := fmt.Sprintf("%d task(s) carry it as a pointer (no box answers to it", total)
+	if !c.archived && here > 0 {
+		pointer += fmt.Sprintf(" — lint's %s-missing", field)
+	}
+	pointer += ")"
 	switch {
 	case hit != "" && !carried:
 		return hit, nil
 	case hit != "":
 		return "", &core.Error{
 			Code: core.CodeValidation, Kind: core.KindEpicAmbiguous,
-			Msg: fmt.Sprintf("epic %q is ambiguous: %d task(s) here carry it as a pointer (a box no store holds%s), and it also names box %s — quote it (%s:'%s') for the carriers, or name the box by id",
-				lit, carriers(c.idx, field, lit), lint, hit, field, lit),
+			Msg:        fmt.Sprintf("epic %q is ambiguous: %s, and it also names box %s — quote it (%s:'%s') for the carriers, or name the box by id", lit, pointer, hit, field, lit),
 			Candidates: []string{lit, hit},
 		}
 	case carried && rerr.Kind == core.KindEpicAmbiguous:
 		rerr.Candidates = append([]string{lit}, rerr.Candidates...)
-		rerr.Msg = fmt.Sprintf("epic %q is ambiguous: %d task(s) here carry it as a pointer (a box no store holds%s), and it also matches boxes %s — quote it (%s:'%s') for the carriers, or name a box by id",
-			lit, carriers(c.idx, field, lit), lint, strings.Join(rerr.Candidates[1:], ", "), field, lit)
+		rerr.Msg = fmt.Sprintf("epic %q is ambiguous: %s, and it also matches boxes %s — quote it (%s:'%s') for the carriers, or name a box by id", lit, pointer, strings.Join(rerr.Candidates[1:], ", "), field, lit)
 		return "", rerr
 	case carried:
 		return lit, nil
 	}
+	return "", c.hintOtherCarriers(field, lit, rerr)
+}
+
+// hintOtherCarriers appends, to a not-found, where else the pointer lives —
+// the other store's tasks carry it — with the read that lists them; a union
+// read has already looked there.
+func (c *queryCompiler) hintOtherCarriers(field, lit string, rerr *core.Error) *core.Error {
 	if rerr.Kind == core.KindEpicNotFound && c.wider == nil {
 		if o := c.other(); o != nil && carries(o, field, lit) {
 			side, read := "the archive's", "--archived "
@@ -302,7 +322,7 @@ func (c *queryCompiler) resolveEpicRef(field string, v query.Value, epics []core
 			rerr.Msg += fmt.Sprintf(" — %s tasks point at it: `furrow ls %s-q '%s:%s'` lists them", side, read, field, lit)
 		}
 	}
-	return "", rerr
+	return rerr
 }
 
 // resolveEpicRefs binds an OR-set of epic refs (resolveEpicRef each), stamping
@@ -390,11 +410,15 @@ func (c *queryCompiler) resolveTaskRefs(term query.Term) ([]taskRef, error) {
 		return refs, nil
 	}
 	extra := map[string]any{"missing": missing}
-	msg := fmt.Sprintf("%s: unknown task id(s) %s — a task ref is an existing id, spelled exactly", term.Field, strings.Join(missing, ", "))
+	msg := fmt.Sprintf("%s: %s not in this snapshot — neither a task here nor a dep a task here carries", term.Field, strings.Join(missing, ", "))
+	hint := ""
 	if c.wider == nil {
-		msg += c.whereElse(term, missing, extra)
+		hint = c.whereElse(term, missing, extra)
 	}
-	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: msg}
+	if hint == "" {
+		hint = "; no store knows it — a task ref is an existing id, spelled exactly"
+	}
+	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: msg + hint}
 	return nil, termErr(e, term, extra)
 }
 
@@ -423,11 +447,11 @@ func (c *queryCompiler) whereElse(term query.Term, ids []string, extra map[strin
 	msg := ""
 	if len(held) > 0 {
 		extra[key] = held
-		msg += fmt.Sprintf("; %s holds %s — `furrow ls %s-q '%s'` reads it there, `furrow show %s%s` names its edges", side, strings.Join(held, ", "), flag, term.Raw, held[0], strings.TrimSuffix(" "+flag, " "))
+		msg += fmt.Sprintf("; %s holds %s — `furrow ls %s-q '%s:%s'` reads there, `furrow show %s%s` names the edges", side, strings.Join(held, ", "), flag, term.Field, strings.Join(held, ","), strings.Join(held, " "), strings.TrimSuffix(" "+flag, " "))
 	}
 	if len(carried) > 0 {
 		extra["carried_elsewhere"] = carried
-		msg += fmt.Sprintf("; only %s's tasks carry %s as a dep — `furrow ls %s-q 'depends-on:%s'` names them", side, strings.Join(carried, ", "), flag, carried[0])
+		msg += fmt.Sprintf("; only %s's tasks carry %s as a dep — `furrow ls %s-q 'depends-on:%s'` names them", side, strings.Join(carried, ", "), flag, strings.Join(carried, ","))
 	}
 	return msg
 }
@@ -519,7 +543,7 @@ func (c *queryCompiler) edgeRefs(term query.Term) ([]string, error) {
 			side, flag, key = "the live board", "", "live"
 		}
 		extra[key] = held
-		msg += fmt.Sprintf("; %s holds %s — `furrow ls %s-q '%s'` reads its edges, `furrow show %s%s` names them", side, strings.Join(held, ", "), flag, term.Raw, held[0], strings.TrimSuffix(" "+flag, " "))
+		msg += fmt.Sprintf("; %s holds %s — `furrow ls %s-q '%s:%s'` reads its edges, `furrow show %s%s` names them", side, strings.Join(held, ", "), flag, term.Field, strings.Join(held, ","), strings.Join(held, " "), strings.TrimSuffix(" "+flag, " "))
 	}
 	if len(dangling) > 0 {
 		lint := ""

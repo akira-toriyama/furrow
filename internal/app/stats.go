@@ -64,21 +64,12 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 	if err != nil {
 		return Stats{}, err
 	}
-	// stats is the one read over both snapshots (its window scans the archive
-	// too), so every compile here is union-aware: the archive is loaded once,
-	// when a query or a window can need it, and handed to each compile as the
-	// other snapshot (queryRead.wider) — a ref either snapshot holds resolves,
-	// and the walks follow the union's edges.
-	var arcIdx *core.Index
-	var arcBody func(string) (string, error)
-	if o.Query != "" || o.Since != nil || o.Until != nil {
-		if arcIdx, arcBody, err = a.archiveSnapshot(); err != nil {
-			return Stats{}, err
-		}
-	}
 	// Compile -q once; the distributions then describe the QUERIED slice, the
-	// same AND semantics as List (`stats -q is:stale` = the stale board's shape).
-	qpred, err := a.queryPred(o.Query, idx, queryRead{staleDays: a.Cfg.RevisitStaleDays, wider: arcIdx})
+	// same AND semantics as List (`stats -q is:stale` = the stale board's
+	// shape) — a snapshot read of the hot board, so a ref it cannot place is
+	// refused exactly as `ls` refuses it. Only the --since/--until window
+	// scans the archive too (statsWindow), and only it loads it.
+	qpred, err := a.queryPred(o.Query, idx, queryRead{staleDays: a.Cfg.RevisitStaleDays})
 	if err != nil {
 		return Stats{}, err
 	}
@@ -132,6 +123,10 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 		ByLabel: sortedCounts(labelCounts),
 	}
 	if o.Since != nil || o.Until != nil {
+		arcIdx, arcBody, err := a.archiveSnapshot()
+		if err != nil {
+			return Stats{}, err
+		}
 		w, err := a.statsWindow(o, idx, arcIdx, arcBody)
 		if err != nil {
 			return Stats{}, err

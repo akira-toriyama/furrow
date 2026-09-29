@@ -661,6 +661,11 @@ func TestQueryRefCarriedLiteral(t *testing.T) {
 	if ce.Kind != core.KindEpicAmbiguous || !slices.Contains(ce.Candidates, "会場") || !slices.Contains(ce.Candidates, box) {
 		t.Errorf("epic:<title that a pointer also holds> = %q %v, want epic-ambiguous naming both", ce.Kind, ce.Candidates)
 	}
+	// Quoted, the pointer outranks even a whole-title match (the box still
+	// has its id), so the message's "quote it" never loops.
+	if got := qTitles(t, a, "epic:'会場'"); !slices.Equal(got, []string{"corrupt pointer"}) {
+		t.Errorf("epic:'<pointer that is also a whole title>' = %v, want [corrupt pointer]", got)
+	}
 	// An exact id is one target, however it is spelled elsewhere.
 	if got := qTitles(t, a, "epic:"+box); !slices.Equal(got, []string{"member"}) {
 		t.Errorf("epic:<exact id> = %v, want [member]", got)
