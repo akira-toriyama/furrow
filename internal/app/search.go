@@ -50,7 +50,7 @@ func (a *App) Search(o QueryOpts, term string) ([]SearchHit, error) {
 	// (body:/free-text terms) is never loaded a second time for the snippet
 	// scan — `ls` pins one-load-per-body (TestQueryBodyLoadIsLazy) and search
 	// holds the same invariant through the same cache.
-	qpred, qbody, err := a.queryPredShared(o.Query, idx, a.Cfg.RevisitStaleDays, loadBody)
+	qpred, qbody, err := a.queryPredShared(o.Query, idx, queryRead{staleDays: a.Cfg.RevisitStaleDays, loadBody: loadBody, archived: o.Archived})
 	if err != nil {
 		return nil, err
 	}

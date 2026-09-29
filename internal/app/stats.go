@@ -65,8 +65,11 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 		return Stats{}, err
 	}
 	// Compile -q once; the distributions then describe the QUERIED slice, the
-	// same AND semantics as List (`stats -q is:stale` = the stale board's shape).
-	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, nil)
+	// same AND semantics as List (`stats -q is:stale` = the stale board's
+	// shape) — a snapshot read of the hot board, so a ref it cannot place is
+	// refused exactly as `ls` refuses it. Only the --since/--until window
+	// scans the archive too (statsWindow), and only it loads it.
+	qpred, err := a.queryPred(o.Query, idx, queryRead{staleDays: a.Cfg.RevisitStaleDays})
 	if err != nil {
 		return Stats{}, err
 	}
@@ -120,7 +123,11 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 		ByLabel: sortedCounts(labelCounts),
 	}
 	if o.Since != nil || o.Until != nil {
-		w, err := a.statsWindow(o, idx)
+		arcIdx, arcBody, err := a.archiveSnapshot()
+		if err != nil {
+			return Stats{}, err
+		}
+		w, err := a.statsWindow(o, idx, arcIdx, arcBody)
 		if err != nil {
 			return Stats{}, err
 		}
@@ -137,7 +144,7 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 // the archive's own index and body loader so `-q` terms read the right bodies.
 // Ids never collide across the two stores (archive moves a shard, it does not
 // copy it).
-func (a *App) statsWindow(o QueryOpts, idx *core.Index) (*StatsWindow, error) {
+func (a *App) statsWindow(o QueryOpts, idx, arcIdx *core.Index, arcBody func(string) (string, error)) (*StatsWindow, error) {
 	scope := o
 	scope.Since, scope.Until = nil, nil
 
@@ -148,8 +155,8 @@ func (a *App) statsWindow(o QueryOpts, idx *core.Index) (*StatsWindow, error) {
 	}
 	var created, closed []stamp
 
-	scan := func(src *core.Index, loadBody func(string) (string, error)) error {
-		qpred, err := a.queryPred(scope.Query, src, a.Cfg.RevisitStaleDays, loadBody)
+	scan := func(src *core.Index, r queryRead) error {
+		qpred, err := a.queryPred(scope.Query, src, r)
 		if err != nil {
 			return err
 		}
@@ -177,20 +184,16 @@ func (a *App) statsWindow(o QueryOpts, idx *core.Index) (*StatsWindow, error) {
 		return nil
 	}
 
-	if err := scan(idx, nil); err != nil {
+	// The window unions the two snapshots, so each pass is compiled knowing
+	// the other (queryRead.wider): a ref only the archive holds must not fail
+	// the hot pass, and a live id must not fail the archive pass — either
+	// pass alone would refuse what the union answers. arcIdx is nil on a
+	// store that cannot have an archive (not file-backed).
+	if err := scan(idx, queryRead{staleDays: a.Cfg.RevisitStaleDays, wider: arcIdx}); err != nil {
 		return nil, err
 	}
-	if a.Dir != "" { // a non-file-backed store cannot have an archive
-		arc, err := a.archiveStore()
-		if err != nil {
-			return nil, err
-		}
-		arcIdx, err := arc.Load() // a missing archive dir loads empty
-		if err != nil {
-			return nil, err
-		}
-		core.Canonicalize(arcIdx, a.Cfg.Lanes)
-		if err := scan(arcIdx, arc.LoadBody); err != nil {
+	if arcIdx != nil {
+		if err := scan(arcIdx, queryRead{staleDays: a.Cfg.RevisitStaleDays, loadBody: arcBody, archived: true, wider: idx}); err != nil {
 			return nil, err
 		}
 	}

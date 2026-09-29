@@ -189,7 +189,7 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 	// Compile -q once. It receives THIS call's staleDays (which --stale-days
 	// may have overridden), so `revisit -q is:stale` and revisit's own stale
 	// signal use one threshold within one call.
-	qpred, err := a.queryPred(o.Query, idx, staleDays, nil)
+	qpred, err := a.queryPred(o.Query, idx, queryRead{staleDays: staleDays})
 	if err != nil {
 		return nil, err
 	}

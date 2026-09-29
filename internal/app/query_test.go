@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func qErr(t *testing.T, a *App, q string) *core.Error {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = a.compileQuery(q, idx, a.Cfg.RevisitStaleDays, nil)
+	_, _, err = a.compileQuery(q, idx, queryRead{staleDays: a.Cfg.RevisitStaleDays})
 	if err == nil {
 		t.Fatalf("compileQuery(%q) should have failed", q)
 	}
@@ -165,7 +166,7 @@ func TestQueryIsStale(t *testing.T) {
 		days int
 		want int
 	}{{0, 0}, {7, 3}, {35, 1}} {
-		p, _, err := a.compileQuery("is:stale", idx, tc.days, nil)
+		p, _, err := a.compileQuery("is:stale", idx, queryRead{staleDays: tc.days})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,14 +187,20 @@ func TestQueryIsStale(t *testing.T) {
 }
 
 // TestQueryGraph pins the direct-edge graph qualifiers: epic: (membership),
-// depends-on: and blocks: (the two directions of the Deps edge), and the lenient
-// unknown-id contract (0 rows, exit 0).
+// depends-on: and blocks: (the two directions of the Deps edge), and the ref
+// contract each shares with its sibling flag (t-5mcm): an epic ref resolves as
+// -e does (exact id, unique id prefix, unique case-folded title substring; a
+// miss is exit 2 epic-not-found with the box ids as candidates, an ambiguity
+// epic-ambiguous with the contenders), and a task ref must exist (exit 2
+// validation, the misses in details.missing). Neither answers a bad ref with
+// 0 rows at exit 0 any more.
 //
 // parent:/child-of: are gone with the hierarchy; epic: is the grouping spelling
 // that replaced them.
 func TestQueryGraph(t *testing.T) {
 	a := newApp()
-	box := mustEpic(t, a, "the box", EpicAddOpts{})
+	box := mustEpic(t, a, "alpha box", EpicAddOpts{})
+	other := mustEpic(t, a, "beta box", EpicAddOpts{})
 	mustAdd(t, a, "p", AddOpts{})
 	c1 := mustAdd(t, a, "c1", AddOpts{Epic: box})
 	c2 := mustAdd(t, a, "c2", AddOpts{Epic: box, Deps: []string{c1.ID}})
@@ -204,14 +211,14 @@ func TestQueryGraph(t *testing.T) {
 		want []string
 	}{
 		{"epic:" + box, []string{"c1", "c2"}},
+		{"epic:ALPHA", []string{"c1", "c2"}},       // unique title substring, case-folded — what -e resolves
+		{"epic:'alpha box'", []string{"c1", "c2"}}, // quoting only protects the space; the value still resolves
 		{"-epic:" + box, []string{"d3", "p"}},
+		{"epic:" + box + "," + other, []string{"c1", "c2"}}, // comma = OR, each ref resolved
 		{"depends-on:" + c1.ID, []string{"c2", "d3"}},
 		{"depends-on:" + c2.ID, []string{"d3"}},
 		{"depends-on:" + c1.ID + "," + c2.ID, []string{"c2", "d3"}}, // comma = OR
 		{"blocks:" + c2.ID, []string{"c1"}},
-		{"blocks:t-nope0", []string{}}, // unknown id blocks nothing — lenient
-		{"depends-on:t-nope0", []string{}},
-		{"epic:e-nope0", []string{}},
 	}
 	for _, c := range cases {
 		if got := qTitles(t, a, c.q); !slices.Equal(got, c.want) {
@@ -225,6 +232,40 @@ func TestQueryGraph(t *testing.T) {
 	}
 	if got := qTitles(t, a, "blocks:"+tasks[0].ID); !slices.Equal(got, []string{"c1", "c2"}) {
 		t.Errorf("blocks:d3 = %v, want [c1 c2]", got)
+	}
+
+	// A ref that resolves to nothing is exit 2 with the term's position, never
+	// 0 rows: the sibling flag's own kind for an epic ref, validation with the
+	// misses for a task ref (all-or-nothing, as `dep` refuses a whole batch).
+	for _, c := range []struct{ q, kind string }{
+		{"epic:e-nope0", core.KindEpicNotFound},
+		{"epic:box", core.KindEpicAmbiguous},
+		{"anchor:e-nope0", core.KindEpicNotFound},
+		{"anchor:box", core.KindEpicAmbiguous},
+		{"blocks:t-nope0", core.KindValidation},
+		{"depends-on:t-nope0", core.KindValidation},
+		{"descendant-of:t-nope0", core.KindValidation},
+		{"ancestor-of:t-nope0", core.KindValidation},
+		{"depends-on:" + c1.ID + ",t-nope0", core.KindValidation},
+	} {
+		ce := qErr(t, a, c.q)
+		if ce.Code != core.CodeValidation || ce.Kind != c.kind {
+			t.Errorf("-q %q = exit %d kind %q, want exit 2 kind %q", c.q, ce.Code, ce.Kind, c.kind)
+		}
+		if d, _ := ce.Details.(map[string]any); d["term"] == nil {
+			t.Errorf("-q %q: no term in details: %+v", c.q, ce.Details)
+		}
+	}
+	if ce := qErr(t, a, "epic:e-nope0"); !slices.Contains(ce.Candidates, box) || !slices.Contains(ce.Candidates, other) {
+		t.Errorf("epic:e-nope0 candidates = %v, want both boxes", ce.Candidates)
+	}
+	if ce := qErr(t, a, "epic:box"); len(ce.Candidates) != 2 || !slices.Contains(ce.Candidates, box) || !slices.Contains(ce.Candidates, other) {
+		t.Errorf("epic:box candidates = %v, want the two contenders", ce.Candidates)
+	}
+	ce := qErr(t, a, "depends-on:"+c1.ID+",t-nope0")
+	d, _ := ce.Details.(map[string]any)
+	if missing, _ := d["missing"].([]string); !slices.Equal(missing, []string{"t-nope0"}) || len(ce.Candidates) != 0 {
+		t.Errorf("task-ref miss details = %+v candidates = %v, want missing [t-nope0] and no candidates", ce.Details, ce.Candidates)
 	}
 }
 
@@ -369,7 +410,7 @@ func FuzzCompileQuery(f *testing.F) {
 		if err != nil {
 			t.Skip()
 		}
-		p, _, err := a.compileQuery(s, idx, 30, nil)
+		p, _, err := a.compileQuery(s, idx, queryRead{staleDays: 30})
 		if err != nil || p == nil {
 			return
 		}
@@ -415,8 +456,10 @@ func TestQueryTransitiveGraph(t *testing.T) {
 	if got := ids("depends-on:" + ta.ID); !reflect.DeepEqual(got, []string{tb.ID}) {
 		t.Errorf("depends-on base = %v, want [%s]", got, tb.ID)
 	}
-	if got := ids("descendant-of:t-nope1"); len(got) != 0 {
-		t.Errorf("unknown id should have an empty closure, got %v", got)
+	// An unknown start is a fault, not an empty closure (t-5mcm; TestQueryGraph
+	// pins the kind and details).
+	if _, err := a.List(QueryOpts{Query: "descendant-of:t-nope1"}); err == nil {
+		t.Errorf("descendant-of on an unknown id should fail, not answer an empty closure")
 	}
 	// negation composes like every other term.
 	if got := ids("-descendant-of:" + ta.ID + " is:open"); len(got) != 2 {
@@ -530,5 +573,106 @@ func TestSearchQuerySharesBodyCache(t *testing.T) {
 	}
 	if cs.loads != 2 {
 		t.Errorf("each body loads once (2 tasks -> 2 loads), got %d", cs.loads)
+	}
+}
+
+// A ref this snapshot only POINTS AT — a dep whose far end is in no store, a
+// box pointer whose box is gone (a hand edit, an interrupted write: lint's
+// dep-missing / epic-missing / anchor-missing) — resolves as the literal, and
+// the carriers are the answer: non-empty by construction, so never a silent
+// 0 rows, and the repair (`set -q epic:<gone> -e <new>`) stays reachable.
+// Reading the ghost's OWN edges (blocks:, ancestor-of:) is refused, since no
+// store has them; a ghost nothing carries is still a miss. A pointer that
+// ALSO matches a live box by prefix or title names two targets, and neither
+// may win silently (both orders were measured wrong by the refutation
+// passes): epic-ambiguous with both as candidates, like two title hits.
+func TestQueryRefCarriedLiteral(t *testing.T) {
+	a := newApp()
+	mustAdd(t, a, "bystander", AddOpts{})
+	idx, err := a.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The suffix holds an 'o', which the id alphabet lacks, so it never
+	// collides with a generated id.
+	idx.Add(core.Task{ID: "t-carro", Title: "carrier", Status: "ready", Priority: 100, Deps: []string{"t-ghost1"}, Epic: "e-ghost1", Anchor: "e-ghost1", Body: core.BodyPath("t-carro")})
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"depends-on:t-ghost1", "descendant-of:t-ghost1", "epic:e-ghost1", "anchor:e-ghost1"} {
+		if got := qTitles(t, a, q); !slices.Equal(got, []string{"carrier"}) {
+			t.Errorf("-q %q = %v, want [carrier]", q, got)
+		}
+	}
+	for _, q := range []string{"blocks:t-ghost1", "ancestor-of:t-ghost1"} {
+		ce := qErr(t, a, q)
+		d, _ := ce.Details.(map[string]any)
+		if ce.Code != core.CodeValidation || !strings.Contains(ce.Msg, "no store") || d["outside"] == nil {
+			t.Errorf("-q %q = exit %d %q details %+v, want exit 2 naming the ghost as outside every store", q, ce.Code, ce.Msg, d)
+		}
+	}
+	ce := qErr(t, a, "depends-on:t-ghost2")
+	if d, _ := ce.Details.(map[string]any); ce.Code != core.CodeValidation || d["missing"] == nil {
+		t.Errorf("an uncarried ghost is a miss: %+v", ce)
+	}
+
+	// A live box whose title mentions the ghost id: two targets, ambiguous —
+	// and the quoted spelling is the exact one that selects the carriers.
+	mention := mustEpic(t, a, "follow-up to e-ghost1", EpicAddOpts{})
+	ce = qErr(t, a, "epic:e-ghost1")
+	if ce.Kind != core.KindEpicAmbiguous || !slices.Contains(ce.Candidates, "e-ghost1") || !slices.Contains(ce.Candidates, mention) || !strings.Contains(ce.Msg, "epic:'e-ghost1'") {
+		t.Errorf("epic:<pointer that a title also matches> = %q %v %q, want epic-ambiguous naming both and the quoted spelling", ce.Kind, ce.Candidates, ce.Msg)
+	}
+	if got := qTitles(t, a, "epic:'e-ghost1'"); !slices.Equal(got, []string{"carrier"}) {
+		t.Errorf("epic:'<pointer>' (quoted = exact) = %v, want [carrier]", got)
+	}
+	// Two boxes the title matches AND the pointer: the pointer joins the
+	// resolver's ambiguity (this branch was measured dead once: the pointer
+	// silently won and a write landed on its carrier alone).
+	two := mustEpic(t, a, "ghost1 stage", EpicAddOpts{})
+	three := mustEpic(t, a, "ghost1 stage two", EpicAddOpts{})
+	if idx, err = a.load(); err != nil {
+		t.Fatal(err)
+	}
+	idx.Add(core.Task{ID: "t-ghosto", Title: "points at a title fragment", Status: "ready", Priority: 120, Epic: "ghost1", Body: core.BodyPath("t-ghosto")})
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	// "ghost1" is a substring of the mention box's title too: three boxes.
+	ce = qErr(t, a, "epic:ghost1")
+	if ce.Kind != core.KindEpicAmbiguous || len(ce.Candidates) != 4 || ce.Candidates[0] != "ghost1" || !slices.Contains(ce.Candidates, two) || !slices.Contains(ce.Candidates, three) || !slices.Contains(ce.Candidates, mention) {
+		t.Errorf("epic:<pointer beside three title hits> = %q %v, want epic-ambiguous [pointer, box, box, box]", ce.Kind, ce.Candidates)
+	}
+	if got := qTitles(t, a, "epic:'ghost1'"); !slices.Equal(got, []string{"points at a title fragment"}) {
+		t.Errorf("epic:'ghost1' (quoted = exact) = %v, want the carrier", got)
+	}
+	// The mirror image: a corrupt pointer holding a box's TITLE must not hide
+	// that box's members from epic: while -e lists them — ambiguous too.
+	box := mustEpic(t, a, "会場", EpicAddOpts{})
+	mustAdd(t, a, "member", AddOpts{Epic: box})
+	if idx, err = a.load(); err != nil {
+		t.Fatal(err)
+	}
+	idx.Add(core.Task{ID: "t-corro", Title: "corrupt pointer", Status: "ready", Priority: 110, Epic: "会場", Body: core.BodyPath("t-corro")})
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	ce = qErr(t, a, "epic:会場")
+	if ce.Kind != core.KindEpicAmbiguous || !slices.Contains(ce.Candidates, "会場") || !slices.Contains(ce.Candidates, box) || strings.Contains(ce.Msg, "quote it") || !strings.Contains(ce.Msg, "lint") {
+		t.Errorf("epic:<title that a pointer also holds> = %q %v %q, want epic-ambiguous naming both, pointing at lint rather than at quoting", ce.Kind, ce.Candidates, ce.Msg)
+	}
+	// Quoted, a pointer that IS a whole title is the same two targets — never
+	// the carriers silently, never a "quote it" that loops.
+	ce = qErr(t, a, "epic:'会場'")
+	if ce.Kind != core.KindEpicAmbiguous || !slices.Contains(ce.Candidates, "会場") || !slices.Contains(ce.Candidates, box) || strings.Contains(ce.Msg, "quote it") {
+		t.Errorf("epic:'<pointer that is also a whole title>' = %q %v %q, want epic-ambiguous naming both", ce.Kind, ce.Candidates, ce.Msg)
+	}
+	// A quoted whole title with no pointer behind it is the box.
+	if got := qTitles(t, a, "epic:'follow-up to e-ghost1'"); len(got) != 0 {
+		t.Errorf("epic:'<whole title, no members>' = %v, want []", got)
+	}
+	// An exact id is one target, however it is spelled elsewhere.
+	if got := qTitles(t, a, "epic:"+box); !slices.Equal(got, []string{"member"}) {
+		t.Errorf("epic:<exact id> = %v, want [member]", got)
 	}
 }
