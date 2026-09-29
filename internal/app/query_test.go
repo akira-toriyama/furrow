@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func qErr(t *testing.T, a *App, q string) *core.Error {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = a.compileQuery(q, idx, a.Cfg.RevisitStaleDays, nil)
+	_, _, err = a.compileQuery(q, idx, queryRead{staleDays: a.Cfg.RevisitStaleDays})
 	if err == nil {
 		t.Fatalf("compileQuery(%q) should have failed", q)
 	}
@@ -165,7 +166,7 @@ func TestQueryIsStale(t *testing.T) {
 		days int
 		want int
 	}{{0, 0}, {7, 3}, {35, 1}} {
-		p, _, err := a.compileQuery("is:stale", idx, tc.days, nil)
+		p, _, err := a.compileQuery("is:stale", idx, queryRead{staleDays: tc.days})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -409,7 +410,7 @@ func FuzzCompileQuery(f *testing.F) {
 		if err != nil {
 			t.Skip()
 		}
-		p, _, err := a.compileQuery(s, idx, 30, nil)
+		p, _, err := a.compileQuery(s, idx, queryRead{staleDays: 30})
 		if err != nil || p == nil {
 			return
 		}
@@ -572,5 +573,41 @@ func TestSearchQuerySharesBodyCache(t *testing.T) {
 	}
 	if cs.loads != 2 {
 		t.Errorf("each body loads once (2 tasks -> 2 loads), got %d", cs.loads)
+	}
+}
+
+// A ref this snapshot only POINTS AT — a dep whose far end is in no store, a
+// box pointer whose box is gone (a hand edit, an interrupted write: lint's
+// dep-missing / epic-missing / anchor-missing) — resolves as the literal, and
+// the carriers are the answer: non-empty by construction, so never a silent
+// 0 rows, and the repair (`set -q epic:<gone> -e <new>`) stays reachable.
+// Reading the ghost's OWN edges (blocks:, ancestor-of:) is refused, since no
+// store has them; a ghost nothing carries is still a miss.
+func TestQueryRefCarriedLiteral(t *testing.T) {
+	a := newApp()
+	mustAdd(t, a, "bystander", AddOpts{})
+	idx, err := a.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx.Add(core.Task{ID: "t-carr1", Title: "carrier", Status: "ready", Priority: 100, Deps: []string{"t-ghost1"}, Epic: "e-ghost1", Anchor: "e-ghost1", Body: core.BodyPath("t-carr1")})
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"depends-on:t-ghost1", "descendant-of:t-ghost1", "epic:e-ghost1", "anchor:e-ghost1"} {
+		if got := qTitles(t, a, q); !slices.Equal(got, []string{"carrier"}) {
+			t.Errorf("-q %q = %v, want [carrier]", q, got)
+		}
+	}
+	for _, q := range []string{"blocks:t-ghost1", "ancestor-of:t-ghost1"} {
+		ce := qErr(t, a, q)
+		d, _ := ce.Details.(map[string]any)
+		if ce.Code != core.CodeValidation || !strings.Contains(ce.Msg, "no store") || d["outside"] == nil {
+			t.Errorf("-q %q = exit %d %q details %+v, want exit 2 naming the ghost as outside every store", q, ce.Code, ce.Msg, d)
+		}
+	}
+	ce := qErr(t, a, "depends-on:t-ghost2")
+	if d, _ := ce.Details.(map[string]any); ce.Code != core.CodeValidation || d["missing"] == nil {
+		t.Errorf("an uncarried ghost is a miss: %+v", ce)
 	}
 }

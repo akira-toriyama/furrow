@@ -66,7 +66,7 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 	}
 	// Compile -q once; the distributions then describe the QUERIED slice, the
 	// same AND semantics as List (`stats -q is:stale` = the stale board's shape).
-	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, nil)
+	qpred, err := a.queryPred(o.Query, idx, queryRead{staleDays: a.Cfg.RevisitStaleDays})
 	if err != nil {
 		return Stats{}, err
 	}
@@ -148,8 +148,8 @@ func (a *App) statsWindow(o QueryOpts, idx *core.Index) (*StatsWindow, error) {
 	}
 	var created, closed []stamp
 
-	scan := func(src *core.Index, loadBody func(string) (string, error)) error {
-		qpred, err := a.queryPred(scope.Query, src, a.Cfg.RevisitStaleDays, loadBody)
+	scan := func(src *core.Index, r queryRead) error {
+		qpred, err := a.queryPred(scope.Query, src, r)
 		if err != nil {
 			return err
 		}
@@ -177,20 +177,29 @@ func (a *App) statsWindow(o QueryOpts, idx *core.Index) (*StatsWindow, error) {
 		return nil
 	}
 
-	if err := scan(idx, nil); err != nil {
-		return nil, err
-	}
+	// The window unions the two snapshots, so each pass is compiled knowing
+	// the other (queryRead.wider): a ref only the archive holds must not fail
+	// the hot pass, and a live id must not fail the archive pass — either
+	// pass alone would refuse what the union answers.
+	var arcIdx *core.Index
+	var arcBody func(string) (string, error)
 	if a.Dir != "" { // a non-file-backed store cannot have an archive
 		arc, err := a.archiveStore()
 		if err != nil {
 			return nil, err
 		}
-		arcIdx, err := arc.Load() // a missing archive dir loads empty
+		arcIdx, err = arc.Load() // a missing archive dir loads empty
 		if err != nil {
 			return nil, err
 		}
 		core.Canonicalize(arcIdx, a.Cfg.Lanes)
-		if err := scan(arcIdx, arc.LoadBody); err != nil {
+		arcBody = arc.LoadBody
+	}
+	if err := scan(idx, queryRead{staleDays: a.Cfg.RevisitStaleDays, wider: arcIdx}); err != nil {
+		return nil, err
+	}
+	if arcIdx != nil {
+		if err := scan(arcIdx, queryRead{staleDays: a.Cfg.RevisitStaleDays, loadBody: arcBody, archived: true, wider: idx}); err != nil {
 			return nil, err
 		}
 	}

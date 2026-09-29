@@ -44,18 +44,32 @@ func isDateField(f string) bool {
 // an unreadable body as a non-match.
 type taskPred func(*core.Task) (bool, error)
 
-// queryPred compiles a raw `-q` string against the loaded index, or returns
-// (nil, nil) when there is no query — the one entry point every filtering read
-// (ls/next/revisit/stats/search) funnels through, so `-q` means the same thing
-// everywhere. staleDays feeds `is:stale`: normally the config's
+// queryRead is what a filtering read tells the compiler about the index it
+// hands over. staleDays feeds `is:stale`: normally the config's
 // [revisit].stale_days; Revisit passes its effective (possibly --stale-days
 // overridden) window so `revisit -q is:stale` and revisit's own stale signal
 // can never disagree within one call. loadBody resolves a task's body for the
-// body-matching terms — nil means the hot store's; a read filtering a DIFFERENT
-// index (ls --archived) must pass that store's loader, or `body:` terms would
-// silently search the wrong bodies.
-func (a *App) queryPred(raw string, idx *core.Index, staleDays int, loadBody func(string) (string, error)) (taskPred, error) {
-	p, _, err := a.queryPredShared(raw, idx, staleDays, loadBody)
+// body-matching terms — nil means the hot store's; a read filtering a
+// DIFFERENT index (ls --archived) must pass that store's loader, or `body:`
+// terms would silently search the wrong bodies. archived says the index IS
+// that other snapshot, which decides where a ref binder looks for a task the
+// snapshot does not hold (the live board, not the archive). wider is for the
+// one read that unions two snapshots — stats' --since/--until window scans
+// the hot index and the archive in turn — and names the OTHER one: a ref that
+// snapshot knows is not refused by this pass, since the other pass answers it.
+type queryRead struct {
+	staleDays int
+	loadBody  func(string) (string, error)
+	archived  bool
+	wider     *core.Index
+}
+
+// queryPred compiles a raw `-q` string against the loaded index, or returns
+// (nil, nil) when there is no query — the one entry point every filtering read
+// (ls/next/revisit/stats/search) funnels through, so `-q` means the same thing
+// everywhere.
+func (a *App) queryPred(raw string, idx *core.Index, r queryRead) (taskPred, error) {
+	p, _, err := a.queryPredShared(raw, idx, r)
 	return p, err
 }
 
@@ -65,106 +79,34 @@ func (a *App) queryPred(raw string, idx *core.Index, staleDays int, loadBody fun
 // even when the query also carried a body term (`search -q body:x term` used
 // to pay two). The reader is nil when there is no query — with no compiler
 // there is no cache to share, and the caller's own loader is already single-read.
-func (a *App) queryPredShared(raw string, idx *core.Index, staleDays int, loadBody func(string) (string, error)) (taskPred, func(*core.Task) (string, error), error) {
+func (a *App) queryPredShared(raw string, idx *core.Index, r queryRead) (taskPred, func(*core.Task) (string, error), error) {
 	if raw == "" {
 		return nil, nil, nil
 	}
-	return a.compileQuery(raw, idx, staleDays, loadBody)
+	return a.compileQuery(raw, idx, r)
 }
 
 // queryCompiler carries the state a query's terms bind against: the loaded
-// index, the compile-time instant (ONE Clock read per query, so every relative
-// date and staleness test in a pass agrees), the stale threshold, and
-// lazily-built derived state — the done set, the children map, and the body
-// cache. Bodies are loaded on demand and only by terms that read them, so a
-// query with no text-over-body term never pays for a single body read.
+// index and what the read said about it (queryRead), the compile-time instant
+// (ONE Clock read per query, so every relative date and staleness test in a
+// pass agrees), and lazily-built derived state — the done set, the body
+// cache, the box list, the dep-target set. Each is built on first use and only
+// by a term that needs it, so a query with no body term never pays for a body
+// read and one with no ref never loads the boxes.
 type queryCompiler struct {
 	app         *App
 	idx         *core.Index
 	now         time.Time
 	staleDays   int
 	loadBody    func(string) (string, error)
+	archived    bool
+	wider       *core.Index
 	doneIDs     map[string]bool
 	bodies      map[string]string
 	bodyErr     error
 	epics       []core.Epic
 	epicsLoaded bool
-}
-
-// epicList loads the board's boxes once per query — only a term that resolves
-// an epic ref (epic:/anchor:) pays for the read.
-func (c *queryCompiler) epicList() ([]core.Epic, error) {
-	if !c.epicsLoaded {
-		epics, err := c.app.Store.LoadEpics()
-		if err != nil {
-			return nil, err
-		}
-		c.epics, c.epicsLoaded = epics, true
-	}
-	return c.epics, nil
-}
-
-// resolveEpicRefs binds an OR-set of epic refs through the SAME resolution -e
-// uses (resolveEpicIn: exact id, else unique id prefix, else unique case-folded
-// title substring), so `-q epic:X` cannot disagree with `-e X`: a miss is exit 2
-// epic-not-found with every box id in candidates, an ambiguous ref is
-// epic-ambiguous with the contenders, each stamped with the term's position
-// like every other binder fault. The exact-id-only, silent-on-a-miss form this
-// replaces answered `anchor:会場` (a unique title substring the sibling flags
-// resolve) with 0 rows at exit 0, which a drill session read as "nothing is
-// anchored" and started re-pointing 80 dues by hand (t-5mcm). A dangling
-// pointer on a SHARD stays lint's to report (epic-missing, anchor-missing);
-// the ref a QUERY names must resolve.
-func (c *queryCompiler) resolveEpicRefs(term query.Term) ([]string, error) {
-	epics, err := c.epicList()
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(term.Values))
-	for _, v := range term.Values {
-		id, err := c.app.resolveEpicIn(v.Text, epics)
-		if err != nil {
-			var ce *core.Error
-			if errors.As(err, &ce) {
-				return nil, termErr(ce, term, nil)
-			}
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, nil
-}
-
-// resolveTaskRefs binds an OR-set of task refs against the index being read:
-// exact ids, every one present — the contract `furrow dep` holds its <dep>
-// arguments to (a dependency that "does not exist" is exit 2, nothing written).
-// Task ids resolve by prefix or title nowhere in furrow (a random suffix makes
-// a typo a miss, not a near-miss), so a miss carries no candidates; it carries
-// the misses in details.missing and, when one is a RETIRED task, the ids in
-// details.archived with the --archived hint, as a batch write's miss does.
-// Until t-5mcm an unknown id here matched nothing at exit 0 —
-// `depends-on:t-typo` answering "nothing waits on it".
-func (c *queryCompiler) resolveTaskRefs(term query.Term) ([]string, error) {
-	ids := make([]string, 0, len(term.Values))
-	var missing []string
-	for _, v := range term.Values {
-		if _, i := c.idx.Find(v.Text); i < 0 {
-			missing = append(missing, v.Text)
-			continue
-		}
-		ids = append(ids, v.Text)
-	}
-	if len(missing) == 0 {
-		return ids, nil
-	}
-	extra := map[string]any{"missing": missing}
-	msg := fmt.Sprintf("%s: unknown task id(s) %s — a task ref is an existing id, spelled exactly", term.Field, strings.Join(missing, ", "))
-	if arch := c.app.ArchivedContains(missing); len(arch) > 0 {
-		extra["archived"] = arch
-		msg += fmt.Sprintf(" (%s archived — read the archive with --archived, or restore with `furrow unarchive`)", strings.Join(arch, ", "))
-	}
-	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: msg}
-	return nil, termErr(e, term, extra)
+	targets     map[string]bool
 }
 
 // body returns t's body, loading it once per id. A store failure is parked in
@@ -188,14 +130,273 @@ func (c *queryCompiler) body(t *core.Task) string {
 	return b
 }
 
+// epicList loads the board's boxes once per query — only a term that resolves
+// an epic ref (epic:/anchor:) pays for the read.
+func (c *queryCompiler) epicList() ([]core.Epic, error) {
+	if !c.epicsLoaded {
+		epics, err := c.app.Store.LoadEpics()
+		if err != nil {
+			return nil, err
+		}
+		c.epics, c.epicsLoaded = epics, true
+	}
+	return c.epics, nil
+}
+
+// depTargets is the set of ids this snapshot's tasks name in Deps — its edge
+// universe, built once on first use. A retired or removed far end stays in
+// it: the edge is a fact of this snapshot even when the task it points at is
+// not, which is what lets `depends-on:<archived id>` list the live tasks that
+// still carry it.
+func (c *queryCompiler) depTargets() map[string]bool {
+	if c.targets == nil {
+		c.targets = map[string]bool{}
+		for i := range c.idx.Tasks {
+			for _, d := range c.idx.Tasks[i].Deps {
+				c.targets[d] = true
+			}
+		}
+	}
+	return c.targets
+}
+
+// carries reports whether any task of idx carries literal in field — its Epic
+// or Anchor pointer, or (any other field) a Deps entry. It is the ref binders'
+// literal fallback: a ref the resolver cannot place but this snapshot already
+// points at names something real to this read, the pointer itself, and the
+// match set is non-empty by construction, so accepting it can never be a
+// silent 0 rows. That keeps reachable the repairs the resolver alone would
+// refuse — `set -q epic:<removed box> -e <new>` after `epic rm`, `set -q
+// anchor:<removed box> --clear-anchor`, `ls -q depends-on:<retired dep>` —
+// and lets an --archived read name a box only the archive still carries.
+func carries(idx *core.Index, field, literal string) bool {
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		switch field {
+		case "epic":
+			if t.Epic == literal {
+				return true
+			}
+		case "anchor":
+			if t.Anchor == literal {
+				return true
+			}
+		default:
+			if contains(t.Deps, literal) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// resolveEpicRefs binds an OR-set of epic refs through the SAME resolution -e
+// uses (resolveEpicIn: exact id, else unique id prefix, else unique case-folded
+// title substring), so `-q epic:X` cannot disagree with `-e X`; failing that, a
+// literal this snapshot (or a union read's other snapshot) already carries in
+// the field resolves as itself (carries). Anything else is exit 2: a miss is
+// epic-not-found with every box id in candidates and the ref in
+// details.missing, an ambiguous ref epic-ambiguous with the contenders, each
+// stamped with the term's position like every other binder fault. The
+// exact-id-only, silent-on-a-miss form this replaces answered `anchor:会場`
+// (a unique title substring the sibling flags resolve) with 0 rows at exit 0,
+// which a drill session read as "nothing is anchored" and started re-pointing
+// 80 dues by hand (t-5mcm). A dangling pointer on a SHARD stays lint's to
+// report (epic-missing, anchor-missing); the ref a QUERY names must resolve.
+func (c *queryCompiler) resolveEpicRefs(term query.Term) ([]string, error) {
+	epics, err := c.epicList()
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(term.Values))
+	for _, v := range term.Values {
+		id, err := c.app.resolveEpicIn(v.Text, epics)
+		if err == nil {
+			ids = append(ids, id)
+			continue
+		}
+		if carries(c.idx, term.Field, v.Text) || (c.wider != nil && carries(c.wider, term.Field, v.Text)) {
+			ids = append(ids, v.Text)
+			continue
+		}
+		var ce *core.Error
+		if !errors.As(err, &ce) {
+			return nil, err
+		}
+		extra := map[string]any{"ref": v.Text}
+		if ce.Kind == core.KindEpicNotFound {
+			extra["missing"] = []string{v.Text}
+			if term.Field == "anchor" {
+				// The likeliest slip, the one `set --anchor` catches too: the
+				// value is the box's DAY, but the pointer names the box.
+				if _, perr := core.ParseAnchor(v.Text); perr == nil {
+					ce = core.Validationf("", "anchor: names the BOX whose day the due follows (an epic id or ref), not the day itself — `due:%s` selects by date, and the day lives on the box (`furrow epic set <epic> --anchor %s`)", v.Text, v.Text)
+				}
+			}
+		}
+		return nil, termErr(ce, term, extra)
+	}
+	return ids, nil
+}
+
+// taskRef is one bound task ref: the id, and whether it is a task of THIS
+// snapshot — the only case in which its own deps are readable here.
+type taskRef struct {
+	id   string
+	here bool
+}
+
+func refIDs(refs []taskRef) []string {
+	out := make([]string, len(refs))
+	for i, r := range refs {
+		out[i] = r.id
+	}
+	return out
+}
+
+// resolveTaskRefs binds an OR-set of task refs. A ref names a task of this
+// snapshot, an id this snapshot's tasks carry as a dep (depTargets), a task
+// or dep of a union read's other snapshot (wider), or — established on a miss,
+// one index load — a task of the other store (the archive under a live read,
+// the live board under an archived one). Anything else is exit 2 validation
+// with the misses in details.missing: the contract `furrow dep` holds its
+// <dep> arguments to (a dependency that "does not exist" is exit 2, nothing
+// written). Task ids resolve by prefix or title nowhere in furrow (a random
+// suffix makes a typo a miss, not a near-miss), so a miss carries no
+// candidates. Until t-5mcm an unknown id matched nothing at exit 0 —
+// `depends-on:t-typo` answering "nothing waits on it".
+func (c *queryCompiler) resolveTaskRefs(term query.Term) ([]taskRef, error) {
+	refs := make([]taskRef, 0, len(term.Values))
+	var unplaced []string
+	for _, v := range term.Values {
+		id := v.Text
+		switch {
+		case c.idx.Has(id):
+			refs = append(refs, taskRef{id: id, here: true})
+		case c.depTargets()[id]:
+			refs = append(refs, taskRef{id: id})
+		case c.wider != nil && (c.wider.Has(id) || carries(c.wider, "deps", id)):
+			refs = append(refs, taskRef{id: id})
+		default:
+			unplaced = append(unplaced, id)
+		}
+	}
+	if len(unplaced) == 0 {
+		return refs, nil
+	}
+	elsewhere := c.otherStoreHas(unplaced)
+	var missing []string
+	for _, id := range unplaced {
+		if contains(elsewhere, id) {
+			refs = append(refs, taskRef{id: id})
+		} else {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) == 0 {
+		return refs, nil
+	}
+	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation,
+		Msg: fmt.Sprintf("%s: unknown task id(s) %s — a task ref is an existing id, spelled exactly", term.Field, strings.Join(missing, ", "))}
+	return nil, termErr(e, term, map[string]any{"missing": missing})
+}
+
+// otherStoreHas reports which of ids are tasks of the store this read is NOT
+// scanning — the archive under a live read, the live board under an archived
+// one — one index load, paid only on a miss. A union read has already
+// consulted its other snapshot (wider), so nothing is loaded twice: nil.
+func (c *queryCompiler) otherStoreHas(ids []string) []string {
+	switch {
+	case c.wider != nil:
+		return nil
+	case !c.archived:
+		return c.app.ArchivedContains(ids)
+	}
+	hot, err := c.app.load()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, id := range ids {
+		if hot.Has(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// edgeRefs is resolveTaskRefs for the two qualifiers that read the NAMED
+// task's own deps (blocks:, ancestor-of:): every ref must be a task of this
+// snapshot, because a snapshot read never derives facts from the other store
+// (GetBatchArchived's reasoning — two reads disagreeing about one task is the
+// defect that rule closes). A ref that resolved but is not here is exit 2
+// saying where its edges ARE readable (details.outside, plus details.archived
+// or details.live) — unless this is a union read whose other snapshot holds
+// it as a task, where that pass answers and this one contributes nothing for it.
+func (c *queryCompiler) edgeRefs(term query.Term) ([]string, error) {
+	refs, err := c.resolveTaskRefs(term)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(refs))
+	var outside []string
+	for _, r := range refs {
+		switch {
+		case r.here:
+			ids = append(ids, r.id)
+		case c.wider != nil && c.wider.Has(r.id):
+			// the union read's other pass reads this task's edges
+		default:
+			outside = append(outside, r.id)
+		}
+	}
+	if len(outside) == 0 {
+		return ids, nil
+	}
+	extra := map[string]any{"outside": outside}
+	msg := fmt.Sprintf("%s: %s is not a task of this snapshot, so its own deps cannot be read here", term.Field, strings.Join(outside, ", "))
+	elsewhere := c.otherStoreHas(outside)
+	var dangling []string
+	for _, id := range outside {
+		if !contains(elsewhere, id) {
+			dangling = append(dangling, id)
+		}
+	}
+	switch {
+	case len(elsewhere) == 0:
+	case c.archived:
+		extra["live"] = elsewhere
+		msg += fmt.Sprintf("; %s is on the live board — read its edges without --archived", strings.Join(elsewhere, ", "))
+	default:
+		extra["archived"] = elsewhere
+		msg += fmt.Sprintf("; %s is archived — read its edges with --archived (`furrow show <id> --archived` names them too)", strings.Join(elsewhere, ", "))
+	}
+	if len(dangling) > 0 {
+		msg += fmt.Sprintf("; %s is a task of no store, carried here as a dep only (lint: dep-missing)", strings.Join(dangling, ", "))
+	}
+	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: msg}
+	return nil, termErr(e, term, extra)
+}
+
+// stampTerm is termErr for a resolver that returns error: a *core.Error gets
+// the term's position (and extra keys), anything else passes through.
+func stampTerm(err error, term query.Term, extra map[string]any) error {
+	var ce *core.Error
+	if errors.As(err, &ce) {
+		return termErr(ce, term, extra)
+	}
+	return err
+}
+
 // compileQuery parses raw -q text and binds it to a predicate over the loaded
 // index. Validation faults (bad grammar, unknown field/flag, an operator on a
 // non-ordered field, an unknown lane/type value, a malformed date, a ref that
 // resolves to no epic/repo/task) are exit-2 errors carrying a stable kebab id
-// and, where the input almost resolved, candidates. A nil predicate is returned only with a non-nil error; an empty
-// query compiles to a match-everything predicate. The second return is the
-// compiler's cached body reader (see queryPredShared).
-func (a *App) compileQuery(raw string, idx *core.Index, staleDays int, loadBody func(string) (string, error)) (taskPred, func(*core.Task) (string, error), error) {
+// and, where the input almost resolved, candidates. A nil predicate is
+// returned only with a non-nil error; an empty query compiles to a
+// match-everything predicate. The second return is the compiler's cached body
+// reader (see queryPredShared).
+func (a *App) compileQuery(raw string, idx *core.Index, r queryRead) (taskPred, func(*core.Task) (string, error), error) {
 	q, err := query.Parse(raw)
 	if err != nil {
 		e := &core.Error{Code: core.CodeValidation, Kind: core.KindQueryParse, Msg: "invalid query: " + err.Error()}
@@ -208,10 +409,11 @@ func (a *App) compileQuery(raw string, idx *core.Index, staleDays int, loadBody 
 		return nil, nil, e
 	}
 
+	loadBody := r.loadBody
 	if loadBody == nil {
 		loadBody = a.Store.LoadBody
 	}
-	c := &queryCompiler{app: a, idx: idx, now: a.Clock.Now(), staleDays: staleDays, loadBody: loadBody}
+	c := &queryCompiler{app: a, idx: idx, now: a.Clock.Now(), staleDays: r.staleDays, loadBody: loadBody, archived: r.archived, wider: r.wider}
 	// Precompute shared derived state only when a term needs it.
 	for _, t := range q {
 		if t.Kind == query.State {
@@ -393,7 +595,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	case "status", "lane":
 		for _, v := range term.Values {
 			if !a.Cfg.IsLane(v.Text) {
-				return nil, a.unknownLaneErr("", v.Text)
+				return nil, stampTerm(a.unknownLaneErr("", v.Text), term, nil)
 			}
 		}
 		vals := valTexts(term.Values)
@@ -452,7 +654,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 		for _, v := range term.Values {
 			r, err := resolveRepoIn(v.Text, "", universe)
 			if err != nil {
-				return nil, err
+				return nil, stampTerm(err, term, nil)
 			}
 			resolved = append(resolved, r)
 		}
@@ -472,23 +674,25 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	case "depends-on":
 		// t waits on any named id (the named task blocks t) — the Deps edge
 		// read from the dependent's side, Index.Dependents' membership test.
-		// Every named id must exist (resolveTaskRefs).
-		vals, err := c.resolveTaskRefs(term)
+		// The ref must resolve (resolveTaskRefs); as the edge's TARGET it need
+		// not be a task of this snapshot.
+		refs, err := c.resolveTaskRefs(term)
 		if err != nil {
 			return nil, err
 		}
+		vals := refIDs(refs)
 		return neg(func(t *core.Task) bool { return anyContains(t.Deps, vals) }), nil
 
 	case "blocks":
 		// t blocks any named id — the same edge read from the other side:
-		// t ∈ X.Deps. Each named X is resolved once at compile, and every one
-		// must exist (resolveTaskRefs).
-		vals, err := c.resolveTaskRefs(term)
+		// t ∈ X.Deps. Each named X is resolved once at compile and must be a
+		// task of this snapshot, since its own deps are read (edgeRefs).
+		ids, err := c.edgeRefs(term)
 		if err != nil {
 			return nil, err
 		}
 		blocked := map[string]bool{}
-		for _, id := range vals {
+		for _, id := range ids {
 			if x, _ := c.idx.Find(id); x != nil {
 				for _, d := range x.Deps {
 					blocked[d] = true
@@ -500,23 +704,27 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	case "descendant-of":
 		// depends-on's transitive twin: t (transitively) waits on any named id —
 		// X's descendants are everything DOWNSTREAM of it in the deps DAG. The
-		// closure is computed once at compile (O(edges)); every named id must
-		// exist (resolveTaskRefs); the named task itself is not its own
-		// descendant, mirroring how depends-on:X never matches X.
-		vals, err := c.resolveTaskRefs(term)
+		// closure is computed once at compile (O(edges)); the root must resolve
+		// and, being only pointed AT, need not be a task of this snapshot
+		// (resolveTaskRefs); the named task itself is not its own descendant,
+		// mirroring how depends-on:X never matches X.
+		refs, err := c.resolveTaskRefs(term)
 		if err != nil {
 			return nil, err
 		}
-		return neg(func(t *core.Task) bool { return c.reach(vals, false)[t.ID] }), nil
+		set := c.reach(refIDs(refs), false)
+		return neg(func(t *core.Task) bool { return set[t.ID] }), nil
 
 	case "ancestor-of":
 		// blocks' transitive twin: t is anything any named id (transitively)
 		// waits on — X's ancestors are UPSTREAM, the work that must land first.
-		vals, err := c.resolveTaskRefs(term)
+		// The root's own deps are the first hop, so it must be a task of this
+		// snapshot (edgeRefs).
+		ids, err := c.edgeRefs(term)
 		if err != nil {
 			return nil, err
 		}
-		set := c.reach(vals, true)
+		set := c.reach(ids, true)
 		return neg(func(t *core.Task) bool { return set[t.ID] }), nil
 
 	case "title":
@@ -760,14 +968,13 @@ func (c *queryCompiler) reach(starts []string, up bool) map[string]bool {
 	// is excluded from its OWN closure only (the named task is not its own
 	// descendant, as depends-on:X never matches X); reached from another
 	// start, it stays.
+	// A start is walked by id, not looked up: descendant-of's root may be
+	// only an edge target of this snapshot (a retired dep), and its
+	// descendants are still exactly the tasks whose edges name it.
 	result := map[string]bool{}
 	for _, s := range starts {
-		x, _ := c.idx.Find(s)
-		if x == nil {
-			continue
-		}
 		seen := map[string]bool{}
-		frontier := []string{x.ID}
+		frontier := []string{s}
 		for len(frontier) > 0 {
 			id := frontier[len(frontier)-1]
 			frontier = frontier[:len(frontier)-1]
@@ -778,7 +985,7 @@ func (c *queryCompiler) reach(starts []string, up bool) map[string]bool {
 				}
 			}
 		}
-		delete(seen, x.ID)
+		delete(seen, s)
 		for id := range seen {
 			result[id] = true
 		}

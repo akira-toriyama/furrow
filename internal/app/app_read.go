@@ -480,7 +480,7 @@ func (a *App) matchIn(idx *core.Index, o QueryOpts) ([]core.Task, error) {
 		}
 		loadBody = arc.LoadBody
 	}
-	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, loadBody)
+	qpred, err := a.queryPred(o.Query, idx, queryRead{staleDays: a.Cfg.RevisitStaleDays, loadBody: loadBody, archived: o.Archived})
 	if err != nil {
 		return nil, err
 	}
@@ -628,7 +628,7 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 	// Compile -q once; it ANDs with readiness like every other filter. It is
 	// evaluated LAST (after the cheap ready test) so a body-reading query never
 	// loads a body for a task that was not ready anyway.
-	qpred, err := a.queryPred(o.Query, idx, a.Cfg.RevisitStaleDays, nil)
+	qpred, err := a.queryPred(o.Query, idx, queryRead{staleDays: a.Cfg.RevisitStaleDays})
 	if err != nil {
 		return nil, err
 	}
