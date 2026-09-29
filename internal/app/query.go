@@ -272,17 +272,18 @@ func (c *queryCompiler) resolveEpicRef(field string, v query.Value, epics []core
 	pointer += ")"
 	carriersBy := fmt.Sprintf("quote it (%s:'%s') for the carriers", field, lit)
 	switch {
+	case len(byTitle) > 0:
+		// Tested first: the other store's read would meet this same arm.
+		carriersBy = "the pointer is also a whole title, so it has no -q spelling of its own"
+		if !c.archived {
+			carriersBy += fmt.Sprintf(" — `furrow lint` names its carriers (%s-missing)", field)
+		}
 	case here == 0:
 		side, read := "the archive's", "--archived "
 		if c.archived {
 			side, read = "the live board's", ""
 		}
 		carriersBy = fmt.Sprintf("only %s tasks carry it — `furrow ls %s-q \"%s:'%s'\"` lists them", side, read, field, lit)
-	case len(byTitle) > 0:
-		carriersBy = "the pointer is also a whole title, so it has no -q spelling of its own"
-		if !c.archived {
-			carriersBy += fmt.Sprintf(" — `furrow lint` names its carriers (%s-missing)", field)
-		}
 	}
 	if v.Quoted {
 		// Exact only, in the order a reader can always spell: the pointer
