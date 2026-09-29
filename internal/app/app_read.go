@@ -134,7 +134,7 @@ func (a *App) getBatchFrom(findIdx, resolveIdx *core.Index, loadBody func(string
 func (a *App) showItem(idx *core.Index, t *core.Task, body string, doneIDs map[string]bool) ShowItem {
 	deps := make([]TaskRef, 0, len(t.Deps))
 	for _, depID := range t.Deps {
-		deps = append(deps, resolveTaskRef(idx, depID))
+		deps = append(deps, resolveTaskRef(idx, depID, doneIDs))
 	}
 	actionable, blockedBy := a.factsFor(idx, t, doneIDs)
 	return ShowItem{Task: *t, Body: body, Deps: deps, Actionable: actionable, BlockedBy: blockedBy}

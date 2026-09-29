@@ -780,8 +780,15 @@ func newDepCmd() *cobra.Command {
 			"With --list, don't mutate — read <id>'s dependency neighborhood in BOTH\n" +
 			"directions: what it depends_on (its own deps — what it waits on) and what it\n" +
 			"blocks (the reverse edge — the tasks waiting on it), each resolved to\n" +
-			"id+title+lane. --json/--ndjson emit one object with both arrays. The\n" +
-			"reverse edge is the local, no-server twin of \"what unblocks if I finish this\".",
+			"id+title+lane plus that task's own blocked_by (its deps not yet done — the\n" +
+			"key every ls/show row carries; [] when nothing is in the way). So a blocks\n" +
+			"row answers \"what moves if I close this\" by itself: it ends\n" +
+			"`← unblocks on this close` when <id> is its last open dep and\n" +
+			"`← N other open deps` when not; a parked or closed dependent carries no\n" +
+			"note (nothing moves it), and once <id> is done the same rows read\n" +
+			"`← unblocked` / `← N open deps`. --json/--ndjson emit one object with\n" +
+			"both arrays. The reverse edge is the local, no-server twin of \"what\n" +
+			"unblocks if I finish this\".",
 		Example: "  furrow dep t-k3m9p t-a1b2c\n" +
 			"  furrow dep t-k3m9p t-a1b2c t-d4e5f    # depend on both in one write\n" +
 			"  furrow dep t-k3m9p t-a1b2c --rm\n" +
@@ -802,7 +809,7 @@ func newDepCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return emitDepList(res)
+				return emitDepList(res, a.Cfg.Terminal, a.Cfg.DoneLane)
 			}
 			id, deps := args[0], args[1:]
 			verb := "dep+"
