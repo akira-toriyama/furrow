@@ -582,13 +582,13 @@ func TestSearchQuerySharesBodyCache(t *testing.T) {
 // the carriers are the answer: non-empty by construction, so never a silent
 // 0 rows, and the repair (`set -q epic:<gone> -e <new>`) stays reachable.
 // Reading the ghost's OWN edges (blocks:, ancestor-of:) is refused, since no
-// store has them; a ghost nothing carries is still a miss.
+// store has them; a ghost nothing carries is still a miss. A pointer that
+// ALSO matches a live box by prefix or title names two targets, and neither
+// may win silently (both orders were measured wrong by the refutation
+// passes): epic-ambiguous with both as candidates, like two title hits.
 func TestQueryRefCarriedLiteral(t *testing.T) {
 	a := newApp()
 	mustAdd(t, a, "bystander", AddOpts{})
-	// A live box whose TITLE mentions the ghost id must not shadow the
-	// carried pointer (the literal outranks the title-substring pass).
-	mustEpic(t, a, "follow-up to e-ghost1", EpicAddOpts{})
 	idx, err := a.load()
 	if err != nil {
 		t.Fatal(err)
@@ -614,5 +614,31 @@ func TestQueryRefCarriedLiteral(t *testing.T) {
 	ce := qErr(t, a, "depends-on:t-ghost2")
 	if d, _ := ce.Details.(map[string]any); ce.Code != core.CodeValidation || d["missing"] == nil {
 		t.Errorf("an uncarried ghost is a miss: %+v", ce)
+	}
+
+	// A live box whose title mentions the ghost id: two targets, ambiguous.
+	mention := mustEpic(t, a, "follow-up to e-ghost1", EpicAddOpts{})
+	ce = qErr(t, a, "epic:e-ghost1")
+	if ce.Kind != core.KindEpicAmbiguous || !slices.Contains(ce.Candidates, "e-ghost1") || !slices.Contains(ce.Candidates, mention) {
+		t.Errorf("epic:<pointer that a title also matches> = %q %v, want epic-ambiguous naming both", ce.Kind, ce.Candidates)
+	}
+	// The mirror image: a corrupt pointer holding a box's TITLE must not hide
+	// that box's members from epic: while -e lists them — ambiguous too.
+	box := mustEpic(t, a, "会場", EpicAddOpts{})
+	mustAdd(t, a, "member", AddOpts{Epic: box})
+	if idx, err = a.load(); err != nil {
+		t.Fatal(err)
+	}
+	idx.Add(core.Task{ID: "t-corro", Title: "corrupt pointer", Status: "ready", Priority: 110, Epic: "会場", Body: core.BodyPath("t-corro")})
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	ce = qErr(t, a, "epic:会場")
+	if ce.Kind != core.KindEpicAmbiguous || !slices.Contains(ce.Candidates, "会場") || !slices.Contains(ce.Candidates, box) {
+		t.Errorf("epic:<title that a pointer also holds> = %q %v, want epic-ambiguous naming both", ce.Kind, ce.Candidates)
+	}
+	// An exact id is one target, however it is spelled elsewhere.
+	if got := qTitles(t, a, "epic:"+box); !slices.Equal(got, []string{"member"}) {
+		t.Errorf("epic:<exact id> = %v, want [member]", got)
 	}
 }

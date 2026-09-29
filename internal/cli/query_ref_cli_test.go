@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
@@ -86,13 +87,22 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 	// live ← z crosses the archive twice and is one DAG to the window. The
 	// distributions are still the hot board's, so a task whose own edges are
 	// only in the archive is refused exactly as `ls` refuses it.
-	window := func(q string) string {
+	window := func(q string) []string {
 		t.Helper()
 		out, code := run(t, "--json", "stats", "--since", "2020-01-01", "-q", q)
 		if code != 0 {
 			t.Fatalf("stats --since -q %q exit = %d:\n%s", q, code, out)
 		}
-		return out
+		var v struct {
+			Window struct {
+				Created []string `json:"created_ids"`
+				Closed  []string `json:"closed_ids"`
+			} `json:"window"`
+		}
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatalf("parse stats --json: %v\n%s", err, out)
+		}
+		return append(v.Window.Created, v.Window.Closed...)
 	}
 	for _, c := range []struct {
 		q    string
@@ -105,10 +115,10 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 		{"descendant-of:" + upstream, []string{retired, live, z}},
 		{"ancestor-of:" + z, []string{live, retired, upstream}},
 	} {
-		out := window(c.q)
+		ids := window(c.q)
 		for _, id := range c.want {
-			if !strings.Contains(out, id) {
-				t.Errorf("stats --since -q %q window lacks %s:\n%s", c.q, id, out)
+			if !slices.Contains(ids, id) {
+				t.Errorf("stats --since -q %q window = %v, lacks %s", c.q, ids, id)
 			}
 		}
 	}
@@ -134,8 +144,14 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 	if got := lsIDs(t, "--archived", "-q", "depends-on:"+p); len(got) != 1 || got[0] != q {
 		t.Errorf("--archived depends-on:<rm'd> = %v, want [%s]", got, q)
 	}
-	if out := window("depends-on:" + p); !strings.Contains(out, q) {
-		t.Errorf("stats --since -q depends-on:<rm'd> window lacks %s:\n%s", q, out)
+	if ids := window("depends-on:" + p); !slices.Contains(ids, q) {
+		t.Errorf("stats --since -q depends-on:<rm'd> window = %v, lacks %s", ids, q)
+	}
+	// Its own edges exist nowhere; the refusal says who carries it, and does
+	// not point at lint, which judges the live board alone.
+	fe, _ = runErr(t, "ls", "-q", "blocks:"+p)
+	if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "archive's tasks") || strings.Contains(fe.Msg, "lint") {
+		t.Errorf("blocks:<rm'd, carried by the archive> = %+v, want exit 2 naming the archive's tasks as the carriers", fe)
 	}
 }
 
