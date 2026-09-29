@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,15 +13,133 @@ type depListJSON struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	DependsOn []struct {
-		ID     string `json:"id"`
-		Title  string `json:"title"`
-		Status string `json:"status"`
+		ID        string   `json:"id"`
+		Title     string   `json:"title"`
+		Status    string   `json:"status"`
+		BlockedBy []string `json:"blocked_by"`
 	} `json:"depends_on"`
 	Blocks []struct {
-		ID     string `json:"id"`
-		Title  string `json:"title"`
-		Status string `json:"status"`
+		ID        string   `json:"id"`
+		Title     string   `json:"title"`
+		Status    string   `json:"status"`
+		BlockedBy []string `json:"blocked_by"`
 	} `json:"blocks"`
+}
+
+// rowOf returns the output line that names id, "" when none does.
+func rowOf(out, id string) string {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, id) {
+			return line
+		}
+	}
+	return ""
+}
+
+// TestDepListBlocksSayWhatThisCloseMoves pins t-wwk2: a blocks row answers
+// "what moves if I close this" on its own — its blocked_by (JSON) and a
+// trailing note (human) — instead of one `show` per row. Seven furrow-test
+// drill runs retyped show for exactly this.
+func TestDepListBlocksSayWhatThisCloseMoves(t *testing.T) {
+	initStore(t)
+	base := addTask(t, "base task", "-s", "ready")
+	other := addTask(t, "other dep", "-s", "ready")
+	more := addTask(t, "one more dep", "-s", "ready")
+	last := addTask(t, "last-dep task", "-s", "backlog")    // base is its only open dep
+	two := addTask(t, "two-deps task", "-s", "backlog")     // base + other
+	three := addTask(t, "three-deps task", "-s", "backlog") // base + other + more: the plural
+	parked := addTask(t, "parked task", "-s", "icebox")     // base, but nothing moves a parked row
+	for _, args := range [][]string{{last, base}, {two, base, other}, {three, base, other, more}, {parked, base}} {
+		if _, code := run(t, append([]string{"dep"}, args...)...); code != 0 {
+			t.Fatalf("dep add %v failed: %d", args, code)
+		}
+	}
+
+	out, code := run(t, "dep", base, "--list")
+	if code != 0 {
+		t.Fatalf("dep --list exit=%d:\n%s", code, out)
+	}
+	if row := rowOf(out, last); !strings.HasSuffix(row, "← unblocks on this close") {
+		t.Errorf("last-dep row should say this close unblocks it:\n%s", out)
+	}
+	if row := rowOf(out, two); !strings.HasSuffix(row, "← 1 other open dep") {
+		t.Errorf("two-deps row should count the other open dep:\n%s", out)
+	}
+	if row := rowOf(out, three); !strings.HasSuffix(row, "← 2 other open deps") {
+		t.Errorf("three-deps row should count both other open deps, plural:\n%s", out)
+	}
+	if row := rowOf(out, parked); row == "" || strings.Contains(row, "←") {
+		t.Errorf("a parked dependent is listed but carries no note (nothing moves it):\n%s", out)
+	}
+
+	out, code = run(t, "--json", "dep", base, "--list")
+	if code != 0 {
+		t.Fatalf("dep --list --json exit=%d:\n%s", code, out)
+	}
+	var r depListJSON
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		t.Fatalf("parse: %v\n%s", err, out)
+	}
+	got := map[string][]string{}
+	for _, b := range r.Blocks {
+		got[b.ID] = b.BlockedBy
+	}
+	if want := []string{base}; !equalStrings(got[last], want) {
+		t.Errorf("last blocked_by = %v, want %v", got[last], want)
+	}
+	if want := []string{base, other}; !equalStrings(got[two], want) {
+		t.Errorf("two blocked_by = %v, want %v (deps are a sorted set; so is blocked_by)", got[two], want)
+	}
+	if want := []string{base}; !equalStrings(got[parked], want) {
+		t.Errorf("parked blocked_by = %v, want %v (JSON states the fact; only the human note is withheld)", got[parked], want)
+	}
+
+	// depends_on rows carry the same key: a dep with nothing in its way is [].
+	out, _ = run(t, "--json", "dep", two, "--list")
+	if !strings.Contains(out, `"blocked_by": []`) || strings.Contains(out, "null") {
+		t.Errorf("depends_on rows should carry blocked_by as [] (never null):\n%s", out)
+	}
+
+	// Once the subject is done the notes read in the past tense.
+	if _, code := run(t, "done", base); code != 0 {
+		t.Fatalf("done exit=%d", code)
+	}
+	out, _ = run(t, "dep", base, "--list")
+	if row := rowOf(out, last); !strings.HasSuffix(row, "← unblocked") {
+		t.Errorf("after the close the last-dep row should read unblocked:\n%s", out)
+	}
+	if row := rowOf(out, two); !strings.HasSuffix(row, "← 1 open dep") {
+		t.Errorf("after the close the two-deps row should count what is still open:\n%s", out)
+	}
+	out, _ = run(t, "--json", "dep", base, "--list")
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		t.Fatalf("parse: %v\n%s", err, out)
+	}
+	found := false
+	for _, b := range r.Blocks {
+		if b.ID != last {
+			continue
+		}
+		found = true
+		if len(b.BlockedBy) != 0 {
+			t.Errorf("after the close last blocked_by = %v, want []", b.BlockedBy)
+		}
+	}
+	if !found {
+		t.Errorf("after the close the blocks side should still list %s:\n%s", last, out)
+	}
+}
+
+// equalStrings compares two id lists as sets: deps are stored sorted, and ids
+// are random, so the order a test handed them in says nothing.
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	a, b = slices.Clone(a), slices.Clone(b)
+	slices.Sort(a)
+	slices.Sort(b)
+	return slices.Equal(a, b)
 }
 
 func TestDepListJSONBothDirections(t *testing.T) {
