@@ -616,11 +616,35 @@ func TestQueryRefCarriedLiteral(t *testing.T) {
 		t.Errorf("an uncarried ghost is a miss: %+v", ce)
 	}
 
-	// A live box whose title mentions the ghost id: two targets, ambiguous.
+	// A live box whose title mentions the ghost id: two targets, ambiguous —
+	// and the quoted spelling is the exact one that selects the carriers.
 	mention := mustEpic(t, a, "follow-up to e-ghost1", EpicAddOpts{})
 	ce = qErr(t, a, "epic:e-ghost1")
-	if ce.Kind != core.KindEpicAmbiguous || !slices.Contains(ce.Candidates, "e-ghost1") || !slices.Contains(ce.Candidates, mention) {
-		t.Errorf("epic:<pointer that a title also matches> = %q %v, want epic-ambiguous naming both", ce.Kind, ce.Candidates)
+	if ce.Kind != core.KindEpicAmbiguous || !slices.Contains(ce.Candidates, "e-ghost1") || !slices.Contains(ce.Candidates, mention) || !strings.Contains(ce.Msg, "epic:'e-ghost1'") {
+		t.Errorf("epic:<pointer that a title also matches> = %q %v %q, want epic-ambiguous naming both and the quoted spelling", ce.Kind, ce.Candidates, ce.Msg)
+	}
+	if got := qTitles(t, a, "epic:'e-ghost1'"); !slices.Equal(got, []string{"carrier"}) {
+		t.Errorf("epic:'<pointer>' (quoted = exact) = %v, want [carrier]", got)
+	}
+	// Two boxes the title matches AND the pointer: the pointer joins the
+	// resolver's ambiguity (this branch was measured dead once: the pointer
+	// silently won and a write landed on its carrier alone).
+	two := mustEpic(t, a, "ghost1 stage", EpicAddOpts{})
+	three := mustEpic(t, a, "ghost1 stage two", EpicAddOpts{})
+	if idx, err = a.load(); err != nil {
+		t.Fatal(err)
+	}
+	idx.Add(core.Task{ID: "t-ghosto", Title: "points at a title fragment", Status: "ready", Priority: 120, Epic: "ghost1", Body: core.BodyPath("t-ghosto")})
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	// "ghost1" is a substring of the mention box's title too: three boxes.
+	ce = qErr(t, a, "epic:ghost1")
+	if ce.Kind != core.KindEpicAmbiguous || len(ce.Candidates) != 4 || ce.Candidates[0] != "ghost1" || !slices.Contains(ce.Candidates, two) || !slices.Contains(ce.Candidates, three) || !slices.Contains(ce.Candidates, mention) {
+		t.Errorf("epic:<pointer beside three title hits> = %q %v, want epic-ambiguous [pointer, box, box, box]", ce.Kind, ce.Candidates)
+	}
+	if got := qTitles(t, a, "epic:'ghost1'"); !slices.Equal(got, []string{"points at a title fragment"}) {
+		t.Errorf("epic:'ghost1' (quoted = exact) = %v, want the carrier", got)
 	}
 	// The mirror image: a corrupt pointer holding a box's TITLE must not hide
 	// that box's members from epic: while -e lists them — ambiguous too.

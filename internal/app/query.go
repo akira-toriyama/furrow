@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -207,21 +208,111 @@ func carriers(idx *core.Index, field, literal string) int {
 	return n
 }
 
-// resolveEpicRefs binds an OR-set of epic refs through the SAME resolution -e
-// uses (resolveEpicIn: exact id, else unique id prefix, else unique case-folded
-// title substring), so `-q epic:X` cannot disagree with `-e X`, with one
-// addition -e has no use for: a pointer the snapshot (or the other store)
-// carries in the field but no box answers to resolves as that literal — the
-// carriers, non-empty by construction — and a pointer beside a non-exact
-// resolver hit is ambiguous (see the loop). Anything else is exit 2: a miss is
-// epic-not-found with every box id in candidates and the ref in
-// details.missing, an ambiguous ref epic-ambiguous with the contenders, each
-// stamped with the term's position like every other binder fault. The
-// exact-id-only, silent-on-a-miss form this replaces answered `anchor:会場`
-// (a unique title substring the sibling flags resolve) with 0 rows at exit 0,
-// which a drill session read as "nothing is anchored" and started re-pointing
-// 80 dues by hand (t-5mcm). A dangling pointer on a SHARD stays lint's to
-// report (epic-missing, anchor-missing); the ref a QUERY names must resolve.
+// epicNotFound is resolveEpicIn's miss, built here for the quoted form (which
+// never calls the resolver): the same kind, message and candidates.
+func epicNotFound(ref string, epics []core.Epic) *core.Error {
+	ids := make([]string, 0, len(epics))
+	for i := range epics {
+		ids = append(ids, epics[i].ID)
+	}
+	sort.Strings(ids)
+	return &core.Error{Code: core.CodeValidation, Kind: core.KindEpicNotFound, Msg: fmt.Sprintf("unknown epic %q", ref), Candidates: ids}
+}
+
+// resolveEpicRef binds one epic ref against the boxes and the pointers the
+// snapshot carries. Unquoted, it is the SAME resolution -e uses (resolveEpicIn:
+// exact id, else unique id prefix, else unique case-folded title substring),
+// so `-q epic:X` cannot disagree with `-e X`; quoted, it is exact only — the
+// id, the whole title (case-folded, as title:'…' is whole-field), or the
+// pointer itself — which is how a pointer named in candidates is selected.
+// Beyond -e: a pointer the snapshot (or a union read's other snapshot) carries
+// in the field but no box answers to resolves as that literal — the carriers,
+// non-empty by construction, which keeps `set -q epic:<gone> -e <new>` and
+// `set -q anchor:<gone> --clear-anchor` reachable after `epic rm`; and past an
+// exact id, a carried pointer beside a box the resolver found by prefix or
+// title is TWO targets, so it is epic-ambiguous with both as candidates —
+// each order of preference was measured wrong (a live box whose title
+// mentioned a removed box's id shadowed its carriers; a corrupt pointer
+// holding a box's title hid that box's members from epic: while -e listed
+// them). A miss says where else the pointer lives (the other store's tasks),
+// with the read that sees it: this read does not resolve there.
+func (c *queryCompiler) resolveEpicRef(field string, v query.Value, epics []core.Epic) (string, *core.Error) {
+	lit := v.Text
+	for i := range epics {
+		if epics[i].ID == lit {
+			// An exact box id: the one target a carried copy of it also names.
+			return lit, nil
+		}
+	}
+	carried := carries(c.idx, field, lit) || (c.wider != nil && carries(c.wider, field, lit))
+	var hit string
+	var rerr *core.Error
+	if v.Quoted {
+		var byTitle []string
+		for i := range epics {
+			if strings.EqualFold(epics[i].Title, lit) {
+				byTitle = append(byTitle, epics[i].ID)
+			}
+		}
+		switch len(byTitle) {
+		case 0:
+			rerr = epicNotFound(lit, epics)
+		case 1:
+			hit = byTitle[0]
+		default:
+			sort.Strings(byTitle)
+			rerr = &core.Error{Code: core.CodeValidation, Kind: core.KindEpicAmbiguous, Msg: fmt.Sprintf("epic %q is ambiguous (%s)", lit, strings.Join(byTitle, ", ")), Candidates: byTitle}
+		}
+	} else {
+		id, err := c.app.resolveEpicIn(lit, epics)
+		if err == nil {
+			hit = id
+		} else if !errors.As(err, &rerr) {
+			return "", &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: err.Error()}
+		}
+	}
+	lint := ""
+	if !c.archived {
+		lint = fmt.Sprintf(" — lint's %s-missing", field)
+	}
+	switch {
+	case hit != "" && !carried:
+		return hit, nil
+	case hit != "":
+		return "", &core.Error{
+			Code: core.CodeValidation, Kind: core.KindEpicAmbiguous,
+			Msg: fmt.Sprintf("epic %q is ambiguous: %d task(s) here carry it as a pointer (a box no store holds%s), and it also names box %s — quote it (%s:'%s') for the carriers, or name the box by id",
+				lit, carriers(c.idx, field, lit), lint, hit, field, lit),
+			Candidates: []string{lit, hit},
+		}
+	case carried && rerr.Kind == core.KindEpicAmbiguous:
+		rerr.Candidates = append([]string{lit}, rerr.Candidates...)
+		rerr.Msg = fmt.Sprintf("epic %q is ambiguous: %d task(s) here carry it as a pointer (a box no store holds%s), and it also matches boxes %s — quote it (%s:'%s') for the carriers, or name a box by id",
+			lit, carriers(c.idx, field, lit), lint, strings.Join(rerr.Candidates[1:], ", "), field, lit)
+		return "", rerr
+	case carried:
+		return lit, nil
+	}
+	if rerr.Kind == core.KindEpicNotFound && c.wider == nil {
+		if o := c.other(); o != nil && carries(o, field, lit) {
+			side, read := "the archive's", "--archived "
+			if c.archived {
+				side, read = "the live board's", ""
+			}
+			rerr.Msg += fmt.Sprintf(" — %s tasks point at it: `furrow ls %s-q '%s:%s'` lists them", side, read, field, lit)
+		}
+	}
+	return "", rerr
+}
+
+// resolveEpicRefs binds an OR-set of epic refs (resolveEpicRef each), stamping
+// a fault with the term's position like every other binder fault; a miss
+// carries the ref in details.missing. The exact-id-only, silent-on-a-miss
+// form this replaces answered `anchor:会場` (a unique title substring the
+// sibling flags resolve) with 0 rows at exit 0, which a drill session read as
+// "nothing is anchored" and started re-pointing 80 dues by hand (t-5mcm). A
+// dangling pointer on a SHARD stays lint's to report (epic-missing,
+// anchor-missing); the ref a QUERY names must resolve.
 func (c *queryCompiler) resolveEpicRefs(term query.Term) ([]string, error) {
 	epics, err := c.epicList()
 	if err != nil {
@@ -229,48 +320,10 @@ func (c *queryCompiler) resolveEpicRefs(term query.Term) ([]string, error) {
 	}
 	ids := make([]string, 0, len(term.Values))
 	for _, v := range term.Values {
-		id, err := c.app.resolveEpicIn(v.Text, epics)
-		if err == nil && id == v.Text {
-			// An exact box id: the one target a carried copy of it also names.
+		id, ce := c.resolveEpicRef(term.Field, v, epics)
+		if ce == nil {
 			ids = append(ids, id)
 			continue
-		}
-		// Past the exact id, a pointer the snapshot carries and the resolver's
-		// prefix / title-substring hit are two DIFFERENT targets when both
-		// exist, and neither may win: a live box whose title mentions a
-		// removed box's id shadowed the tasks still pointing at it (the repair
-		// `set -q epic:<gone> -e <new>` previewed 0 rows), and the reverse
-		// order let a corrupt pointer that holds a box's TITLE hide that box's
-		// members from `epic:` while `-e` listed them — both measured by the
-		// refutation passes. So a carried literal beside a resolver hit is
-		// epic-ambiguous with both as candidates, exactly like two title hits.
-		carried := carries(c.idx, term.Field, v.Text)
-		switch {
-		case carried && err == nil:
-			cands := []string{v.Text, id}
-			return nil, termErr(&core.Error{
-				Code:       core.CodeValidation,
-				Kind:       core.KindEpicAmbiguous,
-				Msg:        fmt.Sprintf("epic %q is ambiguous: %d task(s) here carry it as a pointer (a box no store holds — lint's %s-missing), and it also names box %s", v.Text, carriers(c.idx, term.Field, v.Text), term.Field, id),
-				Candidates: cands,
-			}, term, map[string]any{"ref": v.Text})
-		case carried:
-			ids = append(ids, v.Text)
-			continue
-		case err == nil:
-			ids = append(ids, id)
-			continue
-		}
-		if o := c.other(); o != nil && carries(o, term.Field, v.Text) {
-			ids = append(ids, v.Text)
-			continue
-		}
-		var ce *core.Error
-		if !errors.As(err, &ce) {
-			return nil, err
-		}
-		if ce.Kind == core.KindEpicAmbiguous && carried {
-			ce.Candidates = append([]string{v.Text}, ce.Candidates...)
 		}
 		extra := map[string]any{"ref": v.Text}
 		if ce.Kind == core.KindEpicNotFound {
@@ -306,58 +359,87 @@ func refIDs(refs []taskRef) []string {
 }
 
 // resolveTaskRefs binds an OR-set of task refs. A ref names a task of this
-// snapshot, an id this snapshot's tasks carry as a dep (depTargets), or —
-// established on a miss, one index load — a task the other store holds or
-// carries (other: the archive under a live read, the live board under an
-// archived one, the other snapshot of a union read). Anything else is exit 2 validation
-// with the misses in details.missing: the contract `furrow dep` holds its
-// <dep> arguments to (a dependency that "does not exist" is exit 2, nothing
-// written). Task ids resolve by prefix or title nowhere in furrow (a random
-// suffix makes a typo a miss, not a near-miss), so a miss carries no
-// candidates. Until t-5mcm an unknown id matched nothing at exit 0 —
-// `depends-on:t-typo` answering "nothing waits on it".
+// snapshot, an id this snapshot's tasks carry as a dep (depTargets: an edge
+// is a fact of the snapshot even when its far end retired), or, in a union
+// read, a task or dep of the other snapshot (wider). Anything else is exit 2
+// validation with the misses in details.missing — the contract `furrow dep`
+// holds its <dep> arguments to (a dependency that "does not exist" is exit 2,
+// nothing written) and the one `show`/`dep --list` hold an archived id to
+// under a live read — and the message says where else the id lives, with
+// the read that sees it: the other store holds it (details.archived or
+// details.live) or only the other store's tasks carry it
+// (details.carried_elsewhere). Task ids resolve by prefix or title nowhere
+// in furrow (a random suffix makes a typo a miss, not a near-miss), so a miss
+// carries no candidates. Until t-5mcm an unknown id matched nothing at exit 0
+// — `depends-on:t-typo` answering "nothing waits on it".
 func (c *queryCompiler) resolveTaskRefs(term query.Term) ([]taskRef, error) {
 	refs := make([]taskRef, 0, len(term.Values))
-	var unplaced []string
+	var missing []string
 	for _, v := range term.Values {
 		id := v.Text
 		switch {
 		case c.idx.Has(id):
 			refs = append(refs, taskRef{id: id, here: true})
-		case c.depTargets()[id]:
+		case c.depTargets()[id], c.wider != nil && (c.wider.Has(id) || carries(c.wider, "deps", id)):
 			refs = append(refs, taskRef{id: id})
 		default:
-			unplaced = append(unplaced, id)
-		}
-	}
-	if len(unplaced) == 0 {
-		return refs, nil
-	}
-	other := c.other()
-	var missing []string
-	for _, id := range unplaced {
-		if other != nil && (other.Has(id) || carries(other, "deps", id)) {
-			refs = append(refs, taskRef{id: id})
-		} else {
 			missing = append(missing, id)
 		}
 	}
 	if len(missing) == 0 {
 		return refs, nil
 	}
-	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation,
-		Msg: fmt.Sprintf("%s: unknown task id(s) %s — a task ref is an existing id, spelled exactly", term.Field, strings.Join(missing, ", "))}
-	return nil, termErr(e, term, map[string]any{"missing": missing})
+	extra := map[string]any{"missing": missing}
+	msg := fmt.Sprintf("%s: unknown task id(s) %s — a task ref is an existing id, spelled exactly", term.Field, strings.Join(missing, ", "))
+	if c.wider == nil {
+		msg += c.whereElse(term, missing, extra)
+	}
+	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: msg}
+	return nil, termErr(e, term, extra)
+}
+
+// whereElse words a miss's hint from the other store — the ids it holds, and
+// the ids only its tasks carry as a dep — and files them in extra
+// (details.archived / details.live, details.carried_elsewhere), naming the
+// read that sees them. Nothing is loaded unless there was a miss.
+func (c *queryCompiler) whereElse(term query.Term, ids []string, extra map[string]any) string {
+	o := c.other()
+	if o == nil {
+		return ""
+	}
+	var held, carried []string
+	for _, id := range ids {
+		switch {
+		case o.Has(id):
+			held = append(held, id)
+		case carries(o, "deps", id):
+			carried = append(carried, id)
+		}
+	}
+	side, flag, key := "the archive", "--archived ", "archived"
+	if c.archived {
+		side, flag, key = "the live board", "", "live"
+	}
+	msg := ""
+	if len(held) > 0 {
+		extra[key] = held
+		msg += fmt.Sprintf("; %s holds %s — `furrow ls %s-q '%s'` reads it there, `furrow show %s%s` names its edges", side, strings.Join(held, ", "), flag, term.Raw, held[0], strings.TrimSuffix(" "+flag, " "))
+	}
+	if len(carried) > 0 {
+		extra["carried_elsewhere"] = carried
+		msg += fmt.Sprintf("; only %s's tasks carry %s as a dep — `furrow ls %s-q 'depends-on:%s'` names them", side, strings.Join(carried, ", "), flag, carried[0])
+	}
+	return msg
 }
 
 // other returns the snapshot this read is NOT scanning: the union read's other
 // snapshot when the caller passed one (wider), else the archive under a live
 // read or the live board under an archived one, loaded once per compile and
-// only on a miss (a disk read). nil when there is none — an in-memory store
-// has no archive. It answers EXISTENCE (does the other store hold or carry
-// this ref), which is what lets a ref resolve to a true empty here; it never
-// feeds a snapshot read's answer, except in a union read, where findTask and
-// reach read the other snapshot's edges too because the union promised both.
+// only on a miss (a disk read); nil when there is none — an in-memory store
+// has no archive. A snapshot read resolves nothing there: it consults it to
+// SAY where a missed ref lives (whereElse), the way `show`'s not-found hints
+// at the archive. A union read (wider) resolves against both, findTask and
+// reach reading the other snapshot's edges too, because the union promised both.
 func (c *queryCompiler) other() *core.Index {
 	if c.wider != nil {
 		return c.wider
@@ -394,13 +476,12 @@ func (c *queryCompiler) findTask(id string) *core.Task {
 
 // edgeRefs is resolveTaskRefs for the two qualifiers that read the NAMED
 // task's own deps (blocks:, ancestor-of:): every ref must be a task of this
-// snapshot, because a snapshot read never derives facts from the other store
-// (GetBatchArchived's reasoning — two reads disagreeing about one task is the
-// defect that rule closes). A ref that resolved but is not here is exit 2
-// saying where its edges ARE readable (details.outside, plus details.archived
-// or details.live) — unless this is a union read whose other snapshot holds
-// it as a task: the union promised both, so its deps are read from there
-// (findTask) and each pass matches its own tasks.
+// snapshot — or, in a union read, of the other snapshot, whose task is then
+// read through findTask — because a snapshot read never derives facts from the
+// other store (GetBatchArchived's reasoning — two reads disagreeing about one
+// task is the defect that rule closes). A ref this snapshot only carries as a
+// dep is exit 2 (details.outside) saying where its edges are readable, or
+// that no store holds it — on the live board, lint's dep-missing.
 func (c *queryCompiler) edgeRefs(term query.Term) ([]string, error) {
 	refs, err := c.resolveTaskRefs(term)
 	if err != nil {
@@ -411,7 +492,6 @@ func (c *queryCompiler) edgeRefs(term query.Term) ([]string, error) {
 	for _, r := range refs {
 		switch {
 		case r.here, c.wider != nil && c.wider.Has(r.id):
-			// a union read reads the other snapshot's task too (findTask)
 			ids = append(ids, r.id)
 		default:
 			outside = append(outside, r.id)
@@ -421,47 +501,32 @@ func (c *queryCompiler) edgeRefs(term query.Term) ([]string, error) {
 		return ids, nil
 	}
 	extra := map[string]any{"outside": outside}
-	msg := fmt.Sprintf("%s: %s is not a task of this snapshot, so its own deps cannot be read here", term.Field, strings.Join(outside, ", "))
-	var elsewhere, dangling []string
-	other := c.other()
+	msg := fmt.Sprintf("%s: %s — not a task of this snapshot, so its own deps cannot be read here", term.Field, strings.Join(outside, ", "))
+	var held, dangling []string
+	o := c.other()
 	for _, id := range outside {
-		if other != nil && other.Has(id) {
-			elsewhere = append(elsewhere, id)
+		if o != nil && c.wider == nil && o.Has(id) {
+			held = append(held, id)
 		} else {
 			dangling = append(dangling, id)
 		}
 	}
-	// The hint names a read that HAS the flag: stats, next, revisit and the
-	// write selectors take -q but not --archived.
-	switch {
-	case len(elsewhere) == 0:
-	case c.archived:
-		extra["live"] = elsewhere
-		msg += fmt.Sprintf("; %s is on the live board — read its edges with `furrow ls -q '%s'` or `furrow show <id>`", strings.Join(elsewhere, ", "), term.Raw)
-	default:
-		extra["archived"] = elsewhere
-		msg += fmt.Sprintf("; %s is archived — read its edges with `furrow ls --archived -q '%s'` or `furrow show <id> --archived`", strings.Join(elsewhere, ", "), term.Raw)
-	}
-	// A task no store holds is carried as a dep by this snapshot (a dangling
-	// edge lint names as dep-missing) or only by the other store's tasks
-	// (invisible to lint, which judges the live board): say which.
-	var carriedHere, carriedThere []string
-	for _, id := range dangling {
-		if c.depTargets()[id] {
-			carriedHere = append(carriedHere, id)
-		} else {
-			carriedThere = append(carriedThere, id)
-		}
-	}
-	if len(carriedHere) > 0 {
-		msg += fmt.Sprintf("; %s is a task of no store, carried here as a dep only (lint: dep-missing)", strings.Join(carriedHere, ", "))
-	}
-	if len(carriedThere) > 0 {
-		side, read := "the archive's", "furrow ls --archived -q 'depends-on:<id>'"
+	if len(held) > 0 {
+		// The hint names a read that HAS the flag: stats, next, revisit and
+		// the write selectors take -q but not --archived.
+		side, flag, key := "the archive", "--archived ", "archived"
 		if c.archived {
-			side, read = "the live board's", "furrow ls -q 'depends-on:<id>'"
+			side, flag, key = "the live board", "", "live"
 		}
-		msg += fmt.Sprintf("; %s is a task of no store, carried as a dep only by %s tasks (`%s` names them)", strings.Join(carriedThere, ", "), side, read)
+		extra[key] = held
+		msg += fmt.Sprintf("; %s holds %s — `furrow ls %s-q '%s'` reads its edges, `furrow show %s%s` names them", side, strings.Join(held, ", "), flag, term.Raw, held[0], strings.TrimSuffix(" "+flag, " "))
+	}
+	if len(dangling) > 0 {
+		lint := ""
+		if !c.archived {
+			lint = " (lint: dep-missing)"
+		}
+		msg += fmt.Sprintf("; no store holds %s — carried here as a dep only%s", strings.Join(dangling, ", "), lint)
 	}
 	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: msg}
 	return nil, termErr(e, term, extra)

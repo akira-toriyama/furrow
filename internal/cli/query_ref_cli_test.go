@@ -66,8 +66,14 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 	if d, _ := fe.Details.(map[string]any); d["live"] == nil {
 		t.Errorf("--archived blocks:<live> details = %+v, want live", d)
 	}
-	if got := lsIDs(t, "--archived", "-q", "depends-on:"+live); len(got) != 0 {
-		t.Errorf("--archived depends-on:<live, uncarried> = %v, want [] (a true empty)", got)
+	// A live id nothing archived carries is unknown to the archive snapshot:
+	// exit 2 saying the live board holds it, as `show --archived` would.
+	fe, _ = runErr(t, "ls", "--archived", "-q", "depends-on:"+live)
+	if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "the live board holds") {
+		t.Fatalf("--archived depends-on:<live, uncarried> should be exit 2 naming the live board, got %+v", fe)
+	}
+	if d, _ := fe.Details.(map[string]any); d["missing"] == nil || d["live"] == nil {
+		t.Errorf("--archived depends-on:<live, uncarried> details = %+v, want missing + live", d)
 	}
 
 	// A miss in EVERY store is still the fault, the misses named.
@@ -122,36 +128,41 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 			}
 		}
 	}
-	if fe, _ := runErr(t, "stats", "--since", "2020-01-01", "-q", "blocks:"+retired); fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "ls --archived -q") {
-		t.Errorf("stats -q blocks:<archived> should refuse as ls does, got %+v", fe)
+	// stats' own distributions compile union-aware too, so the archived task's
+	// edges are readable there: blocks:<retired> reaches its live dep.
+	if ids := window("blocks:" + retired); !slices.Contains(ids, upstream) {
+		t.Errorf("stats --since -q blocks:<archived> window = %v, lacks %s", ids, upstream)
 	}
 	if fe, _ := runErr(t, "stats", "--since", "2020-01-01", "-q", "blocks:t-nope0"); fe == nil || fe.Code != core.CodeValidation {
 		t.Errorf("stats --since -q blocks:t-nope0 should still be exit 2, got %+v", fe)
 	}
 
 	// An id no store holds as a task but the archive still carries as a dep
-	// (`rm` does not see archived references) exists to the read: the live
-	// board's dependents are a true empty, the archive's are the answer, and
-	// stats' hot-only compile no longer refuses what its window returns.
+	// (`rm` does not see archived references): the live snapshot does not
+	// know it, so a live read is exit 2 naming the archive's tasks as the
+	// carriers (details.carried_elsewhere, no lint hint — lint judges the
+	// live board alone), the archive's read is the answer, and stats, the
+	// union read, returns it in the window.
 	p := addTask(t, "p, removed after q retired")
 	q := addTask(t, "q, waits on p", "--dep", p)
 	mustRun(t, "done", q)
 	mustRun(t, "archive", q, "--yes")
 	mustRun(t, "rm", p, "--yes")
-	if got := lsIDs(t, "-q", "depends-on:"+p); len(got) != 0 {
-		t.Errorf("depends-on:<rm'd, carried by the archive> = %v, want []", got)
+	for _, term := range []string{"depends-on:" + p, "blocks:" + p} {
+		fe, _ := runErr(t, "ls", "-q", term)
+		if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "the archive's tasks carry") || !strings.Contains(fe.Msg, "ls --archived -q 'depends-on:"+p) || strings.Contains(fe.Msg, "lint") {
+			t.Errorf("ls -q %s (rm'd, carried by the archive) = %+v, want exit 2 naming the archive's tasks as the carriers", term, fe)
+			continue
+		}
+		if d, _ := fe.Details.(map[string]any); d["carried_elsewhere"] == nil {
+			t.Errorf("ls -q %s details = %+v, want carried_elsewhere", term, d)
+		}
 	}
 	if got := lsIDs(t, "--archived", "-q", "depends-on:"+p); len(got) != 1 || got[0] != q {
 		t.Errorf("--archived depends-on:<rm'd> = %v, want [%s]", got, q)
 	}
 	if ids := window("depends-on:" + p); !slices.Contains(ids, q) {
 		t.Errorf("stats --since -q depends-on:<rm'd> window = %v, lacks %s", ids, q)
-	}
-	// Its own edges exist nowhere; the refusal says who carries it, and does
-	// not point at lint, which judges the live board alone.
-	fe, _ = runErr(t, "ls", "-q", "blocks:"+p)
-	if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "archive's tasks") || strings.Contains(fe.Msg, "lint") {
-		t.Errorf("blocks:<rm'd, carried by the archive> = %+v, want exit 2 naming the archive's tasks as the carriers", fe)
 	}
 }
 

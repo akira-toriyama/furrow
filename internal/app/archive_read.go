@@ -141,6 +141,27 @@ func (a *App) archiveIndex() *core.Index {
 	return idx
 }
 
+// archiveSnapshot loads the archive store's index (canonicalized like the hot
+// one) and body loader for a union read — nil, nil, nil when the store is not
+// file-backed (no archive); a missing archive dir loads empty. Unlike
+// archiveIndex it reports a read failure, since a union read that silently
+// lost its archive half would narrow.
+func (a *App) archiveSnapshot() (*core.Index, func(string) (string, error), error) {
+	if a.Dir == "" {
+		return nil, nil, nil
+	}
+	arc, err := a.archiveStore()
+	if err != nil {
+		return nil, nil, err
+	}
+	idx, err := arc.Load()
+	if err != nil {
+		return nil, nil, err
+	}
+	core.Canonicalize(idx, a.Cfg.Lanes)
+	return idx, arc.LoadBody, nil
+}
+
 // ArchivedContains returns the subset of ids present in the archive store, in
 // input order — used to enrich a hot-store not-found error with a "retry with
 // --archived" hint (archiveIndex's best-effort contract: nothing archived on
