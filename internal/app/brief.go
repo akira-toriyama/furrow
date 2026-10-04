@@ -70,6 +70,10 @@ type BriefData struct {
 	// errors only, by code). Best-effort: a lint failure zeroes it rather than
 	// failing the orientation read.
 	Lint LintErrorSummary
+	// NextScope is the epic scope Next applied above. The due band is board-wide
+	// by design, so a due row can be one next will never hand out; the human
+	// band marks those through NextScope.Admits rather than re-deriving the rule.
+	NextScope EpicScope
 }
 
 // Brief assembles BriefData under the query's scope (repo/label). nextLimit
@@ -191,7 +195,12 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		lint = LintErrorSummary{}
 	}
 
+	scope, err := a.NextScope(o)
+	if err != nil {
+		return nil, err
+	}
 	return &BriefData{
+		NextScope:     scope,
 		Active:        active,
 		EpicsDeclared: len(all) > 0,
 		Pinned:        pinned,

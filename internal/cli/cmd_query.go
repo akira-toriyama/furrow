@@ -512,7 +512,9 @@ func newBriefCmd() *cobra.Command {
 			"lane-filter-free (dated work is usually parked outside the focus; a date\n" +
 			"is the one thing on the board that EXPIRES), omitted when nothing has\n" +
 			"arrived, and on a board with boxes its human header says so (`due (N,\n" +
-			"every epic):`) because the next band below IS scoped; `active` = the open+active epic(s)\n" +
+			"every epic):`) because the next band below IS scoped — a row that scope\n" +
+			"keeps out of next ends `outside next: <box>` (`unfiled` when nothing is\n" +
+			"active); `active` = the open+active epic(s)\n" +
 			"next scopes to, with their member roll-up (epics_declared tells a\n" +
 			"non-participating board apart from \"nothing active, so next is\n" +
 			"deliberately empty\"); `pinned` = the open pinned channel(s) whose\n" +
