@@ -159,7 +159,7 @@ func (a *App) Tidy(o TidyOpts) (*TidyReport, error) {
 			t.ClearExtras()
 		}
 	}
-	if err := a.Store.Save(idx); err != nil {
+	if err := a.saveIndex(idx); err != nil {
 		return nil, err
 	}
 	if o.UnknownKeys {

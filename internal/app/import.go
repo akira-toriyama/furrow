@@ -323,7 +323,7 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 		idx.Add(t)
 		ids = append(ids, id)
 	}
-	if err := a.Store.Save(idx); err != nil {
+	if err := a.saveIndex(idx); err != nil {
 		return nil, err
 	}
 	// Return the tasks as a subsequent read emits them: Save normalized each of

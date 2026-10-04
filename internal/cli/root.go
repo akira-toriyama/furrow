@@ -110,6 +110,10 @@ func classifyFailure(err error) *core.Error {
 		for _, n := range a.TakeSessionNotes() {
 			fmt.Fprintln(errOut, "note:", n)
 		}
+		// A command can fail after one of its writes landed (an `apply` whose
+		// second directive names an unknown id); that write's error still
+		// deserves the note the success path would print.
+		noteNewLintErrors(a)
 	}
 	return fe
 }
@@ -251,6 +255,7 @@ func newRootCmd() *cobra.Command {
 			// {before,after,changed} envelope to annotate (add, epic, attach):
 			// a no-op when an envelope path already drained it.
 			sessionGuardExtra(a)
+			noteNewLintErrors(a)
 			// The gate is keyed by the TOP-LEVEL name: cobra hands the hook the
 			// LEAF command, so `epic activate` used to arrive as "activate", miss
 			// the set, and leave the activation record it wrote into the box's

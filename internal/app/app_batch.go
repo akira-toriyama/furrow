@@ -105,7 +105,7 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 	// invalidate a pointer still in use (core.Index holds tasks by value). The
 	// files are already written; this half cannot fail.
 	a.insertSuccessors(idx, successors)
-	if err := a.Store.Save(idx); err != nil {
+	if err := a.saveIndex(idx); err != nil {
 		return nil, nil, err
 	}
 	out, reps := collectBatch(idx, order, reports)
@@ -443,7 +443,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 	if err := a.flushSuccessors(idx, successors); err != nil {
 		return nil, nil, err
 	}
-	if err := a.Store.Save(idx); err != nil {
+	if err := a.saveIndex(idx); err != nil {
 		return nil, nil, err
 	}
 	out, reps := collectBatch(idx, order, reports)

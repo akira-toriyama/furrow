@@ -141,6 +141,11 @@ type App struct {
 	// while partitionSync still leaves a co-located operator's untouched
 	// tracked-dirty body alone. nil until the first body write.
 	bodiesTouched map[string]bool
+
+	// preWrite is the task index as it stood on disk before this process's
+	// first index write, postWrite the index it last wrote (see saveIndex);
+	// both nil until a write. NewLintErrors compares the two.
+	preWrite, postWrite *core.Index
 }
 
 // ctxSleep waits d during Sync's transient-retry backoff, returning early with

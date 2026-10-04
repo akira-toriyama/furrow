@@ -30,6 +30,26 @@ func CycleProblems(idx *Index) []Problem {
 		func(t *Task) []string { return t.Deps })
 }
 
+// CycleRegions is the task ids caught in each dep-cycle region, keyed by the
+// region's smallest id — the id CycleProblems files the region's finding under,
+// so a reader of that finding can recover everyone it is about.
+func CycleRegions(idx *Index) map[string][]string {
+	byID := make(map[string]*Task, len(idx.Tasks))
+	for i := range idx.Tasks {
+		byID[idx.Tasks[i].ID] = &idx.Tasks[i]
+	}
+	order, adj := buildIDGraph(byID, func(t *Task) []string { return t.Deps })
+	out := map[string][]string{}
+	for _, scc := range stronglyConnected(order, adj) {
+		if !isCyclicSCC(scc, adj) {
+			continue
+		}
+		sort.Strings(scc)
+		out[scc[0]] = scc
+	}
+	return out
+}
+
 // cycleProblems is the task-graph front of the shared engine: build the
 // adjacency from `edges`, then hand the id graph to cycleProblemsGraph. It is
 // parameterized rather than inlined into its one caller because the shape has
