@@ -89,8 +89,9 @@ func SubstringNeedle(term string) Needle { return Needle{term: term} }
 // clears the flag itself (`(?-i)`), so --regex folds case as the substring
 // default does. Matching runs on the raw field text: `.` stops at a newline and
 // `(?m)` makes ^/$ line anchors. A pattern that matches the empty string is
-// refused — it would match every task, which search never answers (the same
-// contract as the empty term).
+// refused, as the empty term is: it matches every field of every task. A
+// pattern that merely matches almost everything (`\b`, `.`) is the caller's
+// query, as a one-letter substring is.
 func RegexNeedle(pattern string) (Needle, error) {
 	re, err := regexp.Compile("(?i)" + pattern)
 	if err != nil {
@@ -123,7 +124,8 @@ func (n Needle) In(text string) bool {
 // body read alike. A regex match is located on the RAW text (a line anchor
 // needs the newlines), mapped into the collapsed runes, and a match longer than
 // the two context windows is cut at that length so `.*` cannot turn the
-// excerpt into the whole body. "" when the needle does not occur.
+// excerpt into the whole body (at radius 0 the match is shown whole). "" when
+// the needle does not occur.
 func (n Needle) Snippet(text string, radius int) string {
 	if n.re == nil {
 		return Snippet(text, n.term, radius)
@@ -134,8 +136,8 @@ func (n Needle) Snippet(text string, radius int) string {
 	}
 	runes, at := collapseIndexed(text)
 	start, end := at[loc[0]], at[loc[1]]
-	if limit := 2 * max(radius, 0); end-start > limit {
-		end = start + limit
+	if radius > 0 && end-start > 2*radius {
+		end = start + 2*radius
 	}
 	return window(runes, start, end, radius)
 }

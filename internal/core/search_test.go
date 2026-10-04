@@ -161,6 +161,10 @@ func TestNeedleSnippetRegex(t *testing.T) {
 	if got := []rune(greedy.Snippet("start "+strings.Repeat("x", 500), 10)); len(got) > 2*10+10+1 {
 		t.Errorf("a long match must stay bounded, got %d runes", len(got))
 	}
+	// Radius 0 shows the match itself, as the substring Snippet does.
+	if got, want := foo.Snippet("a foo b", 0), Snippet("a foo b", "foo", 0); got != want {
+		t.Errorf("radius 0: regex Snippet = %q, want %q", got, want)
+	}
 	// The substring needle keeps the package Snippet's output exactly.
 	s := SubstringNeedle("fox")
 	if got, want := s.Snippet("the quick brown fox jumps over", 4), Snippet("the quick brown fox jumps over", "fox", 4); got != want {
