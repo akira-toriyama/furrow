@@ -115,7 +115,10 @@ func printBoardsHuman(l *app.BoardsList) {
 	}
 	for _, b := range l.Boards {
 		state := b.SchemaState
-		if !b.Exists {
+		switch {
+		case !b.Exists && b.OnDisk:
+			state = "not a furrow store"
+		case !b.Exists:
 			state = "missing (not on disk)"
 		}
 		repo := b.Repo

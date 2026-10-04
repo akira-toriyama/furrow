@@ -538,7 +538,14 @@ entries (most specific scope wins) → else nothing resolves (exit 2; the error
 says `furrow init` only on a machine with no board configured). So
 `FURROW_BOARD` replaces only the config-file boards, never a nearer `FURROW_DIR`
 / local `.furrow` / pointer — and outside its scope no central board resolves,
-whatever the config file declares.
+whatever the config file declares. A configured path (`FURROW_DIR`, a pointer's
+`board`, a `[[board]]` `path`, `FURROW_BOARD`) must name the store itself: an
+existing directory that is not one — say, the repo holding the `.furrow` — is
+exit 2, with that `.furrow` as the did-you-mean (a directory furrow already
+wrote its own data into still opens, as before). An empty directory, or one
+holding only dot-entries other than `.furrow` (say, a `.gitkeep`), is a
+store-to-be, as before; `FURROW_DIR=<dir> furrow init` fills one, unless it is a
+git work tree's root, whose store belongs in its `.furrow`.
 
 That order picks the **store**. The **scope** is a second question: a pointer
 or a `[[board]]` answers it (including with "none"), while `FURROW_DIR` and a

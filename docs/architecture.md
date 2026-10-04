@@ -604,7 +604,16 @@ the resolution, split to honour the purity rule:
   `FURROW_BOARD=<path>` replaces the file with one synthetic entry (`repo =
   "auto"`, `auto_filter` on, one scope two levels above the store) that passes
   the same gate — outside that scope no central board resolves, so a cwd-less
-  caller names the store with `FURROW_DIR` instead.
+  caller names the store with `FURROW_DIR` instead. Every configured path
+  (`FURROW_DIR`, a pointer's board, the winning `[[board]]`, `FURROW_BOARD`) must
+  pass `isStoreDir`: one holding furrow's own data (its `meta.json`, its
+  archive's, or a task shard core decodes under its own id) is a store whatever
+  sits beside it (furrow does not guess between two stores); otherwise a marked
+  `.furrow` inside is the repo-root slip unless the path is itself named
+  `.furrow` — refused, with it as the did-you-mean; otherwise a store marker of
+  its kind, or a store-to-be (an empty directory, or one holding only
+  dot-entries other than `.furrow`). The walk's own `.furrow` needs no marker —
+  its name is one.
 
 **Scope vs store.** A `[[board]]` injects a scope repo like a pointer does
 (`repo = "auto"` derives it from the checkout); `auto_filter` decides whether

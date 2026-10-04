@@ -8,9 +8,11 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
@@ -115,6 +117,9 @@ func discover(startDir string) (resolution, error) {
 		if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
 			return resolution{}, core.Validationf("", "%s=%q is not an existing directory", EnvDir, abs)
 		}
+		if err := notStoreErr(fmt.Sprintf("%s=%q", EnvDir, abs), abs); err != nil {
+			return resolution{}, err
+		}
 		return resolution{Dir: abs, Source: SourceEnv}, nil
 	}
 	if _, err := filepath.Abs(startDir); err != nil {
@@ -173,6 +178,178 @@ func isFile(p string) bool {
 	return err == nil && !fi.IsDir()
 }
 
+// exists reports any entry at p, a dangling symlink included.
+func exists(p string) bool {
+	_, err := os.Lstat(p)
+	return err == nil
+}
+
+// storeMarkers are what a furrow store holds, each of its own kind: `furrow
+// init` makes bodies/ and then writes config.toml, every layout since v2 keeps
+// meta.json and tasks/, and a v1 board is the monolithic index.json. That last
+// one stays a store so it behaves exactly as it always has (it opens
+// unstamped); judging a layout is the schema gate's job, not this check's.
+var storeMarkers = []struct {
+	name string
+	dir  bool
+}{{"config.toml", false}, {"meta.json", false}, {"tasks", true}, {"bodies", true}, {"index.json", false}}
+
+// isStoreDir reports whether p is a directory a store lives in, or may:
+//
+//  1. one holding furrow's own data (furrowData) is a store, whatever sits beside it —
+//     a stray nested .furrow, a self-link, even a repo root an older binary
+//     already wrote through the slip: each opened before, and furrow does not
+//     guess which of two stores holds the tasks (a guess that says "remove the
+//     other one" destroys data when it is wrong);
+//  2. otherwise one holding a MARKED .furrow is the repo-root slip, whatever
+//     else (a foreign config.toml, an Ansible tasks/) sits beside it — unless
+//     p is itself named .furrow, which is never a repo root. Nothing of
+//     furrow's is in p, so the .furrow as did-you-mean strands nothing;
+//  3. otherwise a store marker of its kind makes a store, and so does a
+//     store-to-be (storeToBe): what an empty directory always was.
+//
+// Only a marker's ABSENCE counts against p: one that cannot be read for any
+// other reason counts as present, so an unreadable store goes on to fail with
+// its own permission error rather than be called "not a store".
+func isStoreDir(p string) bool {
+	if !isDir(p) {
+		return false
+	}
+	if furrowData(p) {
+		return true
+	}
+	if filepath.Base(p) != DirName {
+		inner := filepath.Join(p, DirName)
+		if isDir(inner) && hasStoreMarker(inner) && canonicalPath(inner) != canonicalPath(p) {
+			return false
+		}
+	}
+	return hasStoreMarker(p) || storeToBe(p)
+}
+
+// furrowData reports data only furrow writes: its meta.json, its archive
+// sub-store's, or a task shard core's decoder accepts. Any of them settles
+// rule 1 — even with meta.json unreadable, conflicted or deleted (fsstore's
+// own remedy for an unreadable one), the shards or the archive are the store,
+// and opening it lets the real meta.json error speak.
+func furrowData(p string) bool {
+	if furrowMeta(p) || furrowMeta(filepath.Join(p, "archive")) {
+		return true
+	}
+	shards, _ := filepath.Glob(filepath.Join(p, "tasks", "*.json"))
+	for _, f := range shards {
+		b, err := os.ReadFile(f) // #nosec G304 -- a shard under the configured store path
+		if err != nil {
+			continue
+		}
+		// furrow names a shard after its task: a foreign tasks/*.json is not one.
+		if t, err := core.UnmarshalTask(b); err == nil && t.ID != "" && t.ID+".json" == filepath.Base(f) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasStoreMarker reports a store marker of its kind in p; a marker that exists
+// but cannot be stat'ed counts as present (see isStoreDir).
+func hasStoreMarker(p string) bool {
+	for _, m := range storeMarkers {
+		fi, err := os.Stat(filepath.Join(p, m.name))
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				return true
+			}
+			continue
+		}
+		if fi.IsDir() == m.dir {
+			return true
+		}
+	}
+	return false
+}
+
+// furrowMeta reports a meta.json in p that declares a layout version furrow
+// writes — read by fsstore, the one decoder of that file, so a foreign
+// meta.json (or one that does not parse) is not furrow's.
+func furrowMeta(p string) bool {
+	if !isFile(filepath.Join(p, "meta.json")) {
+		return false
+	}
+	v, err := fsstore.New(p, nil, "", "", 0).BoardVersion()
+	return err == nil && v >= 2 // v1 was the monolithic index.json, never a meta.json
+}
+
+// storeToBe reports a directory the first write may stamp: nothing in it but
+// dot-entries (a .git from cloning an empty board repo, Finder's .DS_Store, a
+// .gitkeep, furrow's own .tmp-* staging), and no .furrow among them — a
+// directory holding one is the repo-root slip, not a store-to-be. One that
+// cannot even be listed is no store-to-be: absence decides there (isStoreDir).
+func storeToBe(p string) bool {
+	entries, err := os.ReadDir(p)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), ".") || e.Name() == DirName {
+			return false
+		}
+	}
+	return true
+}
+
+// notStoreFinding states why an existing directory that a configured path
+// names is not a store (nil when it is one, or when it does not exist — each
+// arm reports that case in its own words), with the .furrow inside as the
+// did-you-mean when there is one, and no remedy: each caller appends the one
+// that fits its arm. Such a directory used to open as a fresh, writable,
+// empty board: reads exit 0 on nothing, and the first write grows tasks/ +
+// meta.json wherever the path pointed — the commonest slip being a board's
+// repo root for its .furrow (t-tsds). It names what it found, never a content
+// claim about a directory it cannot list.
+func notStoreFinding(subject, dir string) *core.Error {
+	if !isDir(dir) || isStoreDir(dir) {
+		return nil
+	}
+	e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation}
+	if inner := filepath.Join(dir, DirName); isStoreDir(inner) {
+		e.Msg = fmt.Sprintf("%s is not a furrow store but the directory holding its .furrow; did you mean %q?", subject, inner)
+		e.Candidates = []string{inner}
+		return e
+	}
+	found := "it cannot be listed, so furrow cannot tell it is empty"
+	if entries, err := os.ReadDir(dir); err == nil {
+		var names []string
+		for _, en := range entries {
+			if !strings.HasPrefix(en.Name(), ".") {
+				names = append(names, en.Name())
+			}
+		}
+		switch {
+		case len(names) == 0:
+			found = "it holds only dot-entries and a .furrow that is not a store"
+		case len(names) > 3:
+			found = fmt.Sprintf("it holds %s, … and no store marker", strings.Join(names[:3], ", "))
+		default:
+			found = fmt.Sprintf("it holds %s and no store marker", strings.Join(names, ", "))
+		}
+	}
+	e.Msg = fmt.Sprintf("%s is a directory but not a furrow store (%s)", subject, found)
+	return e
+}
+
+// notStoreErr is notStoreFinding with the discovery arms' remedy: a
+// did-you-mean is its own remedy; otherwise name what a store looks like.
+func notStoreErr(subject, dir string) error {
+	e := notStoreFinding(subject, dir)
+	if e == nil {
+		return nil
+	}
+	if len(e.Candidates) == 0 {
+		e.Msg += " — point it at a store (a directory holding meta.json; one made by init also has config.toml), or at an empty directory (create it first) for a new one"
+	}
+	return e
+}
+
 // discoveryUnresolvedErr is the walk's give-up error, and its remedy depends on
 // the machine. With configured [[board]] entries, "run `furrow init`" is
 // exactly the WRONG advice — following it grows a stray local board that
@@ -229,24 +406,32 @@ func envBoardGiveUp(startDir string, cdExit bool) error {
 	inScope := scope != "" && underScope(startDir, scope)
 	var exits, notes []string
 	if envErr != nil {
-		if scope == "" || inScope {
+		var cands []string // a not-a-store override's did-you-mean; scope is then the candidate's
+		if ce := (*core.Error)(nil); errors.As(envErr, &ce) {
+			cands = ce.Candidates
+		}
+		// "fix it" is a promise: only a missing path (make the store there) or a
+		// did-you-mean (point at it) can be fixed in place — an existing
+		// directory that is no store cannot become one.
+		fixable := !isDir(store) || len(cands) > 0
+		if fixable && (scope == "" || inScope) {
 			exits = append(exits, "fix it")
 		}
 		exits = append(exits, fmt.Sprintf("set %s to an existing store", EnvDir))
 		if unset != "" {
 			exits = append(exits, unset)
 		}
-		if scope != "" && !inScope {
+		switch {
+		case scope == "" || inScope || !fixable:
+		case len(cands) > 0:
+			notes = append(notes, fmt.Sprintf("pointed at %q instead, %q would still lie outside its one scope %q", cands[0], startDir, scope))
+		default:
 			notes = append(notes, fmt.Sprintf("even once that store exists, %q lies outside its one scope %q", startDir, scope))
 		}
 		if why != "" {
 			notes = append(notes, why)
 		}
-		e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: envErr.Error() + " — " + orJoin(exits) + parenthesize(notes)}
-		if ce := (*core.Error)(nil); errors.As(envErr, &ce) {
-			e.Candidates = ce.Candidates
-		}
-		return e
+		return &core.Error{Code: core.CodeValidation, Kind: core.KindValidation, Msg: envErr.Error() + " — " + orJoin(exits) + parenthesize(notes), Candidates: cands}
 	}
 	if raw := os.Getenv(EnvBoard); !filepath.IsAbs(raw) && !strings.HasPrefix(raw, "~") {
 		notes = append(notes, fmt.Sprintf("%s is relative, so its store and scope re-resolve against every cwd", EnvBoard))
@@ -290,8 +475,8 @@ func unsetEnvBoardExit(startDir string) (exit, why string, configured bool) {
 	switch {
 	case winner == nil:
 		return "", fmt.Sprintf("no configured [[board]] scope encloses it either, so unsetting %s would not help", EnvBoard), true
-	case !isDir(store):
-		return "", fmt.Sprintf("the configured board %q that encloses it is not an existing directory either", store), true
+	case !isStoreDir(store):
+		return "", fmt.Sprintf("the configured board %q that encloses it is not an existing furrow store either", store), true
 	}
 	return fmt.Sprintf("unset %s: the configured board %q resolves here", EnvBoard, store), "", true
 }
@@ -309,6 +494,21 @@ func parenthesize(notes []string) string {
 func walkFindsBoard(dir string) bool {
 	_, ok := walkUp(dir, holdsStoreOrPointer)
 	return ok
+}
+
+// configScopeEncloses reports whether a config-file [[board]] scope picks dir —
+// whatever then became of that board (missing, or no store).
+func configScopeEncloses(dir string) bool {
+	boards, cfgDir, _, err := loadConfigBoards()
+	if err != nil || len(boards) == 0 {
+		return false
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	winner, _, _ := pickBoard(boards, cfgDir, canonicalPath(abs))
+	return winner != nil
 }
 
 // underScope reports whether dir is scope or below it, by the gate's own
@@ -349,6 +549,9 @@ func resolvePointer(pointerDir, pointerPath string) (resolution, error) {
 	}
 	if fi, err := os.Stat(board); err != nil || !fi.IsDir() {
 		return resolution{}, core.Validationf("", "%s: board %q is not an existing directory", pointerPath, board)
+	}
+	if err := notStoreErr(fmt.Sprintf("%s: board %q", pointerPath, board), board); err != nil {
+		return resolution{}, err
 	}
 	repo, rwarn := deriveScopeRepo(p.DefaultRepo, pointerDir)
 	return resolution{Dir: board, DefaultRepo: repo, AutoFilter: true, ScopeDeclared: true, ScopeWarn: append(pwarn, rwarn...), Source: SourcePointer}, nil
@@ -411,6 +614,13 @@ func resolveGlobalBoard(startDir string) (resolution, bool, error) {
 		}
 		return resolution{}, false, core.Validationf("", "central board %q is not an existing directory", winBoard)
 	}
+	cfgPath, _ := globalConfigPath()
+	if err := notStoreErr(fmt.Sprintf("the [[board]] path %q in %s", winBoard, cfgPath), winBoard); err != nil {
+		if os.Getenv(EnvBoard) != "" {
+			return resolution{}, false, envBoardGiveUp(startDir, true)
+		}
+		return resolution{}, false, err
+	}
 	repo, rwarn := deriveScopeRepo(winner.Repo, abs)
 	// FURROW_BOARD enters through loadGlobalBoards as a synthetic board, so a
 	// winning board is "env" when that override is set, else a real user-config
@@ -472,7 +682,10 @@ func boardScopes(b *config.GlobalBoard, resolvedBoard string) []string {
 // unset. err is the override's own failure, worded to name it and kept a
 // validation error (a user's setting, whatever resolve step failed): a value
 // that cannot resolve leaves store and scope empty; a store that is not there
-// still fills the scope, which needs no store. Callers append the remedy.
+// still fills the scope, which needs no store; a directory that is no store
+// fills it from the did-you-mean the fix would point at (its own scope would
+// be the wrong one), else from its own path — the best estimate of where a
+// fix there would apply. Callers append the remedy.
 func envBoardScope() (store, scope string, set bool, err error) {
 	raw := os.Getenv(EnvBoard)
 	if raw == "" {
@@ -484,11 +697,18 @@ func envBoardScope() (store, scope string, set bool, err error) {
 		return "", "", true, core.Validationf("", "%s=%q cannot be resolved: %v", EnvBoard, raw, rerr)
 	}
 	scope = boardScopes(&boards[0], store)[0]
+	subject := fmt.Sprintf("%s=%q", EnvBoard, store)
+	if raw != store { // quote what the variable holds, then what it named
+		subject = fmt.Sprintf("%s=%q (resolved to %q)", EnvBoard, raw, store)
+	}
 	if !isDir(store) {
-		if raw != store { // quote what the variable holds, then what it named
-			return store, scope, true, core.Validationf("", "%s=%q (resolved to %q) is not an existing directory", EnvBoard, raw, store)
+		return store, scope, true, core.Validationf("", "%s is not an existing directory", subject)
+	}
+	if e := notStoreFinding(subject, store); e != nil {
+		if len(e.Candidates) == 1 {
+			return store, boardScopes(&boards[0], e.Candidates[0])[0], true, e
 		}
-		return store, scope, true, core.Validationf("", "%s=%q is not an existing directory", EnvBoard, store)
+		return store, scope, true, e
 	}
 	return store, scope, true, nil
 }
@@ -581,6 +801,44 @@ bodies/*.md merge=union
 archive/bodies/*.md merge=union
 `
 
+// gitAttributes returns the .gitattributes init should write, or nil when the
+// file already says everything. A store-to-be init fills may hold one of the
+// user's own: its rules are kept and only the missing furrow lines appended,
+// in the file's own line ending (t-tsds: init used to replace it whole,
+// silently, at exit 0). Read before anything is written, so an unreadable one
+// fails init cleanly.
+func gitAttributes(path string) ([]byte, error) {
+	old, err := os.ReadFile(path) // #nosec G304 -- the .gitattributes of the store init was told to create
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		return []byte(GitAttributesTemplate), nil // nothing there yet; MkdirAll reports a bad target itself
+	}
+	if err != nil {
+		return nil, core.Validationf("", "cannot read %s: %v — init merges its union-merge rules into it; make it a readable file first", path, err)
+	}
+	eol := "\n"
+	if strings.Contains(string(old), "\r\n") {
+		eol = "\r\n"
+	}
+	have := map[string]bool{}
+	for _, l := range strings.Split(string(old), "\n") {
+		have[strings.TrimSpace(l)] = true
+	}
+	merged := string(old)
+	for _, l := range strings.Split(GitAttributesTemplate, "\n") {
+		if l == "" || strings.HasPrefix(l, "#") || have[l] {
+			continue
+		}
+		if merged != "" && !strings.HasSuffix(merged, "\n") {
+			merged += eol
+		}
+		merged += l + eol
+	}
+	if merged == string(old) {
+		return nil, nil
+	}
+	return []byte(merged), nil
+}
+
 // Init creates a fresh .furrow at dir/.furrow (config.toml template + an empty
 // tasks/ shard dir + meta.json + bodies/ + the union-merge .gitattributes). It
 // is an error if one already exists. The tasks/ dir and meta.json are
@@ -594,10 +852,45 @@ func Init(dir string) (*App, error) {
 // the store directory verbatim (it need not be called ".furrow"), and `furrow
 // init` under either must create the store the very next command will discover,
 // never a stray board in the cwd (which is how this repo once got a committed
-// .furrow/ — see .gitignore).
+// .furrow/ — see .gitignore). An existing directory is filled only when it is a
+// store-to-be (empty or dot-only — what discovery accepts there too); a store
+// is refused as one, and anything else as what it is, never as ".furrow"
+// (t-tsds: init used to call a repo root ".furrow already exists").
 func InitAt(fdir string) (*App, error) {
-	if fi, err := os.Stat(fdir); err == nil && fi.IsDir() {
-		return nil, core.Validationf("", "%s already exists at %q", DirName, fdir)
+	if fi, err := os.Stat(fdir); err == nil && !fi.IsDir() {
+		return nil, core.Validationf("", "%q exists and is not a directory", fdir)
+	} else if err == nil {
+		switch {
+		case storeToBe(fdir) && filepath.Base(fdir) != DirName && exists(filepath.Join(fdir, ".git")):
+			// A git work tree's root (a .git dir, or a worktree's/submodule's .git
+			// file) is where its repo lives, not its store — unless it is named
+			// .furrow: a board repo cloned as a repo's .furrow is exactly where
+			// the walk looks.
+			return nil, core.Validationf("", "%q is the root of a git work tree — put the store at %q, where discovery looks for it", fdir, filepath.Join(fdir, DirName))
+		case storeToBe(fdir):
+		case isStoreDir(fdir):
+			return nil, core.Validationf("", "a furrow store already exists at %q", fdir)
+		case filepath.Base(fdir) == DirName:
+			return nil, core.Validationf("", "a %s already exists at %q (the walk from its repo opens it as the local board)", DirName, fdir)
+		default:
+			e := &core.Error{Code: core.CodeValidation, Kind: core.KindValidation,
+				Msg: fmt.Sprintf("%q exists and is not a furrow store — init creates one only in a new, empty or dot-only directory", fdir)}
+			if inner := filepath.Join(fdir, DirName); isStoreDir(inner) {
+				e.Msg += fmt.Sprintf("; the store is already at %q — point the setting there", inner)
+				e.Candidates = []string{inner}
+			}
+			return nil, e
+		}
+	}
+	// A store inside a store reads as the repo-root slip from then on (`furrow
+	// init .furrow` from a board's repo once made one at exit 0): refused when
+	// the parent holds furrow's own meta.json, or is a .furrow with a marker.
+	if parent := filepath.Dir(fdir); furrowMeta(parent) || (filepath.Base(parent) == DirName && hasStoreMarker(parent)) {
+		return nil, core.Validationf("", "%q would nest a store inside the store at %q — run init in a repo, not in a board", fdir, parent)
+	}
+	attrs, err := gitAttributes(filepath.Join(fdir, ".gitattributes"))
+	if err != nil { // before any write: a failure must leave no marker behind
+		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Join(fdir, "bodies"), 0o755); err != nil {
 		return nil, core.Internalf("", "create %s: %v", fdir, err)
@@ -605,8 +898,10 @@ func InitAt(fdir string) (*App, error) {
 	if err := fsstore.WriteFileAtomic(filepath.Join(fdir, "config.toml"), []byte(config.Template)); err != nil {
 		return nil, err
 	}
-	if err := fsstore.WriteFileAtomic(filepath.Join(fdir, ".gitattributes"), []byte(GitAttributesTemplate)); err != nil {
-		return nil, err
+	if attrs != nil {
+		if err := fsstore.WriteFileAtomic(filepath.Join(fdir, ".gitattributes"), attrs); err != nil {
+			return nil, err
+		}
 	}
 	a, err := openAt(fdir)
 	if err != nil {

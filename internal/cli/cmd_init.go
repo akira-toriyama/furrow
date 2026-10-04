@@ -20,7 +20,9 @@ func newInitCmd() *cobra.Command {
 			"FURROW_BOARD, then <dir>/.furrow for an explicit argument, then\n" +
 			"./.furrow. An argument that contradicts a set override is exit 2 —\n" +
 			"init never silently creates a board somewhere the next command will\n" +
-			"not look.",
+			"not look. An existing target is filled only when it is empty or holds only\n" +
+			"dot-entries such as .gitkeep; a git work tree's root (its store belongs in\n" +
+			"its .furrow), a store, or anything else is exit 2.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			argStore := ""
