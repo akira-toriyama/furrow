@@ -51,13 +51,60 @@ func TestWriteNamesTheLintErrorItCreates(t *testing.T) {
 }
 
 // The note follows the board's lint policy: an error the board re-levels to a
-// warning is not an error to note, so the note never calls something an error
-// that `furrow lint` does not.
+// warning or ignores is not an error to note, so the note never calls
+// something an error that `furrow lint` does not. The ready-blocked note is the
+// positive control — the hook is live under the same policy.
 func TestWriteLintNoteFollowsTheBoardPolicy(t *testing.T) {
 	freezeClock(t)
 	initStore(t)
 	mustRun(t, "config", "set", "lint.severity.due-overdue", "warn")
 	if _, se, _ := runSplit(t, "add", "late", "--due", dayOffset(t, -3)); strings.Contains(se, "lint error") {
 		t.Errorf("a re-leveled due-overdue must not be noted as an error:\n%s", se)
+	}
+	blocker := addTask(t, "blocker")
+	waiter := addTask(t, "waiter", "--dep", blocker)
+	if _, se, _ := runSplit(t, "set", waiter, "-s", "ready"); !strings.Contains(se, "leaves "+waiter+" in lint error ready-blocked") {
+		t.Errorf("an error the policy leaves alone is still noted:\n%s", se)
+	}
+	mustRun(t, "config", "set", "lint.ignore_codes", "ready-blocked")
+	other := addTask(t, "other", "--dep", blocker)
+	if _, se, _ := runSplit(t, "set", other, "-s", "ready"); strings.Contains(se, "lint error") {
+		t.Errorf("an ignored code must not be noted:\n%s", se)
+	}
+}
+
+// Board-level errors count too: the first repeating task on a shared board
+// with no [due].timezone raises repeat-no-timezone, which lint files under the
+// id `config`.
+func TestWriteLintNoteCoversBoardRules(t *testing.T) {
+	freezeClock(t)
+	initStore(t)
+	if _, se, _ := runSplit(t, "add", "weekly", "--due", dayOffset(t, 30), "--repeat", "weekly"); !strings.Contains(se, "in lint error repeat-no-timezone") {
+		t.Errorf("the first series on a zone-less shared board must name repeat-no-timezone:\n%s", se)
+	}
+	if _, se, _ := runSplit(t, "add", "daily", "--due", dayOffset(t, 30), "--repeat", "daily"); strings.Contains(se, "lint error") {
+		t.Errorf("a second series leaves the same (code, id) and must stay quiet:\n%s", se)
+	}
+}
+
+// A command that fails after one of its writes landed still names the error
+// that write created; across several writes the "before" is the board as the
+// command found it, so the first write's error is not lost.
+func TestWriteLintNoteSurvivesAFailedCommand(t *testing.T) {
+	freezeClock(t)
+	initStore(t)
+	blocker := addTask(t, "blocker")
+	first := addTask(t, "first", "--dep", blocker)
+	second := addTask(t, "second", "--dep", blocker)
+
+	_, se, code := runSplitIn(t, "SetStatus-task: "+first+" ready\nSetStatus-task: "+second+" ready\n", "apply", "--on", "merge")
+	if code != 0 || !strings.Contains(se, "leaves "+first+" in lint error ready-blocked") || !strings.Contains(se, "leaves "+second+" in lint error ready-blocked") {
+		t.Errorf("two writes in one command: both errors named (exit %d):\n%s", code, se)
+	}
+
+	third := addTask(t, "third", "--dep", blocker)
+	_, se, code = runSplitIn(t, "SetStatus-task: "+third+" ready\nSetStatus-task: t-nope0 ready\n", "apply", "--on", "merge")
+	if code == 0 || !strings.Contains(se, "leaves "+third+" in lint error ready-blocked") {
+		t.Errorf("a failed command whose first write landed must still name its error (exit %d):\n%s", code, se)
 	}
 }

@@ -130,8 +130,7 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 	}
 	ps = append(ps, bodyPs...)
 
-	ps = append(ps, a.lintConfigProblems(idx)...)
-	ps = append(ps, a.lintHygieneProblems(idx)...)
+	ps = append(ps, a.lintConfigProblems()...)
 
 	// A board still on an older layout than this binary is read-only (every write
 	// hits the store's gate). Warn, don't error: that state is the legitimate
@@ -176,11 +175,12 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 }
 
 // lintIndex is every rule Lint derives from the task shards, the boxes and the
-// config alone — no body, record or config FILE read. It is split out so
-// NewLintErrors can run exactly these rules over the board before and after a
-// write; anything added here is part of that comparison, so a rule that reads a
-// body or a file belongs in Lint, not here. idx is read RAW (pre-clamp) and
-// canonicalized in place.
+// loaded config alone — no body, record or file read, and no config clamp
+// (those describe the config, not the board). It is split out so NewLintErrors
+// can run exactly these rules over the board before and after a write: a new
+// rule over the tasks belongs here, or a write that trips it stays silent; a
+// rule that reads a body or a file belongs in Lint. idx is read RAW (pre-clamp)
+// and canonicalized in place.
 func (a *App) lintIndex(idx *core.Index, epics []core.Epic) []core.Problem {
 	// The estimate range check runs on the RAW (pre-clamp) index: Canonicalize
 	// would otherwise round a hand-edited out-of-range value/effort away before
@@ -331,6 +331,8 @@ func (a *App) lintIndex(idx *core.Index, epics []core.Epic) []core.Problem {
 	// instant — its date is broken on paper before any work is late. The same
 	// skip set as the two due findings, applied to both ends of the edge.
 	ps = append(ps, core.DueInversionProblems(idx, a.loc(), a.dueSkipLanes())...)
+	ps = append(ps, a.lintBoardRules(idx)...)
+	ps = append(ps, a.lintHygieneProblems(idx)...)
 	return ps
 }
 
@@ -559,10 +561,9 @@ func (a *App) lintBodyContent(hasTask, hasEpic map[string]bool, bodyIDs []string
 	return ps, nil
 }
 
-// lintConfigProblems collects the config-driven findings: the archive-backlog
-// nudge, the required-label rule, and every clamp warning (board config,
-// [lint].ignore_codes typos, user-level config).
-func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
+// lintBoardRules collects the findings a board setting raises over the tasks:
+// repeat-no-timezone, the archive-backlog nudge, and the required-label rule.
+func (a *App) lintBoardRules(idx *core.Index) []core.Problem {
 	var ps []core.Problem
 	// repeat-no-timezone: a series is expanded in the board's [due].timezone, and
 	// undeclared that is the zone of whatever process CLOSES the occurrence. On a
@@ -602,7 +603,13 @@ func (a *App) lintConfigProblems(idx *core.Index) []core.Problem {
 			}
 		}
 	}
+	return ps
+}
 
+// lintConfigProblems collects every config clamp warning: the board config,
+// [lint].ignore_codes and [lint.severity] typos, and the user-level config.
+func (a *App) lintConfigProblems() []core.Problem {
+	var ps []core.Problem
 	for _, w := range a.Warnings {
 		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "config", Msg: w})
 	}
