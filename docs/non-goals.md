@@ -164,6 +164,21 @@ is a measured case, not a preference: a session acting on a cancelled dependency
 as if it had landed. The shape then is GitHub's — a close reason the done task
 carries, read by `revisit`'s `dep_done` and by `N/M` — never a lane.
 
+### No free-form meta on a task
+An epic takes `--meta key=value` that furrow never interprets; a task does not,
+and the asymmetry is deliberate. A box's meta labels the box for whoever reads
+it (which board a scenario lives on, what it simulates), and nothing ranks or
+filters boxes by it. A task shard is the other kind of record: each field on it
+is something `next`, `ls`, a `-q` qualifier or `lint` reads — which is why a new
+one is a schema bump — and a key/value bag furrow never reads would be a second
+body with a key syntax. The case that asked for one does not need it: two tasks
+quoting different budget splits stay exactly as invisible to `lint` as meta
+values as they are as prose, because nothing interprets either. An owner, an
+amount or a time actual goes in the body. What would reopen this is a reader,
+not a writer — a query, sort or lint rule that needs a value no field carries —
+and that value then gets a field of its own, with the bump. A per-person
+**assignee** is that kind of field, and planned (see the honesty note below).
+
 
 ## Storage format
 
