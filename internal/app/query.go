@@ -692,13 +692,15 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 
 	switch term.Kind {
 	case query.FreeText:
-		// Free text = furrow search's matcher over title + body (case-insensitive
-		// substring, core.ContainsFold), so `-q foo` finds what `furrow search
-		// foo` finds. The body is consulted only when the title misses, so a
-		// title hit never pays for a body read.
-		needle := term.Text
+		// Free text = furrow search's walk (core.FindText: title, checklist,
+		// refs, body) with its default substring needle, so `-q foo` finds what
+		// `furrow search foo` finds. The body is consulted only when the shard
+		// fields miss. c.body records a load failure in bodyErr itself, so the
+		// walk's own error is always nil here.
+		needle := core.SubstringNeedle(term.Text)
 		return neg(func(t *core.Task) bool {
-			return core.ContainsFold(t.Title, needle) || core.ContainsFold(c.body(t), needle)
+			field, _, _ := core.FindText(t, needle, func() (string, error) { return c.body(t), nil })
+			return field != ""
 		}), nil
 
 	case query.State:

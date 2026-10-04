@@ -164,3 +164,42 @@ func TestCLISearchArchived(t *testing.T) {
 		t.Errorf("an archived body hit must report matched_field=body:\n%s", out)
 	}
 }
+
+// A checklist row and a ref are searchable text: --json names the field, and
+// the human row still leads with the title, since an item or a path alone does
+// not say which task it belongs to.
+func TestSearchChecklistAndRefHits(t *testing.T) {
+	initStore(t)
+	inList := addTask(t, "venue walkthrough", "--check", "下見枠 10/10 を確保")
+	inRef := addTask(t, "print the menu", "--ref", "docs/oneday-restaurant/2026-11-21/menu.md")
+
+	out, code := run(t, "--json", "search", "10/10")
+	if code != 0 {
+		t.Fatalf("search exit=%d:\n%s", code, out)
+	}
+	if hits := searchHits(t, out); len(hits) != 1 || hits[0].ID != inList || hits[0].MatchedField != "checklist" || hits[0].Snippet != "下見枠 10/10 を確保" {
+		t.Errorf("want one checklist hit on %s with the item as snippet:\n%s", inList, out)
+	}
+	out, code = run(t, "search", "oneday-restaurant")
+	if code != 0 || !strings.Contains(out, inRef) || !strings.Contains(out, "refs") || !strings.Contains(out, "print the menu  ·  docs/oneday-restaurant/") {
+		t.Errorf("a ref hit's human row names the field, the title and the ref (exit=%d):\n%s", code, out)
+	}
+}
+
+func TestSearchRegexFlag(t *testing.T) {
+	initStore(t)
+	cand := addTask(t, "候補 B を取り下げる")
+	addTask(t, "BGM を選ぶ")
+
+	out, code := run(t, "--json", "search", "--regex", `\bB\b`)
+	if code != 0 {
+		t.Fatalf("search --regex exit=%d:\n%s", code, out)
+	}
+	if hits := searchHits(t, out); len(hits) != 1 || hits[0].ID != cand {
+		t.Errorf(`--regex '\bB\b' should find only %s, never BGM:\n%s`, cand, out)
+	}
+	fe, _ := runErr(t, "--json", "search", "--regex", "(unclosed")
+	if fe == nil || fe.Code != core.CodeValidation || fe.Kind != core.KindValidation || !strings.Contains(fe.Msg, "(unclosed") {
+		t.Errorf("a bad pattern is a validation error quoting the caller's pattern, got %+v", fe)
+	}
+}

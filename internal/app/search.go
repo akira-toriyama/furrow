@@ -7,30 +7,40 @@ import (
 )
 
 // snippetRadius is the runes of body context Search keeps on each side of a
-// match. Titles are short and returned whole; bodies get a windowed excerpt.
+// match. A title, checklist item or ref is short and returned whole; a body
+// gets a windowed excerpt.
 const snippetRadius = 60
 
 // SearchHit is one task matched by Search: the task, which field carried the
-// match (title|body), and a one-line snippet of the matched text in context.
+// match (core.FindText's title|checklist|refs|body), and a one-line snippet of
+// the matched text in context.
 type SearchHit struct {
 	Task         core.Task
 	MatchedField string
 	Snippet      string
 }
 
-// Search returns the tasks whose title or body contains term (a case-insensitive
-// substring), in canonical order, after applying the query's scope filters — the
-// same -s/-l/-r/-n semantics as List. Title is matched first: a title hit reports
-// matched_field "title" (snippet = the whole title) and never pays to load the
-// body; otherwise the body is loaded on demand and a hit reports "body" with a
-// windowed excerpt. The body scan is O(board) with no index — the same "an index
-// is YAGNI" stance as Backlinks. term is required: an empty/blank term is a
-// validation error, not a match-everything. A -s naming an unknown lane fails
-// fast (validateLaneFilter, symmetric with List). A zero-match result is healthy
-// (exit 0), never a miss.
-func (a *App) Search(o QueryOpts, term string) ([]SearchHit, error) {
+// Search returns the tasks whose text holds term, in canonical order, after
+// applying the query's scope filters — the same -s/-l/-r/-n semantics as List.
+// term is a case-insensitive substring, or with regex an RE2 pattern
+// (core.RegexNeedle). The fields are walked by core.FindText — the walk `-q`
+// free text shares — so a title, checklist-item or ref hit reports that field
+// with the matched text whole (whitespace collapsed to one line) and never
+// reads the body; a body hit reports a windowed excerpt. The body scan is O(board) with no
+// index — the same "an index is YAGNI" stance as Backlinks. term is required:
+// an empty/blank term is a validation error, not a match-everything. A -s
+// naming an unknown lane fails fast (validateLaneFilter, symmetric with List).
+// A zero-match result is healthy (exit 0), never a miss.
+func (a *App) Search(o QueryOpts, term string, regex bool) ([]SearchHit, error) {
 	if strings.TrimSpace(term) == "" {
 		return nil, core.Validationf("", "search term must not be empty")
+	}
+	needle := core.SubstringNeedle(term)
+	if regex {
+		var err error
+		if needle, err = core.RegexNeedle(term); err != nil {
+			return nil, err
+		}
 	}
 	if err := a.validateLaneFilter(o.Status); err != nil {
 		return nil, err
@@ -73,19 +83,20 @@ func (a *App) Search(o QueryOpts, term string) ([]SearchHit, error) {
 				continue
 			}
 		}
-		switch {
-		case core.ContainsFold(t.Title, term):
-			out = append(out, SearchHit{Task: *t, MatchedField: "title", Snippet: t.Title})
-		default:
-			body, err := readBody(t)
-			if err != nil {
-				return nil, err
-			}
-			if !core.ContainsFold(body, term) {
-				continue
-			}
-			out = append(out, SearchHit{Task: *t, MatchedField: "body", Snippet: core.Snippet(body, term, snippetRadius)})
+		field, text, err := core.FindText(t, needle, func() (string, error) { return readBody(t) })
+		if err != nil {
+			return nil, err
 		}
+		if field == "" {
+			continue
+		}
+		// A title, item or ref is shown whole but still on one line: an item or
+		// a ref can carry a newline the shard never refused.
+		snippet := strings.Join(strings.Fields(text), " ")
+		if field == core.FieldBody {
+			snippet = needle.Snippet(text, snippetRadius)
+		}
+		out = append(out, SearchHit{Task: *t, MatchedField: field, Snippet: snippet})
 		if o.Limit > 0 && len(out) >= o.Limit {
 			break
 		}

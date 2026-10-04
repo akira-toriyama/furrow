@@ -32,10 +32,10 @@ func emitSearch(hits []app.SearchHit) error {
 }
 
 // printSearchTable renders search hits as a plain aligned table: id, matched
-// field, and the match text. For a body hit the title is shown before the
-// snippet (so the id is never the only clue to which task matched); a title hit
-// shows the title alone. Deliberately plain (no box drawing) so it greps and
-// copies cleanly, like printTaskTable.
+// field, and the match text. For a checklist, refs or body hit the title is
+// shown before the snippet (so the id is never the only clue to which task
+// matched); a title hit shows the title alone. Deliberately plain (no box
+// drawing) so it greps and copies cleanly, like printTaskTable.
 func printSearchTable(hits []app.SearchHit) {
 	if len(hits) == 0 {
 		fmt.Fprintln(out, "(no matches)")
@@ -53,7 +53,7 @@ func printSearchTable(hits []app.SearchHit) {
 	fmt.Fprintf(out, "%-*s  %-*s  %s\n", wID, "ID", wField, "FIELD", "MATCH")
 	for _, h := range hits {
 		match := h.Snippet
-		if h.MatchedField == "body" {
+		if h.MatchedField != core.FieldTitle {
 			match = h.Task.Title + "  ·  " + h.Snippet
 		}
 		fmt.Fprintf(out, "%-*s  %-*s  %s\n", wID, h.Task.ID, wField, h.MatchedField, match)

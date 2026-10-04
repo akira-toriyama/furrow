@@ -269,8 +269,8 @@ func TestQueryGraph(t *testing.T) {
 	}
 }
 
-// TestQueryFreeTextAndBody pins D1: free text is search's matcher over
-// title+body (case-insensitive substring), body: is the explicit body
+// TestQueryFreeTextAndBody pins D1: free text is search's matcher over the
+// task's text (case-insensitive substring), body: is the explicit body
 // qualifier, and a QUOTED value on a text qualifier is whole-field equality
 // (still case-folded) where a bare one is a substring.
 func TestQueryFreeTextAndBody(t *testing.T) {
@@ -564,7 +564,7 @@ func TestSearchQuerySharesBodyCache(t *testing.T) {
 	cs := &countingStore{Store: a.Store}
 	a.Store = cs
 
-	hits, err := a.Search(QueryOpts{Query: "body:needle"}, "needle")
+	hits, err := a.Search(QueryOpts{Query: "body:needle"}, "needle", false)
 	if err != nil {
 		t.Fatal(err)
 	}

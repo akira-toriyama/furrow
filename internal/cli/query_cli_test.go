@@ -206,7 +206,7 @@ func TestQueryFreeTextReachesBody(t *testing.T) {
 
 	ft := qIDs(t, "zebra")
 	if !slices.Contains(ft, inBody) || !slices.Contains(ft, inTitle) {
-		t.Errorf("free text must span title+body: %v", ft)
+		t.Errorf("free text must span title and body: %v", ft)
 	}
 	// Equivalence with furrow search (same matcher, same hits).
 	out, code := run(t, "--json", "search", "zebra")
