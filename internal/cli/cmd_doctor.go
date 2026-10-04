@@ -36,7 +36,8 @@ func newDoctorCmd() *cobra.Command {
 			"    .furrow or pointer wins — info, never unhealthy: opting out is legitimate)\n" +
 			"  - discovery is simulated at cwd (informational) and at every dir given as\n" +
 			"    an argument (an assertion: a dir that resolves to no board is an error\n" +
-			"    with the fix — add it to a board's scopes)\n\n" +
+			"    naming the cause and its fix — add it to a board's scopes, or, while\n" +
+			"    an env override decides, what that override needs)\n\n" +
 			"Every finding carries a stable kebab-case `code` — branch on it, never on the\n" +
 			"message (the `id` field is contextual: a store path, a scope path, a dir, an\n" +
 			"env var name, or `config`). Severity `info` is a fact worth seeing, not a\n" +

@@ -80,7 +80,9 @@ func newBoardsCmd() *cobra.Command {
 			"vocabulary — reported, never guessed. No config or no usable [[board]] is\n" +
 			"boards: [] with exit 0 — that emptiness is the finding. The FURROW_BOARD env\n" +
 			"override is a per-invocation redirect, not machine config, so it is not\n" +
-			"listed.",
+			"listed; while it is set, a stderr note names it and its one scope (or the\n" +
+			"FURROW_DIR that outranks it), because discovery then reads none of the\n" +
+			"listed entries.",
 		Example: "  furrow boards           # human summary of every configured board\n" +
 			"  furrow boards --json    # {config, boards: [{store, scopes, repo, exists, lanes, writable, ...}]}\n" +
 			"  furrow boards --json | jq -r '.boards[].store'",

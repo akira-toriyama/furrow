@@ -46,9 +46,10 @@ type BoardEntry struct {
 // board without re-parsing furrow's config format itself. It reads the
 // user-level config FILE only: the FURROW_BOARD env override is a
 // per-invocation redirect, not machine configuration, so it is deliberately
-// not listed. Clamp warnings (a path-less or scope-less [[board]], an
-// unresolvable path) surface in the second return for the CLI to note on
-// stderr — clamp-don't-reject, same as discovery.
+// not listed — but it is noted, since discovery then reads none of the listed
+// entries. Clamp warnings (a path-less or scope-less [[board]], an
+// unresolvable path) and that note surface in the second return for the CLI to
+// print on stderr — clamp-don't-reject, same as discovery.
 func Boards() (*BoardsList, []string, error) {
 	path, err := globalConfigPath()
 	if err != nil {
@@ -67,6 +68,24 @@ func Boards() (*BoardsList, []string, error) {
 			continue
 		}
 		list.Boards = append(list.Boards, entry)
+	}
+	// Unlisted, but never silent: while FURROW_BOARD is set discovery reads none
+	// of these entries, so a listing whose scopes looked live would contradict
+	// every command run beside it (t-xr78) — and FURROW_DIR outranks both.
+	if _, scope, set, serr := envBoardScope(); set {
+		raw := os.Getenv(EnvBoard)
+		entries := "" // never talk about entries there are none of
+		if len(list.Boards) > 0 {
+			entries = ", not the configured entries"
+		}
+		switch {
+		case os.Getenv(EnvDir) != "":
+			warn = append(warn, fmt.Sprintf("%s=%q is set, but %s outranks it: discovery uses %s=%q%s", EnvBoard, raw, EnvDir, EnvDir, os.Getenv(EnvDir), entries))
+		case serr != nil:
+			warn = append(warn, fmt.Sprintf("%v; discovery falls through to it%s", serr, entries))
+		default:
+			warn = append(warn, fmt.Sprintf("%s=%q is set — discovery uses it (one scope, %q)%s", EnvBoard, raw, scope, entries))
+		}
 	}
 	return list, warn, nil
 }

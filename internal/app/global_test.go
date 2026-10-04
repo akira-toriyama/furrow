@@ -1,10 +1,13 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/internal/core"
 )
 
 // globalLayout builds tmp/org/projects/.furrow (the central board) and writes a
@@ -562,6 +565,151 @@ func TestGlobal_EnvBoardInertOutsideDerivedScope(t *testing.T) {
 	if _, err := Open(outside); err == nil {
 		t.Fatal("FURROW_BOARD must stay gated to its derived parent scope, got activation")
 	}
+}
+
+// Outside FURROW_BOARD's derived scope the give-up error prescribed two exits
+// that are dead while the override is set — a scope in the config file (never
+// read) and FURROW_BOARD itself (already pointed) — even when the config
+// already declares a scope enclosing the directory (t-xr78). It must name the
+// override's scope and the exits that work, and unsetting must really work.
+func TestGlobal_EnvBoardOutsideScopeNamesLiveRemedies(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	root := t.TempDir()
+	org := filepath.Join(root, "org")
+	board := mustInitBoard(t, filepath.Join(org, "projects"))
+	other := filepath.Join(root, "other")
+	writeGlobalConfig(t, boardEntry(board, "auto", other))
+	outside := mkGitRepo(t, filepath.Join(other, "repoX"))
+	t.Setenv(EnvBoard, board)
+
+	_, err := Open(outside)
+	if err == nil {
+		t.Fatal("FURROW_BOARD replaces the config's boards — its scope must not activate")
+	}
+	msg := err.Error()
+	for _, want := range []string{`"` + org + `"`, `FURROW_DIR="` + board + `"`, "unset FURROW_BOARD"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("remedy must name %s, got: %s", want, msg)
+		}
+	}
+	for _, dead := range []string{"board's scopes in", "point FURROW_BOARD"} {
+		if strings.Contains(msg, dead) {
+			t.Errorf("remedy must not prescribe %q while FURROW_BOARD is set: %s", dead, msg)
+		}
+	}
+	var fe *core.Error
+	if !errors.As(err, &fe) || fe.Kind != core.KindValidation || len(fe.Candidates) != 1 || fe.Candidates[0] != board {
+		t.Errorf("want a validation error with the override's store as the one candidate, got %#v", err)
+	}
+
+	// A remedy pointing FURROW_DIR at a store that is not there would be dead
+	// too: a missing override is itself the answer.
+	t.Setenv(EnvBoard, filepath.Join(org, "gone", DirName))
+	if _, err := Open(outside); err == nil || !strings.Contains(err.Error(), "not an existing directory") {
+		t.Errorf("a missing FURROW_BOARD store must be named as the problem, got %v", err)
+	}
+
+	t.Setenv(EnvBoard, "")
+	if a, err := Open(outside); err != nil || a.Dir != board {
+		t.Errorf("the named exit must work: with FURROW_BOARD unset the config scope resolves the board, got %v / %+v", err, a)
+	}
+}
+
+// Every exit the FURROW_BOARD give-up names must work from where it was hit,
+// and none may lead to init (t-xr78 review): "unset FURROW_BOARD" only when a
+// configured board then resolves here — on a board-less machine unsetting lands
+// on the init advice — "cd into that scope" never for a relative value, whose
+// scope moves with the cwd, and an unusable override names itself as a
+// validation error, with the scope it would still miss.
+func TestGlobal_EnvBoardGiveUpOffersOnlyLiveExits(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	root := t.TempDir()
+	org := filepath.Join(root, "org")
+	board := mustInitBoard(t, filepath.Join(org, "projects"))
+	outside := mkGitRepo(t, filepath.Join(root, "other", "repoX"))
+	open := func(t *testing.T) string {
+		t.Helper()
+		_, err := Open(outside)
+		var fe *core.Error
+		if !errors.As(err, &fe) || fe.Kind != core.KindValidation {
+			t.Fatalf("want a validation error, got %#v", err)
+		}
+		if strings.Contains(fe.Msg, "furrow init") {
+			t.Errorf("no exit may lead to init: %s", fe.Msg)
+		}
+		return fe.Msg
+	}
+
+	t.Run("no board configured", func(t *testing.T) {
+		writeGlobalConfig(t, "")
+		t.Setenv(EnvBoard, board)
+		msg := open(t)
+		if strings.Contains(msg, "unset FURROW_BOARD:") || !strings.Contains(msg, "no [[board]] is configured") {
+			t.Errorf("unsetting resolves nothing on a board-less machine and must say so: %s", msg)
+		}
+		if strings.Contains(msg, "entries are not read") {
+			t.Errorf("with no [[board]] configured there is no shadow to name: %s", msg)
+		}
+	})
+	t.Run("boards configured elsewhere", func(t *testing.T) {
+		writeGlobalConfig(t, boardEntry(board, "auto", filepath.Join(root, "elsewhere")))
+		t.Setenv(EnvBoard, board)
+		msg := open(t)
+		if strings.Contains(msg, "unset FURROW_BOARD:") || !strings.Contains(msg, "no configured [[board]] scope encloses it either") {
+			t.Errorf("unsetting would not help here and must say so: %s", msg)
+		}
+	})
+	t.Run("relative value", func(t *testing.T) {
+		writeGlobalConfig(t, "")
+		rel, err := filepath.Rel(mustGetwd(t), board)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(EnvBoard, rel)
+		msg := open(t)
+		// Neither cd nor "make it absolute" alone resolves this dir (same store,
+		// same scope): the relative value is a note, not an exit.
+		if strings.Contains(msg, "cd into that scope") || strings.Contains(msg, "make FURROW_BOARD absolute") || !strings.Contains(msg, "FURROW_BOARD is relative") {
+			t.Errorf("a relative value's scope moves with the cwd — no cd exit: %s", msg)
+		}
+	})
+	t.Run("missing store outside its scope", func(t *testing.T) {
+		writeGlobalConfig(t, "")
+		t.Setenv(EnvBoard, filepath.Join(org, "gone", DirName))
+		msg := open(t)
+		for _, want := range []string{"not an existing directory", "set FURROW_DIR to an existing store", "even once that store exists", `"` + org + `"`} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("want %q in: %s", want, msg)
+			}
+		}
+		if strings.Contains(msg, "— fix it") {
+			t.Errorf("fixing the store leaves this dir outside its scope — no fix-it exit: %s", msg)
+		}
+	})
+	t.Run("missing store inside its scope", func(t *testing.T) {
+		writeGlobalConfig(t, "")
+		t.Setenv(EnvBoard, filepath.Join(org, "gone", DirName))
+		_, err := Open(mkGitRepo(t, filepath.Join(org, "repoQ")))
+		if err == nil || !strings.Contains(err.Error(), "FURROW_BOARD=") || !strings.Contains(err.Error(), "— fix it") || strings.Contains(err.Error(), "central board") {
+			t.Errorf("inside its scope a missing store must name FURROW_BOARD with the fix-it exit: %v", err)
+		}
+	})
+	t.Run("unresolvable value", func(t *testing.T) {
+		writeGlobalConfig(t, "")
+		t.Setenv(EnvBoard, "~nobody/x/.furrow")
+		if msg := open(t); !strings.Contains(msg, `FURROW_BOARD="~nobody/x/.furrow" cannot be resolved`) {
+			t.Errorf("an unresolvable override must name itself: %s", msg)
+		}
+	})
+}
+
+func mustGetwd(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wd
 }
 
 // `add` inside a scoped board unions the derived repo into the task's repos —

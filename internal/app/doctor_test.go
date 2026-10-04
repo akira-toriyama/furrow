@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/akira-toriyama/furrow/internal/core"
 	"github.com/akira-toriyama/furrow/internal/gittest"
 )
 
@@ -254,6 +255,109 @@ func TestDoctorEnvBoardSuppressesNoBoards(t *testing.T) {
 	}
 	if n := findProblems(r, "env-override"); len(n) != 1 {
 		t.Errorf("the override itself must still be visible: %+v", r.Problems)
+	}
+}
+
+// Outside FURROW_BOARD's derived scope doctor said "every invocation resolves
+// there" beside its own `cwd -> (no board)`, and an asserted dir's remedy was a
+// config-file scope that is never read while the override is set — with that
+// scope already declared (t-xr78).
+func TestDoctorEnvBoardOutsideItsScope(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	root := t.TempDir()
+	org := filepath.Join(root, "org")
+	board := mustInitBoard(t, filepath.Join(org, "projects"))
+	other := filepath.Join(root, "other")
+	outside := filepath.Join(other, "repoX")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeGlobalConfig(t, boardEntry(board, "auto", other))
+	t.Setenv(EnvBoard, board)
+
+	r := mustDoctor(t, outside, outside)
+	n := findProblems(r, "env-override")
+	if len(n) != 1 {
+		t.Fatalf("want one env-override, got %+v", r.Problems)
+	}
+	if msg := r.Problems[n[0]].Msg; strings.Contains(msg, "every invocation") || !strings.Contains(msg, `"`+org+`"`) {
+		t.Errorf("env-override must name FURROW_BOARD's one scope, not claim every invocation: %s", msg)
+	}
+	n = findProblems(r, "dir-unresolved")
+	if len(n) != 1 {
+		t.Fatalf("want dir-unresolved on the asserted dir, got %+v", r.Problems)
+	}
+	msg := r.Problems[n[0]].Msg
+	for _, want := range []string{`"` + org + `"`, `FURROW_DIR="` + board + `"`, "unset FURROW_BOARD"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("dir-unresolved must name %s, got: %s", want, msg)
+		}
+	}
+	if strings.Contains(msg, "board's scopes in") {
+		t.Errorf("dir-unresolved must not send the operator to a config file that is not read: %s", msg)
+	}
+	if strings.Contains(msg, "cd into") {
+		t.Errorf("a cd cannot make an asserted dir resolve — no cd exit: %s", msg)
+	}
+}
+
+// Each doctor line about FURROW_BOARD must match what discovery does in that
+// state (t-xr78 review): an asserted dir INSIDE the scope that fails for another
+// reason names that reason, not the scope; FURROW_DIR outranks the override; a
+// "~/…" value is judged by the gate's resolver, not a raw stat; and a broken
+// override fails only what falls through to it.
+func TestDoctorEnvBoardLinesMatchDiscovery(t *testing.T) {
+	writeGlobalConfig(t, "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	org := filepath.Join(home, "hb", "org")
+	board := mustInitBoard(t, filepath.Join(org, "projects"))
+	t.Setenv(EnvDir, "")
+	t.Setenv(EnvBoard, board)
+
+	repoP := filepath.Join(org, "repoP")
+	if err := os.MkdirAll(repoP, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoP, PointerName), []byte("board = \"../gone/.furrow\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := mustDoctor(t, "", repoP)
+	if n := findProblems(r, "dir-unresolved"); len(n) != 1 || strings.Contains(r.Problems[n[0]].Msg, "outside") || !strings.Contains(r.Problems[n[0]].Msg, PointerName) {
+		t.Errorf("a broken pointer inside the scope must be named as the cause: %+v", r.Problems)
+	}
+
+	envLine := func(r *DoctorReport) core.Problem {
+		t.Helper()
+		for _, p := range r.Problems {
+			if p.ID == EnvBoard {
+				return p
+			}
+		}
+		t.Fatalf("no FURROW_BOARD line: %+v", r.Problems)
+		return core.Problem{}
+	}
+
+	t.Setenv(EnvBoard, "~/hb/org/projects/.furrow")
+	if p := envLine(mustDoctor(t, "")); p.Code != "env-override" {
+		t.Errorf("a ~/ value discovery resolves must not read as broken: %+v", p)
+	}
+
+	t.Setenv(EnvDir, board)
+	r = mustDoctor(t, "")
+	if p := envLine(r); p.Code != "env-override" || !strings.Contains(p.Msg, "has no effect") {
+		t.Errorf("with FURROW_DIR set the override has no effect and must say so: %+v", p)
+	}
+	// An override with no effect substitutes for no [[board]] either: the
+	// board-less machine must still warn, or a broken setup reads healthy.
+	if len(findProblems(r, "no-boards")) != 1 {
+		t.Errorf("FURROW_BOARD outranked by FURROW_DIR must not suppress no-boards: %+v", r.Problems)
+	}
+
+	t.Setenv(EnvDir, "")
+	t.Setenv(EnvBoard, filepath.Join(org, "gone", DirName))
+	if p := envLine(mustDoctor(t, "")); p.Code != "env-override-broken" || strings.Contains(p.Msg, "every furrow command") || !strings.Contains(p.Msg, "falls through to it") {
+		t.Errorf("a broken override fails what falls through to it, not every command: %+v", p)
 	}
 }
 
