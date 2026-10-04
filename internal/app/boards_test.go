@@ -97,3 +97,60 @@ func TestBoardsIgnoresEnvBoardOverride(t *testing.T) {
 		t.Errorf("FURROW_BOARD is a per-invocation redirect, not machine config — it must not be listed: %+v", list.Boards)
 	}
 }
+
+// Unlisted is not unsaid: while FURROW_BOARD is set the configured entries are
+// never read by discovery, so `boards` showed their scopes as if live, and the
+// one scope that did decide was printed nowhere (t-xr78).
+func TestBoardsNotesTheEnvBoardShadowingTheEntries(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	writeGlobalConfig(t, boardEntry(mustInitBoard(t, t.TempDir()), "auto", t.TempDir()))
+	board := mustInitBoard(t, filepath.Join(t.TempDir(), "org", "projects"))
+	t.Setenv(EnvBoard, board)
+	scope := `"` + filepath.Dir(filepath.Dir(board)) + `"`
+
+	note := func() string {
+		t.Helper()
+		_, warns, err := Boards()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range warns {
+			if strings.Contains(w, "FURROW_BOARD=") {
+				return w
+			}
+		}
+		t.Fatalf("want a FURROW_BOARD note, got %q", warns)
+		return ""
+	}
+
+	list, _, err := Boards()
+	if err != nil || len(list.Boards) != 1 {
+		t.Fatalf("the configured entry is still listed, got %+v / %v", list, err)
+	}
+	if w := note(); !strings.Contains(w, scope) || !strings.Contains(w, "not the configured entries") {
+		t.Errorf("the note must name the override's scope %s over the entries: %s", scope, w)
+	}
+
+	// Each state says what discovery really does — never a scope that does not
+	// decide, never "the configured entries" when there are none.
+	t.Setenv(EnvDir, board)
+	if w := note(); !strings.Contains(w, "FURROW_DIR outranks it") {
+		t.Errorf("with FURROW_DIR set the note must say FURROW_BOARD is outranked: %s", w)
+	}
+	t.Setenv(EnvDir, "")
+	gone := filepath.Join(t.TempDir(), "gone", DirName)
+	t.Setenv(EnvBoard, gone)
+	if w := note(); !strings.Contains(w, "not an existing directory") || !strings.Contains(w, "not the configured entries") {
+		t.Errorf("a missing override store must be named as such: %s", w)
+	}
+
+	// With no entries configured, no arm may talk about them.
+	writeGlobalConfig(t, "")
+	for _, s := range []struct{ dir, board string }{{"", board}, {"", gone}, {board, board}} {
+		t.Setenv(EnvDir, s.dir)
+		t.Setenv(EnvBoard, s.board)
+		if w := note(); strings.Contains(w, "entries") {
+			t.Errorf("with no entries configured the note must not talk about them (FURROW_DIR=%q): %s", s.dir, w)
+		}
+	}
+}

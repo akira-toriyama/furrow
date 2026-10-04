@@ -198,23 +198,36 @@ func doctorSessionRegistry() []core.Problem {
 }
 
 // envOverrideProblems reports the two env overrides. A set override is INFO —
-// deliberate machine setup, but every invocation resolves there, shadowing all
-// configured boards, so doctor must say it or the rest of the report misleads.
-// A BROKEN one is an error: every furrow command on the machine fails until it
-// is unset or fixed.
+// deliberate machine setup that shadows every configured board, so doctor must
+// say it or the rest of the report misleads; a BROKEN one is an error. The two
+// differ in reach, and each sentence must match it (t-xr78): FURROW_DIR answers
+// every invocation, so a broken one fails every command; FURROW_BOARD answers
+// only what falls through to it — no FURROW_DIR, no nearer .furrow or pointer,
+// inside its one derived scope — and is judged by envBoardScope, the gate's own
+// resolver (a raw stat called a working "~/…" value broken).
 func envOverrideProblems(envDir, envBoard string) []core.Problem {
 	var ps []core.Problem
-	for _, e := range []struct{ name, val string }{{EnvDir, envDir}, {EnvBoard, envBoard}} {
-		if e.val == "" {
-			continue
+	if envDir != "" {
+		if fi, err := os.Stat(envDir); err != nil || !fi.IsDir() {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "env-override-broken", ID: EnvDir,
+				Msg: fmt.Sprintf("%s=%q is not an existing directory — every furrow command fails until it is unset or fixed", EnvDir, envDir)})
+		} else {
+			ps = append(ps, core.Problem{Severity: SevInfo, Code: "env-override", ID: EnvDir,
+				Msg: fmt.Sprintf("%s=%q is set — every invocation resolves there, shadowing the configured boards", EnvDir, envDir)})
 		}
-		if fi, err := os.Stat(e.val); err != nil || !fi.IsDir() {
-			ps = append(ps, core.Problem{Severity: core.SevError, Code: "env-override-broken", ID: e.name,
-				Msg: fmt.Sprintf("%s=%q is not an existing directory — every furrow command fails until it is unset or fixed", e.name, e.val)})
-			continue
-		}
-		ps = append(ps, core.Problem{Severity: SevInfo, Code: "env-override", ID: e.name,
-			Msg: fmt.Sprintf("%s=%q is set — every invocation resolves there, shadowing the configured boards", e.name, e.val)})
+	}
+	_, scope, set, err := envBoardScope()
+	switch {
+	case !set:
+	case envDir != "":
+		ps = append(ps, core.Problem{Severity: SevInfo, Code: "env-override", ID: EnvBoard,
+			Msg: fmt.Sprintf("%s=%q has no effect: %s is also set and outranks it everywhere", EnvBoard, envBoard, EnvDir)})
+	case err != nil:
+		ps = append(ps, core.Problem{Severity: core.SevError, Code: "env-override-broken", ID: EnvBoard,
+			Msg: fmt.Sprintf("%v — every command that falls through to it (no nearer .furrow or pointer) fails until it is unset or fixed", err)})
+	default:
+		ps = append(ps, core.Problem{Severity: SevInfo, Code: "env-override", ID: EnvBoard,
+			Msg: fmt.Sprintf("%s=%q is set — it replaces the configured boards with one synthetic board scoped to %q (two levels above its store); outside that scope only a local .furrow or a pointer resolves", EnvBoard, envBoard, scope)})
 	}
 	return ps
 }
@@ -256,8 +269,9 @@ func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string) []core.P
 	// [[board]] — every checkout without its own .furrow/pointer is bare exit 2,
 	// and nothing on the machine says why. FURROW_BOARD substitutes for it; a
 	// FURROW_DIR board (now probed above) does NOT — it is a per-invocation
-	// redirect, and the config is still empty.
-	if len(configured) == 0 && r.EnvBoard == "" {
+	// redirect, and the config is still empty — and while FURROW_DIR is set
+	// FURROW_BOARD substitutes for nothing (it has no effect at all).
+	if len(configured) == 0 && (r.EnvBoard == "" || r.EnvDir != "") {
 		detail := ""
 		if _, err := os.Stat(cfgPath); err != nil {
 			detail = " (the config file does not exist)"
@@ -531,8 +545,21 @@ func doctorResolutions(r *DoctorReport, cwd string, assertDirs []string) []core.
 			dr.Resolved = true
 			dr.Store, dr.Source, dr.ScopeRepo = res.Dir, res.Source, res.DefaultRepo
 		} else if asserted {
-			ps = append(ps, core.Problem{Severity: core.SevError, Code: "dir-unresolved", ID: dir,
-				Msg: fmt.Sprintf("no board resolves at %q (no local .furrow, no pointer, no [[board]] scope encloses it) — add it to a board's scopes in %s", dir, r.Config)})
+			// While an env override is set the config file is not what decided,
+			// so "add it to a board's scopes" cannot help — and the dir may sit in
+			// one already (t-xr78). The cause that did decide speaks instead: a
+			// FURROW_DIR, or a .furrow/pointer the walk met (a broken pointer is not
+			// "no pointer"), names itself in discover's error; otherwise it is
+			// FURROW_BOARD's give-up, minus "cd into that scope" — an asserted dir
+			// does not move. With no override set the remedy is unchanged.
+			msg := fmt.Sprintf("no board resolves at %q (no local .furrow, no pointer, no [[board]] scope encloses it) — add it to a board's scopes in %s", dir, r.Config)
+			switch {
+			case r.EnvDir != "" || (r.EnvBoard != "" && walkFindsBoard(dir)):
+				msg = fmt.Sprintf("no board resolves at %q: %v", dir, err)
+			case r.EnvBoard != "":
+				msg = fmt.Sprintf("no board resolves at %q: %v", dir, envBoardGiveUp(dir, false))
+			}
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "dir-unresolved", ID: dir, Msg: msg})
 		}
 		r.Resolutions = append(r.Resolutions, dr)
 	}
