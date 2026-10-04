@@ -92,8 +92,8 @@ type DoctorBoard struct {
 // plain, un-git-ed directory — legitimate, never a problem), "no-upstream" (a
 // repo with no tracking ref — what a STANDALONE board reports: `mode =
 // "standalone"` means git-with-no-remote, not git-less), "unavailable" (the probe itself failed — no git binary, or rev-list
-// errored), and "unprobed" (the board is not on disk, so there was nothing to
-// ask).
+// errored), and "unprobed" (the board is not on disk, or not a furrow store, so
+// there was nothing to ask).
 type DoctorGit struct {
 	State  string `json:"state"`
 	Ahead  int    `json:"ahead"`
@@ -211,6 +211,9 @@ func envOverrideProblems(envDir, envBoard string) []core.Problem {
 		if fi, err := os.Stat(envDir); err != nil || !fi.IsDir() {
 			ps = append(ps, core.Problem{Severity: core.SevError, Code: "env-override-broken", ID: EnvDir,
 				Msg: fmt.Sprintf("%s=%q is not an existing directory — every furrow command fails until it is unset or fixed", EnvDir, envDir)})
+		} else if e := notStoreFinding(fmt.Sprintf("%s=%q", EnvDir, envDir), envDir); e != nil {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "env-override-broken", ID: EnvDir,
+				Msg: e.Msg + " — every furrow command fails until it is unset or fixed"})
 		} else {
 			ps = append(ps, core.Problem{Severity: SevInfo, Code: "env-override", ID: EnvDir,
 				Msg: fmt.Sprintf("%s=%q is set — every invocation resolves there, shadowing the configured boards", EnvDir, envDir)})
@@ -246,13 +249,24 @@ func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string) []core.P
 	}
 
 	cfgDir := filepath.Dir(cfgPath)
+	// A configured path must name a store — except one discovery already
+	// opened (a markerless local .furrow the walk accepts): presence decides
+	// there, or doctor would call missing the board its own resolution used.
+	present := func(store string) bool {
+		for _, res := range r.Resolutions {
+			if res.Resolved && canonicalPath(res.Store) == canonicalPath(store) {
+				return isDir(store)
+			}
+		}
+		return isStoreDir(store)
+	}
 	var configured []DoctorBoard
 	for _, b := range entries {
 		// Same resolution and the same wording `furrow boards` uses (one helper),
 		// rendered into doctor's sink. These are already surfaced by
 		// LoadGlobalBoards' clamp warnings via discovery; naming them here too
 		// keeps each finding self-contained.
-		entry, w, ok := resolveBoardEntry(cfgDir, b)
+		entry, w, ok := resolveBoardEntry(cfgDir, b, present)
 		for _, msg := range w {
 			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "global-config-clamp", ID: "config", Msg: msg})
 		}
@@ -295,10 +309,11 @@ func doctorOrderBoards(ctx context.Context, r *DoctorReport, cfgPath string, con
 	var ps []core.Problem
 	var resolved []string
 	if r.EnvDir != "" {
-		if abs, err := filepath.Abs(r.EnvDir); err == nil {
-			if fi, err := os.Stat(abs); err == nil && fi.IsDir() {
-				resolved = append(resolved, abs)
-			}
+		// Only a store is a board to list: a FURROW_DIR naming anything else is
+		// env-override-broken already, and a board-missing beside it would send
+		// the operator to a [[board]] path no entry declares (t-tsds).
+		if abs, err := filepath.Abs(r.EnvDir); err == nil && isStoreDir(abs) {
+			resolved = append(resolved, abs)
 		}
 	}
 	for _, res := range r.Resolutions {
@@ -321,7 +336,7 @@ func doctorOrderBoards(ctx context.Context, r *DoctorReport, cfgPath string, con
 		if placed {
 			continue
 		}
-		entry := probeBoardEntry(store, []string{}, config.GlobalBoard{})
+		entry := probeBoardEntry(store, []string{}, config.GlobalBoard{}, isDir) // discovery opened it
 		db := DoctorBoard{BoardEntry: entry, Git: DoctorGit{State: GitUnprobed}}
 		ps = append(ps, doctorBoardProblems(ctx, &db, cfgPath)...)
 		r.Boards = append(r.Boards, db)
@@ -350,8 +365,11 @@ func doctorHasBoard(r *DoctorReport, store string) bool {
 func doctorBoardProblems(ctx context.Context, db *DoctorBoard, cfgPath string) []core.Problem {
 	var ps []core.Problem
 	if !db.Exists {
-		return append(ps, core.Problem{Severity: core.SevError, Code: "board-missing", ID: db.Store,
-			Msg: fmt.Sprintf("board %q is not on disk — clone the board repo there, or fix the [[board]] path in %s", db.Store, cfgPath)})
+		msg := fmt.Sprintf("board %q is not on disk — clone the board repo so its store lands here (a path ending in %s is the store inside the repo, so the clone goes one level up), or fix the [[board]] path in %s", db.Store, DirName, cfgPath)
+		if e := notStoreFinding(fmt.Sprintf("board %q", db.Store), db.Store); e != nil {
+			msg = fmt.Sprintf("%s — fix the [[board]] path in %s", e.Msg, cfgPath)
+		}
+		return append(ps, core.Problem{Severity: core.SevError, Code: "board-missing", ID: db.Store, Msg: msg})
 	}
 	// The version pair comes through board.go's schemaVersions — the one
 	// allowlisted introspection site — so this file never names the version
@@ -545,16 +563,16 @@ func doctorResolutions(r *DoctorReport, cwd string, assertDirs []string) []core.
 			dr.Resolved = true
 			dr.Store, dr.Source, dr.ScopeRepo = res.Dir, res.Source, res.DefaultRepo
 		} else if asserted {
-			// While an env override is set the config file is not what decided,
-			// so "add it to a board's scopes" cannot help — and the dir may sit in
-			// one already (t-xr78). The cause that did decide speaks instead: a
-			// FURROW_DIR, or a .furrow/pointer the walk met (a broken pointer is not
-			// "no pointer"), names itself in discover's error; otherwise it is
-			// FURROW_BOARD's give-up, minus "cd into that scope" — an asserted dir
-			// does not move. With no override set the remedy is unchanged.
+			// "add it to a board's scopes" fits only the walk's plain give-up
+			// with no override set. Otherwise the cause that decided speaks
+			// (t-xr78, t-tsds): a FURROW_DIR, a .furrow/pointer the walk met (a
+			// broken pointer is not "no pointer"), or a configured scope that
+			// does enclose the dir (its board missing or no store) names itself in
+			// discover's error; under FURROW_BOARD it is the give-up, minus "cd
+			// into that scope" — an asserted dir does not move.
 			msg := fmt.Sprintf("no board resolves at %q (no local .furrow, no pointer, no [[board]] scope encloses it) — add it to a board's scopes in %s", dir, r.Config)
 			switch {
-			case r.EnvDir != "" || (r.EnvBoard != "" && walkFindsBoard(dir)):
+			case r.EnvDir != "" || walkFindsBoard(dir) || (r.EnvBoard == "" && configScopeEncloses(dir)):
 				msg = fmt.Sprintf("no board resolves at %q: %v", dir, err)
 			case r.EnvBoard != "":
 				msg = fmt.Sprintf("no board resolves at %q: %v", dir, envBoardGiveUp(dir, false))

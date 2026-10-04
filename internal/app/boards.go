@@ -34,7 +34,10 @@ type BoardEntry struct {
 	Scopes []string `json:"scopes"` // directories this board activates under, resolved
 	Repo   string   `json:"repo"`   // declared scope repo: "auto" | "" | owner/repo
 	Label  string   `json:"label"`  // declared literal add-time tag ("" = none)
-	Exists bool     `json:"exists"` // the store directory is present on disk
+	Exists bool     `json:"exists"` // a furrow store is present at Store
+	// OnDisk: a directory sits at Store, store or not — presentation only, so
+	// a non-store directory renders as such, not as "missing (not on disk)".
+	OnDisk bool `json:"-"`
 	BoardVocab
 	SchemaTriple
 }
@@ -62,7 +65,7 @@ func Boards() (*BoardsList, []string, error) {
 	cfgDir := filepath.Dir(path)
 	list := &BoardsList{Config: path, Boards: []BoardEntry{}}
 	for _, b := range entries {
-		entry, w, ok := resolveBoardEntry(cfgDir, b)
+		entry, w, ok := resolveBoardEntry(cfgDir, b, isStoreDir)
 		warn = append(warn, w...)
 		if !ok {
 			continue
@@ -99,7 +102,7 @@ func Boards() (*BoardsList, []string, error) {
 // SAME config and each had its own copy of this loop with byte-identical warning
 // text. One rule and one wording, rendered into two sinks: boards returns plain
 // strings, doctor wraps them as global-config-clamp problems.
-func resolveBoardEntry(cfgDir string, b config.GlobalBoard) (BoardEntry, []string, bool) {
+func resolveBoardEntry(cfgDir string, b config.GlobalBoard, present func(string) bool) (BoardEntry, []string, bool) {
 	store, err := resolvePathRelTo(cfgDir, b.Path)
 	if err != nil {
 		return BoardEntry{}, []string{fmt.Sprintf("ignoring central board %q: %v", b.Path, err)}, false
@@ -114,24 +117,29 @@ func resolveBoardEntry(cfgDir string, b config.GlobalBoard) (BoardEntry, []strin
 		}
 		scopes = append(scopes, sp)
 	}
-	return probeBoardEntry(store, scopes, b), warn, true
+	return probeBoardEntry(store, scopes, b, present), warn, true
 }
 
-// probeBoardEntry probes one configured board. A missing directory (or one whose
+// probeBoardEntry probes one board. A missing directory (or one whose
 // config.toml cannot even parse) keeps the empty vocabulary and the unreadable
 // triple; a present board is opened exactly like discovery would open it
 // (config clamp included) and reports the same vocabulary and the same folded
-// hot+archive schema state as `furrow board` on that board.
-func probeBoardEntry(store string, scopes []string, b config.GlobalBoard) BoardEntry {
+// hot+archive schema state as `furrow board` on that board. present is the
+// arm's own acceptance test, so the probe agrees with discovery: a configured
+// path must name a store (isStoreDir — a non-store directory would report a
+// fresh, writable, empty board, t-tsds), while a store discovery already
+// opened (the walk's local .furrow) only has to be on disk (isDir).
+func probeBoardEntry(store string, scopes []string, b config.GlobalBoard, present func(string) bool) BoardEntry {
 	e := BoardEntry{
 		Store:        store,
 		Scopes:       scopes,
 		Repo:         b.Repo,
 		Label:        b.Label,
+		OnDisk:       isDir(store),
 		BoardVocab:   emptyVocab(),
 		SchemaTriple: schemaTriple(0, SchemaUnreadable, false),
 	}
-	if fi, err := os.Stat(store); err != nil || !fi.IsDir() {
+	if !present(store) {
 		return e
 	}
 	e.Exists = true
