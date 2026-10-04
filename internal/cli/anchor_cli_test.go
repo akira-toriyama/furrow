@@ -167,6 +167,7 @@ func TestEpicClearAnchorDisclosesFollowers(t *testing.T) {
 // (unless the same write promises one), a repeat rule, a day where the box
 // was expected, and --yes / an empty value with nothing behind them.
 func TestSetAnchorRefusals(t *testing.T) {
+	freezeClock(t)
 	epic, follower, _, _, _ := anchorBoard(t)
 	undated := addTask(t, "undated", "-e", epic)
 	repeating := addTask(t, "weekly", "-e", epic, "--due", "2026-10-05", "--repeat", "weekly")

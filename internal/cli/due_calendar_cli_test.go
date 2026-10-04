@@ -63,6 +63,7 @@ func TestDueRendersInBoardCalendar(t *testing.T) {
 // points in the board's calendar — the zone recur expands them in — so a
 // viewer's-zone rendering would disagree with the very rule that produced them.
 func TestRepeatStampsRenderInBoardCalendar(t *testing.T) {
+	freezeClock(t)
 	initCalendarBoard(t)
 	id := addTask(t, "watering", "--due", dueSpelling, "--repeat", "weekly")
 
