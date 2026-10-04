@@ -679,37 +679,10 @@ func (a *App) lintHygieneProblems(idx *core.Index) []core.Problem {
 	// creation nor intent — and nothing but a hand edit produces it (add
 	// appends past the lane's max, reorder respaces). One finding per tie,
 	// on the lowest id, naming the rest; the remedy is reorder (t-awr6).
-	type slot struct {
-		lane string
-		prio int
-	}
-	ties := map[slot][]string{}
-	for i := range idx.Tasks {
-		t := &idx.Tasks[i]
-		if t.Closed != nil {
-			continue
-		}
-		k := slot{t.Status, t.Priority}
-		ties[k] = append(ties[k], t.ID)
-	}
-	tieKeys := make([]slot, 0, len(ties))
-	for k, ids := range ties {
-		if len(ids) > 1 {
-			tieKeys = append(tieKeys, k)
-		}
-	}
-	sort.Slice(tieKeys, func(i, j int) bool {
-		if tieKeys[i].lane != tieKeys[j].lane {
-			return tieKeys[i].lane < tieKeys[j].lane
-		}
-		return tieKeys[i].prio < tieKeys[j].prio
-	})
-	for _, k := range tieKeys {
-		ids := ties[k]
-		sort.Strings(ids)
-		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "priority-duplicate", ID: ids[0],
+	for _, tie := range priorityTies(idx) {
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "priority-duplicate", ID: tie.ids[0],
 			Msg: fmt.Sprintf("priority %d in lane %q is shared with %s, so their order is undefined — `furrow reorder %s --before <ref>` (or --after) places them",
-				k.prio, k.lane, strings.Join(ids[1:], ", "), ids[0])})
+				tie.prio, tie.lane, strings.Join(tie.ids[1:], ", "), tie.ids[0])})
 	}
 
 	// title-scope-marker ([lint].title_scope_markers, OFF by default): a title
@@ -920,4 +893,43 @@ func containsAnyFold(s string, needles []string) bool {
 		}
 	}
 	return false
+}
+
+// priorityTie is one priority-duplicate finding's group: the open tasks that
+// share one priority in one lane, ids sorted (the finding is filed under ids[0]).
+type priorityTie struct {
+	lane string
+	prio int
+	ids  []string
+}
+
+// priorityTies is every priority-duplicate group, ordered by lane then priority.
+func priorityTies(idx *core.Index) []priorityTie {
+	type slot struct {
+		lane string
+		prio int
+	}
+	ties := map[slot][]string{}
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if t.Closed != nil {
+			continue
+		}
+		k := slot{t.Status, t.Priority}
+		ties[k] = append(ties[k], t.ID)
+	}
+	var out []priorityTie
+	for k, ids := range ties {
+		if len(ids) > 1 {
+			sort.Strings(ids)
+			out = append(out, priorityTie{k.lane, k.prio, ids})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].lane != out[j].lane {
+			return out[i].lane < out[j].lane
+		}
+		return out[i].prio < out[j].prio
+	})
+	return out
 }

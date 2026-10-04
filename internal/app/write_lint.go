@@ -30,10 +30,10 @@ func (a *App) saveIndex(idx *core.Index) error {
 // NewLintErrors returns the lint ERRORS this App's writes created: lintIndex,
 // leveled by the board's policy exactly as Lint levels it, run over the board
 // as it stood before the first write and as this App last wrote it. An error
-// is new when the earlier board had no error with the same (code, id), so
-// touching a task that was already in error says nothing, while a write that
-// puts a DIFFERENT task in error (reopening a dep its dependent sits ready on)
-// is caught. "After" is the index this process saved, not a re-read, so a
+// is new when it is about a task (or board-level id) the earlier board had no
+// error of that code about (errorMembers), so touching a task that was
+// already in error says nothing, while a write that puts a DIFFERENT task in
+// error (reopening a dep its dependent sits ready on) is caught. "After" is the index this process saved, not a re-read, so a
 // co-located writer landing in between is never blamed on this command. Both
 // sides judge against the boxes as they are now: a write that changes only a
 // box is not compared. nil when nothing was written.
@@ -51,13 +51,22 @@ func (a *App) NewLintErrors() ([]core.Problem, error) {
 		return nil, err
 	}
 	had := map[[2]string]bool{}
-	for _, p := range a.indexErrors(a.preWrite, epics) {
-		had[[2]string{p.Code, p.ID}] = true
+	before := a.indexErrors(a.preWrite, epics)
+	members := errorMembers(a.preWrite)
+	for _, p := range before {
+		for _, m := range members(p) {
+			had[[2]string{p.Code, m}] = true
+		}
 	}
 	var out []core.Problem
-	for _, p := range a.indexErrors(a.postWrite, epics) {
-		if !had[[2]string{p.Code, p.ID}] {
-			out = append(out, p)
+	after := a.indexErrors(a.postWrite, epics)
+	members = errorMembers(a.postWrite)
+	for _, p := range after {
+		for _, m := range members(p) {
+			if !had[[2]string{p.Code, m}] {
+				out = append(out, p)
+				break
+			}
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -67,6 +76,32 @@ func (a *App) NewLintErrors() ([]core.Problem, error) {
 		return out[i].Code < out[j].Code
 	})
 	return out, nil
+}
+
+// errorMembers says who a finding is about. Most findings are about their ID;
+// a region finding — one per dep cycle or priority tie, filed under its
+// smallest id — is about every task in the region, so a write that only
+// shrinks or splits a region (moving its smallest id) is not a new error,
+// while a task newly drawn into one is.
+func errorMembers(idx *core.Index) func(core.Problem) []string {
+	cycles := core.CycleRegions(idx)
+	ties := map[string][]string{}
+	for _, tie := range priorityTies(idx) {
+		ties[tie.ids[0]] = tie.ids
+	}
+	return func(p core.Problem) []string {
+		switch p.Code {
+		case "dep-cycle":
+			if m, ok := cycles[p.ID]; ok {
+				return m
+			}
+		case "priority-duplicate":
+			if m, ok := ties[p.ID]; ok {
+				return m
+			}
+		}
+		return []string{p.ID}
+	}
 }
 
 // indexErrors is lintIndex under the board's lint policy, errors only.

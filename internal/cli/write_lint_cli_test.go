@@ -16,7 +16,7 @@ func TestWriteNamesTheLintErrorItCreates(t *testing.T) {
 	waiter := addTask(t, "waiter", "--dep", blocker)
 
 	_, se, code := runSplit(t, "set", waiter, "-s", "ready")
-	if code != 0 || !strings.Contains(se, "note: this write leaves "+waiter+" in lint error ready-blocked: ") || !strings.Contains(se, blocker) {
+	if code != 0 || !strings.Contains(se, "note: this write raised lint error ready-blocked on "+waiter+": ") || !strings.Contains(se, blocker) {
 		t.Errorf("set -s ready over an open dep: exit %d, want the ready-blocked note naming %s:\n%s", code, blocker, se)
 	}
 	// Touching a task that was already in error is not a new finding.
@@ -25,12 +25,12 @@ func TestWriteNamesTheLintErrorItCreates(t *testing.T) {
 	}
 
 	edge := addTask(t, "edge", "-s", "ready")
-	if _, se, _ = runSplit(t, "dep", edge, blocker); !strings.Contains(se, "leaves "+edge+" in lint error ready-blocked") {
+	if _, se, _ = runSplit(t, "dep", edge, blocker); !strings.Contains(se, "raised lint error ready-blocked on "+edge) {
 		t.Errorf("a dep edge onto a ready task must name the error it creates:\n%s", se)
 	}
 
 	_, se, _ = runSplit(t, "add", "late", "--due", dayOffset(t, -3))
-	if !strings.Contains(se, "in lint error due-overdue: ") {
+	if !strings.Contains(se, "raised lint error due-overdue on ") {
 		t.Errorf("add --due in the past must name due-overdue:\n%s", se)
 	}
 
@@ -40,7 +40,7 @@ func TestWriteNamesTheLintErrorItCreates(t *testing.T) {
 	dependent := addTask(t, "dependent", "--dep", dep)
 	mustRun(t, "done", dep)
 	mustRun(t, "set", dependent, "-s", "ready")
-	if _, se, _ = runSplit(t, "move", dep, "backlog"); !strings.Contains(se, "leaves "+dependent+" in lint error ready-blocked") {
+	if _, se, _ = runSplit(t, "move", dep, "backlog"); !strings.Contains(se, "raised lint error ready-blocked on "+dependent) {
 		t.Errorf("reopening a done dep must name the dependent it blocks:\n%s", se)
 	}
 
@@ -63,7 +63,7 @@ func TestWriteLintNoteFollowsTheBoardPolicy(t *testing.T) {
 	}
 	blocker := addTask(t, "blocker")
 	waiter := addTask(t, "waiter", "--dep", blocker)
-	if _, se, _ := runSplit(t, "set", waiter, "-s", "ready"); !strings.Contains(se, "leaves "+waiter+" in lint error ready-blocked") {
+	if _, se, _ := runSplit(t, "set", waiter, "-s", "ready"); !strings.Contains(se, "raised lint error ready-blocked on "+waiter) {
 		t.Errorf("an error the policy leaves alone is still noted:\n%s", se)
 	}
 	mustRun(t, "config", "set", "lint.ignore_codes", "ready-blocked")
@@ -79,7 +79,7 @@ func TestWriteLintNoteFollowsTheBoardPolicy(t *testing.T) {
 func TestWriteLintNoteCoversBoardRules(t *testing.T) {
 	freezeClock(t)
 	initStore(t)
-	if _, se, _ := runSplit(t, "add", "weekly", "--due", dayOffset(t, 30), "--repeat", "weekly"); !strings.Contains(se, "in lint error repeat-no-timezone") {
+	if _, se, _ := runSplit(t, "add", "weekly", "--due", dayOffset(t, 30), "--repeat", "weekly"); !strings.Contains(se, "raised lint error repeat-no-timezone on config") {
 		t.Errorf("the first series on a zone-less shared board must name repeat-no-timezone:\n%s", se)
 	}
 	if _, se, _ := runSplit(t, "add", "daily", "--due", dayOffset(t, 30), "--repeat", "daily"); strings.Contains(se, "lint error") {
@@ -98,13 +98,13 @@ func TestWriteLintNoteSurvivesAFailedCommand(t *testing.T) {
 	second := addTask(t, "second", "--dep", blocker)
 
 	_, se, code := runSplitIn(t, "SetStatus-task: "+first+" ready\nSetStatus-task: "+second+" ready\n", "apply", "--on", "merge")
-	if code != 0 || !strings.Contains(se, "leaves "+first+" in lint error ready-blocked") || !strings.Contains(se, "leaves "+second+" in lint error ready-blocked") {
+	if code != 0 || !strings.Contains(se, "raised lint error ready-blocked on "+first) || !strings.Contains(se, "raised lint error ready-blocked on "+second) {
 		t.Errorf("two writes in one command: both errors named (exit %d):\n%s", code, se)
 	}
 
 	third := addTask(t, "third", "--dep", blocker)
 	_, se, code = runSplitIn(t, "SetStatus-task: "+third+" ready\nSetStatus-task: t-nope0 ready\n", "apply", "--on", "merge")
-	if code == 0 || !strings.Contains(se, "leaves "+third+" in lint error ready-blocked") {
+	if code == 0 || !strings.Contains(se, "raised lint error ready-blocked on "+third) {
 		t.Errorf("a failed command whose first write landed must still name its error (exit %d):\n%s", code, se)
 	}
 }

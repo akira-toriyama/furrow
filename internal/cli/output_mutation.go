@@ -221,6 +221,6 @@ func noteNewLintErrors(a *app.App) {
 		return
 	}
 	for _, p := range ps {
-		fmt.Fprintf(errOut, "note: this write leaves %s in lint error %s: %s\n", p.ID, p.Code, p.Msg)
+		fmt.Fprintf(errOut, "note: this write raised lint error %s on %s: %s\n", p.Code, p.ID, p.Msg)
 	}
 }
