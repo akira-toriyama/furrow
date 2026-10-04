@@ -190,11 +190,11 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 		fmt.Fprintf(out, "due (%d%s):\n", b.Due.Total(), scopeNote)
 		for _, it := range b.Due.Overdue {
 			row := fmt.Sprintf("  ! %s  %-12s %s  (overdue %s)", it.Task.ID, it.Task.Status, it.Task.Title, calendarTime(a, *it.Task.Due))
-			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task), outsideNextTag(b.NextScope, &it.Task)))
+			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task), outsideNextTag(b, it.Task.ID)))
 		}
 		for _, it := range b.Due.Today {
 			row := fmt.Sprintf("  · %s  %-12s %s  (today %s)", it.Task.ID, it.Task.Status, it.Task.Title, calendarTime(a, *it.Task.Due))
-			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task), outsideNextTag(b.NextScope, &it.Task)))
+			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task), outsideNextTag(b, it.Task.ID)))
 		}
 	}
 	// The focus header, only on a participating board: which box `next` is
@@ -289,16 +289,14 @@ func hiddenByLane(hidden []app.HiddenLane) string {
 	return fmt.Sprintf(" — %d hidden by -n: %s", total, strings.Join(parts, ", "))
 }
 
-// outsideNextTag marks a due row whose box keeps it out of `next`: the band
-// spans every epic while next is scoped, and a pick the band offers that next
-// never lists read as a contradiction until the row said which box it sits in
-// (t-b8dg, furrow-test drill 7 orient#4). Rows next can hand out stay unmarked.
-func outsideNextTag(scope app.EpicScope, t *core.Task) string {
-	if scope.Admits(t.Epic) {
-		return ""
+// outsideNextTag marks a due row next cannot hand out with the scope that keeps
+// it out (App's outsideNext): the band ignores the epic focus and the board's
+// repo scope while next obeys both, and a pick the band offered that next never
+// listed read as a contradiction until the row said why (t-b8dg, furrow-test
+// drill 7 orient#4). Rows next can reach stay unmarked.
+func outsideNextTag(b *app.BriefData, id string) string {
+	if why := b.OutsideNext[id]; why != "" {
+		return "outside next: " + why
 	}
-	if t.Epic == "" {
-		return "outside next: unfiled"
-	}
-	return "outside next: " + t.Epic
+	return ""
 }
