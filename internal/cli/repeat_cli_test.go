@@ -502,6 +502,7 @@ func TestRepeatTagFollowsTheLiveOccurrence(t *testing.T) {
 // Two spent series otherwise render byte-identical lines and the mapping is
 // unrecoverable from the text.
 func TestABatchCloseNamesTheOccurrenceEachReceiptBelongsTo(t *testing.T) {
+	freezeClock(t)
 	initStore(t)
 	out, code := run(t, "add", "alpha", "--due", "2026-10-01", "--repeat", "daily for 2 times")
 	a := addedID(t, out, code)
@@ -619,6 +620,7 @@ func TestBindingAnOffLatticeAnchorSaysSo(t *testing.T) {
 // one, so a preview that tested the field alone promised a successor the apply
 // then did not create — the preview stating the opposite of the write.
 func TestApplyDryRunSaysWhenTheCloseWouldEndTheSeries(t *testing.T) {
+	freezeClock(t)
 	initStore(t)
 	out, code := run(t, "add", "x", "--due", "2026-10-01", "--repeat", "daily for 2 times")
 	first := addedID(t, out, code)
