@@ -246,16 +246,18 @@ func TestSearchReachesChecklistAndRefs(t *testing.T) {
 // title → checklist → refs → body, so the report is stable across boards.
 func TestSearchFieldOrder(t *testing.T) {
 	cases := []struct {
-		opts AddOpts
-		want string
+		title string
+		opts  AddOpts
+		want  string
 	}{
-		{AddOpts{Checklist: UncheckedItems([]string{"kiwi row"}), Refs: []string{"kiwi.md"}, Body: "kiwi body"}, core.FieldChecklist},
-		{AddOpts{Refs: []string{"kiwi.md"}, Body: "kiwi body"}, core.FieldRefs},
-		{AddOpts{Body: "kiwi body"}, core.FieldBody},
+		{"kiwi", AddOpts{Checklist: UncheckedItems([]string{"kiwi row"}), Refs: []string{"kiwi.md"}, Body: "kiwi body"}, core.FieldTitle},
+		{"fruit", AddOpts{Checklist: UncheckedItems([]string{"kiwi row"}), Refs: []string{"kiwi.md"}, Body: "kiwi body"}, core.FieldChecklist},
+		{"fruit", AddOpts{Refs: []string{"kiwi.md"}, Body: "kiwi body"}, core.FieldRefs},
+		{"fruit", AddOpts{Body: "kiwi body"}, core.FieldBody},
 	}
 	for _, c := range cases {
 		a := newApp()
-		mustAdd(t, a, "fruit", c.opts)
+		mustAdd(t, a, c.title, c.opts)
 		hits, err := a.Search(QueryOpts{}, "kiwi", false)
 		if err != nil {
 			t.Fatal(err)
@@ -317,5 +319,26 @@ func TestSearchRegexRefusals(t *testing.T) {
 	// Without --regex the same text is a literal substring, never a pattern.
 	if hits, err := a.Search(QueryOpts{}, `x*`, false); err != nil || len(hits) != 0 {
 		t.Errorf("a substring search for %q must be a clean literal miss, got %v %v", `x*`, hits, err)
+	}
+}
+
+// A checklist item or ref is shown whole — never cut to the body's context
+// window — but on one line: neither field refuses an embedded newline.
+func TestSearchShardFieldSnippetIsWholeAndOneLine(t *testing.T) {
+	a := newApp()
+	long := strings.Repeat("前置き ", 30) + "zzneedle " + strings.Repeat("後書き ", 30)
+	mustAdd(t, a, "long item", AddOpts{Checklist: UncheckedItems([]string{long})})
+	mustAdd(t, a, "multi-line ref", AddOpts{Refs: []string{"first line\nqqneedle second"}})
+	for term, want := range map[string]string{
+		"zzneedle": strings.Join(strings.Fields(long), " "),
+		"qqneedle": "first line qqneedle second",
+	} {
+		hits, err := a.Search(QueryOpts{}, term, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(hits) != 1 || hits[0].Snippet != want {
+			t.Errorf("search %q: snippet = %+v, want the whole field on one line %q", term, hits, want)
+		}
 	}
 }

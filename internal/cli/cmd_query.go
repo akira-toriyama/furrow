@@ -742,10 +742,10 @@ func newSearchCmd() *cobra.Command {
 			"reports the first field that matched (title, checklist, refs or body) and a\n" +
 			"one-line snippet: a title, checklist item or ref whole, a body as an excerpt\n" +
 			"with the term in context; --json/--ndjson emit the full task plus\n" +
-			"matched_field and snippet, so an agent skips the `grep .furrow` dance. Only\n" +
-			"a body hit pays to read the body. Several words are one literal phrase. An\n" +
-			"empty result is healthy (exit 0), not a miss — the same contract as\n" +
-			"ls/next/revisit.\n\n" +
+			"matched_field and snippet, so an agent skips the `grep .furrow` dance. A\n" +
+			"title, checklist or ref hit never reads the body. Several words are one\n" +
+			"literal phrase. An empty result is healthy (exit 0), not a miss — the\n" +
+			"same contract as ls/next/revisit.\n\n" +
 			"--regex reads the term as an RE2 pattern over the same fields, still\n" +
 			"case-insensitive unless the pattern clears it with (?-i): `\\bB\\b` finds B\n" +
 			"standing alone rather than inside BGM (\\b is ASCII — beside kana, kanji or a\n" +

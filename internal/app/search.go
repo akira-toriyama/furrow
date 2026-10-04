@@ -25,8 +25,8 @@ type SearchHit struct {
 // term is a case-insensitive substring, or with regex an RE2 pattern
 // (core.RegexNeedle). The fields are walked by core.FindText — the walk `-q`
 // free text shares — so a title, checklist-item or ref hit reports that field
-// with the matched text whole and never pays to load the body; only a body hit
-// loads it and reports a windowed excerpt. The body scan is O(board) with no
+// with the matched text whole (whitespace collapsed to one line) and never
+// reads the body; a body hit reports a windowed excerpt. The body scan is O(board) with no
 // index — the same "an index is YAGNI" stance as Backlinks. term is required:
 // an empty/blank term is a validation error, not a match-everything. A -s
 // naming an unknown lane fails fast (validateLaneFilter, symmetric with List).
@@ -90,7 +90,9 @@ func (a *App) Search(o QueryOpts, term string, regex bool) ([]SearchHit, error) 
 		if field == "" {
 			continue
 		}
-		snippet := text
+		// A title, item or ref is shown whole but still on one line: an item or
+		// a ref can carry a newline the shard never refused.
+		snippet := strings.Join(strings.Fields(text), " ")
 		if field == core.FieldBody {
 			snippet = needle.Snippet(text, snippetRadius)
 		}

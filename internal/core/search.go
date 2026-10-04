@@ -1,8 +1,12 @@
 package core
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
+	"regexp/syntax"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -88,14 +92,16 @@ func SubstringNeedle(term string) Needle { return Needle{term: term} }
 // refused — it would match every task, which search never answers (the same
 // contract as the empty term).
 func RegexNeedle(pattern string) (Needle, error) {
-	// Compiled bare first so a syntax error quotes the caller's pattern, not
-	// the flag-prefixed one.
-	if _, err := regexp.Compile(pattern); err != nil {
-		return Needle{}, Validationf("", "--regex %q is not an RE2 pattern: %v", pattern, err)
-	}
 	re, err := regexp.Compile("(?i)" + pattern)
 	if err != nil {
-		return Needle{}, Validationf("", "--regex %q is not an RE2 pattern: %v", pattern, err)
+		// The parser quotes the flag-prefixed expression; the caller wrote the
+		// pattern without it, so the message names the fault on their spelling.
+		msg := err.Error()
+		var se *syntax.Error
+		if errors.As(err, &se) {
+			msg = fmt.Sprintf("%s: `%s`", se.Code, strings.TrimPrefix(se.Expr, "(?i)"))
+		}
+		return Needle{}, Validationf("", "--regex %q is not an RE2 pattern: %s", pattern, msg)
 	}
 	if re.MatchString("") {
 		return Needle{}, Validationf("", "--regex %q matches the empty string, so it would match every task — anchor it to at least one character", pattern)
@@ -111,9 +117,13 @@ func (n Needle) In(text string) bool {
 	return ContainsFold(text, n.term)
 }
 
-// Snippet is the one-line excerpt around the needle's first occurrence in text
-// (see the package Snippet; a regex match is located on the raw text and the
-// window is collapsed after). "" when the needle does not occur.
+// Snippet is the one-line excerpt around the needle's first occurrence in text,
+// shaped as the package Snippet shapes a substring hit: context is counted in
+// the whitespace-collapsed text, so a regex hit and a substring hit on the same
+// body read alike. A regex match is located on the RAW text (a line anchor
+// needs the newlines), mapped into the collapsed runes, and a match longer than
+// the two context windows is cut at that length so `.*` cannot turn the
+// excerpt into the whole body. "" when the needle does not occur.
 func (n Needle) Snippet(text string, radius int) string {
 	if n.re == nil {
 		return Snippet(text, n.term, radius)
@@ -122,8 +132,37 @@ func (n Needle) Snippet(text string, radius int) string {
 	if loc == nil {
 		return ""
 	}
-	start := utf8.RuneCountInString(text[:loc[0]])
-	return window([]rune(text), start, start+utf8.RuneCountInString(text[loc[0]:loc[1]]), radius)
+	runes, at := collapseIndexed(text)
+	start, end := at[loc[0]], at[loc[1]]
+	if limit := 2 * max(radius, 0); end-start > limit {
+		end = start + limit
+	}
+	return window(runes, start, end, radius)
+}
+
+// collapseIndexed is strings.Join(strings.Fields(text), " ") as runes, plus,
+// for every rune-start byte offset of text and for len(text), the index in
+// those runes where that byte's content lands (a whitespace byte maps to where
+// the run's single space, if any, sits).
+func collapseIndexed(text string) ([]rune, []int) {
+	runes := make([]rune, 0, len(text))
+	at := make([]int, len(text)+1)
+	gap := false
+	for i, r := range text {
+		if unicode.IsSpace(r) {
+			at[i] = len(runes)
+			gap = len(runes) > 0
+			continue
+		}
+		if gap {
+			runes = append(runes, ' ')
+			gap = false
+		}
+		at[i] = len(runes)
+		runes = append(runes, r)
+	}
+	at[len(text)] = len(runes)
+	return runes, at
 }
 
 // The fields a text search reads, named by their shard JSON keys — the values

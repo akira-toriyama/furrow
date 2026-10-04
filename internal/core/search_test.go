@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestContainsFold(t *testing.T) {
 	cases := []struct {
@@ -125,6 +128,11 @@ func TestRegexNeedleRefusals(t *testing.T) {
 			t.Errorf("RegexNeedle(%q) = %v, want a validation error", p, err)
 		}
 	}
+	// The fault is named on the caller's spelling, never the flag-prefixed one.
+	_, err := RegexNeedle(`(unclosed`)
+	if e := AsError(err); e == nil || strings.Contains(e.Msg, "(?i)") || !strings.Contains(e.Msg, "missing closing )") {
+		t.Errorf("a syntax error must quote the caller's pattern without the (?i) prefix, got %v", err)
+	}
 }
 
 // A regex snippet is located on the RAW text — so a line anchor still finds its
@@ -137,6 +145,21 @@ func TestNeedleSnippetRegex(t *testing.T) {
 	}
 	if got := n.Snippet("no match here", 6); got != "" {
 		t.Errorf("a miss must yield \"\", got %q", got)
+	}
+	// Context is counted in collapsed text, as the substring Snippet counts it,
+	// so a whitespace run neither eats the radius nor earns an ellipsis.
+	body := "alpha\n\n\n\n\n\nfoo\n\n\n\n\n\nomega"
+	foo, _ := RegexNeedle(`fo+`)
+	if got, want := foo.Snippet(body, 4), Snippet(body, "foo", 4); got != want {
+		t.Errorf("regex Snippet = %q, want the substring shape %q", got, want)
+	}
+	if got := foo.Snippet("\n\n\n\nfoo bar", 2); got != "foo b…" {
+		t.Errorf("leading whitespace must not earn an ellipsis, got %q", got)
+	}
+	// A long match is cut at two context windows, so `.*` cannot return the body.
+	greedy, _ := RegexNeedle(`(?s)start.*`)
+	if got := []rune(greedy.Snippet("start "+strings.Repeat("x", 500), 10)); len(got) > 2*10+10+1 {
+		t.Errorf("a long match must stay bounded, got %d runes", len(got))
 	}
 	// The substring needle keeps the package Snippet's output exactly.
 	s := SubstringNeedle("fox")
