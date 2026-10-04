@@ -643,13 +643,8 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 		if !o.match(t) {
 			continue
 		}
-		if scope.Engaged && !scope.Pinned[t.Epic] {
-			if len(scope.Active) == 0 {
-				continue // nothing is active: deliberately empty (pinned only), never the unfiled pile
-			}
-			if t.Epic != "" && !scope.Active[t.Epic] {
-				continue
-			}
+		if !scope.Admits(t.Epic) {
+			continue
 		}
 		// "Ready" = in a next lane AND every dep done — the same rule
 		// App.actionable encodes, expressed here against the (possibly

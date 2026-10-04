@@ -40,7 +40,8 @@ type BriefData struct {
 	// because a date is the one thing on this board that expires: everything else
 	// brief reports waits for you, a date passes without you. Deliberately not
 	// epic-scoped (promised work is usually parked outside the active focus),
-	// though it obeys the repo scope like every other section. `lint`'s
+	// and blind to the board's automatic repo scope too (App.Due) — only an
+	// explicit -r/-l narrows it. `lint`'s
 	// due-overdue/due-today are its twin — this is the surface a session cannot
 	// miss, that one is the check a sweep goes looking for.
 	Due       DueSummary
@@ -70,6 +71,13 @@ type BriefData struct {
 	// errors only, by code). Best-effort: a lint failure zeroes it rather than
 	// failing the orientation read.
 	Lint LintErrorSummary
+	// OutsideNext names, per due task id, why next cannot hand that task out
+	// under this read's scope (see outsideNext); a task next can reach has no
+	// entry. The due band is scoped by neither the epic focus nor the automatic
+	// repo scope, so a due row can be one next never lists, and the human band
+	// says which scope keeps it out. Not serialized: the JSON rows carry the
+	// task's repos and epic beside brief's `active` list.
+	OutsideNext map[string]string
 }
 
 // Brief assembles BriefData under the query's scope (repo/label). nextLimit
@@ -191,7 +199,20 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		lint = LintErrorSummary{}
 	}
 
+	scope, err := a.NextScope(no)
+	if err != nil {
+		return nil, err
+	}
+	outside := map[string]string{}
+	for _, band := range [][]ListItem{due.Overdue, due.Today} {
+		for i := range band {
+			if why := outsideNext(no, scope, &band[i].Task); why != "" {
+				outside[band[i].Task.ID] = why
+			}
+		}
+	}
 	return &BriefData{
+		OutsideNext:   outside,
 		Active:        active,
 		EpicsDeclared: len(all) > 0,
 		Pinned:        pinned,
@@ -248,4 +269,28 @@ func hiddenByLane(dropped []core.Task, lanes []string) []HiddenLane {
 		}
 	}
 	return out
+}
+
+// outsideNext says which of next's scopes keeps t out of a next read with o and
+// scope, or "" when neither does (its lane or an open dep may still). The repo
+// scope is named first — activating a box would not bring that task in — as
+// `repo <owner/repo,…>`, or `draft` for a task with no repo; then the epic
+// scope, as `box <id>`, or `unfiled` when no box is active. It asks next's own
+// predicates (QueryOpts.match with the lane filter dropped, EpicScope.Admits),
+// so the answer cannot drift from what next lists.
+func outsideNext(o QueryOpts, scope EpicScope, t *core.Task) string {
+	o.Status = ""
+	if !o.match(t) {
+		if len(t.Repos) == 0 {
+			return "draft"
+		}
+		return "repo " + strings.Join(t.Repos, ",")
+	}
+	if !scope.Admits(t.Epic) {
+		if t.Epic == "" {
+			return "unfiled"
+		}
+		return "box " + t.Epic
+	}
+	return ""
 }
