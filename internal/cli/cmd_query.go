@@ -182,7 +182,7 @@ func addQueryFlag(cmd *cobra.Command, p *string) {
 		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
 			"is:actionable|blocked|stale|open|closed|draft|unfiled|overdue, "+
 			"ordinals+dates with >=,<,.. (updated:>=-2w), graph epic:/anchor:/depends-on:/blocks:, "+
-			"free text over title+body; ANDs with the other filters")
+			"free text over title, checklist, refs and body; ANDs with the other filters")
 }
 
 // parseDateBound parses a --since/--until value: a bare YYYY-MM-DD (interpreted
@@ -426,7 +426,7 @@ func newNextCmd() *cobra.Command {
 			"2 with the configured lanes in candidates (like -s). --json's reason.in_next_lane\n" +
 			"names the lane each task matched, so a --lanes-included one is distinguishable.\n\n" +
 			"-q ANDs a typed query onto the actionable set — the same language as `ls -q`\n" +
-			"(qualifiers, dates, has:/no:, is:, graph edges, free text over title+body) —\n" +
+			"(qualifiers, dates, has:/no:, is:, graph edges, free text over a task's text) —\n" +
 			"so `next -q 'value:>=4'` is \"what can I pick up now that is worth a lot\".",
 		Example: "  furrow next               # what to pick up now (active epic + unfiled)\n" +
 			"  furrow next -n1 --json    # just the top task, with a reason\n" +
@@ -730,24 +730,35 @@ func newSearchCmd() *cobra.Command {
 	var (
 		f        filterFlags
 		queryStr string
+		regex    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "search <term>",
-		Short: "Full-text search over task titles and bodies",
-		Long: "Search every task's title and Markdown body for a case-insensitive\n" +
-			"substring, in canonical order, honoring the same -s/-l/-r scope and -n\n" +
-			"limit as `ls` (so a bare `search` stays within this repo's board; -r ''\n" +
-			"searches the whole board). Each hit reports which field matched (title or\n" +
-			"body) and a one-line snippet with the term in context; --json/--ndjson\n" +
-			"emit the full task plus matched_field and snippet, so an agent skips the\n" +
-			"`grep .furrow/bodies` dance. A title match never pays to read the body.\n" +
-			"Several words are one literal phrase. An empty result is healthy (exit 0),\n" +
-			"not a miss — the same contract as ls/next/revisit.\n\n" +
+		Short: "Full-text search over every task's title, checklist, refs and body",
+		Long: "Search every task's text — its title, each checklist item, each ref, then\n" +
+			"its Markdown body — for a case-insensitive substring, in canonical order,\n" +
+			"honoring the same -s/-l/-r scope and -n limit as `ls` (so a bare `search`\n" +
+			"stays within this repo's board; -r '' searches the whole board). Each hit\n" +
+			"reports the first field that matched (title, checklist, refs or body) and a\n" +
+			"one-line snippet: a title, checklist item or ref whole, a body as an excerpt\n" +
+			"with the term in context; --json/--ndjson emit the full task plus\n" +
+			"matched_field and snippet, so an agent skips the `grep .furrow` dance. Only\n" +
+			"a body hit pays to read the body. Several words are one literal phrase. An\n" +
+			"empty result is healthy (exit 0), not a miss — the same contract as\n" +
+			"ls/next/revisit.\n\n" +
+			"--regex reads the term as an RE2 pattern over the same fields, still\n" +
+			"case-insensitive unless the pattern clears it with (?-i): `\\bB\\b` finds B\n" +
+			"standing alone rather than inside BGM (\\b is ASCII — beside kana, kanji or a\n" +
+			"space is a boundary, beside a letter, digit or _ is not), and\n" +
+			"`2026-11-21|11/21` finds both spellings of a date in one read. `.` stops at\n" +
+			"a newline; (?m) makes ^ and $ line anchors. A pattern that matches the\n" +
+			"empty string would match every task and is exit 2, as an empty term is.\n\n" +
 			"-q ANDs a typed query onto the hits — the same language as `ls -q` — so\n" +
 			"`search sync -q 'is:open label:cli'` greps only the open cli-tagged tasks.\n" +
-			"(A bare `-q` free-text term IS this search: `ls -q foo` finds what `furrow\n" +
-			"search foo` finds. `search` remains the command that reports match field +\n" +
-			"snippet; the term argument stays required.)\n\n" +
+			"(A bare `-q` free-text term IS this search without --regex: `ls -q foo`\n" +
+			"finds what `furrow search foo` finds. `-q` never takes a pattern; `search`\n" +
+			"remains the command that reports match field + snippet, and the term\n" +
+			"argument stays required.)\n\n" +
 			"--archived searches the sibling archive store INSTEAD of the hot board —\n" +
 			"the same meaning it has on ls/show, so digging up why something was done\n" +
 			"stops falling back to grepping .furrow/archive/bodies by hand.",
@@ -755,6 +766,8 @@ func newSearchCmd() *cobra.Command {
 			"  furrow search \"single marshaller\" --json\n" +
 			"  furrow search sync -s backlog -n5\n" +
 			"  furrow search sync -q 'is:open label:cli'   # only open cli-tagged hits\n" +
+			"  furrow search --regex '\\bB\\b'               # B standing alone, not inside BGM\n" +
+			"  furrow search --regex '2026-11-21|11/21'    # one date, two spellings\n" +
 			"  furrow search attach -r ''        # whole board, not just this repo\n" +
 			"  furrow search reslice --archived  # the retired tasks, not the hot board",
 		Args: cobra.MinimumNArgs(1),
@@ -772,7 +785,7 @@ func newSearchCmd() *cobra.Command {
 			o.Query = queryStr
 			o.Archived = f.archived
 			term := strings.Join(args, " ")
-			hits, err := a.Search(o, term)
+			hits, err := a.Search(o, term, regex)
 			if err != nil {
 				return err
 			}
@@ -783,7 +796,7 @@ func newSearchCmd() *cobra.Command {
 			// flag, so the adapter re-runs the search drafts-only and the remedy
 			// names the escape hatch search does have (-r '').
 			hintHiddenDrafts(o, func(q app.QueryOpts) ([]core.Task, error) {
-				hs, err := a.Search(q, term)
+				hs, err := a.Search(q, term, regex)
 				if err != nil {
 					return nil, err
 				}
@@ -796,7 +809,7 @@ func newSearchCmd() *cobra.Command {
 			hintCapped(len(hits), f.limit, "", func() (int, error) {
 				u := o
 				u.Limit = 0
-				all, err := a.Search(u, term)
+				all, err := a.Search(u, term, regex)
 				return len(all), err
 			})
 			// A zero-match search is a valid clean result (exit 0), not a miss.
@@ -805,5 +818,6 @@ func newSearchCmd() *cobra.Command {
 	}
 	addFilterFlags(cmd, &f, want("status"), want("label"), want("repo"), want("limit"), want("epic"), want("archived"))
 	addQueryFlag(cmd, &queryStr)
+	cmd.Flags().BoolVar(&regex, "regex", false, "read the term as an RE2 pattern (case-insensitive unless (?-i)) instead of a substring")
 	return cmd
 }

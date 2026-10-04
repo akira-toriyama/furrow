@@ -13,7 +13,7 @@ func TestSearchMatchesTitleAndBody(t *testing.T) {
 	t2, _ := a.Add("unrelated title", AddOpts{Body: "we should use teatest for the TUI"}) // body match
 	a.Add("nothing to see", AddOpts{Body: "plain prose"})                                 // no match
 
-	hits, err := a.Search(QueryOpts{}, "teatest")
+	hits, err := a.Search(QueryOpts{}, "teatest", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestSearchMatchesTitleAndBody(t *testing.T) {
 func TestSearchCaseInsensitive(t *testing.T) {
 	a := newApp()
 	a.Add("Adopt TeaTest", AddOpts{})
-	hits, err := a.Search(QueryOpts{}, "TEATEST")
+	hits, err := a.Search(QueryOpts{}, "TEATEST", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,12 +47,12 @@ func TestSearchCaseInsensitive(t *testing.T) {
 func TestSearchTitleTakesPrecedenceOverBody(t *testing.T) {
 	a := newApp()
 	t1, _ := a.Add("sync fixes", AddOpts{Body: "the sync command is also mentioned here"})
-	hits, err := a.Search(QueryOpts{}, "sync")
+	hits, err := a.Search(QueryOpts{}, "sync", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(hits) != 1 || hits[0].Task.ID != t1.ID || hits[0].MatchedField != "title" {
-		t.Fatalf("a title+body match should be one title hit, got %+v", hits)
+		t.Fatalf("a title-and-body match should be one title hit, got %+v", hits)
 	}
 }
 
@@ -61,7 +61,7 @@ func TestSearchScopeByStatusAndLabel(t *testing.T) {
 	a.Add("sync one", AddOpts{Labels: []string{"cli"}}) // inbox, cli
 	a.Add("sync two", AddOpts{Status: "in-progress"})   // in-progress, no label
 
-	hits, err := a.Search(QueryOpts{Status: "in-progress"}, "sync")
+	hits, err := a.Search(QueryOpts{Status: "in-progress"}, "sync", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestSearchScopeByStatusAndLabel(t *testing.T) {
 		t.Fatalf("status filter should narrow to the 1 in-progress task, got %+v", hits)
 	}
 
-	hits, err = a.Search(QueryOpts{Label: "cli"}, "sync")
+	hits, err = a.Search(QueryOpts{Label: "cli"}, "sync", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestSearchLimit(t *testing.T) {
 	a.Add("sync a", AddOpts{})
 	a.Add("sync b", AddOpts{})
 	a.Add("sync c", AddOpts{})
-	hits, err := a.Search(QueryOpts{Limit: 2}, "sync")
+	hits, err := a.Search(QueryOpts{Limit: 2}, "sync", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestSearchLimit(t *testing.T) {
 func TestSearchEmptyTermIsValidationError(t *testing.T) {
 	a := newApp()
 	a.Add("anything", AddOpts{})
-	if _, err := a.Search(QueryOpts{}, "   "); core.AsError(err) == nil || core.AsError(err).Code != core.CodeValidation {
+	if _, err := a.Search(QueryOpts{}, "   ", false); core.AsError(err) == nil || core.AsError(err).Code != core.CodeValidation {
 		t.Fatalf("a blank term should be a validation error (exit 2), got %v", err)
 	}
 }
@@ -103,7 +103,7 @@ func TestSearchEmptyTermIsValidationError(t *testing.T) {
 func TestSearchUnknownLaneFilterFailsFast(t *testing.T) {
 	a := newApp()
 	a.Add("anything", AddOpts{})
-	if _, err := a.Search(QueryOpts{Status: "ghost"}, "any"); core.AsError(err) == nil || core.AsError(err).Code != core.CodeValidation {
+	if _, err := a.Search(QueryOpts{Status: "ghost"}, "any", false); core.AsError(err) == nil || core.AsError(err).Code != core.CodeValidation {
 		t.Fatalf("an unknown -s lane should fail fast (exit 2), got %v", err)
 	}
 }
@@ -111,7 +111,7 @@ func TestSearchUnknownLaneFilterFailsFast(t *testing.T) {
 func TestSearchZeroMatchIsCleanEmpty(t *testing.T) {
 	a := newApp()
 	a.Add("anything", AddOpts{})
-	hits, err := a.Search(QueryOpts{}, "nomatchxyz")
+	hits, err := a.Search(QueryOpts{}, "nomatchxyz", false)
 	if err != nil {
 		t.Fatalf("a zero-match search must not error (exit 0), got %v", err)
 	}
@@ -151,7 +151,7 @@ func TestSearchArchivedReadsTheArchiveBodies(t *testing.T) {
 		t.Fatalf("precondition: one task should have been archived, got %d", len(rep.Tasks))
 	}
 
-	hits, err := a.Search(QueryOpts{}, "zulu")
+	hits, err := a.Search(QueryOpts{}, "zulu", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestSearchArchivedReadsTheArchiveBodies(t *testing.T) {
 		t.Fatalf("the hot search must see only the hot task, got %+v", hits)
 	}
 
-	hits, err = a.Search(QueryOpts{Archived: true}, "zulu")
+	hits, err = a.Search(QueryOpts{Archived: true}, "zulu", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestSearchArchivedEmptyStoreIsHealthy(t *testing.T) {
 	if _, err := a.Add("hot only", AddOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	hits, err := a.Search(QueryOpts{Archived: true}, "hot")
+	hits, err := a.Search(QueryOpts{Archived: true}, "hot", false)
 	if err != nil {
 		t.Fatalf("searching an empty archive must be healthy, got %v", err)
 	}
@@ -199,4 +199,123 @@ func newFSApp(t *testing.T) *App {
 		t.Fatal(err)
 	}
 	return openBoard(t, dir)
+}
+
+// The text a reschedule or a candidate drop has to find lives in checklist rows
+// and refs too (furrow-test drills: a `docs/<event>/2026-11-21/…` ref and a
+// checklist-only 「下見枠」 were invisible to search and pushed the session to
+// grep the shards). Search and -q free text walk the same four fields, title
+// first and body last, and a shard-field hit never reads the body.
+func TestSearchReachesChecklistAndRefs(t *testing.T) {
+	a := newApp()
+	inList := mustAdd(t, a, "venue walkthrough", AddOpts{Checklist: UncheckedItems([]string{"book the slot", "下見枠 10/10 を確保"})})
+	inRef := mustAdd(t, a, "print the menu", AddOpts{Refs: []string{"docs/oneday-restaurant/2026-11-21/menu.md"}})
+	mustAdd(t, a, "unrelated", AddOpts{Body: "plain prose"})
+	cs := &countingStore{Store: a.Store}
+	a.Store = cs
+
+	for _, c := range []struct {
+		term, id, field, snippet string
+	}{
+		{"下見枠", inList.ID, core.FieldChecklist, "下見枠 10/10 を確保"},
+		{"oneday-restaurant", inRef.ID, core.FieldRefs, "docs/oneday-restaurant/2026-11-21/menu.md"},
+	} {
+		cs.loads = 0
+		hits, err := a.Search(QueryOpts{}, c.term, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(hits) != 1 || hits[0].Task.ID != c.id || hits[0].MatchedField != c.field || hits[0].Snippet != c.snippet {
+			t.Fatalf("search %q: want one %s hit on %s with the whole %s as snippet, got %+v", c.term, c.field, c.id, c.field, hits)
+		}
+		// The two misses paid one body read each; the shard hit paid none.
+		if cs.loads != 2 {
+			t.Errorf("search %q: %d body loads, want 2 (a %s hit must not read its body)", c.term, cs.loads, c.field)
+		}
+		ls, err := a.List(QueryOpts{Query: c.term})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(ls) != 1 || ls[0].ID != c.id {
+			t.Errorf("-q %q must find what search finds (%s), got %v", c.term, c.id, ls)
+		}
+	}
+}
+
+// One task, the term in every field: the reported field follows the walk order
+// title → checklist → refs → body, so the report is stable across boards.
+func TestSearchFieldOrder(t *testing.T) {
+	cases := []struct {
+		opts AddOpts
+		want string
+	}{
+		{AddOpts{Checklist: UncheckedItems([]string{"kiwi row"}), Refs: []string{"kiwi.md"}, Body: "kiwi body"}, core.FieldChecklist},
+		{AddOpts{Refs: []string{"kiwi.md"}, Body: "kiwi body"}, core.FieldRefs},
+		{AddOpts{Body: "kiwi body"}, core.FieldBody},
+	}
+	for _, c := range cases {
+		a := newApp()
+		mustAdd(t, a, "fruit", c.opts)
+		hits, err := a.Search(QueryOpts{}, "kiwi", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(hits) != 1 || hits[0].MatchedField != c.want {
+			t.Errorf("%+v: matched_field = %+v, want %s", c.opts, hits, c.want)
+		}
+	}
+}
+
+// --regex is the escape from substring noise the drills hit eight runs in a
+// row: a one-letter candidate name ("B") matched every BGM and every b. RE2's
+// \b is ASCII, so B beside kana or a space is at a boundary and B inside BGM
+// is not; case still folds unless the pattern clears it with (?-i).
+func TestSearchRegex(t *testing.T) {
+	a := newApp()
+	cand := mustAdd(t, a, "候補 B の見積を取り下げる", AddOpts{})
+	company := mustAdd(t, a, "見積の比較", AddOpts{Body: "A/B/C のうち B社 だけが未回答"})
+	mustAdd(t, a, "BGM のプレイリスト", AddOpts{})
+	lower := mustAdd(t, a, "plan b if it rains", AddOpts{})
+
+	ids := func(hits []SearchHit) []string {
+		var out []string
+		for _, h := range hits {
+			out = append(out, h.Task.ID)
+		}
+		return out
+	}
+	hits, err := a.Search(QueryOpts{}, `\bB\b`, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(ids(hits), ","); got != strings.Join([]string{cand.ID, company.ID, lower.ID}, ",") {
+		t.Errorf(`\bB\b (case-folded) = %s, want the candidate, B社 and "plan b" — never BGM`, got)
+	}
+	if hits, err = a.Search(QueryOpts{}, `(?-i)\bB\b`, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(ids(hits), ","); got != cand.ID+","+company.ID {
+		t.Errorf(`(?-i)\bB\b = %s, want only the capital B tasks`, got)
+	}
+	// The body snippet is cut around the regex match, not the pattern text.
+	for _, h := range hits {
+		if h.Task.ID == company.ID && (h.MatchedField != core.FieldBody || !strings.Contains(h.Snippet, "B社")) {
+			t.Errorf("a regex body hit carries an excerpt around the match, got %+v", h)
+		}
+	}
+}
+
+func TestSearchRegexRefusals(t *testing.T) {
+	a := newApp()
+	a.Add("anything", AddOpts{})
+	for _, p := range []string{`(unclosed`, `x*`, `^`, `(?i)`} {
+		_, err := a.Search(QueryOpts{}, p, true)
+		if e := core.AsError(err); e == nil || e.Code != core.CodeValidation {
+			t.Errorf("--regex %q: want a validation error (exit 2), got %v", p, err)
+		}
+	}
+	// Without --regex the same text is a literal substring, never a pattern.
+	if hits, err := a.Search(QueryOpts{}, `x*`, false); err != nil || len(hits) != 0 {
+		t.Errorf("a substring search for %q must be a clean literal miss, got %v %v", `x*`, hits, err)
+	}
 }
