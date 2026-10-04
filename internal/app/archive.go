@@ -193,7 +193,7 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 	if err := arc.Save(arcIdx); err != nil {
 		return nil, err
 	}
-	if err := a.Store.Save(idx); err != nil {
+	if err := a.saveIndex(idx); err != nil {
 		return nil, err
 	}
 	for _, t := range moved { // both indexes are durable now — safe to delete the source
@@ -308,7 +308,7 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := a.Store.Save(idx); err != nil {
+	if err := a.saveIndex(idx); err != nil {
 		return nil, err
 	}
 	if err := arc.Save(arcIdx); err != nil {

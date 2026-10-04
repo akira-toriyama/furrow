@@ -413,7 +413,7 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 	}
 	if plan != nil && len(plan.Moves) > 0 {
 		applyAnchorMoves(idx, plan, a.Clock.Now())
-		if err := a.Store.Save(idx); err != nil {
+		if err := a.saveIndex(idx); err != nil {
 			return nil, nil, nil, err
 		}
 	}

@@ -251,6 +251,7 @@ func newRootCmd() *cobra.Command {
 			// {before,after,changed} envelope to annotate (add, epic, attach):
 			// a no-op when an envelope path already drained it.
 			sessionGuardExtra(a)
+			noteNewLintErrors(a)
 			// The gate is keyed by the TOP-LEVEL name: cobra hands the hook the
 			// LEAF command, so `epic activate` used to arrive as "activate", miss
 			// the set, and leave the activation record it wrote into the box's

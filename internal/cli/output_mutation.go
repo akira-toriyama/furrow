@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
@@ -207,4 +208,19 @@ func atoiArg(name, s string) (int, error) {
 		return 0, core.Validationf("", "%s must be an integer, got %q", name, s)
 	}
 	return n, nil
+}
+
+// noteNewLintErrors names, on stderr, each lint error this command's writes
+// created (App.NewLintErrors) — a state the board's pre-push lint would
+// otherwise be the first to mention. Best effort like the rest of the post-run
+// hook: the write already succeeded, so a failed re-read is a note, not an exit.
+func noteNewLintErrors(a *app.App) {
+	ps, err := a.NewLintErrors()
+	if err != nil {
+		fmt.Fprintf(errOut, "note: the write went through, but re-checking lint after it failed: %v — run `furrow lint`\n", err)
+		return
+	}
+	for _, p := range ps {
+		fmt.Fprintf(errOut, "note: this write leaves %s in lint error %s: %s\n", p.ID, p.Code, p.Msg)
+	}
 }

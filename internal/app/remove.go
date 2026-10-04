@@ -242,7 +242,7 @@ func (a *App) RemoveTasks(ids []string, o RemoveOpts) (*RemoveTasksReport, error
 	for id := range targetSet {
 		idx.Remove(id)
 	}
-	if err := a.Store.Save(idx); err != nil {
+	if err := a.saveIndex(idx); err != nil {
 		return nil, err
 	}
 	if err := a.unlinkBodies(refs.Links, linkRe, targetSet); err != nil {
@@ -340,7 +340,7 @@ func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 			idx.Tasks[i].Anchor = ""
 		}
 	}
-	if err := a.Store.Save(idx); err != nil {
+	if err := a.saveIndex(idx); err != nil {
 		return nil, err
 	}
 	for i := range epics {

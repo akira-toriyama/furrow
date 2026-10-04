@@ -19,7 +19,7 @@ func (a *App) ReviewTask(id string) (*core.Task, error) {
 	}
 	now := a.Clock.Now()
 	t.Reviewed = &now
-	if err := a.Store.Save(idx); err != nil {
+	if err := a.saveIndex(idx); err != nil {
 		return nil, err
 	}
 	saved, _ := idx.Find(id)

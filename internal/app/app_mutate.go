@@ -367,7 +367,7 @@ func (a *App) mutateInPost(idx *core.Index, id string, fn func(*core.Task) error
 			return nil, err
 		}
 	}
-	if err := a.Store.Save(idx); err != nil {
+	if err := a.saveIndex(idx); err != nil {
 		return nil, err
 	}
 	saved, _ := idx.Find(id)

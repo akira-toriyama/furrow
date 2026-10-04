@@ -78,6 +78,110 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 	if err != nil {
 		return nil, err
 	}
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return nil, err
+	}
+	ps := a.lintIndex(idx, epics)
+
+	// Provenance ([lint].provenance_markers, OFF by default): warn on an open,
+	// non-terminal task whose body carries none of the board's provenance
+	// markers. The rule exists because a tracker entry is read as FACT by every
+	// later session — a 2026-07-26 sweep task-ified 7 single-source observations
+	// unrefuted, and a later refutation pass killed 6 of 11 — and prose rules
+	// alone demonstrably do not stop it. The check only pressures the writer to
+	// state "where this came from / how it was verified"; it cannot judge
+	// correctness. The marker VOCABULARY is the operator's (a board convention,
+	// set in the board's own config so it syncs), never furrow's: shipping
+	// default wording would bless one language and one house style.
+	if len(a.Cfg.LintProvenanceMarkers) > 0 {
+		for i := range idx.Tasks {
+			t := &idx.Tasks[i]
+			if a.Cfg.IsTerminal(t.Status) {
+				continue
+			}
+			body, err := a.Store.LoadBody(t.ID)
+			if err != nil {
+				return nil, err
+			}
+			if !containsAnyFold(body, a.Cfg.LintProvenanceMarkers) {
+				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "provenance-missing", ID: t.ID,
+					Msg: fmt.Sprintf("body records no provenance (none of the [lint].provenance_markers: %s) — say where this came from and how it was verified, e.g. `furrow note %s \"...\"`",
+						strings.Join(a.Cfg.LintProvenanceMarkers, ", "), t.ID)})
+			}
+		}
+	}
+
+	rps, err := a.lintRecordKeys()
+	if err != nil {
+		return nil, err
+	}
+	ps = append(ps, rps...)
+
+	shapePs, hasTask, hasEpic, bodyIDs, err := a.lintStoreShape(idx, epics)
+	if err != nil {
+		return nil, err
+	}
+	ps = append(ps, shapePs...)
+
+	bodyPs, err := a.lintBodyContent(hasTask, hasEpic, bodyIDs)
+	if err != nil {
+		return nil, err
+	}
+	ps = append(ps, bodyPs...)
+
+	ps = append(ps, a.lintConfigProblems(idx)...)
+	ps = append(ps, a.lintHygieneProblems(idx)...)
+
+	// A board still on an older layout than this binary is read-only (every write
+	// hits the store's gate). Warn, don't error: that state is the legitimate
+	// middle of a flag day, and erroring would red every repo's board-lint CI for
+	// the whole window. The write gate is already the hard stop — this is just the
+	// thing that makes the state visible before someone runs into it.
+	//
+	// Each store is judged on its own (the archive carries its own meta.json),
+	// and the finding names WHICH one: id `meta` is the board, `archive` its
+	// archive store — one row said "board is schema v3" for either, and an
+	// archive that fell behind read as the whole board being read-only
+	// (t-rns9). An unstamped but EMPTY store is version 0 yet writable, which
+	// Writable already knows.
+	for _, s := range a.boardStores() {
+		if s.Err != nil || s.Version > core.SchemaVersion || s.Store.Writable() == nil {
+			continue
+		}
+		id, what := "meta", "board"
+		if s.Store != a.Store {
+			id, what = "archive", "archive store"
+		}
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "schema-outdated", ID: id,
+			Msg: fmt.Sprintf("%s is schema v%d; this furrow writes v%d — writes are refused until `furrow upgrade` runs (a flag day: bump every pinned caller FIRST)", what, s.Version, core.SchemaVersion)})
+	}
+
+	ps = append(ps, extra...)
+	// [lint.severity] board policy, applied BEFORE the sort so the ordering (and
+	// every consumer — the exit code, LintErrorCounts' sync line, --severity)
+	// sees the effective level, never the shipped one.
+	ps = a.applyLintPolicy(ps)
+
+	sort.SliceStable(ps, func(i, j int) bool {
+		if ps[i].Severity != ps[j].Severity {
+			return ps[i].Severity < ps[j].Severity
+		}
+		if ps[i].ID != ps[j].ID {
+			return ps[i].ID < ps[j].ID
+		}
+		return ps[i].Msg < ps[j].Msg
+	})
+	return ps, nil
+}
+
+// lintIndex is every rule Lint derives from the task shards, the boxes and the
+// config alone — no body, record or config FILE read. It is split out so
+// NewLintErrors can run exactly these rules over the board before and after a
+// write; anything added here is part of that comparison, so a rule that reads a
+// body or a file belongs in Lint, not here. idx is read RAW (pre-clamp) and
+// canonicalized in place.
+func (a *App) lintIndex(idx *core.Index, epics []core.Epic) []core.Problem {
 	// The estimate range check runs on the RAW (pre-clamp) index: Canonicalize
 	// would otherwise round a hand-edited out-of-range value/effort away before
 	// we could warn about it. Everything else is order-independent, so we
@@ -92,10 +196,6 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 	// The epic rules need a SECOND store read (the boxes), which is why they are
 	// their own entry point rather than another Validate parameter — Validate's
 	// contract is "everything derivable from the Index alone".
-	epics, err := a.Store.LoadEpics()
-	if err != nil {
-		return nil, err
-	}
 	ps = append(ps, core.EpicProblems(idx, epics, a.Cfg.Terminal, a.Cfg.EpicIDPattern())...)
 	// The anchor pair's integrity (anchor-*): every state here is one the
 	// write paths refuse, so a finding is a hand-edit or a merge — and the two
@@ -231,97 +331,15 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 	// instant — its date is broken on paper before any work is late. The same
 	// skip set as the two due findings, applied to both ends of the edge.
 	ps = append(ps, core.DueInversionProblems(idx, a.loc(), a.dueSkipLanes())...)
+	return ps
+}
 
-	// Provenance ([lint].provenance_markers, OFF by default): warn on an open,
-	// non-terminal task whose body carries none of the board's provenance
-	// markers. The rule exists because a tracker entry is read as FACT by every
-	// later session — a 2026-07-26 sweep task-ified 7 single-source observations
-	// unrefuted, and a later refutation pass killed 6 of 11 — and prose rules
-	// alone demonstrably do not stop it. The check only pressures the writer to
-	// state "where this came from / how it was verified"; it cannot judge
-	// correctness. The marker VOCABULARY is the operator's (a board convention,
-	// set in the board's own config so it syncs), never furrow's: shipping
-	// default wording would bless one language and one house style.
-	if len(a.Cfg.LintProvenanceMarkers) > 0 {
-		for i := range idx.Tasks {
-			t := &idx.Tasks[i]
-			if a.Cfg.IsTerminal(t.Status) {
-				continue
-			}
-			body, err := a.Store.LoadBody(t.ID)
-			if err != nil {
-				return nil, err
-			}
-			if !containsAnyFold(body, a.Cfg.LintProvenanceMarkers) {
-				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "provenance-missing", ID: t.ID,
-					Msg: fmt.Sprintf("body records no provenance (none of the [lint].provenance_markers: %s) — say where this came from and how it was verified, e.g. `furrow note %s \"...\"`",
-						strings.Join(a.Cfg.LintProvenanceMarkers, ", "), t.ID)})
-			}
-		}
-	}
-
-	rps, err := a.lintRecordKeys()
-	if err != nil {
-		return nil, err
-	}
-	ps = append(ps, rps...)
-
-	shapePs, hasTask, hasEpic, bodyIDs, err := a.lintStoreShape(idx, epics)
-	if err != nil {
-		return nil, err
-	}
-	ps = append(ps, shapePs...)
-
-	bodyPs, err := a.lintBodyContent(hasTask, hasEpic, bodyIDs)
-	if err != nil {
-		return nil, err
-	}
-	ps = append(ps, bodyPs...)
-
-	ps = append(ps, a.lintConfigProblems(idx)...)
-	ps = append(ps, a.lintHygieneProblems(idx)...)
-
-	// A board still on an older layout than this binary is read-only (every write
-	// hits the store's gate). Warn, don't error: that state is the legitimate
-	// middle of a flag day, and erroring would red every repo's board-lint CI for
-	// the whole window. The write gate is already the hard stop — this is just the
-	// thing that makes the state visible before someone runs into it.
-	//
-	// Each store is judged on its own (the archive carries its own meta.json),
-	// and the finding names WHICH one: id `meta` is the board, `archive` its
-	// archive store — one row said "board is schema v3" for either, and an
-	// archive that fell behind read as the whole board being read-only
-	// (t-rns9). An unstamped but EMPTY store is version 0 yet writable, which
-	// Writable already knows.
-	for _, s := range a.boardStores() {
-		if s.Err != nil || s.Version > core.SchemaVersion || s.Store.Writable() == nil {
-			continue
-		}
-		id, what := "meta", "board"
-		if s.Store != a.Store {
-			id, what = "archive", "archive store"
-		}
-		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "schema-outdated", ID: id,
-			Msg: fmt.Sprintf("%s is schema v%d; this furrow writes v%d — writes are refused until `furrow upgrade` runs (a flag day: bump every pinned caller FIRST)", what, s.Version, core.SchemaVersion)})
-	}
-
-	ps = append(ps, extra...)
-	// [lint.severity] board policy, applied BEFORE the sort so the ordering (and
-	// every consumer — the exit code, LintErrorCounts' sync line, --severity)
-	// sees the effective level, never the shipped one.
+// applyLintPolicy is the board's lint policy: [lint.severity] re-levels, then
+// [lint].ignore_codes drops. Lint and NewLintErrors both go through it, so a
+// write note can never call an error what `furrow lint` does not.
+func (a *App) applyLintPolicy(ps []core.Problem) []core.Problem {
 	ps = core.ApplySeverity(ps, a.LintSeverityOverrides())
-	ps = core.FilterProblems(ps, core.ProblemFilter{IgnoreCodes: a.Cfg.LintIgnoreCodes})
-
-	sort.SliceStable(ps, func(i, j int) bool {
-		if ps[i].Severity != ps[j].Severity {
-			return ps[i].Severity < ps[j].Severity
-		}
-		if ps[i].ID != ps[j].ID {
-			return ps[i].ID < ps[j].ID
-		}
-		return ps[i].Msg < ps[j].Msg
-	})
-	return ps, nil
+	return core.FilterProblems(ps, core.ProblemFilter{IgnoreCodes: a.Cfg.LintIgnoreCodes})
 }
 
 // LintFilter is `furrow lint`'s narrowing: --code (allow-list),
