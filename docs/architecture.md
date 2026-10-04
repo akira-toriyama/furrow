@@ -601,7 +601,10 @@ the resolution, split to honour the purity rule:
   paths, canonicalizes cwd and scopes (symlinks), and picks the board whose
   scope is the **longest canonical prefix** of cwd; only the winner is
   `stat`-ed, so a broken path in another scope never breaks this directory.
-  `FURROW_BOARD=<path>` short-circuits the file.
+  `FURROW_BOARD=<path>` replaces the file with one synthetic entry (`repo =
+  "auto"`, `auto_filter` on, one scope two levels above the store) that passes
+  the same gate — outside that scope no central board resolves, so a cwd-less
+  caller names the store with `FURROW_DIR` instead.
 
 **Scope vs store.** A `[[board]]` injects a scope repo like a pointer does
 (`repo = "auto"` derives it from the checkout); `auto_filter` decides whether

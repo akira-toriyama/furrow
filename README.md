@@ -501,10 +501,12 @@ silent, `furrow lint` and `furrow config path` report whatever was clamped.
 (a worktree's `.git` file is followed to the shared config, so a worktree named
 `chord-fix-y` still derives `owner/chord`), else a ghq-style path, else the
 board opens **unscoped** with a stderr note and `add` creates drafts — a bare
-directory name is never written into `repos`. `FURROW_BOARD=<path>` is the env
-form: one synthetic board for one-offs and tests, outranking only the config
-file's entries (see Discovery precedence). The retired `label = "auto"` is
-ignored with a warning.
+directory name is never written into `repos`. The retired `label = "auto"` is
+ignored with a warning. `FURROW_BOARD=<path>` is the env form: one synthetic
+board for one-offs and tests (`repo = "auto"`, one scope two levels above the
+store: `…/me/projects/.furrow` → `…/me`) that replaces the config file's entries
+while set (see [Discovery precedence](#discovery-precedence)). A job with no
+meaningful cwd wants `FURROW_DIR` instead ([docs/scheduling.md](docs/scheduling.md)).
 
 `autocommit = true` makes furrow **git-commit the board's `.furrow/` after every
 mutating command** — the standalone board's backup habit as a tool guarantee.
@@ -528,12 +530,15 @@ default_repo = "me/chord"       # optional: scope to one owner/repo ("auto" deri
 ### Discovery precedence
 
 `FURROW_DIR` (explicit, no scope injection) → the nearest ancestor directory
-holding a `.furrow` (a real local store wins) → a `.furrow-pointer.toml`
-redirecting to a board → a **central board**: `FURROW_BOARD` (env override —
-one synthetic board) if set, otherwise the user-level config file's `[[board]]`
-entries (when the cwd is under one of their `scopes`; most specific scope wins)
-→ `furrow init`. So `FURROW_BOARD` only outranks the config-file boards, never a
-nearer `FURROW_DIR` / local `.furrow` / pointer.
+holding a `.furrow` or a `.furrow-pointer.toml` redirecting to a board (at the
+same level the real local store wins) → a **central board** whose scope encloses
+the cwd: `FURROW_BOARD` (env override — one synthetic board, scoped two levels
+above its store) if set, otherwise the user-level config file's `[[board]]`
+entries (most specific scope wins) → else nothing resolves (exit 2; the error
+says `furrow init` only on a machine with no board configured). So
+`FURROW_BOARD` replaces only the config-file boards, never a nearer `FURROW_DIR`
+/ local `.furrow` / pointer — and outside its scope no central board resolves,
+whatever the config file declares.
 
 That order picks the **store**. The **scope** is a second question: a pointer
 or a `[[board]]` answers it (including with "none"), while `FURROW_DIR` and a
