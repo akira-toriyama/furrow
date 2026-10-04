@@ -62,20 +62,79 @@ func (a *App) Archive(olderThanDays int, dryRun bool, repos ...string) (*Archive
 	cutoff := a.Clock.Now().AddDate(0, 0, -olderThanDays)
 	ids := Archivable(idx, a.Cfg.DoneLane, cutoff, repos...)
 
-	var moved []core.Task
+	// To a fixed point: a held task stays, so whatever IT depends on is held too.
+	leaving := make(map[string]bool, len(ids))
 	for _, id := range ids {
-		if t, _ := idx.Find(id); t != nil {
-			moved = append(moved, *t)
+		leaving[id] = true
+	}
+	held := map[string][]string{}
+	for {
+		holds := depHolds(idx, leaving)
+		if len(holds) == 0 {
+			break
+		}
+		for id, by := range holds {
+			held[id] = by
+			delete(leaving, id)
 		}
 	}
-	return a.archiveMove(idx, moved, dryRun)
+
+	var moved []core.Task
+	var kept []HeldTask
+	for _, id := range ids {
+		t, _ := idx.Find(id)
+		if t == nil {
+			continue
+		}
+		if by, ok := held[id]; ok {
+			kept = append(kept, HeldTask{ID: t.ID, Title: t.Title, HeldBy: by})
+			continue
+		}
+		moved = append(moved, *t)
+	}
+	rep, err := a.archiveMove(idx, moved, dryRun)
+	if err != nil {
+		return nil, err
+	}
+	if kept != nil {
+		rep.Held = kept
+	}
+	return rep, nil
+}
+
+// depHolds maps each leaving id to the tasks STAYING in the hot store that name
+// it in deps, in index order. Archiving such a task strands the edge: the hot
+// index no longer holds the id, so the dependent reads as blocked (out of
+// `next`) and lint raises dep-missing — and ready-blocked on an actionable one
+// (t-tf56). Any staying dependent holds, whatever its lane: dep-missing is
+// lane-blind. A dependent that leaves in the same move holds nothing — the
+// edge lands whole in archive/.
+func depHolds(idx *core.Index, leaving map[string]bool) map[string][]string {
+	holds := map[string][]string{}
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if leaving[t.ID] {
+			continue
+		}
+		for _, dep := range t.Deps {
+			if leaving[dep] && !contains(holds[dep], t.ID) {
+				holds[dep] = append(holds[dep], t.ID)
+			}
+		}
+	}
+	return holds
 }
 
 // ArchiveIDs archives exactly the named tasks — retiring specific done tasks by
 // id, the targeted counterpart to the age sweep (so folding one finished task no
 // longer needs a board-wide `--older-than 0`). Every id must exist AND be in the
 // done lane; a non-done id is a validation error naming it (archiving an
-// in-progress task would strand live work in archive/). Duplicate ids collapse.
+// in-progress task would strand live work in archive/). A named task that a
+// task staying in the hot store depends on is refused (kind `referenced`, the
+// edges in details.references.deps) — the sweep holds such a task back, but a
+// named id that silently stayed would be a write that did not do what it was
+// asked. There is no force: the result would be a board in lint error.
+// Duplicate ids collapse.
 // dryRun reports without moving. Uses the same destination-before-source move as
 // Archive.
 func (a *App) ArchiveIDs(ids []string, dryRun bool) (*ArchiveReport, error) {
@@ -99,16 +158,43 @@ func (a *App) ArchiveIDs(ids []string, dryRun bool) (*ArchiveReport, error) {
 		}
 		moved = append(moved, *t)
 	}
+	if holds := depHolds(idx, seen); len(holds) > 0 {
+		refs := newReferences()
+		for _, t := range moved {
+			for _, by := range holds[t.ID] {
+				refs.Deps = append(refs.Deps, DepEdge{From: by, To: t.ID})
+			}
+		}
+		return nil, &core.Error{
+			Code:    core.CodeValidation,
+			Kind:    core.KindReferenced,
+			Subject: refs.Deps[0].To,
+			Msg: fmt.Sprintf("still depended on — %s; archiving would strand the edge (lint dep-missing, the dependent out of next), so nothing was archived: "+
+				"archive the dependents in the same call once they are done, or drop the edge (`furrow dep <dependent> <id> --rm`)", refs.Summary()),
+			Details: map[string]any{"references": refs},
+		}
+	}
 	return a.archiveMove(idx, moved, dryRun)
 }
 
 // ArchiveReport is what archive hands back: the tasks it moved (or would) and
 // the asset half — every in-play asset copied into archive/, what the hot store
 // then let go, and what it KEPT because a remaining body or owner still holds
-// it (an asset held on both sides is on disk twice, one git blob).
+// it (an asset held on both sides is on disk twice, one git blob). Held is the
+// sweep's other stated non-move: the selected tasks it left in the hot store
+// because a task staying there depends on them (always empty on a by-id
+// retire, which refuses instead).
 type ArchiveReport struct {
 	Tasks  []core.Task   `json:"tasks"`
 	Assets AssetTransfer `json:"assets"`
+	Held   []HeldTask    `json:"held"`
+}
+
+// HeldTask is one done task the age sweep selected but left in the hot store.
+type HeldTask struct {
+	ID     string   `json:"id"`
+	Title  string   `json:"title"`
+	HeldBy []string `json:"held_by"` // the staying tasks whose deps name it
 }
 
 // UnarchiveReport is ArchiveReport's inverse: the tasks restored and the asset
@@ -132,7 +218,7 @@ type UnarchiveReport struct {
 // file while the hot index or a hot body still references it, and a retry
 // converges: the copy is an idempotent overwrite, the reap re-judged.
 func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*ArchiveReport, error) {
-	rep := &ArchiveReport{Tasks: moved, Assets: newAssetTransfer()}
+	rep := &ArchiveReport{Tasks: moved, Assets: newAssetTransfer(), Held: []HeldTask{}}
 	if rep.Tasks == nil {
 		rep.Tasks = []core.Task{}
 	}

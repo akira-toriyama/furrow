@@ -177,8 +177,8 @@ func TestCLIShowJSONCarriesTheDerivedFactsLsAlreadyHad(t *testing.T) {
 
 // A dep the hot store cannot resolve keeps `dep --list`'s `[?]`: the edge is
 // reported rather than dropped, and lint's dep-missing is what calls it a
-// defect. `dep` refuses to CREATE one, so the reachable way in is to retire the
-// target — archiving it leaves the edge behind, pointing out of the store.
+// defect. `dep` refuses to CREATE one and `archive` refuses to strand one, so
+// the reachable way in is to retire both ends and restore the dependent alone.
 func TestCLIShowReportsADanglingDepRatherThanDroppingIt(t *testing.T) {
 	initStore(t)
 	subject := addTask(t, "downstream", "-r", "o/r")
@@ -186,13 +186,16 @@ func TestCLIShowReportsADanglingDepRatherThanDroppingIt(t *testing.T) {
 	if out, code := run(t, "dep", subject, real); code != 0 {
 		t.Fatalf("dep exit %d:\n%s", code, out)
 	}
-	// Retire the dep out of the hot store: the edge survives, its target does
-	// not — a dangling id without hand-editing a shard.
-	if out, code := run(t, "set", real, "-s", "done"); code != 0 {
+	// The edge survives, its target does not — a dangling id without
+	// hand-editing a shard.
+	if out, code := run(t, "set", real, subject, "-s", "done"); code != 0 {
 		t.Fatalf("set done exit %d:\n%s", code, out)
 	}
-	if out, code := run(t, "archive", real, "--yes"); code != 0 {
+	if out, code := run(t, "archive", real, subject, "--yes"); code != 0 {
 		t.Fatalf("archive exit %d:\n%s", code, out)
+	}
+	if out, code := run(t, "unarchive", subject); code != 0 {
+		t.Fatalf("unarchive exit %d:\n%s", code, out)
 	}
 
 	human, code := run(t, "show", subject)

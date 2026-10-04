@@ -46,6 +46,14 @@ func newArchiveCmd() *cobra.Command {
 			"guard from the CLI contract). A task's attached assets go with it; one that\n" +
 			"another hot body still shows (a repeat successor's, a box's) also STAYS in\n" +
 			"the hot store, and the output says so (`assets` in --json).\n\n" +
+			"A done task that a task STAYING in the hot store still depends on is not\n" +
+			"archived: the edge would dangle (lint dep-missing) and the dependent would\n" +
+			"drop out of `next`. The sweep leaves it and says so (`held` in --json, with\n" +
+			"the dependents in held_by) — it goes on a later sweep, once they have gone\n" +
+			"or go with it. Naming such a task by id is refused (exit 2, kind\n" +
+			"`referenced`, the edges in details.references.deps) and nothing moves:\n" +
+			"name the dependents in the same call once they are done, or drop the edge\n" +
+			"with `furrow dep <dependent> <id> --rm`.\n\n" +
 			"The age sweep INHERITS THE BOARD SCOPE, like every read: with no -r it folds\n" +
 			"only the aged done of the repo your ls/next/search are already scoped to. An\n" +
 			"explicit -r (repeatable) swaps that scope; -r '' sweeps the whole board, and\n" +
@@ -109,7 +117,7 @@ func newArchiveCmd() *cobra.Command {
 func emitArchive(rep *app.ArchiveReport, dry, byID bool, days int, repos []string) {
 	moved := rep.Tasks
 	if jsonMode() {
-		payload := map[string]any{"dry_run": dry, "tasks": moved, "assets": rep.Assets}
+		payload := map[string]any{"dry_run": dry, "tasks": moved, "assets": rep.Assets, "held": rep.Held}
 		if !byID {
 			if repos == nil {
 				repos = []string{}
@@ -141,6 +149,13 @@ func emitArchive(rep *app.ArchiveReport, dry, byID bool, days int, repos []strin
 		fmt.Fprintf(out, "  %s  %s\n", t.ID, t.Title)
 	}
 	printAssetTransfer(rep.Assets, dry, "moved to archive/", "the hot store")
+	hold := "held"
+	if dry {
+		hold = "would be held"
+	}
+	for _, h := range rep.Held {
+		fmt.Fprintf(out, "%s in the hot store: %s  %s — still a dep of %s\n", hold, h.ID, h.Title, strings.Join(h.HeldBy, ", "))
+	}
 	if dry && len(moved) > 0 {
 		fmt.Fprintln(out, "re-run with --yes to apply")
 	}

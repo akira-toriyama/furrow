@@ -39,7 +39,7 @@ const (
 	KindQueryType             = "query-type"              // -q term used a value form the field does not take
 	KindQueryUnknownField     = "query-unknown-field"     // -q named an unknown qualifier; candidates carries the vocabulary
 	KindQueryUnknownFlag      = "query-unknown-flag"      // -q is: named an unknown flag; candidates carries the vocabulary
-	KindReferenced            = "referenced"              // `rm` target still referenced (deps, [[links]], members); details.references names them — pass --force to sever
+	KindReferenced            = "referenced"              // `rm` target still referenced (deps, [[links]], members), or an `archive <id>` target a staying task depends on; details.references names them — `rm --force` severs, archive has no force
 	KindRepoAmbiguous         = "repo-ambiguous"          // a repo short name matched several repos; candidates carries them
 	KindRepoUnknown           = "repo-unknown"            // a repo arg matched no known repo
 	KindSchemaTooNew          = "schema-too-new"          // the BOARD is ahead of this binary — update furrow (exit 3)
