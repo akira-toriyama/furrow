@@ -77,7 +77,12 @@ jobs:
           # release" form; a first release (no earlier tag) walks from the root
           # commit instead (an exclusive range bound, so the root itself stays
           # out — acceptable for the one release that has this shape).
-          if base="$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD^ 2>/dev/null)"; then
+          # Candidates (`*-*`) are never the base: the release cut after an rc
+          # would walk from that rc and publish notes for the one release-prep
+          # commit between them (measured: v8.0.0's base came back v8.0.0-rc.1,
+          # not v7.0.0). Every rc's notes therefore also run from the last full
+          # release — the answer glyph's own `below:` form gives.
+          if base="$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD^ 2>/dev/null)"; then
             :
           else
             base="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
