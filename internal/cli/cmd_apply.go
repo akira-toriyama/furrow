@@ -70,7 +70,7 @@ func newApplyCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&bodyFile, "body-file", "", "file holding the PR/commit text (default: read stdin)")
+	cmd.Flags().StringVar(&bodyFile, "body-file", "", "file holding the PR/commit text (default, or '-': read stdin)")
 	cmd.Flags().StringVar(&ref, "ref", "", "source reference recorded in the task body, e.g. furrow#42")
 	cmd.Flags().StringVar(&on, "on", "", "event being applied: open|merge (required)")
 	cmd.Flags().StringVar(&openLane, "open-lane", app.DefaultOpenLane, "lane a task is nudged to on --on open")
@@ -80,9 +80,9 @@ func newApplyCmd() *cobra.Command {
 }
 
 // readBodyText returns the directive text from --body-file, or stdin when the
-// flag is empty.
+// flag is empty or "-" (the `-`=stdin convention every --body-file shares).
 func readBodyText(cmd *cobra.Command, path string) (string, error) {
-	if path != "" {
+	if path != "" && path != "-" {
 		// #nosec G304 -- path is the operator's own --body-file argument;
 		// reading the file they named is the command's purpose.
 		b, err := os.ReadFile(path)

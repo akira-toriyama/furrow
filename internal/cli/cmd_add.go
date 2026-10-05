@@ -23,7 +23,7 @@ func newAddCmd() *cobra.Command {
 		draft      bool
 		deps       []string
 		refs       []string
-		body       string
+		body       bodyFlags
 		checks     []string
 		stdin      bool
 		batch      string
@@ -58,6 +58,10 @@ func newAddCmd() *cobra.Command {
 			"is how a caller learns the ids. A duplicate key, a key that is an existing\n" +
 			"id, a dep naming neither an id nor a key, or a dep cycle inside the batch\n" +
 			"is exit 2 and writes nothing.\n\n" +
+			"--body is the markdown ITSELF (`-` reads stdin); --body-file <path> reads\n" +
+			"it from a file, and an empty file is exit 2. A one-line --body naming an\n" +
+			"existing file is exit 2 with the spellings that work in candidates —\n" +
+			"never a task whose body is the path.\n\n" +
 			"--due promises the task for an instant: `2026-08-04` (that WHOLE day — it\n" +
 			"binds 23:59:59 in the board's calendar, so the day never starts out\n" +
 			"overdue), `2026-08-04T10:30`, an RFC3339 instant, or a signed offset such\n" +
@@ -79,6 +83,7 @@ func newAddCmd() *cobra.Command {
 			"  furrow add \"Fix flaky sync test\" -s ready -l bug --value 4 --effort 2\n" +
 			"  furrow add \"Cross-repo epic\" -r akira-toriyama/furrow -r akira-toriyama/cifail\n" +
 			"  furrow add \"Check the nightly run landed\" -s waiting --due 2026-08-04T10:30\n" +
+			"  furrow add \"Design the cache\" --body-file notes.md\n" +
 			"  git grep -l TODO | furrow add --stdin -l chore   # one task per line\n" +
 			"  furrow add --batch plan.ndjson -e travel --json   # per-task fields, keys for deps and [[links]]",
 		Args: cobra.ArbitraryArgs,
@@ -87,17 +92,19 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// `--body -` reads the initial body from stdin (the shared `-`=stdin
-			// convention; `note`/`done --note` honor it too). `--stdin` (one title
-			// per line) also consumes stdin, so the two cannot both read it.
-			if body == "-" && stdin {
-				return core.Validationf("", "cannot combine --stdin with --body - (stdin has a single stream)")
+			// `--body -` / `--body-file -` read the initial body from stdin (the
+			// shared `-`=stdin convention; `note`/`done --note` honor it too).
+			// `--stdin` (one title per line) and `--batch -` also consume stdin, so
+			// no two of them can read it.
+			bodyStdin := body.stdinFlag()
+			if bodyStdin != "" && stdin {
+				return core.Validationf("", "cannot combine --stdin with %s - (stdin has a single stream)", bodyStdin)
 			}
 			if batch != "" && stdin {
 				return core.Validationf("", "cannot combine --batch with --stdin (one bulk input per call)")
 			}
-			if batch == "-" && body == "-" {
-				return core.Validationf("", "cannot combine --batch - with --body - (stdin has a single stream)")
+			if batch == "-" && bodyStdin != "" {
+				return core.Validationf("", "cannot combine --batch - with %s - (stdin has a single stream)", bodyStdin)
 			}
 			// An empty --due is exit 2 here for the same reason it is on `set`: a
 			// caller interpolating an unset variable (`--due "$WHEN"`) means a bug,
@@ -112,9 +119,28 @@ func newAddCmd() *cobra.Command {
 			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchorRef) == "" {
 				return core.Validationf("", "--anchor was given an empty value; pass the epic whose day the due follows, or drop the flag")
 			}
+			// Every argument-shape refusal comes BEFORE the body is resolved:
+			// resolving may read stdin to EOF, and a call that was never going to
+			// run must fail without waiting on a stream that may not close.
+			switch {
+			case stdin && len(args) > 0:
+				return core.Validationf("", "cannot combine --stdin with title arguments")
+			case batch != "" && len(args) > 0:
+				return core.Validationf("", "cannot combine --batch with title arguments")
+			case !stdin && batch == "" && len(args) == 0:
+				return core.Validationf("", "provide a title, --stdin to read titles from stdin, or --batch <file|-> for NDJSON")
+			}
+			// Resolved ONCE, for every add path: the body is a shared flag, so the
+			// bulk paths must get the file's or stdin's text too, never the flag's
+			// raw spelling. The conflict checks above left stdin free whenever this
+			// reads it.
+			bodyText, err := body.text(cmd, !stdin && batch != "-")
+			if err != nil {
+				return err
+			}
 			opts := app.AddOpts{
 				Status: status, Labels: labels, Repos: repos, Draft: draft,
-				Deps: deps, Refs: refs, Body: body, Checklist: app.UncheckedItems(checks),
+				Deps: deps, Refs: refs, Body: bodyText, Checklist: app.UncheckedItems(checks),
 				Epic: epicRef, Due: due, Repeat: repeatSpec, Anchor: anchorRef,
 				// An explicit `-e ''` means "unfiled, on purpose" — suppress the
 				// active-epic inheritance a bare add gets.
@@ -134,24 +160,10 @@ func newAddCmd() *cobra.Command {
 			}
 
 			if stdin {
-				if len(args) > 0 {
-					return core.Validationf("", "cannot combine --stdin with title arguments")
-				}
 				return addFromStdin(cmd, a, opts)
 			}
 			if batch != "" {
-				if len(args) > 0 {
-					return core.Validationf("", "cannot combine --batch with title arguments")
-				}
 				return addFromBatch(cmd, a, batch, opts)
-			}
-			if len(args) == 0 {
-				return core.Validationf("", "provide a title, --stdin to read titles from stdin, or --batch <file|-> for NDJSON")
-			}
-			// Resolve `--body -` (read stdin) for the single-task path; the --stdin
-			// path was excluded above, so body is otherwise a literal here.
-			if opts.Body, err = readTextArg(cmd, body); err != nil {
-				return err
 			}
 			t, err := a.Add(strings.Join(args, " "), opts)
 			if err != nil {
@@ -183,7 +195,7 @@ func newAddCmd() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("anchor", "repeat")
 	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
 	cmd.Flags().StringArrayVar(&refs, "ref", nil, "reference (file:line or URL; verbatim; repeatable)")
-	cmd.Flags().StringVar(&body, "body", "", "initial body markdown ('-' reads stdin; default: a heading from the title)")
+	body.register(cmd, "initial body markdown itself, never a path ('-' reads stdin; default: a heading from the title)")
 	cmd.Flags().StringArrayVar(&checks, "check", nil, "seed an unchecked checklist item (repeatable; text verbatim)")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "read one task title per line from stdin; create all in one write")
 	cmd.Flags().StringVar(&batch, "batch", "", "read NDJSON (one task object per line; '-' = stdin) with per-task fields and batch-local keys for deps and [[links]]; create all in one write")
@@ -283,7 +295,7 @@ func warnShadowedDraft(a *app.App, draftFlag, drafted bool) {
 }
 
 func newEditCmd() *cobra.Command {
-	var body string
+	var body bodyFlags
 	cmd := &cobra.Command{
 		Use:   "edit <id>",
 		Short: "Edit a task's or epic's markdown body in $EDITOR, or replace it with --body",
@@ -293,7 +305,10 @@ func newEditCmd() *cobra.Command {
 			"--body \"<markdown>\" skips the editor entirely: it REPLACES the whole body\n" +
 			"AND stamps the entity's `updated`, in one command — the non-interactive\n" +
 			"edit. Pass `-` to read the new body from stdin (the shared `-`=stdin\n" +
-			"convention; `add --body`, `note`, and `done --note` honor it too). An\n" +
+			"convention; `add --body`, `note`, and `done --note` honor it too), or\n" +
+			"--body-file <path> to read it from a file. --body is never a path: a\n" +
+			"one-line value naming an existing file is exit 2 with both spellings in\n" +
+			"candidates, not a body that says only the path. An\n" +
 			"empty replacement is exit 2, never a silent clear. Unlike a direct file\n" +
 			"edit, which leaves `updated` stale, --body keeps the staleness signals\n" +
 			"(revisit, lint's reconcile-gap) honest — prefer `furrow note <id>` when\n" +
@@ -303,20 +318,21 @@ func newEditCmd() *cobra.Command {
 			"routes it, never the id's prefix.",
 		Example: "  furrow edit t-k3m9p\n" +
 			"  furrow edit t-k3m9p --body \"# rewritten\\n\\nnew plan\"\n" +
-			"  ridge-editor-save | furrow edit t-k3m9p --body -   # replace from stdin",
+			"  ridge-editor-save | furrow edit t-k3m9p --body -   # replace from stdin\n" +
+			"  furrow edit t-k3m9p --body-file plan.md           # replace from a file",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
 				return err
 			}
-			if cmd.Flags().Changed("body") {
-				return editSetBody(cmd, a, args[0], body)
+			if body.given(cmd) {
+				return editSetBody(cmd, a, args[0], &body)
 			}
 			// The guard describes a write; the editor path never writes the
 			// shard, so a set flag there would be silently meaningless.
 			if f := cmd.Flags().Lookup(expectUpdatedFlag); f != nil && f.Value.String() != "" {
-				return core.Validationf(args[0], "--expect-updated only applies to the --body replacement write")
+				return core.Validationf(args[0], "--expect-updated only applies to the --body / --body-file replacement write")
 			}
 			path, err := a.EditPath(args[0])
 			if err != nil {
@@ -347,18 +363,18 @@ func newEditCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&body, "body", "", "replace the WHOLE body with this markdown and advance updated ('-' reads stdin); empty is exit 2")
+	body.register(cmd, "replace the WHOLE body with this markdown itself, never a path, and advance updated ('-' reads stdin); empty is exit 2")
 	addExpectUpdatedFlag(cmd)
 	return cmd
 }
 
-// editSetBody is the `edit --body` arm: resolve `-`=stdin, route task/epic by
-// store membership (note's contract), replace, and report. `changed` tracks
-// metadata only, so the envelope surfaces the effect as `replaced_bytes` — the
-// byte count written, not the text echoed back: unlike a note, a body is
-// unbounded and the caller just supplied it.
-func editSetBody(cmd *cobra.Command, a *app.App, ref, body string) error {
-	text, err := readTextArg(cmd, body)
+// editSetBody is the `edit --body` / `--body-file` arm: resolve the flag pair,
+// route task/epic by store membership (note's contract), replace, and report.
+// `changed` tracks metadata only, so the envelope surfaces the effect as
+// `replaced_bytes` — the byte count written, not the text echoed back: unlike
+// a note, a body is unbounded and the caller just supplied it.
+func editSetBody(cmd *cobra.Command, a *app.App, ref string, body *bodyFlags) error {
+	text, err := body.text(cmd, true)
 	if err != nil {
 		return err
 	}
