@@ -72,7 +72,7 @@ func newEpicAddCmd() *cobra.Command {
 			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchor) == "" {
 				return core.Validationf("", "--anchor was given an empty value; pass a calendar day (2026-11-21), or drop the flag to create the box without one")
 			}
-			bodyText, err := body.text(cmd)
+			bodyText, err := body.text(cmd, true)
 			if err != nil {
 				return err
 			}

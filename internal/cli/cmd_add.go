@@ -59,8 +59,9 @@ func newAddCmd() *cobra.Command {
 			"id, a dep naming neither an id nor a key, or a dep cycle inside the batch\n" +
 			"is exit 2 and writes nothing.\n\n" +
 			"--body is the markdown ITSELF (`-` reads stdin); --body-file <path> reads\n" +
-			"it from a file. A one-line --body naming an existing file is exit 2 with\n" +
-			"both spellings in candidates — never a task whose body is the path.\n\n" +
+			"it from a file, and an empty file is exit 2. A one-line --body naming an\n" +
+			"existing file is exit 2 with the spellings that work in candidates —\n" +
+			"never a task whose body is the path.\n\n" +
 			"--due promises the task for an instant: `2026-08-04` (that WHOLE day — it\n" +
 			"binds 23:59:59 in the board's calendar, so the day never starts out\n" +
 			"overdue), `2026-08-04T10:30`, an RFC3339 instant, or a signed offset such\n" +
@@ -118,10 +119,22 @@ func newAddCmd() *cobra.Command {
 			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchorRef) == "" {
 				return core.Validationf("", "--anchor was given an empty value; pass the epic whose day the due follows, or drop the flag")
 			}
+			// Every argument-shape refusal comes BEFORE the body is resolved:
+			// resolving may read stdin to EOF, and a call that was never going to
+			// run must fail without waiting on a stream that may not close.
+			switch {
+			case stdin && len(args) > 0:
+				return core.Validationf("", "cannot combine --stdin with title arguments")
+			case batch != "" && len(args) > 0:
+				return core.Validationf("", "cannot combine --batch with title arguments")
+			case !stdin && batch == "" && len(args) == 0:
+				return core.Validationf("", "provide a title, --stdin to read titles from stdin, or --batch <file|-> for NDJSON")
+			}
 			// Resolved ONCE, for every add path: the body is a shared flag, so the
 			// bulk paths must get the file's or stdin's text too, never the flag's
-			// raw spelling. The checks above left stdin free whenever this reads it.
-			bodyText, err := body.text(cmd)
+			// raw spelling. The conflict checks above left stdin free whenever this
+			// reads it.
+			bodyText, err := body.text(cmd, !stdin && batch != "-")
 			if err != nil {
 				return err
 			}
@@ -147,19 +160,10 @@ func newAddCmd() *cobra.Command {
 			}
 
 			if stdin {
-				if len(args) > 0 {
-					return core.Validationf("", "cannot combine --stdin with title arguments")
-				}
 				return addFromStdin(cmd, a, opts)
 			}
 			if batch != "" {
-				if len(args) > 0 {
-					return core.Validationf("", "cannot combine --batch with title arguments")
-				}
 				return addFromBatch(cmd, a, batch, opts)
-			}
-			if len(args) == 0 {
-				return core.Validationf("", "provide a title, --stdin to read titles from stdin, or --batch <file|-> for NDJSON")
 			}
 			t, err := a.Add(strings.Join(args, " "), opts)
 			if err != nil {
@@ -370,7 +374,7 @@ func newEditCmd() *cobra.Command {
 // `replaced_bytes` — the byte count written, not the text echoed back: unlike
 // a note, a body is unbounded and the caller just supplied it.
 func editSetBody(cmd *cobra.Command, a *app.App, ref string, body *bodyFlags) error {
-	text, err := body.text(cmd)
+	text, err := body.text(cmd, true)
 	if err != nil {
 		return err
 	}
