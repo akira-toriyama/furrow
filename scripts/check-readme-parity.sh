@@ -5,16 +5,18 @@
 # source of truth, not README ⇄ README. Two pure-text-extraction guards, no
 # git-tag or network dependency (deterministic):
 #   1. the concrete sync-task-status.yml@vN.N.N pin the README teaches in its
-#      `uses:` example must match the `furrow-version` default of the reusable
-#      itself (.github/workflows/sync-task-status.yml) — the authoritative
-#      "current release" pin, bumped right before tagging — so a reader never
-#      copies a stale pin. NOT .github/workflows/task-status.yml: that file is a
-#      fleet-synced COPY owned by akira-toriyama/.github's fleet/task-status.yml
-#      (its header says so), and this guard used to compare against it, which
-#      made release-prep bump a file furrow does not own — the next scheduled
-#      fleet-sync then overwrote it back, reverting 3 of 4 caller-bump releases
-#      (once for ~46h, t-2268). It catches up when the hub rollout lands;
-#      release-prep must leave it alone.
+#      `uses:` example must match flake.nix's `version` — the release pin, the
+#      one version literal release-prep bumps (check-version-lockstep.sh holds
+#      it to the tag at release time) — so a reader never copies a stale pin.
+#      NOT the reusable's own `furrow-version` input: it has no literal any
+#      more, it derives the version from the tag. And NOT
+#      .github/workflows/task-status.yml: that file is a fleet-synced COPY
+#      owned by akira-toriyama/.github's fleet/task-status.yml (its header says
+#      so), and this guard used to compare against it, which made release-prep
+#      bump a file furrow does not own — the next scheduled fleet-sync then
+#      overwrote it back, reverting 3 of 4 caller-bump releases (once for ~46h,
+#      t-2268). It catches up when the hub rollout lands; release-prep must
+#      leave it alone.
 #   2. every {"schema_version": N} literal in README.md and docs/*.md must equal
 #      const SchemaVersion in internal/core/task.go, in the JSON literal AND in
 #      "board layout vN" prose (both forms drifted to v3 against a v4 board once).
@@ -22,37 +24,36 @@ set -eu
 cd "$(dirname "$0")/.."
 
 # Extract the first concrete sync-task-status.yml@vN.N.N pin from a file. The
-# vX.Y.Z placeholder used in prose has no digit after @v, so it is skipped.
+# vX.Y.Z placeholder used in prose has no digit after @v, so it is skipped; a
+# pre-release suffix is kept, so an -rc pin compares like-for-like.
 pin_tag() {
-  sed -n 's/.*sync-task-status\.yml@\(v[0-9][0-9.]*\).*/\1/p' "$1" | head -1
+  sed -n 's/.*sync-task-status\.yml@\(v[0-9][0-9A-Za-z.+-]*\).*/\1/p' "$1" | head -1
 }
 
 readme="$(pin_tag README.md)"
 
-# The release pin the repo itself maintains: sync-task-status.yml's
-# `furrow-version` default. The same anchored extraction as
-# check-version-lockstep.sh, for the same reasons (only the 8-space input-default
-# indent matches; the description prose, indented deeper, cannot).
-release="$(sed -n 's/^        default:[[:space:]]*\(v[0-9][^[:space:]]*\).*/\1/p' \
-  .github/workflows/sync-task-status.yml | head -1)"
+# The release pin: flake.nix's `version`, extracted exactly as
+# check-version-lockstep.sh does (the sole `version = "X";` assignment).
+flake_ver="$(sed -n 's/^[[:space:]]*version = "\([^"]*\)";.*/\1/p' flake.nix | head -1)"
+release="${flake_ver:+v$flake_ver}"
 
 if [ -z "$readme" ] || [ -z "$release" ]; then
   echo "✖ could not find a concrete release pin in both files:" >&2
-  echo "  README.md sync-task-status.yml@vN.N.N:      ${readme:-<none>}" >&2
-  echo "  sync-task-status.yml furrow-version default: ${release:-<none>}" >&2
+  echo "  README.md sync-task-status.yml@vN.N.N: ${readme:-<none>}" >&2
+  echo "  flake.nix version:                     ${flake_ver:-<none>}" >&2
   exit 1
 fi
 
 if [ "$readme" != "$release" ]; then
   echo "✖ README's sync-task-status pin does not match the release pin:" >&2
-  echo "  README.md:                                   $readme" >&2
-  echo "  sync-task-status.yml furrow-version default: $release" >&2
+  echo "  README.md:         $readme" >&2
+  echo "  flake.nix version: $flake_ver" >&2
   echo >&2
-  echo "The concrete pin in README's uses: example must match the furrow-version" >&2
-  echo "default of the reusable itself — bump them together (release-prep) so a" >&2
-  echo "reader never copies a stale pin. Do NOT bump .github/workflows/" >&2
-  echo "task-status.yml to match: that file is a fleet-synced copy owned by the" >&2
-  echo "hub canonical; it catches up when the hub rollout lands." >&2
+  echo "The concrete pin in README's uses: example must match flake.nix's version" >&2
+  echo "— bump them together (release-prep) so a reader never copies a stale pin." >&2
+  echo "Do NOT bump .github/workflows/task-status.yml to match: that file is a" >&2
+  echo "fleet-synced copy owned by the hub canonical; it catches up when the hub" >&2
+  echo "rollout lands." >&2
   exit 1
 fi
 

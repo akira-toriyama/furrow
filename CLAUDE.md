@@ -49,8 +49,8 @@ user-level config. The essentials, in the order a session meets them:
   `tidy`), and `rm` refuses a still-referenced target (kind `referenced`)
   unless `--force`.
 - **`upgrade` is a flag day.** Release the furrow that ships the schema, bump
-  every pinned `sync-task-status.yml@vX.Y.Z` caller and that workflow's
-  `furrow-version` default, and only THEN `furrow upgrade --yes` — see Schema.
+  every pinned `sync-task-status.yml@vX.Y.Z` caller, and only THEN
+  `furrow upgrade --yes` — see Schema.
 - furrow is **CLI-only and non-interactive**; a TUI/GUI (ridge, loom) is a
   separate front-end driving this CLI/JSON contract.
 
@@ -201,8 +201,9 @@ so on stderr). So **an ordinary write never touches `meta.json`'s
 upgrade`** (preview unless `--yes`; the `archive/` store too; idempotent on a
 current board) — a **flag day** with no downgrade (`git revert` on the board
 repo), whose ORDER is the human's: (1) release the furrow shipping the schema,
-(2) bump every caller's `sync-task-status.yml@vX.Y.Z` pin and that workflow's
-`furrow-version` default, (3) only THEN `furrow upgrade --yes` + `furrow sync` —
+(2) bump every caller's `sync-task-status.yml@vX.Y.Z` pin (the workflow reads
+its binary version off that tag — it has no version literal of its own),
+(3) only THEN `furrow upgrade --yes` + `furrow sync` —
 on the `projects` board AND on `akira-toriyama/furrow-test` (README links it as
 the worked example; a stale one is read-only for the reader who follows the link).
 
@@ -224,8 +225,9 @@ the worked example; a stale one is read-only for the reader who follows the link
   user-visible change, and **sweep the docs/ tier in the same change**: drift
   pools exactly where no guard looks. The guards that do look:
   [`scripts/check-readme-parity.sh`](scripts/check-readme-parity.sh) (README's
-  `sync-task-status.yml@vX.Y.Z` pin must match that workflow's `furrow-version`
-  default — leave the fleet-synced `task-status.yml` alone — and every
+  `sync-task-status.yml@vX.Y.Z` pin must match `flake.nix`'s `version`, the
+  release pin that `scripts/check-version-lockstep.sh` holds the pushed tag to
+  — leave the fleet-synced `task-status.yml` alone — and every
   `{"schema_version": N}` literal in README.md, CLAUDE.md and docs/*.md must
   equal `core.SchemaVersion`) and
   [`scripts/check-docs-vocab.sh`](scripts/check-docs-vocab.sh): **add a member

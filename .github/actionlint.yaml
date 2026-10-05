@@ -1,0 +1,13 @@
+# actionlint configuration (read by the fleet actionlint gate,
+# akira-toriyama/.github t-ya55, and by scripts/check.sh).
+#
+# job.workflow_ref is real at runtime — sync-task-status.yml reads the tag the
+# CALLER pinned it to from there ("Resolve the pinned furrow version"), the
+# same derivation glyph's reusables have shipped with in every release run.
+# actionlint 1.7.12 has not added it to its `job` context schema, so it flags
+# the use as an undefined property. Scope-waive exactly that message; drop this
+# file once actionlint's schema catches up.
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      - 'property "workflow_ref" is not defined in object type'

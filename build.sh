@@ -5,7 +5,9 @@ set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
-VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+# --match: only a version tag may name the build; any other tag reachable from
+# HEAD would otherwise be described instead.
+VERSION="$(git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)"
 COMMIT="$(git rev-parse HEAD 2>/dev/null || echo '')"
 DATE="$(git show -s --format=%cI HEAD 2>/dev/null || echo '')"
 

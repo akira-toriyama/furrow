@@ -27,18 +27,21 @@ name: sync-task-status
 #         PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
 #
 # The furrow binary is DOWNLOADED from a release (checksum-verified) — not
-# `go install`ed. The `furrow-version` default in THIS file is kept in lockstep
-# with the file's own release tag (bump it right before tagging), so the
-# workflow revision a caller pins and the binary revision it runs cannot
-# diverge, and CI (the "third writer" of the tracker) upgrades only when a
-# caller's pin is bumped deliberately (one fleet-sync PR per furrow release).
+# `go install`ed — and WHICH release is read off the tag the caller pinned this
+# file to (job.workflow_ref), so the workflow revision a caller pins and the
+# binary revision it runs cannot diverge, and CI (the "third writer" of the
+# tracker) upgrades only when a caller's pin is bumped deliberately (one
+# fleet-sync PR per furrow release). There is deliberately NO version literal
+# here to bump: the hand-bumped default this replaced shipped v4.0.0 inside the
+# v5.0.0 and v5.1.0 tags, and the fleet ran the older binary for 14 days.
+# scripts/check-version-lockstep.sh refuses a concrete default.
 #
 # ORDERING RULE (learned the hard way on 2026-07-13). CI is the board's THIRD
 # WRITER and it runs a PINNED, therefore possibly older, binary. A board's layout
 # version is shared mutable state between it and whatever the operator runs
 # locally. So a board upgrade must FOLLOW the fleet pin bump, never precede it:
 #   1. release a furrow that ships the new schema
-#   2. bump every caller's pin (and this file's furrow-version default) to it
+#   2. bump every caller's pin to it
 #   3. only then `furrow upgrade --yes` the board
 # Reversing 2 and 3 takes every repo's task-status sync down at once. furrow
 # itself now refuses to raise a board as a side effect of an ordinary write, and
@@ -86,11 +89,13 @@ on:
         default: in-progress
       furrow-version:
         description: >-
-          The furrow release whose binary is installed (vX.Y.Z). The default is
-          kept in LOCKSTEP with this file's own release tag (bumped right
-          before tagging), so a caller pinned to @vX.Y.Z runs binary vX.Y.Z.
+          Override the furrow release whose binary is installed (vX.Y.Z). Leave
+          empty (the default) and the version is derived from the tag the caller
+          pinned this reusable to (job.workflow_ref), so @vX.Y.Z runs binary
+          vX.Y.Z automatically. Set it only when pinning a non-tag ref (a branch
+          or SHA), which has no release binary to derive.
         type: string
-        default: v7.0.0
+        default: ""
     secrets:
       PROJECTS_WRITE_PAT:
         required: false
@@ -155,10 +160,36 @@ jobs:
           # artifacts. t-yaxa
           persist-credentials: true
 
+      # Resolve the binary version from the tag the caller pinned this reusable
+      # to. job.workflow_ref is <owner>/<repo>/<path>@refs/tags/vX.Y.Z for a tag
+      # pin (the normal case), so the tag IS the version — no hand-bumped default
+      # to drift. The override input covers a branch/SHA pin, which has no
+      # release binary to derive from. Gated like the install it feeds: a
+      # dormant or skipped run must stay green whatever ref it is pinned to.
+      - name: Resolve the pinned furrow version
+        if: steps.gate.outputs.proceed == 'true'
+        id: furrow
+        env:
+          WORKFLOW_REF: ${{ job.workflow_ref }}
+          OVERRIDE: ${{ inputs.furrow-version }}
+        run: |
+          set -euo pipefail
+          if [ -n "${OVERRIDE:-}" ]; then
+            echo "version=$OVERRIDE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Only a release tag names a binary: a moving tag (@v7) or a branch
+          # would otherwise fail later as a bare download 404.
+          ref="${WORKFLOW_REF##*@}"
+          case "$ref" in
+            refs/tags/v[0-9]*.[0-9]*.[0-9]*) echo "version=${ref#refs/tags/}" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::sync-task-status is pinned to $ref, which is not a release tag (refs/tags/vX.Y.Z); pin a release tag, or pass furrow-version to pick a release binary."; exit 1 ;;
+          esac
+
       - name: Install furrow (pinned release binary, checksum + provenance verified)
         if: steps.gate.outputs.proceed == 'true'
         env:
-          VER: ${{ inputs.furrow-version }}
+          VER: ${{ steps.furrow.outputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -184,8 +215,8 @@ jobs:
           # matches THIS release's own checksums.txt (self-consistent — a forged
           # release could ship a matching pair). `gh attestation verify` also proves
           # the artifact was built by furrow's release workflow. Fail-closed.
-          # Releases from v0.6.2+ are attested; the lockstep pin (this workflow's tag
-          # == the binary's release) ensures verify only runs against an attested build.
+          # Releases from v0.6.2+ are attested; the version is this workflow's own
+          # tag, so verify only ever runs against an attested build.
           # Bounded retry (mirrors the artifact/checksum curls' `--retry 3`): the
           # attestations API / Sigstore transparency log can blip, and this step is
           # fail-closed — don't drop a genuinely-attested release's status sync on a
@@ -229,7 +260,7 @@ jobs:
           if [ "$writable" != "true" ]; then
             b="$(printf '%s' "$board" | jq -r '.schema_version')"
             m="$(printf '%s' "$board" | jq -r '.binary_schema_version')"
-            echo "::error title=furrow schema mismatch::board is schema v$b, this pinned furrow writes v$m — bump this repo's sync-task-status.yml@vX.Y.Z pin (and the furrow-version default) to a release that speaks v$b"
+            echo "::error title=furrow schema mismatch::board is schema v$b, this pinned furrow writes v$m — bump this repo's sync-task-status.yml@vX.Y.Z pin (or its furrow-version override, if it passes one) to a release that speaks v$b"
             exit 1
           fi
           echo "board schema v$(printf '%s' "$board" | jq -r '.schema_version') — writable"
