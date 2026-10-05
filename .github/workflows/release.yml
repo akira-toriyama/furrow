@@ -32,8 +32,10 @@ jobs:
       # A skipped release-prep fails HERE, before anything is built or
       # published: the pushed tag must be the release pin (flake.nix's version,
       # which every PR holds README's pin to). v5.0.0 and v5.1.0 shipped with
-      # both still at 4.0.0, and nothing said so.
+      # both still at 4.0.0, and nothing said so. Tag refs only: a
+      # workflow_dispatch from a branch has no tag to hold to the pin.
       - name: Assert the tag is the release pin
+        if: github.ref_type == 'tag'
         env:
           TAG: ${{ github.ref_name }}
         run: sh scripts/check-version-lockstep.sh "$TAG"
@@ -101,11 +103,11 @@ jobs:
           args: release --clean --release-notes ${{ runner.temp }}/CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Name the tag being released rather than let GoReleaser infer it from
-          # `git describe`: fetch-depth 0 brings every tag, so a second tag on
-          # this commit would be a coin toss for the version stamped into the
-          # binaries and archive names.
-          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          # The tag this run is FOR, stated — never left for GoReleaser to pick
+          # among the tags on this commit. glyph's v3.3.0 push, cut on the same
+          # tree as its last rc, built 3.3.0-rc.2 artifacts (measured there
+          # 2026-09-10). Empty on a non-tag run, which leaves the choice as it was.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           # Private half of homebrew-tap's write deploy key (fleet-sync fans it
           # out); GoReleaser pushes the cask over SSH with it. t-6bhz
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}

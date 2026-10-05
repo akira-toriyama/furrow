@@ -178,10 +178,12 @@ jobs:
             echo "version=$OVERRIDE" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Only a release tag names a binary: a moving tag (@v7) or a branch
+          # would otherwise fail later as a bare download 404.
           ref="${WORKFLOW_REF##*@}"
           case "$ref" in
-            refs/tags/*) echo "version=${ref#refs/tags/}" >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::sync-task-status is pinned to a non-tag ref ($ref); pass furrow-version to pick a release binary."; exit 1 ;;
+            refs/tags/v[0-9]*.[0-9]*.[0-9]*) echo "version=${ref#refs/tags/}" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::sync-task-status is pinned to $ref, which is not a release tag (refs/tags/vX.Y.Z); pin a release tag, or pass furrow-version to pick a release binary."; exit 1 ;;
           esac
 
       - name: Install furrow (pinned release binary, checksum + provenance verified)
@@ -258,7 +260,7 @@ jobs:
           if [ "$writable" != "true" ]; then
             b="$(printf '%s' "$board" | jq -r '.schema_version')"
             m="$(printf '%s' "$board" | jq -r '.binary_schema_version')"
-            echo "::error title=furrow schema mismatch::board is schema v$b, this pinned furrow writes v$m — bump this repo's sync-task-status.yml@vX.Y.Z pin to a release that speaks v$b"
+            echo "::error title=furrow schema mismatch::board is schema v$b, this pinned furrow writes v$m — bump this repo's sync-task-status.yml@vX.Y.Z pin (or its furrow-version override, if it passes one) to a release that speaks v$b"
             exit 1
           fi
           echo "board schema v$(printf '%s' "$board" | jq -r '.schema_version') — writable"
