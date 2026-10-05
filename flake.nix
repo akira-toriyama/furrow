@@ -26,7 +26,7 @@
         # holds the pushed tag to it at release time and check-readme-parity.sh
         # holds README's pin to it, so `nix run/install` never reports a stale
         # version (audit F9).
-        version = "7.0.0";
+        version = "8.0.0-rc.1";
         # The nix store src has no .git, so version.Resolve's VCS-stamp fallback
         # finds nothing; stamp Commit explicitly from the flake's own revision
         # (dirtyRev when the tree is uncommitted) so `furrow version` isn't blank.
