@@ -40,7 +40,7 @@ func newEpicAddCmd() *cobra.Command {
 		meta   []string
 		labels []string
 		repos  []string
-		body   string
+		body   bodyFlags
 		anchor string
 	)
 	cmd := &cobra.Command{
@@ -72,8 +72,12 @@ func newEpicAddCmd() *cobra.Command {
 			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchor) == "" {
 				return core.Validationf("", "--anchor was given an empty value; pass a calendar day (2026-11-21), or drop the flag to create the box without one")
 			}
+			bodyText, err := body.text(cmd)
+			if err != nil {
+				return err
+			}
 			e, err := a.EpicAdd(args[0], app.EpicAddOpts{
-				Goal: goal, Meta: m, Labels: labels, Repos: repos, Body: body, Anchor: anchor,
+				Goal: goal, Meta: m, Labels: labels, Repos: repos, Body: bodyText, Anchor: anchor,
 			})
 			if err != nil {
 				return err
@@ -90,7 +94,7 @@ func newEpicAddCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&meta, "meta", nil, "free-form key=value furrow never interprets (repeatable)")
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable; comma-separated)")
 	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "owner/repo this box spans (repeatable; comma-separated)")
-	cmd.Flags().StringVar(&body, "body", "", "initial body markdown (default: a heading from the title)")
+	body.register(cmd, "initial body markdown itself, never a path ('-' reads stdin; default: a heading from the title)")
 	cmd.Flags().StringVar(&anchor, "anchor", "", "the box's calendar day (YYYY-MM-DD) that its followers' dues are derived from")
 	return cmd
 }
