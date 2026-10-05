@@ -58,9 +58,20 @@ homebrew_casks:
       git:
         url: "git@github.com:akira-toriyama/homebrew-tap.git"
         private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
+    # `auto` = no tap push for a tag carrying a prerelease part (v8.0.0-rc.1).
+    # A candidate exists for sync-task-status to install on a caller pinned to
+    # it; without this every `v*` tag regenerates the cask, so an rc would be
+    # what `brew upgrade` hands out.
+    skip_upload: auto
     directory: Casks
     homepage: https://github.com/akira-toriyama/furrow
     description: "Clonable, git-native plain-text task tracker — an alternative to GitHub Projects/Issues"
+    # The tap lints its own history with glyph, and GoReleaser's default
+    # subject ("Brew cask update for furrow version vX.Y.Z") matches no gemoji
+    # pattern: exit 3 under the tap's glyph.toml (measured 2026-10-05). `=`: a
+    # cask bump moves no version of the tap. The subject glyph's cask and the
+    # hub's update-tap.yml already write there.
+    commit_msg_template: ":package:(tap)= bump {{ .ProjectName }} to {{ .Tag }}"
     # The binary is unsigned; strip the quarantine xattr on macOS so Gatekeeper
     # allows launch (same pattern as the family's other casks).
     hooks:
@@ -80,6 +91,11 @@ release:
   # human pass since glyph generates and escapes them (t-8hqn) and
   # pr-verdict previews them at PR time.
   draft: false
+  # `auto` publishes a hyphenated tag (v8.0.0-rc.1) as a prerelease — the only
+  # thing that keeps GitHub's `latest` pointer, which the releases page and
+  # `gh release view` read, off a candidate. GoReleaser's default is `false`:
+  # every tag a full release.
+  prerelease: auto
 
 # Nix: the primary nix story is the in-repo flake.nix (`nix run
 # github:akira-toriyama/furrow`). A GoReleaser nix block (push to a NUR repo)
