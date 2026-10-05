@@ -100,7 +100,7 @@ fi
 # drifted (CI missed the epic schema diff and most of the smoke).
 FURROW_BIN="$BIN" sh scripts/check-live.sh
 
-echo "→ nix flake version ⇄ release-pin lockstep guard"
+echo "→ release-pin guard (no version literal in sync-task-status.yml, flake vendorHash freshness)"
 sh scripts/check-version-lockstep.sh
 
 # Release CONFIG/behavior invariants (ldflags -X path resolves to the real

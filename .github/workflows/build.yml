@@ -74,7 +74,7 @@ jobs:
             sh -n "$h"
           done
 
-      - name: nix flake lockstep guard (version pin + vendorHash freshness)
+      - name: release-pin guard (no version literal in sync-task-status.yml + vendorHash freshness)
         run: sh scripts/check-version-lockstep.sh
 
       # Release config/behavior invariants a plain grep of the configs can't make

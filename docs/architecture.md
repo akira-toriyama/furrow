@@ -303,8 +303,8 @@ downgrade path** (recovery is `git revert` on the board repo). Its report is
 It is a **flag day**: once it lands, no older furrow can write that board,
 pinned CI included, and furrow cannot see the fleet's pins — so the **ordering
 is the human's**: (1) release a furrow shipping the layout, (2) bump every
-caller's `sync-task-status.yml@vX.Y.Z` pin *and* that workflow's
-`furrow-version` default, (3) only **then** `furrow upgrade --yes` + `furrow
+caller's `sync-task-status.yml@vX.Y.Z` pin (the workflow installs the binary
+of the tag it is pinned to), (3) only **then** `furrow upgrade --yes` + `furrow
 sync`. `sync-task-status.yml` pre-flights `furrow board --json` and fails with
 one annotated error when `.writable != true`.
 

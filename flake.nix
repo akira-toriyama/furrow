@@ -21,10 +21,11 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        # Lockstep with the release tag: a flake has no tag info at eval time, so
-        # this is bumped in release-prep alongside sync-task-status.yml's
-        # furrow-version default (scripts/check-version-lockstep.sh enforces the
-        # match), so `nix run/install` never reports a stale version (audit F9).
+        # THE release pin: a flake has no tag info at eval time, so this is the one
+        # version literal release-prep bumps. scripts/check-version-lockstep.sh
+        # holds the pushed tag to it at release time and check-readme-parity.sh
+        # holds README's pin to it, so `nix run/install` never reports a stale
+        # version (audit F9).
         version = "7.0.0";
         # The nix store src has no .git, so version.Resolve's VCS-stamp fallback
         # finds nothing; stamp Commit explicitly from the flake's own revision
