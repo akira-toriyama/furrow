@@ -120,7 +120,7 @@ func TestAutoCommitDisabledNeverCommits(t *testing.T) {
 	git, dir := setupACBoard(t)
 	before := headCount(t, git, dir)
 
-	a := openBoard(t, dir) // AutoCommit stays false (a local board reads no user-config opt-in)
+	a := openBoard(t, dir) // AutoCommit stays false (no user-config [[board]] names this store)
 	if _, err := a.Add("hello", AddOpts{}); err != nil {
 		t.Fatal(err)
 	}

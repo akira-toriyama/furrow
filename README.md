@@ -511,10 +511,16 @@ meaningful cwd wants `FURROW_DIR` instead ([docs/scheduling.md](docs/scheduling.
 `autocommit = true` makes furrow **git-commit the board's `.furrow/` after every
 mutating command** — the standalone board's backup habit as a tool guarantee.
 It lives here, in the **per-machine** user config, never the board's committed
-`config.toml` (which syncs to every clone and CI). It commits by `sync`'s own
-rule plus the body this command wrote, is **best-effort** (a commit failure is
-a stderr warning, the command still exits 0), **never fetches or pushes**, and
-skips a board whose enclosing git repo is not its own. Mechanism:
+`config.toml` (which syncs to every clone and CI). It **follows the store, not
+the scope**: the entry whose `path` is the store furrow opened applies whichever
+way the command reached it — this entry's scope, a cwd inside the board's own
+tree (local discovery), a pointer, or `FURROW_DIR` — so a backup promise never
+depends on the directory you ran from (two entries naming one store: the one
+whose scope resolved the command, else the first in the file). It commits by
+`sync`'s own rule plus the body this command wrote, is **best-effort** (a commit
+failure is a stderr warning, the command still exits 0), **never fetches or
+pushes**, and skips a board whose enclosing git repo is not its own.
+`furrow board` reports `autocommit: on` whenever it applies. Mechanism:
 [docs/architecture.md](docs/architecture.md).
 
 ### Per-repo pointer
@@ -718,7 +724,7 @@ The common setup on a work machine, where there is no remote you can push to: ke
    autocommit = true                            # commit the board after each change — the backup habit, automated
    ```
 
-Then set **`mode = "standalone"`** and **`default_repo = "<owner>/<repo>"`** in the board's `config.toml` ([Configuration](#configuration)): the mode changes wording only (`furrow upgrade` drops the flag-day checklist and the sync line), and `default_repo` closes the hole that a command run from *inside* `claude_workspace/` finds the board by local discovery, which carries none of the `[[board]]` entry's scope — without it the same board answers `ls` differently by directory and a bare `add` there drafts. With no remote, commits are the only undo, so `autocommit = true` above is the backup habit automated ([details](#user-level-config-no-per-repo-file)).
+Then set **`mode = "standalone"`** and **`default_repo = "<owner>/<repo>"`** in the board's `config.toml` ([Configuration](#configuration)): the mode changes wording only (`furrow upgrade` drops the flag-day checklist and the sync line), and `default_repo` closes the hole that a command run from *inside* `claude_workspace/` finds the board by local discovery, which carries none of the `[[board]]` entry's scope — without it the same board answers `ls` differently by directory and a bare `add` there drafts. With no remote, commits are the only undo, so `autocommit = true` above is the backup habit automated ([details](#user-level-config-no-per-repo-file)); it needs no such fallback, because it follows the store's path and so holds from inside `claude_workspace/` too.
 
 A fully separate directory (e.g. `~/furrow-boards/app/.furrow`, outside the code repo) works too — same two-config setup, just a different `path`/`scopes`.
 

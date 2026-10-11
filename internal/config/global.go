@@ -31,7 +31,9 @@ type GlobalBoard struct {
 	// board's .furrow/ afterwards (best-effort, no push) — the standalone-board
 	// backup guarantee turned into a tool behavior. It lives here (per-machine
 	// user config), NOT in the board's committed config.toml, so one operator's
-	// choice never propagates to every clone or to CI. Default false.
+	// choice never propagates to every clone or to CI. It is keyed by Path: the
+	// app layer applies it whenever it opens that store, not only when this
+	// entry's scope resolved the command. Default false.
 	AutoCommit bool
 }
 

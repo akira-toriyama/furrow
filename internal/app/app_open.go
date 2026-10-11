@@ -87,6 +87,54 @@ func applyBoardScope(res *resolution, cfg *config.Config) []string {
 	return nil
 }
 
+// applyStoreAutoCommit reads `autocommit` off the user-config [[board]] entry
+// whose path IS the store discovery opened, whichever arm found it. The key
+// is the store, not the arm, because the key answers a question about the
+// store ("is this one backed up by commits on this machine?") that has the
+// same answer from every directory. Before this, the opt-in rode only on the
+// user-config arm, so the documented standalone recipe — a [[board]] naming
+// `<repo>/claude_workspace/.furrow`, autocommit on — committed a `furrow label`
+// run at the repo root and silently left the same command run from inside
+// `claude_workspace/` (found by the walk: source "local") uncommitted, with no
+// stderr line (t-19gf). That is the scope hole `default_repo` closes, on the
+// backup side — and unlike scope, the board's own config.toml can never carry
+// the answer (it is committed and shared; autocommit is per-machine), so the
+// user config has to be consulted here for every arm.
+//
+// Precedence: the entry discovery picked (the user-config arm's winner) keeps
+// its say; any other arm takes the FIRST entry in file order naming the store
+// (pickBoard's tie rule). The file arm alone is read (loadConfigBoards):
+// FURROW_BOARD replaces the file for SCOPE resolution, but names no autocommit
+// of its own, so a store it points at that the file also names is backed up
+// exactly as it is without the override. Dropped (clamped) entries cannot
+// match — an autocommit-only entry still needs `scopes`, like every entry.
+//
+// A config file that cannot be read at all is a stderr note and autocommit
+// off, never an error: this runs for a LOCAL board too, which opened fine
+// before the user config was ever consulted, and the user-config arm reports
+// the broken file loudly the next time it is the one that resolves.
+func applyStoreAutoCommit(res *resolution) {
+	if res.Source == SourceUserConfig {
+		return
+	}
+	boards, cfgDir, _, err := loadConfigBoards()
+	if err != nil {
+		res.ScopeWarn = append(res.ScopeWarn, fmt.Sprintf("autocommit stays off: the user config cannot be read (%v)", err))
+		return
+	}
+	store := canonicalPath(res.Dir)
+	for i := range boards {
+		p, err := resolvePathRelTo(cfgDir, boards[i].Path)
+		if err != nil {
+			continue // pickBoard warns about this entry when it is the one resolving
+		}
+		if canonicalPath(p) == store {
+			res.AutoCommit = boards[i].AutoCommit
+			return
+		}
+	}
+}
+
 // defaultRepoWarning is the clamp the app layer applies to `default_repo` —
 // config stores it verbatim because core.IsRepoShaped lives here. It is ONE
 // function because `config set` must ask the same question before writing:
