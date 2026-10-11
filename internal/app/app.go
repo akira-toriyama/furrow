@@ -88,8 +88,10 @@ type App struct {
 	AutoFilter bool
 
 	// AutoCommit reports whether this board opted into post-mutation git commits
-	// (the user-config [[board]] `autocommit` key; default false). When on, the
-	// CLI runs AutoCommitFlush after a successful mutating command.
+	// (the user-config [[board]] `autocommit` key of the entry naming THIS store,
+	// whichever discovery arm reached it — see applyStoreAutoCommit; default
+	// false). When on, the CLI runs AutoCommitFlush after a successful mutating
+	// command.
 	AutoCommit bool
 
 	// ScopeWarnings are discovery-time notes bound for stderr (e.g. the global
@@ -188,6 +190,9 @@ func Open(startDir string) (*App, error) {
 	// only be applied here, once openAt has loaded it. It is a fallback: a
 	// pointer's / a [[board]]'s repo is nearer and already in res.
 	a.Warnings = append(a.Warnings, applyBoardScope(&res, a.Cfg)...)
+	// Likewise autocommit: it is the store's per-machine property, read off
+	// the user-config entry naming the store, whatever arm reached it.
+	applyStoreAutoCommit(&res)
 	a.DefaultLabel = res.DefaultLabel
 	a.DefaultRepo = res.DefaultRepo
 	a.AutoFilter = res.AutoFilter

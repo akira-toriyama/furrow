@@ -62,7 +62,10 @@ auto_filter = true
 # behavior, for a standalone single-machine board. PER-MACHINE by design (that
 # is why it lives in THIS file, not the board's shared config.toml): one
 # operator's choice never propagates to other clones or CI. The board must be
-# its own git repo (` + "`git init`" + ` in the board's directory). Default false.
+# its own git repo (` + "`git init`" + ` in the board's directory). It follows the
+# STORE: a command that opens this path from inside the board's own tree, via
+# a pointer, or via FURROW_DIR commits too, not only one this entry's scope
+# resolved. Default false.
 autocommit = false
 
 # Repeat [[board]] to declare more central boards; the innermost scope wins.

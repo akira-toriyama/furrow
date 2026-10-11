@@ -631,7 +631,15 @@ clone and CI): it reuses `partitionSync` — exactly what `furrow sync` commits
 by — plus the ids this command wrote, is best-effort (a commit failure never
 turns a landed mutation into a non-zero exit, which would make an agent
 double-apply), never fetches or pushes, and refuses when the enclosing git repo
-is not the board's own.
+is not the board's own. It is keyed by the **store**, not the arm:
+`app.applyStoreAutoCommit` reads it off the `[[board]]` entry whose `path` is
+the opened store after every arm (the user-config winner keeps its own value;
+any other arm takes the first entry in file order naming the store, reading
+the config file alone — `FURROW_BOARD` replaces the file for scope, not for
+this). Unlike scope, the board's own `config.toml` can carry no fallback here
+(it is shared), which is why the user config is consulted for a local board at
+all; a file that cannot be read is one stderr note and autocommit off, never
+an error on a board that opened without it.
 
 **Repo derivation (`repo = "auto"`)**, in [`internal/app/gitorigin.go`](../internal/app/gitorigin.go),
 is **file reads only — no git subprocess**: find the checkout (a `.git` file's
