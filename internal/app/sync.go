@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -83,6 +84,14 @@ type SyncProgress struct {
 	// your in-progress task stays invisible until you happen to re-read it.
 	// Omitted when empty.
 	Incoming []IncomingChange `json:"incoming,omitempty"`
+	// MergedShards lists the shard paths (repo-relative, like a sync-conflict's
+	// details.paths) whose two sides this sync's pull merged at the field grain
+	// (see resolveShardConflicts): both sides had written the shard, in
+	// different fields, and the rebase would otherwise have stopped on the
+	// `updated` stamp every write advances. Disclosed because a merge is a
+	// write nobody typed — the reader should know the pulled shard is neither
+	// side's verbatim. Omitted when empty.
+	MergedShards []string `json:"merged_shards,omitempty"`
 }
 
 // opRemedy names the exact way out of an in-progress git operation. The generic
@@ -138,11 +147,15 @@ func interruptError(err error, ctxErr error) error {
 // It is a thin git wrapper by design — no daemon, no sync server (see
 // docs/non-goals.md).
 //
-// Failure contract: a rebase conflict aborts the rebase automatically (the
+// Failure contract: a rebase conflict is first offered to the shard resolver
+// (resolveShardConflicts) — machine-written shards both sides changed in
+// DIFFERENT fields are merged field by field and the rebase continues,
+// reported in MergedShards. Anything else aborts the rebase automatically (the
 // board is never left with conflict markers — those would make every later
 // furrow command fail in UnmarshalTask; the local sync commit survives) and
 // returns a CodeInternal error with ID "sync-conflict" whose Details carry the
-// conflicted paths. The returned SyncProgress is meaningful even when err is
+// conflicted paths (and, per shard refused for it, the fields both sides set
+// differently). The returned SyncProgress is meaningful even when err is
 // non-nil.
 //
 // Two further ids exist because a sync can lose WORK without losing the BOARD, and
@@ -330,16 +343,53 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 		before := autostashCommits(ctx, r)
 		if err := r.PullRebase(ctx); err != nil {
 			if r.RebaseInProgress(ctx) {
+				// A stop on shards both sides wrote in different fields is not a
+				// conflict to hand anyone: merge them and finish the rebase, which
+				// lands on the same success path (autostash re-applied by git at
+				// the end, so the stash probe below still holds). Only a board this
+				// binary may write gets the resolver — a merge is re-encoded with
+				// THIS binary's marshaller, and a stale board (schema-upgrade-required)
+				// is read-only for every other writer too.
+				var merged []string
+				var unresolved []shardConflict
+				var merr error
+				if a.Writable() == nil {
+					merged, unresolved, merr = a.resolveShardConflicts(ctx, r, spec, err)
+				}
+				if merr == nil && len(unresolved) == 0 && ctx.Err() == nil && !r.RebaseInProgress(ctx) {
+					p.MergedShards = appendUnique(p.MergedShards, merged...)
+					p.PendingStash, stranded = strandedStash(ctx, r, before)
+					p.Pulled = true
+					return nil
+				}
+				if merr != nil {
+					// The rebase stopped for a reason other than a conflict (a hook
+					// refused a pick, or ctx was cancelled mid-resolve): abort, and
+					// report the stop itself — it is not "conflicts", so p.Conflict
+					// stays false and the kind is git's own failure.
+					paths := r.ConflictedPaths(ctx)
+					if aerr := r.AbortRebase(ctx); aerr != nil {
+						return gitAbortFailed(merr, aerr, paths, r.Toplevel())
+					}
+					p.PendingStash, stranded = strandedStash(ctx, r, before)
+					return merr
+				}
 				// Flag the conflict BEFORE attempting the abort: even if the
 				// abort itself fails (the one state the contract promises never
 				// to leave behind), the progress object and the error must both
 				// say "conflict" and carry the paths.
 				p.Conflict = true
-				paths := r.ConflictedPaths(ctx)
+				paths := conflictPaths(unresolved)
+				if len(paths) == 0 {
+					paths = r.ConflictedPaths(ctx)
+				}
 				aerr := r.AbortRebase(ctx)
 				// The abort is what re-applies the autostash on this path, so probe
 				// after it — and only after it (a failed abort never got that far).
 				details := map[string]any{"paths": paths}
+				if fields := conflictFields(unresolved); fields != nil {
+					details["fields"] = fields
+				}
 				if aerr == nil {
 					p.PendingStash, stranded = strandedStash(ctx, r, before)
 					if len(p.PendingStash) > 0 {
@@ -361,6 +411,12 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 				// the operator was in the middle of writing.
 				msg := "pull --rebase hit conflicts; the rebase was aborted and the board restored " +
 					"(your local sync commit is intact). Resolve the paths by hand (pull, fix, commit), then re-run furrow sync"
+				if fields := conflictFields(unresolved); fields != nil {
+					msg = "pull --rebase hit conflicts that no field-wise merge resolves (" + describeConflictFields(fields) +
+						"); the rebase was aborted and the board restored (your local sync commit is intact). " +
+						"Decide those fields: set each to the value you want with a furrow command on this checkout " +
+						"(so the two sides agree), then re-run furrow sync — shards that differ in other fields merge on their own"
+				}
 				if stranded {
 					msg = fmt.Sprintf("pull --rebase hit conflicts; the rebase was aborted (your local sync commit is "+
 						"intact), but git could NOT put your stashed working-tree changes back — they are in the stash, "+
@@ -443,4 +499,51 @@ func (p *SyncProgress) SyncSummary() string {
 		s += fmt.Sprintf(" foreign_files=%d", n)
 	}
 	return s
+}
+
+// describeConflictFields renders the refused shards for the error line:
+// ".furrow/tasks/t-x.json: title; .furrow/tasks/t-y.json: priority, status".
+func describeConflictFields(fields map[string][]string) string {
+	paths := make([]string, 0, len(fields))
+	for p := range fields {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	parts := make([]string, len(paths))
+	for i, p := range paths {
+		parts[i] = p + ": " + strings.Join(fields[p], ", ")
+	}
+	return strings.Join(parts, "; ")
+}
+
+// gitAbortFailed is the error for a stopped rebase the resolver could not go
+// on with AND the automatic abort of which failed — the one state the contract
+// promises never to leave, so it is named with the way out. git-failed, not
+// sync-conflict: the stop was not a conflict (that branch has its own error).
+func gitAbortFailed(stop, abort error, paths []string, top string) error {
+	return &core.Error{
+		Code: core.CodeInternal,
+		Kind: core.KindGitFailed,
+		Msg: fmt.Sprintf("pull --rebase stopped (%v) AND the automatic abort failed (%v) — "+
+			"run 'git rebase --abort' in %s by hand, then re-run furrow sync", stop, abort, top),
+		Details: map[string]any{"paths": paths},
+	}
+}
+
+// appendUnique appends the paths not already listed and keeps the list sorted
+// — a sync can pull twice (the push-race retry), and a shard merged on both
+// pulls is one shard.
+func appendUnique(list []string, paths ...string) []string {
+	have := make(map[string]bool, len(list))
+	for _, p := range list {
+		have[p] = true
+	}
+	for _, p := range paths {
+		if !have[p] {
+			have[p] = true
+			list = append(list, p)
+		}
+	}
+	sort.Strings(list)
+	return list
 }

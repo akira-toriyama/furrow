@@ -129,9 +129,17 @@ func newSyncCmd() *cobra.Command {
 			"  2. git fetch, then git rebase --autostash @{u} (onto the tracking ref, not\n" +
 			"     FETCH_HEAD, so a co-writer's concurrent fetch can't race it)\n" +
 			"  3. git push (one pull→push retry on non-fast-forward)\n\n" +
-			"On a rebase conflict the rebase is aborted automatically (the board is never\n" +
-			"left with conflict markers; your local sync commit survives) and the error\n" +
-			"envelope carries kind \"sync-conflict\" plus the conflicted paths. A co-writer's\n" +
+			"A rebase stop on machine-written shards (tasks/, epics/, repos/ *.json, hot or\n" +
+			"archived) that both sides wrote in DIFFERENT fields is merged field by field —\n" +
+			"the status bot's close and your checklist tick both land, `updated` takes the\n" +
+			"later stamp, `closed` the first close — and the rebase continues; the shards\n" +
+			"are listed in merged_shards and one \"merged:\" line. Any other conflict (a\n" +
+			"field both sides set differently, a `closed` change on a repeating task,\n" +
+			"meta.json, a deleted shard) aborts the rebase automatically (the board is\n" +
+			"never left with conflict markers; your local sync commit survives) and the\n" +
+			"error envelope carries kind \"sync-conflict\" plus the paths that need a\n" +
+			"decision and, per shard refused over a field, those fields (details.fields):\n" +
+			"set them to the value you want on this checkout and re-run. A co-writer's\n" +
 			"fetch racing a ref/index lock during the pull is waited out with a bounded\n" +
 			"backoff; a live race clears in under a second, so a lock that persists is a\n" +
 			"likely-stale .git/*.lock and sync fails terminally naming it (kind\n" +
@@ -148,7 +156,8 @@ func newSyncCmd() *cobra.Command {
 			"markers is never auto-committed (kind \"body-conflict-marker\", exit 2): a commit\n" +
 			"cannot be un-published, and `furrow lint` flags any that got in already.\n\n" +
 			"The progress object {committed, pulled, pushed, conflict, complete,\n" +
-			"committed_bodies, pending_bodies, pending_stash, incoming} goes to stdout\n" +
+			"committed_bodies, pending_bodies, pending_stash, incoming, merged_shards}\n" +
+			"goes to stdout\n" +
 			"even on\n" +
 			"failure; `complete` is false whenever a body or stash is left pending (and\n" +
 			"the stdout summary line names that count), so a pushed-but-incomplete sync\n" +
@@ -206,6 +215,11 @@ func newSyncCmd() *cobra.Command {
 				emitObject(syncOutput{prog, summaryPtr(sum), lintPtr(lint)})
 			} else {
 				fmt.Fprintln(out, prog.SyncSummary())
+				// The shards the pull merged field-wise: a write nobody typed, so
+				// it is said before what the pull brought in.
+				if line := mergedLine(prog.MergedShards); line != "" {
+					fmt.Fprintln(out, line)
+				}
 				// What the pull brought in, before the board-state ride-alongs:
 				// revisit/lint describe where the board IS, incoming says what
 				// just MOVED it — the order a reader reconstructs events in.
@@ -325,6 +339,19 @@ func incomingLine(changes []app.IncomingChange) string {
 		return ""
 	}
 	return "incoming: " + strings.Join(parts, ", ")
+}
+
+// mergedLine renders the shards the pull merged field-wise as one line:
+// "merged: 1 shard(s) both sides wrote in different fields (.furrow/tasks/t-x.json)".
+// At most three paths are named (capNames), the count is exact and the full
+// list is the JSON `merged_shards` key. Nothing merged -> "" (quiet).
+func mergedLine(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	n, more := capNames(len(paths))
+	return fmt.Sprintf("merged: %d shard(s) both sides had written (%s%s)",
+		len(paths), strings.Join(paths[:n], ", "), more)
 }
 
 // stashNote renders the stranded autostash entries for the human warning:

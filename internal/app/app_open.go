@@ -792,8 +792,9 @@ func canonicalPath(p string) string {
 // while a session appends notes, and two EOF-adjacent appends conflict on
 // every pull --rebase (t-44h4). git's built-in union merge driver keeps both
 // sides instead — a body never has a meaningful textual conflict to hand a
-// human. Shards stay OUT: union on JSON would corrupt it, and the shard
-// conflict IS meaningful (two writers disagreeing about one task).
+// human. Shards stay OUT: union on JSON would corrupt it. Their resolver is
+// sync's own (resolveShardConflicts) — field-wise, so only two writers setting
+// the SAME field differently is left as a conflict.
 const GitAttributesTemplate = `# machine-written by furrow init — see 'multi-machine sync' in the README.
 # Bodies are append-mostly prose; let git fold concurrent appends together
 # (the task-status marker × local note race) instead of conflicting.

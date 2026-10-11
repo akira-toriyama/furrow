@@ -22,10 +22,10 @@ import (
 // both sides stamps `updated` on each clone with its own wall clock, and the
 // moment the two stamps fall in different seconds (a slow runner crossing a
 // boundary between A's add and B's note) the SHARD conflicts on that one line
-// — the deliberately-unhandled shard race t-44h4 left to the operator, which
-// no union rule covers and which this test is not about. That is how the test
-// flaked on macOS CI (t-gsf3): it passed only while every stamp shared one
-// second.
+// — the shard race t-44h4 left to the operator (since resolved field-wise by
+// sync, see sync_merge_test.go), which no union rule covers and which this
+// test is not about. That is how the test flaked on macOS CI (t-gsf3): it
+// passed only while every stamp shared one second.
 func TestSyncUnionMergesConcurrentBodyAppends(t *testing.T) {
 	_, cloneA, cloneB := setupClones(t)
 

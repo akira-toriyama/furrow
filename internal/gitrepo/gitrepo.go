@@ -645,11 +645,19 @@ func (r *Repo) absGitPath(out string) string {
 // Ctrl-C/SIGTERM-cancelled sync), so a long fetch/push unwinds promptly instead
 // of hanging.
 func runGit(ctx context.Context, git, dir string, args ...string) (stdout, stderr string, err error) {
+	return runGitEnv(ctx, git, dir, nil, args...)
+}
+
+// runGitEnv is runGit under extra environment entries ("KEY=value"), for the
+// steps that must pin a variable the operator's shell may set (GIT_EDITOR for
+// a rebase --continue). Each override's key is stripped from the inherited
+// environment first, for the same reason gitEnv strips the locale keys.
+func runGitEnv(ctx context.Context, git, dir string, env []string, args ...string) (stdout, stderr string, err error) {
 	// #nosec G204 -- git is resolved from PATH; args are furrow-built git
 	// subcommands and refs/paths, never an unescaped user shell string.
 	cmd := exec.CommandContext(ctx, git, append(gitConfig(), args...)...)
 	cmd.Dir = dir
-	cmd.Env = gitEnv()
+	cmd.Env = gitEnv(env...)
 	var so, se strings.Builder
 	cmd.Stdout = &so
 	cmd.Stderr = &se
@@ -681,21 +689,24 @@ func gitConfig() []string {
 // only appended-over, because getenv resolves a duplicate key to the first
 // occurrence on some platforms, so a trailing "LC_ALL=C" would not reliably win.
 // The git porcelain furrow parses (e.g. `diff --diff-filter=U`) is not
-// localized, so forcing C is safe.
-func gitEnv() []string {
+// localized, so forcing C is safe. overrides are further "KEY=value" entries
+// appended last, their keys stripped from the inherited set by the same rule.
+func gitEnv(overrides ...string) []string {
+	drop := map[string]bool{"LC_ALL": true, "LANG": true, "LANGUAGE": true, "LC_MESSAGES": true}
+	for _, o := range overrides {
+		k, _, _ := strings.Cut(o, "=")
+		drop[k] = true
+	}
 	base := os.Environ()
-	out := make([]string, 0, len(base)+1)
+	out := make([]string, 0, len(base)+1+len(overrides))
 	for _, kv := range base {
-		switch {
-		case strings.HasPrefix(kv, "LC_ALL="),
-			strings.HasPrefix(kv, "LANG="),
-			strings.HasPrefix(kv, "LANGUAGE="),
-			strings.HasPrefix(kv, "LC_MESSAGES="):
+		k, _, _ := strings.Cut(kv, "=")
+		if drop[k] {
 			continue
 		}
 		out = append(out, kv)
 	}
-	return append(out, "LC_ALL=C")
+	return append(append(out, "LC_ALL=C"), overrides...)
 }
 
 // firstLine trims a git stderr blob to its first non-empty line — enough for

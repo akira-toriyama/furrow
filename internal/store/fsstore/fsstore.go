@@ -771,7 +771,9 @@ func (s *Store) atomicWrite(path string, data []byte) error {
 
 // WriteFileAtomic is the store's tmp+fsync+rename write for the files that
 // live beside the shards but are not shards — config.toml, .gitattributes,
-// the user-level config. They were written with os.WriteFile, which truncates
+// the user-level config — and for the one shard write that does not go
+// through Save: sync's field-wise merge of a conflicted shard, whose bytes
+// core already canonicalised. They were written with os.WriteFile, which truncates
 // first: a crash between truncate and write left a half TOML that config.Load
 // refuses outright, so `furrow board` could not even open the board that had
 // just been edited (t-ge22).

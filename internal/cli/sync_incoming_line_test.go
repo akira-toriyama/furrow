@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/internal/app"
@@ -60,5 +61,21 @@ func TestIncomingLineCapsNamedIDs(t *testing.T) {
 	want := "incoming: 5 closed (t-0, t-1, t-2, +2 more)"
 	if got := incomingLine(changes); got != want {
 		t.Errorf("incomingLine = %q, want %q", got, want)
+	}
+}
+
+// The merged line names the shards a pull merged field-wise, capped like the
+// incoming line, and stays silent when nothing was merged.
+func TestMergedLineRendering(t *testing.T) {
+	if got := mergedLine(nil); got != "" {
+		t.Errorf("nothing merged must print nothing, got %q", got)
+	}
+	one := mergedLine([]string{".furrow/tasks/t-a.json"})
+	if want := "merged: 1 shard(s) both sides had written (.furrow/tasks/t-a.json)"; one != want {
+		t.Errorf("mergedLine(one) = %q; want %q", one, want)
+	}
+	five := mergedLine([]string{"a", "b", "c", "d", "e"})
+	if !strings.HasPrefix(five, "merged: 5 shard(s)") || !strings.HasSuffix(five, "(a, b, c, +2 more)") {
+		t.Errorf("mergedLine(five) = %q; want the exact count and at most three names", five)
 	}
 }
