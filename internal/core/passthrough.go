@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 )
@@ -94,13 +95,34 @@ func isKnown(names []string, key string) bool {
 	return false
 }
 
+// rawObject decodes one shard's bytes to its top-level keys with every value
+// left verbatim (json.RawMessage). It is the ONE generic decoder of shard bytes
+// — splitExtras parks unknown keys through it and MergeShard (merge.go) reads
+// the three sides of a conflicted shard through it — and it lives here because
+// decoding a shard's bytes is this file's monopoly (check-marshal-singlepath.sh
+// guards every other file against encoding/json). nil data is an empty object:
+// the "no base" side of a both-added merge.
+func rawObject(data []byte) (map[string]json.RawMessage, error) {
+	if len(data) == 0 {
+		return map[string]json.RawMessage{}, nil
+	}
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(data, &all); err != nil {
+		return nil, err
+	}
+	if all == nil {
+		return nil, errors.New("not a JSON object")
+	}
+	return all, nil
+}
+
 // splitExtras separates a raw object's keys into the ones the struct declares and
 // the ones it does not. The unknown ones are returned verbatim (json.RawMessage),
 // never parsed into a Go shape we would then have to re-derive — preserving is
 // the point, and a value we do not understand is a value we must not rewrite.
 func splitExtras(data []byte, known []string) (Extras, error) {
-	var all map[string]json.RawMessage
-	if err := json.Unmarshal(data, &all); err != nil {
+	all, err := rawObject(data)
+	if err != nil {
 		return nil, err
 	}
 	for k := range all {
@@ -235,11 +257,18 @@ func extrasStringValue(e Extras, key string) (val string, ok, isString bool) {
 	if !present {
 		return "", false, false
 	}
-	var s string
+	val, isString = rawString(raw)
+	return val, true, isString
+}
+
+// rawString decodes one raw value as a JSON string; ok is false for null or
+// any non-string value. The one string decoder for shard values, shared by
+// extrasStringValue and the merge's timestamp reads (merge.go).
+func rawString(raw json.RawMessage) (s string, ok bool) {
 	if err := json.Unmarshal(raw, &s); err != nil {
-		return "", true, false
+		return "", false
 	}
-	return s, true, true
+	return s, true
 }
 
 // extraKeys names the unknown keys a record arrived with, sorted; nil when there

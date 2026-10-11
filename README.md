@@ -589,14 +589,26 @@ disjoint files; only both sides editing the *same* task conflicts. **Bodies go
 one step further:** `furrow init` scaffolds `.furrow/.gitattributes` with
 `bodies/*.md merge=union` (and the `archive/bodies/` twin), so the commonest
 collision — a bot appending a status marker while a session appends a note to the
-same body — folds both paragraphs instead of stopping the sync (a *shard*
-conflict stays real — union on JSON would corrupt it). A board initialized before
-the scaffold just adds that line; `furrow doctor` warns `no-body-union-merge`
-until it does. On a real conflict sync **aborts the rebase automatically** (the
-board is never left with markers; your local sync commit survives) and exits 3
-with `"kind": "sync-conflict"` + `"details": {"paths": [...]}`. The progress object
+same body — folds both paragraphs instead of stopping the sync. A board
+initialized before the scaffold just adds that line; `furrow doctor` warns
+`no-body-union-merge` until it does. **Shards are merged by furrow itself**, not
+by git (union on JSON would corrupt it): when the rebase stops on a
+machine-written shard (`tasks/`, `epics/`, `repos/` `*.json`, hot or archived)
+that both sides wrote in *different* fields — the status bot's close and your
+checklist tick, which collide only on the `updated` stamp every write advances —
+sync merges the two field by field (`updated` takes the later stamp, `closed` the
+first close), continues the rebase, and lists the shards in `merged_shards`. A
+field both sides set *differently* is a real conflict, as is any `closed` change
+on a **repeating** task (a close mints the successor, so two closes are two
+series), `meta.json`, or a shard one side deleted: sync **aborts the rebase
+automatically** (the board is never left with markers; your local sync commit
+survives) and exits 3 with `"kind": "sync-conflict"` + `"details": {"paths":
+[...], "fields": {<path>: [<field>...]}}` — `paths` names only the shards that
+need a decision (`fields` the fields, where that is the reason); set those
+fields to the value you want with a furrow command on this checkout and re-run,
+and the rest merges on its own. The progress object
 `{committed, pulled, pushed, conflict, complete, committed_bodies,
-pending_bodies, pending_stash, foreign_files, switches, incoming}` prints to
+pending_bodies, pending_stash, foreign_files, switches, incoming, merged_shards}` prints to
 stdout on
 success and
 failure alike (empty lists omitted); **`complete`** — not `pushed` — is the
@@ -609,7 +621,9 @@ shard diff: `created` / `closed` / `reopened` / `moved` / `refiled` /
 `archived` (the pulled tree holds its `archive/` copy) / `removed` (`furrow rm`:
 nothing to unarchive) / `updated`, with the old and new lane or epic on the moves — also
 rendered as one `incoming:` human line, so the CI that closed your in-progress
-task surfaces in the sync that pulled it, not on a later re-read.
+task surfaces in the sync that pulled it, not on a later re-read; `merged_shards`
+names the shards that pull merged field-wise (one `merged:` line), because a
+merge is a write nobody typed.
 
 ## Sync failure modes
 

@@ -331,12 +331,15 @@ jobs:
           #
           # `furrow sync` is furrow's own implementation of this exact operation and
           # is strictly better at it: it retries pull→push on a non-fast-forward
-          # (the race this loop existed for), and on a real conflict it ABORTS the
-          # rebase, restores the board, keeps the local commit, and exits 3 with the
-          # stable kind `sync-conflict` plus `details.paths`. The race stays handled
-          # and the conflict becomes a typed, reportable outcome instead of raw git
-          # text in a dead step. (That contract is pinned by
-          # internal/app/sync_test.go's TestSyncConflictAbortsAndReportsPaths.)
+          # (the race this loop existed for); a shard this run and a session wrote
+          # in DIFFERENT fields (this close vs. their checklist tick, colliding only
+          # on `updated`) is merged field by field and the rebase continues; and on
+          # a real conflict it ABORTS the rebase, restores the board, keeps the
+          # local commit, and exits 3 with the stable kind `sync-conflict` plus
+          # `details.paths`. The race stays handled and the conflict becomes a
+          # typed, reportable outcome instead of raw git text in a dead step. (That
+          # contract is pinned by internal/app/sync_test.go's
+          # TestSyncConflictAbortsAndReportsPaths and sync_merge_test.go.)
           #
           # The commit above is made BEFORE sync on purpose, so the tracker keeps
           # this workflow's own message; sync then sees a clean tree

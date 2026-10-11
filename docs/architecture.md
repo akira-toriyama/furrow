@@ -554,7 +554,8 @@ command notes (the README table is generated from this tree), never a copy here:
   "message"}}` to stderr — `kind` a closed vocabulary (`furrow vocab
   error-kinds`), `retryable` whether re-running is the documented recovery —
   plus `candidates` (a near-miss: an ambiguous repo short name, an unknown lane
-  or (sub)command) and `details` (`sync-conflict`'s paths; the version gate's
+  or (sub)command) and `details` (`sync-conflict`'s paths and, per shard refused
+  over a field, its `fields`; the version gate's
   `{board_schema, binary_schema}`). The contract also lives in the root
   command's `--help`. `cmd/furrow/main.go` is literally `os.Exit(cli.Execute())`.
 
