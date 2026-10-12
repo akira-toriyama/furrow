@@ -36,20 +36,33 @@ var autoCommitApp *app.App
 
 // mutatingCommands names the subcommands that write to the store — the set the
 // autocommit post-run hook fires for. Reads and diagnostics write nothing, so
-// they are absent; so are, deliberately, `edit` (whose real change happens
-// out-of-process in $EDITOR), `migrate` (a rare, possibly cross-board rewrite
-// to commit deliberately), `init` (it creates the store this hook would commit
-// INTO, and never opens an App, so an entry for it could not fire), and `sync`
-// itself (its own git ritual). A command missing here simply does
-// not autocommit its own change — it rides in on the next mutating command's
-// commit — a graceful degradation, never data loss.
+// they are absent; so are, deliberately, `migrate` (a rare, possibly
+// cross-board rewrite to commit deliberately), `init` (it creates the store
+// this hook would commit INTO, and never opens an App, so an entry for it
+// could not fire), `config` (`config set` edits config.toml, a machine path
+// the NEXT mutator's commit carries; its siblings are reads), and `sync`
+// itself (its own git ritual). `edit` is in: its --body/--body-file arm is a
+// store write like note's (it was missing here, so that arm's body landed
+// neither committed nor journaled while `furrow note` beside it was —
+// t-m0v2); its $EDITOR / print-the-path arms write nothing in-process and
+// disarm the hook themselves (disarmAutoCommit). A command missing here
+// simply does not autocommit its own change — it rides in on the next
+// mutating command's commit — a graceful degradation, never data loss.
 var mutatingCommands = map[string]bool{
-	"add": true, "note": true, "attach": true, "done": true,
+	"add": true, "note": true, "attach": true, "edit": true, "done": true,
 	"move": true, "reorder": true, "retitle": true, "set": true, "value": true,
 	"effort": true, "check": true, "dep": true, "epic": true, "label": true,
 	"repo": true, "ref": true, "review": true, "apply": true, "archive": true,
-	"rm": true, "upgrade": true,
+	"unarchive": true, "rm": true, "tidy": true, "upgrade": true,
 }
+
+// disarmAutoCommit tells the root PersistentPostRunE that the command which
+// opened the App wrote nothing in-process after all, so neither the autocommit
+// flush nor the body journal runs for it. The one caller is `edit`'s editor /
+// path-printing arm: the gate is keyed by command name, the name is a mutator
+// for its --body arm, and firing the flush here would sweep a pre-dirty tree
+// into a commit named after a command that changed nothing.
+func disarmAutoCommit() { autoCommitApp = nil }
 
 // Execute builds the root command, runs it, and maps the result to furrow's
 // exit-code contract:

@@ -18,16 +18,24 @@ func TestMutatingCommandsAreRealAndExcludeReads(t *testing.T) {
 			t.Errorf("mutatingCommands has %q, which is not a registered command (typo? renamed?)", name)
 		}
 	}
-	// Reads, diagnostics, sync (its own git ritual), edit (edits happen in
-	// $EDITOR, out of process), and migrate (a rare, deliberately hand-committed
-	// rewrite) must NEVER autocommit.
+	// Reads, diagnostics, sync (its own git ritual), config (set's config.toml
+	// rides on the next mutator; its siblings are reads), and migrate (a rare,
+	// deliberately hand-committed rewrite) must NEVER autocommit.
 	for _, read := range []string{
 		"ls", "show", "next", "brief", "revisit", "search", "stats",
 		"board", "boards", "doctor", "lint", "config", "schema", "version",
-		"sync", "edit", "migrate",
+		"sync", "migrate",
 	} {
 		if mutatingCommands[read] {
 			t.Errorf("%q must NOT be in mutatingCommands (it would autocommit a pre-dirty tree)", read)
+		}
+	}
+	// Every store write that is not one of those is in: each of these was
+	// found missing (edit --body: t-m0v2; unarchive and tidy in its sweep) and
+	// left its own change uncommitted while its neighbours committed.
+	for _, write := range []string{"edit", "unarchive", "tidy"} {
+		if !mutatingCommands[write] {
+			t.Errorf("%q must be in mutatingCommands (it writes the store in-process)", write)
 		}
 	}
 }

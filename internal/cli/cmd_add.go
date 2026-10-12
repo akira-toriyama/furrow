@@ -329,6 +329,10 @@ func newEditCmd() *cobra.Command {
 			if body.given(cmd) {
 				return editSetBody(cmd, a, args[0], &body)
 			}
+			// From here on nothing is written in-process (the editor is a
+			// child process; the no-TTY arm only prints the path), so the
+			// post-run autocommit must not fire for this invocation.
+			disarmAutoCommit()
 			// The guard describes a write; the editor path never writes the
 			// shard, so a set flag there would be silently meaningless.
 			if f := cmd.Flags().Lookup(expectUpdatedFlag); f != nil && f.Value.String() != "" {
