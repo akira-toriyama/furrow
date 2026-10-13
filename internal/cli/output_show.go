@@ -325,6 +325,9 @@ func printTaskDetail(a *app.App, it *app.ShowItem, body string) {
 	if t.Closed != nil {
 		fmt.Fprintf(out, "closed:   %s\n", humanTime(*t.Closed))
 	}
+	if t.Reviewed != nil {
+		fmt.Fprintf(out, "reviewed: %s\n", humanTime(*t.Reviewed))
+	}
 	if strings.TrimSpace(body) != "" {
 		fmt.Fprintf(out, "\n%s\n", strings.TrimRight(body, "\n"))
 	}

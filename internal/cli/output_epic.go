@@ -82,11 +82,16 @@ func emitEpicList(a *app.App, items []app.EpicItem) error {
 // row shape `ls --json` uses so a consumer parses one task type, not two.
 type epicDetailView struct {
 	core.Epic
-	Progress app.Progress   `json:"progress"`
-	Stuck    bool           `json:"stuck"`
-	Waiting  *app.EpicWait  `json:"waiting,omitempty"`
-	Tasks    []listItemView `json:"tasks"`
-	BodyText string         `json:"body_text"`
+	Progress app.Progress  `json:"progress"`
+	Stuck    bool          `json:"stuck"`
+	Waiting  *app.EpicWait `json:"waiting,omitempty"`
+	// ResolvedDeps is the human `deps:` line's fact — each dep edge with its
+	// title and state (open / done / missing) — beside the raw id set the
+	// embedded Epic carries as `deps`. Always present ([] when none), so a
+	// reader never falls back to the ids and a second read.
+	ResolvedDeps []epicRefView  `json:"deps_resolved"`
+	Tasks        []listItemView `json:"tasks"`
+	BodyText     string         `json:"body_text"`
 }
 
 // epicMetaView is epicDetailView minus the prose — `show <epic-id> --no-body`.
@@ -95,17 +100,18 @@ type epicDetailView struct {
 // whether the key exists, never the content.
 type epicMetaView struct {
 	core.Epic
-	Progress app.Progress   `json:"progress"`
-	Stuck    bool           `json:"stuck"`
-	Waiting  *app.EpicWait  `json:"waiting,omitempty"`
-	Tasks    []listItemView `json:"tasks"`
+	Progress     app.Progress   `json:"progress"`
+	Stuck        bool           `json:"stuck"`
+	Waiting      *app.EpicWait  `json:"waiting,omitempty"`
+	ResolvedDeps []epicRefView  `json:"deps_resolved"`
+	Tasks        []listItemView `json:"tasks"`
 }
 
 func emitEpicDetail(a *app.App, d *app.EpicDetail, noBody bool) error {
 	if jsonMode() {
 		if noBody {
 			v := toEpicDetailView(d)
-			emitObject(epicMetaView{Epic: v.Epic, Progress: v.Progress, Stuck: v.Stuck, Waiting: v.Waiting, Tasks: v.Tasks})
+			emitObject(epicMetaView{Epic: v.Epic, Progress: v.Progress, Stuck: v.Stuck, Waiting: v.Waiting, ResolvedDeps: v.ResolvedDeps, Tasks: v.Tasks})
 			return nil
 		}
 		emitObject(toEpicDetailView(d))
@@ -125,6 +131,14 @@ func emitEpicDetail(a *app.App, d *app.EpicDetail, noBody bool) error {
 // second box view to keep in step.
 func toEpicDetailView(d *app.EpicDetail) epicDetailView {
 	v := epicDetailView{Epic: d.Epic, Progress: d.Progress, Stuck: d.Stuck, Waiting: d.Waiting, BodyText: d.Body}
+	v.ResolvedDeps = make([]epicRefView, 0, len(d.Deps))
+	for _, r := range d.Deps {
+		state := r.State
+		if state == "" {
+			state = "missing"
+		}
+		v.ResolvedDeps = append(v.ResolvedDeps, epicRefView{ID: r.ID, Title: r.Title, State: state})
+	}
 	v.Tasks = make([]listItemView, 0, len(d.Tasks))
 	for _, it := range d.Tasks {
 		v.Tasks = append(v.Tasks, toListItemView(it))
@@ -182,6 +196,9 @@ func printEpicDetail(a *app.App, d *app.EpicDetail) {
 	for _, k := range sortedKeys(d.Epic.Meta) {
 		fmt.Fprintf(out, "meta:     %s = %s\n", k, d.Epic.Meta[k])
 	}
+	if d.Epic.Reviewed != nil {
+		fmt.Fprintf(out, "reviewed: %s\n", humanTime(*d.Epic.Reviewed))
+	}
 	fmt.Fprintf(out, "tasks (%d):\n", len(d.Tasks))
 	for _, it := range d.Tasks {
 		row := fmt.Sprintf("  %s %s  [%s]  %s", stateGlyph(a, it.Actionable, it.Task.Status), it.Task.ID, it.Task.Status, it.Task.Title)
@@ -196,12 +213,12 @@ func printEpicDetail(a *app.App, d *app.EpicDetail) {
 
 // emitEpicMutation is emitMutation's epic twin: the same {before,after,changed}
 // envelope, so a front-end reads one shape whichever entity it edited.
-func emitEpicMutation(mutate func() (*core.Epic, *core.Epic, error)) error {
+func emitEpicMutation(a *app.App, mutate func() (*core.Epic, *core.Epic, error)) error {
 	before, after, err := mutate()
 	if err != nil {
 		return err
 	}
-	return emitEpicMutationResult(before, after, nil)
+	return emitEpicMutationResult(a, before, after, nil)
 }
 
 // emitEpicMutationResult renders the epic {before,after,changed} envelope, with
@@ -209,7 +226,8 @@ func emitEpicMutation(mutate func() (*core.Epic, *core.Epic, error)) error {
 // crossed-ordering warning made machine-readable), note's `appended`. Same
 // escape hatch, and same reason, as the task side's mutationEnvelope: an
 // envelope key for the fact a stderr note narrates.
-func emitEpicMutationResult(before, after *core.Epic, extra map[string]any) error {
+func emitEpicMutationResult(a *app.App, before, after *core.Epic, extra map[string]any) error {
+	extra = mergeExtra(extra, sessionGuardExtra(a))
 	if jsonMode() {
 		emitObject(epicMutationEnvelope(before, after, extra))
 		return nil
@@ -223,7 +241,8 @@ func emitEpicMutationResult(before, after *core.Epic, extra map[string]any) erro
 // identically whichever one it addressed. The epic subtree's own verbs keep
 // emitEpicMutationResult's bare `<id>  <title>` line — there the verb is
 // already in the command.
-func printEpicMutation(verb string, before, after *core.Epic, extra map[string]any) {
+func printEpicMutation(a *app.App, verb string, before, after *core.Epic, extra map[string]any) {
+	extra = mergeExtra(extra, sessionGuardExtra(a))
 	if jsonMode() {
 		emitObject(epicMutationEnvelope(before, after, extra))
 		return
@@ -234,6 +253,9 @@ func printEpicMutation(verb string, before, after *core.Epic, extra map[string]a
 // epicMutationEnvelope builds the epic {before, after, changed} object — the
 // single assembly point for the shape, for the reason mutationEnvelope
 // documents on the task side: assembled twice, a new key gets added once.
+// The session guard's `session_warn` rides it exactly as it rides the task
+// envelope (the emitters above drain the guard); the root post-run hook's
+// drain is then a no-op for these writes.
 func epicMutationEnvelope(before, after *core.Epic, extra map[string]any) map[string]any {
 	return envelope(before, after, changedEpicFields(before, after), extra)
 }

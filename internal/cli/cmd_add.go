@@ -401,7 +401,7 @@ func editSetBody(cmd *cobra.Command, a *app.App, ref string, body *bodyFlags) er
 		if guard && before != nil {
 			extra = mergeExtra(extra, staleReadExtra(before.ID, &before.Updated, expected))
 		}
-		printEpicMutation("edited", before, after, extra)
+		printEpicMutation(a, "edited", before, after, extra)
 		return nil
 	}
 	return emitMutationWith(cmd, a, "edited", ref,

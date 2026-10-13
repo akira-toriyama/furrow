@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
 )
@@ -58,22 +59,32 @@ func TestCLIAttachUpdatesBodyAndJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	testClock = shiftedClock{2 * time.Second} // whole-second stamps: let updated move
+	t.Cleanup(func() { testClock = nil })
 	out, code := run(t, "--json", "attach", id, src)
 	if code != 0 {
 		t.Fatalf("attach exit = %d:\n%s", code, out)
 	}
+	// The one-id mutation envelope, plus the asset keys (t-w846).
 	var res struct {
-		ID    string `json:"id"`
-		Asset string `json:"asset"`
-		Ref   string `json:"ref"`
-		Line  string `json:"line"`
+		Before struct {
+			Updated string `json:"updated"`
+		} `json:"before"`
+		After struct {
+			ID      string `json:"id"`
+			Updated string `json:"updated"`
+		} `json:"after"`
+		Changed []string `json:"changed"`
+		Asset   string   `json:"asset"`
+		Ref     string   `json:"ref"`
+		Line    string   `json:"line"`
 	}
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatalf("parse attach --json: %v\n%s", err, out)
 	}
 	wantName := id + "-shot.png"
-	if res.ID != id {
-		t.Errorf("id = %q, want %q", res.ID, id)
+	if res.After.ID != id || res.Changed == nil || res.Before.Updated == res.After.Updated {
+		t.Errorf("after.id = %q changed = %v updated %s -> %s, want %q with updated advanced", res.After.ID, res.Changed, res.Before.Updated, res.After.Updated, id)
 	}
 	if res.Asset != "bodies/assets/"+wantName {
 		t.Errorf("asset = %q, want bodies/assets/%s", res.Asset, wantName)

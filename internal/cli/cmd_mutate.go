@@ -564,7 +564,7 @@ func newNoteCmd() *cobra.Command {
 				if guard && before != nil {
 					effect = mergeExtra(effect, staleReadExtra(before.ID, &before.Updated, expected))
 				}
-				printEpicMutation("noted", before, after, effect)
+				printEpicMutation(a, "noted", before, after, effect)
 				return nil
 			}
 			write := a.AddNote

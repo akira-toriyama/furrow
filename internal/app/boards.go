@@ -35,9 +35,11 @@ type BoardEntry struct {
 	Repo   string   `json:"repo"`   // declared scope repo: "auto" | "" | owner/repo
 	Label  string   `json:"label"`  // declared literal add-time tag ("" = none)
 	Exists bool     `json:"exists"` // a furrow store is present at Store
-	// OnDisk: a directory sits at Store, store or not — presentation only, so
-	// a non-store directory renders as such, not as "missing (not on disk)".
-	OnDisk bool `json:"-"`
+	// OnDisk: a directory sits at Store, store or not — so a non-store
+	// directory reads as such, not as "missing (not on disk)". Emitted, because
+	// the human line told "unreadable" from "missing" by it while the JSON
+	// reader saw exists:false for both.
+	OnDisk bool `json:"on_disk"`
 	BoardVocab
 	SchemaTriple
 }
