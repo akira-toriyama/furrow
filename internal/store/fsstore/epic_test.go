@@ -131,13 +131,12 @@ func TestSaveEpicIsZeroChurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "epics", "e-k3m9.json")
-	before, err := os.Stat(path)
-	if err != nil {
+	// A past mtime is what gives the comparison teeth: a rewrite then moves it
+	// by decades, where a sleep only hopes the next write lands in a later tick.
+	past := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, past, past); err != nil {
 		t.Fatal(err)
 	}
-	// The sleep is what gives the mtime comparison teeth: without a gap, a real
-	// rewrite could land inside the same timestamp tick and read as a no-op.
-	time.Sleep(10 * time.Millisecond)
 	if err := s.SaveEpic(epicNamed("e-k3m9", "box")); err != nil {
 		t.Fatal(err)
 	}
@@ -145,8 +144,8 @@ func TestSaveEpicIsZeroChurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !before.ModTime().Equal(after.ModTime()) {
-		t.Errorf("unchanged epic was rewritten (mtime moved %v -> %v)", before.ModTime(), after.ModTime())
+	if !after.ModTime().Equal(past) {
+		t.Errorf("unchanged epic was rewritten (mtime moved %v -> %v)", past, after.ModTime())
 	}
 }
 

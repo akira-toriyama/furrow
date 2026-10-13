@@ -11,6 +11,48 @@ import (
 	"github.com/akira-toriyama/furrow/v9/internal/gittest"
 )
 
+// Autocommit on a board that is no git repository: the mutation succeeds
+// (exit 0, the task exists) and the flush's warning reaches stderr with the
+// `warning:` prefix and the remedy, through the post-run hook's own loop.
+func TestAutoCommit_WarnsOnStderrWhenTheBoardIsNoGitRepo(t *testing.T) {
+	gittest.GitOrSkip(t)
+	t.Setenv(app.EnvDir, "")
+	t.Setenv(app.EnvBoard, "")
+
+	scope := t.TempDir()
+	boardRoot := filepath.Join(scope, "central")
+	if _, err := app.Init(boardRoot); err != nil {
+		t.Fatal(err)
+	}
+	board := filepath.Join(boardRoot, app.DirName)
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	fdir := filepath.Join(cfgDir, "furrow")
+	if err := os.MkdirAll(fdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "[[board]]\npath = \"" + board + "\"\nscopes = [\"" + scope + "\"]\nrepo = \"\"\nautocommit = true\n"
+	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(scope, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(work)
+
+	stdout, stderr, code := runSplit(t, "add", "no repo to commit into")
+	if code != 0 || !strings.Contains(stdout, "t-") {
+		t.Fatalf("the add itself must succeed (exit %d):\n%s\n%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "warning: autocommit: board "+board+" is not inside a git repository") || !strings.Contains(stderr, "git init") {
+		t.Errorf("stderr must carry the flush's warning with its prefix and remedy:\n%s", stderr)
+	}
+	if strings.Contains(stdout, "autocommit") {
+		t.Errorf("the warning belongs on stderr, not in the data stream:\n%s", stdout)
+	}
+}
+
 // TestAutoCommit_EndToEndViaCLI is the whole-stack proof: a user-config
 // [[board]] with autocommit=true, driven through the real cobra command tree
 // (run -> root.Execute -> PersistentPostRunE), makes `furrow add` leave the
