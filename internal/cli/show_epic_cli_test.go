@@ -168,12 +168,13 @@ func TestCLIShowEpicMisses(t *testing.T) {
 	epic := addEpic(t, "a box", "-r", "o/r")
 
 	// An epic-shaped miss says EPIC — "task not found" would send the reader to
-	// the wrong store.
+	// the wrong store — and exits 2 like every other reader of epic-not-found
+	// (show alone used to say exit 1 for the kind).
 	fe, _ := runErr(t, "show", "e-nope0")
-	if fe == nil || int(fe.Code) != 1 {
-		t.Fatalf("unknown box want exit 1, got %v", fe)
+	if fe == nil || fe.Code != core.CodeValidation || fe.Kind != core.KindEpicNotFound {
+		t.Fatalf("unknown box want epic-not-found exit 2, got %v", fe)
 	}
-	if !strings.Contains(fe.Msg, "epic not found") {
+	if !strings.Contains(fe.Msg, "epic") {
 		t.Errorf("message should name the entity: %q", fe.Msg)
 	}
 

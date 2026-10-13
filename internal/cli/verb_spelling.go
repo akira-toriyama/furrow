@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"strings"
-
 	"github.com/spf13/cobra"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
@@ -38,29 +36,3 @@ func depVerbArgs(cmd *cobra.Command, args []string) error {
 	}
 	return cobra.MinimumNArgs(2)(cmd, rest)
 }
-
-// looksLikeID is the prefix-agnostic shape test for the did-you-mean hints:
-// `<letters>-<letters or digits>` with nothing else, which every task and epic
-// id has under any [ids] configuration and no English word does. It is a
-// HINT for an error message, never a route — the id-keyed commands resolve by
-// store membership.
-func looksLikeID(s string) bool {
-	prefix, suffix, ok := strings.Cut(s, "-")
-	if !ok || prefix == "" || suffix == "" {
-		return false
-	}
-	for _, r := range prefix {
-		if !isASCIILetter(r) {
-			return false
-		}
-	}
-	for _, r := range suffix {
-		if !isASCIILetter(r) && !isASCIIDigit(r) {
-			return false
-		}
-	}
-	return true
-}
-
-func isASCIILetter(r rune) bool { return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' }
-func isASCIIDigit(r rune) bool  { return r >= '0' && r <= '9' }

@@ -656,6 +656,38 @@ func (a *App) RefTargetsEpic(ref string) (bool, error) {
 	return a.isEpicIDShape(ref), nil
 }
 
+// EpicRefMiss is the box resolution's own verdict on a ref `show` could not
+// find as a task — so a task read that was handed a box ref fails exactly as
+// `epic show` would: an ambiguous title is epic-ambiguous with the candidates
+// (it used to fold into "1 of 1 ids not found", exit 1, candidates lost), an
+// epic-shaped id that names no box is epic-not-found (exit 2, as every other
+// reader of the kind). nil for a ref that is a task, resolves to a box (which
+// the batch read handles itself), or reads as neither.
+func (a *App) EpicRefMiss(ref string) (*core.Error, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	if idx.Has(ref) {
+		return nil, nil
+	}
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return nil, err
+	}
+	_, rerr := a.resolveEpicIn(ref, epics)
+	ce := core.AsError(rerr)
+	switch {
+	case rerr == nil:
+		return nil, nil // a box ShowBatch reads itself — never a miss here
+	case ce != nil && ce.Kind == core.KindEpicAmbiguous:
+		return ce, nil
+	case ce != nil && a.isEpicIDShape(ref):
+		return ce, nil
+	}
+	return nil, nil
+}
+
 // isEpicIDShape reports whether ref LOOKS like an epic id ([ids].epic_prefix +
 // base32) — "an id names its entity kind on sight" (core.Epic.ID). It is a
 // guess, deliberately confined to choosing the error for a ref that resolved to

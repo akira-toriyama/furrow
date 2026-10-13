@@ -26,8 +26,15 @@ func newEpicCmd() *cobra.Command {
 			"human does. It does SUGGEST — done/deactivate name the previous active box\n" +
 			"(computed from the activation log, `unknown` when no record decides it) —\n" +
 			"but activating it stays your call.",
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
+		// `furrow epic` alone prints help; an unknown subcommand is exit 2 with
+		// the known names in candidates, the root's and `config`'s contract.
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return cmd.Help()
+			}
+			return unknownSubcommandErr(cmd, args[0])
+		},
 	}
 	cmd.AddCommand(newEpicAddCmd(), newEpicLsCmd(), newEpicShowCmd(), newEpicSetCmd(),
 		newEpicActivateCmd(), newEpicDeactivateCmd(), newEpicDoneCmd(), newEpicReopenCmd(), newEpicDepCmd(), newEpicRmCmd())
@@ -105,16 +112,45 @@ func newEpicAddCmd() *cobra.Command {
 // epicAddArgs is `epic add`'s arity check with the two first-time mistakes
 // spelled out (t-5r9g): an unquoted multi-word title, and `epic add <epic>
 // <task>` meant as "put this task into that box" — which is `set -e`, named as
-// the exact call in candidates when both arguments have an id's shape.
+// the exact call in candidates when one argument is a task on the board and
+// another resolves to a box, in either order (the shape-only guess used to
+// propose `set <epic> -e <task>` for the reversed spelling, and a call for ids
+// that did not exist).
 func epicAddArgs(_ *cobra.Command, args []string) error {
 	if len(args) == 1 {
 		return nil
 	}
 	e := core.Validationf("", "`epic add` takes exactly one argument, the new box's title (quote a title with spaces), received %d; a task joins a box with `furrow set <task> -e <epic>`, not with `epic add`", len(args))
-	if len(args) == 2 && looksLikeID(args[0]) && looksLikeID(args[1]) {
-		e.Candidates = []string{"furrow set " + args[1] + " -e " + args[0]}
+	if len(args) >= 2 {
+		if task, epic, ok := epicAddRedirect(args); ok {
+			e.Candidates = []string{"furrow set " + task + " -e " + epic}
+		}
 	}
 	return e
+}
+
+// epicAddRedirect finds the one task id and the one box ref among args, both
+// resolved against the board; ok is false when the board cannot be opened or
+// the pair is not there.
+func epicAddRedirect(args []string) (task, epic string, ok bool) {
+	a, err := openApp()
+	if err != nil {
+		return "", "", false
+	}
+	var tasks, epics []string
+	for _, arg := range args {
+		if _, _, err := a.Get(arg); err == nil {
+			tasks = append(tasks, arg)
+			continue
+		}
+		if id, err := a.ResolveEpic(arg); err == nil {
+			epics = append(epics, id)
+		}
+	}
+	if len(tasks) != 1 || len(epics) != 1 {
+		return "", "", false
+	}
+	return tasks[0], epics[0], true
 }
 
 func newEpicLsCmd() *cobra.Command {
