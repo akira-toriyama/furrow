@@ -515,6 +515,11 @@ func Valid(line string, anchor time.Time, loc *time.Location) error {
 	if opt.Interval > MaxInterval {
 		return fmt.Errorf("stored recurrence rule %q: the interval must be at most %d", line, MaxInterval)
 	}
+	// A COUNT=0 term is invisible on the parsed option (the zero means "no
+	// COUNT"); Compile reads it off the text, and so must the stored-line check.
+	if n, ok := namedCount(strings.ToUpper(strings.TrimPrefix(line, "RRULE:"))); ok && n < 1 {
+		return fmt.Errorf("stored recurrence rule %q: a count must be a positive whole number, got %d", line, n)
+	}
 	if _, err := buildFrom(opt, anchor, line, loc); err != nil {
 		return err
 	}

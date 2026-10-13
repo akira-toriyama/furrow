@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/config"
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 	"github.com/akira-toriyama/furrow/v9/internal/recur"
 )
@@ -599,14 +598,21 @@ func (a *App) lintBoardRules(idx *core.Index) []core.Problem {
 	// and since a close settles the whole local DAY of a bare-date series, the
 	// two zones also disagree about which day that is. A fixed due does not
 	// drift (its instant is stored); only a rule expanded from it does, which
-	// is why this fires on repeating tasks alone. A standalone board has one
-	// zone and is exempt. An ERROR, not a warn: the shipped level's consumer is
-	// a shared board's CI gate, and this is a state someone must fix once —
-	// [lint.severity] re-levels it like every other code.
-	if a.Cfg.Mode == config.ModeShared && a.Loc == nil {
+	// is why this fires on repeating tasks alone. It fires on EVERY mode: a
+	// standalone board was exempt as "one zone", but the mode changes wording
+	// only (the five places that say so held, this rule did not), and a board's
+	// series are expanded from its declared calendar, not from whichever
+	// machine happens to hold it. The test is the DECLARATION
+	// ([due].timezone), never the process zone the app resolved — a.Loc is
+	// filled from the machine when nothing is declared, so reading it muted
+	// the rule under any helper that pins a zone. An ERROR, not a warn: the
+	// shipped level's consumer is a shared board's CI gate, and this is a
+	// state someone must fix once — [lint.severity] re-levels it like every
+	// other code.
+	if a.Cfg.DueTimezone == nil {
 		if n := countRepeating(idx); n > 0 {
 			ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-no-timezone", ID: "config",
-				Msg: fmt.Sprintf("%d repeating task(s) on a shared board with no [due].timezone — the series is expanded, and the day a close settles is chosen, in the zone of whichever machine closes it (a UTC CI runner lands weekly/monthly occurrences a day off); declare the calendar with `furrow config set due.timezone <IANA zone>`", n)})
+				Msg: fmt.Sprintf("%d repeating task(s) with no [due].timezone — the series is expanded, and the day a close settles is chosen, in the zone of whichever machine closes it (a UTC CI runner lands weekly/monthly occurrences a day off); declare the calendar with `furrow config set due.timezone <IANA zone>`", n)})
 		}
 	}
 	// archive-backlog nudge ([lint].archive_done, off by default): warn when the

@@ -12,29 +12,37 @@ import (
 // A series is expanded in the zone of whichever machine closes it when the
 // board declares no [due].timezone — two calendars on a shared board, one of
 // them a UTC CI runner. lint is the only place that can say so before the
-// first successor lands a day off; a standalone board has one zone and a board
-// with no repeating task has nothing that drifts.
+// first successor lands a day off. It fires on every mode (the mode changes
+// wording only — a standalone board used to be exempt) and reads the
+// DECLARATION, not the process zone (a pinned machine zone used to mute it);
+// a board with no repeating task has nothing that drifts.
 func TestLintErrorsARepeatingSeriesWithNoBoardZone(t *testing.T) {
-	newApp := func(mode string, loc *time.Location) *App {
-		a, _ := newAppWith(at(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC)), zone(loc),
-			withCfg(func(c *config.Config) { c.Mode = mode }))
+	newApp := func(mode string, loc *time.Location, machine *time.Location) *App {
+		opts := []appOpt{at(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC)), zone(loc),
+			withCfg(func(c *config.Config) { c.Mode = mode })}
+		if machine != nil {
+			opts = append(opts, machineZone(machine))
+		}
+		a, _ := newAppWith(opts...)
 		return a
 	}
 	cases := []struct {
 		name      string
 		mode      string
 		loc       *time.Location
+		machine   *time.Location
 		repeating bool
 		want      int
 	}{
-		{"shared, undeclared, repeating", config.ModeShared, nil, true, 1},
-		{"shared, declared", config.ModeShared, jst, true, 0},
-		{"standalone, undeclared", config.ModeStandalone, nil, true, 0},
-		{"shared, undeclared, nothing repeats", config.ModeShared, nil, false, 0},
+		{"shared, undeclared, repeating", config.ModeShared, nil, nil, true, 1},
+		{"shared, declared", config.ModeShared, jst, nil, true, 0},
+		{"standalone, undeclared", config.ModeStandalone, nil, nil, true, 1},
+		{"shared, undeclared, machine zone pinned", config.ModeShared, nil, jst, true, 1},
+		{"shared, undeclared, nothing repeats", config.ModeShared, nil, nil, false, 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			a := newApp(c.mode, c.loc)
+			a := newApp(c.mode, c.loc, c.machine)
 			if c.repeating {
 				mustAddRepeating(t, a, "水やり", "2026-03-01", "daily", AddOpts{})
 			} else if _, err := a.Add("plain", AddOpts{Due: "2026-03-01"}); err != nil {
@@ -55,7 +63,7 @@ func TestLintErrorsARepeatingSeriesWithNoBoardZone(t *testing.T) {
 	}
 
 	t.Run("the live occurrence is what counts", func(t *testing.T) {
-		a := newApp(config.ModeShared, nil)
+		a := newApp(config.ModeShared, nil, nil)
 		task := mustAddRepeating(t, a, "水やり", "2026-03-01", "daily", AddOpts{})
 		if _, _, err := a.moveOne(task.ID, a.Cfg.DoneLane); err != nil {
 			t.Fatal(err)

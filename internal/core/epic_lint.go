@@ -103,7 +103,8 @@ func epicMembershipProblems(idx *Index, byID map[string]*Epic, terminal map[stri
 func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Problem {
 	var out []Problem
 
-	// repo -> the open+active epics naming it.
+	// repo (folded: a repo name compares case-insensitively, as every match
+	// of one does) -> the open+active epics naming it.
 	activeByRepo := map[string][]string{}
 	for i := range epics {
 		e := &epics[i]
@@ -111,7 +112,7 @@ func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Pr
 			continue // a closed epic holds no slot, however its flag was left
 		}
 		for _, r := range e.Repos {
-			activeByRepo[r] = append(activeByRepo[r], e.ID)
+			activeByRepo[strings.ToLower(r)] = append(activeByRepo[strings.ToLower(r)], e.ID)
 		}
 	}
 	for repo, ids := range activeByRepo {

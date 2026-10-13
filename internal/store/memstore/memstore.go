@@ -139,6 +139,7 @@ func cloneTask(t core.Task) core.Task {
 	t.Closed = cloneTime(t.Closed)
 	t.Reviewed = cloneTime(t.Reviewed)
 	t.Due = cloneTime(t.Due)
+	t.RepeatAnchor = cloneTime(t.RepeatAnchor)
 	return t
 }
 
@@ -155,6 +156,7 @@ func cloneEpic(e core.Epic) core.Epic {
 		e.Meta = m
 	}
 	e.Closed = cloneTime(e.Closed)
+	e.Reviewed = cloneTime(e.Reviewed)
 	return e
 }
 
@@ -438,6 +440,9 @@ func (s *Store) SaveAsset(id, srcName string, data []byte) (string, error) {
 // fsstore writing bodies/assets/<name> verbatim (the archive round trip's
 // transport; attach goes through SaveAsset).
 func (s *Store) SaveAssetRaw(name string, data []byte) error {
+	if err := s.gateWrite(); err != nil {
+		return err
+	}
 	s.assets[name] = append([]byte(nil), data...)
 	return nil
 }
@@ -498,7 +503,12 @@ func (s *Store) ListBodyIDs() ([]string, error) { return sortedKeys(s.bodies), n
 // it always matches the task's id).
 func (s *Store) ListTaskIDs() ([]string, error) { return sortedKeys(s.tasks), nil }
 
+// sortedKeys is nil for an empty map — fsstore's listStems answers nil for an
+// empty or missing directory, and a reflect-equal consumer saw [] here.
 func sortedKeys[V any](m map[string]V) []string {
+	if len(m) == 0 {
+		return nil
+	}
 	ids := make([]string, 0, len(m))
 	for id := range m {
 		ids = append(ids, id)
