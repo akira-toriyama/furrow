@@ -78,6 +78,7 @@ cross-platform, brew/nix packaged.
 ```sh
 go build ./...                          # compile (use GOTOOLCHAIN=local on Go 1.25+)
 go test ./...                           # all packages
+sh scripts/repin-vendorhash.sh            # after go.mod/go.sum change: re-derive flake.nix vendorHash (needs nix)
 ./run.sh ls --json                      # build + run a subcommand
 ```
 
