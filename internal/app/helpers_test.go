@@ -1,6 +1,7 @@
 package app
 
 import (
+	"testing"
 	"time"
 
 	"github.com/akira-toriyama/furrow/v9/internal/config"
@@ -129,6 +130,60 @@ func idsOf[T any](xs []T) []string {
 		default:
 			panic("idsOf: unsupported element type")
 		}
+	}
+	return out
+}
+
+// mustLint runs lint and fails the test on an error — the findings every
+// lint assertion starts from.
+func mustLint(t *testing.T, a *App) []core.Problem {
+	t.Helper()
+	ps, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ps
+}
+
+// problemsWhere keeps the findings keep accepts — the one walk the lint
+// tests' filters are built on, so a case asserts on ITS finding and not on
+// the rest of a board's lint output.
+func problemsWhere(ps []core.Problem, keep func(core.Problem) bool) []core.Problem {
+	var out []core.Problem
+	for _, p := range ps {
+		if keep(p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// problemsWithCode keeps the findings carrying any of codes.
+func problemsWithCode(ps []core.Problem, codes ...string) []core.Problem {
+	return problemsWhere(ps, func(p core.Problem) bool {
+		for _, c := range codes {
+			if p.Code == c {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// hasProblem reports whether a finding with code and subject id is present,
+// at severity sev ("" for either).
+func hasProblem(ps []core.Problem, code, id string, sev string) bool {
+	return len(problemsWhere(ps, func(p core.Problem) bool {
+		return p.Code == code && p.ID == id && (sev == "" || p.Severity == sev)
+	})) > 0
+}
+
+// byID indexes findings by their subject id; a later finding on the same id
+// wins, which the callers (one finding per file kind) never hit.
+func byID(ps []core.Problem) map[string]core.Problem {
+	out := map[string]core.Problem{}
+	for _, p := range ps {
+		out[p.ID] = p
 	}
 	return out
 }

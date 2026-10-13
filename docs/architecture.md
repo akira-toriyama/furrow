@@ -87,6 +87,7 @@ same `--json`/`--ndjson` contract an agent does.
 | `internal/recur` | Recurrence, a leaf beside `query`: the short `--repeat` spelling to one RFC 5545 RRULE line, a stored rule to its next occurrence. The only importer of the RRULE library and the only package that knows the grammar; `internal/app` owns WHEN a rule advances (a close). The five library traps it contains (an exhausted rule is a zero time with no error, day-of-month skips per RFC 5545 §3.3.10, DTSTART dropped and rebuilt, an off-lattice anchor never emitted, the local-midnight day grid) are its package doc. |
 | `internal/query` | Pure parser (stdlib only) for the `-q` typed-query DSL, producing an AST. It knows the GRAMMAR, not furrow's fields; `internal/app`'s `compileQuery` binds each term to a task predicate against the index, the `Clock` and the store's bodies (loaded on demand). One compiled predicate serves every filtering read. |
 | `internal/gittest` | Test-only: `Isolate()` neutralizes global/system git config (and background maintenance) at the process-env level from `TestMain`, plus the shared `GitOrSkip`/`RunGit`. Imported only by `_test.go` files. |
+| `internal/testutil` | Test-only, like `gittest`: the user-level config under an isolated config home (`ConfigHome`, `UserConfig`, `UserConfigIn`) and the `[[board]]` table it is built from (`BoardEntry`). Imports nothing of furrow's own, so any package's `_test.go` files may use it. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |
 
 ---

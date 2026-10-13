@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 	"github.com/spf13/cobra"
 )
 
@@ -126,14 +127,7 @@ func pointerRepoLayout(t *testing.T) (scoped, board *app.App) {
 		t.Fatal(err)
 	}
 
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(repo); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+	t.Chdir(repo)
 	return a, cboard
 }
 
@@ -314,21 +308,7 @@ func localBoardLayout(t *testing.T, boardConfig string) (checkout, inside string
 		t.Fatal(err)
 	}
 
-	cfgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgDir)
-	fdir := filepath.Join(cfgDir, "furrow")
-	if err := os.MkdirAll(fdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	entry := "[[board]]\npath = \"" + filepath.Join(inside, ".furrow") + "\"\nscopes = [\"" + checkout + "\"]\nrepo = \"me/demo\"\n"
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(entry), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+	testutil.UserConfig(t, testutil.BoardEntry(filepath.Join(inside, ".furrow"), "me/demo", checkout))
 	return checkout, inside
 }
 
@@ -338,13 +318,9 @@ func localBoardLayout(t *testing.T, boardConfig string) (checkout, inside string
 func TestLs_BoardDefaultRepoMakesScopeCwdIndependent(t *testing.T) {
 	checkout, inside := localBoardLayout(t, "default_repo = \"me/demo\"\n")
 
-	if err := os.Chdir(checkout); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(checkout)
 	fromCheckout, _ := mustSplit(t, "ls")
-	if err := os.Chdir(inside); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(inside)
 	fromInside, _ := mustSplit(t, "ls")
 
 	if fromCheckout != fromInside {
@@ -360,13 +336,9 @@ func TestLs_BoardDefaultRepoMakesScopeCwdIndependent(t *testing.T) {
 func TestLs_WithoutBoardDefaultRepoTheViewsDiverge(t *testing.T) {
 	checkout, inside := localBoardLayout(t, "")
 
-	if err := os.Chdir(checkout); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(checkout)
 	fromCheckout, _ := mustSplit(t, "ls")
-	if err := os.Chdir(inside); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(inside)
 	fromInside, _ := mustSplit(t, "ls")
 
 	if fromCheckout == fromInside {
@@ -382,9 +354,7 @@ func TestLs_WithoutBoardDefaultRepoTheViewsDiverge(t *testing.T) {
 // promises. Nothing is printed on stdout by the failing scope itself.
 func TestLint_ReportsBoardDefaultRepoClamp(t *testing.T) {
 	_, inside := localBoardLayout(t, "default_repo = \"auto\"\n")
-	if err := os.Chdir(inside); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(inside)
 	stdout, _ := mustSplit(t, "lint")
 	if !strings.Contains(stdout, "default_repo") || !strings.Contains(stdout, "config-clamp") {
 		t.Errorf("lint must name the clamped default_repo:\n%s", stdout)

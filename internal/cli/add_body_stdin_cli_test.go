@@ -2,24 +2,11 @@ package cli
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
-
-// readTaskBody returns the on-disk bodies/<id>.md contents.
-func readTaskBody(t *testing.T, id string) string {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join(os.Getenv(app.EnvDir), "bodies", id+".md"))
-	if err != nil {
-		t.Fatalf("read body %s: %v", id, err)
-	}
-	return string(b)
-}
 
 // parseAddID pulls the created id out of `add --json` output.
 func parseAddID(t *testing.T, out string) string {
@@ -46,7 +33,7 @@ func TestAddBodyDashReadsStdin(t *testing.T) {
 		t.Fatalf("add --body - exit = %d:\n%s", code, out)
 	}
 	id := parseAddID(t, out)
-	if got := strings.TrimRight(readTaskBody(t, id), "\n"); got != "x\ny" {
+	if got := strings.TrimRight(readBody(t, id), "\n"); got != "x\ny" {
 		t.Errorf("body from stdin = %q, want %q (must not be the literal \"-\")", got, "x\ny")
 	}
 }
@@ -105,7 +92,7 @@ func TestAddBodyLiteralUnchanged(t *testing.T) {
 		t.Fatalf("add --body literal exit = %d:\n%s", code, out)
 	}
 	id := parseAddID(t, out)
-	if got := strings.TrimRight(readTaskBody(t, id), "\n"); got != "hello world" {
+	if got := strings.TrimRight(readBody(t, id), "\n"); got != "hello world" {
 		t.Errorf("literal body = %q, want %q", got, "hello world")
 	}
 }
@@ -115,7 +102,7 @@ func TestAddBodyLiteralUnchanged(t *testing.T) {
 func TestAddNoBodyKeepsDefaultHeading(t *testing.T) {
 	initStore(t)
 	id := addTask(t, "My Title")
-	if got := readTaskBody(t, id); !strings.HasPrefix(got, "# My Title") {
+	if got := readBody(t, id); !strings.HasPrefix(got, "# My Title") {
 		t.Errorf("default body should start with a heading, got %q", got)
 	}
 }

@@ -19,8 +19,8 @@ func TestCLIBriefDueBandNamesItsScopeOnABoardWithBoxes(t *testing.T) {
 		t.Fatalf("no boxes: the plain header (exit %d):\n%s", code, out)
 	}
 
-	focus := epicID(t, "focus", "--repo", "o/r")
-	other := epicID(t, "elsewhere", "--repo", "o/r")
+	focus := addEpic(t, "focus", "--repo", "o/r")
+	other := addEpic(t, "elsewhere", "--repo", "o/r")
 	mustRun(t, "epic", "activate", focus)
 	outside := addTask(t, "due today, outside the focus", "-s", "ready", "-e", other, "--due", today)
 	out, code = run(t, "brief")
@@ -44,9 +44,9 @@ func TestCLIBriefDueBandNamesItsScopeOnABoardWithBoxes(t *testing.T) {
 func TestCLIBriefDueRowNamesTheBoxNextLeavesOut(t *testing.T) {
 	freezeClock(t)
 	initStore(t)
-	focus := epicID(t, "focus", "--repo", "o/r")
-	other := epicID(t, "elsewhere", "--repo", "o/r")
-	channel := epicID(t, "channel", "--repo", "o/r")
+	focus := addEpic(t, "focus", "--repo", "o/r")
+	other := addEpic(t, "elsewhere", "--repo", "o/r")
+	channel := addEpic(t, "channel", "--repo", "o/r")
 	mustRun(t, "epic", "activate", focus)
 	mustRun(t, "epic", "set", channel, "--pinned")
 	late := dayOffset(t, -2)
@@ -103,8 +103,8 @@ func dueRow(t *testing.T) func(out, id string) string {
 func TestCLIBriefDueRowNamesTheRepoBeforeTheBox(t *testing.T) {
 	freezeClock(t)
 	initStore(t)
-	boxA := epicID(t, "a's focus", "--repo", "o/a")
-	boxB := epicID(t, "b's focus", "--repo", "o/b")
+	boxA := addEpic(t, "a's focus", "--repo", "o/a")
+	boxB := addEpic(t, "b's focus", "--repo", "o/b")
 	mustRun(t, "epic", "activate", boxA)
 	mustRun(t, "epic", "activate", boxB)
 	late, today := dayOffset(t, -2), dayOffset(t, 0)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // assertNotAStore checks the refusal every discovery arm owes a configured path
@@ -37,7 +38,7 @@ func assertNotAStore(t *testing.T, err error, subject, wrong, inner string) {
 // dropped) opened as a fresh, writable, empty board: reads exit 0 on nothing
 // and the first `add` grew tasks/ + meta.json + bodies/ in the repo root.
 func TestFurrowDirAtANonStoreDirIsRefused(t *testing.T) {
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	t.Setenv(EnvBoard, "")
 	repo := t.TempDir()
 	inner := mustInitBoard(t, repo)
@@ -53,7 +54,7 @@ func TestFurrowDirAtANonStoreDirIsRefused(t *testing.T) {
 }
 
 func TestPointerAtANonStoreDirIsRefused(t *testing.T) {
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	t.Setenv(EnvDir, "")
 	t.Setenv(EnvBoard, "")
 	boardRepo := t.TempDir()
@@ -77,13 +78,13 @@ func TestCentralBoardAtANonStoreDirIsRefused(t *testing.T) {
 
 	// A [[board]] entry naming the repo root, and FURROW_BOARD doing the same:
 	// both reach the winner's check (repoX sits inside either scope).
-	writeGlobalConfig(t, boardEntry(boardRepo, "auto", scope))
+	testutil.UserConfig(t, testutil.BoardEntry(boardRepo, "auto", scope))
 	t.Setenv(EnvBoard, "")
 	_, err := Open(repoX)
 	assertNotAStore(t, err, `[[board]] path "`+boardRepo+`"`, boardRepo, inner)
 
 	// FURROW_BOARD names itself on both sides of its scope (t-xr78's give-up).
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	t.Setenv(EnvBoard, boardRepo) // derived scope = root, which encloses repoX
 	_, err = Open(repoX)
 	assertNotAStore(t, err, `FURROW_BOARD="`+boardRepo+`"`, boardRepo, inner)
@@ -199,7 +200,7 @@ func TestIsStoreDirMarkers(t *testing.T) {
 // by a path is a store-to-be (the first write stamps it), and an unreadable
 // store fails with its own permission error, never "not a furrow store".
 func TestStoreCheckKeepsWhatWorked(t *testing.T) {
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	t.Setenv(EnvBoard, "")
 	empty := t.TempDir()
 	t.Setenv(EnvDir, empty)
@@ -239,7 +240,7 @@ func TestStoreCheckAgreesWithDiscovery(t *testing.T) {
 	boardRepo := filepath.Join(org, "projects")
 	mustInitBoard(t, boardRepo)
 	repoX := mkGitRepo(t, filepath.Join(org, "repoX"))
-	writeGlobalConfig(t, boardEntry(boardRepo, "auto", org))
+	testutil.UserConfig(t, testutil.BoardEntry(boardRepo, "auto", org))
 	t.Setenv(EnvDir, "")
 	t.Setenv(EnvBoard, filepath.Join(root, "elsewhere", "gone", DirName))
 	if _, err := Open(repoX); err == nil || strings.Contains(err.Error(), "unset FURROW_BOARD:") || !strings.Contains(err.Error(), "not an existing furrow store either") {
@@ -259,7 +260,7 @@ func TestStoreCheckAgreesWithDiscovery(t *testing.T) {
 	}
 
 	t.Setenv(EnvDir, "")
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	local := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(filepath.Join(local, DirName, "notes"), 0o755); err != nil {
 		t.Fatal(err)
@@ -278,7 +279,7 @@ func TestStoreCheckAgreesWithDiscovery(t *testing.T) {
 // a repo root ".furrow" — with the store inside as the did-you-mean. A
 // markerless directory that can be searched but not listed is no store.
 func TestStoreToBeAndInit(t *testing.T) {
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	t.Setenv(EnvBoard, "")
 	dots := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dots, ".git"), 0o755); err != nil {
@@ -341,7 +342,7 @@ func TestDoctorNamesTheBoardThatDecided(t *testing.T) {
 	org := filepath.Join(root, "org")
 	boardRepo := filepath.Join(org, "projects")
 	mustInitBoard(t, boardRepo)
-	writeGlobalConfig(t, boardEntry(boardRepo, "auto", org))
+	testutil.UserConfig(t, testutil.BoardEntry(boardRepo, "auto", org))
 	repoX := filepath.Join(org, "repoX")
 	if err := os.MkdirAll(repoX, 0o755); err != nil {
 		t.Fatal(err)
@@ -357,7 +358,7 @@ func TestDoctorNamesTheBoardThatDecided(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(store, "notes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeGlobalConfig(t, boardEntry(store, "auto", local))
+	testutil.UserConfig(t, testutil.BoardEntry(store, "auto", local))
 	r = mustDoctor(t, local)
 	if len(findProblems(r, "board-missing")) != 0 {
 		t.Errorf("the walk opens this .furrow; doctor must not call it missing: %+v", r.Problems)
@@ -372,7 +373,7 @@ func TestDoctorNamesTheBoardThatDecided(t *testing.T) {
 // .furrow is no store-to-be.
 func TestStoreRulesInOrder(t *testing.T) {
 	t.Setenv(EnvBoard, "")
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 
 	named := filepath.Join(t.TempDir(), "boardstore") // not called .furrow
 	if _, err := InitAt(named); err != nil {
@@ -436,7 +437,7 @@ func assertNotAStoreMsg(t *testing.T, err error, inner string) {
 // included.
 func TestEnvBoardNotAStoreScope(t *testing.T) {
 	t.Setenv(EnvDir, "")
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	root := t.TempDir()
 	repo := filepath.Join(root, "org", "projects")
 	mustInitBoard(t, repo)
@@ -598,7 +599,7 @@ func TestInitRefusesWorkTreeRootAndFiles(t *testing.T) {
 // furrow data, and a self-linked .furrow is not the slip.
 func TestFurrowDataSettlesRuleOne(t *testing.T) {
 	t.Setenv(EnvBoard, "")
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	store := filepath.Join(t.TempDir(), "boardstore")
 	if _, err := InitAt(store); err != nil {
 		t.Fatal(err)

@@ -12,8 +12,8 @@ import (
 // The count rides stderr; stdout stays the scoped rows.
 func TestCLINextDisclosesActionableHiddenByFocus(t *testing.T) {
 	initStore(t)
-	focus := epicID(t, "focus box", "--repo", "o/r")
-	other := epicID(t, "other box", "--repo", "o/r")
+	focus := addEpic(t, "focus box", "--repo", "o/r")
+	other := addEpic(t, "other box", "--repo", "o/r")
 	mustRun(t, "epic", "activate", focus)
 	in := addTask(t, "in focus", "-e", focus, "-s", "ready")
 	out1 := addTask(t, "elsewhere one", "-e", other, "-s", "ready")
@@ -64,7 +64,7 @@ func TestCLINextDisclosesActionableHiddenByFocus(t *testing.T) {
 // must be opened to reach it.
 func TestCLINextNoActiveEpicCountsHiddenWork(t *testing.T) {
 	initStore(t)
-	box := epicID(t, "closed for now", "--repo", "o/r")
+	box := addEpic(t, "closed for now", "--repo", "o/r")
 	addTask(t, "waiting in the box", "-e", box, "-s", "ready")
 
 	_, stderr, code := runSplit(t, "next")

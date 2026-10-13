@@ -80,7 +80,7 @@ func TestAddNoteReconcilesStaleDep(t *testing.T) {
 	if _, err := a.Done(slice.ID); err != nil {
 		t.Fatal(err)
 	}
-	if !hasProblem(t, a, "reconcile-gap", epic.ID) {
+	if !hasProblem(mustLint(t, a), "reconcile-gap", epic.ID, "") {
 		t.Fatal("precondition: dep closed after epic.Updated should warn reconcile-gap")
 	}
 
@@ -90,21 +90,7 @@ func TestAddNoteReconcilesStaleDep(t *testing.T) {
 	if _, err := a.AddNote(epic.ID, "slice done; folded its result into the epic."); err != nil {
 		t.Fatal(err)
 	}
-	if hasProblem(t, a, "reconcile-gap", epic.ID) {
+	if hasProblem(mustLint(t, a), "reconcile-gap", epic.ID, "") {
 		t.Error("after a note, reconcile-gap must clear for the epic")
 	}
-}
-
-func hasProblem(t *testing.T, a *App, code, id string) bool {
-	t.Helper()
-	ps, err := a.Lint()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, p := range ps {
-		if p.Code == code && p.ID == id {
-			return true
-		}
-	}
-	return false
 }

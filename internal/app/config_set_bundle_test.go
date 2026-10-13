@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 func userConfigPath(t *testing.T) string {
@@ -23,7 +24,7 @@ func userConfigPath(t *testing.T) string {
 // current value carried its warning before the edit too and "bogus" over
 // "bogus" was exit 0, "unchanged".
 func TestConfigSetUserRefusesAValueTheFileAlreadyHoldsClamped(t *testing.T) {
-	writeGlobalConfig(t, "[session]\nguard = \"bogus\"\n")
+	testutil.UserConfig(t, "[session]\nguard = \"bogus\"\n")
 	before, _ := os.ReadFile(userConfigPath(t))
 	_, err := ConfigSetUser("", "session.guard", "bogus")
 	fe := core.AsError(err)
@@ -57,7 +58,7 @@ func TestConfigSetBoardPointsASessionKeyAtTheUserConfig(t *testing.T) {
 // With --board the candidates for an unknown key are the ENTRY keys only:
 // the [session] keys never combine with --board, so offering them misleads.
 func TestConfigSetUserBoardCandidatesExcludeSessionKeys(t *testing.T) {
-	writeGlobalConfig(t, boardEntry("/b/.furrow", "auto", "/b"))
+	testutil.UserConfig(t, testutil.BoardEntry("/b/.furrow", "auto", "/b"))
 	_, err := ConfigSetUser("/b/.furrow", "nosuch", "1")
 	fe := core.AsError(err)
 	if fe == nil || fe.Code != core.CodeValidation {
@@ -77,7 +78,7 @@ func TestConfigSetUserBoardCandidatesExcludeSessionKeys(t *testing.T) {
 // Two [[board]] entries declaring one path are both exact for --board <path>;
 // the first used to be edited silently. It is ambiguous, naming both.
 func TestConfigSetUserRefusesAPathTwoEntriesDeclare(t *testing.T) {
-	writeGlobalConfig(t, boardEntry("/b/.furrow", "auto", "/one")+boardEntry("/b/.furrow", "auto", "/two"))
+	testutil.UserConfig(t, testutil.BoardEntry("/b/.furrow", "auto", "/one")+testutil.BoardEntry("/b/.furrow", "auto", "/two"))
 	before, _ := os.ReadFile(userConfigPath(t))
 	_, err := ConfigSetUser("/b/.furrow", "autocommit", "true")
 	fe := core.AsError(err)
@@ -98,7 +99,7 @@ func TestConfigSetUserRefusesAPathTwoEntriesDeclare(t *testing.T) {
 // appended a separator to a scope that already ends in one.
 func TestRootScopeActivatesEverywhere(t *testing.T) {
 	store := mustInitBoard(t, t.TempDir())
-	writeGlobalConfig(t, boardEntry(store, "", "/"))
+	testutil.UserConfig(t, testutil.BoardEntry(store, "", "/"))
 	cwd := t.TempDir()
 	a, err := Open(cwd)
 	if err != nil {
@@ -119,7 +120,7 @@ func TestDoctorListsASymlinkedStoreOnce(t *testing.T) {
 	if err := os.Symlink(parent, link); err != nil {
 		t.Skip("symlinks unavailable")
 	}
-	writeGlobalConfig(t, boardEntry(store, "", parent))
+	testutil.UserConfig(t, testutil.BoardEntry(store, "", parent))
 	t.Setenv(EnvDir, filepath.Join(link, DirName))
 	r := mustDoctor(t, parent)
 	n := 0
@@ -136,7 +137,7 @@ func TestDoctorListsASymlinkedStoreOnce(t *testing.T) {
 // Two entries declaring one store are reported once by doctor, naming both.
 func TestDoctorWarnsAboutEntriesDeclaringOneStore(t *testing.T) {
 	store := mustInitBoard(t, t.TempDir())
-	writeGlobalConfig(t, boardEntry(store, "", "/one")+boardEntry(store, "", "/two"))
+	testutil.UserConfig(t, testutil.BoardEntry(store, "", "/one")+testutil.BoardEntry(store, "", "/two"))
 	r := mustDoctor(t, "")
 	n := findProblems(r, "board-duplicate-path")
 	if len(n) != 1 || !strings.Contains(r.Problems[n[0]].Msg, "#1, #2") {

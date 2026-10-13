@@ -9,6 +9,7 @@ import (
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 	"github.com/akira-toriyama/furrow/v9/internal/gittest"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 func findProblems(r *DoctorReport, code string) []int {
@@ -42,7 +43,7 @@ func TestDoctorHealthyMachine(t *testing.T) {
 	if err := os.MkdirAll(checkout, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeGlobalConfig(t, boardEntry(board, "auto", scope))
+	testutil.UserConfig(t, testutil.BoardEntry(board, "auto", scope))
 
 	r := mustDoctor(t, checkout)
 	if !r.Healthy {
@@ -76,7 +77,7 @@ func TestDoctorHealthyMachine(t *testing.T) {
 // but no [[board]] in the user config — every use is a bare exit 2 that names
 // nothing. Doctor must name it and hand over the concrete fix.
 func TestDoctorNoBoardsIsTheDiagnosis(t *testing.T) {
-	writeGlobalConfig(t, "# no boards\n")
+	testutil.UserConfig(t, "# no boards\n")
 
 	r := mustDoctor(t, t.TempDir())
 	if r.Healthy {
@@ -92,7 +93,7 @@ func TestDoctorNoBoardsIsTheDiagnosis(t *testing.T) {
 	}
 
 	// Entirely-missing config file: same finding, and the message says so.
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	testutil.ConfigHome(t)
 	r = mustDoctor(t, t.TempDir())
 	hits = findProblems(r, "no-boards")
 	if len(hits) != 1 || !strings.Contains(r.Problems[hits[0]].Msg, "does not exist") {
@@ -106,9 +107,9 @@ func TestDoctorBoardAndScopeExistence(t *testing.T) {
 	liveScope := filepath.Join(root, "org")
 	board := mustInitBoard(t, filepath.Join(liveScope, "projects"))
 	deadScope := filepath.Join(root, "gone")
-	writeGlobalConfig(t,
-		boardEntry(board, "auto", liveScope, deadScope)+
-			boardEntry(missingBoard, "auto", liveScope))
+	testutil.UserConfig(t,
+		testutil.BoardEntry(board, "auto", liveScope, deadScope)+
+			testutil.BoardEntry(missingBoard, "auto", liveScope))
 
 	r := mustDoctor(t, "")
 	if r.Healthy {
@@ -138,7 +139,7 @@ func TestDoctorSchemaOutdatedWarns(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(board, "meta.json"), []byte("{\n  \"schema_version\": 1\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeGlobalConfig(t, boardEntry(board, "auto", scope))
+	testutil.UserConfig(t, testutil.BoardEntry(board, "auto", scope))
 
 	r := mustDoctor(t, "")
 	if n := findProblems(r, "schema-outdated"); len(n) != 1 || !strings.Contains(r.Problems[n[0]].Msg, "furrow upgrade") {
@@ -160,7 +161,7 @@ func TestDoctorAssertedDirMustResolve(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	writeGlobalConfig(t, boardEntry(board, "auto", scope))
+	testutil.UserConfig(t, testutil.BoardEntry(board, "auto", scope))
 
 	// cwd OUTSIDE every scope is informational — never a problem on its own.
 	r := mustDoctor(t, outside)
@@ -194,7 +195,7 @@ func TestDoctorShadowOptOutCheckout(t *testing.T) {
 	board := mustInitBoard(t, filepath.Join(scope, "projects"))
 	// A sibling checkout with its OWN repo-local board: nearest wins there.
 	mustInitBoard(t, filepath.Join(scope, "loner"))
-	writeGlobalConfig(t, boardEntry(board, "auto", scope))
+	testutil.UserConfig(t, testutil.BoardEntry(board, "auto", scope))
 
 	r := mustDoctor(t, "")
 	var optOut bool
@@ -216,7 +217,7 @@ func TestDoctorShadowOptOutCheckout(t *testing.T) {
 }
 
 func TestDoctorEnvOverrides(t *testing.T) {
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 
 	// A broken override is the loudest possible misconfiguration: every furrow
 	// command on the machine fails.
@@ -245,7 +246,7 @@ func TestDoctorEnvOverrides(t *testing.T) {
 // FURROW_BOARD substitutes for a configured [[board]] (it IS a board), so
 // no-boards must NOT fire — unlike FURROW_DIR, which bypasses boards entirely.
 func TestDoctorEnvBoardSuppressesNoBoards(t *testing.T) {
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	board := mustInitBoard(t, filepath.Join(t.TempDir(), "projects"))
 	t.Setenv(EnvBoard, board)
 
@@ -272,7 +273,7 @@ func TestDoctorEnvBoardOutsideItsScope(t *testing.T) {
 	if err := os.MkdirAll(outside, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeGlobalConfig(t, boardEntry(board, "auto", other))
+	testutil.UserConfig(t, testutil.BoardEntry(board, "auto", other))
 	t.Setenv(EnvBoard, board)
 
 	r := mustDoctor(t, outside, outside)
@@ -307,7 +308,7 @@ func TestDoctorEnvBoardOutsideItsScope(t *testing.T) {
 // "~/…" value is judged by the gate's resolver, not a raw stat; and a broken
 // override fails only what falls through to it.
 func TestDoctorEnvBoardLinesMatchDiscovery(t *testing.T) {
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	org := filepath.Join(home, "hb", "org")
@@ -362,7 +363,7 @@ func TestDoctorEnvBoardLinesMatchDiscovery(t *testing.T) {
 }
 
 func TestDoctorGlobalConfigUnreadable(t *testing.T) {
-	writeGlobalConfig(t, "not [ toml")
+	testutil.UserConfig(t, "not [ toml")
 
 	r := mustDoctor(t, "")
 	if n := findProblems(r, "global-config-unreadable"); len(n) != 1 || r.Problems[n[0]].Severity != "error" {
@@ -397,7 +398,7 @@ func TestDoctorGitAheadBehind(t *testing.T) {
 	gittest.RunGit(t, git, cloneB, "fetch", "-q")
 
 	boardB := filepath.Join(cloneB, DirName)
-	writeGlobalConfig(t, boardEntry(boardB, "auto", filepath.Dir(cloneB)))
+	testutil.UserConfig(t, testutil.BoardEntry(boardB, "auto", filepath.Dir(cloneB)))
 
 	r := mustDoctor(t, "")
 	if len(r.Boards) != 1 {
@@ -423,7 +424,7 @@ func TestDoctorGitAheadBehind(t *testing.T) {
 // entries only, so a FURROW_DIR board was never diagnosed and another board's
 // unnamed "schema v9" row read as the operator's own (t-b3dq).
 func TestDoctorProbesTheResolvedBoardFirst(t *testing.T) {
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 
 	envBoard := mustInitBoard(t, t.TempDir())
 	if err := os.WriteFile(filepath.Join(envBoard, "meta.json"), []byte("{\n  \"schema_version\": 9\n}\n"), 0o644); err != nil {

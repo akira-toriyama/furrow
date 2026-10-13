@@ -26,14 +26,6 @@ func plantDeps(t *testing.T, a *App, deps map[string][]string) {
 	}
 }
 
-func codesOf(ps []core.Problem) map[string]bool {
-	out := map[string]bool{}
-	for _, p := range ps {
-		out[p.Code+" "+p.ID] = true
-	}
-	return out
-}
-
 // A dep-cycle finding is filed under the region's smallest id but is about
 // every task in it. Cutting one edge of the knot A↔B↔C leaves B↔C — a region
 // now filed under B, which was in the cycle all along: not a new error. A task
@@ -54,7 +46,7 @@ func TestNewLintErrorsReadsACycleAsItsWholeRegion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(ps) != 0 {
-		t.Errorf("shrinking a cycle region created no error, got %v", codesOf(ps))
+		t.Errorf("shrinking a cycle region created no error, got %v", ps)
 	}
 
 	b := newApp()
@@ -76,7 +68,7 @@ func TestNewLintErrorsReadsACycleAsItsWholeRegion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ps, _ = b.NewLintErrors(); len(ps) != 1 || ps[0].Code != "dep-cycle" {
-		t.Errorf("a task drawn into a cycle is a new error, got %v", codesOf(ps))
+		t.Errorf("a task drawn into a cycle is a new error, got %v", ps)
 	}
 }
 
@@ -110,7 +102,7 @@ func TestNewLintErrorsReadsATieAsItsWholeGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(ps) != 0 {
-		t.Errorf("leaving a tie created no error, got %v", codesOf(ps))
+		t.Errorf("leaving a tie created no error, got %v", ps)
 	}
 }
 

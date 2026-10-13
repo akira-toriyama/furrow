@@ -8,26 +8,13 @@ import (
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
-func addTitled(t *testing.T, args ...string) string {
-	t.Helper()
-	out, code := run(t, append([]string{"add", "--json"}, args...)...)
-	if code != 0 {
-		t.Fatalf("add %v: exit %d\n%s", args, code, out)
-	}
-	var task core.Task
-	if err := json.Unmarshal([]byte(out), &task); err != nil {
-		t.Fatalf("add --json: %v\n%s", err, out)
-	}
-	return task.ID
-}
-
 // A -q selection on done PREVIEWS until --yes (nothing written, dry_run in
 // JSON), then applies as one batch — the write-side typed query (t-zce2).
 func TestDoneSelectorPreviewsThenApplies(t *testing.T) {
 	initStore(t)
-	bug1 := addTitled(t, "first bug", "-l", "bug")
-	bug2 := addTitled(t, "second bug", "-l", "bug")
-	other := addTitled(t, "unrelated")
+	bug1 := addTask(t, "first bug", "-l", "bug")
+	bug2 := addTask(t, "second bug", "-l", "bug")
+	other := addTask(t, "unrelated")
 
 	out, code := run(t, "done", "-q", "label:bug")
 	if code != 0 || !strings.Contains(out, "would close 2 task(s)") ||
@@ -73,7 +60,7 @@ func TestDoneSelectorPreviewsThenApplies(t *testing.T) {
 // candidates on a typo, matched or not), and applies the batch on --yes.
 func TestMoveSelectorVetsLaneAndApplies(t *testing.T) {
 	initStore(t)
-	id := addTitled(t, "inbox task")
+	id := addTask(t, "inbox task")
 
 	fe, _ := runErr(t, "move", "-q", "status:inbox", "not-a-lane", "--yes")
 	if fe == nil || fe.Code != core.CodeValidation || len(fe.Candidates) == 0 {
@@ -94,8 +81,8 @@ func TestMoveSelectorVetsLaneAndApplies(t *testing.T) {
 // set with a selection applies the same edits to every match in one write.
 func TestSetSelectorAppliesEdits(t *testing.T) {
 	initStore(t)
-	a1 := addTitled(t, "one", "-l", "sweep")
-	a2 := addTitled(t, "two", "-l", "sweep")
+	a1 := addTask(t, "one", "-l", "sweep")
+	a2 := addTask(t, "two", "-l", "sweep")
 
 	if out, code := run(t, "set", "-q", "label:sweep", "-s", "backlog", "--add-label", "triaged", "--yes"); code != 0 {
 		t.Fatalf("apply: exit %d\n%s", code, out)
@@ -111,7 +98,7 @@ func TestSetSelectorAppliesEdits(t *testing.T) {
 // The selection contract's refusals, shared by every command that takes one.
 func TestSelectorGuards(t *testing.T) {
 	initStore(t)
-	id := addTitled(t, "guard target")
+	id := addTask(t, "guard target")
 
 	for name, args := range map[string][]string{
 		"ids beside a selection":    {"done", id, "-q", "status:inbox"},
@@ -133,7 +120,7 @@ func TestSelectorGuards(t *testing.T) {
 // on both the preview and the apply, like every empty read.
 func TestSelectorEmptyMatchIsExitZero(t *testing.T) {
 	initStore(t)
-	addTitled(t, "bystander")
+	addTask(t, "bystander")
 
 	if out, code := run(t, "done", "-q", "label:no-such-tag"); code != 0 || !strings.Contains(out, "would close 0 task(s)") {
 		t.Fatalf("empty preview = %q (exit %d)", out, code)
@@ -148,7 +135,7 @@ func TestSelectorEmptyMatchIsExitZero(t *testing.T) {
 // matched task's body.
 func TestDoneSelectorWithNote(t *testing.T) {
 	initStore(t)
-	id := addTitled(t, "noted close", "-l", "wave")
+	id := addTask(t, "noted close", "-l", "wave")
 
 	if out, code := run(t, "done", "-q", "label:wave", "--yes", "--note", "swept"); code != 0 {
 		t.Fatalf("apply: exit %d\n%s", code, out)

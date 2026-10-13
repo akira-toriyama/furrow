@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v9/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 func TestConfigPath_PrintsResolvedPath(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	cfgHome := testutil.ConfigHome(t)
 	so := mustRun(t, "config", "path")
 	if want := filepath.Join(cfgHome, "furrow", "config.toml"); strings.TrimSpace(so) != want {
 		t.Errorf("stdout = %q, want %q", strings.TrimSpace(so), want)
@@ -19,8 +19,7 @@ func TestConfigPath_PrintsResolvedPath(t *testing.T) {
 }
 
 func TestConfigPath_JSON(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	cfgHome := testutil.ConfigHome(t)
 	so := mustRun(t, "--json", "config", "path")
 	want := filepath.Join(cfgHome, "furrow", "config.toml")
 	if !strings.Contains(so, `"path"`) || !strings.Contains(so, want) {
@@ -31,15 +30,7 @@ func TestConfigPath_JSON(t *testing.T) {
 // A half-written home config surfaces its clamp warning on stderr while stdout
 // stays the clean path (so `furrow config path` still pipes cleanly).
 func TestConfigPath_SurfacesClampWarningOnStderr(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
-	fdir := filepath.Join(cfgHome, "furrow")
-	if err := os.MkdirAll(fdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte("[[board]]\npath = \"/x/.furrow\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	userCfg := testutil.UserConfig(t, "[[board]]\npath = \"/x/.furrow\"\n")
 	so, se := mustSplit(t, "config", "path")
 	if !strings.Contains(se, "no scopes") {
 		t.Errorf("clamp warning should be on stderr; got stderr=%q", se)
@@ -47,24 +38,16 @@ func TestConfigPath_SurfacesClampWarningOnStderr(t *testing.T) {
 	if strings.Contains(so, "no scopes") {
 		t.Errorf("warning leaked into stdout: %q", so)
 	}
-	if want := filepath.Join(cfgHome, "furrow", "config.toml"); strings.TrimSpace(so) != want {
+	if strings.TrimSpace(so) != userCfg {
 		t.Errorf("stdout should be the path only; got %q", so)
 	}
 }
 
 func TestConfigInit_WritesPlaceholderTemplate(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	cfgHome := testutil.ConfigHome(t)
 
 	start := t.TempDir() // no enclosing .furrow -> placeholder
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(start); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+	t.Chdir(start)
 
 	so := mustRun(t, "config", "init")
 	if !strings.Contains(so, "wrote") {

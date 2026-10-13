@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -263,9 +262,7 @@ func TestCLIBriefDueSection(t *testing.T) {
 func TestCLIBriefDueIgnoresTheBoardRepoScope(t *testing.T) {
 	freezeClock(t)
 	checkout, _ := localBoardLayout(t, "default_repo = \"me/demo\"\n")
-	if err := os.Chdir(checkout); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(checkout)
 
 	mine := addTask(t, "promised here", "-s", "waiting", "-r", "me/demo", "--due", dayOffset(t, -1))
 	theirs := addTask(t, "promised elsewhere", "-s", "waiting", "-r", "me/other", "--due", dayOffset(t, -2))

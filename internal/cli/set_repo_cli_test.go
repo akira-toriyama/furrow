@@ -13,8 +13,8 @@ import (
 // and removing the last repo leaves a first-class draft.
 func TestSetAddRmRepos(t *testing.T) {
 	initStore(t)
-	t1 := addTitled(t, "one", "-r", "owner/app")
-	t2 := addTitled(t, "two")
+	t1 := addTask(t, "one", "-r", "owner/app")
+	t2 := addTask(t, "two")
 
 	// Bulk attach across several ids — one all-or-nothing write.
 	if out, code := run(t, "set", t1, t2, "--add-repo", "owner/lib"); code != 0 {
@@ -46,7 +46,7 @@ func TestSetAddRmRepos(t *testing.T) {
 // resolving to nothing is exit 2 (never a silent new repo).
 func TestSetRepoGuards(t *testing.T) {
 	initStore(t)
-	id := addTitled(t, "guarded", "-r", "owner/app")
+	id := addTask(t, "guarded", "-r", "owner/app")
 
 	if fe, _ := runErr(t, "set", id, "--add-repo", ""); fe == nil || fe.Code != core.CodeValidation {
 		t.Errorf("blank --add-repo = %+v, want exit 2", fe)

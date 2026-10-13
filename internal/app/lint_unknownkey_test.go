@@ -9,26 +9,6 @@ import (
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
-// unknownKeyFindings returns the unknown-shard-key problems, keyed by the id each
-// one blames — the field a --json consumer branches on.
-func unknownKeyFindings(t *testing.T, a *App) map[string]core.Problem {
-	t.Helper()
-	ps, err := a.Lint()
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := map[string]core.Problem{}
-	for _, p := range ps {
-		if p.Code == "unknown-shard-key" {
-			if p.Severity != core.SevWarn {
-				t.Errorf("unknown-shard-key must be a WARNING, not %q: a preserved key breaks nothing and must not red a CI", p.Severity)
-			}
-			found[p.ID] = p
-		}
-	}
-	return found
-}
-
 // All THREE machine-written file kinds park unknown top-level keys now — and all
 // three had to flip their published schema to additionalProperties:true to stay
 // honest about that. That flip removed the ONLY thing that ever rejected a typo in
@@ -48,7 +28,7 @@ func TestLintWarnsUnknownKeysInEveryShardKind(t *testing.T) {
 	if _, err := a.ReviewRepo("owner/app", false); err != nil {
 		t.Fatal(err)
 	}
-	if got := unknownKeyFindings(t, a); len(got) != 0 {
+	if got := problemsWithCode(mustLint(t, a), "unknown-shard-key"); len(got) != 0 {
 		t.Fatalf("a board furrow wrote itself must be clean, got %v", got)
 	}
 
@@ -71,7 +51,13 @@ func TestLintWarnsUnknownKeysInEveryShardKind(t *testing.T) {
 	plant(filepath.Join(root, core.RepoRecordPath("owner/app")), `"cadence_days"`, `14`)
 	plant(filepath.Join(root, "meta.json"), `"min_reader"`, `3`)
 
-	got := unknownKeyFindings(t, a)
+	found := problemsWithCode(mustLint(t, a), "unknown-shard-key")
+	for _, p := range found {
+		if p.Severity != core.SevWarn {
+			t.Errorf("unknown-shard-key must be a WARNING, not %q: a preserved key breaks nothing and must not red a CI", p.Severity)
+		}
+	}
+	got := byID(found)
 	for id, wantKey := range map[string]string{
 		task.ID:     "lables",       // a task shard: a hand-edit typo, blamed on the task id
 		"owner/app": "cadence_days", // a repo review shard: a newer furrow's unbumped field

@@ -30,7 +30,7 @@ func TestEditBodyDashReplacesFromStdin(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("edit --body - exit = %d:\n%s", code, out)
 	}
-	body := readTaskBody(t, id)
+	body := readBody(t, id)
 	if body != "# rewritten\n\nnew plan\n" {
 		t.Errorf("body = %q, want the stdin content verbatim", body)
 	}
@@ -58,7 +58,7 @@ func TestEditBodyLiteral(t *testing.T) {
 	if out, code := run(t, "edit", id, "--body", "replaced"); code != 0 {
 		t.Fatalf("edit --body literal exit = %d:\n%s", code, out)
 	}
-	if got := readTaskBody(t, id); got != "replaced\n" {
+	if got := readBody(t, id); got != "replaced\n" {
 		t.Errorf("body = %q, want %q", got, "replaced\n")
 	}
 }
@@ -81,7 +81,7 @@ func TestEditBodyEmptyIsExit2(t *testing.T) {
 			t.Errorf("%s: want exit 2, got %d:\n%s", name, code, out)
 		}
 	}
-	if got := readTaskBody(t, id); !strings.Contains(got, "keep me") {
+	if got := readBody(t, id); !strings.Contains(got, "keep me") {
 		t.Errorf("refused replacement must leave the body intact, got %q", got)
 	}
 }
@@ -96,7 +96,7 @@ func TestEditBodyRoutesToEpic(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("edit epic --body exit = %d:\n%s", code, out)
 	}
-	if got := readTaskBody(t, eid); got != "# box plan\n" {
+	if got := readBody(t, eid); got != "# box plan\n" {
 		t.Errorf("epic body = %q, want %q", got, "# box plan\n")
 	}
 	env := parseEnvelope(t, out)

@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // shadowedBoardLayout builds a central board configured with a [[board]] scope
@@ -22,24 +22,8 @@ func shadowedBoardLayout(t *testing.T) {
 	if _, err := app.Init(central); err != nil {
 		t.Fatal(err)
 	}
-	cfgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgDir)
-	fdir := filepath.Join(cfgDir, "furrow")
-	if err := os.MkdirAll(fdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "[[board]]\npath = \"" + filepath.Join(central, app.DirName) + "\"\nscopes = [\"" + scope + "\"]\nrepo = \"me/projects\"\n"
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(central); err != nil { // inside the board's own tree
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+	testutil.UserConfig(t, testutil.BoardEntry(filepath.Join(central, app.DirName), "me/projects", scope))
+	t.Chdir(central) // inside the board's own tree
 }
 
 // A bare add inside the board's own tree drafts — and now says so on stderr at
@@ -71,19 +55,12 @@ func TestAdd_ShadowedScopeWarnsOnDraft(t *testing.T) {
 func TestAdd_PlainLocalBoardDoesNotWarn(t *testing.T) {
 	t.Setenv(app.EnvBoard, "")
 	t.Setenv(app.EnvDir, "")
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // no [[board]] configured
+	testutil.ConfigHome(t) // no [[board]] configured
 	dir := t.TempDir()
 	if _, err := app.Init(dir); err != nil {
 		t.Fatal(err)
 	}
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+	t.Chdir(dir)
 
 	_, se := mustSplit(t, "add", "classic repo-local task")
 	if strings.Contains(se, "drafted —") {

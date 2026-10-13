@@ -8,18 +8,6 @@ import (
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
-// problemsWithCode narrows to one code so a case asserts on ITS finding and not
-// on the rest of a board's lint output.
-func problemsWithCode(ps []core.Problem, code string) []core.Problem {
-	var out []core.Problem
-	for _, p := range ps {
-		if p.Code == code {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
 // `furrow lint` is the twin of brief's section: an arrived date must be found by
 // a whole-board sweep, with overdue an ERROR (it drives the exit code) and today
 // a warning.

@@ -3,57 +3,9 @@ package cli
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/gittest"
 )
-
-// autoCommitBoard sets up a user-config [[board]] with autocommit on, its own
-// git repo, cwd under the scope, and returns the board's git runner and a
-// HEAD commit counter — the TestAutoCommit_EndToEndViaCLI fixture, shared by
-// the per-command proofs below.
-func autoCommitBoard(t *testing.T) (gitAt func(args ...string) string, commitCount func() int) {
-	t.Helper()
-	git := gittest.GitOrSkip(t)
-	t.Setenv(app.EnvDir, "")
-	t.Setenv(app.EnvBoard, "")
-	scope := t.TempDir()
-	boardRoot := filepath.Join(scope, "central")
-	if _, err := app.Init(boardRoot); err != nil {
-		t.Fatal(err)
-	}
-	board := filepath.Join(boardRoot, app.DirName)
-	gitAt = func(args ...string) string { return gittest.RunGit(t, git, boardRoot, args...) }
-	gitAt("init", "-q", "-b", "main")
-	gitAt("add", "-A")
-	gitAt("commit", "-q", "-m", "board")
-	cfgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgDir)
-	fdir := filepath.Join(cfgDir, "furrow")
-	if err := os.MkdirAll(fdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "[[board]]\npath = \"" + board + "\"\nscopes = [\"" + scope + "\"]\nrepo = \"\"\nautocommit = true\n"
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	work := filepath.Join(scope, "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(work)
-	commitCount = func() int {
-		n, err := strconv.Atoi(strings.TrimSpace(gitAt("rev-list", "--count", "HEAD")))
-		if err != nil {
-			t.Fatalf("rev-list --count HEAD: %v", err)
-		}
-		return n
-	}
-	return gitAt, commitCount
-}
 
 // `edit --body` is a store write like `note`: it must leave the board committed
 // (t-m0v2: it used to leave `M bodies/<id>.md` behind, silently — neither
