@@ -157,18 +157,29 @@ func (a *App) applyDirectives(text, ref string, mode ApplyMode, openLane string,
 	}
 	res := ApplyResult{On: string(mode), Ref: ref, DryRun: dryRun, Outcomes: []ApplyOutcome{}}
 
+	// ONE snapshot for every directive's lookup. A per-directive load answered
+	// "task not found" for ANY load failure — a board newer than this binary
+	// read as six missing tasks instead of schema-too-new — and a task that
+	// vanished between the existence probe and the fetch aborted the whole
+	// run with the per-directive miss (t-xypx). The writes below still load
+	// for themselves, as every mutator does.
+	idx, err := a.load()
+	if err != nil {
+		return res, err
+	}
 	for _, d := range ParseDirectives(text) {
 		out := ApplyOutcome{ID: d.ID, Lane: d.Lane, Action: "skipped"}
 
+		t, i := idx.Find(d.ID)
 		switch {
 		case d.ID == "":
 			fail(&out, core.Validationf("", "could not parse a task id from %q", d.Link))
-		case !a.exists(d.ID):
-			fail(&out, core.NotFound(d.ID))
+		case i < 0:
+			fail(&out, a.notFoundTask(d.ID))
 		case d.Lane != "" && !a.Cfg.IsLane(d.Lane):
 			fail(&out, a.unknownLaneErr(d.ID, d.Lane))
 		default:
-			if err := a.applyOne(&out, d, ref, mode, openLane, dryRun); err != nil {
+			if err := a.applyOne(&out, t, d, ref, mode, openLane, dryRun); err != nil {
 				return res, err // IO failure: abort
 			}
 		}
@@ -182,12 +193,7 @@ func (a *App) applyDirectives(text, ref string, mode ApplyMode, openLane string,
 // an IO failure (which aborts the whole run); per-directive validation problems
 // are recorded in out, not returned. With dryRun the same decisions are made
 // and recorded, but no store write happens — the outcome is the projection.
-func (a *App) applyOne(out *ApplyOutcome, d Directive, ref string, mode ApplyMode, openLane string, dryRun bool) error {
-	// Fetch once: needed for the terminal check (open) and the no-op skip below.
-	t, _, err := a.Get(d.ID)
-	if err != nil {
-		return err
-	}
+func (a *App) applyOne(out *ApplyOutcome, t *core.Task, d Directive, ref string, mode ApplyMode, openLane string, dryRun bool) error {
 
 	target := ""
 	switch mode {
@@ -268,15 +274,6 @@ func fail(out *ApplyOutcome, err error) {
 	}
 }
 
-// exists reports whether a task id is present, cheaply (no body load).
-func (a *App) exists(id string) bool {
-	idx, err := a.load()
-	if err != nil {
-		return false
-	}
-	return idx.Has(id)
-}
-
 // annotationLine renders the one-line body note recording a PR event. It mirrors
 // the existing hand-written convention (a ✅ bullet citing the merged PR).
 func annotationLine(mode ApplyMode, ref, lane string) string {
@@ -311,7 +308,7 @@ func (a *App) AppendBody(id, line string) (bool, error) {
 	}
 	t, i := idx.Find(id)
 	if i < 0 {
-		return false, core.NotFound(id)
+		return false, a.notFoundTask(id)
 	}
 	if err := a.guardTask(t); err != nil {
 		return false, err
