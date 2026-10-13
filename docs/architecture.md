@@ -29,7 +29,7 @@ library.
                                  v
      internal/cli (cobra) — the ONLY presentation layer in-repo
      command/flag parsing, human/JSON rendering
-     (a TUI/GUI is a SEPARATE front-end repo — ridge / loom —
+     (a TUI/GUI is a SEPARATE front-end repo — ridge / vista —
       that drives furrow through its CLI/JSON contract, not its Go packages)
                                  |
                                  |  (every mutation & query)
@@ -66,7 +66,7 @@ library.
 A dependency arrow means "imports". Note what is **absent**: `internal/core`
 imports no other furrow package and no third-party library; `internal/cli` never
 imports a store adapter for mutation — it goes through `internal/app`. furrow is
-**CLI-only**: any TUI/GUI (ridge, loom) is a separate front-end consuming the
+**CLI-only**: the front-ends (ridge, a TUI; vista, a GUI) are separate repos consuming the
 same `--json`/`--ndjson` contract an agent does.
 
 ### Package responsibilities
@@ -74,7 +74,7 @@ same `--json`/`--ndjson` contract an agent does.
 | Package | Role |
 |---|---|
 | `cmd/furrow/main.go` | Entry point. Just `os.Exit(cli.Execute())` — no logic. |
-| `internal/cli` | cobra adapter and the **only** in-repo presentation layer: parse flags, call `app`, render (human table or `--json`/`--ndjson`), map errors to exit codes. Holds no task logic. A TUI/GUI is an out-of-repo front-end (ridge / loom) driving this same CLI/JSON contract. |
+| `internal/cli` | cobra adapter and the **only** in-repo presentation layer: parse flags, call `app`, render (human table or `--json`/`--ndjson`), map errors to exit codes. Holds no task logic. The front-ends (ridge, a TUI; vista, a GUI) are out-of-repo, driving this same CLI/JSON contract. |
 | `internal/app` | Coordinator. Wires a `Store` + `Config` + `Clock`; exposes every mutation/query as a method. The **only** place that mutates state. |
 | `internal/config` | Loads `.furrow/config.toml` (clamp-don't-reject). Produces an effective `Config`. Also owns the surgical single-key editor behind `furrow config set`, the one config writer. |
 | `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
@@ -568,8 +568,9 @@ command notes (the README table is generated from this tree), never a copy here:
   lane vocabulary and the schema triple, without provoking an error.
 - **Non-interactive by default**: no prompts; `furrow edit` on a non-TTY prints
   the body path instead of launching an editor; `NO_COLOR`/non-TTY suppress
-  color. **Destructive ops preview unless `--yes`** (`archive`, `rm`, `tidy`,
-  `upgrade`).
+  color. **Destructive ops preview unless `--yes`** — the one list, printed by
+  `furrow --help`: `archive`, `rm`, `epic rm`, `tidy`, `upgrade`, `migrate`, a
+  day move on `epic set --anchor`, and a `-q/-l/-r` selection on a write.
 - **Exit-code contract** (`internal/core/errors.go`): `0` ok — **including an
   empty query result** / `1` a **specifically requested id** was not found,
   never an empty list / `2` bad-usage or validation / `3+` internal or IO, with

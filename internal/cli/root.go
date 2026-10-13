@@ -200,15 +200,19 @@ func newRootCmd() *cobra.Command {
 			"epics/*.json, repos/*.json, meta.json — is furrow-OWNED: NEVER hand-edit those. One\n" +
 			"deterministic marshaller writes them, so a manual edit fights the next write\n" +
 			"and churns git; mutate through commands instead. Drive it from the CLI —\n" +
-			"furrow is CLI-only; any TUI/GUI is a separate front-end that speaks this\n" +
-			"CLI's JSON.\n\n" +
+			"furrow is CLI-only; the front-ends (ridge, a TUI; vista, a GUI) are separate\n" +
+			"repos that speak this CLI's JSON. This help is the agent contract: what\n" +
+			"CLAUDE.md and README say about driving furrow points here.\n\n" +
 			"Session start on a shared (multi-machine) board: `furrow sync && furrow\n" +
 			"brief` — converge the board, then orient (due band, active epic, top\n" +
 			"actionable picks with bodies, blocked, revisit) in one read.\n\n" +
 			"Where the verbs live: a task joins a box with `set <id> -e <epic>` (`epic add`\n" +
 			"only CREATES a box); a dep is `dep <id> <dep-id>` (`dep add` / `dep rm` are\n" +
 			"accepted spellings of the add and the --rm); labels, repos and refs are\n" +
-			"`label|repo|ref <id> --add/--rm`.\n\n" +
+			"`label|repo|ref <id> --add/--rm`. The prose writes — `note`, `edit --body`\n" +
+			"/ `--body-file`, `done --note`, `attach`, `apply`'s annotation — append to or\n" +
+			"replace the body AND advance `updated`; a hand edit of bodies/<id>.md does\n" +
+			"neither, which is what lint's reconcile-gap reads.\n\n" +
 			"Exit codes: 0 ok (an empty query result is still 0) · 1 a specifically requested\n" +
 			"id was not found (e.g. show <id>) or `furrow doctor` found problems (kind\n" +
 			"doctor-unhealthy) · 2 bad usage / validation (fix the args, do\n" +
@@ -219,14 +223,29 @@ func newRootCmd() *cobra.Command {
 			"jq is always clean. Branch on `kind` (a closed kebab-case vocabulary — `furrow\n" +
 			"vocab error-kinds` prints it) and on `retryable` (true = re-running the same\n" +
 			"command is the documented recovery), never on the message prose.\n\n" +
+			"JSON shapes are read off the signature: a command whose Use says <id>...\n" +
+			"(show, done, move, set) emits an ARRAY at every arity, a one-id mutation\n" +
+			"emits {before, after, changed}, and the report-shaped commands (rm, archive,\n" +
+			"tidy, upgrade, apply, migrate) emit ONE object whatever they took. A mutation\n" +
+			"that changes nothing leaves `updated` alone — an idempotent retry writes no\n" +
+			"shard — while the prose writes above always advance it.\n\n" +
+			"Destructive operations preview unless --yes — the one list: archive, rm,\n" +
+			"epic rm, tidy, upgrade, migrate, a day move on `epic set --anchor` (it\n" +
+			"re-dates every follower), and a -q/-l/-r selection on done/move/set. rm\n" +
+			"refuses a target something still references (kind referenced,\n" +
+			"details.references) unless --force; archive has no force.\n\n" +
+			"session-busy (exit 2): under Claude Code, a write that touches a repo an\n" +
+			"earlier, still-working session occupies is refused — wait, hand the write to\n" +
+			"that session, or file it with `add --draft`. There is no force flag.\n\n" +
 			"A read never narrows or truncates silently: when a scope or default filter\n" +
 			"hides rows, or a -n cap bites, one stderr note says so (\"N draft(s) hidden\",\n" +
 			"\"showing N of M\"), and an explicit filter that matched nothing while almost\n" +
 			"resolving — an unknown lane, an unknown repo short name, a label uniquely\n" +
 			"naming a repo — is exit 2 with candidates, never a confident empty result.\n\n" +
 			"The board's layout version gates writes, and it is an INPUT — an ordinary write\n" +
-			"never raises it (only `furrow upgrade` does). Two kinds say which side is stale,\n" +
-			"and the exit code alone tells them apart:\n" +
+			"never raises it (only `furrow upgrade` does). Two kinds say which side is\n" +
+			"stale — branch on the kind; the exit codes differ too (2 and 3), but the\n" +
+			"kind is the contract:\n" +
 			"  schema-upgrade-required (exit 2) the BOARD is behind this binary. It stays\n" +
 			"                                   fully READABLE but is read-only until\n" +
 			"                                   `furrow upgrade` runs.\n" +
@@ -234,9 +253,15 @@ func newRootCmd() *cobra.Command {
 			"                                   furrow (in CI: bump the pin). Note this is a\n" +
 			"                                   deliberate refusal that nonetheless exits 3:\n" +
 			"                                   the fix is the binary, not the input.\n" +
-			"Both carry details {board_schema, binary_schema}. `furrow board` reports the\n" +
-			"state (schema_state / writable) WITHOUT failing — read it as a pre-flight rather\n" +
-			"than provoking an error; `furrow lint` warns schema-outdated.",
+			"Both carry details {board_schema, binary_schema}. `furrow board --json` reports\n" +
+			"the state (schema_state / writable) WITHOUT failing — read it as a pre-flight\n" +
+			"rather than provoking an error; `furrow lint` warns schema-outdated.\n" +
+			"`furrow upgrade` is a flag day with no downgrade (git revert on the board\n" +
+			"repo), in this order: release the furrow that ships the schema, bump every\n" +
+			"pinned sync-task-status.yml@vX.Y.Z caller, and only THEN `furrow upgrade\n" +
+			"--yes`. `furrow config set` is the one write that works on an older-layout\n" +
+			"board — it edits config.toml surgically and never touches the store — so a\n" +
+			"flag day can be prepared from any binary.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// An unknown TOP-LEVEL command gets the same structured error every
