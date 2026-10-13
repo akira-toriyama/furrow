@@ -203,6 +203,19 @@ func applyAnchorMoves(idx *core.Index, plan *AnchorPlan, now time.Time) {
 	}
 }
 
+// revertAnchorMoves puts every moved due back — the best-effort undo of
+// applyAnchorMoves when the box's own save failed after the followers landed.
+func revertAnchorMoves(idx *core.Index, plan *AnchorPlan) {
+	for _, m := range plan.Moves {
+		t, i := idx.Find(m.ID)
+		if i < 0 {
+			continue
+		}
+		from := m.From
+		t.Due = &from
+	}
+}
+
 // resolveAnchorRef resolves a task-side `--anchor` value: the box it names,
 // which must exist and already carry a day — a task cannot follow a day the
 // box has not declared, and declaring it first is one command. A value that

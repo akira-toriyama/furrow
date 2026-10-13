@@ -2,6 +2,8 @@ package app
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -343,7 +345,13 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 			return nil, nil, nil, err
 		}
 	}
-	before, after, err := a.mutateEpic(ref, func(e *core.Epic) error {
+	// The followers' index is written BEFORE the box (mutateEpicStamping's
+	// beforeSave): a refused index save then leaves the box's day where it
+	// was, so the same command re-run moves them. A box save failing after
+	// the followers landed is the one window left; the reverse moves are
+	// applied best-effort so a re-run does not shift them twice.
+	followersSaved := false
+	before, after, err := a.mutateEpicStamping(ref, false, func(e *core.Epic) error {
 		if o.Title != nil {
 			t := core.NormalizeTitle(*o.Title)
 			if strings.TrimSpace(t) == "" {
@@ -407,15 +415,23 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 			e.Anchor = p.To
 		}
 		return nil
-	})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if plan != nil && len(plan.Moves) > 0 {
+	}, func() error {
+		if plan == nil || len(plan.Moves) == 0 {
+			return nil
+		}
 		applyAnchorMoves(idx, plan, a.Clock.Now())
 		if err := a.saveIndex(idx); err != nil {
-			return nil, nil, nil, err
+			return err
 		}
+		followersSaved = true
+		return nil
+	})
+	if err != nil {
+		if followersSaved {
+			revertAnchorMoves(idx, plan)
+			_ = a.saveIndex(idx)
+		}
+		return nil, nil, nil, err
 	}
 	return before, after, plan, nil
 }
@@ -836,7 +852,7 @@ func (a *App) resolveEpicIn(ref string, epics []core.Epic) (string, error) {
 // mutateEpic is the single write funnel: load, apply, stamp `updated` when the
 // edit changed the box's shard, save.
 func (a *App) mutateEpic(ref string, fn func(*core.Epic) error) (*core.Epic, *core.Epic, error) {
-	return a.mutateEpicStamping(ref, false, fn)
+	return a.mutateEpicStamping(ref, false, fn, nil)
 }
 
 // mutateEpicProse is mutateEpic for the paths that write a box's PROSE (a note,
@@ -845,10 +861,16 @@ func (a *App) mutateEpic(ref string, fn func(*core.Epic) error) (*core.Epic, *co
 // be unconditional — the task side draws exactly the same line (see
 // App.stampIfChanged).
 func (a *App) mutateEpicProse(ref string, fn func(*core.Epic) error) (*core.Epic, *core.Epic, error) {
-	return a.mutateEpicStamping(ref, true, fn)
+	return a.mutateEpicStamping(ref, true, fn, nil)
 }
 
-func (a *App) mutateEpicStamping(ref string, alwaysStamp bool, fn func(*core.Epic) error) (*core.Epic, *core.Epic, error) {
+// mutateEpicStamping is the one epic write skeleton. beforeSave, when given,
+// runs after fn and the guards and BEFORE the box is written: the place for a
+// write the box's edit entails on another store (the followers an anchor move
+// re-dates) — its refusal must leave the box untouched, or a re-run computes
+// a delta of zero against a day that already landed and the followers never
+// catch up (t-r6vt).
+func (a *App) mutateEpicStamping(ref string, alwaysStamp bool, fn func(*core.Epic) error, beforeSave func() error) (*core.Epic, *core.Epic, error) {
 	id, err := a.ResolveEpic(ref)
 	if err != nil {
 		return nil, nil, err
@@ -860,7 +882,14 @@ func (a *App) mutateEpicStamping(ref string, alwaysStamp bool, fn func(*core.Epi
 	if !ok {
 		return nil, nil, core.NotFound(id)
 	}
+	// A value copy shares the box's maps and slices with the edit fn is about
+	// to make, so `before` would already show the new meta (t-r6vt): clone
+	// every reference field.
 	before := *e
+	before.Labels = slices.Clone(e.Labels)
+	before.Repos = slices.Clone(e.Repos)
+	before.Meta = maps.Clone(e.Meta)
+	before.Deps = slices.Clone(e.Deps)
 	snap, err := core.MarshalEpic(e)
 	if err != nil {
 		return nil, nil, err
@@ -886,6 +915,11 @@ func (a *App) mutateEpicStamping(ref string, alwaysStamp bool, fn func(*core.Epi
 		e.Updated = a.Clock.Now()
 	} else if err := a.stampEpicIfChanged(e, snap); err != nil {
 		return nil, nil, err
+	}
+	if beforeSave != nil {
+		if err := beforeSave(); err != nil {
+			return nil, nil, err
+		}
 	}
 	if err := a.Store.SaveEpic(e); err != nil {
 		return nil, nil, err

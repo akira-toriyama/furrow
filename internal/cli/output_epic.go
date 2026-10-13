@@ -312,9 +312,13 @@ func anchorDelta(p *app.AnchorPlan) string {
 // — the selection-preview contract: JSON is {dry_run: true, anchor: <plan>}
 // (an OBJECT, told from the applied envelope by dry_run), human mode lists
 // every follower's old → new due, the done ones kept, and names the re-run.
-func emitAnchorPreview(a *app.App, p *app.AnchorPlan) {
+func emitAnchorPreview(a *app.App, p *app.AnchorPlan, pending []string) {
 	if jsonMode() {
-		emitObject(map[string]any{"dry_run": true, "anchor": p})
+		o := map[string]any{"dry_run": true, "anchor": p}
+		if len(pending) > 0 {
+			o["pending"] = pending
+		}
+		emitObject(o)
 		return
 	}
 	fmt.Fprintf(out, "would move %d due(s) that follow %s: anchor %s\n", len(p.Moves), p.Epic, anchorDelta(p))
@@ -322,6 +326,9 @@ func emitAnchorPreview(a *app.App, p *app.AnchorPlan) {
 		fmt.Fprintln(out, anchorMoveRow(a, m))
 	}
 	printAnchorKept(p)
+	if len(pending) > 0 {
+		fmt.Fprintf(out, "also pending, applied with --yes: --%s\n", strings.Join(pending, ", --"))
+	}
 	fmt.Fprintln(out, "re-run with --yes to apply")
 }
 
