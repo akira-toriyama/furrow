@@ -45,6 +45,12 @@ func TestSyncArchiveVersusReopenIsAConflictNotASilentArchivedReopen(t *testing.T
 	if fe == nil || fe.Kind != core.KindSyncConflict {
 		t.Fatalf("archive vs reopen must be a sync-conflict, got %v", err)
 	}
+	// The shard one side deleted is the conflict's path — the resolver has no
+	// field-wise merge for a delete, and the envelope names what to look at.
+	d, _ := fe.Details.(map[string]any)
+	if paths, _ := d["paths"].([]string); len(paths) != 1 || paths[0] != ".furrow/tasks/"+x.ID+".json" {
+		t.Errorf("details.paths = %v, want the deleted-on-one-side shard alone", d["paths"])
+	}
 	if _, err := os.Stat(filepath.Join(cloneB, ".furrow", "archive", "tasks", x.ID+".json")); err == nil {
 		t.Fatal("the reopen landed in archive/ — the aborted rebase must restore the board")
 	}

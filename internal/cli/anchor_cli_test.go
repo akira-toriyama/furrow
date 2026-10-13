@@ -148,7 +148,17 @@ func TestEpicClearAnchorDisclosesFollowers(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &env); err != nil || env.Anchor == nil || env.Anchor.From != "" || len(env.Anchor.Moves) != 0 {
 		t.Errorf("re-setting the day is a first set and moves nothing: %s (%v)", out, err)
 	}
-	mustRun(t, "epic", "set", epic, "--clear-anchor")
+	out = mustRun(t, "--json", "epic", "set", epic, "--clear-anchor")
+	var cleared anchorEnvelope
+	if err := json.Unmarshal([]byte(out), &cleared); err != nil || cleared.Anchor == nil {
+		t.Fatalf("clear --json: %v\n%s", err, out)
+	}
+	if cleared.Anchor.From != "2026-11-21" || cleared.Anchor.To != "" || len(cleared.Anchor.Moves) != 0 {
+		t.Errorf("a clear reports the day it dropped and moves nothing: %s", out)
+	}
+	if got := strings.Join(cleared.Anchor.Followers, ","); got != follower+","+cross && got != cross+","+follower {
+		t.Errorf("the envelope's followers must name the two tasks left pointing at the box, got %q", got)
+	}
 	lint, code := run(t, "lint", "--code", "anchor-unset")
 	if code != 0 {
 		t.Fatalf("anchor-unset is a warn, exit %d:\n%s", code, lint)

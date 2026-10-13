@@ -54,6 +54,10 @@ const frozenBoardDir = "testdata/frozen-board"
 func TestFrozenBoardRoundTripsByteIdentical(t *testing.T) {
 	root := filepath.Join(t.TempDir(), ".furrow")
 	copyTree(t, frozenBoardDir, root)
+	// Every file's mtime is stamped into the past first: a rewrite then moves
+	// it by decades instead of by the few milliseconds a copy-then-save might
+	// share within one filesystem timestamp tick.
+	stampPast(t, root)
 	before := snapshotTree(t, root)
 
 	s := New(root, lanes, "t-", "e-", 5)
@@ -223,6 +227,22 @@ func TestFrozenBoardParksUnknownKeys(t *testing.T) {
 	}
 	if len(repos) != 1 || !slices.Equal(repos[0].ExtraKeys(), []string{"last_bot_reviewed"}) {
 		t.Errorf("the repo review shard's unknown key must be parked: got %+v", repos)
+	}
+}
+
+// stampPast sets every file under root to one mtime far in the past, so an
+// unchanged-bytes rewrite is unmistakable in the snapshot comparison.
+func stampPast(t *testing.T, root string) {
+	t.Helper()
+	past := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		return os.Chtimes(p, past, past)
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

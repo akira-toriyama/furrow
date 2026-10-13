@@ -3,7 +3,6 @@ package cli
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 // t-kvsa: brief's due band is board-wide while its next band obeys the
@@ -12,7 +11,8 @@ import (
 // due header now says so; a board with no boxes has no focus to differ from.
 func TestCLIBriefDueBandNamesItsScopeOnABoardWithBoxes(t *testing.T) {
 	initStore(t)
-	today := time.Now().Format("2006-01-02")
+	freezeClock(t)
+	today := dayOffset(t, 0)
 	addTask(t, "dated, no boxes yet", "-s", "ready", "-r", "o/r", "--due", today)
 	out, code := run(t, "brief")
 	if code != 0 || !strings.Contains(out, "due (1):") {

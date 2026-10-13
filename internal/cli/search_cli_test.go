@@ -186,6 +186,51 @@ func TestSearchChecklistAndRefHits(t *testing.T) {
 	}
 }
 
+// --regex and a quoted phrase reach a checklist row and a ref exactly as a
+// bare substring does, in `search` and in `-q` alike: the one walk behind
+// both (core.FindText) takes the needle, not the spelling.
+func TestSearchRegexAndPhraseReachChecklistAndRefs(t *testing.T) {
+	initStore(t)
+	inList := addTask(t, "venue walkthrough", "--check", "下見枠 10/10 を確保")
+	inRef := addTask(t, "print the menu", "--ref", "docs/oneday-restaurant/2026-11-21/menu.md")
+	addTask(t, "decoy 10/11 を確保")
+
+	for _, c := range []struct {
+		args  []string
+		id    string
+		field string
+	}{
+		{[]string{"--json", "search", "--regex", `枠 \d+/\d+ を`}, inList, "checklist"},
+		{[]string{"--json", "search", "--regex", `^docs/[a-z-]+/\d{4}-\d{2}-\d{2}/`}, inRef, "refs"},
+		{[]string{"--json", "search", "10/10 を確保"}, inList, "checklist"},
+		{[]string{"--json", "search", "--regex", `^\d{4}-\d{2}-\d{2}$`}, "", ""}, // a line anchor binds to the whole item or ref
+	} {
+		out, code := run(t, c.args...)
+		if code != 0 {
+			t.Fatalf("%v exit=%d:\n%s", c.args, code, out)
+		}
+		hits := searchHits(t, out)
+		if c.id == "" {
+			if len(hits) != 0 {
+				t.Errorf("%v: want no hit, got:\n%s", c.args, out)
+			}
+			continue
+		}
+		if len(hits) != 1 || hits[0].ID != c.id || hits[0].MatchedField != c.field {
+			t.Errorf("%v: want one %s hit on %s, got:\n%s", c.args, c.field, c.id, out)
+		}
+	}
+
+	// The same phrase as -q free text: quoted, so the whitespace is part of it.
+	out, code := run(t, "--json", "ls", "-q", `"10/10 を確保"`)
+	if code != 0 {
+		t.Fatalf("ls -q phrase exit=%d:\n%s", code, out)
+	}
+	if !strings.Contains(out, inList) || strings.Contains(out, inRef) || strings.Contains(out, "decoy") {
+		t.Errorf("-q \"10/10 を確保\" must reach the checklist row and nothing else:\n%s", out)
+	}
+}
+
 func TestSearchRegexFlag(t *testing.T) {
 	initStore(t)
 	cand := addTask(t, "候補 B を取り下げる")

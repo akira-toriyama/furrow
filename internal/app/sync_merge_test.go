@@ -63,6 +63,45 @@ func shardBytes(t *testing.T, dir, id string) []byte {
 	return data
 }
 
+// A conflict on a file that is no shard — config.toml edited on both sides —
+// is not the resolver's to merge: sync reports sync-conflict with that path,
+// and the aborted rebase leaves the local edit in place.
+func TestSyncReportsANonShardConflictWithItsPath(t *testing.T) {
+	_, cloneA, cloneB := setupClones(t)
+	appendConfig := func(dir, line string) {
+		t.Helper()
+		p := filepath.Join(dir, DirName, "config.toml")
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, append(data, []byte(line)...), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	appendConfig(cloneA, "\n# edited on A\n")
+	if _, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	appendConfig(cloneB, "\n# edited on B\n")
+	_, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{})
+	fe := core.AsError(err)
+	if fe == nil || fe.Kind != core.KindSyncConflict {
+		t.Fatalf("a non-shard conflict must be a sync-conflict, got %v", err)
+	}
+	d, _ := fe.Details.(map[string]any)
+	if paths, _ := d["paths"].([]string); len(paths) != 1 || paths[0] != DirName+"/config.toml" {
+		t.Errorf("details.paths = %v, want the non-shard path alone", d["paths"])
+	}
+	if _, ok := d["fields"]; ok {
+		t.Errorf("a non-shard conflict has no disputed fields to name: %v", d["fields"])
+	}
+	data, err := os.ReadFile(filepath.Join(cloneB, DirName, "config.toml"))
+	if err != nil || !strings.Contains(string(data), "# edited on B") || strings.Contains(string(data), "<<<<<<<") {
+		t.Errorf("the aborted rebase must restore B's own edit, got:\n%s (%v)", data, err)
+	}
+}
+
 func TestSyncMergesShardsWrittenInDifferentFields(t *testing.T) {
 	_, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 

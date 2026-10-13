@@ -253,6 +253,70 @@ func TestSetAnchorInvariants(t *testing.T) {
 	}
 }
 
+// A follower with no due can only come from a hand-edit (every write path
+// refuses it); the move still has to see it, and refuses the whole move with
+// details.undated — the preview the same way, before anything is written.
+func TestEpicSetAnchorRefusesAHandEditedUndatedFollower(t *testing.T) {
+	a, _, epic, follower, _, _, _ := anchorFixture(t)
+	bare := mustAdd(t, a, "bare", AddOpts{Epic: epic})
+	idx, err := a.Store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range idx.Tasks {
+		if idx.Tasks[i].ID == bare.ID {
+			idx.Tasks[i].Anchor = epic
+		}
+	}
+	if err := a.Store.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	dueBefore := dueOf(t, a, follower.ID)
+
+	for name, try := range map[string]func() error{
+		"preview": func() error { _, err := a.PlanAnchor(epic, "2026-11-28"); return err },
+		"apply":   func() error { _, _, _, err := a.EpicSet(epic, EpicSetOpts{Anchor: ptr("2026-11-28")}); return err },
+	} {
+		ce, ok := try().(*core.Error)
+		if !ok || ce.Code != core.CodeValidation || ce.Subject != epic {
+			t.Fatalf("%s over an undated follower must refuse on the epic: %v", name, ce)
+		}
+		d, _ := ce.Details.(map[string]any)
+		if !reflect.DeepEqual(d["undated"], []string{bare.ID}) {
+			t.Errorf("%s: details.undated = %v, want [%s]", name, d["undated"], bare.ID)
+		}
+		if _, has := d["repeating"]; has {
+			t.Errorf("%s: details.repeating must be absent when no follower repeats: %v", name, d["repeating"])
+		}
+		if !strings.Contains(ce.Msg, "1 with no due ("+bare.ID+")") {
+			t.Errorf("%s: the message must count and name the undated follower: %s", name, ce.Msg)
+		}
+	}
+	e, _, _ := a.Store.LoadEpic(epic)
+	if e.Anchor != "2026-11-21" || !dueOf(t, a, follower.ID).Equal(dueBefore) {
+		t.Errorf("a refused move wrote something: anchor %q, follower due %s", e.Anchor, dueOf(t, a, follower.ID))
+	}
+}
+
+// A follower whose shifted due would leave the years a shard can hold: the
+// move refuses on that task (ShiftDue's own validation, surfaced with the
+// task as subject) and writes nothing — the last refusal in the plan walk.
+func TestEpicSetAnchorRefusesAFollowerShiftedPastYear9999(t *testing.T) {
+	a, _ := newAppWith(at(time.Date(2026, 9, 27, 3, 0, 0, 0, time.UTC)), zone(jst))
+	epic := mustEpic(t, a, "far", EpicAddOpts{Repos: []string{"o/r"}, Anchor: "9999-12-20"})
+	edge := mustAdd(t, a, "edge", AddOpts{Epic: epic, Due: "9999-12-31", Anchor: epic})
+	dueBefore := dueOf(t, a, edge.ID)
+	_, _, _, err := a.EpicSet(epic, EpicSetOpts{Anchor: ptr("9999-12-31")})
+	ce, ok := err.(*core.Error)
+	if !ok || ce.Code != core.CodeValidation || ce.Subject != edge.ID || !strings.Contains(ce.Msg, "year 10000") {
+		t.Fatalf("a follower shifted past year 9999 must refuse on the task: %v", err)
+	}
+	e, _, _ := a.Store.LoadEpic(epic)
+	if e.Anchor != "9999-12-20" || !dueOf(t, a, edge.ID).Equal(dueBefore) {
+		t.Errorf("a refused move wrote something: anchor %q, due %s", e.Anchor, dueOf(t, a, edge.ID))
+	}
+}
+
 func mustList(t *testing.T, a *App, o QueryOpts) []core.Task {
 	t.Helper()
 	o.Repo = ""

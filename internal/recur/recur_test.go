@@ -744,6 +744,13 @@ func assertEveryOccurrenceLands(t *testing.T, line string, anchor time.Time) {
 			t.Fatalf("occurrence %d of %q is %s — the rule does skip, so the note was right",
 				i, line, next.Format("2006-01-02"))
 		}
+		// The day alone cannot tell a series that advances from one that
+		// stands still (#392: a weekly series handed back the day it closed on
+		// and the shape-only assertion stayed green).
+		if !next.After(cur) {
+			t.Fatalf("occurrence %d of %q is %s, not after %s — the series stands still",
+				i, line, next.Format(time.RFC3339), cur.Format(time.RFC3339))
+		}
 		cur = next
 	}
 }
