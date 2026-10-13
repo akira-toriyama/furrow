@@ -30,7 +30,7 @@ import (
 // affected ids and foreign is repo-relative paths, all sorted (nil when empty,
 // so SyncProgress omits them).
 func partitionSync(spec string, changes []gitrepo.Change, opts SyncOpts) (commitPaths, committedBodies, pendingBodies, foreign []string) {
-	bodiesPrefix := spec + "/bodies/"
+	bodiesPrefix := specJoin(spec, "bodies/")
 	named := make(map[string]bool, len(opts.Bodies))
 	for _, id := range opts.Bodies {
 		named[id] = true
@@ -71,7 +71,7 @@ func partitionSync(spec string, changes []gitrepo.Change, opts SyncOpts) (commit
 // bodies/*.md is deliberately NOT here: that is the hand-editable class
 // partitionSync routes through the body opt-in rules.
 func machineSyncPath(spec, path string) bool {
-	rel, ok := strings.CutPrefix(path, spec+"/")
+	rel, ok := underSpec(spec, path)
 	if !ok {
 		return false
 	}
@@ -82,6 +82,26 @@ func machineSyncPath(spec, path string) bool {
 		return machineSyncRel(arel)
 	}
 	return machineSyncRel(rel)
+}
+
+// specJoin joins a store-relative path onto the board's repo-relative pathspec
+// (spec, from Repo.RelPath). spec is "." when the store IS the git toplevel —
+// a board repo cloned as a repo's .furrow, the layout `furrow init` accepts
+// there — and git prints such a store's paths bare ("bodies/t-x.md"), which
+// "./bodies/" never prefixes: sync and autocommit then called every shard
+// foreign and committed nothing. underSpec is the CutPrefix twin.
+func specJoin(spec, rel string) string {
+	if spec == "." || spec == "" {
+		return rel
+	}
+	return spec + "/" + rel
+}
+
+func underSpec(spec, path string) (string, bool) {
+	if spec == "." || spec == "" {
+		return path, true
+	}
+	return strings.CutPrefix(path, spec+"/")
 }
 
 // machineSyncRel is machineSyncPath's per-store rule, on a path relative to one
@@ -118,8 +138,10 @@ func machineSyncRel(rel string) bool {
 // on every other machine and in git history, which cannot be un-published. Lint
 // tells you afterwards; this refuses beforehand.
 //
-// Validation (exit 2, do-not-retry): the fix is an edit, not a re-run.
-func (a *App) guardBodyMarkers(ids []string) error {
+// Validation (exit 2, do-not-retry): the fix is an edit, not a re-run. marked
+// lists the refused ids (sorted) beside the error, so the caller can report
+// them as the pending bodies they are.
+func (a *App) guardBodyMarkers(ids []string) (marked []string, err error) {
 	type markedBody struct {
 		ID    string `json:"id"`
 		Path  string `json:"path"`
@@ -129,20 +151,22 @@ func (a *App) guardBodyMarkers(ids []string) error {
 	for _, id := range ids {
 		body, err := a.Store.LoadBody(id)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if lines := core.ConflictMarkerLines(body); len(lines) > 0 {
 			bad = append(bad, markedBody{ID: id, Path: core.BodyPath(id), Lines: lines})
+			marked = append(marked, id)
 		}
 	}
 	if len(bad) == 0 {
-		return nil
+		return nil, nil
 	}
+	sort.Strings(marked)
 	named := make([]string, len(bad))
 	for i, b := range bad {
 		named[i] = fmt.Sprintf("%s (line %s)", b.Path, joinInts(b.Lines))
 	}
-	return &core.Error{
+	return marked, &core.Error{
 		Code: core.CodeValidation,
 		Kind: core.KindBodyConflictMarker,
 		Msg: fmt.Sprintf("refusing to commit %d body file(s) still carrying git conflict markers: %s — "+

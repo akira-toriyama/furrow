@@ -236,8 +236,8 @@ type UnreviewedRepo struct {
 // close), task ids past the stale threshold, and repos whose human review has
 // gone stale. Ids/repos are in canonical order.
 type RevisitSummary struct {
-	DepDone    []string         `json:"dep_done"`             // task ids with >=1 dependency in the done lane
-	Stale      []string         `json:"stale"`                // task ids not updated within staleDays
+	DepDone    []string         `json:"dep_done,omitempty"`   // task ids with >=1 dependency in the done lane
+	Stale      []string         `json:"stale,omitempty"`      // task ids not updated within staleDays
 	Unreviewed []UnreviewedRepo `json:"unreviewed,omitempty"` // repos past [review].stale_after_days (omitted when none, so the existing JSON shape is unchanged)
 	// The epic keys carry EPIC ids, not task ids — the entities are distinct
 	// and so are their id spaces. omitempty so a board with no boxes keeps a

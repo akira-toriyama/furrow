@@ -386,7 +386,7 @@ On a non-zero exit, furrow prints a structured error object to stderr:
 
 Two fields carry the decision, so a consumer never parses prose:
 
-- **`kind`** — the stable kebab-case failure class, a **closed vocabulary** (`furrow vocab error-kinds` prints it; every member below). The generic trio mirrors the exit classes — `not-found`, `validation`, `internal` — and a named kind exists exactly where the remedy is more specific than the exit code: `body-conflict-marker`, `doctor-unhealthy`, `epic-active-clash`, `epic-ambiguous`, `epic-not-found`, `git-failed`, `git-missing`, `no-git-repo`, `query-parse`, `query-type`, `query-unknown-field`, `query-unknown-flag`, `referenced`, `repo-ambiguous`, `repo-unknown`, `schema-too-new`, `schema-upgrade-required`, `session-busy`, `sync-busy`, `sync-conflict`, `sync-interrupted`, `sync-lock-stale`, `sync-op-in-progress`, `sync-push-rejected`, `sync-stash-stranded`, `sync-unmerged`, `unknown-lane`, `unknown-subcommand`.
+- **`kind`** — the stable kebab-case failure class, a **closed vocabulary** (`furrow vocab error-kinds` prints it; every member below). The generic trio mirrors the exit classes — `not-found`, `validation`, `internal` — and a named kind exists exactly where the remedy is more specific than the exit code: `body-conflict-marker`, `doctor-unhealthy`, `epic-active-clash`, `epic-ambiguous`, `epic-not-found`, `git-failed`, `git-missing`, `no-git-repo`, `query-parse`, `query-type`, `query-unknown-field`, `query-unknown-flag`, `referenced`, `repo-ambiguous`, `repo-unknown`, `schema-too-new`, `schema-upgrade-required`, `session-busy`, `sync-busy`, `sync-conflict`, `sync-detached-head`, `sync-interrupted`, `sync-lock-stale`, `sync-no-upstream`, `sync-op-in-progress`, `sync-push-rejected`, `sync-stash-stranded`, `sync-unmerged`, `unknown-lane`, `unknown-subcommand`.
 - **`retryable`** — `true` means re-running the same command is the documented recovery (`sync-busy`, `sync-push-rejected`, `sync-interrupted`); always present, so "retry or escalate?" is one key, not a memorized table.
 
 `subject` names the entity the failure is about — a task or epic id, an
@@ -640,14 +640,16 @@ pending_bodies, pending_stash, foreign_files, switches, incoming, merged_shards}
 stdout on
 success and
 failure alike (empty lists omitted); **`complete`** — not `pushed` — is the
-"fully published" flag, `false` whenever a body or stash is left pending,
+"fully published" flag, `false` whenever a body or stash is left pending or the
+sync failed (a failed sync published nothing, whatever its lists say),
 `foreign_files` names the non-furrow junk deliberately left uncommitted, and
 `switches` names any `epic activate` records this sync published (the switch
 log's exit point), and `incoming` classifies the task changes the pull brought
 IN — the other machines' and CI's writes, read off the pre-pull..post-pull
 shard diff: `created` / `closed` / `reopened` / `moved` / `refiled` /
-`archived` (the pulled tree holds its `archive/` copy) / `removed` (`furrow rm`:
-nothing to unarchive) / `updated`, with the old and new lane or epic on the moves — also
+`archived` (the pulled tree holds its `archive/` copy) / `unarchived` (the
+pre-pull tree held it) / `removed` (`furrow rm`: nothing to unarchive) /
+`updated`, with the old and new lane or epic on the moves — also
 rendered as one `incoming:` human line, so the CI that closed your in-progress
 task surfaces in the sync that pulled it, not on a later re-read; `merged_shards`
 names the shards that pull merged field-wise (one `merged:` line), because a
@@ -657,6 +659,15 @@ merge is a write nobody typed.
 
 This is the failure taxonomy; every kind is branch-on-the-`kind`, with `retryable` saying whether a re-run is the fix (`furrow vocab error-kinds` prints the whole vocabulary):
 
+- **A pre-flight that refuses, before anything is committed.** `git-missing`
+  (exit 3: no git on PATH); `no-git-repo` (exit 2: the board is not inside a
+  git repository); `sync-op-in-progress` (exit 2: a merge / cherry-pick /
+  revert / bisect of yours is in progress — the message names the exact way
+  out); `sync-detached-head` (exit 2: HEAD is not on a branch, so a sync
+  commit would be orphaned by the next checkout); `sync-no-upstream` (exit 2:
+  the branch tracks nothing — nothing to pull from or push to; `git push -u`
+  once); a `-b` naming no task on the board (exit 2, `validation`, with the
+  bodies `-b` can name as `candidates`).
 - **A stranded autostash.** Step 2 stashes your *other* dirty files; if git's
   re-apply conflicts it keeps them **in the stash** and **exits 0** — the edits
   silently leave your working tree. So sync probes the stash: the run that
@@ -754,7 +765,7 @@ A fully separate directory (e.g. `~/furrow-boards/app/.furrow`, outside the code
 
 Everything shared-board-shaped is N/A here, and knowing the failure shapes saves a debugging detour:
 
-- **`furrow sync`** assumes an upstream: on a no-remote board it prints its progress object, then fails with **exit 3, kind `git-failed`** relaying git's wording — branch on the kind. Nothing is broken; backup here is `autocommit`, not sync.
+- **`furrow sync`** assumes an upstream: on a no-remote board it refuses before committing anything, with **exit 2, kind `sync-no-upstream`** — branch on the kind. Nothing is broken; backup here is `autocommit`, not sync.
 - **PR→status automation** (`furrow apply`, the `SetStatus-task:` footer, the reusable workflow) is shared-board-only: the footer points CI at a body-file **URL** a never-pushed board does not have. Status transitions are manual.
 
 ---

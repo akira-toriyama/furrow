@@ -47,8 +47,10 @@ const (
 	KindSessionBusy           = "session-busy"            // the write touches a repo an earlier, still-working session occupies (exit 2)
 	KindSyncBusy              = "sync-busy"               // a concurrent writer's rebase is still in flight — retryable
 	KindSyncConflict          = "sync-conflict"           // the pull rebase hit real conflicts; details.paths names them
+	KindSyncDetachedHead      = "sync-detached-head"      // HEAD is not on a branch: a sync commit would be orphaned; check one out
 	KindSyncInterrupted       = "sync-interrupted"        // a signal cancelled the in-flight git — retryable
 	KindSyncLockStale         = "sync-lock-stale"         // a git lock/fetch race outlived the retry budget; remove the stale .git/*.lock
+	KindSyncNoUpstream        = "sync-no-upstream"        // the branch tracks no upstream: nothing to pull from or push to
 	KindSyncOpInProgress      = "sync-op-in-progress"     // a non-rebase git operation (your own merge, say) blocks sync
 	KindSyncPushRejected      = "sync-push-rejected"      // a co-writer kept winning the push race — retryable
 	KindSyncStashStranded     = "sync-stash-stranded"     // the autostash could not re-apply; your edits sit in the stash
@@ -85,8 +87,10 @@ var errorKinds = map[string]bool{
 	KindSessionBusy:           true,
 	KindSyncBusy:              true,
 	KindSyncConflict:          true,
+	KindSyncDetachedHead:      true,
 	KindSyncInterrupted:       true,
 	KindSyncLockStale:         true,
+	KindSyncNoUpstream:        true,
 	KindSyncOpInProgress:      true,
 	KindSyncPushRejected:      true,
 	KindSyncStashStranded:     true,

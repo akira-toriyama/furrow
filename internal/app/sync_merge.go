@@ -24,7 +24,7 @@ import (
 // schema_version is the flag-day gate, and two sides disagreeing about it is
 // never a field to merge. Bodies have git's union driver.
 func shardKindOf(spec, path string) (core.ShardKind, bool) {
-	rel, ok := strings.CutPrefix(path, spec+"/")
+	rel, ok := underSpec(spec, path)
 	if !ok {
 		return 0, false
 	}

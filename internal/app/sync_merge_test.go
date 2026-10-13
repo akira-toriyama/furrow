@@ -297,8 +297,8 @@ func TestSyncConflictNamesTheDisagreeingFields(t *testing.T) {
 	if err == nil {
 		t.Fatal("a same-field disagreement must still fail the sync")
 	}
-	if !p.Conflict || p.Pulled || p.Pushed || len(p.MergedShards) != 0 {
-		t.Errorf("progress = %+v; want conflict=true pulled=false pushed=false and no merged shards", p)
+	if !p.Conflict || p.Pulled || p.Pushed || len(p.MergedShards) != 0 || p.Complete {
+		t.Errorf("progress = %+v; want conflict=true pulled=false pushed=false complete=false and no merged shards", p)
 	}
 	fe := core.AsError(err)
 	if fe == nil || fe.Kind != core.KindSyncConflict {

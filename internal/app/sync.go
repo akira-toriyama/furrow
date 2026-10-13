@@ -45,11 +45,13 @@ type SyncProgress struct {
 	Pulled    bool `json:"pulled"`    // pull --rebase completed
 	Pushed    bool `json:"pushed"`    // push completed
 	Conflict  bool `json:"conflict"`  // pull hit conflicts (rebase was aborted)
-	// Complete is true when the sync left NOTHING behind: no PendingBodies and no
-	// PendingStash. A sync can report pushed=true at exit 0 and still be
-	// incomplete (a modified body deliberately not committed), so `pushed` alone
-	// is not "the board is fully published" — `complete` is the single key an
-	// agent branches on. Computed from the final pending state (see Sync's defer).
+	// Complete is true when the sync SUCCEEDED and left NOTHING behind: no
+	// PendingBodies and no PendingStash. A sync can report pushed=true at exit 0
+	// and still be incomplete (a modified body deliberately not committed), so
+	// `pushed` alone is not "the board is fully published" — `complete` is the
+	// single key an agent branches on, which is why a failed sync (a conflict, a
+	// stale lock, a refused body) is never complete however empty its pending
+	// lists are. Computed from the final state (see Sync's defer).
 	Complete bool `json:"complete"`
 	// CommittedBodies lists task ids whose bodies/<id>.md this sync committed
 	// (new/seeded bodies, or ones named via -b/--all-bodies). PendingBodies lists
@@ -177,10 +179,12 @@ func interruptError(err error, ctxErr error) error {
 // the stash nor the fix.
 func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err error) {
 	p = &SyncProgress{}
-	// `complete` is derived from the FINAL pending state on every return path
-	// (success and error), so the "fully published?" bit can never drift from the
-	// lists it summarizes. p is a named return initialized above, so this is safe.
-	defer func() { p.Complete = len(p.PendingBodies) == 0 && len(p.PendingStash) == 0 }()
+	// `complete` is derived from the FINAL state on every return path, so the
+	// "fully published?" bit can never drift from the outcome and the lists it
+	// summarizes: a failed sync published nothing, whatever it left pending. p
+	// and err are named returns, so the defer sees both (it runs AFTER the
+	// interrupt collapse below — defers are LIFO).
+	defer func() { p.Complete = err == nil && len(p.PendingBodies) == 0 && len(p.PendingStash) == 0 }()
 	// Collapse a cancellation artifact into one honest "sync-interrupted" (see
 	// interruptError). The progress object is left intact, so it still reports how
 	// far the sync got before the interrupt.
@@ -247,6 +251,37 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 		}
 	}
 
+	// The branch pre-flights run BEFORE the auto-commit, like the operation
+	// pre-flights above: a commit made on a detached HEAD is orphaned the moment
+	// a branch is checked out (the board's writes vanish with it), and a commit
+	// on a branch with no upstream has nowhere to go — both used to commit
+	// first and fail in the pull, with committed=true and git's own words.
+	branch, detached, err := r.Branch(ctx)
+	if err != nil {
+		return p, err
+	}
+	if detached {
+		return p, &core.Error{
+			Code: core.CodeValidation,
+			Kind: core.KindSyncDetachedHead,
+			Msg: fmt.Sprintf("HEAD is detached in %s — a sync commit made here would be left behind the moment a branch "+
+				"is checked out. Check out the board's branch (`git -C %s switch <branch>`), then re-run furrow sync", r.Toplevel(), r.Toplevel()),
+		}
+	}
+	tracked, err := r.HasUpstream(ctx)
+	if err != nil {
+		return p, err
+	}
+	if !tracked {
+		return p, &core.Error{
+			Code: core.CodeValidation,
+			Kind: core.KindSyncNoUpstream,
+			Msg: fmt.Sprintf("branch %s in %s tracks no upstream — nothing to pull from or push to, so nothing was committed. "+
+				"sync is the shared-board ritual; a standalone board is backed up by autocommit, not sync. To share this board, "+
+				"track a remote branch (`git -C %s push -u origin %s`), then re-run furrow sync", branch, r.Toplevel(), r.Toplevel(), branch),
+		}
+	}
+
 	spec, err := r.RelPath(a.Dir)
 	if err != nil {
 		return p, err
@@ -255,6 +290,15 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 	changes, err := r.DirtyChanges(ctx, spec)
 	if err != nil {
 		return p, err
+	}
+	// A -b id that names no task on the board is refused before anything is
+	// committed (it was silently ignored: the operator read "pushed" and the
+	// body they meant stayed pending). The candidates are the bodies -b CAN
+	// name — the ones this sync would otherwise leave pending.
+	if len(opts.Bodies) > 0 {
+		if err := a.guardBodyIDs(spec, changes, opts.Bodies); err != nil {
+			return p, err
+		}
 	}
 	// The touched-bodies journal is the cross-process half of bodiesTouched:
 	// ids whose bodies furrow ITSELF wrote (note / edit --body / done --note /
@@ -276,7 +320,11 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 		if len(commitPaths) > 0 {
 			// Never publish a half-merged body (see guardBodyMarkers). This runs
 			// BEFORE the commit, so a refused sync has changed nothing at all.
-			if err := a.guardBodyMarkers(committedBodies); err != nil {
+			if marked, err := a.guardBodyMarkers(committedBodies); err != nil {
+				// The refused bodies are left exactly where a pending body is
+				// left — uncommitted — so they are reported as pending too.
+				p.PendingBodies = appendUnique(p.PendingBodies, marked...)
+				sort.Strings(p.PendingBodies)
 				return p, err
 			}
 			message := opts.Message
@@ -487,6 +535,34 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 	}
 	p.Pushed = true
 	return p, nil
+}
+
+// guardBodyIDs refuses a -b id that names no task on the hot board. Validation
+// (exit 2): the flag is wrong, not the board. Candidates are the ids whose
+// bodies are dirty and would be left pending without a -b — the ones the
+// operator could have meant.
+func (a *App) guardBodyIDs(spec string, changes []gitrepo.Change, ids []string) error {
+	idx, err := a.load()
+	if err != nil {
+		return err
+	}
+	var unknown []string
+	for _, id := range ids {
+		if _, i := idx.Find(id); i < 0 {
+			unknown = append(unknown, id)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	_, _, pending, _ := partitionSync(spec, changes, SyncOpts{})
+	return &core.Error{
+		Code:       core.CodeValidation,
+		Kind:       core.KindValidation,
+		Subject:    unknown[0],
+		Msg:        fmt.Sprintf("-b names no task on this board: %s — nothing was committed", strings.Join(unknown, ", ")),
+		Candidates: pending,
+	}
 }
 
 // SyncSummary renders the progress as one terse human line (stdout, non-JSON

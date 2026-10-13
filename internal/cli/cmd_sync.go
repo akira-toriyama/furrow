@@ -149,7 +149,25 @@ func newSyncCmd() *cobra.Command {
 			"likely-stale .git/*.lock and sync fails terminally naming it (kind\n" +
 			"\"sync-lock-stale\"; a pre-flight\n" +
 			"foreign rebase that stays stuck instead exits with the retryable kind\n" +
-			"\"sync-busy\").\n\n" +
+			"\"sync-busy\"). A co-writer that keeps winning the push race is the retryable\n" +
+			"\"sync-push-rejected\" (the board is untouched; re-running is the whole fix),\n" +
+			"and a Ctrl-C / SIGTERM mid-run is the retryable \"sync-interrupted\" (exit\n" +
+			"130 / 143; the pre-flight of the re-run waits out or reports what it left).\n\n" +
+			"Pre-flights refuse BEFORE anything is committed, each with its own kind:\n" +
+			"  git-missing (exit 3)          git is not on PATH\n" +
+			"  no-git-repo (exit 2)          the board is not inside a git repository\n" +
+			"  sync-op-in-progress (exit 2)  a merge/cherry-pick/revert/bisect of yours is\n" +
+			"                                in progress — finish or abort it (the message\n" +
+			"                                names the exact git command)\n" +
+			"  sync-unmerged (exit 2)        unmerged paths with no operation in progress\n" +
+			"  sync-detached-head (exit 2)   HEAD is not on a branch: a sync commit would be\n" +
+			"                                orphaned by the next checkout — check one out\n" +
+			"  sync-no-upstream (exit 2)     the branch tracks no upstream: nothing to pull\n" +
+			"                                from or push to (a standalone board is backed\n" +
+			"                                up by autocommit, not sync) — `git push -u`\n" +
+			"  body-conflict-marker (exit 2) a body to commit still carries conflict markers\n" +
+			"  validation (exit 2)           -b names no task on the board; candidates\n" +
+			"                                lists the bodies -b can name\n\n" +
 			"Your OWN dirty files are autostashed for the rebase. If git cannot put them\n" +
 			"back (its re-apply conflicts with what was pulled), it keeps them in the stash,\n" +
 			"warns only on stderr, and exits 0 — so sync probes the stash itself and fails\n" +
@@ -160,15 +178,16 @@ func newSyncCmd() *cobra.Command {
 			"markers is never auto-committed (kind \"body-conflict-marker\", exit 2): a commit\n" +
 			"cannot be un-published, and `furrow lint` flags any that got in already.\n\n" +
 			"The progress object {committed, pulled, pushed, conflict, complete,\n" +
-			"committed_bodies, pending_bodies, pending_stash, incoming, merged_shards}\n" +
-			"goes to stdout\n" +
-			"even on\n" +
-			"failure; `complete` is false whenever a body or stash is left pending (and\n" +
-			"the stdout summary line names that count), so a pushed-but-incomplete sync\n" +
-			"never reads as fully published. `incoming` classifies the task changes the\n" +
+			"committed_bodies, pending_bodies, pending_stash, foreign_files, switches,\n" +
+			"incoming, merged_shards} goes to stdout even on failure; `complete` is true\n" +
+			"only for a sync that succeeded with no body or stash left pending (the\n" +
+			"stdout summary line names those counts), so neither a pushed-but-incomplete\n" +
+			"sync nor a failed one reads as fully published. `foreign_files` names the\n" +
+			"non-furrow files left uncommitted and `switches` the `epic activate` records\n" +
+			"published. `incoming` classifies the task changes the\n" +
 			"pull brought IN — the other machines' and CI's writes, from the pre-pull vs\n" +
 			"post-pull shard diff: created / closed / reopened / moved / refiled /\n" +
-			"archived / removed / updated, with the old and new lane or epic on the moves\n" +
+			"archived / unarchived / removed / updated, with the old and new lane or epic on the moves\n" +
 			"— and prints as one \"incoming:\" line, so the CI that closed your in-progress\n" +
 			"task surfaces in the sync that pulled it, not on a later re-read. After a successful sync it also reports a\n" +
 			"revisit summary (repo-scoped counts of tasks with a done dependency or gone\n" +

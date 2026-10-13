@@ -13,28 +13,32 @@ import (
 )
 
 // The incoming kinds, one closed vocabulary (`furrow vocab incoming-kinds`):
-// a shard that appeared is created; a modification is classified by the FIRST
-// match of closed | reopened | moved | refiled | updated (a `done` both closes
-// and moves; "closed" is the half the operator cares about); a shard that
-// vanished is archived when the pulled tree holds its archive/ copy and
-// removed when it holds none — `furrow archive` and `furrow rm` delete a hot
-// shard alike, and calling an rm "archived" pointed the reader at an
-// `unarchive` that has nothing to restore (t-k0g9).
+// a shard that appeared is unarchived when the pre-pull tree held its archive/
+// copy (`furrow unarchive` moves it back, done lane and all — "created" sent
+// the reader looking for a task they had already closed) and created
+// otherwise; a modification is classified by the FIRST match of closed |
+// reopened | moved | refiled | updated (a `done` both closes and moves;
+// "closed" is the half the operator cares about); a shard that vanished is
+// archived when the pulled tree holds its archive/ copy and removed when it
+// holds none — `furrow archive` and `furrow rm` delete a hot shard alike, and
+// calling an rm "archived" pointed the reader at an `unarchive` that has
+// nothing to restore (t-k0g9).
 const (
-	incomingCreated  = "created"
-	incomingClosed   = "closed"
-	incomingReopened = "reopened"
-	incomingMoved    = "moved"
-	incomingRefiled  = "refiled"
-	incomingArchived = "archived"
-	incomingRemoved  = "removed"
-	incomingUpdated  = "updated"
+	incomingCreated    = "created"
+	incomingClosed     = "closed"
+	incomingReopened   = "reopened"
+	incomingMoved      = "moved"
+	incomingRefiled    = "refiled"
+	incomingArchived   = "archived"
+	incomingUnarchived = "unarchived"
+	incomingRemoved    = "removed"
+	incomingUpdated    = "updated"
 )
 
 // incomingKinds lists the vocabulary in the order the docs enumerate it.
 var incomingKinds = []string{
 	incomingCreated, incomingClosed, incomingReopened, incomingMoved,
-	incomingRefiled, incomingArchived, incomingRemoved, incomingUpdated,
+	incomingRefiled, incomingArchived, incomingUnarchived, incomingRemoved, incomingUpdated,
 }
 
 // IncomingKindList returns the vocabulary in that order — the machine source
@@ -88,7 +92,8 @@ func (a *App) incomingChanges(ctx context.Context, r *gitrepo.Repo, spec, base s
 	if head == "" || head == base {
 		return nil
 	}
-	prefix := spec + "/tasks/"
+	prefix := specJoin(spec, "tasks/")
+	archivedPath := func(name string) string { return specJoin(spec, "archive/tasks/"+name) }
 	taskAt := func(rev, path string) *core.Task {
 		data := r.FileAt(ctx, rev, path)
 		if data == nil {
@@ -114,13 +119,16 @@ func (a *App) incomingChanges(ctx context.Context, r *gitrepo.Repo, spec, base s
 				continue
 			}
 			ch.Kind, ch.Title = incomingCreated, t.Title
+			if r.FileAt(ctx, base, archivedPath(name)) != nil {
+				ch.Kind = incomingUnarchived
+			}
 		case 'D':
 			t := taskAt(base, fc.Path)
 			if t == nil {
 				continue
 			}
 			ch.Kind, ch.Title = incomingRemoved, t.Title
-			if r.FileAt(ctx, head, spec+"/archive/tasks/"+name) != nil {
+			if r.FileAt(ctx, head, archivedPath(name)) != nil {
 				ch.Kind = incomingArchived
 			}
 		case 'M':
