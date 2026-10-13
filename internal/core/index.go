@@ -90,6 +90,21 @@ func (idx *Index) NextPriority(lane string, base, step int) int {
 	return max + step
 }
 
+// PriorityPeers returns the ids of the OTHER tasks in lane that hold priority
+// (sorted), the tie `lint` reports as priority-duplicate: a lane change or an
+// explicit priority that lands on one has made the lane's order undefined.
+func (idx *Index) PriorityPeers(lane string, priority int, except string) []string {
+	var peers []string
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
+		if t.Status == lane && t.Priority == priority && t.ID != except {
+			peers = append(peers, t.ID)
+		}
+	}
+	sort.Strings(peers)
+	return peers
+}
+
 // PriorityChange records one neighbor's priority move inside a respace plan —
 // the machine-readable receipt for "inserting here had to renumber the lane".
 type PriorityChange struct {

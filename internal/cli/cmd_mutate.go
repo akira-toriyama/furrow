@@ -88,6 +88,9 @@ func sessionGuardExtra(a *app.App) map[string]any {
 	for _, n := range a.TakeSessionNotes() {
 		fmt.Fprintln(errOut, "note:", n)
 	}
+	for _, n := range a.TakeNotes() {
+		fmt.Fprintln(errOut, "note:", n)
+	}
 	if len(clashes) == 0 {
 		return nil
 	}
@@ -418,6 +421,11 @@ func newMoveCmd() *cobra.Command {
 			"nor warn (the checklist is the task's own breakdown, and what a close asserts\n" +
 			"is the body's completion condition), so read `furrow show <id>` — its\n" +
 			"`checklist: N/M` line is the tally — before deciding a task is done.\n\n" +
+			"A task keeps its priority across lanes (parked and brought back, it keeps\n" +
+			"its place), but priority only orders WITHIN a lane and each lane respaces on\n" +
+			"its own, so the destination may already hold that value: the mover then\n" +
+			"lands at the destination's tail instead of on the tie, disclosed in a stderr\n" +
+			"note (`furrow reorder` positions it). Set -s does the same.\n\n" +
 			"Instead of enumerating ids, SELECT the targets with the read side's own\n" +
 			"filters — -q/-l/-r, ANDed under the board scope exactly as in ls (then\n" +
 			"`move <flags> <lane>` takes just the lane). The selection previews until\n" +
@@ -579,7 +587,10 @@ func newReorderCmd() *cobra.Command {
 		Use:   "reorder <id> [<priority>]",
 		Short: "Set a task's priority — absolute, or relative with --before/--after",
 		Long: "Order a task within its lane. With an absolute <priority>, set the sparse\n" +
-			"integer directly (lower = higher up). With --before/--after <id>, compute it:\n" +
+			"integer directly (lower = higher up) — honoured as given, and a value another\n" +
+			"task in the lane already holds is disclosed in a stderr note, since the\n" +
+			"lane's order is then undefined (`lint` reports it as priority-duplicate).\n" +
+			"With --before/--after <id>, compute it:\n" +
 			"the task is slotted immediately before/after that task in its lane (both must\n" +
 			"share a lane — relative order across lanes is meaningless). When the sparse\n" +
 			"gap next to the target is exhausted, the whole lane is respaced in the same\n" +
@@ -1228,7 +1239,7 @@ func newSetCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "move to this lane")
 	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "re-file under this epic (id, unique id prefix, or unique title substring; \"\" unfiles)")
-	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "set the sparse priority directly")
+	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "set the sparse priority directly (a value already held in the lane is disclosed in a note)")
 	cmd.Flags().StringVar(&before, "before", "", "place immediately before this task (in the destination lane)")
 	cmd.Flags().StringVar(&after, "after", "", "place immediately after this task (in the destination lane)")
 	cmd.Flags().IntVar(&value, "value", 0, "set the 1..5 value estimate")

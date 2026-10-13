@@ -182,7 +182,7 @@ func newAddCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "lane (default: config lanes.default)")
-	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "explicit priority (default: append in lane)")
+	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "explicit priority (default: append in lane; a value already held in the lane is disclosed in a note)")
 	cmd.Flags().IntVar(&value, "value", 0, "coarse 1..5 value estimate (clamped; omit to leave unset)")
 	cmd.Flags().IntVar(&effort, "effort", 0, "coarse 1..5 effort estimate (clamped; omit to leave unset)")
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable)")

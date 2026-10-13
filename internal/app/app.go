@@ -141,6 +141,10 @@ type App struct {
 	sessionRepos  map[string]string
 	sessionWarn   []core.SessionClash
 	sessionNotes  []string
+	// notes are one-line disclosures a write queues for stderr that are not
+	// errors and not session-guard stand-downs (a priority relocated on a lane
+	// change, an explicit priority that landed on a tie). Drained by TakeNotes.
+	notes []string
 
 	// bodiesTouched is the set of task ids whose bodies/<id>.md THIS process
 	// created, modified, or deleted (see saveBody/deleteBody). AutoCommitFlush

@@ -33,7 +33,7 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 			consumeRepeat(t)
 		}
 		rep, succ = r, s
-		a.applyLane(t, lane)
+		a.applyLane(idx, t, lane)
 		return nil
 	}, func(ix *core.Index) error {
 		return a.flushSuccessors(ix, []*pendingSuccessor{succ})
@@ -48,7 +48,15 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 // on entering the done lane (when unset — also backfilling a zombie), clears it
 // on leaving done, and leaves it alone for other terminal lanes (parked ≠
 // closed). Shared by Move and Set so the two can never diverge on the rule.
-func (a *App) applyLane(t *core.Task, lane string) {
+//
+// Priority travels with the task across lanes (a task parked and brought back
+// keeps its place), but priority is only meaningful WITHIN a lane and each
+// lane respaces on its own, so the value a task carries may already be held
+// in the destination (the real board's t-8jpv/t-rgky: a backlog respace handed
+// out 280 while a ready task held 280, and `set -s backlog` later put both at
+// 280). A task landing on a tie is placed at the destination's tail instead,
+// and the relocation is queued as a note — never a silent undefined order.
+func (a *App) applyLane(idx *core.Index, t *core.Task, lane string) {
 	was := t.Status
 	t.Status = lane
 	switch {
@@ -57,6 +65,21 @@ func (a *App) applyLane(t *core.Task, lane string) {
 		t.Closed = &now
 	case lane != a.Cfg.DoneLane && was == a.Cfg.DoneLane:
 		t.Closed = nil
+	}
+	if was != lane && len(idx.PriorityPeers(lane, t.Priority, t.ID)) > 0 {
+		from := t.Priority
+		t.Priority = idx.NextPriority(lane, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
+		a.note("priority %d was already taken in lane %q — %s placed at the lane's tail (%d); `furrow reorder %s --before <ref>` positions it", from, lane, t.ID, t.Priority, t.ID)
+	}
+}
+
+// noteSharedPriority queues the disclosure for an EXPLICIT priority that landed
+// on a tie (add -p, set -p, reorder <priority>): the value is never rounded —
+// an explicit arg is honoured as given — but the undefined order it created
+// must not be silent until the next `lint`.
+func (a *App) noteSharedPriority(idx *core.Index, t *core.Task) {
+	if peers := idx.PriorityPeers(t.Status, t.Priority, t.ID); len(peers) > 0 {
+		a.note("priority %d in lane %q is now shared with %s, so their order is undefined — `furrow reorder %s --before <ref>` (or --after) places them", t.Priority, t.Status, strings.Join(peers, ", "), t.ID)
 	}
 }
 
@@ -73,7 +96,14 @@ func (a *App) CheckLane(lane string) error {
 
 // Reorder sets a task's absolute priority.
 func (a *App) Reorder(id string, priority int) (*core.Task, error) {
-	return a.mutate(id, func(t *core.Task) { t.Priority = priority })
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	return a.mutateIn(idx, id, func(t *core.Task) {
+		t.Priority = priority
+		a.noteSharedPriority(idx, t)
+	})
 }
 
 // ReorderRelative places id immediately before (or after) ref in ref's lane,

@@ -295,6 +295,9 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 			Created:   now, Updated: now, Body: core.BodyPath(id),
 			Epic: s.Epic, Due: dues[i], Anchor: s.Anchor,
 		}
+		if s.Priority != nil {
+			a.noteSharedPriority(idx, &t)
+		}
 		// Mirror Add: a task born in the done lane is closed at birth, so bulk
 		// `add --stdin -s done` doesn't leak the same closed:null zombie. A
 		// per-iteration copy keeps each Closed pointer distinct.
