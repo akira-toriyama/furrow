@@ -95,10 +95,10 @@ if [ "$stamp" != "$gosum" ]; then
   echo "  stamped go.sum sha256: $stamp" >&2
   echo "  actual  go.sum sha256: $gosum" >&2
   echo >&2
-  echo "nix build is broken right now (fixed-output hash mismatch). Re-pin:" >&2
-  echo "  1. set vendorHash = pkgs.lib.fakeHash in flake.nix" >&2
-  echo "  2. nix build .#   # copy the 'got: sha256-...' hash into vendorHash" >&2
-  echo "  3. update the '# go.sum sha256:' stamp to $gosum" >&2
+  echo "nix build is broken right now (fixed-output hash mismatch). Re-pin with" >&2
+  echo "  sh scripts/repin-vendorhash.sh   # needs nix; writes flake.nix" >&2
+  echo "(= set vendorHash = pkgs.lib.fakeHash, nix build .#, paste the 'got:' hash," >&2
+  echo "   refresh the '# go.sum sha256:' stamp to $gosum)" >&2
   exit 1
 fi
 
