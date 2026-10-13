@@ -46,7 +46,7 @@ func newRmCmd() *cobra.Command {
 			"`tasks` as they were (a live `repeat` among them is the series this ends),\n" +
 			"`references` what stands (and, with --force, was severed), `assets` what\n" +
 			"goes ({deleted}) and what stays ({kept: [{name, held_by}]}).",
-		Example: "  furrow rm t-k3m9p                 # preview: what would go, what points at it\n" +
+		Example: "  furrow rm t-k3m9p                 # preview: what would go, what points at it (exit 2 while referenced)\n" +
 			"  furrow rm t-k3m9p --yes           # delete (refused while referenced)\n" +
 			"  furrow rm t-k3m9p --force --yes   # sever the references, then delete\n" +
 			"  furrow rm t-a1b2c t-d4e5f --yes   # several, one all-or-nothing write",
@@ -94,9 +94,9 @@ func newEpicRmCmd() *cobra.Command {
 			"any body but its own.\n\n" + rmLongTail + "\n\n" +
 			"--json prints one report: {dry_run, force, epic, references, assets}. An unfiled\n" +
 			"member is what `lint`'s epic-required then names — refile it with `set -e`.",
-		Example: "  furrow epic rm e-k3m9                 # preview\n" +
-			"  furrow epic rm e-k3m9 --yes           # delete (refused while referenced)\n" +
-			"  furrow epic rm e-k3m9 --force --yes   # unfile the members, sever, delete",
+		Example: "  furrow epic rm e-k3m9p                 # preview (exit 2 while members or deps reference it)\n" +
+			"  furrow epic rm e-k3m9p --yes           # delete (refused while referenced)\n" +
+			"  furrow epic rm e-k3m9p --force --yes   # unfile the members, sever, delete",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -128,7 +128,7 @@ func newEpicRmCmd() *cobra.Command {
 
 func addRmFlags(cmd *cobra.Command, force, yes *bool) {
 	cmd.Flags().BoolVar(force, "force", false, "sever what still references the target (dep edges, [[links]], members, epic deps, anchors) instead of refusing")
-	cmd.Flags().BoolVar(yes, "yes", false, "actually delete (required; otherwise dry-run)")
+	addYesFlag(cmd, yes)
 }
 
 func rmVerb(dry bool) string {

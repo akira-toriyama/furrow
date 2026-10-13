@@ -16,7 +16,7 @@ import (
 func newEpicCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "epic",
-		Short: "Manage epics (boxes of work): add, list, show, set, activate, done",
+		Short: "Manage epics (boxes of work): add, ls, show, set, activate, deactivate, done, reopen, dep, rm",
 		Long: "An epic is a box of work: a first-class entity with a goal, free-form\n" +
 			"meta, and member tasks. At most ONE epic may be active per repo, and\n" +
 			"`furrow next` scopes to it — that is what keeps a session from picking the\n" +
@@ -106,7 +106,7 @@ func newEpicAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&goal, "goal", "", "the closing condition, in one line (optional)")
 	cmd.Flags().StringArrayVar(&meta, "meta", nil, "free-form key=value furrow never interprets (repeatable)")
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable; comma-separated)")
-	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "owner/repo this box spans (repeatable; comma-separated)")
+	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "repo this box spans (owner/repo, or a unique short name; repeatable; comma-separated)")
 	body.register(cmd, "initial body markdown itself, never a path ('-' reads stdin; default: a heading from the title)")
 	cmd.Flags().StringVar(&anchor, "anchor", "", "the box's calendar day (YYYY-MM-DD) that its followers' dues are derived from")
 	return cmd
@@ -299,10 +299,10 @@ func newEpicSetCmd() *cobra.Command {
 			"stored value. Which boxes carry them is an operating convention, not\n" +
 			"furrow's: furrow stays name-independent.",
 		Example: "  furrow epic add \"会場\" --anchor 2026-11-21             # the event day\n" +
-			"  furrow set -q 'epic:e-v0zd has:due' --anchor e-v0zd --yes  # mark the dues that follow it\n" +
-			"  furrow epic set e-v0zd --anchor 2026-11-28              # the day moved: preview every follower's old → new due\n" +
-			"  furrow epic set e-v0zd --anchor 2026-11-28 --yes        # apply, one write\n" +
-			"  furrow epic set e-v0zd --clear-anchor                   # drop the day (followers keep their pointer, disclosed)",
+			"  furrow set -q 'epic:e-v0zdq has:due' --anchor e-v0zdq --yes  # mark the dues that follow it\n" +
+			"  furrow epic set e-v0zdq --anchor 2026-11-28              # the day moved: preview every follower's old → new due\n" +
+			"  furrow epic set e-v0zdq --anchor 2026-11-28 --yes        # apply, one write\n" +
+			"  furrow epic set e-v0zdq --clear-anchor                   # drop the day (followers keep their pointer, disclosed)",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := emptyFlagErr(cmd, args[0], "add-label", "rm-label", "add-repo", "rm-repo", "meta", "rm-meta"); err != nil {
@@ -388,13 +388,13 @@ func newEpicSetCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&rmMeta, "rm-meta", nil, "remove a meta key (repeatable)")
 	cmd.Flags().StringSliceVar(&addLabels, "add-label", nil, "add a label (repeatable; comma-separated)")
 	cmd.Flags().StringSliceVar(&rmLabels, "rm-label", nil, "remove a label (repeatable; comma-separated)")
-	cmd.Flags().StringSliceVar(&addRepos, "add-repo", nil, "attach an owner/repo (repeatable; comma-separated)")
-	cmd.Flags().StringSliceVar(&rmRepos, "rm-repo", nil, "detach an owner/repo (repeatable; comma-separated)")
+	cmd.Flags().StringSliceVar(&addRepos, "add-repo", nil, "attach a repo (owner/repo, or a unique short name; repeatable; comma-separated)")
+	cmd.Flags().StringSliceVar(&rmRepos, "rm-repo", nil, "detach a repo (same forms; repeatable; comma-separated)")
 	cmd.Flags().BoolVar(&standing, "standing", false, "declare a permanent box (exempt from epic_all_done/epic_dep_done; --standing=false clears)")
 	cmd.Flags().BoolVar(&pinned, "pinned", false, "surface this box's actionable tasks in next/brief regardless of the active scope (--pinned=false clears)")
 	cmd.Flags().StringVar(&anchor, "anchor", "", "set or move the box's calendar day (YYYY-MM-DD); a move shifts every follower's due by the day delta, previewed until --yes")
 	cmd.Flags().BoolVar(&clearAnchor, "clear-anchor", false, "drop the box's day (followers keep their pointer and are disclosed)")
-	cmd.Flags().BoolVar(&yes, "yes", false, "apply the follower due moves an --anchor change previews (the preview also names every other edit on the line, held back until --yes)")
+	addYesFlag(cmd, &yes)
 	cmd.MarkFlagsMutuallyExclusive("anchor", "clear-anchor")
 	return cmd
 }
@@ -633,12 +633,12 @@ func newEpicDepCmd() *cobra.Command {
 			"With --list, don't mutate — read the neighborhood in BOTH directions: what\n" +
 			"it waits on (depends_on) and what waits on it (blocks), each resolved to\n" +
 			"id+title+state.",
-		Example: "  furrow epic dep e-k3m9 e-a1b2\n" +
-			"  furrow epic dep e-k3m9 e-a1b2 e-d4e5   # wait on both in one write\n" +
-			"  furrow epic dep e-k3m9 e-a1b2 --rm\n" +
-			"  furrow epic dep add e-k3m9 e-a1b2      # the same two writes, verb first\n" +
-			"  furrow epic dep rm e-k3m9 e-a1b2\n" +
-			"  furrow epic dep e-k3m9 --list --json   # what it waits on and what it blocks",
+		Example: "  furrow epic dep e-k3m9p e-a1b2c\n" +
+			"  furrow epic dep e-k3m9p e-a1b2c e-d4e5f   # wait on both in one write\n" +
+			"  furrow epic dep e-k3m9p e-a1b2c --rm\n" +
+			"  furrow epic dep add e-k3m9p e-a1b2c      # the same two writes, verb first\n" +
+			"  furrow epic dep rm e-k3m9p e-a1b2c\n" +
+			"  furrow epic dep e-k3m9p --list --json   # what it waits on and what it blocks",
 		Args: depVerbArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()

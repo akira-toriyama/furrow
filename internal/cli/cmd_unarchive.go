@@ -35,7 +35,7 @@ func newUnarchiveCmd() *cobra.Command {
 			"No --yes: restoring destroys nothing (the destructive direction, archive,\n" +
 			"keeps its preview guard).",
 		Example: "  furrow unarchive t-k3m9p\n" +
-			"  furrow unarchive t-k3m9p t-x7q2          # one all-or-nothing write\n" +
+			"  furrow unarchive t-k3m9p t-x7q2m          # one all-or-nothing write\n" +
 			"  furrow unarchive t-k3m9p && furrow move t-k3m9p backlog   # restore AND reopen",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

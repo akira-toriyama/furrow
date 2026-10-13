@@ -297,7 +297,7 @@ func TestAnchorSelectorsAndRows(t *testing.T) {
 	if show := mustRun(t, "epic", "show", epic, "--no-body"); !strings.Contains(show, "anchor:   2026-11-21") {
 		t.Errorf("epic show:\n%s", show)
 	}
-	if help := mustRun(t, "set", "--help"); !strings.Contains(help, "--anchor e-v0zd") || !strings.Contains(help, "has:due no:anchor") {
+	if help := mustRun(t, "set", "--help"); !strings.Contains(help, "--anchor e-v0zdq") || !strings.Contains(help, "has:due no:anchor") {
 		t.Errorf("set --help lost its anchor example:\n%s", help)
 	}
 }

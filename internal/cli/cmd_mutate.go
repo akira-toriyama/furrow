@@ -281,7 +281,8 @@ func newDoneCmd() *cobra.Command {
 			"with an unknown id closes NOTHING and exits 1 with every miss in\n" +
 			"details.missing (the show batch shape). --json is ALWAYS an array of\n" +
 			"{before,after,changed} envelopes, one per id (a single id is a one-element\n" +
-			"array); --ndjson streams one envelope per line.\n\n" +
+			"array); --ndjson streams one envelope per line. Entering the done lane\n" +
+			"stamps `closed`; leaving it (a reopen) clears it.\n\n" +
 			"A close settles the TASK, not its checklist: unticked items neither block\n" +
 			"nor warn (the checklist is the task's own breakdown, and what a close asserts\n" +
 			"is the body's completion condition), so read `furrow show <id>` — its\n" +
@@ -326,8 +327,8 @@ func newDoneCmd() *cobra.Command {
 			"board's [due].timezone — undeclared, the zone of the machine that closes,\n" +
 			"which `furrow lint` errors on a shared board (repeat-no-timezone).",
 		Example: "  furrow done t-k3m9p\n" +
-			"  furrow done t-k3m9p --note \"→ continued in t-x7q2\"\n" +
-			"  furrow done t-k3m9p t-x7q2 t-9d4n   # triage sweep, one write\n" +
+			"  furrow done t-k3m9p --note \"→ continued in t-x7q2m\"\n" +
+			"  furrow done t-k3m9p t-x7q2m t-9d4nk   # triage sweep, one write\n" +
 			"  furrow done -q 'label:spike status:waiting'        # preview the selection\n" +
 			"  furrow done -q 'label:spike status:waiting' --yes  # close it, one write",
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -416,7 +417,8 @@ func newMoveCmd() *cobra.Command {
 			"with every miss in details.missing; an unknown lane is exit 2 with the\n" +
 			"configured lanes in candidates. --json is ALWAYS an array of\n" +
 			"{before,after,changed} envelopes, one per id (a single id is a one-element\n" +
-			"array); --ndjson streams one envelope per line.\n\n" +
+			"array); --ndjson streams one envelope per line. Entering the done lane\n" +
+			"stamps `closed`; leaving it (a reopen) clears it.\n\n" +
 			"A close settles the TASK, not its checklist: unticked items neither block\n" +
 			"nor warn (the checklist is the task's own breakdown, and what a close asserts\n" +
 			"is the body's completion condition), so read `furrow show <id>` — its\n" +
@@ -434,7 +436,7 @@ func newMoveCmd() *cobra.Command {
 			"refuses to combine with ids or --expect-updated (exit 2) — the full\n" +
 			"contract is spelled out in `furrow done --help`.",
 		Example: "  furrow move t-k3m9p in-progress\n" +
-			"  furrow move t-k3m9p t-x7q2 backlog     # triage sweep, one write\n" +
+			"  furrow move t-k3m9p t-x7q2m backlog     # triage sweep, one write\n" +
 			"  furrow move -q 'status:inbox no:value' icebox        # preview\n" +
 			"  furrow move -q 'status:inbox no:value' icebox --yes  # one write",
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -518,7 +520,7 @@ func newNoteCmd() *cobra.Command {
 			"fails on the side its prefix suggests: an unknown `e-` id is exit 2 with\n" +
 			"candidates, an unknown task id exit 1.",
 		Example: "  furrow note t-k3m9p \"検証完了。次: アダプタ選定。\"\n" +
-			"  furrow note e-k3m9 \"方針: v7 の pinned に寄せる。\"\n" +
+			"  furrow note e-k3m9p \"方針: v7 の pinned に寄せる。\"\n" +
 			"  git log -1 --format=%B | furrow note t-k3m9p -\n" +
 			"  furrow note t-k3m9p --prepend \"2026-10-13 判断: B 案で進める（詳細は末尾）\"",
 		Args: cobra.ExactArgs(2),
@@ -987,19 +989,19 @@ func newSetCmd() *cobra.Command {
 			"human line, in the board's calendar.",
 		Example: "  furrow set t-k3m9p -s ready --value 4 --effort 2 --add-label bug\n" +
 			"  furrow set t-k3m9p -s ready --before t-x1y2z\n" +
-			"  furrow set t-k3m9p -e e-v0zd\n" +
+			"  furrow set t-k3m9p -e e-v0zdq\n" +
 			"  furrow set t-k3m9p t-x1y2z t-9f2qr -s backlog --add-label triaged\n" +
-			"  furrow set t-a1 t-b2 t-c3 --add-repo owner/app   # bulk attach, one write\n" +
+			"  furrow set t-a1b2c t-b2c3d t-c3d4e --add-repo owner/app   # bulk attach, one write\n" +
 			"  furrow set t-k3m9p --due 2026-08-04     # promise it for that whole day\n" +
 			"  furrow set t-k3m9p --due +1d            # snooze a day from now\n" +
 			"  furrow set t-k3m9p --due-shift +7d      # a week later than it is now promised for\n" +
 			"  furrow set -q 'id:t-k3m9p,t-x1y2z' -r '' --due-shift -1d   # ids, previewed via -q id: (-r '' = whole board)\n" +
-			"  furrow set t-k3m9p --due 2026-11-07 --anchor e-v0zd   # promised for D-14 of the box's day, and follows it\n" +
-			"  furrow set -q 'epic:e-v0zd has:due no:repeat' --anchor e-v0zd   # preview: mark the dues that follow the box's day\n" +
+			"  furrow set t-k3m9p --due 2026-11-07 --anchor e-v0zdq   # promised for D-14 of the box's day, and follows it\n" +
+			"  furrow set -q 'epic:e-v0zdq has:due no:repeat' --anchor e-v0zdq   # preview: mark the dues that follow the box's day\n" +
 			"  furrow ls -q 'has:due no:anchor'        # the dates the other side (or the calendar) fixed\n" +
 			"  furrow set t-k3m9p --clear-value --rm-label wip\n" +
-			"  furrow set -q 'status:inbox label:bug' -e e-v0zd        # preview\n" +
-			"  furrow set -q 'status:inbox label:bug' -e e-v0zd --yes  # one write",
+			"  furrow set -q 'status:inbox label:bug' -e e-v0zdq        # preview\n" +
+			"  furrow set -q 'status:inbox label:bug' -e e-v0zdq --yes  # one write",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") || cmd.Flags().Changed("yes") {
 				return cobra.ArbitraryArgs(cmd, args) // the id/selector clash gets its own message in guard
@@ -1306,7 +1308,7 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&addLabels, "add-label", nil, "add a label (repeatable; comma-separated)")
 	cmd.Flags().StringSliceVar(&rmLabels, "rm-label", nil, "remove a label (repeatable; comma-separated)")
 	cmd.Flags().StringSliceVar(&addRepos, "add-repo", nil, "attach a repo (owner/repo or a unique short name; repeatable; comma-separated)")
-	cmd.Flags().StringSliceVar(&rmRepos, "rm-repo", nil, "detach a repo (same forms; removing the last one leaves a draft; repeatable)")
+	cmd.Flags().StringSliceVar(&rmRepos, "rm-repo", nil, "detach a repo (same forms; removing the last one leaves a draft; repeatable; comma-separated)")
 	cmd.MarkFlagsMutuallyExclusive("value", "clear-value")
 	cmd.MarkFlagsMutuallyExclusive("effort", "clear-effort")
 	cmd.MarkFlagsMutuallyExclusive("due", "clear-due", "due-shift")
@@ -1526,8 +1528,8 @@ func newRepoCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringSliceVar(&add, "add", nil, "repo to attach (owner/repo, or a unique short name; repeatable)")
-	cmd.Flags().StringSliceVar(&rm, "rm", nil, "repo to detach (same forms; repeatable)")
+	cmd.Flags().StringSliceVar(&add, "add", nil, "repo to attach (owner/repo, or a unique short name; repeatable; comma-separated)")
+	cmd.Flags().StringSliceVar(&rm, "rm", nil, "repo to detach (same forms; repeatable; comma-separated)")
 	addExpectUpdatedFlag(cmd)
 	return cmd
 }
