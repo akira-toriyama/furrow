@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
 	"github.com/akira-toriyama/furrow/v9/internal/core"
@@ -83,13 +82,9 @@ func newApplyCmd() *cobra.Command {
 // flag is empty or "-" (the `-`=stdin convention every --body-file shares).
 func readBodyText(cmd *cobra.Command, path string) (string, error) {
 	if path != "" && path != "-" {
-		// #nosec G304 -- path is the operator's own --body-file argument;
-		// reading the file they named is the command's purpose.
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return "", core.Internalf("", "read --body-file %q: %v", path, err)
-		}
-		return string(b), nil
+		// The same reader add/edit use: a path that does not resolve is the
+		// operator's input, exit 2, not an internal failure (t-xypx).
+		return readBodyFile(path)
 	}
 	b, err := io.ReadAll(cmd.InOrStdin())
 	if err != nil {
