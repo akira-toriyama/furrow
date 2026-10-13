@@ -409,11 +409,16 @@ func (d DueSummary) Total() int { return len(d.Overdue) + len(d.Today) }
 // same-instant tie (every bare-day due lands on 23:59:59) breaks by the index's
 // canonical lane -> priority -> id order. See sortByDue.
 func (a *App) Due(o QueryOpts) (DueSummary, error) {
-	o.ScopeRepo = ""
 	idx, err := a.load()
 	if err != nil {
 		return DueSummary{}, err
 	}
+	return a.dueIn(idx, o), nil
+}
+
+// dueIn is Due over a snapshot the caller already holds.
+func (a *App) dueIn(idx *core.Index, o QueryOpts) DueSummary {
+	o.ScopeRepo = ""
 	doneIDs := a.doneSet(idx)
 	now, loc := a.Clock.Now(), a.loc()
 	skip := a.dueSkipLanes()
@@ -438,7 +443,7 @@ func (a *App) Due(o QueryOpts) (DueSummary, error) {
 	canon := core.TaskOrder(a.Cfg.Lanes)
 	sortByDue(sum.Overdue, canon)
 	sortByDue(sum.Today, canon)
-	return sum, nil
+	return sum
 }
 
 // sortByDue orders one due band: earliest instant first, so the longest-overdue

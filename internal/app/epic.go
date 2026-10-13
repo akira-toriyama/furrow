@@ -177,7 +177,7 @@ func (a *App) EpicAdd(title string, o EpicAddOpts) (*core.Epic, error) {
 	if err := a.saveBody(id, body); err != nil {
 		return nil, err
 	}
-	if err := a.Store.SaveEpic(&e); err != nil {
+	if err := a.saveEpic(&e); err != nil {
 		return nil, err
 	}
 	return &e, nil
@@ -201,6 +201,11 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	return a.epicListIn(epics, idx, o), nil
+}
+
+// epicListIn is EpicList over a snapshot the caller already holds.
+func (a *App) epicListIn(epics []core.Epic, idx *core.Index, o EpicQueryOpts) []EpicItem {
 	stats := a.epicMemberStats(idx, a.doneSet(idx), a.Clock.Now())
 
 	out := make([]EpicItem, 0, len(epics))
@@ -229,7 +234,7 @@ func (a *App) EpicList(o EpicQueryOpts) ([]EpicItem, error) {
 		}
 		return out[i].Epic.ID < out[j].Epic.ID
 	})
-	return out, nil
+	return out
 }
 
 // epicRank orders `epic ls`: the active box first (the focus), then pinned
@@ -762,8 +767,13 @@ func (a *App) NextScope(o QueryOpts) (EpicScope, error) {
 	if err != nil {
 		return EpicScope{}, err
 	}
-	if len(epics) == 0 {
-		return EpicScope{}, nil
+	return a.nextScopeIn(epics, o), nil
+}
+
+// nextScopeIn is NextScope over boxes the caller already holds.
+func (a *App) nextScopeIn(epics []core.Epic, o QueryOpts) EpicScope {
+	if o.Epic != "" || o.AllEpics || len(epics) == 0 {
+		return EpicScope{}
 	}
 	repo := o.Repo
 	if repo == "" {
@@ -786,7 +796,7 @@ func (a *App) NextScope(o QueryOpts) (EpicScope, error) {
 		}
 		s.Active[e.ID] = true
 	}
-	return s, nil
+	return s
 }
 
 // ResolveEpic turns a user-supplied reference into an epic id, shaped exactly
@@ -921,7 +931,7 @@ func (a *App) mutateEpicStamping(ref string, alwaysStamp bool, fn func(*core.Epi
 			return nil, nil, err
 		}
 	}
-	if err := a.Store.SaveEpic(e); err != nil {
+	if err := a.saveEpic(e); err != nil {
 		return nil, nil, err
 	}
 	return &before, e, nil

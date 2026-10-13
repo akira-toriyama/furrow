@@ -605,6 +605,11 @@ func (a *App) Next(o QueryOpts) ([]core.Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	return a.nextIn(idx, scope, o)
+}
+
+// nextIn is Next over a snapshot the caller already holds (brief's one load).
+func (a *App) nextIn(idx *core.Index, scope EpicScope, o QueryOpts) ([]core.Task, error) {
 	doneIDs := a.doneSet(idx)
 	// inNextLane is normally the configured [next].lanes membership; --lanes
 	// (o.Lanes) overrides it for this call ONLY — a non-destructive, in-memory

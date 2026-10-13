@@ -47,6 +47,20 @@ func (a *App) LintErrorCounts() (LintErrorSummary, error) {
 	if err != nil {
 		return LintErrorSummary{}, err
 	}
+	return lintErrorSummary(ps), nil
+}
+
+// lintErrorCountsIn is LintErrorCounts over a snapshot the caller already
+// holds (brief's one load).
+func (a *App) lintErrorCountsIn(idx *core.Index, epics []core.Epic) (LintErrorSummary, error) {
+	ps, err := a.lintIn(idx, epics)
+	if err != nil {
+		return LintErrorSummary{}, err
+	}
+	return lintErrorSummary(ps), nil
+}
+
+func lintErrorSummary(ps []core.Problem) LintErrorSummary {
 	sum := LintErrorSummary{Codes: map[string]int{}}
 	for _, p := range ps {
 		if p.Severity == core.SevError {
@@ -54,7 +68,7 @@ func (a *App) LintErrorCounts() (LintErrorSummary, error) {
 			sum.Codes[p.Code]++
 		}
 	}
-	return sum, nil
+	return sum
 }
 
 // Lint runs the full consistency check: core's in-memory rules plus the
@@ -82,6 +96,11 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 	if err != nil {
 		return nil, err
 	}
+	return a.lintIn(idx, epics, extra...)
+}
+
+// lintIn is Lint over a snapshot the caller already holds.
+func (a *App) lintIn(idx *core.Index, epics []core.Epic, extra ...core.Problem) ([]core.Problem, error) {
 	ps := a.lintIndex(idx, epics)
 	arcPs, err := a.lintArchive()
 	if err != nil {
