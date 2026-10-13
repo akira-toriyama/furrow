@@ -2,12 +2,13 @@
 # check.sh — the full local verification, runnable by you or by Claude Code with
 # no TTY. It mirrors the Go core of CI (build/vet/race-test/module hygiene/
 # golangci-lint/govulncheck of source AND binary) plus every repo-specific guard,
-# and runs the workflow/TOML linters (actionlint, taplo, zizmor) when they are on
-# PATH. A green run here is NOT a green CI: go-bite (does each new test fail
-# against the pre-PR source?), the commit/PR-title lint (glyph) and repo-policy
-# have no local pass, and a linter that is not installed is skipped with a note,
-# not failed — read the "skipped" lines. Use GOTOOLCHAIN=local on a Go 1.25+
-# host.
+# says when the local Go or golangci-lint is not the one CI runs, and runs the
+# workflow/TOML linters (actionlint, taplo, zizmor) and the commit lint (glyph,
+# over origin/main..HEAD) when they are on PATH. A green run here is NOT a
+# green CI: go-bite (does each new test fail against the pre-PR source?), the
+# PR-title half of commit-lint and repo-policy have no local pass, and a linter
+# that is not installed is skipped with a note, not failed — read the "skipped"
+# lines. Use GOTOOLCHAIN=local on a Go 1.25+ host.
 set -eu
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=local
@@ -33,6 +34,28 @@ echo "  scripts/board-hooks/* parse clean"
 echo "→ module hygiene (go mod tidy -diff + verify)"
 go mod tidy -diff
 go mod verify
+
+# CI runs `go-version: stable` (build.yml), the CURRENT Go release, while a
+# host may sit on an older one; the lint broke twice on exactly that skew
+# (build.yml's golangci note), so say when the two differ — like the
+# golangci-lint pin check below, pure text plus one 3-second lookup of what
+# stable is today, skipped quietly offline.
+ci_go="$(sed -n 's/^[[:space:]]*go-version:[[:space:]]*\([^[:space:]#]*\).*/\1/p' .github/workflows/build.yml | head -1)"
+local_go="$(go env GOVERSION)"
+if [ "$ci_go" = "stable" ]; then
+  stable_go="$(curl -fsS --max-time 3 'https://go.dev/VERSION?m=text' 2>/dev/null | head -1 || true)"
+  if [ -z "$stable_go" ]; then
+    echo "→ go toolchain (local $local_go; CI runs go-version: stable — could not resolve stable offline, verdicts can differ)"
+  elif [ "$stable_go" != "$local_go" ]; then
+    echo "→ go toolchain (WARNING: local $local_go but CI runs stable = $stable_go, build.yml go-version: stable — verdicts can differ)"
+  else
+    echo "→ go toolchain ($local_go, matches CI's stable)"
+  fi
+elif [ -n "$ci_go" ] && [ "go$ci_go" != "$local_go" ] && [ "$ci_go" != "$local_go" ]; then
+  echo "→ go toolchain (WARNING: local $local_go but CI pins go-version: $ci_go in build.yml — verdicts can differ)"
+else
+  echo "→ go toolchain ($local_go, matches build.yml)"
+fi
 
 echo "→ go build"
 go build ./...
@@ -133,4 +156,18 @@ else
   echo "→ zizmor (skipped — not installed; CI runs it)"
 fi
 
-echo "✓ all checks passed (CI-only gates not covered here: go-bite, commit-lint, repo-policy)"
+# The commit half of CI's commit-lint gate (the PR title has no local pass):
+# every commit on the branch, the range CI lints. A push that fails it costs a
+# round trip, so it runs here when glyph is on PATH, skipped with a note like
+# the other linters. origin/main may be absent on a fresh clone — then there is
+# no range to lint and CI remains the authority.
+if ! command -v glyph >/dev/null 2>&1; then
+  echo "→ glyph lint (skipped — not installed; CI runs it)"
+elif ! git rev-parse --verify -q origin/main >/dev/null 2>&1; then
+  echo "→ glyph lint (skipped — no origin/main to range against; CI runs it)"
+else
+  echo "→ glyph lint (commit convention over origin/main..HEAD, what commit-lint runs in CI)"
+  glyph lint --range origin/main..HEAD
+fi
+
+echo "✓ all checks passed (CI-only gates not covered here: go-bite, the PR-title half of commit-lint, repo-policy)"

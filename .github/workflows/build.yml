@@ -45,7 +45,13 @@ jobs:
   bite:
     uses: akira-toriyama/.github/.github/workflows/go-bite.yml@v2
     with:
-      go-version-file: go.mod
+      # The same Go as the ci job and govulncheck.yml: go-version-file would
+      # run the gate on go.mod's floor (1.26) while ci tests on stable (1.27),
+      # and a test that bites on one Go and not the other is a gate on a
+      # toolchain nothing else here uses (measured 2026-10-13, job logs
+      # 115187086287 vs 115187086168).
+      go-version: stable
+      go-version-file: ''
 
   # Repo-specific guards + smoke. Linux only — OS-independent; the core `test` job
   # already exercises the code on macOS.
