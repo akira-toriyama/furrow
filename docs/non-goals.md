@@ -268,10 +268,10 @@ remote backend.*
 furrow is **CLI-only**. The one presentation layer in-repo is `internal/cli`;
 any interactive TUI or GUI lives in its own front-end repo and drives furrow
 through the **CLI/JSON contract** (it does not import furrow's Go packages). —
-*Planned front-ends: **ridge** (a charm-v2 TUI, a CLI/JSON client of furrow) and
-**loom** (a from-scratch TUI framework, future/gated). A rich hosted web or React
-UI remains out of scope; cloud-/Issue-/account-backed candidates were dropped for
-assuming a remote backend.*
+*The front-ends: **ridge** (a charm-v2 TUI) and **vista** (a GUI), both CLI/JSON
+clients of furrow. A rich hosted web or React UI remains out of scope;
+cloud-/Issue-/account-backed candidates were dropped for assuming a remote
+backend.*
 
 If web does happen, the first step is a *read-only* static viewer built on Go
 `net/http` + `embed.FS` that simply reads the `tasks/*.json` shards — no Node
@@ -310,7 +310,7 @@ To keep this list honest about today's reality (not aspirations):
   when there is something machine-actionable to say. `furrow migrate`
   (importing a legacy `Task.md`) is wired and working too.
 - **Not built here** — furrow is CLI-only: any interactive TUI/GUI is a separate
-  front-end repo consuming the CLI/JSON contract (planned: **ridge**, **loom**);
+  front-end repo consuming the CLI/JSON contract (**ridge**, a TUI; **vista**, a GUI);
   a hosted/web backend and a rich React UI remain out of scope for now (see
   *Backend & UI* above); the optional `furrow import
   --from-gh-project` seed is also unbuilt.

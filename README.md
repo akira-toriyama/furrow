@@ -13,8 +13,8 @@
 Written in Go (module `github.com/akira-toriyama/furrow/v9`, Go 1.25+). No database, no daemon, no cloud.
 
 > **Status:** furrow is **CLI-only** and shipping — the core domain, the full
-> CLI, and `migrate` all work. A TUI/GUI is a separate, planned front-end over
-> the CLI/JSON contract, not part of this binary. Feature and release detail in
+> CLI, and `migrate` all work. The front-ends — ridge (a TUI) and vista (a GUI)
+> — are separate repos over the CLI/JSON contract, not part of this binary. Feature and release detail in
 > [Status](#status); downloads on the [Releases page](https://github.com/akira-toriyama/furrow/releases).
 
 ---
@@ -248,7 +248,7 @@ A task body is plain Markdown, so you can attach a screenshot, a diagram or a re
 
 ## Command reference
 
-All commands below are implemented and working today. furrow is CLI-only; a TUI/GUI is a separate, planned front-end that drives it through the CLI/JSON contract (see [Status](#status)).
+All commands below are implemented and working today. furrow is CLI-only; the front-ends (ridge, a TUI; vista, a GUI) are separate repos that drive it through the CLI/JSON contract (see [Status](#status)).
 
 The table is **generated from the binary**: the cobra tree's `Use`/`Short`/aliases/flags are the single source of truth — `scripts/gen-command-table.sh` splices it in, and check.sh/CI fail when the block and the binary disagree — so a command or flag can no longer ship without appearing here (hand-kept lists kept losing commands; the audit found four missing). `furrow <cmd> --help` says the same one-liners; the [command notes](#command-notes) below carry the behavior contracts a one-liner can't.
 
@@ -377,7 +377,7 @@ furrow is **non-interactive by default** — it never prompts. **Destructive ope
 | `3+` | internal / I/O error |
 | `130` / `143` | a `SIGINT` / `SIGTERM` interrupted the run (128+signal by Unix convention) — e.g. Ctrl-C during `furrow sync`, which returns `sync-interrupted` (retryable). A deliberate `sync-conflict` is not a cancellation and keeps its exit `3`. |
 
-The **schema gate** is the one place where the exit code, not the kind, says which side is stale: `schema-upgrade-required` (exit 2) = the board is behind, run `furrow upgrade`; `schema-too-new` (exit 3) = the binary is behind, update furrow (in CI, bump the `sync-task-status.yml@vX.Y.Z` pin). Both carry `details {board_schema, binary_schema}`; to ask "can I write here?" **without provoking an error**, read `furrow board --json`'s `writable`/`schema_state` (see [the layout gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)). The same contract is printed by `furrow --help` (and each affected command's help), so it is discoverable from the binary, not just here.
+The **schema gate** has two kinds, one per stale side — branch on the kind (the exit codes differ too, `2` and `3`, but the kind is the contract): `schema-upgrade-required` (exit 2) = the board is behind, run `furrow upgrade`; `schema-too-new` (exit 3) = the binary is behind, update furrow (in CI, bump the `sync-task-status.yml@vX.Y.Z` pin). Both carry `details {board_schema, binary_schema}`; to ask "can I write here?" **without provoking an error**, read `furrow board --json`'s `writable`/`schema_state` (see [the layout gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)). The same contract is printed by `furrow --help` (and each affected command's help), so it is discoverable from the binary, not just here.
 
 On a non-zero exit, furrow prints a structured error object to stderr:
 
@@ -814,9 +814,9 @@ furrow's write path is byte-stable on purpose: every shard goes through one mars
   real, pinned `vendorHash` (re-pinned after every `go.sum` change by
   `scripts/repin-vendorhash.sh`) with a
   committed `flake.lock` (since `v0.4.0`).
-- **Future (low priority):** an interactive TUI/GUI as a **separate front-end**
-  that drives furrow through its CLI/JSON contract (it does not import furrow's
-  Go packages), and a read-only web viewer over the task shards.
+- **Separate front-ends:** ridge (a TUI) and vista (a GUI) drive furrow through
+  its CLI/JSON contract (they do not import furrow's Go packages); a read-only
+  web viewer over the task shards stays future, low priority.
 
 Design notes: architecture in [`docs/architecture.md`](docs/architecture.md),
 terms in [`docs/glossary.md`](docs/glossary.md), due dates and launchd

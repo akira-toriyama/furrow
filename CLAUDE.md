@@ -51,8 +51,8 @@ user-level config. The essentials, in the order a session meets them:
 - **`upgrade` is a flag day.** Release the furrow that ships the schema, bump
   every pinned `sync-task-status.yml@vX.Y.Z` caller, and only THEN
   `furrow upgrade --yes` — see Schema.
-- furrow is **CLI-only and non-interactive**; a TUI/GUI (ridge, loom) is a
-  separate front-end driving this CLI/JSON contract.
+- furrow is **CLI-only and non-interactive**; the front-ends (ridge, a TUI;
+  vista, a GUI) are separate repos driving this CLI/JSON contract.
 
 ## What this is
 
