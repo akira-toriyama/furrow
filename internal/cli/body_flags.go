@@ -97,6 +97,7 @@ func readBodyFile(path string) (string, error) {
 // meant to read, and a stat failure of any kind (absent, unreadable, too long
 // to be a path) leaves s the literal markdown it was passed as.
 func namesFile(s string) bool {
+	s = strings.TrimSpace(s) // " notes.md " still names notes.md once the shell's padding is gone
 	if s == "" || strings.Contains(s, "\n") {
 		return false
 	}

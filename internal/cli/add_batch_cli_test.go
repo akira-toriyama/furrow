@@ -195,7 +195,8 @@ func TestCLIAddBatchChecklistObjectItems(t *testing.T) {
 		done bool
 	}{
 		{"from the flag", false}, // the shared flag's item comes first
-		{"plain", false},         // a repeated text adds nothing
+		{"plain", false},
+		{"plain", false}, // the line's own rows survive as written, repeats included (t-xm83: the round trip keeps every row)
 		{"done already", true},
 		{"object, unticked", false},
 		{"[[" + rows[0].ID + "]] self link", true},
@@ -209,7 +210,7 @@ func TestCLIAddBatchChecklistObjectItems(t *testing.T) {
 		}
 	}
 	show, _ := run(t, "show", rows[0].ID)
-	if !strings.Contains(show, "checklist: 2/5") || !strings.Contains(show, "[x] done already") {
+	if !strings.Contains(show, "checklist: 2/6") || !strings.Contains(show, "[x] done already") {
 		t.Errorf("show must tally the seeded ticks:\n%s", show)
 	}
 }
