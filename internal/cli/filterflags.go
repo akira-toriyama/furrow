@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 	"github.com/spf13/cobra"
 )
 
@@ -85,6 +86,20 @@ func addFilterFlags(cmd *cobra.Command, f *filterFlags, flags ...filterFlag) {
 			cmd.Flags().StringVarP(&f.epic, "epic", "e", "", use(usageEpic))
 		case "limit":
 			cmd.Flags().IntVarP(&f.limit, "limit", "n", f.limit, use(usageLimit))
+			// A negative cap read as "all" (every consumer treats <= 0 as
+			// uncapped); say so instead of honouring a typo (t-jty7).
+			prev := cmd.PreRunE
+			cmd.PreRunE = func(c *cobra.Command, args []string) error {
+				if prev != nil {
+					if err := prev(c, args); err != nil {
+						return err
+					}
+				}
+				if f.limit < 0 {
+					return core.Validationf("", "-n %d: a row cap cannot be negative (0 = all)", f.limit)
+				}
+				return nil
+			}
 		case "archived":
 			cmd.Flags().BoolVar(&f.archived, "archived", false, use(usageArchived))
 		case "since":
