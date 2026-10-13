@@ -176,20 +176,24 @@ func (r *Repo) DirtyChanges(ctx context.Context, pathspec string) ([]Change, err
 	// shard) to decide what to commit and what to check, and a directory is neither: the
 	// bodies would be committed while being counted as no body at all — invisible to
 	// committed_bodies AND to the conflict-marker guard. Enumerate files, always.
-	out, stderr, err := runGit(ctx, r.git, r.top, "status", "--porcelain", "-uall", "--", pathspec)
+	//
+	// -z makes every path literal: the line format C-quotes a path with a
+	// space, a quote or a non-ASCII byte (core.quotepath only covers the last),
+	// and the quoted spelling then matched no classifier and surfaced verbatim
+	// in foreign_files. --no-renames keeps one record per path — a rename's
+	// "new\0orig" pair under -z would otherwise read as a stray second entry —
+	// and the callers want exactly that: a moved body is a deletion to publish
+	// and an addition to classify.
+	out, stderr, err := runGit(ctx, r.git, r.top, "status", "--porcelain", "-z", "--no-renames", "-uall", "--", pathspec)
 	if err != nil {
 		return nil, gitFailed("git status: %s", firstLine(stderr))
 	}
 	changes := []Change{} // [] not null, matching the store's slice style
-	for _, l := range strings.Split(out, "\n") {
-		if len(l) < 4 { // each entry is "XY path"
+	for _, l := range strings.Split(out, "\x00") {
+		if len(l) < 4 { // each record is "XY path"
 			continue
 		}
 		path := l[3:]
-		// A rename/copy is reported "orig -> new"; the live path is the target.
-		if i := strings.Index(path, " -> "); i >= 0 {
-			path = path[i+len(" -> "):]
-		}
 		changes = append(changes, Change{Path: filepath.ToSlash(path), Untracked: l[0] == '?' && l[1] == '?', Deleted: l[0] == 'D' || l[1] == 'D'})
 	}
 	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
@@ -726,13 +730,18 @@ func runGitEnv(ctx context.Context, git, dir string, env []string, args ...strin
 // repo may hold other files under the pathspec, and a C-quoted path would land
 // in a sync-conflict's details as `"\343\201\202.md"`); diff.noprefix and
 // diff.mnemonicPrefix are pinned off so a file header is always `+++ b/<path>`
-// (AddedLines strips exactly that). One place, so no reader of git output
-// carries its own copy — three did, and two readers had none (t-3t68).
+// (AddedLines strips exactly that); color.ui is pinned off because an
+// operator's `color.ui = always` colours even a piped `diff`, and the escape
+// codes in front of every `+++`/`+` turned AddedLines into zero lines and the
+// activation-switch disclosure it feeds into silence — the noprefix defect in
+// another coat. One place, so no reader of git output carries its own copy —
+// three did, and two readers had none (t-3t68).
 func gitConfig() []string {
 	return []string{
 		"-c", "core.quotepath=false",
 		"-c", "diff.noprefix=false",
 		"-c", "diff.mnemonicPrefix=false",
+		"-c", "color.ui=false",
 	}
 }
 
@@ -746,8 +755,19 @@ func gitConfig() []string {
 // The git porcelain furrow parses (e.g. `diff --diff-filter=U`) is not
 // localized, so forcing C is safe. overrides are further "KEY=value" entries
 // appended last, their keys stripped from the inherited set by the same rule.
+//
+// Git's own repository-locating variables (gitLocalEnvVars) are stripped too.
+// A git hook exports GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE and friends to its
+// children, so a furrow run from ANOTHER repo's hook (a commit-msg hook that
+// notes the task, say) inherited that repo's location: Open resolved the
+// board's toplevel to the hook's repo and Commit wrote the board's shards
+// into the wrong history. furrow always names the directory it means (cmd.Dir
+// is the board's), so git has nothing to learn from these.
 func gitEnv(overrides ...string) []string {
 	drop := map[string]bool{"LC_ALL": true, "LANG": true, "LANGUAGE": true, "LC_MESSAGES": true}
+	for _, k := range gitLocalEnvVars {
+		drop[k] = true
+	}
 	for _, o := range overrides {
 		k, _, _ := strings.Cut(o, "=")
 		drop[k] = true
@@ -762,6 +782,18 @@ func gitEnv(overrides ...string) []string {
 		out = append(out, kv)
 	}
 	return append(append(out, "LC_ALL=C"), overrides...)
+}
+
+// gitLocalEnvVars is `git rev-parse --local-env-vars` (git 2.x), the variables
+// that tell git WHICH repository and index to operate on — the set a hook
+// exports to its children. Frozen here rather than asked of git per call: the
+// list has been stable for a decade, and asking would itself run under the
+// inherited environment.
+var gitLocalEnvVars = []string{
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+	"GIT_OBJECT_DIRECTORY", "GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE",
+	"GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE", "GIT_PREFIX", "GIT_SHALLOW_FILE",
+	"GIT_COMMON_DIR",
 }
 
 // firstLine trims a git stderr blob to its first non-empty line — enough for
