@@ -70,7 +70,7 @@ func newLsCmd() *cobra.Command {
 			"  furrow ls -q 'label:cli,dx -status:done updated:>=-2w'\n" +
 			"  furrow ls -e travel       # only that box's members\n" +
 			"  furrow ls --tree          # the board grouped by epic, ★ = ready now\n" +
-			"  furrow ls --tree e-k3m9   # just that box's group",
+			"  furrow ls --tree e-k3m9p   # just that box's group",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("tree") {
 				return cobra.MaximumNArgs(1)(cmd, args)
@@ -186,7 +186,7 @@ func addQueryFlag(cmd *cobra.Command, p *[]string) {
 	cmd.Flags().StringArrayVarP(p, "query", "q", nil,
 		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
 			"is:actionable|blocked|stale|open|closed|draft|unfiled|overdue, "+
-			"ordinals+dates with >=,<,.. (updated:>=-2w), graph epic:/anchor:/depends-on:/blocks:, "+
+			"ordinals+dates with >=,<,.. (updated:>=-2w), graph epic:/anchor:/depends-on:/blocks:/descendant-of:/ancestor-of:, "+
 			"free text over title, checklist, refs and body; ANDs with the other filters; repeated -q ANDs the queries")
 }
 
@@ -268,10 +268,10 @@ func newShowCmd() *cobra.Command {
 			"[[id]] notation (the local, rate-limit-free twin of GitHub's \"mentioned\n" +
 			"in\"); --json adds a mentioned_by array. The scan is opt-in, so a plain\n" +
 			"`show` never pays for it.",
-		Example: "  furrow show t-4fq1\n" +
-			"  furrow show t-4fq1 t-x2x9 --no-body --ndjson   # lean batch read\n" +
-			"  furrow show t-4fq1 --backlinks\n" +
-			"  furrow show t-4fq1 --archived                    # read a retired task",
+		Example: "  furrow show t-4fq1v\n" +
+			"  furrow show t-4fq1v t-x2x9r --no-body --ndjson   # lean batch read\n" +
+			"  furrow show t-4fq1v --backlinks\n" +
+			"  furrow show t-4fq1v --archived                    # read a retired task",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -431,7 +431,8 @@ func newNextCmd() *cobra.Command {
 			"leaving [next].lanes in config untouched (non-destructive): `next --lanes\n" +
 			"backlog,ready` surfaces a no-dependency backlog task you could start now\n" +
 			"without first promoting it. The deps-done half is unchanged, so --lanes\n" +
-			"widens which lanes qualify, not what \"ready\" means; an unknown lane is exit\n" +
+			"REPLACES which lanes qualify for this call (not adds to them), never what\n" +
+			"\"ready\" means; an unknown lane is exit\n" +
 			"2 with the configured lanes in candidates (like -s). --json's reason.in_next_lane\n" +
 			"names the lane each task matched, so a --lanes-included one is distinguishable.\n\n" +
 			"-q ANDs a typed query onto the actionable set — the same language as `ls -q`\n" +
@@ -514,8 +515,9 @@ func newBriefCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "brief",
 		Short: "One-shot session-orient read: due band, active/pinned epics, next picks with bodies, blocked, revisit, drafts",
-		Long: "Answer \"where am I?\" in ONE process at session start — the sync → next →\n" +
-			"show ritual folded into a single read. Each section keeps the\n" +
+		Long: "Answer \"where am I?\" in ONE process at session start — the next → show\n" +
+			"read folded into a single process (brief never touches git: run\n" +
+			"`furrow sync` first on a shared board). Each section keeps the\n" +
 			"contract of the command it summarizes: `due` LEADS the read —\n" +
 			"{overdue, today}, longest-overdue first, board-wide as to epics and\n" +
 			"lane-filter-free (dated work is usually parked outside the focus; a date\n" +
@@ -693,8 +695,8 @@ func newStatsCmd() *cobra.Command {
 			"Flow membership is decided by `created`/`closed` alone — a task closed in\n" +
 			"the window and touched after it still counts — and the scan unions the\n" +
 			"archive store, so an archive sweep cannot deflate `closed`. That section\n" +
-			"is the machine side of the session budget check (created ≤ closed − 1):\n" +
-			"declare counts in prose, verify them against `stats -r '' --since <t0>`.",
+			"answers \"what did this window create and close\" with ids, so a count\n" +
+			"claimed in prose is checked against `stats -r '' --since <t0>`.",
 		Example: "  furrow stats               # this repo's board at a glance\n" +
 			"  furrow stats -r '' --json  # whole-board counts + full label/repo vocab\n" +
 			"  furrow stats -q is:stale   # where the stale work sits\n" +

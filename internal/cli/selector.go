@@ -44,7 +44,14 @@ func addSelectorFlags(cmd *cobra.Command, s *writeSelector) {
 	addFilterFlags(cmd, &s.filterFlags,
 		wantUsage("label", "select by label instead of ids (OR; comma-separated or repeated -l); ANDs with -q/-r and the board scope"),
 		wantUsage("repo", "select within this repo instead of the board scope (owner/repo or a unique short name; '' = whole board)"))
-	cmd.Flags().BoolVar(&s.yes, "yes", false, "apply the -q/-l/-r selection (without it the selection only previews)")
+	addYesFlag(cmd, &s.yes)
+}
+
+// addYesFlag is the ONE registrar of --yes, and its one wording: every
+// destructive or selecting command previews without it (ten registrations
+// carried six wordings of that).
+func addYesFlag(cmd *cobra.Command, p *bool) {
+	cmd.Flags().BoolVar(p, "yes", false, "apply the previewed write (without --yes the command only previews and writes nothing)")
 }
 
 // active reports whether the caller selected by filter — any of -q/-l/-r was

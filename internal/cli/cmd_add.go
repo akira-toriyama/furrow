@@ -185,15 +185,15 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "explicit priority (default: append in lane; a value already held in the lane is disclosed in a note)")
 	cmd.Flags().IntVar(&value, "value", 0, "coarse 1..5 value estimate (clamped; omit to leave unset)")
 	cmd.Flags().IntVar(&effort, "effort", 0, "coarse 1..5 effort estimate (clamped; omit to leave unset)")
-	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable)")
-	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "repo to attach (owner/repo, or a unique short name; repeatable)")
+	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label (repeatable; comma-separated)")
+	cmd.Flags().StringSliceVarP(&repos, "repo", "r", nil, "repo to attach (owner/repo, or a unique short name; repeatable; comma-separated)")
 	cmd.Flags().BoolVar(&draft, "draft", false, "create as a draft (no repo attached; suppresses the board repo); conflicts with -r")
 	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "epic to file this task under (id, unique id prefix, or unique title substring; default: the scope's single active epic, '' stays unfiled)")
 	cmd.Flags().StringVar(&due, "due", "", "promise this for a date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d")
 	cmd.Flags().StringVar(&repeatSpec, "repeat", "", "recur when closed: daily | every 2 weeks on mon,thu | monthly on last fri | ... (needs --due; a raw RRULE line also works, minus a DTSTART — --due is the series start)")
 	cmd.Flags().StringVar(&anchorRef, "anchor", "", "make the due follow this epic's day (the box must carry one; needs --due, refused beside --repeat): when the day moves, so does the due")
 	cmd.MarkFlagsMutuallyExclusive("anchor", "repeat")
-	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable)")
+	cmd.Flags().StringSliceVar(&deps, "dep", nil, "dependency task id (repeatable; comma-separated)")
 	cmd.Flags().StringArrayVar(&refs, "ref", nil, "reference (file:line or URL; verbatim; repeatable)")
 	body.register(cmd, "initial body markdown itself, never a path ('-' reads stdin; default: a heading from the title)")
 	cmd.Flags().StringArrayVar(&checks, "check", nil, "seed an unchecked checklist item (repeatable; text verbatim)")
@@ -317,7 +317,7 @@ func newEditCmd() *cobra.Command {
 			"bodies/ directory, so this is the same file either way; store membership\n" +
 			"routes it, never the id's prefix.",
 		Example: "  furrow edit t-k3m9p\n" +
-			"  furrow edit t-k3m9p --body \"# rewritten\\n\\nnew plan\"\n" +
+			"  furrow edit t-k3m9p --body-file plan.md    # replace the body from a file\n" +
 			"  ridge-editor-save | furrow edit t-k3m9p --body -   # replace from stdin\n" +
 			"  furrow edit t-k3m9p --body-file plan.md           # replace from a file",
 		Args: cobra.ExactArgs(1),

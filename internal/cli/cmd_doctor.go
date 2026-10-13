@@ -29,6 +29,8 @@ func newDoctorCmd() *cobra.Command {
 			"  - every board is on disk, readable, and on this binary's schema\n" +
 			"    (schema-outdated -> `furrow upgrade`; schema-too-new -> update furrow)\n" +
 			"  - every scope directory exists\n" +
+			"  - the session-guard registry still parses (session-registry-unreadable;\n" +
+			"    skipped when the user config sets [session] guard = \"off\")\n" +
 			"  - a git-backed board's freshness vs its upstream, from LOCAL knowledge\n" +
 			"    only (as of the last fetch): behind warns \"sync before reading\", ahead\n" +
 			"    warns \"unpushed writes\", an in-progress rebase/merge warns too\n" +

@@ -86,6 +86,6 @@ func newTidyCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&doneDeps, "done-deps", false, "select the satisfied done-lane dep edges (required beside --yes to prune them)")
 	cmd.Flags().BoolVar(&unknownKeys, "unknown-keys", false, "select the parked unknown shard keys (required beside --yes to drop them)")
-	cmd.Flags().BoolVar(&yes, "yes", false, "actually prune the selected classes (otherwise dry-run)")
+	addYesFlag(cmd, &yes)
 	return cmd
 }

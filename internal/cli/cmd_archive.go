@@ -104,7 +104,7 @@ func newArchiveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&olderThan, "older-than", 0, "age in days (default: config archive.older_than_days) — sweep only")
-	cmd.Flags().BoolVar(&yes, "yes", false, "actually move (required; otherwise dry-run)")
+	addYesFlag(cmd, &yes)
 	cmd.Flags().StringSliceVarP(&repoArgs, "repo", "r", nil, "scope the sweep to these repos (owner/repo or a unique short name; repeatable); -r '' = the whole board — sweep only")
 	return cmd
 }

@@ -50,7 +50,7 @@ func newUpgradeCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "actually raise the board (default: preview only)")
+	addYesFlag(cmd, &yes)
 	return cmd
 }
 

@@ -12,8 +12,9 @@ remote and more than one writer. This repo deliberately has **no local
 user-level config. The essentials, in the order a session meets them:
 
 - Canonical commands: `furrow add|ls|show|next|brief|revisit|search|stats|board|boards|doctor|edit|note|attach|done|move|set|reorder|retitle|value|effort|check|dep|epic|label|repo|ref|review|sync|apply|archive|unarchive|rm|tidy|upgrade|lint|config|init|migrate|schema|version|vocab`.
-  **`furrow brief [--json]`** is the session-start read (sync → `next -r` →
-  `show <id>` in ONE process; read-only): orient a shared board with
+  **`furrow brief [--json]`** is the session-start read (`next -r` →
+  `show <id>` in ONE process after a `furrow sync`; read-only, it never
+  touches git): orient a shared board with
   `furrow sync && furrow brief`. Run `furrow sync` before reading and after
   writing a shared board.
 - **Every command's contract is in `furrow <cmd> --help` and README's command

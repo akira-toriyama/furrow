@@ -45,7 +45,7 @@ func newReviewCmd() *cobra.Command {
 			"  furrow review akira-toriyama/furrow   # record a human repo review\n" +
 			"  furrow review furrow                  # same, by unique short name\n" +
 			"  furrow review furrow --by agent       # log an agent sweep (human clock unchanged)\n" +
-			"  furrow review e-k3m9                  # stamp a standing box reviewed",
+			"  furrow review e-k3m9p                  # stamp a standing box reviewed",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch by {

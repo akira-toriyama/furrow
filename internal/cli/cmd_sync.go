@@ -425,7 +425,7 @@ func lintLine(sum app.LintErrorSummary) string {
 }
 
 // epicSwitchLine renders one published activation record: "epic: activated
-// e-k3m9 \"title\" 2026-07-29 14:32 — reason" (the reason clause only when one
+// e-k3m9p \"title\" 2026-07-29 14:32 — reason" (the reason clause only when one
 // was recorded).
 func epicSwitchLine(sw app.EpicSwitch) string {
 	line := fmt.Sprintf("epic: activated %s %q %s", sw.Epic, sw.Title, sw.At)

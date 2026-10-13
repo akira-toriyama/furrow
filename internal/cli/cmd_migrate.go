@@ -32,7 +32,7 @@ func newMigrateCmd() *cobra.Command {
 			"surfacing later as one `furrow lint` epic-required error per task.",
 		Example: "  furrow migrate Task.md                       # dry-run preview\n" +
 			"  furrow migrate Task.md -e \"current work\" --yes\n" +
-			"  furrow migrate Task.md -l imported -e e-k3m9 --yes",
+			"  furrow migrate Task.md -l imported -e e-k3m9p --yes",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -71,8 +71,8 @@ func newMigrateCmd() *cobra.Command {
 			return applyMigrate(cmd, a, res, labels, plan, warnings)
 		},
 	}
-	cmd.Flags().BoolVar(&write, "yes", false, "actually create the tasks (default: dry-run preview)")
-	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label applied to every imported task (repeatable)")
+	addYesFlag(cmd, &write)
+	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "label applied to every imported task (repeatable; comma-separated)")
 	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "epic every imported task is filed under (id, unique id prefix, or unique title substring; default: the scope's single active epic, '' imports unfiled)")
 	return cmd
 }
