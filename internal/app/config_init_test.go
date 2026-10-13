@@ -68,21 +68,21 @@ func TestInitGlobalConfig_DerivesFromNearestFurrow(t *testing.T) {
 	if !derived {
 		t.Errorf("derived should be true when a .furrow encloses the start dir")
 	}
-	boards, warn, err := config.LoadGlobalBoards(path)
+	global, warn, err := config.LoadGlobal(path)
 	if err != nil {
 		t.Fatalf("written config did not parse: %v", err)
 	}
 	if len(warn) != 0 {
 		t.Errorf("derived config should not warn; got %v", warn)
 	}
-	if len(boards) != 1 {
-		t.Fatalf("want 1 board, got %d (%v)", len(boards), boards)
+	if len(global.Boards) != 1 {
+		t.Fatalf("want 1 board, got %d (%v)", len(global.Boards), global.Boards)
 	}
-	if boards[0].Path != board {
-		t.Errorf("board path = %q, want %q", boards[0].Path, board)
+	if global.Boards[0].Path != board {
+		t.Errorf("board path = %q, want %q", global.Boards[0].Path, board)
 	}
-	if wantScope := filepath.Join(root, "org"); len(boards[0].Scopes) != 1 || boards[0].Scopes[0] != wantScope {
-		t.Errorf("scopes = %v, want [%s]", boards[0].Scopes, wantScope)
+	if wantScope := filepath.Join(root, "org"); len(global.Boards[0].Scopes) != 1 || global.Boards[0].Scopes[0] != wantScope {
+		t.Errorf("scopes = %v, want [%s]", global.Boards[0].Scopes, wantScope)
 	}
 }
 
@@ -99,15 +99,15 @@ func TestInitGlobalConfig_FlagsOverrideDerivation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	boards, _, err := config.LoadGlobalBoards(path)
+	global, _, err := config.LoadGlobal(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(boards) != 1 || boards[0].Path != "/explicit/.furrow" {
-		t.Errorf("flag --path ignored; got %v", boards)
+	if len(global.Boards) != 1 || global.Boards[0].Path != "/explicit/.furrow" {
+		t.Errorf("flag --path ignored; got %v", global.Boards)
 	}
-	if len(boards[0].Scopes) != 1 || boards[0].Scopes[0] != "/explicit/scope" {
-		t.Errorf("flag --scope ignored; got %v", boards[0].Scopes)
+	if len(global.Boards[0].Scopes) != 1 || global.Boards[0].Scopes[0] != "/explicit/scope" {
+		t.Errorf("flag --scope ignored; got %v", global.Boards[0].Scopes)
 	}
 }
 

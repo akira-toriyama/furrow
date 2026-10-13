@@ -65,16 +65,17 @@ var (
 	// motivates the 14-day default (two missed weeks).
 	DefaultReviewStaleAfterDays = 14
 
-	// DefaultSessionBusySeconds is [session].busy_seconds: how long another
-	// Claude Code session on this machine, whose turn is NOT known to have
-	// ended, keeps counting as WORKING in the repo it sits in after its last
-	// transcript write — which makes a later session's write into that repo
-	// refuse (session-busy) rather than merely warn (session_warn). An ended
-	// turn is idle at once, so the window only bounds the mid-turn reading:
-	// five minutes covers the ordinary gap between tool calls, and a long build
-	// or an unanswered permission prompt exceeding it demotes the refusal to a
-	// warning instead of refusing forever. A session whose transcript cannot
-	// be read is measured from its start instead, under the same ceiling.
+	// DefaultSessionBusySeconds is the user-level [session].busy_seconds: how
+	// long another AI agent session on this machine, whose turn is NOT known
+	// to have ended, keeps counting as WORKING in the repo it sits in after
+	// its last transcript write — which makes a later session's write into
+	// that repo refuse (session-busy) rather than merely warn (session_warn).
+	// An ended turn is idle at once, so the window only bounds the mid-turn
+	// reading: five minutes covers the ordinary gap between tool calls, and a
+	// long build or an unanswered permission prompt exceeding it demotes the
+	// refusal to a warning instead of refusing forever. A session whose
+	// transcript cannot be read is measured from its start instead, under the
+	// same ceiling. The section itself is session.go (GlobalSession).
 	DefaultSessionBusySeconds = 300
 )
 
@@ -123,11 +124,6 @@ type Config struct {
 	ReviewStaleAfterDays int
 
 	LabelsRequired bool // when true, a task with zero labels is rejected/flagged
-
-	// SessionBusySeconds is the [session].busy_seconds threshold of the
-	// co-located-session write guard (see DefaultSessionBusySeconds). 0 =
-	// an occupant with a readable activity record is never busy: warn only.
-	SessionBusySeconds int
 
 	// LintArchiveDone is the [lint].archive_done nudge threshold: `furrow lint`
 	// warns when at least this many done tasks are older than ArchiveOlderThanDays
@@ -230,7 +226,6 @@ func Default() *Config {
 		ArchiveOlderThanDays: DefaultArchiveOlderThanDays,
 		RevisitStaleDays:     DefaultRevisitStaleDays,
 		ReviewStaleAfterDays: DefaultReviewStaleAfterDays,
-		SessionBusySeconds:   DefaultSessionBusySeconds,
 		DueIgnoreLanes:       setOf(DefaultDueIgnoreLanes),
 		Mode:                 DefaultMode,
 	}

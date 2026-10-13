@@ -68,14 +68,19 @@ func (a *App) ConfigSetBoard(dotted, value string) (*ConfigEdit, error) {
 	return finishConfigEdit(path, dotted, typed, res)
 }
 
-// ConfigSetUser sets one key of a [[board]] entry in the user-level config
-// (~/.config/furrow/config.toml). boardRef picks the entry — the epic-ref
-// contract carried over: exact path/scope, else unique substring over both,
-// else exit 2 with the entry paths in candidates; with exactly one entry the
-// ref may be omitted. Entry CREATION is deliberately out of scope (`config
-// init` and the operator's editor own the file's shape; the writer edits what
-// exists). Package-level, not a method: the user config exists independent of
-// any resolved board, exactly like GlobalConfigPath/InitGlobalConfig.
+// ConfigSetUser sets one key of the user-level config
+// (~/.config/furrow/config.toml): a key of its own sections (`session.guard`,
+// `session.busy_seconds` — config.UserKeys, edited like a board section) or
+// a key of a [[board]] entry (config.UserEntryKeys). For an entry, boardRef
+// picks it — the epic-ref contract carried over: exact path/scope, else
+// unique substring over both, else exit 2 with the entry paths in candidates;
+// with exactly one entry the ref may be omitted — and a ref beside a
+// section key is exit 2 (it names no entry). Entry CREATION is deliberately
+// out of scope (`config init` and the operator's editor own the file's
+// shape; the writer edits what exists), while a missing [session] section is
+// appended, as a missing board section is. Package-level, not a method: the
+// user config exists independent of any resolved board, exactly like
+// GlobalConfigPath/InitGlobalConfig.
 func ConfigSetUser(boardRef, dotted, value string) (*ConfigEdit, error) {
 	path, err := GlobalConfigPath()
 	if err != nil {
@@ -93,21 +98,33 @@ func ConfigSetUser(boardRef, dotted, value string) (*ConfigEdit, error) {
 	if err != nil {
 		return nil, core.Validationf("config", "%s does not parse strictly — fix it before writing through it: %v", path, err)
 	}
-	idx, err := resolveUserBoard(entries, boardRef, path)
-	if err != nil {
-		return nil, err
-	}
-	k, name, ok := config.ResolveKey(config.UserEntryKeys(), dotted)
-	if !ok {
-		return nil, unknownConfigKeyErr(dotted, config.UserEntryKeys())
-	}
-	typed, err := config.ParseCLIValue(k, value)
-	if err != nil {
-		return nil, core.Validationf("config", "%s: %v", dotted, err)
-	}
-	res, err := config.SetInArrayTable(string(data), "board", idx, name, config.RenderTOMLValue(typed))
-	if err != nil {
-		return nil, core.Validationf("config", "%s: %v", path, err)
+	var res config.SetResult
+	var typed any
+	if k, name, ok := config.ResolveKey(config.UserKeys(), dotted); ok {
+		if boardRef != "" {
+			return nil, core.Validationf("config", "%s is a key of the user config's own [%s] section, not of a [[board]] entry — drop --board", dotted, k.Section)
+		}
+		if typed, err = config.ParseCLIValue(k, value); err != nil {
+			return nil, core.Validationf("config", "%s: %v", dotted, err)
+		}
+		if res, err = config.SetInSection(string(data), k.Section, name, config.RenderTOMLValue(typed)); err != nil {
+			return nil, core.Validationf("config", "%s: %v", path, err)
+		}
+	} else {
+		k, name, ok := config.ResolveKey(config.UserEntryKeys(), dotted)
+		if !ok {
+			return nil, unknownConfigKeyErr(dotted, append(config.UserKeys(), config.UserEntryKeys()...))
+		}
+		idx, err := resolveUserBoard(entries, boardRef, path)
+		if err != nil {
+			return nil, err
+		}
+		if typed, err = config.ParseCLIValue(k, value); err != nil {
+			return nil, core.Validationf("config", "%s: %v", dotted, err)
+		}
+		if res, err = config.SetInArrayTable(string(data), "board", idx, name, config.RenderTOMLValue(typed)); err != nil {
+			return nil, core.Validationf("config", "%s: %v", path, err)
+		}
 	}
 	if err := guardConfigRegression(path, data, []byte(res.Doc), userWarnings); err != nil {
 		return nil, err
@@ -132,7 +149,7 @@ func boardWarnings(data []byte, path string) ([]string, error) {
 }
 
 func userWarnings(data []byte, path string) ([]string, error) {
-	_, warn, err := config.LoadGlobalBoardsBytes(data, path)
+	_, warn, err := config.LoadGlobalBytes(data, path)
 	return warn, err
 }
 

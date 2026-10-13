@@ -18,7 +18,8 @@ func GlobalConfigPath() (string, error) {
 }
 
 // GlobalConfigWarnings loads the user-level config and returns its clamp
-// warnings (dropped/ignored [[board]] entries, or a malformed-file note),
+// warnings (dropped/ignored [[board]] entries, an out-of-range [session]
+// value, or a malformed-file note),
 // regardless of cwd or scope. This is the explicit surface for the warnings that
 // discovery DROPS on its inert path (all boards clamped away, or cwd out of every
 // scope): `furrow lint` and `furrow config path` report them instead of silently
@@ -28,7 +29,7 @@ func GlobalConfigWarnings() []string {
 	if err != nil {
 		return nil
 	}
-	_, warn, err := config.LoadGlobalBoards(path)
+	_, warn, err := config.LoadGlobal(path)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: %v", path, err)}
 	}

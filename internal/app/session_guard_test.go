@@ -204,27 +204,6 @@ func TestSessionGuardEndedTurnWarnsHoweverFreshTheTranscript(t *testing.T) {
 	}
 }
 
-func TestSessionGuardBusySecondsZeroIsWarnOnly(t *testing.T) {
-	a, _ := guardedApp(t, time.Second, false)
-	a.Cfg.SessionBusySeconds = 0
-	if _, err := a.Add("x", AddOpts{Repos: []string{"o/glyph"}}); err != nil {
-		t.Fatalf("busy_seconds=0 never refuses a known activity: %v", err)
-	}
-	if w := a.TakeSessionWarn(); len(w) != 1 {
-		t.Fatalf("it still warns: %+v", w)
-	}
-	// 0 is the warn-only switch for unknown activity too: the one escape a
-	// non-add write has when an occupant's transcript cannot be found.
-	b, _ := guardedApp(t, 0, true)
-	b.Cfg.SessionBusySeconds = 0
-	if _, err := b.Add("x", AddOpts{Repos: []string{"o/glyph"}}); err != nil {
-		t.Fatalf("busy_seconds=0 never refuses: %v", err)
-	}
-	if w := b.TakeSessionWarn(); len(w) != 1 || w[0].Busy {
-		t.Fatalf("warned, not busy: %+v", w)
-	}
-}
-
 func TestSessionGuardFirstComeFirstServed(t *testing.T) {
 	a, _ := guardedApp(t, time.Second, false)
 	// Self started BEFORE the occupant: the earlier session owns the repo.

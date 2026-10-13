@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/akira-toriyama/furrow/internal/config"
 	"github.com/akira-toriyama/furrow/internal/core"
 )
 
@@ -37,6 +38,12 @@ import (
 // Not guarded, deliberately: reads; board maintenance (`archive`, `tidy`,
 // `upgrade`, `review`'s clock stamps, `sync`); and anything outside Claude
 // Code (no CLAUDECODE env — a human shell, CI).
+//
+// The user config's per-machine `[session]` section (config.GlobalSession)
+// sets the mode: `refuse` is the rule above; `warn` demotes every refusal to
+// the idle warning (the clash still says the occupant is working); `off`
+// leaves Sessions nil at Open, so nothing here runs. The busy window is its
+// `busy_seconds`.
 
 // SessionRef identifies THIS process's session for the guard: the registry
 // entry with the same PID, or failing that the same non-empty ID.
@@ -45,11 +52,16 @@ type SessionRef struct {
 	ID  string
 }
 
-// SessionWarnLine renders the idle-occupant warning the CLI prints on stderr
-// when a guarded write went through beside an idle earlier session.
+// SessionWarnLine renders the occupant warning the CLI prints on stderr when
+// a guarded write went through beside an earlier session: idle under any
+// mode, or working under `guard = "warn"` (a busy clash, which says so).
 func SessionWarnLine(clashes []core.SessionClash) string {
 	parts := make([]string, 0, len(clashes))
 	for _, c := range clashes {
+		if c.Busy {
+			parts = append(parts, fmt.Sprintf("%s is being worked on by the earlier Claude Code session %s (%s; session guard = warn)", c.Repo, sessionLabel(c), activityLabel(c)))
+			continue
+		}
 		parts = append(parts, fmt.Sprintf("%s is also open in the earlier Claude Code session %s (idle %s)", c.Repo, sessionLabel(c), idleLabel(c)))
 	}
 	return strings.Join(parts, "; ") + " — the write went through; if that session resumes, it may collide with this edit"
@@ -81,9 +93,10 @@ func (a *App) guardTask(t *core.Task) error {
 // guardRepos is the guard itself. subject tags the error (a task/epic id, ""
 // for a creation); repos is the union the write touches; hint, when non-empty,
 // is the escape the message and `details.hint` name (`--draft` for a task
-// add). Busy clashes refuse the write; idle ones are recorded for the CLI to
-// warn about; no registry, no self, or a repo the guard cannot derive is no
-// clash.
+// add). Busy clashes refuse the write (under `guard = "warn"` they are
+// recorded instead, Busy flag kept so the warning says working); idle ones
+// are recorded for the CLI to warn about; no registry, no self, or a repo the
+// guard cannot derive is no clash.
 func (a *App) guardRepos(subject string, repos []string, hint string) error {
 	if a.Sessions == nil || len(repos) == 0 {
 		return nil
@@ -92,7 +105,7 @@ func (a *App) guardRepos(subject string, repos []string, hint string) error {
 	if !ok {
 		return nil
 	}
-	within := time.Duration(a.Cfg.SessionBusySeconds) * time.Second
+	within := time.Duration(a.Session.BusySeconds) * time.Second
 	clashes := core.SessionClashes(self, others, a.sessionRepoOf, repos, a.Clock.Now(), within)
 	if len(clashes) == 0 {
 		return nil
@@ -101,7 +114,7 @@ func (a *App) guardRepos(subject string, repos []string, hint string) error {
 	for _, c := range clashes {
 		busy = busy || c.Busy
 	}
-	if !busy {
+	if !busy || a.Session.Guard == config.SessionGuardWarn {
 		a.sessionWarn = mergeClashes(a.sessionWarn, clashes)
 		return nil
 	}

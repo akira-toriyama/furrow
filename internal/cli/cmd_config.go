@@ -18,10 +18,11 @@ func newConfigCmd() *cobra.Command {
 		Short: "Inspect and write furrow's config files (board rules and central boards)",
 		Long: "Manage furrow's two config files: the resolved board's .furrow/config.toml\n" +
 			"(lanes, next, aliases — the rules every command reads) and\n" +
-			"~/.config/furrow/config.toml (the per-machine [[board]] entries that say\n" +
-			"which central board backs the repos under your tree). `config set` writes\n" +
-			"one key of either surgically; `config init` writes the user-level template;\n" +
-			"`config path` prints where the user-level file lives.",
+			"~/.config/furrow/config.toml (the per-machine file: the [[board]] entries\n" +
+			"that say which central board backs the repos under your tree, and the\n" +
+			"[session] write-guard mode). `config set` writes one key of either\n" +
+			"surgically; `config init` writes the user-level template; `config path`\n" +
+			"prints where the user-level file lives.",
 		// `furrow config` alone prints help (exit 0); an unknown subcommand
 		// (`config show`) is exit 2 with the known names in candidates, matching
 		// the root's unknown-command contract instead of swallowing it as exit-0
@@ -46,12 +47,15 @@ func newConfigSetCmd() *cobra.Command {
 	var board string
 	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set one config key — the board's config.toml, or --user for a [[board]] entry",
+		Short: "Set one config key — the board's config.toml, or --user for the user-level file",
 		Long: "Write one key surgically (comments, ordering, and every other byte survive).\n" +
 			"The default target is the RESOLVED BOARD's .furrow/config.toml — the same\n" +
-			"board every other command operates on; --user targets a [[board]] entry of\n" +
-			"~/.config/furrow/config.toml instead (--board <ref> picks the entry by path\n" +
-			"or scope — exact, else unique substring; omit it when one entry exists).\n\n" +
+			"board every other command operates on; --user targets\n" +
+			"~/.config/furrow/config.toml instead: its own [session] keys\n" +
+			"(session.guard refuse|warn|off, session.busy_seconds), or a key of one\n" +
+			"[[board]] entry (--board <ref> picks the entry by path or scope — exact,\n" +
+			"else unique substring; omit it when one entry exists; never beside a\n" +
+			"[session] key).\n\n" +
 			"<key> is dotted (lanes.default, next.lanes, alias.<name>; bare for a\n" +
 			"top-level key like mode). A list value is comma-split\n" +
 			"(next.lanes ready,in-progress). The writer is STRICT where the reader is\n" +
@@ -62,7 +66,8 @@ func newConfigSetCmd() *cobra.Command {
 		Example: "  furrow config set lanes.default ready\n" +
 			"  furrow config set next.lanes ready,in-progress\n" +
 			"  furrow config set alias.triage \"ls -s inbox\"\n" +
-			"  furrow config set --user --board projects autocommit true",
+			"  furrow config set --user --board projects autocommit true\n" +
+			"  furrow config set --user session.guard warn",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if board != "" && !user {
@@ -94,7 +99,7 @@ func newConfigSetCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&user, "user", false, "target the user-level config's [[board]] entries instead of the board's config.toml")
+	cmd.Flags().BoolVar(&user, "user", false, "target the user-level config ([session] keys, or a [[board]] entry with --board) instead of the board's config.toml")
 	cmd.Flags().StringVar(&board, "board", "", "which [[board]] entry to edit (path or scope; exact, else unique substring) — requires --user")
 	return cmd
 }

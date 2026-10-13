@@ -68,6 +68,11 @@ func BoardKeys() []Key { return structKeys(reflect.TypeOf(raw{})) }
 // user-level config, derived from its raw decode struct the same way.
 func UserEntryKeys() []Key { return structKeys(reflect.TypeOf(rawBoard{})) }
 
+// UserKeys is the settable-key vocabulary of the user-level config's own
+// sections ([session]) — everything in it that is not a [[board]] entry (an
+// array of tables is addressed per entry, by UserEntryKeys).
+func UserKeys() []Key { return structKeys(reflect.TypeOf(rawGlobal{})) }
+
 func structKeys(t reflect.Type) []Key {
 	var keys []Key
 	for i := 0; i < t.NumField(); i++ {
@@ -80,6 +85,9 @@ func structKeys(t reflect.Type) []Key {
 			continue
 		}
 		ft := f.Type
+		if ft.Kind() == reflect.Slice && ft.Elem().Kind() == reflect.Struct {
+			continue // an array of tables ([[board]]) is edited per entry
+		}
 		if ft.Kind() == reflect.Struct {
 			for j := 0; j < ft.NumField(); j++ {
 				sf := ft.Field(j)

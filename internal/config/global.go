@@ -37,8 +37,17 @@ type GlobalBoard struct {
 	AutoCommit bool
 }
 
+// Global is the user-level config as read: the [[board]] entries and the
+// per-machine [session] section (see SessionGuard). Both are clamped, never
+// rejected — the file is ambient to every repo on the machine.
+type Global struct {
+	Boards  []GlobalBoard
+	Session GlobalSession
+}
+
 type rawGlobal struct {
-	Boards []rawBoard `toml:"board"`
+	Boards  []rawBoard `toml:"board"`
+	Session rawSession `toml:"session"`
 }
 
 type rawBoard struct {
@@ -55,14 +64,16 @@ type rawBoard struct {
 	AutoCommit bool `toml:"autocommit"`
 }
 
-// LoadGlobalBoards parses the user-level furrow config at path and returns its
-// [[board]] entries, or nil when there is no usable default board.
+// LoadGlobal parses the user-level furrow config at path: its [[board]]
+// entries (nil when there is no usable default board) and its [session]
+// section (the defaults when absent).
 //
 // Unlike LoadPointer (which fails loud on a missing board, because a pointer is
 // an explicit per-repo redirect), the central board is CLAMP-DON'T-REJECT like
 // Load: it is ambient and affects every repo, so a half-written file must never
 // break furrow in an unrelated directory. Specifically:
-//   - a missing/empty file (no [[board]]) yields (nil, nil, nil) — no board.
+//   - a missing/empty file (no [[board]]) yields no board and the default
+//     [session], with no warning.
 //   - TOML that does not PARSE (a syntax error) is an error — nothing can be
 //     salvaged from a file with no readable structure.
 //   - an unknown key is ignored with a warning naming the file, line, and key
@@ -75,7 +86,9 @@ type rawBoard struct {
 //     mode it used to miss.
 //   - each surviving [[board]] is clamped on its own: an entry with no path, or
 //     no scopes once blank strings are pruned, is dropped with a warning.
-//   - if every entry is dropped the result is (nil, warn, nil) — "no board".
+//   - if every entry is dropped the result is no board, with the warnings.
+//   - [session] clamps per key (clampSession): an unknown guard or a
+//     non-positive window falls back to the default with a warning.
 //
 // A legacy single [board] table decodes (via go-toml/v2) into a one-element
 // slice; its old `scope` key now WARNS as unknown, and with no `scopes` the
@@ -86,55 +99,64 @@ type rawBoard struct {
 // Resolving each board path, selecting the most specific scope, and checking
 // that the chosen board exists are the caller's job (only the app layer knows
 // cwd and the config file's directory).
-func LoadGlobalBoards(path string) ([]GlobalBoard, []string, error) {
+func LoadGlobal(path string) (*Global, []string, error) {
 	// #nosec G304 -- path is furrow's own user-level config location
 	// (~/.config/furrow/config.toml), resolved by the app layer, not attacker-supplied.
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return nil, nil, nil
+		return &Global{Session: DefaultGlobalSession()}, nil, nil
 	}
 	if err != nil {
 		return nil, nil, err
 	}
-	return LoadGlobalBoardsBytes(data, path)
+	return LoadGlobalBytes(data, path)
 }
 
-// LoadGlobalBoardsBytes is LoadGlobalBoards over in-memory content — the
-// validation half of `config set --user`.
-func LoadGlobalBoardsBytes(data []byte, path string) ([]GlobalBoard, []string, error) {
+// LoadGlobalBytes is LoadGlobal over in-memory content — the validation half
+// of `config set --user`.
+func LoadGlobalBytes(data []byte, path string) (*Global, []string, error) {
 	var r rawGlobal
 	unknown, err := decodeStrict(data, &r, path)
 	if err != nil {
 		// A type error somewhere in the file. Salvage what still reads: the
-		// lenient pass below drops only the broken entries. A syntax error
-		// falls through it unchanged (nothing decodes at all).
-		entries, warn, salvageErr := salvageGlobalBoards(data, path)
+		// lenient pass below drops only the broken entries and keys. A syntax
+		// error falls through it unchanged (nothing decodes at all).
+		entries, session, warn, salvageErr := salvageGlobal(data, path)
 		if salvageErr != nil {
 			return nil, nil, fmt.Errorf("furrow config.toml: %w", err)
 		}
 		boards, clampWarn := clampGlobalBoards(entries, path)
-		return boards, append(warn, clampWarn...), nil
+		return &Global{Boards: boards, Session: session}, append(warn, clampWarn...), nil
 	}
 	boards, warn := clampGlobalBoards(r.Boards, path)
-	return boards, append(unknown, warn...), nil
+	session, sessionWarn := clampSession(r.Session, path)
+	return &Global{Boards: boards, Session: session}, append(append(unknown, warn...), sessionWarn...), nil
 }
 
-// salvageGlobalBoards is the lenient second pass behind LoadGlobalBoards: it
-// re-reads the file as untyped TOML and coerces each [[board]] entry field by
-// field, dropping ONLY the entries that hold a wrong-typed value (with a
-// warning naming the file, entry, and key) so the healthy boards survive.
-// Positions are gone on this path — go-toml reports them only while decoding
-// into the typed struct, which is what just failed — so the warnings name the
-// entry by index instead of by line.
-func salvageGlobalBoards(data []byte, path string) ([]rawBoard, []string, error) {
+// salvageGlobal is the lenient second pass behind LoadGlobal: it re-reads the
+// file as untyped TOML and coerces each [[board]] entry field by field,
+// dropping ONLY the entries that hold a wrong-typed value (with a warning
+// naming the file, entry, and key) so the healthy boards survive, and the
+// [session] section key by key the same way. Positions are gone on this path
+// — go-toml reports them only while decoding into the typed struct, which is
+// what just failed — so the warnings name the entry by index instead of by
+// line.
+func salvageGlobal(data []byte, path string) ([]rawBoard, GlobalSession, []string, error) {
 	var doc map[string]any
 	if err := toml.Unmarshal(data, &doc); err != nil {
-		return nil, nil, err
+		return nil, GlobalSession{}, nil, err
 	}
+	session, warn := coerceSession(doc["session"], path)
+	entries, w := salvageBoards(doc["board"], path)
+	return entries, session, append(warn, w...), nil
+}
+
+// salvageBoards coerces the untyped `board` value of a salvaged document.
+func salvageBoards(v any, path string) ([]rawBoard, []string) {
 	var items []any
-	switch v := doc["board"].(type) {
+	switch v := v.(type) {
 	case nil:
-		return nil, nil, nil
+		return nil, nil
 	case []any: // [[board]] array of tables
 		items = v
 	case []map[string]any: // go-toml may type a homogeneous array this way
@@ -144,7 +166,7 @@ func salvageGlobalBoards(data []byte, path string) ([]rawBoard, []string, error)
 	case map[string]any: // legacy single [board] table
 		items = []any{v}
 	default:
-		return nil, []string{fmt.Sprintf("%s: `board` is not a [[board]] table; ignoring it", path)}, nil
+		return nil, []string{fmt.Sprintf("%s: `board` is not a [[board]] table; ignoring it", path)}
 	}
 	var entries []rawBoard
 	var warn []string
@@ -160,7 +182,7 @@ func salvageGlobalBoards(data []byte, path string) ([]rawBoard, []string, error)
 			entries = append(entries, *b)
 		}
 	}
-	return entries, warn, nil
+	return entries, warn
 }
 
 // coerceBoard converts one untyped [[board]] table into a rawBoard. A key

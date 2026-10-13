@@ -781,11 +781,11 @@ func loadConfigBoards() (boards []config.GlobalBoard, cfgDir string, warn []stri
 	if err != nil {
 		return nil, "", nil, err
 	}
-	boards, warn, err = config.LoadGlobalBoards(path)
+	global, warn, err := config.LoadGlobal(path)
 	if err != nil {
 		return nil, "", nil, err
 	}
-	return boards, filepath.Dir(path), warn, nil
+	return global.Boards, filepath.Dir(path), warn, nil
 }
 
 // globalConfigPath is ${XDG_CONFIG_HOME}/furrow/config.toml when XDG_CONFIG_HOME

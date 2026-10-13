@@ -49,17 +49,17 @@ func TestRenderGlobalConfig_SubstitutesAndRoundTrips(t *testing.T) {
 	if err := os.WriteFile(p, []byte(rendered), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	boards, warn, err := LoadGlobalBoards(p)
+	global, warn, err := LoadGlobal(p)
 	if err != nil {
 		t.Fatalf("rendered config did not parse: %v", err)
 	}
 	if len(warn) != 0 {
 		t.Errorf("rendered config produced clamp warnings: %v", warn)
 	}
-	if len(boards) != 1 {
-		t.Fatalf("want 1 board, got %d (%v)", len(boards), boards)
+	if len(global.Boards) != 1 {
+		t.Fatalf("want 1 board, got %d (%v)", len(global.Boards), global.Boards)
 	}
-	b := boards[0]
+	b := global.Boards[0]
 	if b.Path != board {
 		t.Errorf("board path = %q, want %q", b.Path, board)
 	}
