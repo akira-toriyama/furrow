@@ -25,16 +25,15 @@ func TestQueryTaskRefsAcrossStores(t *testing.T) {
 	upstream := addTask(t, "upstream, done and still live")
 	mustRun(t, "done", upstream)
 	retired := addTask(t, "retired", "--dep", upstream)
-	live := addTask(t, "live, waits on the retired one", "--dep", retired)
-	z := addTask(t, "z, waits on live", "--dep", live)
-	// archive will not strand a live dep edge (t-tf56), so the state is reached
-	// the way a board still reaches it: the chain retires whole, and the
-	// dependents are restored and reopened without the task they wait on.
-	mustRun(t, "done", retired, live, z)
-	mustRun(t, "archive", retired, live, z, "--yes")
-	mustRun(t, "unarchive", live, z)
-	mustRun(t, "move", live, "backlog")
-	mustRun(t, "move", z, "backlog")
+	// archive will not strand a live dep edge (t-tf56) and unarchive will not
+	// restore a dependent without its archived dependency (t-kw28), so the
+	// state is reached the way a board still reaches it: a hand-edited shard
+	// (or a merge), after the dependency retired on its own.
+	mustRun(t, "done", retired)
+	mustRun(t, "archive", retired, "--yes")
+	live := addTask(t, "live, waits on the retired one", "-s", "backlog")
+	z := addTask(t, "z, waits on live", "--dep", live, "-s", "backlog")
+	addDanglingDep(t, live, retired)
 
 	// Live read: the retired id is carried by `live`, so it resolves and the
 	// carrier is the answer; its own deps are not here, so blocks: says so.

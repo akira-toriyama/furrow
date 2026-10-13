@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
@@ -175,6 +176,33 @@ func (a *App) ArchiveIDs(ids []string, dryRun bool) (*ArchiveReport, error) {
 		}
 	}
 	return a.archiveMove(idx, moved, dryRun)
+}
+
+// archivedDepsOf lists the dep edges from the tasks being restored to tasks
+// that stay in the archive (neither on the hot board nor restored in the same
+// call), in index order.
+func archivedDepsOf(moved []core.Task, arcIdx, hot *core.Index, leaving map[string]bool) References {
+	refs := newReferences()
+	for _, t := range moved {
+		for _, dep := range t.Deps {
+			if leaving[dep] || hot.Has(dep) || !arcIdx.Has(dep) {
+				continue
+			}
+			refs.Deps = append(refs.Deps, DepEdge{From: t.ID, To: dep})
+		}
+	}
+	return refs
+}
+
+// archivedDeps returns the distinct dep targets of refs.Deps, in order.
+func (r References) archivedDeps() []string {
+	var out []string
+	for _, e := range r.Deps {
+		if !contains(out, e.To) {
+			out = append(out, e.To)
+		}
+	}
+	return out
 }
 
 // ArchiveReport is what archive hands back: the tasks it moved (or would) and
@@ -366,6 +394,30 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 		}
 	}
 	leaving := idSet(moved)
+	// Guarded like every task write: a restore puts tasks back on the hot
+	// board of the repos they carry, so a session holding one of those repos
+	// refuses it before anything moves (t-kw28).
+	var restoredRepos []string
+	for _, t := range moved {
+		restoredRepos = unionRepos(restoredRepos, t.Repos)
+	}
+	if err := a.guardRepos(strings.Join(ids, ","), restoredRepos, ""); err != nil {
+		return nil, err
+	}
+	// The mirror of ArchiveIDs' depHolds: a restored task whose dependency
+	// stays archived would read as blocked on an id the hot index lacks (lint
+	// dep-missing, the board's pre-push lint refusing the push). Restore them
+	// together, or drop the edge first.
+	if refs := archivedDepsOf(moved, arcIdx, idx, leaving); len(refs.Deps) > 0 {
+		return nil, &core.Error{
+			Code:    core.CodeValidation,
+			Kind:    core.KindReferenced,
+			Subject: refs.Deps[0].From,
+			Msg: fmt.Sprintf("still depends on an archived task — %s; restoring would strand the edge (lint dep-missing), so nothing was restored: "+
+				"unarchive them together (`furrow unarchive %s`), or drop the edge first", refs.Summary(), strings.Join(append(ids, refs.archivedDeps()...), " ")),
+			Details: map[string]any{"references": refs},
+		}
+	}
 	arcEpics, err := arc.LoadEpics()
 	if err != nil {
 		return nil, err

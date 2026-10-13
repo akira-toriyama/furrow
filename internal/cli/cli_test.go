@@ -127,6 +127,33 @@ func initStore(t *testing.T) {
 	t.Setenv(app.EnvDir, filepath.Join(dir, app.DirName))
 }
 
+// addDanglingDep hand-edits id's shard to carry dep in `deps` — the one way a
+// dep the hot store cannot resolve is still reached now that `dep` refuses to
+// create one, `archive` refuses to strand one and `unarchive` refuses to
+// restore a dependent without its archived dependency (t-kw28): a hand edit,
+// or a merge that removed the target on another machine.
+func addDanglingDep(t *testing.T, id, dep string) {
+	t.Helper()
+	path := filepath.Join(os.Getenv(app.EnvDir), "tasks", id+".json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shard map[string]any
+	if err := json.Unmarshal(raw, &shard); err != nil {
+		t.Fatal(err)
+	}
+	deps, _ := shard["deps"].([]any)
+	shard["deps"] = append(deps, dep)
+	out, err := json.MarshalIndent(shard, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(out, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // addTask runs `add --json` and returns the created task's id. Ids are random,
 // so tests capture them rather than hardcoding t-0001.
 func addTask(t *testing.T, args ...string) string {
