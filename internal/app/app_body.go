@@ -78,15 +78,16 @@ func (a *App) EditPath(ref string) (string, error) {
 // written, the note is saved without Updated advancing — a partial failure costs
 // a timestamp, never content, and a re-run re-appends and fixes Updated.
 //
-// It differs from AppendBody (the `apply` annotation helper) on both counts,
-// deliberately: AppendBody dedupes an identical line and leaves Updated alone,
-// because a re-run of `apply` for the same PR event must be idempotent. A note
-// is the opposite — a progress note repeating an earlier one is still a distinct
-// event, so it always appends — and it MUST move Updated, because the body is
-// the task's content. Hand-editing the file (via EditPath) does not touch the
-// shard, which lets Updated go stale and makes lint's reconcile-gap (a dep's
-// Closed time vs. Updated) misfire on a task whose progress was recorded only in
-// prose; a note keeps Updated honest, so that check stays trustworthy.
+// It differs from AppendBody (the `apply` annotation helper) on one count,
+// deliberately: AppendBody dedupes an identical line, and only a line that lands
+// stamps Updated, because a re-run of `apply` for the same PR event must be a
+// true no-op. A note is the opposite — a progress note repeating an earlier one
+// is still a distinct event, so it always appends — and it MUST move Updated,
+// because the body is the task's content. Hand-editing the file (via EditPath)
+// does not touch the shard, which lets Updated go stale and makes lint's
+// reconcile-gap (a dep's Closed time vs. Updated) misfire on a task whose
+// progress was recorded only in prose; a note keeps Updated honest, so that
+// check stays trustworthy.
 //
 // NotFound (exit 1) when id names no task; an empty/whitespace-only note is a
 // validation error (exit 2).

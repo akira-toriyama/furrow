@@ -22,8 +22,11 @@ type AttachResult struct {
 // transparently handles the blob and furrow needs no LFS awareness.
 //
 // The id is validated before anything is written, so a bad id fails cleanly
-// (exit 1) and never leaves a stray asset. Reuses AppendBody, so the reference
-// line lands idempotently and the body keeps its trailing-newline invariant.
+// (exit 1) and never leaves a stray asset. One index snapshot carries the
+// lookup, the asset and the body line (a second load between them let the task
+// vanish with the asset already on disk — t-jg8x), and the body change stamps
+// `updated` like every prose write: the shard cannot see a body, so a line
+// added to one is invisible to the staleness clock unless the write says so.
 func (a *App) Attach(id, srcName string, data []byte) (*AttachResult, error) {
 	idx, err := a.load()
 	if err != nil {
@@ -33,8 +36,8 @@ func (a *App) Attach(id, srcName string, data []byte) (*AttachResult, error) {
 	if i < 0 {
 		return nil, a.notFoundTask(id)
 	}
-	// Guarded BEFORE the asset lands: AppendBody guards too, but by then the
-	// asset would already be on disk — an orphan on a refusal.
+	// Guarded BEFORE the asset lands: the body write guards too, but by then
+	// the asset would already be on disk — an orphan on a refusal.
 	if err := a.guardTask(t); err != nil {
 		return nil, err
 	}
@@ -44,7 +47,7 @@ func (a *App) Attach(id, srcName string, data []byte) (*AttachResult, error) {
 	}
 	ref := core.AssetRef(name)
 	line := core.AttachLine(srcName, ref)
-	if _, err := a.AppendBody(id, line); err != nil {
+	if _, err := a.appendBodyLine(idx, id, line); err != nil {
 		return nil, err
 	}
 	return &AttachResult{
