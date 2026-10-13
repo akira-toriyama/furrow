@@ -11,8 +11,8 @@ import (
 // stuck (blocked: next-lane tasks with an unsatisfied dep, which plain `next`
 // deliberately hides), what deserves a fresh look (the revisit summary), and
 // how many loose balls sit repo-less (drafts). It is a pure COMPOSITION of the
-// existing reads, so its answers can never diverge from the commands it
-// summarizes.
+// existing reads' inner halves over ONE snapshot, so its answers can never
+// diverge from the commands it summarizes, nor from each other.
 type BriefData struct {
 	// Active is the open+active epic(s) for the scope — the focus Next scopes to,
 	// with the member roll-up. EpicsDeclared distinguishes the two empty cases a
@@ -84,10 +84,27 @@ type BriefData struct {
 // caps how many next picks carry a body (0 = uncapped); NextTotal always
 // reports the uncapped count. staleDays feeds the revisit summary (0 disables
 // the stale signal, Revisit's contract).
+//
+// One snapshot: the index and the boxes are read ONCE and handed to each
+// band's inner read (nextIn, dueIn, epicListIn, …), so every band describes
+// the same board. Composed from the public reads it used to load ten times,
+// and between two of those loads a task could vanish — counted in NextTotal,
+// absent from the picks, with no note (a read must never narrow silently).
+// On one snapshot the picks ARE the next rows.
 func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	all, err := a.Store.LoadEpics()
+	if err != nil {
+		return nil, err
+	}
+
 	no := o
 	no.Limit = 0
-	nextTasks, err := a.Next(no)
+	scope := a.nextScopeIn(all, no)
+	nextTasks, err := a.nextIn(idx, scope, no)
 	if err != nil {
 		return nil, err
 	}
@@ -101,19 +118,21 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 	for _, t := range nextTasks {
 		ids = append(ids, t.ID)
 	}
-	picks, _, err := a.GetBatch(ids, true)
+	picks, _, err := a.getBatchFrom(idx, nil, a.Store.LoadBody, ids, true)
 	if err != nil {
 		return nil, err
 	}
 
+	doneIDs := a.doneSet(idx)
 	bo := o
 	bo.Limit = 0
 	bo.Status = strings.Join(a.Cfg.NextLanes, ",")
 	bo.Blocked = true
-	blocked, err := a.ListItems(bo)
+	blockedTasks, err := a.matchIn(idx, bo)
 	if err != nil {
 		return nil, err
 	}
+	blocked := a.listItemsIn(idx, blockedTasks, doneIDs)
 
 	// The same read with the lane filter widened to every open lane, so the
 	// band can print what its own scope left out instead of a bare 0.
@@ -121,19 +140,19 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 	to.Limit = 0
 	to.Status = strings.Join(openLanes(a.Cfg.Lanes, a.Cfg.IsTerminal), ",")
 	to.Blocked = true
-	blockedAll, err := a.ListItems(to)
+	blockedAll, err := a.matchIn(idx, to)
 	if err != nil {
 		return nil, err
 	}
 
 	ro := o
 	ro.Limit = 0
-	sum, err := a.RevisitSummary(ro, staleDays)
+	sum, err := a.revisitSummaryIn(idx, all, ro, staleDays)
 	if err != nil {
 		return nil, err
 	}
 
-	drafts, err := a.List(QueryOpts{Drafts: true})
+	drafts, err := a.matchIn(idx, QueryOpts{Drafts: true})
 	if err != nil {
 		return nil, err
 	}
@@ -141,47 +160,32 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 	// The due section under this read's scope, minus any lane filter: a promised
 	// task is typically parked in `waiting` or still in an intake lane, so
 	// inheriting a caller's -s would hide precisely the rows this section exists
-	// to show. The board's repo scope is dropped by App.Due itself (no AUTOMATIC
+	// to show. The board's repo scope is dropped by dueIn itself (no AUTOMATIC
 	// narrowing may hide a date — a promise does not stop expiring because this
 	// session happens to sit in another repo), and the epic scope was never
 	// applied here to begin with. An explicit -r/-l survives all three.
 	dueOpts := o
 	dueOpts.Status = ""
-	due, err := a.Due(dueOpts)
-	if err != nil {
-		return nil, err
-	}
+	due := a.dueIn(idx, dueOpts)
 
 	// The epic header: EpicsDeclared is board-wide (participation is a board
 	// property), Active is scoped like Next's own scope (o.Repo, else the
 	// board's ScopeRepo) so the line names the focus THIS session's next obeys.
-	all, err := a.Store.LoadEpics()
-	if err != nil {
-		return nil, err
-	}
 	repoScope := o.Repo
 	if repoScope == "" {
 		repoScope = o.ScopeRepo
 	}
-	items, err := a.EpicList(EpicQueryOpts{Repo: repoScope})
-	if err != nil {
-		return nil, err
-	}
 	var active []EpicItem
-	for _, it := range items {
+	for _, it := range a.epicListIn(all, idx, EpicQueryOpts{Repo: repoScope}) {
 		if it.Epic.Active {
 			active = append(active, it)
 		}
 	}
-	// The pinned channels, board-wide (EpicList with no repo filter): a pinned
-	// box outside this repo can still lead Next when its tasks match the scope.
-	allItems, err := a.EpicList(EpicQueryOpts{})
-	if err != nil {
-		return nil, err
-	}
+	// The pinned channels, board-wide (no repo filter): a pinned box outside
+	// this repo can still lead Next when its tasks match the scope.
 	var pinned []EpicItem
 	quiet := 0
-	for _, it := range allItems {
+	for _, it := range a.epicListIn(all, idx, EpicQueryOpts{}) {
 		if !it.Epic.Pinned || it.Epic.Active {
 			continue
 		}
@@ -194,15 +198,11 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 
 	// Best-effort, exactly like sync's ride-along: orientation must not fail
 	// because a lint sweep hit an IO error.
-	lint, err := a.LintErrorCounts()
+	lint, err := a.lintErrorCountsIn(idx, all)
 	if err != nil {
 		lint = LintErrorSummary{}
 	}
 
-	scope, err := a.NextScope(no)
-	if err != nil {
-		return nil, err
-	}
 	outside := map[string]string{}
 	for _, band := range [][]ListItem{due.Overdue, due.Today} {
 		for i := range band {

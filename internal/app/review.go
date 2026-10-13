@@ -50,7 +50,7 @@ func (a *App) ReviewEpic(ref string) (*core.Epic, *core.Epic, error) {
 	before := *e
 	now := a.Clock.Now()
 	e.Reviewed = &now
-	if err := a.Store.SaveEpic(e); err != nil {
+	if err := a.saveEpic(e); err != nil {
 		return nil, nil, err
 	}
 	return &before, e, nil

@@ -158,6 +158,10 @@ type App struct {
 	// first index write, postWrite the index it last wrote (see saveIndex);
 	// both nil until a write. NewLintErrors compares the two.
 	preWrite, postWrite *core.Index
+	// preEpics / postEpics are the box twins (see saveEpic): the boxes as they
+	// stood before this process's first box write, and as it last left them.
+	preEpics, postEpics []core.Epic
+	epicsWritten        bool
 }
 
 // ctxSleep waits d during Sync's transient-retry backoff, returning early with

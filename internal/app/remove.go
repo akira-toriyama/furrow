@@ -348,7 +348,7 @@ func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 			continue
 		}
 		epics[i].Deps = without(epics[i].Deps, targetSet)
-		if err := a.Store.SaveEpic(&epics[i]); err != nil {
+		if err := a.saveEpic(&epics[i]); err != nil {
 			return nil, err
 		}
 	}

@@ -108,3 +108,24 @@ func TestWriteLintNoteSurvivesAFailedCommand(t *testing.T) {
 		t.Errorf("a failed command whose first write landed must still name its error (exit %d):\n%s", code, se)
 	}
 }
+
+// The note covers a write that changes only a BOX: the board's first `epic
+// add` puts every unfiled task into epic-required (the rule only fires once
+// a box exists), and the writer heard nothing — the comparison skipped a
+// write that left the task index alone.
+func TestWriteNamesTheLintErrorABoxWriteCreates(t *testing.T) {
+	freezeClock(t)
+	initStore(t)
+	x := addTask(t, "x")
+	if out, code := run(t, "lint"); code != 0 {
+		t.Fatalf("a board with no box has no epic-required: %d\n%s", code, out)
+	}
+	_, se, code := runSplit(t, "epic", "add", "first box")
+	if code != 0 || !strings.Contains(se, "note: this write raised lint error epic-required on "+x+": ") {
+		t.Errorf("the first epic add must name the epic-required it raised on %s (exit %d):\n%s", x, code, se)
+	}
+	// A second box changes nothing for x: no new error, no note.
+	if _, se, _ := runSplit(t, "epic", "add", "second box"); strings.Contains(se, "lint error") {
+		t.Errorf("a box write that creates no new error must stay quiet:\n%s", se)
+	}
+}

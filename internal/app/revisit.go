@@ -136,6 +136,11 @@ func (a *App) revisitEpicsIn(idx *core.Index, o QueryOpts, staleDays int) ([]Epi
 	if err != nil {
 		return nil, err
 	}
+	return a.revisitEpicsFrom(idx, epics, o, staleDays), nil
+}
+
+// revisitEpicsFrom is revisitEpicsIn over boxes the caller already holds.
+func (a *App) revisitEpicsFrom(idx *core.Index, epics []core.Epic, o QueryOpts, staleDays int) []EpicRevisitItem {
 	now := a.Clock.Now()
 	stats := a.epicMemberStats(idx, a.doneSet(idx), now)
 	var out []EpicRevisitItem
@@ -158,7 +163,7 @@ func (a *App) revisitEpicsIn(idx *core.Index, o QueryOpts, staleDays int) ([]Epi
 		}
 		return out[i].Epic.ID < out[j].Epic.ID
 	})
-	return out, nil
+	return out
 }
 
 // RevisitItem pairs a task with the re-evaluation signals it triggered. It is the
@@ -270,6 +275,15 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 	if err != nil {
 		return RevisitSummary{}, err
 	}
+	epics, err := a.Store.LoadEpics()
+	if err != nil {
+		return RevisitSummary{}, err
+	}
+	return a.revisitSummaryIn(idx, epics, o, staleDays)
+}
+
+// revisitSummaryIn is RevisitSummary over a snapshot the caller already holds.
+func (a *App) revisitSummaryIn(idx *core.Index, epics []core.Epic, o QueryOpts, staleDays int) (RevisitSummary, error) {
 	doneIDs := a.doneSet(idx)
 	now := a.Clock.Now()
 	sum := RevisitSummary{}
@@ -297,10 +311,7 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 	// The epic signals ride the same pass so `sync` reports boxes and tasks from
 	// one read. RevisitEpics owns the scope rules for boxes (a box's repos, not a
 	// task's), so it is called rather than re-implemented here.
-	eps, err := a.revisitEpicsIn(idx, o, staleDays)
-	if err != nil {
-		return RevisitSummary{}, err
-	}
+	eps := a.revisitEpicsFrom(idx, epics, o, staleDays)
 	for _, it := range eps {
 		for _, r := range it.Reasons {
 			switch r.Code {

@@ -27,40 +27,91 @@ func (a *App) saveIndex(idx *core.Index) error {
 	return nil
 }
 
+// saveEpic is saveIndex's box twin: the one write of a box shard this package
+// makes (upgrade's layout rewrite aside, which has no "before"). The first
+// call snapshots the boxes as they still stand on disk; every call folds the
+// box it wrote into the "after" set in memory — never a re-read, so a
+// co-located writer landing in between is not blamed on this command. Without
+// this, a write that changed only a box was not compared at all: the first
+// `epic add` on a board put every unfiled task into epic-required, and the
+// note README promises for "every rule" stayed silent (t-dhzm).
+func (a *App) saveEpic(e *core.Epic) error {
+	if !a.epicsWritten {
+		// Non-nil even for a board with no box yet: nil is "no snapshot", and
+		// the board's FIRST box is exactly the write that must be compared.
+		if before, err := a.Store.LoadEpics(); err == nil {
+			a.preEpics = append([]core.Epic{}, before...)
+			a.postEpics = append([]core.Epic{}, before...)
+		}
+	}
+	if err := a.Store.SaveEpic(e); err != nil {
+		return err
+	}
+	a.epicsWritten = true
+	replaced := false
+	for i := range a.postEpics {
+		if a.postEpics[i].ID == e.ID {
+			a.postEpics[i] = *e
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		a.postEpics = append(a.postEpics, *e)
+	}
+	return nil
+}
+
 // NewLintErrors returns the lint ERRORS this App's writes created: lintIndex,
 // leveled by the board's policy exactly as Lint levels it, run over the board
-// as it stood before the first write and as this App last wrote it. An error
+// as it stood before the first write and as this App last wrote it — tasks
+// AND boxes, each side taken from the write funnels (saveIndex, saveEpic) and
+// read from disk once only for the half this process never wrote. An error
 // is new when it is about a task (or board-level id) the earlier board had no
 // error of that code about (errorMembers), so touching a task that was
 // already in error says nothing, while a write that puts a DIFFERENT task in
-// error (reopening a dep its dependent sits ready on) is caught. "After" is the index this process saved, not a re-read, so a
-// co-located writer landing in between is never blamed on this command. Both
-// sides judge against the boxes as they are now: a write that changes only a
-// box is not compared. nil when nothing was written.
+// error (reopening a dep its dependent sits ready on, or declaring the
+// board's first box) is caught. "After" is what this process saved, not a
+// re-read, so a co-located writer landing in between is never blamed on this
+// command. nil when nothing was written.
 //
 // It reports, it never refuses: the write already happened, the state can be a
 // deliberate step, and lint plus the board's pre-push check are the gate. What
 // this buys is that the writer hears it in the same command instead of at push
 // time (t-7vgb).
 func (a *App) NewLintErrors() ([]core.Problem, error) {
-	if a.preWrite == nil || a.postWrite == nil {
+	wroteIndex := a.preWrite != nil && a.postWrite != nil
+	wroteEpics := a.epicsWritten && a.preEpics != nil
+	if !wroteIndex && !wroteEpics {
 		return nil, nil
 	}
-	epics, err := a.Store.LoadEpics()
-	if err != nil {
-		return nil, err
+	beforeIdx, afterIdx := a.preWrite, a.postWrite
+	if !wroteIndex {
+		idx, err := a.Store.Load()
+		if err != nil {
+			return nil, err
+		}
+		beforeIdx, afterIdx = idx, idx
+	}
+	beforeEpics, afterEpics := a.preEpics, a.postEpics
+	if !wroteEpics {
+		epics, err := a.Store.LoadEpics()
+		if err != nil {
+			return nil, err
+		}
+		beforeEpics, afterEpics = epics, epics
 	}
 	had := map[[2]string]bool{}
-	before := a.indexErrors(a.preWrite, epics)
-	members := errorMembers(a.preWrite)
+	before := a.indexErrors(beforeIdx, beforeEpics)
+	members := errorMembers(beforeIdx)
 	for _, p := range before {
 		for _, m := range members(p) {
 			had[[2]string{p.Code, m}] = true
 		}
 	}
 	var out []core.Problem
-	after := a.indexErrors(a.postWrite, epics)
-	members = errorMembers(a.postWrite)
+	after := a.indexErrors(afterIdx, afterEpics)
+	members = errorMembers(afterIdx)
 	for _, p := range after {
 		for _, m := range members(p) {
 			if !had[[2]string{p.Code, m}] {

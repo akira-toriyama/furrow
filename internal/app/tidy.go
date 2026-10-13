@@ -168,7 +168,7 @@ func (a *App) Tidy(o TidyOpts) (*TidyReport, error) {
 				continue
 			}
 			epics[i].ClearExtras()
-			if err := a.Store.SaveEpic(&epics[i]); err != nil {
+			if err := a.saveEpic(&epics[i]); err != nil {
 				return nil, err
 			}
 		}
