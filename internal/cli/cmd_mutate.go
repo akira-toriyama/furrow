@@ -468,9 +468,10 @@ func newMoveCmd() *cobra.Command {
 }
 
 func newNoteCmd() *cobra.Command {
+	var prepend bool
 	cmd := &cobra.Command{
 		Use:   "note <id> <text>",
-		Short: "Append a paragraph to a task's or epic's body and advance its updated time",
+		Short: "Append (or --prepend) a paragraph to a task's or epic's body and advance its updated time",
 		Long: "Append <text> as a new paragraph to bodies/<id>.md AND stamp the entity's\n" +
 			"`updated` time, in one command — the in-band way to record progress, stop-points,\n" +
 			"and next steps across sessions. Unlike hand-editing the file (what `furrow\n" +
@@ -478,6 +479,12 @@ func newNoteCmd() *cobra.Command {
 			"reconcile-gap check does not misfire on a task whose progress lives only in\n" +
 			"its body. Pass `-` as <text> to read the note from stdin (for multi-line or\n" +
 			"long notes).\n\n" +
+			"--prepend places the paragraph FIRST instead: right after the body's `# title`\n" +
+			"line when it has one (a successor's `previous: [[id]]` back-link stays above\n" +
+			"it), else at the very top — for the \"latest decision at the top\" habit on a\n" +
+			"long record, without replacing the whole body through `edit --body`. The\n" +
+			"rest of the body is kept byte-for-byte; `--json` then carries `prepended`\n" +
+			"instead of `appended`.\n\n" +
 			"<id> may name a TASK or an EPIC — the two share the bodies/ directory, so a\n" +
 			"box's progress record is the same operation on the same file, and only the\n" +
 			"shard that stamps `updated` differs. MEMBERSHIP routes it, not the id's\n" +
@@ -488,7 +495,8 @@ func newNoteCmd() *cobra.Command {
 			"candidates, an unknown task id exit 1.",
 		Example: "  furrow note t-k3m9p \"検証完了。次: アダプタ選定。\"\n" +
 			"  furrow note e-k3m9 \"方針: v7 の pinned に寄せる。\"\n" +
-			"  git log -1 --format=%B | furrow note t-k3m9p -",
+			"  git log -1 --format=%B | furrow note t-k3m9p -\n" +
+			"  furrow note t-k3m9p --prepend \"2026-10-13 判断: B 案で進める（詳細は末尾）\"",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -501,8 +509,14 @@ func newNoteCmd() *cobra.Command {
 			}
 			// `changed` tracks metadata fields only, so a note (body + updated)
 			// would show changed:[] — surface the effect instead. Both entities
-			// carry the same key, so a caller reads one shape either way.
-			appended := map[string]any{"appended": strings.TrimRight(text, "\n")}
+			// carry the same key, so a caller reads one shape either way; the
+			// key names the placement, so a reader of the envelope knows where
+			// the paragraph went.
+			key := "appended"
+			if prepend {
+				key = "prepended"
+			}
+			effect := map[string]any{key: strings.TrimRight(text, "\n")}
 			epic, rerr := a.RefTargetsEpic(args[0])
 			if rerr != nil {
 				return rerr
@@ -515,21 +529,30 @@ func newNoteCmd() *cobra.Command {
 				if gerr != nil {
 					return gerr
 				}
-				before, after, nerr := a.EpicNote(args[0], text)
+				write := a.EpicNote
+				if prepend {
+					write = a.EpicPrependNote
+				}
+				before, after, nerr := write(args[0], text)
 				if nerr != nil {
 					return nerr
 				}
 				if guard && before != nil {
-					appended = mergeExtra(appended, staleReadExtra(before.ID, &before.Updated, expected))
+					effect = mergeExtra(effect, staleReadExtra(before.ID, &before.Updated, expected))
 				}
-				printEpicMutation("noted", before, after, appended)
+				printEpicMutation("noted", before, after, effect)
 				return nil
 			}
+			write := a.AddNote
+			if prepend {
+				write = a.PrependNote
+			}
 			return emitMutationWith(cmd, a, "noted", args[0],
-				func() (*core.Task, error) { return a.AddNote(args[0], text) },
-				func(after *core.Task) map[string]any { return appended })
+				func() (*core.Task, error) { return write(args[0], text) },
+				func(after *core.Task) map[string]any { return effect })
 		},
 	}
+	cmd.Flags().BoolVar(&prepend, "prepend", false, "put the paragraph first (right after the # title line, else at the top) instead of last")
 	addExpectUpdatedFlag(cmd)
 	return cmd
 }

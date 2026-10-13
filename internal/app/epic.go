@@ -569,6 +569,17 @@ func (a *App) EpicNote(ref, text string) (*core.Epic, *core.Epic, error) {
 	return a.mutateEpicProse(ref, func(e *core.Epic) error { return a.appendBody(e.ID, text) })
 }
 
+// EpicPrependNote is PrependNote's box twin, exactly as EpicNote is AddNote's:
+// the same placement rule on the same bodies/ file, and only the shard whose
+// `updated` moves differs. `furrow note --prepend` routes here by membership.
+func (a *App) EpicPrependNote(ref, text string) (*core.Epic, *core.Epic, error) {
+	text, err := normalizeNote(ref, text)
+	if err != nil {
+		return nil, nil, err
+	}
+	return a.mutateEpicProse(ref, func(e *core.Epic) error { return a.prependBody(e.ID, text) })
+}
+
 // EpicSetBody replaces an EPIC's entire body AND stamps the box's Updated —
 // SetBody's box twin, routed to by `furrow edit --body` exactly as EpicNote is
 // by `furrow note` (membership decides, never the id's prefix), and the same

@@ -110,6 +110,35 @@ func (a *App) AddNote(id, text string) (*core.Task, error) {
 	})
 }
 
+// PrependNote is AddNote with the paragraph placed FIRST: right after the
+// body's H1 heading (the `# <title>` line add seeds and retitle maintains; a
+// successor's `previous: [[id]]` back-link stays above it), or at the very top
+// of a body that has no heading. Everything else is AddNote's contract — the
+// body lands before the shard stamps Updated, the note is never deduped, an
+// empty note is exit 2 — so `furrow note --prepend` differs from `furrow note`
+// in placement alone. It exists because "the latest decision goes at the top"
+// is a real habit on long-lived tasks (a reader should not have to reach the
+// end of a long record to find the current plan), and the only way to do it
+// before was a whole-body replacement through `edit --body` with the heading
+// peeled off and re-attached by hand (t-91ks).
+func (a *App) PrependNote(id, text string) (*core.Task, error) {
+	text, err := normalizeNote(id, text)
+	if err != nil {
+		return nil, err
+	}
+	idx, err := a.load()
+	if err != nil {
+		return nil, err
+	}
+	return a.mutateInErr(idx, id, func(t *core.Task) error { // AddNote's order and stamp
+		if err := a.prependBody(id, text); err != nil {
+			return err
+		}
+		t.Updated = a.Clock.Now()
+		return nil
+	})
+}
+
 // normalizeNote trims a note's trailing newlines and rejects an
 // empty/whitespace note as bad usage (never a silent no-op append). Shared by
 // AddNote and the done --note paths so the two can never diverge on what
@@ -197,6 +226,53 @@ func (a *App) appendedBody(id, text string) (string, error) {
 	b.WriteString(text)
 	b.WriteString("\n")
 	return b.String(), nil
+}
+
+// prependBody writes text as the body's first paragraph (see prependedBody).
+func (a *App) prependBody(id, text string) error {
+	body, err := a.Store.LoadBody(id)
+	if err != nil {
+		return err
+	}
+	return a.saveBody(id, prependedBody(body, text))
+}
+
+// prependedBody composes body with text as its first paragraph: after the H1
+// heading when the first real line is one (retitleHeading's rule — a single
+// `#` then a space, with blank lines and a successor's `previous: [[id]]`
+// back-link allowed above it), else at the very top. The paragraph is
+// separated from the heading and from what follows by exactly one blank line
+// each, whatever blank lines the body had there; the rest of the body is
+// otherwise preserved byte-for-byte.
+func prependedBody(body, text string) string {
+	lines := strings.Split(body, "\n")
+	heading := -1
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) == "" || bodyLinkLine.MatchString(ln) {
+			continue
+		}
+		if strings.HasPrefix(ln, "# ") {
+			heading = i
+		}
+		break
+	}
+	var b strings.Builder
+	rest := body
+	if heading >= 0 {
+		b.WriteString(strings.Join(lines[:heading+1], "\n"))
+		b.WriteString("\n\n")
+		rest = strings.Join(lines[heading+1:], "\n")
+	}
+	b.WriteString(text)
+	b.WriteString("\n")
+	if rest = strings.TrimLeft(rest, "\n"); strings.TrimSpace(rest) != "" {
+		b.WriteString("\n")
+		b.WriteString(rest)
+		if !strings.HasSuffix(rest, "\n") {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }
 
 // markBodyTouched records that this process created, modified, or deleted the
