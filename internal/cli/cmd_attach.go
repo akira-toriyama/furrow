@@ -42,8 +42,12 @@ func newAttachCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The one-id mutation envelope ({before, after, changed} — the body
+			// line stamps updated), plus the asset facts; it used to be its own
+			// {id, asset, ref, line} object, the one task write outside the rule.
+			extra := mergeExtra(map[string]any{"asset": res.Path, "ref": res.Ref, "line": res.Line}, sessionGuardExtra(a))
 			if jsonMode() {
-				emitObject(map[string]string{"id": res.ID, "asset": res.Path, "ref": res.Ref, "line": res.Line})
+				emitObject(mutationEnvelope(&res.Before, &res.After, extra))
 				return nil
 			}
 			fmt.Fprintf(out, "attached %s  %s\n", res.ID, res.Path)

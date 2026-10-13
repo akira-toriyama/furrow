@@ -367,7 +367,7 @@ func newEpicSetCmd() *cobra.Command {
 			if plan != nil {
 				extra = map[string]any{"anchor": plan}
 			}
-			if err := emitEpicMutationResult(before, after, extra); err != nil {
+			if err := emitEpicMutationResult(a, before, after, extra); err != nil {
 				return err
 			}
 			if plan != nil {
@@ -431,7 +431,7 @@ func newEpicActivateCmd() *cobra.Command {
 			if len(openDeps) > 0 {
 				extra = map[string]any{"open_deps": openDeps}
 			}
-			return emitEpicMutationResult(before, after, extra)
+			return emitEpicMutationResult(a, before, after, extra)
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "who asked for this switch and why (recorded in the epic's body)")
@@ -563,7 +563,7 @@ func emitWithPreviousSuggest(a *app.App, before, after *core.Epic, extra map[str
 	for k, v := range extra {
 		keys[k] = v
 	}
-	if err := emitEpicMutationResult(before, after, keys); err != nil {
+	if err := emitEpicMutationResult(a, before, after, keys); err != nil {
 		return err
 	}
 	if jsonMode() {
@@ -598,7 +598,7 @@ func newEpicReopenCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return emitEpicMutationResult(before, after, nil)
+			return emitEpicMutationResult(a, before, after, nil)
 		},
 	}
 }
@@ -649,9 +649,9 @@ func newEpicDepCmd() *cobra.Command {
 			spelled, args := depVerb(args)
 			ref, deps := args[0], args[1:]
 			if rm || spelled == "rm" {
-				return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicRemoveDeps(ref, deps) })
+				return emitEpicMutation(a, func() (*core.Epic, *core.Epic, error) { return a.EpicRemoveDeps(ref, deps) })
 			}
-			return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicAddDeps(ref, deps) })
+			return emitEpicMutation(a, func() (*core.Epic, *core.Epic, error) { return a.EpicAddDeps(ref, deps) })
 		},
 	}
 	cmd.Flags().BoolVar(&rm, "rm", false, "remove the deps instead of adding them")

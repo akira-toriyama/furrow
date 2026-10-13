@@ -74,7 +74,7 @@ func newReviewCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				printEpicMutation("reviewed", before, after, nil)
+				printEpicMutation(a, "reviewed", before, after, nil)
 				return nil
 			}
 			if a.Cfg.IDPattern().MatchString(arg) {

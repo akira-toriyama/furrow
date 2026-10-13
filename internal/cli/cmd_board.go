@@ -75,7 +75,8 @@ func newBoardsCmd() *cobra.Command {
 			"front-end. The JSON is {config, boards: []}: `config` names the file read\n" +
 			"(whether or not it exists), and each entry carries the resolved store path\n" +
 			"and scopes, the DECLARED repo/label (\"auto\" cannot resolve without a\n" +
-			"checkout), an `exists` flag, and the same vocabulary + schema keys as\n" +
+			"checkout), `exists` (a store is there) beside `on_disk` (a directory is\n" +
+			"there at all — unreadable and missing differ), and the same vocabulary + schema keys as\n" +
 			"`furrow board` (one parser reads both). A missing board keeps an EMPTY\n" +
 			"vocabulary — reported, never guessed. No config or no usable [[board]] is\n" +
 			"boards: [] with exit 0 — that emptiness is the finding. The FURROW_BOARD env\n" +
@@ -84,7 +85,7 @@ func newBoardsCmd() *cobra.Command {
 			"FURROW_DIR that outranks it), because discovery then reads none of the\n" +
 			"listed entries.",
 		Example: "  furrow boards           # human summary of every configured board\n" +
-			"  furrow boards --json    # {config, boards: [{store, scopes, repo, exists, lanes, writable, ...}]}\n" +
+			"  furrow boards --json    # {config, boards: [{store, scopes, repo, exists, on_disk, lanes, writable, ...}]}\n" +
 			"  furrow boards --json | jq -r '.boards[].store'",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

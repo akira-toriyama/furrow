@@ -272,8 +272,8 @@ func newRootCmd() *cobra.Command {
 				return nil
 			}
 			// The session guard's stderr output for the writes that have no
-			// {before,after,changed} envelope to annotate (add, epic, attach):
-			// a no-op when an envelope path already drained it.
+			// {before,after,changed} envelope to annotate (add): a no-op when an
+			// envelope path already drained it.
 			sessionGuardExtra(a)
 			noteNewLintErrors(a)
 			// The gate is keyed by the TOP-LEVEL name: cobra hands the hook the

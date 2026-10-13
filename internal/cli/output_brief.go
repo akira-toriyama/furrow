@@ -84,22 +84,31 @@ type briefView struct {
 // arrays are always present ([] never null) whenever the section is emitted at
 // all, so a reader can index them without a nil check.
 type briefDueView struct {
-	Overdue []listItemView `json:"overdue"`
-	Today   []listItemView `json:"today"`
+	Overdue []briefDueRowView `json:"overdue"`
+	Today   []briefDueRowView `json:"today"`
+}
+
+// briefDueRowView is one due row: the ls row plus outside_next — why `next`
+// cannot hand this task out under the read's scope (`repo …`, `draft`,
+// `box …`, `unfiled`; see app.BriefData.OutsideNext) — the fact the human
+// band's `outside next:` tag carried alone. Omitted when next can reach it.
+type briefDueRowView struct {
+	listItemView
+	OutsideNext string `json:"outside_next,omitempty"`
 }
 
 // toBriefDueView converts the app summary, or returns nil when nothing is due —
 // which is what keeps the `due` key off a dateless board's brief.
-func toBriefDueView(d app.DueSummary) *briefDueView {
+func toBriefDueView(d app.DueSummary, outside map[string]string) *briefDueView {
 	if d.Empty() {
 		return nil
 	}
-	v := &briefDueView{Overdue: []listItemView{}, Today: []listItemView{}}
+	v := &briefDueView{Overdue: []briefDueRowView{}, Today: []briefDueRowView{}}
 	for _, it := range d.Overdue {
-		v.Overdue = append(v.Overdue, toListItemView(it))
+		v.Overdue = append(v.Overdue, briefDueRowView{listItemView: toListItemView(it), OutsideNext: outside[it.Task.ID]})
 	}
 	for _, it := range d.Today {
-		v.Today = append(v.Today, toListItemView(it))
+		v.Today = append(v.Today, briefDueRowView{listItemView: toListItemView(it), OutsideNext: outside[it.Task.ID]})
 	}
 	return v
 }
@@ -134,7 +143,7 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 			Next:          make([]taskView, 0, len(b.Next)),
 			NextTotal:     b.NextTotal,
 			BlockedTotal:  b.BlockedTotal,
-			Due:           toBriefDueView(b.Due),
+			Due:           toBriefDueView(b.Due, b.OutsideNext),
 			Blocked:       make([]briefBlockedView, 0, len(b.Blocked)),
 			Revisit:       b.Revisit,
 			Drafts:        b.Drafts,

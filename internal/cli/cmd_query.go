@@ -256,7 +256,7 @@ func newShowCmd() *cobra.Command {
 			"blocked_by — the two derived keys `furrow ls --json` has always carried,\n" +
 			"computed by the same helper, which makes --no-body --json key-for-key an\n" +
 			"ls row — and NOT a resolved dep array: `furrow dep --list --json` is that\n" +
-			"shape, and a dep's title and lane are one `show <deps...> --no-body\n" +
+			"shape, and a dep's title and status are one `show <deps...> --no-body\n" +
 			"--json` away. --no-body trims the PROSE, never the facts.\n" +
 			"An id may name an EPIC: store membership routes each one (never the id's\n" +
 			"prefix), and a box is rendered as the box view `furrow epic show` prints —\n" +

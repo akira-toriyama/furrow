@@ -11,6 +11,10 @@ type AttachResult struct {
 	Path string // store-relative path, e.g. "bodies/assets/t-0042-shot.png"
 	Ref  string // body-relative markdown reference, e.g. "assets/t-0042-shot.png"
 	Line string // the markdown line appended to the body
+	// Before / After are the task as it stood and as the write left it (the
+	// body line stamps `updated`), so the CLI emits the one-id mutation
+	// envelope every other task write emits.
+	Before, After core.Task
 }
 
 // Attach copies a file (srcName + its bytes) into the task's asset area
@@ -47,14 +51,18 @@ func (a *App) Attach(id, srcName string, data []byte) (*AttachResult, error) {
 	}
 	ref := core.AssetRef(name)
 	line := core.AttachLine(srcName, ref)
+	before := *t
 	if _, err := a.appendBodyLine(idx, id, line); err != nil {
 		return nil, err
 	}
+	after, _ := idx.Find(id)
 	return &AttachResult{
-		ID:   id,
-		Name: name,
-		Path: core.AssetPath(name),
-		Ref:  ref,
-		Line: line,
+		ID:     id,
+		Name:   name,
+		Path:   core.AssetPath(name),
+		Ref:    ref,
+		Line:   line,
+		Before: before,
+		After:  *after,
 	}, nil
 }
