@@ -787,7 +787,7 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 	case query.Qualifier:
 		return c.compileQualifier(term, neg)
 	}
-	return nil, core.Validationf("query-parse", "unhandled query term")
+	return nil, &core.Error{Code: core.CodeValidation, Kind: core.KindQueryParse, Msg: "unhandled query term"}
 }
 
 func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Task) bool) func(*core.Task) bool) (func(*core.Task) bool, error) {
@@ -1006,7 +1006,7 @@ func compileNumeric(term query.Term, neg func(func(*core.Task) bool) func(*core.
 	parse := func(s string) (float64, error) {
 		n, err := strconv.ParseFloat(s, 64)
 		if err != nil {
-			return 0, unknownQueryErr(core.KindQueryType, "field "+strconv.Quote(f)+" needs a number, got "+strconv.Quote(s), nil)
+			return 0, termErr(unknownQueryErr(core.KindQueryType, "field "+strconv.Quote(f)+" needs a number, got "+strconv.Quote(s), nil), term, nil)
 		}
 		return n, nil
 	}
@@ -1108,6 +1108,16 @@ func termErr(e *core.Error, term query.Term, extra map[string]any) *core.Error {
 	}
 	e.Details = d
 	return e
+}
+
+// withTerm stamps term onto a query error raised below the binder (a date
+// scalar that did not parse), where the term was not in scope; an error that
+// already carries details, or is not a query error, passes through.
+func withTerm(err error, term query.Term) error {
+	if ce := core.AsError(err); ce != nil && ce.Details == nil {
+		return termErr(ce, term, nil)
+	}
+	return err
 }
 
 // valTexts projects an OR-set's texts (for the equality fields, where

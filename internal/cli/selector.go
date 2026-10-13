@@ -29,7 +29,7 @@ import (
 //     ONE task, and a selection is however many the filters matched).
 type writeSelector struct {
 	filterFlags
-	query string
+	query []string
 	yes   bool
 }
 
@@ -78,11 +78,11 @@ func (s *writeSelector) guard(cmd *cobra.Command, ids []string) error {
 // nothing but names a repo exits 2 with candidates, and a scope that hides
 // drafts says so on stderr. Returns the matched tasks in canonical order.
 func (s *writeSelector) resolve(cmd *cobra.Command, a *app.App) ([]core.Task, error) {
-	o, err := scopedQuery(cmd, a, joinOrFilter(s.label), s.repo, "")
+	o, err := scopedQuery(cmd, a, joinOrFilter(s.label), s.repoValue(), "")
 	if err != nil {
 		return nil, err
 	}
-	o.Query = s.query
+	o.Query = joinQuery(s.query)
 	tasks, err := a.List(o)
 	if err != nil {
 		return nil, err

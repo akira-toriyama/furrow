@@ -532,6 +532,15 @@ func TestQueryErrorDetailsCarryPosition(t *testing.T) {
 		{"is:open updatd:>=4", "updatd:>=4", 8},   // unknown field (bind)
 		{"is:opeen", "is:opeen", 0},               // unknown flag (bind)
 		{"is:open -title:>x", "-title:>x", 8},     // type fault (bind)
+		// The value-type faults carried no details at all (README promised
+		// "every fault"): a non-number, a bad range end, a malformed date, a
+		// bare relative offset, a comparison on an equality field.
+		{"is:open value:abc", "value:abc", 8},
+		{"is:open roi:2..x", "roi:2..x", 8},
+		{"is:open created:2026-13-01", "created:2026-13-01", 8},
+		{"is:open updated:-2w", "updated:-2w", 8},
+		{"is:open due:*..nope", "due:*..nope", 8},
+		{"is:open status:>x", "status:>x", 8},
 	}
 	for _, tc := range cases {
 		ce := qErr(t, a, tc.q)

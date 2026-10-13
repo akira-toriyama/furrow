@@ -141,7 +141,7 @@ func newEpicLsCmd() *cobra.Command {
 			}
 			// The task reads' scope rule, applied to boxes: EpicList takes one
 			// repo filter, so the board scope and an explicit -r collapse into it.
-			scope, repo, err := repoScope(cmd, a, f.repo)
+			scope, repo, err := repoScope(cmd, a, f.repoValue())
 			if err != nil {
 				return err
 			}

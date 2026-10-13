@@ -19,7 +19,7 @@ func newLsCmd() *cobra.Command {
 		tree       bool
 		actionable bool
 		blocked    bool
-		queryStr   string
+		queryStr   []string
 	)
 	cmd := &cobra.Command{
 		Use:     "ls [<epic>]",
@@ -86,14 +86,14 @@ func newLsCmd() *cobra.Command {
 			if drafts && cmd.Flags().Changed("repo") {
 				return core.Validationf("", "--drafts cannot be combined with -r/--repo (a draft has no repo)")
 			}
-			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, f.epic)
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repoValue(), f.epicValue())
 			if err != nil {
 				return err
 			}
 			o.Status, o.Limit, o.Drafts = joinOrFilter(f.status), f.limit, drafts
 			o.Sort, o.Reverse, o.Archived = sortBy, reverse, f.archived
 			o.Actionable, o.Blocked = actionable, blocked
-			o.Query = queryStr
+			o.Query = joinQuery(queryStr)
 			if err := f.window(cmd, &o); err != nil {
 				return err
 			}
@@ -177,12 +177,12 @@ func newLsCmd() *cobra.Command {
 // for it, so no command can drift on what the query language is. The evaluator
 // is equally shared (app.queryPred), so wiring a new command is exactly this
 // call plus setting QueryOpts.Query.
-func addQueryFlag(cmd *cobra.Command, p *string) {
-	cmd.Flags().StringVarP(p, "query", "q", "",
+func addQueryFlag(cmd *cobra.Command, p *[]string) {
+	cmd.Flags().StringArrayVarP(p, "query", "q", nil,
 		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
 			"is:actionable|blocked|stale|open|closed|draft|unfiled|overdue, "+
 			"ordinals+dates with >=,<,.. (updated:>=-2w), graph epic:/anchor:/depends-on:/blocks:, "+
-			"free text over title, checklist, refs and body; ANDs with the other filters")
+			"free text over title, checklist, refs and body; ANDs with the other filters; repeated -q ANDs the queries")
 }
 
 // parseDateBound parses a --since/--until value: a bare YYYY-MM-DD (interpreted
@@ -393,7 +393,7 @@ func newNextCmd() *cobra.Command {
 		f        filterFlags
 		allEpics bool
 		lanes    []string
-		queryStr string
+		queryStr []string
 	)
 	cmd := &cobra.Command{
 		Use:   "next",
@@ -442,13 +442,13 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 			warnReadOnly(a)
-			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, f.epic)
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repoValue(), f.epicValue())
 			if err != nil {
 				return err
 			}
 			o.Limit = f.limit
 			o.AllEpics = allEpics
-			o.Query = queryStr
+			o.Query = joinQuery(queryStr)
 			// --lanes is a one-shot override of [next].lanes: the same comma-OR /
 			// repeated union as -s (a StringArray split on ",", trimmed, empties
 			// dropped). Next validates the tokens against the configured lanes, so a
@@ -554,7 +554,7 @@ func newBriefCmd() *cobra.Command {
 				return err
 			}
 			warnReadOnly(a)
-			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, "")
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repoValue(), "")
 			if err != nil {
 				return err
 			}
@@ -587,7 +587,7 @@ func newRevisitCmd() *cobra.Command {
 	var (
 		f         filterFlags
 		staleDays int
-		queryStr  string
+		queryStr  []string
 	)
 	cmd := &cobra.Command{
 		Use:   "revisit",
@@ -623,12 +623,12 @@ func newRevisitCmd() *cobra.Command {
 			if cmd.Flags().Changed("stale-days") {
 				days = staleDays
 			}
-			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, f.epic)
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repoValue(), f.epicValue())
 			if err != nil {
 				return err
 			}
 			o.Limit = f.limit
-			o.Query = queryStr
+			o.Query = joinQuery(queryStr)
 			items, err := a.Revisit(o, days)
 			if err != nil {
 				return err
@@ -655,7 +655,7 @@ func newRevisitCmd() *cobra.Command {
 func newStatsCmd() *cobra.Command {
 	var (
 		f        filterFlags
-		queryStr string
+		queryStr []string
 	)
 	cmd := &cobra.Command{
 		Use:   "stats",
@@ -692,12 +692,12 @@ func newStatsCmd() *cobra.Command {
 				return err
 			}
 			warnReadOnly(a)
-			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, f.epic)
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repoValue(), f.epicValue())
 			if err != nil {
 				return err
 			}
 			o.Status = joinOrFilter(f.status)
-			o.Query = queryStr
+			o.Query = joinQuery(queryStr)
 			if err := f.window(cmd, &o); err != nil {
 				return err
 			}
@@ -729,7 +729,7 @@ func newStatsCmd() *cobra.Command {
 func newSearchCmd() *cobra.Command {
 	var (
 		f        filterFlags
-		queryStr string
+		queryStr []string
 		regex    bool
 	)
 	cmd := &cobra.Command{
@@ -777,12 +777,12 @@ func newSearchCmd() *cobra.Command {
 				return err
 			}
 			warnReadOnly(a)
-			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repo, f.epic)
+			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repoValue(), f.epicValue())
 			if err != nil {
 				return err
 			}
 			o.Status, o.Limit = joinOrFilter(f.status), f.limit
-			o.Query = queryStr
+			o.Query = joinQuery(queryStr)
 			o.Archived = f.archived
 			term := strings.Join(args, " ")
 			hits, err := a.Search(o, term, regex)
