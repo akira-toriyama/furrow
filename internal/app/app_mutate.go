@@ -7,6 +7,7 @@ package app
 import (
 	"bytes"
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
@@ -24,8 +25,9 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 	}
 	var rep *RepeatReport
 	var succ *pendingSuccessor
-	saved, err := a.mutateInPost(idx, id, func(t *core.Task) error {
-		r, s, rerr := a.planRepeat(idx, t, t.Status, lane, a.Clock.Now(), nil)
+	now := a.Clock.Now()
+	saved, err := a.mutateInPostAt(idx, id, now, func(t *core.Task) error {
+		r, s, rerr := a.planRepeat(idx, t, t.Status, lane, now, nil)
 		if rerr != nil {
 			return rerr
 		}
@@ -33,7 +35,7 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 			consumeRepeat(t)
 		}
 		rep, succ = r, s
-		a.applyLane(idx, t, lane)
+		a.applyLane(idx, t, lane, now)
 		return nil
 	}, func(ix *core.Index) error {
 		return a.flushSuccessors(ix, []*pendingSuccessor{succ})
@@ -56,13 +58,16 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 // out 280 while a ready task held 280, and `set -s backlog` later put both at
 // 280). A task landing on a tie is placed at the destination's tail instead,
 // and the relocation is queued as a note — never a silent undefined order.
-func (a *App) applyLane(idx *core.Index, t *core.Task, lane string) {
+func (a *App) applyLane(idx *core.Index, t *core.Task, lane string, now time.Time) {
 	was := t.Status
 	t.Status = lane
 	switch {
 	case lane == a.Cfg.DoneLane && t.Closed == nil:
-		now := a.Clock.Now()
-		t.Closed = &now
+		// The caller's instant, the same one the write's `updated` carries:
+		// a close read the clock here and again for the stamp, so closed and
+		// updated could differ by seconds on one write.
+		closed := now
+		t.Closed = &closed
 	case lane != a.Cfg.DoneLane && was == a.Cfg.DoneLane:
 		t.Closed = nil
 	}
@@ -388,6 +393,13 @@ func (a *App) mutateInErr(idx *core.Index, id string, fn func(*core.Task) error)
 // value: appending can move the backing array, so the insert has to happen once
 // every *core.Task pointer this function holds is done being used.
 func (a *App) mutateInPost(idx *core.Index, id string, fn func(*core.Task) error, post func(*core.Index) error) (*core.Task, error) {
+	return a.mutateInPostAt(idx, id, a.Clock.Now(), fn, post)
+}
+
+// mutateInPostAt is mutateInPost with the write's instant chosen by the
+// caller — so an edit that stamps another clock field inside fn (a close's
+// `closed`) and the `updated` stamp here carry ONE instant.
+func (a *App) mutateInPostAt(idx *core.Index, id string, now time.Time, fn func(*core.Task) error, post func(*core.Index) error) (*core.Task, error) {
 	t, i := idx.Find(id)
 	if i < 0 {
 		return nil, a.notFoundTask(id)
@@ -412,7 +424,7 @@ func (a *App) mutateInPost(idx *core.Index, id string, fn func(*core.Task) error
 	if err := a.guardRepos(id, unionRepos(reposBefore, t.Repos), ""); err != nil {
 		return nil, err
 	}
-	if err := a.stampIfChanged(t, before); err != nil {
+	if err := a.stampIfChangedAt(t, before, now); err != nil {
 		return nil, err
 	}
 	if post != nil {
@@ -452,12 +464,17 @@ func (a *App) mutateInPost(idx *core.Index, id string, fn func(*core.Task) error
 // unconditionally and deliberately: the body is the task's content but lives
 // outside the shard, so its bytes can never show up in this comparison.
 func (a *App) stampIfChanged(t *core.Task, before []byte) error {
+	return a.stampIfChangedAt(t, before, a.Clock.Now())
+}
+
+// stampIfChangedAt is stampIfChanged with the instant chosen by the caller.
+func (a *App) stampIfChangedAt(t *core.Task, before []byte, now time.Time) error {
 	changed, err := shardChanged(t, before)
 	if err != nil {
 		return err
 	}
 	if changed {
-		t.Updated = a.Clock.Now()
+		t.Updated = now
 	}
 	return nil
 }

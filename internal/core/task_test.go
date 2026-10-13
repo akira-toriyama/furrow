@@ -195,3 +195,26 @@ func TestMarshalTaskNormalizesTimestamps(t *testing.T) {
 		t.Errorf("fractional seconds / zone offset must not survive normalization:\n%s", s)
 	}
 }
+
+// CloneTask shares nothing with its source: every slice, pointer and the
+// unknown-key carrier is fresh.
+func TestCloneTaskSharesNothing(t *testing.T) {
+	due := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	v := 3
+	src, err := UnmarshalTask([]byte(`{"id":"t-00001","title":"x","status":"inbox","priority":10,"labels":["a"],"deps":["t-00002"],"checklist":[{"text":"one","done":false}],"value":3,"due":"2026-03-01T00:00:00Z","repeat_anchor":"2026-03-01T00:00:00Z","future_key":{"k":1}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src.Value = &v
+	cp := CloneTask(*src)
+	cp.Labels[0] = "b"
+	cp.Deps = append(cp.Deps, "t-00003")
+	cp.Checklist[0].Done = true
+	*cp.Value = 9
+	*cp.Due = due.Add(time.Hour)
+	*cp.RepeatAnchor = due.Add(time.Hour)
+	cp.ClearExtras()
+	if src.Labels[0] != "a" || len(src.Deps) != 1 || src.Checklist[0].Done || *src.Value != 3 || !src.Due.Equal(due) || !src.RepeatAnchor.Equal(due) || len(src.ExtraKeys()) != 1 {
+		t.Errorf("the source moved under the copy: %+v", src)
+	}
+}
