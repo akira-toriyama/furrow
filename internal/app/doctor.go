@@ -37,6 +37,7 @@ var doctorCodes = map[string]bool{
 	"board-behind":                true,
 	"board-mid-operation":         true,
 	"board-missing":               true,
+	"board-duplicate-path":        true,
 	"board-unreadable":            true,
 	"dir-unresolved":              true,
 	"env-override":                true,
@@ -266,6 +267,20 @@ func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string, global *
 		}
 		return isStoreDir(store)
 	}
+	// Two entries declaring one store: the first wins at discovery and
+	// `config set --board <path>` cannot tell them apart — say so once.
+	seenPath := map[string][]int{}
+	for i, b := range entries {
+		if p, err := resolvePathRelTo(cfgDir, b.Path); err == nil {
+			seenPath[canonicalPath(p)] = append(seenPath[canonicalPath(p)], i+1)
+		}
+	}
+	for _, store := range sortedStrings(seenPath) {
+		if ns := seenPath[store]; len(ns) > 1 {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "board-duplicate-path", ID: "config",
+				Msg: fmt.Sprintf("[[board]] entries %s all declare the store %q — the first wins at discovery and `furrow config set --user --board` cannot pick between them; merge them into one entry (its scopes can list every directory) in %s", joinEntryNumbers(ns), store, cfgPath)})
+		}
+	}
 	var configured []DoctorBoard
 	for _, b := range entries {
 		// Same resolution and the same wording `furrow boards` uses (one helper),
@@ -333,7 +348,7 @@ func doctorOrderBoards(ctx context.Context, r *DoctorReport, cfgPath string, con
 		}
 		placed := false
 		for _, db := range configured {
-			if db.Store == store {
+			if canonicalPath(db.Store) == canonicalPath(store) {
 				r.Boards = append(r.Boards, db)
 				placed = true
 				break
@@ -355,10 +370,30 @@ func doctorOrderBoards(ctx context.Context, r *DoctorReport, cfgPath string, con
 	return ps
 }
 
-// doctorHasBoard reports whether r.Boards already carries the store.
+func sortedStrings[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func joinEntryNumbers(ns []int) string {
+	parts := make([]string, len(ns))
+	for i, n := range ns {
+		parts[i] = fmt.Sprintf("#%d", n)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// doctorHasBoard reports whether r.Boards already carries the store — by
+// canonical path, so a FURROW_DIR spelled through a symlink and the
+// [[board]] entry naming the same store are one board, not two rows.
 func doctorHasBoard(r *DoctorReport, store string) bool {
+	cs := canonicalPath(store)
 	for _, b := range r.Boards {
-		if b.Store == store {
+		if canonicalPath(b.Store) == cs {
 			return true
 		}
 	}

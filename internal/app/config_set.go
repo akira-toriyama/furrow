@@ -62,7 +62,8 @@ func (a *App) ConfigSetBoard(dotted, value string) (*ConfigEdit, error) {
 	if err != nil {
 		return nil, core.Validationf("config", "%s: %v", path, err)
 	}
-	if err := guardConfigRegression(path, data, []byte(res.Doc), boardWarnings); err != nil {
+	baseline := config.UnsetInSection(string(data), k.Section, name)
+	if err := guardConfigRegression(path, []byte(baseline), []byte(res.Doc), boardWarnings); err != nil {
 		return nil, err
 	}
 	return finishConfigEdit(path, dotted, typed, res)
@@ -100,6 +101,7 @@ func ConfigSetUser(boardRef, dotted, value string) (*ConfigEdit, error) {
 	}
 	var res config.SetResult
 	var typed any
+	var baseline string
 	if k, name, ok := config.ResolveKey(config.UserKeys(), dotted); ok {
 		if boardRef != "" {
 			return nil, core.Validationf("config", "%s is a key of the user config's own [%s] section, not of a [[board]] entry — drop --board", dotted, k.Section)
@@ -110,10 +112,17 @@ func ConfigSetUser(boardRef, dotted, value string) (*ConfigEdit, error) {
 		if res, err = config.SetInSection(string(data), k.Section, name, config.RenderTOMLValue(typed)); err != nil {
 			return nil, core.Validationf("config", "%s: %v", path, err)
 		}
+		baseline = config.UnsetInSection(string(data), k.Section, name)
 	} else {
 		k, name, ok := config.ResolveKey(config.UserEntryKeys(), dotted)
 		if !ok {
-			return nil, unknownConfigKeyErr(dotted, append(config.UserKeys(), config.UserEntryKeys()...))
+			// With --board the key can only be an entry's: the [session] keys
+			// are not candidates (the help says the two never combine).
+			keys := config.UserEntryKeys()
+			if boardRef == "" {
+				keys = append(config.UserKeys(), keys...)
+			}
+			return nil, unknownConfigKeyErr(dotted, keys)
 		}
 		idx, err := resolveUserBoard(entries, boardRef, path)
 		if err != nil {
@@ -125,8 +134,9 @@ func ConfigSetUser(boardRef, dotted, value string) (*ConfigEdit, error) {
 		if res, err = config.SetInArrayTable(string(data), "board", idx, name, config.RenderTOMLValue(typed)); err != nil {
 			return nil, core.Validationf("config", "%s: %v", path, err)
 		}
+		baseline = config.UnsetInArrayTable(string(data), "board", idx)(name)
 	}
-	if err := guardConfigRegression(path, data, []byte(res.Doc), userWarnings); err != nil {
+	if err := guardConfigRegression(path, []byte(baseline), []byte(res.Doc), userWarnings); err != nil {
 		return nil, err
 	}
 	return finishConfigEdit(path, dotted, typed, res)
@@ -154,16 +164,24 @@ func userWarnings(data []byte, path string) ([]string, error) {
 }
 
 // guardConfigRegression re-parses the edited document with the REAL loader and
-// refuses the write when it fails to parse or gained a clamp warning the old
-// document did not carry — the moment "the reader would ignore what you just
-// wrote" becomes an exit 2 instead of a note in some later lint. Warnings are
-// compared with line numbers stripped, since an insertion shifts every line
-// below it.
-func guardConfigRegression(path string, oldData, newData []byte, warnings func([]byte, string) ([]string, error)) error {
-	oldWarn, _ := warnings(oldData, path)
+// refuses the write when it fails to parse or carries a clamp warning the
+// BASELINE — the same document without the key being set — does not: the
+// moment "the reader would ignore what you just wrote" becomes an exit 2
+// instead of a note in some later lint. The baseline is the document minus
+// the key, not the document as it was, because a key whose current value is
+// already clamped carried its warning before the edit too, and "no new
+// warning" let `session.guard bogus` through as "unchanged" when the file
+// already said bogus. Warnings are compared with line numbers stripped, since
+// an insertion shifts every line below it.
+//
+// A document that no longer parses is validation (exit 2): the input made it
+// so (a key or value TOML cannot carry in that spelling), and nothing was
+// written.
+func guardConfigRegression(path string, baseline, newData []byte, warnings func([]byte, string) ([]string, error)) error {
+	oldWarn, _ := warnings(baseline, path)
 	newWarn, err := warnings(newData, path)
 	if err != nil {
-		return core.Internalf("config", "the edit produced a document that no longer parses (%v) — nothing was written; report this", err)
+		return core.Validationf("config", "the edit would produce a document that does not parse (%v) — nothing was written", err)
 	}
 	old := map[string]int{}
 	for _, w := range oldWarn {
@@ -227,15 +245,13 @@ func resolveUserBoard(entries []config.UserBoardEntry, ref, path string) (int, e
 			Candidates: paths,
 		}
 	}
-	var hits []int
+	// Exact first — but two entries that declare the same path (or scope) are
+	// both exact, and the first used to win silently; name them instead.
+	var exact, hits []int
 	for i, e := range entries {
-		if e.Path == ref {
-			return i, nil
-		}
-		for _, s := range e.Scopes {
-			if s == ref {
-				return i, nil
-			}
+		if e.Path == ref || contains(e.Scopes, ref) {
+			exact = append(exact, i)
+			continue
 		}
 		if strings.Contains(e.Path, ref) {
 			hits = append(hits, i)
@@ -247,6 +263,12 @@ func resolveUserBoard(entries []config.UserBoardEntry, ref, path string) (int, e
 				break
 			}
 		}
+	}
+	if len(exact) == 1 {
+		return exact[0], nil
+	}
+	if len(exact) > 1 {
+		hits = exact
 	}
 	switch len(hits) {
 	case 1:
@@ -260,20 +282,31 @@ func resolveUserBoard(entries []config.UserBoardEntry, ref, path string) (int, e
 	default:
 		var amb []string
 		for _, i := range hits {
-			amb = append(amb, entries[i].Path)
+			amb = append(amb, fmt.Sprintf("%s (entry #%d, scopes %s)", entries[i].Path, i+1, strings.Join(entries[i].Scopes, ", ")))
+		}
+		msg := fmt.Sprintf("--board %q is ambiguous", ref)
+		if len(exact) > 1 {
+			msg = fmt.Sprintf("--board %q names %d [[board]] entries exactly — merge the duplicate entries in %s, then re-run", ref, len(exact), path)
 		}
 		return 0, &core.Error{
 			Code: core.CodeValidation, Kind: core.KindValidation, Subject: "config",
-			Msg:        fmt.Sprintf("--board %q is ambiguous", ref),
+			Msg:        msg,
 			Candidates: amb,
 		}
 	}
 }
 
 func unknownConfigKeyErr(dotted string, keys []config.Key) *core.Error {
-	return &core.Error{
+	e := &core.Error{
 		Code: core.CodeValidation, Kind: core.KindValidation, Subject: "config",
 		Msg:        fmt.Sprintf("unknown config key %q", dotted),
 		Candidates: config.KeyVocabulary(keys),
 	}
+	// The [session] keys moved to the user-level config (#458): a board-target
+	// set of one is the old habit, and the vocabulary alone does not say where
+	// the key went. The candidates stay what THIS target accepts.
+	if _, _, ok := config.ResolveKey(config.UserKeys(), dotted); ok {
+		e.Msg = fmt.Sprintf("%s is a key of the USER-LEVEL config, not the board's — `furrow config set --user %s <value>`", dotted, dotted)
+	}
+	return e
 }

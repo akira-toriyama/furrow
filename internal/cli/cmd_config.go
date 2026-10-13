@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
 	"github.com/akira-toriyama/furrow/v9/internal/core"
@@ -78,6 +79,13 @@ func newConfigSetCmd() *cobra.Command {
 			if user {
 				edit, err = app.ConfigSetUser(board, args[0], args[1])
 			} else {
+				// An alias named after a builtin is inert (expansion checks
+				// builtins first) and lint warns alias-shadow about it: the
+				// strict writer refuses what the reader would ignore. The
+				// command set is this layer's, so the check lives here.
+				if name, ok := strings.CutPrefix(args[0], "alias."); ok && isBuiltinCommand(cmd.Root(), name) {
+					return core.Validationf("config", "alias %q would shadow the builtin command of that name and never run (the builtin wins) — refused, nothing written; pick another name", name)
+				}
 				var a *app.App
 				if a, err = openApp(); err != nil {
 					return err

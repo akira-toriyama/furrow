@@ -819,7 +819,10 @@ func canonicalScopeUnder(cdir, baseDir, scope string) (string, bool, error) {
 		return "", false, err
 	}
 	cs := canonicalPath(sp)
-	if cdir == cs || strings.HasPrefix(cdir, cs+string(os.PathSeparator)) {
+	// The boundary is "scope + separator" — except for the filesystem root,
+	// which already ends in one ("/" + "/" matched nothing, so scopes = ["/"]
+	// activated a board under "/" alone).
+	if cdir == cs || strings.HasPrefix(cdir, strings.TrimSuffix(cs, string(os.PathSeparator))+string(os.PathSeparator)) {
 		return cs, true, nil
 	}
 	return "", false, nil

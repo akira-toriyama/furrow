@@ -195,7 +195,8 @@ func coerceBoard(m map[string]any, path string, n int) (*rawBoard, []string) {
 	bad := func(key string) (*rawBoard, []string) {
 		return nil, append(warn, fmt.Sprintf("%s: [[board]] #%d: key %q has the wrong type; ignoring this board", path, n, key))
 	}
-	for key, v := range m {
+	for _, key := range sortedKeys(m) {
+		v := m[key]
 		switch key {
 		case "path":
 			s, ok := v.(string)

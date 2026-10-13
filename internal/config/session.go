@@ -92,7 +92,8 @@ func coerceSession(v any, path string) (GlobalSession, []string) {
 	}
 	var r rawSession
 	var warn []string
-	for key, val := range m {
+	for _, key := range sortedKeys(m) {
+		val := m[key]
 		switch key {
 		case "guard":
 			s, ok := val.(string)
