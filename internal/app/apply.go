@@ -306,29 +306,36 @@ func (a *App) AppendBody(id, line string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	t, i := idx.Find(id)
-	if i < 0 {
-		return false, a.notFoundTask(id)
-	}
-	if err := a.guardTask(t); err != nil {
-		return false, err
-	}
-	body, err := a.Store.LoadBody(id)
-	if err != nil {
-		return false, err
-	}
-	if strings.Contains(body, line) {
-		return false, nil
-	}
-	var b strings.Builder
-	b.WriteString(body)
-	if body != "" && !strings.HasSuffix(body, "\n") {
+	return a.appendBodyLine(idx, id, line)
+}
+
+// appendBodyLine is AppendBody on a snapshot the caller already holds. A line
+// that lands is prose and stamps `updated` (AddNote's rule); a line already
+// present changes nothing and leaves the clock alone, which is what keeps a
+// re-run of the same PR event or attach a true no-op.
+func (a *App) appendBodyLine(idx *core.Index, id, line string) (bool, error) {
+	changed := false
+	_, err := a.mutateInErr(idx, id, func(t *core.Task) error {
+		body, err := a.Store.LoadBody(id)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(body, line) {
+			return nil
+		}
+		var b strings.Builder
+		b.WriteString(body)
+		if body != "" && !strings.HasSuffix(body, "\n") {
+			b.WriteString("\n")
+		}
+		b.WriteString(line)
 		b.WriteString("\n")
-	}
-	b.WriteString(line)
-	b.WriteString("\n")
-	if err := a.saveBody(id, b.String()); err != nil {
-		return false, err
-	}
-	return true, nil
+		if err := a.saveBody(id, b.String()); err != nil {
+			return err
+		}
+		changed = true
+		t.Updated = a.Clock.Now()
+		return nil
+	})
+	return changed, err
 }

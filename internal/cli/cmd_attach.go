@@ -14,7 +14,7 @@ func newAttachCmd() *cobra.Command {
 		Use:   "attach <id> <file>",
 		Short: "Attach a file of any kind to a task (copies into bodies/assets/, links it from the body)",
 		Long: "Copy a file into the task's asset area (.furrow/bodies/assets/<id>-*) and append a\n" +
-			"relative markdown reference to the task body. Any kind of file: a screenshot, a\n" +
+			"relative markdown reference to the task body (a prose write: `updated` advances). Any kind of file: a screenshot, a\n" +
 			"video, a received PDF or quote, an email, a log — furrow never inspects the type,\n" +
 			"so whatever git can hold, attach can hold. Because the body is a committed .md,\n" +
 			"the whole attach lands in git from the terminal alone — no web session, no\n" +
