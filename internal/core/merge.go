@@ -154,6 +154,46 @@ func MergeShard(kind ShardKind, base, ours, theirs []byte) (merged []byte, confl
 // random ids, which git merges without a murmur), and an edit racing a close
 // lands on the closed predecessor while the successor was cut from the base.
 // Pre-merge, both stopped the sync for a human; they must still.
+// SettleFromTip answers the conflict remedy "set the field to the other
+// side's value and re-run": a rebase replays the local commits ONE AT A TIME,
+// so the pick that first set a conflicting field keeps conflicting however the
+// local branch later changed it — the pick in which the operator aligned the
+// field is never reached. tip is the shard as the local branch's TIP has it
+// (the pre-rebase head); for each field in fields, when tip's value equals
+// ours' (the operator took the other side's value), theirs is rewritten to
+// carry ours' value so the three-way merge sees agreement. settled reports
+// whether EVERY field was settled that way; a field the tip still disputes
+// (its value is theirs', or a third one) leaves the conflict standing.
+func SettleFromTip(ours, theirs, tip []byte, fields []string) (settledTheirs []byte, settled bool, err error) {
+	o, err := rawObject(ours)
+	if err != nil {
+		return nil, false, Validationf("", "merge: one side is not a JSON object: %v", err)
+	}
+	t, err := rawObject(theirs)
+	if err != nil {
+		return nil, false, Validationf("", "merge: one side is not a JSON object: %v", err)
+	}
+	p, err := rawObject(tip)
+	if err != nil {
+		return nil, false, Validationf("", "merge: the local tip is not a JSON object: %v", err)
+	}
+	for _, k := range fields {
+		if !bytes.Equal(compactValue(o[k]), compactValue(p[k])) {
+			return nil, false, nil
+		}
+		if v, ok := o[k]; ok {
+			t[k] = v
+		} else {
+			delete(t, k)
+		}
+	}
+	out, err := composeObject(t)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, true, nil
+}
+
 func repeatCloseConflict(base map[string]json.RawMessage) bool {
 	rule, ok := rawString(base["repeat"])
 	return ok && rule != ""

@@ -414,8 +414,9 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 				if fields := conflictFields(unresolved); fields != nil {
 					msg = "pull --rebase hit conflicts that no field-wise merge resolves (" + describeConflictFields(fields) +
 						"); the rebase was aborted and the board restored (your local sync commit is intact). " +
-						"Decide those fields: set each to the value you want with a furrow command on this checkout " +
-						"(so the two sides agree), then re-run furrow sync — shards that differ in other fields merge on their own"
+						"Decide those fields: to take the other side's value, set it with a furrow command on this checkout " +
+						"(`git -C <board> show @{u}:<path>` shows it) and re-run furrow sync — the merge then keeps your other " +
+						"fields; to keep yours, the other side has to take it. Shards that differ in other fields merge on their own"
 				}
 				if stranded {
 					msg = fmt.Sprintf("pull --rebase hit conflicts; the rebase was aborted (your local sync commit is "+
