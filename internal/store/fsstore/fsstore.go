@@ -826,12 +826,25 @@ func (s *Store) atomicWrite(path string, data []byte) error {
 // refuses outright, so `furrow board` could not even open the board that had
 // just been edited (t-ge22).
 func WriteFileAtomic(path string, data []byte) error {
-	f, err := stage(path, data)
+	// A rename replaces the directory entry, so a path that is a SYMLINK would
+	// become a regular file and the link's target would keep the old bytes —
+	// a config.toml that home-manager or dotfiles manage through a link was
+	// silently detached by `config set --user` (t-9e0x). Write through the
+	// link instead: the staged file lands beside and over the target, and a
+	// target that cannot be replaced (a read-only /nix/store) fails naming it.
+	target := path
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		target = resolved
+	}
+	f, err := stage(target, data)
 	if err != nil {
 		return err
 	}
 	if err := os.Rename(f.tmp, f.path); err != nil {
 		_ = os.Remove(f.tmp)
+		if target != path {
+			return core.Internalf("", "rename temp -> %s (the target of the symlink %s): %v", target, path, err)
+		}
 		return core.Internalf("", "rename temp -> %s: %v", path, err)
 	}
 	return nil

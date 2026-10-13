@@ -56,7 +56,9 @@ default = 100
 prefix = "t-"
 width = 5 # t-k3m9p
 # Epics get their OWN prefix so an id names its entity kind on sight
-# (e.g. e-k3m9p). Must differ from prefix (furrow falls back to "e-" if not).
+# (e.g. e-k3m9p). Letters, digits and dashes, starting with a letter or digit
+# (a prefix is a filename stem). Must differ from prefix (furrow falls back to
+# a prefix that does differ if not).
 epic_prefix = "e-"
 
 [labels]

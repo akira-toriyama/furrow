@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -330,19 +331,27 @@ func fromRaw(r raw) (*Config, []string, error) {
 	c.PriorityStep = clampPositive(r.Priority.Step, DefaultPriorityStep, "priority.step", &warn)
 	c.PriorityDefault = clampPositive(r.Priority.Default, DefaultPriorityDefault, "priority.default", &warn)
 
-	if r.IDs.Prefix != "" {
-		c.IDPrefix = r.IDs.Prefix
-	}
-	if r.IDs.EpicPrefix != "" {
-		c.EpicIDPrefix = r.IDs.EpicPrefix
-	}
+	// An id prefix is a filename stem: shards and bodies are written at
+	// tasks/<prefix><suffix>.json, so a prefix carrying a path separator or
+	// anything outside the id alphabet put files outside the store (`../`
+	// wrote .furrow/<suffix>.json, which no read listed — t-9e0x). Clamp to
+	// the default with a warning, like every other config value; the strict
+	// writer (`config set`) then refuses it outright.
+	c.IDPrefix = clampIDPrefix(r.IDs.Prefix, DefaultIDPrefix, "ids.prefix", &warn)
+	c.EpicIDPrefix = clampIDPrefix(r.IDs.EpicPrefix, DefaultEpicIDPrefix, "ids.epic_prefix", &warn)
 	// The two prefixes must differ, or ids stop naming their entity kind: epics
 	// share the task bodies/ directory, so a collision would make bodies/<id>.md
 	// ambiguous and the orphan-body lint unable to say which store owns a file.
-	// Clamp rather than reject, like every other config value.
+	// Clamp rather than reject, like every other config value — to a prefix
+	// that actually differs (the default epic prefix, unless that is the one
+	// the tasks took).
 	if c.EpicIDPrefix == c.IDPrefix {
-		warn = append(warn, fmt.Sprintf("ids.epic_prefix %q equals ids.prefix; using %q", c.EpicIDPrefix, DefaultEpicIDPrefix))
-		c.EpicIDPrefix = DefaultEpicIDPrefix
+		fallback := DefaultEpicIDPrefix
+		if fallback == c.IDPrefix {
+			fallback = DefaultIDPrefix
+		}
+		warn = append(warn, fmt.Sprintf("ids.epic_prefix %q equals ids.prefix; using %q", c.EpicIDPrefix, fallback))
+		c.EpicIDPrefix = fallback
 	}
 	c.IDWidth = clampPositive(r.IDs.Width, DefaultIDWidth, "ids.width", &warn)
 
@@ -513,6 +522,24 @@ func clampLane(v, fallback string, lanes []string, key string, warn *[]string) s
 	}
 	*warn = append(*warn, fmt.Sprintf("%s %q is not in lanes.order; using %q", key, v, fallback))
 	return fallback
+}
+
+// idPrefixPattern is what a prefix may be: letters, digits and dashes,
+// starting with a letter or digit, so <prefix><suffix> stays one plain
+// filename stem (no separator, no dot, no space). The dash need not be last:
+// overlapping prefixes such as t- / t-e are routed by membership, not shape,
+// and stay legal.
+var idPrefixPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*$`)
+
+func clampIDPrefix(v, def, key string, warn *[]string) string {
+	if v == "" {
+		return def
+	}
+	if !idPrefixPattern.MatchString(v) {
+		*warn = append(*warn, fmt.Sprintf("%s %q is not a prefix (letters, digits and dashes, starting with a letter or digit); using %q", key, v, def))
+		return def
+	}
+	return v
 }
 
 func clampPositive(v *int, fallback int, key string, warn *[]string) int {
