@@ -74,15 +74,31 @@ func staleReadExtra(id string, actual *time.Time, expected time.Time) map[string
 // ({clashes: [...]}) — nil when the guard had nothing to say, so a clean write
 // stays key-free. Draining clears the state, so the envelope annotate and the
 // root post-run hook can both call this and only the first one prints.
+//
+// The envelope carries EVERY clash of this write (a machine reader asks each
+// time); the stderr line carries only what is news to this Claude Code
+// session (app.UnheardClashes — a pair not yet reported, or an occupant that
+// has been active since), so a quiet occupant is one line per session, not
+// one per write. Under --json/--ndjson the line is one JSON object on stderr
+// (`{"session_warn": {message, clashes}}`) rather than prose, so a caller
+// that already parses stderr for the error envelope parses this the same way.
 func sessionGuardExtra(a *app.App) map[string]any {
+	clashes := a.TakeSessionWarn()
+	fresh := a.UnheardClashes(clashes)
 	for _, n := range a.TakeSessionNotes() {
 		fmt.Fprintln(errOut, "note:", n)
 	}
-	clashes := a.TakeSessionWarn()
 	if len(clashes) == 0 {
 		return nil
 	}
-	fmt.Fprintln(errOut, "warning:", app.SessionWarnLine(clashes))
+	if len(fresh) > 0 {
+		line := app.SessionWarnLine(fresh)
+		if jsonMode() {
+			emitStderrObject(map[string]any{"session_warn": map[string]any{"message": line, "clashes": fresh}})
+		} else {
+			fmt.Fprintln(errOut, "warning:", line)
+		}
+	}
 	return map[string]any{"session_warn": map[string]any{"clashes": clashes}}
 }
 

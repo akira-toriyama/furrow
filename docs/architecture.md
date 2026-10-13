@@ -495,9 +495,24 @@ otherwise *busy*. The window is the ceiling on a mid-turn reading, not the
 signal, so a long tool call goes idle after it rather than refusing forever;
 `busy_seconds = 0` makes every clash idle (refusals off, guard on). Busy
 refuses (exit 2, `session-busy`, `details.clashes`, `details.hint` = `--draft`
-on an add); idle warns on stderr and puts `session_warn {clashes}` in the
-`--json` envelope. First come, first served keeps the autonomous session safe:
+on an add); idle puts `session_warn {clashes}` in the `--json` envelope and
+warns on stderr. First come, first served keeps the autonomous session safe:
 its own writes never clash with a later watcher.
+
+The stderr line is news, not noise (`app.UnheardClashes`,
+`session_warn_ledger.go`): a session that ran ~40 mutations beside one quiet
+occupant got the same line 40 times and learned to drop `^warning` — the way
+the one line that matters (the occupant came back) gets dropped too. So the
+line is printed once per Claude Code session per (occupant session, repo), and
+again only when the occupant's transcript has moved since; the envelope key
+is per write and untouched. The record is a per-user state file,
+`$XDG_STATE_HOME/furrow/session-warn.json` (default `~/.local/state/furrow/`),
+keyed by self session id (a new session has heard nothing) and occupant
+session id (never a reusable pid), pruned of dead sessions on every write and
+replaced whole on an unparsable read; where it cannot be written, one
+stand-down note says the line will repeat. Under `--json`/`--ndjson` the line
+is one `{"session_warn": {message, clashes}}` object on stderr, so a reader of
+the error envelope parses it the same way.
 
 Four stand-downs, each one stderr `note: session guard: …` line and never a
 refusal: no `CLAUDECODE` env (a human shell, CI), an unreadable registry
