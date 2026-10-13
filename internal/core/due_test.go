@@ -178,7 +178,7 @@ func TestDueInversionProblems(t *testing.T) {
 	if p.ID != "t-inv01" || p.Code != "due-inversion" || p.Severity != SevWarn {
 		t.Errorf("problem = %+v, want a due-inversion warn on t-inv01", p)
 	}
-	for _, want := range []string{"due 2026-03-10 12:00 +09:00", "t-late1 (due 2026-03-15 12:00 +09:00)", "t-late2 (due 2026-03-20 12:00 +09:00)", "`furrow set t-inv01 --due <date>`", "`furrow dep t-inv01 <dep> --rm`"} {
+	for _, want := range []string{"due 2026-03-10 12:00 +09:00", "t-late1 (due 2026-03-15 12:00 +09:00)", "t-late2 (due 2026-03-20 12:00 +09:00)", "`furrow set t-inv01 --due <date>`", "`furrow dep t-inv01 t-late1 t-late2 --rm`"} {
 		if !strings.Contains(p.Msg, want) {
 			t.Errorf("message %q lacks %q", p.Msg, want)
 		}
@@ -190,5 +190,29 @@ func TestDueInversionProblems(t *testing.T) {
 	}
 	if !IsLintCode(p.Code) {
 		t.Errorf("code %q is not in the lint-code registry", p.Code)
+	}
+}
+
+// The due-inversion remedy names the dep that is promised later; it used to
+// print a literal `<dep>` beside an id the sentence had just given.
+func TestDueInversionRemedyNamesTheDep(t *testing.T) {
+	now := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	early, late := now.Add(24*time.Hour), now.Add(72*time.Hour)
+	idx := &Index{Tasks: []Task{
+		{ID: "t-dep", Title: "dep", Status: "ready", Due: &late},
+		{ID: "t-top", Title: "top", Status: "ready", Due: &early, Deps: []string{"t-dep"}},
+	}}
+	ps := DueInversionProblems(idx, time.UTC, map[string]bool{})
+	var found bool
+	for _, p := range ps {
+		if p.Code == "due-inversion" && p.ID == "t-top" {
+			found = true
+			if !strings.Contains(p.Msg, "furrow dep t-top t-dep --rm") || strings.Contains(p.Msg, "<dep>") {
+				t.Errorf("remedy = %s", p.Msg)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no due-inversion in %+v", ps)
 	}
 }

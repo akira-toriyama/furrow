@@ -125,7 +125,7 @@ func (a *App) AutoCommitFlush(ctx context.Context, cmd string, args []string) *A
 	// syncs do: the same bounded backoff, and a race lost outright (the other
 	// writer's commit already carries these paths) is silent — the change is
 	// published either way.
-	commit := func() error { return r.Commit(ctx, autoCommitMessage(cmd, a.Cfg.IDPrefix, args), commitPaths...) }
+	commit := func() error { return r.Commit(ctx, autoCommitMessage(cmd, a.targetedID, args), commitPaths...) }
 	switch err := retryTransient(commit, func(d time.Duration) error { return a.ctxSleep(ctx, d) }, defaultConcurrentWait, r.Toplevel()); {
 	case errors.Is(err, gitrepo.ErrNothingToCommit):
 		return res
@@ -196,19 +196,45 @@ func (a *App) dropMarkedBodies(spec string, commitPaths, committedBodies []strin
 	return paths, bodies
 }
 
+// targetedID reports whether arg names a task or a box this process's writes
+// touched — shaped like one of the board's ids AND present in the index or
+// box set as it stood before or after the write (so a removed id still
+// counts). A title word shaped like an id ("t-shirt" under the default
+// prefix and width) is not one.
+func (a *App) targetedID(arg string) bool {
+	if !a.Cfg.IDPattern().MatchString(arg) && !a.Cfg.EpicIDPattern().MatchString(arg) {
+		return false
+	}
+	for _, idx := range []*core.Index{a.preWrite, a.postWrite} {
+		if idx != nil && idx.Has(arg) {
+			return true
+		}
+	}
+	for _, epics := range [][]core.Epic{a.preEpics, a.postEpics} {
+		for i := range epics {
+			if epics[i].ID == arg {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // autoCommitMessage builds autocommit's commit subject: the prefix
 // `:card_file_box:(board)=`, whose `=` sigil carries the no-bump (see
 // DefaultSyncMessage for why the sigil is not optional), naming the
 // command and any task ids it targeted so `git log` reads as a furrow audit
 // trail. It is DISTINCT from DefaultSyncMessage ("sync via furrow") so a manual
-// sync and an autocommit are tellable apart in history. Only id-shaped args are
-// echoed (never a note's or title's free text), capped so a bulk `done t-a t-b
-// …` never bloats the subject line.
-func autoCommitMessage(cmd, idPrefix string, args []string) string {
+// sync and an autocommit are tellable apart in history. Only ids are echoed
+// (never a note's or title's free text) — judged by isID, the board's own id
+// patterns for tasks AND boxes, since a `t-` prefix test read the title word
+// "t-shirt" as an id and no epic id at all — capped so a bulk `done t-a t-b …`
+// never bloats the subject line.
+func autoCommitMessage(cmd string, isID func(string) bool, args []string) string {
 	subject := "furrow " + cmd
 	var ids []string
 	for _, arg := range args {
-		if idPrefix != "" && strings.HasPrefix(arg, idPrefix) {
+		if isID(arg) {
 			ids = append(ids, arg)
 		}
 	}

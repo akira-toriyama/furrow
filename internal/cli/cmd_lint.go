@@ -150,7 +150,7 @@ func validateLintCodes(codes []string) error {
 			return &core.Error{
 				Code:       core.CodeValidation,
 				Kind:       core.KindValidation,
-				Msg:        fmt.Sprintf("unknown lint code %q (see `furrow lint` for the vocabulary)", c),
+				Msg:        fmt.Sprintf("unknown lint code %q (`furrow vocab lint-codes` prints the vocabulary)", c),
 				Candidates: core.LintCodeList(),
 			}
 		}

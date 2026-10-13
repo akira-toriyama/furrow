@@ -19,13 +19,14 @@ import (
 // README table generator): both exist because every hand-kept copy of a closed
 // vocabulary eventually loses members — the 2026-07 audit found five.
 //
-// Hidden: repo tooling like `commands`, not part of the CLI contract.
+// Visible, unlike `commands`: README's error-kind and lint bullets and the
+// refusals' remedies send the reader to it, so it is CLI contract and sits in
+// the command table (it was hidden while the docs pointed at it).
 func newVocabCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "vocab [name]",
-		Short:  "Print a closed vocabulary, one member per line (docs drift-guard source)",
-		Hidden: true,
-		Args:   cobra.MaximumNArgs(1),
+		Use:   "vocab [name]",
+		Short: "Print a closed vocabulary (error kinds, lint codes, …), one member per line",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			vocabs := app.Vocabularies()
 			names := make([]string, 0, len(vocabs)+1)
@@ -62,20 +63,27 @@ func newVocabCmd() *cobra.Command {
 	}
 }
 
-// emitLines prints one string per line, or a JSON array under --json/--ndjson.
+// emitLines prints one string per line: a JSON array under --json, one JSON
+// string per line under --ndjson (one value per line, as every list read
+// streams), plain text otherwise.
 func emitLines(ss []string) {
-	if jsonMode() {
+	switch {
+	case flagNDJSON:
+		for _, s := range ss {
+			fmt.Fprintln(out, string(mustJSON(s)))
+		}
+	case jsonMode():
 		emitObject(ss)
-		return
-	}
-	for _, s := range ss {
-		fmt.Fprintln(out, s)
+	default:
+		for _, s := range ss {
+			fmt.Fprintln(out, s)
+		}
 	}
 }
 
 // topLevelCommandNames walks root's registered subcommands — the same set the
 // generated README table and the docs claims call "the commands": visible only
-// (hidden repo tooling like `commands`/`vocab` is not CLI contract), without
+// (the hidden `commands` is the README generator's own), without
 // cobra's help/completion furniture, in registration order. A namespace parent
 // like `config` counts once.
 func topLevelCommandNames(root *cobra.Command) []string {

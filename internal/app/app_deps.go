@@ -139,6 +139,9 @@ func (a *App) RemoveDeps(id string, deps []string) (*core.Task, error) {
 // --add B` records both (a repeated flag kept only the last before). Items are
 // appended verbatim, preserving order and any commas in the text.
 func (a *App) AddChecks(id string, items []string) (*core.Task, error) {
+	if err := requireNonBlank(id, "--add", items); err != nil {
+		return nil, err
+	}
 	return a.mutate(id, func(t *core.Task) {
 		for _, text := range items {
 			t.Checklist = append(t.Checklist, core.ChecklistItem{Text: text})

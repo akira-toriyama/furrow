@@ -161,13 +161,15 @@ func TestCLIMigrateWarnsUnfiledImport(t *testing.T) {
 		t.Errorf("human dry-run is missing the warning:\n%s", out)
 	}
 
-	// The apply says the same thing, and exits 0 — the import is not blocked.
-	out, code = run(t, "migrate", src, "--yes")
+	// The apply says the same thing — on stderr under the warning: prefix,
+	// like every human warning (it was a stdout "warn:" row between the data
+	// rows) — and exits 0: the import is not blocked.
+	out, se, code := runSplit(t, "migrate", src, "--yes")
 	if code != 0 {
-		t.Fatalf("migrate --yes exit %d:\n%s", code, out)
+		t.Fatalf("migrate --yes exit %d:\n%s%s", code, out, se)
 	}
-	if !strings.Contains(out, want) {
-		t.Errorf("human apply is missing the warning:\n%s", out)
+	if !strings.Contains(se, "warning: "+want) || strings.Contains(out, want) {
+		t.Errorf("human apply must warn on stderr, not stdout:\nstdout:\n%s\nstderr:\n%s", out, se)
 	}
 	// The warning's claim, measured: lint reports exactly those 2.
 	lout, code := run(t, "lint", "--code", "epic-required", "--json")

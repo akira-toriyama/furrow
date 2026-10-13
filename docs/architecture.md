@@ -540,8 +540,8 @@ command notes (the README table is generated from this tree), never a copy here:
 `init`, `add`, `ls` (alias `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`,
 `board`, `boards`, `doctor`, `edit`, `note`, `attach`, `done`, `move`, `reorder`,
 `retitle`, `set`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`, `review`,
-`apply`, `sync`, `archive`, `unarchive`, `rm`, `tidy`, `migrate`, `upgrade`, `lint`, `config`, `schema`, `version`
-(the hidden `commands`/`vocab` are the generators' own).
+`apply`, `sync`, `archive`, `unarchive`, `rm`, `tidy`, `migrate`, `upgrade`, `lint`, `config`, `schema`, `version`, `vocab`
+(the hidden `commands` is the README table generator's own).
 
 ### Output, errors, and exit codes
 

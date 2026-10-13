@@ -168,7 +168,7 @@ func applyMigrate(cmd *cobra.Command, a *app.App, res migrate.Result, labels []s
 		fmt.Fprintf(out, "  %s  %-12s  %s\n", t.ID, t.Status, t.Title)
 	}
 	for _, w := range warnings {
-		fmt.Fprintf(out, "warn: %s\n", w)
+		stderrWarn(w)
 	}
 	return nil
 }

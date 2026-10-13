@@ -307,6 +307,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `config set <key> <value>` | Set one config key — the board's config.toml, or --user for the user-level file | `--board`, `--user` |
 | `schema [task\|meta\|repo\|epic]` | Print the JSON Schema for a task shard, meta.json, a repo review shard, or an epic shard | — |
 | `version` | Print the furrow version (with build commit/date when stamped) | — |
+| `vocab [name]` | Print a closed vocabulary (error kinds, lint codes, …), one member per line | — |
 <!-- commands:end -->
 
 On the read commands, `-r/--repo` is the scope control: a full `owner/repo` or a short name resolving to exactly one (ambiguity is exit 2 with `candidates`); an explicit `-r` overrides the board scope, `-r ''` shows the whole board. `-l/--label` is a pure tag filter that ANDs with the scope. Within `-s` or `-l` a comma is OR and repeats union; the flags AND across fields. An unknown `-s` lane **exits 2 with the configured lanes in `candidates`** (a closed vocabulary), an unknown `-l` tag matches nothing — unless it uniquely names a repo, which is exit 2 pointing at `-r` (the did-you-mean guard, on every filtering read). **A read never narrows or truncates silently**: a scope that hides drafts or boxes prints one stderr hint, and a `-n` cap that bites prints `note: showing N of M (-n)`; the JSON stays a bare array. `furrow board` shows the lanes and the active scope without provoking an error.

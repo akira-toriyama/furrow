@@ -126,7 +126,7 @@ func newConfigPathCmd() *cobra.Command {
 				return err
 			}
 			for _, w := range app.GlobalConfigWarnings() {
-				fmt.Fprintln(errOut, w)
+				stderrWarn(w)
 			}
 			if jsonMode() {
 				emitObject(map[string]string{"path": p})
