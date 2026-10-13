@@ -747,3 +747,27 @@ func TestStagedFilesCarryAReadableMode(t *testing.T) {
 		t.Errorf("replaced body mode = %o, want the 640 it had", fi.Mode().Perm())
 	}
 }
+
+// A path that is a symlink is written THROUGH: the link survives and its
+// target carries the bytes. A rename over the link itself turned a
+// home-manager-managed config.toml into a detached regular file (t-9e0x).
+func TestWriteFileAtomicWritesThroughASymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.toml")
+	link := filepath.Join(dir, "link.toml")
+	if err := os.WriteFile(target, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := WriteFileAtomic(link, []byte("new\n")); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the symlink was replaced by a regular file (mode %v, err %v)", fi.Mode(), err)
+	}
+	if got, _ := os.ReadFile(target); string(got) != "new\n" {
+		t.Fatalf("target = %q, want the new bytes", got)
+	}
+}

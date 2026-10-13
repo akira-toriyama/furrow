@@ -460,3 +460,26 @@ func TestDuplicateTableIsFatal(t *testing.T) {
 		t.Errorf("the error must name the line and the table: %v", err)
 	}
 }
+
+// An id prefix is a filename stem: one carrying a path separator (or anything
+// outside the id alphabet) is clamped to the default with a warning, and the
+// equal-prefix fallback lands on a prefix that actually differs (t-9e0x).
+func TestIDPrefixesAreClampedToFilenameStems(t *testing.T) {
+	c, warns, err := LoadBytes([]byte("[ids]\nprefix = \"../\"\nepic_prefix = \"e-\"\n"), "config.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.IDPrefix != DefaultIDPrefix {
+		t.Errorf("prefix ../ clamped to %q, want %q", c.IDPrefix, DefaultIDPrefix)
+	}
+	if !strings.Contains(strings.Join(warns, "\n"), "ids.prefix") {
+		t.Errorf("no warning for the clamped prefix: %v", warns)
+	}
+	c, warns, err = LoadBytes([]byte("[ids]\nprefix = \"e-\"\n"), "config.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.EpicIDPrefix == c.IDPrefix {
+		t.Errorf("equal prefixes survived the fallback: task %q epic %q (%v)", c.IDPrefix, c.EpicIDPrefix, warns)
+	}
+}
