@@ -39,6 +39,14 @@ var ErrNonFastForward = errors.New("push rejected: non-fast-forward")
 // the very index.lock the stale-lock guidance names (t-cdx9).
 var ErrTransientRace = errors.New("git: transient concurrent-writer lock/ref race")
 
+// ErrNothingToCommit is Commit's answer when the pathspecs hold no change
+// against HEAD by the time `git commit` runs: a co-writer in the same checkout
+// committed them first (two syncs racing, autocommits in parallel). The
+// change IS published — just not by this call — so the caller reports
+// committed=false and carries on; git's own exit 1 for it carries no stderr,
+// which the transient-race classifier could never match (t-4jcj).
+var ErrNothingToCommit = errors.New("git: nothing to commit for these paths")
+
 // gitFailed classifies a failed git invocation (KindGitFailed, exit 3). The
 // message names the command and relays git's own words; there is no finer
 // class because the remedy is always "read what git said" — the failures a
@@ -324,9 +332,19 @@ func (r *Repo) Commit(ctx context.Context, message string, pathspecs ...string) 
 		if isTransientRace(stderr) {
 			return fmt.Errorf("%w: git commit: %s", ErrTransientRace, firstLine(stderr))
 		}
+		if r.cleanAgainstHead(ctx, pathspecs) {
+			return ErrNothingToCommit
+		}
 		return gitFailed("git commit: %s", firstLine(stderr))
 	}
 	return nil
+}
+
+// cleanAgainstHead reports whether the pathspecs carry no difference from HEAD
+// in the index or the work tree — the state a lost commit race leaves behind.
+func (r *Repo) cleanAgainstHead(ctx context.Context, pathspecs []string) bool {
+	_, _, err := runGit(ctx, r.git, r.top, append([]string{"diff", "--quiet", "HEAD", "--"}, pathspecs...)...)
+	return err == nil
 }
 
 // PullRebase brings the board up to date the concurrency-safe way: `git fetch`

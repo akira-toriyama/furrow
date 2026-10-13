@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -287,11 +288,17 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 			// nobody remembers launching also stamps it (see syncTrailer).
 			message += "\n\n" + syncTrailer(ctx, r.Toplevel())
 			commit := func() error { return r.Commit(ctx, message, commitPaths...) }
-			if err := retryTransient(commit, sleep, defaultConcurrentWait, r.Toplevel()); err != nil {
+			switch err := retryTransient(commit, sleep, defaultConcurrentWait, r.Toplevel()); {
+			case errors.Is(err, gitrepo.ErrNothingToCommit):
+				// A co-writer in this checkout committed these paths between
+				// the status read and the commit: published, not by us.
+				p.Committed = false
+			case err != nil:
 				return p, err
+			default:
+				p.Committed = true
+				p.CommittedBodies = committedBodies
 			}
-			p.Committed = true
-			p.CommittedBodies = committedBodies
 			// Consume what this sync just committed (autocommit's twin), so a
 			// later JournalTouchedBodies in the same process journals only
 			// what is still unpublished.

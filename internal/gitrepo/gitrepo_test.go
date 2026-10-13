@@ -506,3 +506,30 @@ func TestCommitClassifiesIndexLockAsTransient(t *testing.T) {
 		t.Fatalf("Commit after the lock cleared: %v", err)
 	}
 }
+
+// A commit that finds its pathspecs already committed (a co-writer in the same
+// checkout won the race) is ErrNothingToCommit, never a terminal git-failed:
+// git exits 1 for it with an empty stderr, which no message classifier can
+// read (t-4jcj).
+func TestCommitOfAlreadyCommittedPathsIsNothingToCommit(t *testing.T) {
+	git := gittest.GitOrSkip(t)
+	dir := initRepo(t, git)
+	fdir := filepath.Join(dir, ".furrow")
+	if err := os.MkdirAll(fdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fdir, "meta.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Open(context.Background(), fdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Commit(context.Background(), "first writer", ".furrow"); err != nil {
+		t.Fatal(err)
+	}
+	err = r.Commit(context.Background(), "second writer, too late", ".furrow")
+	if !errors.Is(err, ErrNothingToCommit) {
+		t.Fatalf("a lost commit race must be ErrNothingToCommit, got %v", err)
+	}
+}
