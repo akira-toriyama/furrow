@@ -85,6 +85,9 @@ func newArchiveCmd() *cobra.Command {
 				return nil
 			}
 			days := a.Cfg.ArchiveOlderThanDays
+			if olderThan < 0 {
+				return core.Validationf("", "--older-than %d: an age in days cannot be negative", olderThan)
+			}
 			if cmd.Flags().Changed("older-than") {
 				days = olderThan
 			}

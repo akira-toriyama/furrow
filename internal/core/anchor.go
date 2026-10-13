@@ -53,7 +53,23 @@ func AnchorDays(from, to string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return int(t.Sub(f).Hours() / 24), nil
+	return civilDaysBetween(f, t), nil
+}
+
+// civilDaysBetween counts the calendar days from a to b, both UTC midnights,
+// as whole days — not through time.Duration, whose int64 nanoseconds saturate
+// at ±106751 days (~292 years), which turned a 1700→2026 anchor move into
+// +106751d and a 1992 due (t-jty7).
+func civilDaysBetween(a, b time.Time) int {
+	return int(floorDiv(b.Unix(), 86400) - floorDiv(a.Unix(), 86400))
+}
+
+func floorDiv(x, y int64) int64 {
+	q := x / y
+	if (x%y != 0) && ((x < 0) != (y < 0)) {
+		q--
+	}
+	return q
 }
 
 // AnchorOffsetDays is a follower's D-N: the calendar days from the anchor's
@@ -71,7 +87,7 @@ func AnchorOffsetDays(anchor string, due time.Time, loc *time.Location) (int, er
 	}
 	y, m, d := due.In(loc).Date()
 	day := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
-	return int(day.Sub(a).Hours() / 24), nil
+	return civilDaysBetween(a, day), nil
 }
 
 // FormatAnchorOffset renders an offset the way a schedule names it: D-14, D0,
