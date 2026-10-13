@@ -20,7 +20,11 @@ func newUnarchiveCmd() *cobra.Command {
 			"All-or-nothing, like every batch mutator: each id must be in the archive\n" +
 			"store, or nothing is restored — a miss exits 1 with every miss in\n" +
 			"details.missing, and an id already on the hot board is exit 2 (nothing to\n" +
-			"restore). --json is ALWAYS an array of {before,after,changed} envelopes,\n" +
+			"restore); a task whose dependency stays archived is exit 2 (kind\n" +
+			"referenced, the edges in details.references.deps) — restore them together\n" +
+			"or drop the edge first, since a restored dependent of an archived id reads\n" +
+			"as blocked and lint raises dep-missing. Guarded like every task write\n" +
+			"(session-busy). --json is ALWAYS an array of {before,after,changed} envelopes,\n" +
 			"one per id (before is null — the task was not on the hot board — and each\n" +
 			"envelope carries `unarchived: true`); --ndjson streams one per line.\n\n" +
 			"A restored task comes back EXACTLY as it was archived: done lane, closed\n" +
