@@ -10,23 +10,17 @@ import (
 // assetWarns counts the warn-severity findings whose message contains all of the
 // given substrings — the scan-for-my-finding predicate the app lint tests use.
 func assetWarns(ps []core.Problem, subs ...string) int {
-	n := 0
-	for _, p := range ps {
+	return len(problemsWhere(ps, func(p core.Problem) bool {
 		if p.Severity != core.SevWarn {
-			continue
+			return false
 		}
-		all := true
 		for _, s := range subs {
 			if !strings.Contains(p.Msg, s) {
-				all = false
-				break
+				return false
 			}
 		}
-		if all {
-			n++
-		}
-	}
-	return n
+		return true
+	}))
 }
 
 func TestHumanBytes(t *testing.T) {

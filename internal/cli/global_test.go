@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // TestLs_GlobalBoardNoGitWarnOnStderr drives a real `ls` from a directory that
@@ -23,16 +24,7 @@ func TestLs_GlobalBoardNoGitWarnOnStderr(t *testing.T) {
 	}
 	board := filepath.Join(central, app.DirName)
 
-	cfgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgDir)
-	fdir := filepath.Join(cfgDir, "furrow")
-	if err := os.MkdirAll(fdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "[[board]]\npath = \"" + board + "\"\nscopes = [\"" + scope + "\"]\nrepo = \"auto\"\n"
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	testutil.UserConfig(t, testutil.BoardEntry(board, "auto", scope))
 
 	// Seed one task on the board (FURROW_DIR opens it directly), then clear it.
 	t.Setenv(app.EnvDir, board)
@@ -49,14 +41,7 @@ func TestLs_GlobalBoardNoGitWarnOnStderr(t *testing.T) {
 	if err := os.MkdirAll(plain, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(plain); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+	t.Chdir(plain)
 
 	so, se := mustSplit(t, "ls")
 	if !strings.Contains(se, "no enclosing git repo") {

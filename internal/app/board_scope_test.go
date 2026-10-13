@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // writeBoardConfig replaces the board's config.toml with body. Clamp-don't-reject
@@ -27,7 +29,7 @@ func localBoardWithRepo(t *testing.T, repo string) string {
 	t.Helper()
 	t.Setenv(EnvDir, "")
 	t.Setenv(EnvBoard, "")
-	writeGlobalConfig(t, "# no boards\n")
+	testutil.UserConfig(t, "# no boards\n")
 	dir := t.TempDir()
 	board := mustInitBoard(t, dir)
 	writeBoardConfig(t, board, "default_repo = \""+repo+"\"\n")
@@ -112,7 +114,7 @@ func TestBoardDefaultRepo_AddAttachesInsteadOfDrafting(t *testing.T) {
 func TestBoardDefaultRepo_PointerWins(t *testing.T) {
 	t.Setenv(EnvDir, "")
 	t.Setenv(EnvBoard, "")
-	writeGlobalConfig(t, "# no boards\n")
+	testutil.UserConfig(t, "# no boards\n")
 	root := t.TempDir()
 	board := mustInitBoard(t, filepath.Join(root, "central"))
 	writeBoardConfig(t, board, "default_repo = \"board/self\"\n")
@@ -198,7 +200,7 @@ func TestBoardDefaultRepo_DoesNotContradictAFailedAuto(t *testing.T) {
 func TestBoardDefaultRepo_DoesNotOverrideARedirectOnlyPointer(t *testing.T) {
 	t.Setenv(EnvDir, "")
 	t.Setenv(EnvBoard, "")
-	writeGlobalConfig(t, "# no boards\n")
+	testutil.UserConfig(t, "# no boards\n")
 	root := t.TempDir()
 	board := mustInitBoard(t, filepath.Join(root, "central"))
 	writeBoardConfig(t, board, "default_repo = \"board/self\"\n")
@@ -282,7 +284,7 @@ func TestBoardDefaultRepo_WarnsEvenWhenOutranked(t *testing.T) {
 func TestBoardDefaultRepo_AbsentKeepsLocalUnscoped(t *testing.T) {
 	t.Setenv(EnvDir, "")
 	t.Setenv(EnvBoard, "")
-	writeGlobalConfig(t, "# no boards\n")
+	testutil.UserConfig(t, "# no boards\n")
 	dir := t.TempDir()
 	mustInitBoard(t, dir)
 	a, err := Open(dir)
@@ -301,7 +303,7 @@ func TestBoardDefaultRepo_DoctorReportsIt(t *testing.T) {
 	scope := filepath.Join(root, "org")
 	board := mustInitBoard(t, filepath.Join(scope, "projects"))
 	writeBoardConfig(t, board, "default_repo = \"acme/board\"\n")
-	writeGlobalConfig(t, boardEntry(board, "", scope))
+	testutil.UserConfig(t, testutil.BoardEntry(board, "", scope))
 
 	own := filepath.Dir(board) // the board's own checkout: source=local
 	r, err := Doctor(context.Background(), own, nil)
@@ -327,7 +329,7 @@ func TestBoardDefaultRepo_DoctorStillWarnsWithoutIt(t *testing.T) {
 	root := t.TempDir()
 	scope := filepath.Join(root, "org")
 	board := mustInitBoard(t, filepath.Join(scope, "projects"))
-	writeGlobalConfig(t, boardEntry(board, "", scope))
+	testutil.UserConfig(t, testutil.BoardEntry(board, "", scope))
 
 	r, err := Doctor(context.Background(), filepath.Dir(board), nil)
 	if err != nil {

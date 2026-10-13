@@ -2,15 +2,15 @@ package cli
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
-// initGlobalConfig points XDG_CONFIG_HOME at a fresh dir, creates one real
+// initGlobalConfig points the user config at a fresh home, creates one real
 // board, and writes a user-level config naming it plus one missing board.
 // Returns the real store path.
 func initGlobalConfig(t *testing.T) string {
@@ -21,25 +21,7 @@ func initGlobalConfig(t *testing.T) string {
 	}
 	real := filepath.Join(boardParent, app.DirName)
 
-	xdg := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", xdg)
-	dir := filepath.Join(xdg, "furrow")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := `
-[[board]]
-path   = "` + real + `"
-scopes = ["` + boardParent + `"]
-repo   = "auto"
-
-[[board]]
-path   = "` + filepath.Join(boardParent, "gone", ".furrow") + `"
-scopes = ["/somewhere"]
-`
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	testutil.UserConfig(t, testutil.BoardEntry(real, "auto", boardParent)+testutil.BoardEntry(filepath.Join(boardParent, "gone", ".furrow"), "", "/somewhere"))
 	return real
 }
 
@@ -90,7 +72,7 @@ func TestBoardsCLIListsAndSharesBoardKeys(t *testing.T) {
 }
 
 func TestBoardsCLIWithNoConfigExitsZero(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	testutil.ConfigHome(t)
 
 	got, code := run(t, "--json", "boards")
 	if code != 0 {

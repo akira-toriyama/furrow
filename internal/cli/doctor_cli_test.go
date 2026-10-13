@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // initHealthyMachine writes a user config with ONE live board (house layout:
@@ -21,16 +22,7 @@ func initHealthyMachine(t *testing.T) (scope, store string) {
 	}
 	store = filepath.Join(scope, "projects", app.DirName)
 
-	xdg := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", xdg)
-	dir := filepath.Join(xdg, "furrow")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "[[board]]\npath = \"" + store + "\"\nscopes = [\"" + scope + "\"]\nrepo = \"auto\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	testutil.UserConfig(t, testutil.BoardEntry(store, "auto", scope))
 	return scope, store
 }
 
@@ -85,7 +77,7 @@ func TestDoctorCLIHealthyMachineExitsZero(t *testing.T) {
 }
 
 func TestDoctorCLIUnhealthyExitsOne(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // no config at all -> no-boards warn
+	testutil.ConfigHome(t) // no config at all -> no-boards warn
 
 	got, code := run(t, "doctor")
 	if code != 1 {

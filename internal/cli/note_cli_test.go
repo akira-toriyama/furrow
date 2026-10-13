@@ -195,7 +195,7 @@ func TestCLINoteRoutesByMembershipNotPrefix(t *testing.T) {
 // the bodies/ directory).
 func readBody(t *testing.T, id string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(os.Getenv("FURROW_DIR"), "bodies", id+".md"))
+	b, err := os.ReadFile(filepath.Join(os.Getenv(app.EnvDir), "bodies", id+".md"))
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}

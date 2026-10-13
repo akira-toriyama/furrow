@@ -9,20 +9,6 @@ import (
 
 func day(d int) time.Time { return time.Date(2026, 6, d, 0, 0, 0, 0, time.UTC) }
 
-// staleDepWarns reports whether lint flagged the given task with a reconcile-gap
-// warning (a done dep that closed after the task's last update). It matches the
-// stable `code`, never the message: CLAUDE.md tells callers to branch on the
-// code, and a substring match would both pass for a DIFFERENT warning whose
-// prose happens to say "reconcile" and break on a harmless reword.
-func staleDepWarns(ps []core.Problem, id string) bool {
-	for _, p := range ps {
-		if p.ID == id && p.Severity == core.SevWarn && p.Code == "reconcile-gap" {
-			return true
-		}
-	}
-	return false
-}
-
 func TestLintWarnsUnreconciledDoneDep(t *testing.T) {
 	a := newApp()
 	closed := day(24)
@@ -35,7 +21,7 @@ func TestLintWarnsUnreconciledDoneDep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !staleDepWarns(ps, "t-epic") {
+	if !hasProblem(ps, "reconcile-gap", "t-epic", core.SevWarn) {
 		t.Errorf("expected a reconcile-gap warn on t-epic naming t-slice: %+v", ps)
 	}
 	// It is advisory only: a reconcile gap alone must not make lint fail.
@@ -56,7 +42,7 @@ func TestLintNoWarnWhenReconciled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if staleDepWarns(ps, "t-epic") {
+	if hasProblem(ps, "reconcile-gap", "t-epic", core.SevWarn) {
 		t.Errorf("a reconciled epic must not warn: %+v", ps)
 	}
 }

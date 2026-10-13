@@ -124,7 +124,7 @@ func TestLintUpdatedInFuture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := countCode(ps, "updated-in-future"); n != 1 {
+	if n := len(problemsWithCode(ps, "updated-in-future")); n != 1 {
 		t.Fatalf("updated-in-future = %d findings, want 1: %+v", n, ps)
 	}
 	idx, _ = a.Store.Load()
@@ -134,7 +134,7 @@ func TestLintUpdatedInFuture(t *testing.T) {
 		t.Fatal(err)
 	}
 	ps, _ = a.Lint()
-	if n := countCode(ps, "updated-in-future"); n != 0 {
+	if n := len(problemsWithCode(ps, "updated-in-future")); n != 0 {
 		t.Errorf("minutes of skew must not be a finding: %+v", ps)
 	}
 }
@@ -156,24 +156,14 @@ func TestLintPriorityDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := countCode(ps, "priority-duplicate"); n != 1 {
+	if n := len(problemsWithCode(ps, "priority-duplicate")); n != 1 {
 		t.Fatalf("priority-duplicate = %d findings, want 1: %+v", n, ps)
 	}
 	if _, err := a.Done(y.ID); err != nil {
 		t.Fatal(err)
 	}
 	ps, _ = a.Lint()
-	if n := countCode(ps, "priority-duplicate"); n != 0 {
+	if n := len(problemsWithCode(ps, "priority-duplicate")); n != 0 {
 		t.Errorf("a closed task is out of the ordering: %+v", ps)
 	}
-}
-
-func countCode(ps []core.Problem, code string) int {
-	n := 0
-	for _, p := range ps {
-		if p.Code == code {
-			n++
-		}
-	}
-	return n
 }

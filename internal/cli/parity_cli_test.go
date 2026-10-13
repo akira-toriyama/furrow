@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // Every fact the human output prints is in the JSON, and the other way
@@ -90,20 +92,11 @@ func TestBriefJSONDueRowsCarryOutsideNext(t *testing.T) {
 // boards --json told a missing board and a non-store directory apart only
 // in the human line: on_disk carries the difference.
 func TestBoardsJSONCarriesOnDisk(t *testing.T) {
-	xdg := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", xdg)
 	plain := t.TempDir() // a directory, not a store (an empty one reads as a store-to-be)
 	if err := os.WriteFile(filepath.Join(plain, "README"), []byte("not a board\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfgDir := filepath.Join(xdg, "furrow")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "[[board]]\npath = \"" + plain + "\"\nscopes = [\"/a\"]\n\n[[board]]\npath = \"" + filepath.Join(plain, "gone", ".furrow") + "\"\nscopes = [\"/b\"]\n"
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	testutil.UserConfig(t, testutil.BoardEntry(plain, "", "/a")+testutil.BoardEntry(filepath.Join(plain, "gone", ".furrow"), "", "/b"))
 	out := mustRun(t, "--json", "boards")
 	var list struct {
 		Boards []struct {

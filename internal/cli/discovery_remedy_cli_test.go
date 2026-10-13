@@ -8,6 +8,7 @@ import (
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
 	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // t-1dre: the discovery give-up error used to say "run `furrow init`"
@@ -43,9 +44,7 @@ func TestDiscoveryErrorRemedyMatchesMachineState(t *testing.T) {
 		t.Errorf("candidates must name the configured board path %q, got %v", real, fe.Candidates)
 	}
 
-	empty := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", empty)
-	if err := os.MkdirAll(filepath.Join(empty, "furrow"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(testutil.ConfigHome(t), "furrow"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	fe, _ = runErr(t, "ls")

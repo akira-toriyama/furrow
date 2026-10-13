@@ -9,6 +9,7 @@ import (
 
 	"github.com/akira-toriyama/furrow/v9/internal/claudecode"
 	"github.com/akira-toriyama/furrow/v9/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // t-hyr0: `guard = "warn"` never refuses — a working occupant is recorded as
@@ -76,9 +77,9 @@ func TestOpenArmsTheGuardByTheUserConfig(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if c.toml == "" {
-				t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+				testutil.ConfigHome(t)
 			} else {
-				writeGlobalConfig(t, c.toml)
+				testutil.UserConfig(t, c.toml)
 			}
 			a, err := Open(filepath.Dir(store))
 			if err != nil {
@@ -96,7 +97,7 @@ func TestOpenArmsTheGuardByTheUserConfig(t *testing.T) {
 		})
 	}
 	t.Run("human shell", func(t *testing.T) {
-		writeGlobalConfig(t, "[session]\nguard = \"warn\"\n")
+		testutil.UserConfig(t, "[session]\nguard = \"warn\"\n")
 		t.Setenv(claudecode.EnvActive, "")
 		a, err := Open(filepath.Dir(store))
 		if err != nil {
@@ -107,7 +108,7 @@ func TestOpenArmsTheGuardByTheUserConfig(t *testing.T) {
 		}
 	})
 	t.Run("unreadable user config", func(t *testing.T) {
-		writeGlobalConfig(t, "[[board]\npath=\n")
+		testutil.UserConfig(t, "[[board]\npath=\n")
 		a, err := Open(filepath.Dir(store))
 		if err != nil {
 			t.Fatal(err)
@@ -140,7 +141,7 @@ func TestDoctorSkipsTheRegistryProbeWhenTheGuardIsOff(t *testing.T) {
 		}
 		return false
 	}
-	writeGlobalConfig(t, "[session]\nguard = \"refuse\"\n")
+	testutil.UserConfig(t, "[session]\nguard = \"refuse\"\n")
 	r, err := Doctor(t.Context(), t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +149,7 @@ func TestDoctorSkipsTheRegistryProbeWhenTheGuardIsOff(t *testing.T) {
 	if !has(r) {
 		t.Fatalf("with the guard on, the unreadable entry is a finding: %+v", r.Problems)
 	}
-	writeGlobalConfig(t, "[session]\nguard = \"off\"\n")
+	testutil.UserConfig(t, "[session]\nguard = \"off\"\n")
 	if r, err = Doctor(t.Context(), t.TempDir(), nil); err != nil {
 		t.Fatal(err)
 	}

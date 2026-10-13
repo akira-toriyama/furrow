@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v9/internal/gittest"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // These are real-git tests for post-mutation autocommit (AutoCommitFlush). They
@@ -363,7 +364,7 @@ func TestAutoCommitResolvesFromUserConfig(t *testing.T) {
 	root := t.TempDir()
 	scope := filepath.Join(root, "org")
 	board := mustInitBoard(t, filepath.Join(scope, "projects"))
-	writeGlobalConfig(t, "[[board]]\npath = \""+board+"\"\nscopes = [\""+scope+"\"]\nrepo = \"\"\nautocommit = true\n")
+	testutil.UserConfig(t, testutil.BoardEntry(board, "", scope)+"autocommit = true\n")
 	work := filepath.Join(scope, "work")
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
@@ -386,7 +387,7 @@ func TestAutoCommitDefaultsFalseFromUserConfig(t *testing.T) {
 	root := t.TempDir()
 	scope := filepath.Join(root, "org")
 	board := mustInitBoard(t, filepath.Join(scope, "projects"))
-	writeGlobalConfig(t, "[[board]]\npath = \""+board+"\"\nscopes = [\""+scope+"\"]\nrepo = \"\"\n") // no autocommit key
+	testutil.UserConfig(t, testutil.BoardEntry(board, "", scope)) // no autocommit key
 	work := filepath.Join(scope, "work")
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)

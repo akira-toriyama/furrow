@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // The t-44h4 repro: the task-status bot appends a marker line to a body while
@@ -103,7 +104,7 @@ func TestInitScaffoldsBodyUnionMergeAttributes(t *testing.T) {
 func TestDoctorWarnsWhenBodyUnionMergeRuleIsMissing(t *testing.T) {
 	_, _, cloneB := setupClones(t)
 	boardB := filepath.Join(cloneB, DirName)
-	writeGlobalConfig(t, boardEntry(boardB, "auto", filepath.Dir(cloneB)))
+	testutil.UserConfig(t, testutil.BoardEntry(boardB, "auto", filepath.Dir(cloneB)))
 
 	r := mustDoctor(t, "")
 	if len(findProblems(r, "no-body-union-merge")) != 0 {

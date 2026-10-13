@@ -6,28 +6,12 @@ import (
 	"testing"
 )
 
-// epicID runs `epic add --json` and returns the created box's id.
-func epicID(t *testing.T, args ...string) string {
-	t.Helper()
-	out, code := run(t, append([]string{"--json", "epic", "add"}, args...)...)
-	if code != 0 {
-		t.Fatalf("epic add exit = %d:\n%s", code, out)
-	}
-	var e struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal([]byte(out), &e); err != nil {
-		t.Fatalf("parse epic add --json: %v\n%s", err, out)
-	}
-	return e.ID
-}
-
 // epic done/deactivate suggest the previous active box: one human line and a
 // `previous` key in --json — computed from the activation log, never executed.
 func TestEpicDoneSuggestsPreviousActive(t *testing.T) {
 	initStore(t)
-	ea := epicID(t, "box a", "-r", "me/r1")
-	eb := epicID(t, "box b", "-r", "me/r1")
+	ea := addEpic(t, "box a", "-r", "me/r1")
+	eb := addEpic(t, "box b", "-r", "me/r1")
 	mustRun(t, "epic", "activate", ea)
 	mustRun(t, "epic", "deactivate", ea)
 	mustRun(t, "epic", "activate", eb)
@@ -47,8 +31,8 @@ func TestEpicDoneSuggestsPreviousActive(t *testing.T) {
 
 func TestEpicDeactivateSuggestsPreviousActiveJSON(t *testing.T) {
 	initStore(t)
-	ea := epicID(t, "box a", "-r", "me/r1")
-	eb := epicID(t, "box b", "-r", "me/r1")
+	ea := addEpic(t, "box a", "-r", "me/r1")
+	eb := addEpic(t, "box b", "-r", "me/r1")
 	mustRun(t, "epic", "activate", ea)
 	mustRun(t, "epic", "deactivate", ea)
 	mustRun(t, "epic", "activate", eb)
@@ -76,7 +60,7 @@ func TestEpicDeactivateSuggestsPreviousActiveJSON(t *testing.T) {
 // PRESENT, so "computed, no answer" differs from an older binary's absence).
 func TestEpicDonePreviousUnknown(t *testing.T) {
 	initStore(t)
-	ea := epicID(t, "box a", "-r", "me/r1")
+	ea := addEpic(t, "box a", "-r", "me/r1")
 
 	got, code := run(t, "epic", "done", ea)
 	if code != 0 {
@@ -86,7 +70,7 @@ func TestEpicDonePreviousUnknown(t *testing.T) {
 		t.Errorf("done with no records should say unknown:\n%s", got)
 	}
 
-	eb := epicID(t, "box b", "-r", "me/r1")
+	eb := addEpic(t, "box b", "-r", "me/r1")
 	jgot, _ := run(t, "--json", "epic", "done", eb)
 	var env map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(jgot), &env); err != nil {

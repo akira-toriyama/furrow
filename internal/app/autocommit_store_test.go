@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 // autocommit is keyed by the STORE, not by the discovery arm: the [[board]]
@@ -17,7 +19,7 @@ import (
 // storeEntry renders one [[board]] table naming store with the given scope and
 // autocommit value.
 func storeEntry(store, scope string, autocommit bool) string {
-	return boardEntry(store, "", scope) + "autocommit = " + map[bool]string{true: "true", false: "false"}[autocommit] + "\n"
+	return testutil.BoardEntry(store, "", scope) + "autocommit = " + map[bool]string{true: "true", false: "false"}[autocommit] + "\n"
 }
 
 // autoCommitLayout builds root/org/projects/.furrow with a user config whose one
@@ -30,7 +32,7 @@ func autoCommitLayout(t *testing.T) (scope, central, store string) {
 	scope = filepath.Join(t.TempDir(), "org")
 	central = filepath.Join(scope, "projects")
 	store = mustInitBoard(t, central)
-	writeGlobalConfig(t, storeEntry(store, scope, true))
+	testutil.UserConfig(t, storeEntry(store, scope, true))
 	return scope, central, store
 }
 
@@ -123,7 +125,7 @@ func TestAutoCommitFollowsStore_WinnerThenFileOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	writeGlobalConfig(t, storeEntry(store, scopeA, false)+storeEntry(store, scopeB, true))
+	testutil.UserConfig(t, storeEntry(store, scopeA, false)+storeEntry(store, scopeB, true))
 
 	a, err := Open(filepath.Join(scopeB, "x"))
 	if err != nil {
@@ -150,7 +152,7 @@ func TestAutoCommitFollowsStore_UnreadableConfigWarnsAndStaysOff(t *testing.T) {
 	t.Setenv(EnvBoard, "")
 	central := filepath.Join(t.TempDir(), "projects")
 	store := mustInitBoard(t, central)
-	writeGlobalConfig(t, "[[board]\npath = \"broken\n")
+	testutil.UserConfig(t, "[[board]\npath = \"broken\n")
 	a, err := Open(central)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

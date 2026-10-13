@@ -4,15 +4,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 func TestBoardsListsConfiguredBoards(t *testing.T) {
 	boardParent := t.TempDir()
 	real := mustInitBoard(t, boardParent)
 	missing := filepath.Join(t.TempDir(), "nowhere", ".furrow")
-	writeGlobalConfig(t,
-		boardEntry(real, "auto", boardParent)+
-			"\n"+boardEntry(missing, "owner/repo", "/somewhere")+"label = \"tag\"\n"+
+	testutil.UserConfig(t,
+		testutil.BoardEntry(real, "auto", boardParent)+
+			"\n"+testutil.BoardEntry(missing, "owner/repo", "/somewhere")+"label = \"tag\"\n"+
 			"\n[[board]]\npath = \"/dropped/no/scopes\"\n")
 	cfgPath, err := globalConfigPath()
 	if err != nil {
@@ -70,7 +72,7 @@ func TestBoardsListsConfiguredBoards(t *testing.T) {
 }
 
 func TestBoardsWithNoConfigIsEmptyNotError(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // no config file at all
+	testutil.ConfigHome(t) // no config file at all
 
 	list, _, err := Boards()
 	if err != nil {
@@ -85,7 +87,7 @@ func TestBoardsWithNoConfigIsEmptyNotError(t *testing.T) {
 }
 
 func TestBoardsIgnoresEnvBoardOverride(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	testutil.ConfigHome(t)
 	board := mustInitBoard(t, t.TempDir())
 	t.Setenv(EnvBoard, board)
 
@@ -103,7 +105,7 @@ func TestBoardsIgnoresEnvBoardOverride(t *testing.T) {
 // one scope that did decide was printed nowhere (t-xr78).
 func TestBoardsNotesTheEnvBoardShadowingTheEntries(t *testing.T) {
 	t.Setenv(EnvDir, "")
-	writeGlobalConfig(t, boardEntry(mustInitBoard(t, t.TempDir()), "auto", t.TempDir()))
+	testutil.UserConfig(t, testutil.BoardEntry(mustInitBoard(t, t.TempDir()), "auto", t.TempDir()))
 	board := mustInitBoard(t, filepath.Join(t.TempDir(), "org", "projects"))
 	t.Setenv(EnvBoard, board)
 	scope := `"` + filepath.Dir(filepath.Dir(board)) + `"`
@@ -145,7 +147,7 @@ func TestBoardsNotesTheEnvBoardShadowingTheEntries(t *testing.T) {
 	}
 
 	// With no entries configured, no arm may talk about them.
-	writeGlobalConfig(t, "")
+	testutil.UserConfig(t, "")
 	for _, s := range []struct{ dir, board string }{{"", board}, {"", gone}, {board, board}} {
 		t.Setenv(EnvDir, s.dir)
 		t.Setenv(EnvBoard, s.board)

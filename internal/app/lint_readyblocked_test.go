@@ -6,17 +6,6 @@ import (
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
-// readyBlockedErrors reports whether lint flagged the task with a ready-blocked
-// ERROR. Matches the stable code, never the message prose.
-func readyBlockedErrors(ps []core.Problem, id string) bool {
-	for _, p := range ps {
-		if p.ID == id && p.Severity == core.SevError && p.Code == "ready-blocked" {
-			return true
-		}
-	}
-	return false
-}
-
 // A task in an actionable ([next].lanes) lane whose dep is still open is a
 // board-state ERROR: `furrow next` will never hand it out, so its lane is lying.
 func TestLintErrorsReadyTaskWithOpenDep(t *testing.T) {
@@ -28,7 +17,7 @@ func TestLintErrorsReadyTaskWithOpenDep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !readyBlockedErrors(ps, "t-work") {
+	if !hasProblem(ps, "ready-blocked", "t-work", core.SevError) {
 		t.Errorf("expected a ready-blocked error on t-work: %+v", ps)
 	}
 	if !core.HasErrors(ps) {
@@ -52,7 +41,7 @@ func TestLintReadyBlockedQuietWhenParkedOrSatisfied(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"t-parked", "t-work"} {
-		if readyBlockedErrors(ps, id) {
+		if hasProblem(ps, "ready-blocked", id, core.SevError) {
 			t.Errorf("unexpected ready-blocked error on %s: %+v", id, ps)
 		}
 	}

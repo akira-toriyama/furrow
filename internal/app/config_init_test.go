@@ -8,11 +8,11 @@ import (
 
 	"github.com/akira-toriyama/furrow/v9/internal/config"
 	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 func TestGlobalConfigPath_HonorsXDG(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	cfgHome := testutil.ConfigHome(t)
 	p, err := GlobalConfigPath()
 	if err != nil {
 		t.Fatal(err)
@@ -25,8 +25,7 @@ func TestGlobalConfigPath_HonorsXDG(t *testing.T) {
 // With no nearby .furrow and no flags, init writes the placeholder template
 // verbatim (the bytes mirrored at repo-root config.global.toml).
 func TestInitGlobalConfig_PlaceholderWhenNoContext(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	cfgHome := testutil.ConfigHome(t)
 	start := t.TempDir() // a bare dir with no .furrow above it
 
 	path, derived, err := InitGlobalConfig(start, "", nil)
@@ -58,8 +57,7 @@ func TestInitGlobalConfig_DerivesFromNearestFurrow(t *testing.T) {
 	}
 	board := filepath.Join(repo, DirName)
 
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	testutil.ConfigHome(t)
 
 	path, derived, err := InitGlobalConfig(repo, "", nil)
 	if err != nil {
@@ -92,8 +90,7 @@ func TestInitGlobalConfig_FlagsOverrideDerivation(t *testing.T) {
 	if _, err := Init(repo); err != nil {
 		t.Fatal(err)
 	}
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	testutil.ConfigHome(t)
 
 	path, _, err := InitGlobalConfig(repo, "/explicit/.furrow", []string{"/explicit/scope"})
 	if err != nil {
@@ -112,15 +109,7 @@ func TestInitGlobalConfig_FlagsOverrideDerivation(t *testing.T) {
 }
 
 func TestInitGlobalConfig_RefusesWhenExists(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
-	fdir := filepath.Join(cfgHome, "furrow")
-	if err := os.MkdirAll(fdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte("# mine\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	testutil.UserConfig(t, "# mine\n")
 	if _, _, err := InitGlobalConfig(t.TempDir(), "", nil); err == nil {
 		t.Fatal("InitGlobalConfig should refuse to overwrite an existing config")
 	}
@@ -130,8 +119,7 @@ func TestInitGlobalConfig_RefusesWhenExists(t *testing.T) {
 // would miss it (and os.WriteFile would silently write THROUGH it to the
 // symlink's target), so init must refuse via a stat that sees the link itself.
 func TestInitGlobalConfig_RefusesWhenBrokenSymlinkExists(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	cfgHome := testutil.ConfigHome(t)
 	fdir := filepath.Join(cfgHome, "furrow")
 	if err := os.MkdirAll(fdir, 0o755); err != nil {
 		t.Fatal(err)
@@ -153,8 +141,7 @@ func TestInitGlobalConfig_RefusesWhenBrokenSymlinkExists(t *testing.T) {
 // derivation must be skipped and the placeholder scope kept for the user to fill,
 // rather than writing a garbage scope like "." into the config.
 func TestInitGlobalConfig_RelativePathKeepsPlaceholderScope(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	testutil.ConfigHome(t)
 	path, _, err := InitGlobalConfig(t.TempDir(), "rel/.furrow", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -175,15 +162,7 @@ func TestInitGlobalConfig_RelativePathKeepsPlaceholderScope(t *testing.T) {
 // A half-written home config (a scope-less board) surfaces a clamp warning —
 // the warning discovery drops on its inert path.
 func TestGlobalConfigWarnings_FlagsClampedHomeConfig(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
-	fdir := filepath.Join(cfgHome, "furrow")
-	if err := os.MkdirAll(fdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte("[[board]]\npath = \"/x/.furrow\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	testutil.UserConfig(t, "[[board]]\npath = \"/x/.furrow\"\n")
 	warns := GlobalConfigWarnings()
 	if len(warns) == 0 {
 		t.Fatal("expected a clamp warning for a scope-less board")
@@ -194,7 +173,7 @@ func TestGlobalConfigWarnings_FlagsClampedHomeConfig(t *testing.T) {
 }
 
 func TestGlobalConfigWarnings_QuietWhenNoConfig(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	testutil.ConfigHome(t)
 	if w := GlobalConfigWarnings(); len(w) != 0 {
 		t.Errorf("expected no warnings when there is no home config; got %v", w)
 	}
@@ -203,15 +182,7 @@ func TestGlobalConfigWarnings_QuietWhenNoConfig(t *testing.T) {
 // lint is the one place that reports everything off, so it also surfaces a
 // half-written home config — the clamp warning discovery drops on its inert path.
 func TestLint_SurfacesGlobalConfigWarnings(t *testing.T) {
-	cfgHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgHome)
-	fdir := filepath.Join(cfgHome, "furrow")
-	if err := os.MkdirAll(fdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte("[[board]]\npath = \"/x/.furrow\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	testutil.UserConfig(t, "[[board]]\npath = \"/x/.furrow\"\n")
 
 	a := newApp()
 	ps, err := a.Lint()

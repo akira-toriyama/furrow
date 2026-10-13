@@ -81,10 +81,10 @@ func TestBodyNamingAFileIsRefused(t *testing.T) {
 	t.Run("edit", func(t *testing.T) {
 		initStore(t)
 		id := addTask(t, "keep me")
-		before := readTaskBody(t, id)
+		before := readBody(t, id)
 		fe, _ := runErr(t, "edit", id, "--body", path)
 		assertRefusedAsPath(t, fe, both...)
-		if got := readTaskBody(t, id); got != before {
+		if got := readBody(t, id); got != before {
 			t.Errorf("a refused edit changed the body: %q, want %q", got, before)
 		}
 	})
@@ -154,7 +154,7 @@ func TestBodyFileReadsTheBody(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("add --body-file exit = %d:\n%s", code, out)
 			}
-			if got := readTaskBody(t, parseAddID(t, out)); got != content {
+			if got := readBody(t, parseAddID(t, out)); got != content {
 				t.Errorf("body = %q, want %q", got, content)
 			}
 		})
@@ -166,7 +166,7 @@ func TestBodyFileReadsTheBody(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("edit --body-file exit = %d:\n%s", code, out)
 			}
-			if got := readTaskBody(t, id); got != content {
+			if got := readBody(t, id); got != content {
 				t.Errorf("body = %q, want %q", got, content)
 			}
 			if rb, _ := parseEnvelope(t, out)["replaced_bytes"].(float64); int(rb) != len(content) {
@@ -180,7 +180,7 @@ func TestBodyFileReadsTheBody(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("epic add --body-file exit = %d:\n%s", code, out)
 			}
-			if got := readTaskBody(t, parseAddID(t, out)); got != content {
+			if got := readBody(t, parseAddID(t, out)); got != content {
 				t.Errorf("body = %q, want %q", got, content)
 			}
 		})
@@ -211,7 +211,7 @@ func TestBodyThatIsNotAFileStaysLiteral(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("add --body %q exit = %d:\n%s", tc.body, code, out)
 			}
-			if got := strings.TrimRight(readTaskBody(t, parseAddID(t, out)), "\n"); got != tc.want {
+			if got := strings.TrimRight(readBody(t, parseAddID(t, out)), "\n"); got != tc.want {
 				t.Errorf("body = %q, want the literal %q", got, tc.want)
 			}
 		})
@@ -265,7 +265,7 @@ func TestBodyFileRejectsBadInput(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			initStore(t)
 			id := addTask(t, "keep me")
-			before := readTaskBody(t, id)
+			before := readBody(t, id)
 			fe, out := runErr(t, append([]string{"edit", id}, tc.flags...)...)
 			if fe == nil || fe.Code != core.CodeValidation {
 				t.Fatalf("edit %v: want exit %d, got %+v\n%s", tc.flags, core.CodeValidation, fe, out)
@@ -273,7 +273,7 @@ func TestBodyFileRejectsBadInput(t *testing.T) {
 			if !strings.Contains(fe.Msg, tc.want) {
 				t.Errorf("message %q does not name %q", fe.Msg, tc.want)
 			}
-			if got := readTaskBody(t, id); got != before {
+			if got := readBody(t, id); got != before {
 				t.Errorf("a refused edit changed the body: %q, want %q", got, before)
 			}
 		})

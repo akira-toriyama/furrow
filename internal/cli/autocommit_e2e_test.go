@@ -1,51 +1,22 @@
 package cli
 
 import (
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/gittest"
 )
 
 // Autocommit on a board that is no git repository: the mutation succeeds
 // (exit 0, the task exists) and the flush's warning reaches stderr with the
 // `warning:` prefix and the remedy, through the post-run hook's own loop.
 func TestAutoCommit_WarnsOnStderrWhenTheBoardIsNoGitRepo(t *testing.T) {
-	gittest.GitOrSkip(t)
-	t.Setenv(app.EnvDir, "")
-	t.Setenv(app.EnvBoard, "")
-
-	scope := t.TempDir()
-	boardRoot := filepath.Join(scope, "central")
-	if _, err := app.Init(boardRoot); err != nil {
-		t.Fatal(err)
-	}
-	board := filepath.Join(boardRoot, app.DirName)
-	cfgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgDir)
-	fdir := filepath.Join(cfgDir, "furrow")
-	if err := os.MkdirAll(fdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "[[board]]\npath = \"" + board + "\"\nscopes = [\"" + scope + "\"]\nrepo = \"\"\nautocommit = true\n"
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	work := filepath.Join(scope, "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(work)
+	fx := autoCommitLayout(t, "central", false)
+	t.Chdir(fx.work)
 
 	stdout, stderr, code := runSplit(t, "add", "no repo to commit into")
 	if code != 0 || !strings.Contains(stdout, "t-") {
 		t.Fatalf("the add itself must succeed (exit %d):\n%s\n%s", code, stdout, stderr)
 	}
-	if !strings.Contains(stderr, "warning: autocommit: board "+board+" is not inside a git repository") || !strings.Contains(stderr, "git init") {
+	if !strings.Contains(stderr, "warning: autocommit: board "+fx.board+" is not inside a git repository") || !strings.Contains(stderr, "git init") {
 		t.Errorf("stderr must carry the flush's warning with its prefix and remedy:\n%s", stderr)
 	}
 	if strings.Contains(stdout, "autocommit") {
@@ -60,49 +31,8 @@ func TestAutoCommit_WarnsOnStderrWhenTheBoardIsNoGitRepo(t *testing.T) {
 // stashing the App, the mutatingCommands gate, the post-run hook firing on
 // success).
 func TestAutoCommit_EndToEndViaCLI(t *testing.T) {
-	git := gittest.GitOrSkip(t)
-	t.Setenv(app.EnvDir, "")
-	t.Setenv(app.EnvBoard, "")
+	gitAt, commitCount := autoCommitBoard(t)
 
-	// The board is its own git repo: boardRoot/.furrow with `git init` at boardRoot.
-	scope := t.TempDir()
-	boardRoot := filepath.Join(scope, "central")
-	if _, err := app.Init(boardRoot); err != nil {
-		t.Fatal(err)
-	}
-	board := filepath.Join(boardRoot, app.DirName)
-	gitAt := func(args ...string) string { return gittest.RunGit(t, git, boardRoot, args...) }
-	gitAt("init", "-q", "-b", "main")
-	gitAt("add", "-A")
-	gitAt("commit", "-q", "-m", "board")
-
-	// user config: [[board]] scoped to the whole tree, autocommit on.
-	cfgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgDir)
-	fdir := filepath.Join(cfgDir, "furrow")
-	if err := os.MkdirAll(fdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "[[board]]\npath = \"" + board + "\"\nscopes = [\"" + scope + "\"]\nrepo = \"\"\nautocommit = true\n"
-	if err := os.WriteFile(filepath.Join(fdir, "config.toml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Drive `furrow add` from a working dir under scope (no FURROW_DIR — resolution
-	// must find the user-config board for autocommit to be in play).
-	work := filepath.Join(scope, "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(work)
-
-	commitCount := func() int {
-		n, err := strconv.Atoi(strings.TrimSpace(gitAt("rev-list", "--count", "HEAD")))
-		if err != nil {
-			t.Fatalf("rev-list --count HEAD: %v", err)
-		}
-		return n
-	}
 	before := commitCount()
 
 	if _, code := run(t, "add", "e2e task"); code != 0 {

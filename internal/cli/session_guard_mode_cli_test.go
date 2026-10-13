@@ -3,30 +3,13 @@ package cli
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
-
-// writeUserConfig points XDG_CONFIG_HOME at a fresh dir holding the given
-// user-level furrow config, and returns the file's path.
-func writeUserConfig(t *testing.T, body string) string {
-	t.Helper()
-	home := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", home)
-	dir := filepath.Join(home, "furrow")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	p := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
 
 // t-hyr0, whole stack: the user config's [session].guard decides what a
 // working occupant costs a later session — refuse (the default), a warning
@@ -36,14 +19,14 @@ func TestCLISessionGuardModeFromUserConfig(t *testing.T) {
 	armGuard(t, 10*time.Second) // the occupant is mid-turn: busy under the default window
 
 	t.Run("refuse is the default", func(t *testing.T) {
-		writeUserConfig(t, "")
+		testutil.UserConfig(t, "")
 		fe, _ := runErr(t, "add", "into glyph", "-r", "o/glyph")
 		if fe == nil || fe.Kind != core.KindSessionBusy {
 			t.Fatalf("want session-busy, got %+v", fe)
 		}
 	})
 	t.Run("warn never refuses and says working", func(t *testing.T) {
-		writeUserConfig(t, "[session]\nguard = \"warn\"\n")
+		testutil.UserConfig(t, "[session]\nguard = \"warn\"\n")
 		stdout, stderr, code := runSplit(t, "--json", "add", "into glyph", "-r", "o/glyph")
 		if code != 0 {
 			t.Fatalf("exit %d:\n%s%s", code, stdout, stderr)
@@ -68,7 +51,7 @@ func TestCLISessionGuardModeFromUserConfig(t *testing.T) {
 		}
 	})
 	t.Run("off reads no registry", func(t *testing.T) {
-		writeUserConfig(t, "[session]\nguard = \"off\"\n")
+		testutil.UserConfig(t, "[session]\nguard = \"off\"\n")
 		stdout, stderr, code := runSplit(t, "--json", "add", "into glyph", "-r", "o/glyph")
 		if code != 0 {
 			t.Fatalf("exit %d:\n%s%s", code, stdout, stderr)
@@ -78,7 +61,7 @@ func TestCLISessionGuardModeFromUserConfig(t *testing.T) {
 		}
 	})
 	t.Run("the busy window is the user config's", func(t *testing.T) {
-		writeUserConfig(t, "[session]\nbusy_seconds = 5\n")
+		testutil.UserConfig(t, "[session]\nbusy_seconds = 5\n")
 		fe, _ := runErr(t, "add", "into glyph", "-r", "o/glyph")
 		if fe != nil {
 			t.Fatalf("an occupant silent past a 5s window is idle, got %+v", fe)
@@ -91,7 +74,7 @@ func TestCLISessionGuardModeFromUserConfig(t *testing.T) {
 // would clamp, and no longer knows them on the board side.
 func TestCLIConfigSetUserSessionKeys(t *testing.T) {
 	initStore(t)
-	userCfg := writeUserConfig(t, "# mine\n\n[[board]]\npath = \"~/proj/.furrow\"\nscopes = [\"~/proj\"]\n")
+	userCfg := testutil.UserConfig(t, "# mine\n\n[[board]]\npath = \"~/proj/.furrow\"\nscopes = [\"~/proj\"]\n")
 
 	out, code := run(t, "--json", "config", "set", "--user", "session.guard", "warn")
 	if code != 0 {

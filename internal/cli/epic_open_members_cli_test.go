@@ -17,7 +17,7 @@ func futureDay() string { return time.Now().AddDate(0, 0, 30).Format("2006-01-02
 // and an open_members array beside the envelope. stdout stays the envelope.
 func TestEpicDoneDisclosesOpenMembers(t *testing.T) {
 	initStore(t)
-	box := epicID(t, "repeat box", "-r", "me/r1")
+	box := addEpic(t, "repeat box", "-r", "me/r1")
 	chore := addTask(t, "daily chore", "-e", box, "--due", futureDay(), "--repeat", "daily")
 	plain := addTask(t, "plain member", "-e", box)
 	parked := addTask(t, "parked member", "-e", box)
@@ -71,7 +71,7 @@ func TestEpicDoneDisclosesOpenMembers(t *testing.T) {
 // Nothing open: no note at all, and the key is [] rather than missing.
 func TestEpicDoneOnATidyBoxSaysNothing(t *testing.T) {
 	initStore(t)
-	box := epicID(t, "tidy box", "-r", "me/r1")
+	box := addEpic(t, "tidy box", "-r", "me/r1")
 	id := addTask(t, "finished member", "-e", box)
 	mustRun(t, "done", id)
 
@@ -97,7 +97,7 @@ func TestEpicDoneOnATidyBoxSaysNothing(t *testing.T) {
 // halves can never drift apart.
 func TestOpenMembersRideDoneNotDeactivate(t *testing.T) {
 	initStore(t)
-	box := epicID(t, "box", "-r", "me/r1")
+	box := addEpic(t, "box", "-r", "me/r1")
 	member := addTask(t, "member", "-e", box)
 	mustRun(t, "epic", "activate", box)
 

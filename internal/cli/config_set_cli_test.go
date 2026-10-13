@@ -9,6 +9,7 @@ import (
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
 	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/testutil"
 )
 
 func readBoardConfig(t *testing.T) string {
@@ -129,17 +130,8 @@ func TestConfigSetAliasAndList(t *testing.T) {
 // is exit 2.
 func TestConfigSetUserEntry(t *testing.T) {
 	initStore(t)
-	home := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", home)
-	cfgDir := filepath.Join(home, "furrow")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	userCfg := filepath.Join(cfgDir, "config.toml")
 	doc := "# my boards\n\n[[board]]\npath = \"~/proj/.furrow\"\nscopes = [\"~/proj\"]\n\n[[board]]\npath = \"~/work/.furrow\"\nscopes = [\"~/work\"]\n"
-	if err := os.WriteFile(userCfg, []byte(doc), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	userCfg := testutil.UserConfig(t, doc)
 
 	out, code := run(t, "--json", "config", "set", "--user", "--board", "work", "autocommit", "true")
 	if code != 0 {
