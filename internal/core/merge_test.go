@@ -269,9 +269,105 @@ func TestMergeShardWithoutBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// updated resolves by clock; every other differing key is a conflict.
-	if strings.Join(conflicts, ",") != "checklist,closed,status" {
-		t.Errorf("conflicts = %v; want [checklist closed status]", conflicts)
+	// updated resolves by clock, and `closed` — null on the session's side, a
+	// stamp on the bot's — is set on one side only; every other differing key
+	// is a conflict.
+	if strings.Join(conflicts, ",") != "checklist,status" {
+		t.Errorf("conflicts = %v; want [checklist status]", conflicts)
+	}
+}
+
+// Two clones whose FIRST act on the same repo was a review each — one human,
+// one agent — both create the record: each side's shard has one stamp and the
+// other at null. Null is "never reviewed here", not a change, so the merge
+// carries both stamps; refusing it wedged both clones for good, since `review`
+// can only press "now" and neither side could take the other's value.
+func TestMergeShardWithoutBaseTreatsNullAsUnset(t *testing.T) {
+	t0 := time.Date(2026, 10, 5, 4, 47, 0, 0, time.UTC)
+	record := func(mut func(*RepoRecord)) []byte {
+		r := &RepoRecord{Repo: "me/z"}
+		mut(r)
+		data, err := MarshalRepo(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	human, agent := t0, t0.Add(time.Second)
+	byHuman := record(func(r *RepoRecord) { r.LastReviewed = &human })
+	byAgent := record(func(r *RepoRecord) { r.LastAgentReviewed = &agent })
+	for name, sides := range map[string][2][]byte{"human then agent": {byHuman, byAgent}, "agent then human": {byAgent, byHuman}} {
+		merged, conflicts, err := MergeShard(ShardRepo, nil, sides[0], sides[1])
+		if err != nil || len(conflicts) > 0 {
+			t.Fatalf("%s: err=%v conflicts=%v; want a clean merge", name, err, conflicts)
+		}
+		r, err := UnmarshalRepo(merged)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.LastReviewed == nil || !r.LastReviewed.Equal(human) || r.LastAgentReviewed == nil || !r.LastAgentReviewed.Equal(agent) {
+			t.Errorf("%s: merged record = %s; want both stamps", name, merged)
+		}
+	}
+}
+
+// A review stamp both sides pressed is a clock, like `updated`: the later
+// review wins, on a task, a box and a repo record alike. Against a stamp a
+// side left at null (the base's value) the pressed side simply lands.
+func TestMergeShardReviewStampsResolveByClock(t *testing.T) {
+	t0 := time.Date(2026, 10, 5, 4, 47, 0, 0, time.UTC)
+	t1, t2 := t0.Add(41*time.Second), t0.Add(42*time.Second)
+	task := func(reviewed *time.Time) []byte {
+		data, err := MarshalTask(&Task{ID: "t-rev", Title: "shared", Status: "ready", Priority: 10, Created: t0, Updated: t0, Body: "bodies/t-rev.md", Reviewed: reviewed})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	epic := func(reviewed *time.Time) []byte {
+		data, err := MarshalEpic(&Epic{ID: "e-rev", Title: "box", Created: t0, Updated: t0, Reviewed: reviewed})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	repo := func(human, agent *time.Time) []byte {
+		data, err := MarshalRepo(&RepoRecord{Repo: "me/z", LastReviewed: human, LastAgentReviewed: agent})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	stampOf := func(kind ShardKind, data []byte, key string) time.Time {
+		t.Helper()
+		m, err := rawObject(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts, ok := timestampValue(m[key])
+		if !ok {
+			t.Fatalf("%s is not a stamp in %s", key, data)
+		}
+		return ts
+	}
+	for name, c := range map[string]struct {
+		kind               ShardKind
+		base, ours, theirs []byte
+		key                string
+	}{
+		"task":         {ShardTask, task(nil), task(&t1), task(&t2), "reviewed"},
+		"epic":         {ShardEpic, epic(nil), epic(&t2), epic(&t1), "reviewed"},
+		"repo human":   {ShardRepo, repo(nil, nil), repo(&t1, nil), repo(&t2, nil), "last_reviewed"},
+		"repo agent":   {ShardRepo, repo(&t0, nil), repo(&t0, &t2), repo(&t0, &t1), "last_agent_reviewed"},
+		"task vs null": {ShardTask, task(nil), task(nil), task(&t2), "reviewed"},
+	} {
+		merged, conflicts, err := MergeShard(c.kind, c.base, c.ours, c.theirs)
+		if err != nil || len(conflicts) > 0 {
+			t.Fatalf("%s: err=%v conflicts=%v; want the later review", name, err, conflicts)
+		}
+		if got := stampOf(c.kind, merged, c.key); !got.Equal(t2) {
+			t.Errorf("%s: %s = %s; want the later stamp %s", name, c.key, got, t2)
+		}
 	}
 }
 
@@ -368,12 +464,23 @@ func TestMergeShardNeverMergesACloseOfARepeatingTask(t *testing.T) {
 	}
 	snoozed := task(func(tk *Task) { d := t0.Add(48 * time.Hour); tk.Due, tk.Updated = &d, t0.Add(time.Second) })
 
-	for name, sides := range map[string][2][]byte{
-		"double close":    {closeAt(t0.Add(41 * time.Second)), closeAt(t0.Add(42 * time.Second))},
-		"close vs snooze": {closeAt(t0.Add(41 * time.Second)), snoozed},
-		"snooze vs close": {snoozed, closeAt(t0.Add(41 * time.Second))},
+	// The base never repeated: one side bound a rule, the other closed. Key by
+	// key that is a done task carrying a rule — no successor, a dead series —
+	// so the rule on EITHER side makes the close a conflict.
+	plain := task(func(tk *Task) { tk.Repeat, tk.RepeatAnchor = "", nil })
+	madeRepeating := task(func(tk *Task) { tk.Updated = t0.Add(time.Second) })
+	closedPlain := task(func(tk *Task) {
+		at := t0.Add(41 * time.Second)
+		tk.Status, tk.Closed, tk.Updated, tk.Repeat, tk.RepeatAnchor = "done", &at, at, "", nil
+	})
+	for name, c := range map[string]struct{ base, ours, theirs []byte }{
+		"double close":            {base, closeAt(t0.Add(41 * time.Second)), closeAt(t0.Add(42 * time.Second))},
+		"close vs snooze":         {base, closeAt(t0.Add(41 * time.Second)), snoozed},
+		"snooze vs close":         {base, snoozed, closeAt(t0.Add(41 * time.Second))},
+		"made repeating vs close": {plain, madeRepeating, closedPlain},
+		"close vs made repeating": {plain, closedPlain, madeRepeating},
 	} {
-		merged, conflicts, err := MergeShard(ShardTask, base, sides[0], sides[1])
+		merged, conflicts, err := MergeShard(ShardTask, c.base, c.ours, c.theirs)
 		if err != nil {
 			t.Fatal(err)
 		}

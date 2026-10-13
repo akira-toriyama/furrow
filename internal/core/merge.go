@@ -39,24 +39,34 @@ const (
 // mergeTimestamps names the keys whose both-sides-changed case is a CLOCK
 // disagreement rather than a disagreement about the task, and how it resolves:
 // `updated` is advanced by every write, so the later stamp is the truthful
-// "last written"; `closed` set by both sides means both closed it, and the
-// first close is when it was closed (the double-`done` of a PR footer and a
-// session closing the same task). Anything else that both sides set to
-// different values is a real conflict — and so is ANY `closed` difference on
-// a shard whose base carried a `repeat` rule (see repeatCloseConflict).
+// "last written"; the review stamps (a task's or box's `reviewed`, a repo
+// record's `last_reviewed` / `last_agent_reviewed`) are the same kind of clock
+// — `review` can only ever press "now", so two reviews are one review, the
+// later one; `closed` set by both sides means both closed it, and the first
+// close is when it was closed (the double-`done` of a PR footer and a session
+// closing the same task). Anything else that both sides set to different
+// values is a real conflict — and so is ANY `closed` difference on a shard any
+// side of which carries a `repeat` rule (see repeatCloseConflict).
 var mergeTimestamps = map[string]func(a, b time.Time) time.Time{
-	"updated": func(a, b time.Time) time.Time {
-		if b.After(a) {
-			return b
-		}
-		return a
-	},
-	"closed": func(a, b time.Time) time.Time {
-		if b.Before(a) {
-			return b
-		}
-		return a
-	},
+	"updated":             latestStamp,
+	"reviewed":            latestStamp,
+	"last_reviewed":       latestStamp,
+	"last_agent_reviewed": latestStamp,
+	"closed":              earliestStamp,
+}
+
+func latestStamp(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
+}
+
+func earliestStamp(a, b time.Time) time.Time {
+	if b.Before(a) {
+		return b
+	}
+	return a
 }
 
 // MergeShard three-way merges one shard at the top-level-key grain. base is the
@@ -65,9 +75,17 @@ var mergeTimestamps = map[string]func(a, b time.Time) time.Time{
 //
 // Per key: unchanged on one side takes the other side's value (set, changed,
 // or removed); the same change on both sides is kept once; a key both sides
-// changed differently is a conflict — except the two timestamps mergeTimestamps
+// changed differently is a conflict — except the timestamps mergeTimestamps
 // names. conflicts lists those keys, sorted; when it is non-empty merged is nil
 // and the caller keeps the shard as it was (the sync aborts its rebase).
+//
+// A shard both sides created is merged against the kind's EMPTY shard, so a
+// field a side left at its zero value (an explicit null, an omitted key) is
+// "unchanged" there and the other side's value lands. Against a literally empty
+// base every null-vs-value pair read as two different changes, and two clones
+// whose first act on the same repo was one human and one agent review could
+// never sync again — neither clone could set the other side's stamp, since
+// `review` only presses "now" (the field-wise merge's one dead end).
 //
 // merged is written through the kind's own decoder and encoder, so the result
 // is byte-for-byte what furrow itself would have written: canonical key order,
@@ -75,6 +93,11 @@ var mergeTimestamps = map[string]func(a, b time.Time) time.Time{
 // result the decoder refuses (a side was not a valid shard) is a validation
 // error, and the caller treats it as a conflict.
 func MergeShard(kind ShardKind, base, ours, theirs []byte) (merged []byte, conflicts []string, err error) {
+	if len(base) == 0 {
+		if base, err = emptyShard(kind); err != nil {
+			return nil, nil, err
+		}
+	}
 	b, err := rawObject(base)
 	if err != nil {
 		return nil, nil, Validationf("", "merge: base is not a JSON object: %v", err)
@@ -87,7 +110,7 @@ func MergeShard(kind ShardKind, base, ours, theirs []byte) (merged []byte, confl
 	if err != nil {
 		return nil, nil, Validationf("", "merge: one side is not a JSON object: %v", err)
 	}
-	repeating := repeatCloseConflict(b)
+	repeating := repeatCloseConflict(b, o, t)
 
 	keys := map[string]bool{}
 	for _, m := range []map[string]json.RawMessage{b, o, t} {
@@ -146,14 +169,41 @@ func MergeShard(kind ShardKind, base, ours, theirs []byte) (merged []byte, confl
 	return merged, nil, nil
 }
 
-// repeatCloseConflict reports whether the base shard carried a repeat rule, in
-// which case a `closed` that differs between the sides is a conflict however
-// it differs — never a clock to resolve, never a one-sided change to take.
-// Closing a repeating task MINTS its successor from the state the closer saw:
-// a double close has minted two live successors (two shards with distinct
+// repeatCloseConflict reports whether ANY of the three shards carries a repeat
+// rule, in which case a `closed` that differs between the sides is a conflict
+// however it differs — never a clock to resolve, never a one-sided change to
+// take. Closing a repeating task MINTS its successor from the state the closer
+// saw: a double close has minted two live successors (two shards with distinct
 // random ids, which git merges without a murmur), and an edit racing a close
 // lands on the closed predecessor while the successor was cut from the base.
-// Pre-merge, both stopped the sync for a human; they must still.
+// Pre-merge, both stopped the sync for a human; they must still. The base alone
+// is not enough to ask: a side that MADE the task repeating while the other
+// closed it would otherwise merge key by key into a done task carrying a rule
+// — no successor, no conflict, and lint's repeat-on-closed as the only sign that
+// the series died.
+func repeatCloseConflict(shards ...map[string]json.RawMessage) bool {
+	for _, m := range shards {
+		if rule, ok := rawString(m["repeat"]); ok && rule != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// emptyShard is the kind's zero value as furrow writes it — the base a shard
+// both sides created is merged against.
+func emptyShard(kind ShardKind) ([]byte, error) {
+	switch kind {
+	case ShardTask:
+		return MarshalTask(&Task{})
+	case ShardEpic:
+		return MarshalEpic(&Epic{})
+	case ShardRepo:
+		return MarshalRepo(&RepoRecord{})
+	}
+	return nil, Internalf("", "merge: unknown shard kind %d", kind)
+}
+
 // SettleFromTip answers the conflict remedy "set the field to the other
 // side's value and re-run": a rebase replays the local commits ONE AT A TIME,
 // so the pick that first set a conflicting field keeps conflicting however the
@@ -192,11 +242,6 @@ func SettleFromTip(ours, theirs, tip []byte, fields []string) (settledTheirs []b
 		return nil, false, err
 	}
 	return out, true, nil
-}
-
-func repeatCloseConflict(base map[string]json.RawMessage) bool {
-	rule, ok := rawString(base["repeat"])
-	return ok && rule != ""
 }
 
 // compactValue normalises a raw value for comparison: a hand-edit's whitespace
