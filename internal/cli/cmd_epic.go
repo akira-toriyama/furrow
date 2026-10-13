@@ -311,7 +311,15 @@ func newEpicSetCmd() *cobra.Command {
 					return err
 				}
 				if len(plan.Moves) > 0 {
-					emitAnchorPreview(a, plan)
+					// The other edits on the line ride the same --yes; a preview
+					// that showed only the move hid them (t-r6vt).
+					var pending []string
+					for _, f := range []string{"title", "goal", "standing", "pinned", "add-label", "rm-label", "add-repo", "rm-repo", "meta", "rm-meta"} {
+						if cmd.Flags().Changed(f) {
+							pending = append(pending, f)
+						}
+					}
+					emitAnchorPreview(a, plan, pending)
 					return nil
 				}
 			}
@@ -344,7 +352,7 @@ func newEpicSetCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&pinned, "pinned", false, "surface this box's actionable tasks in next/brief regardless of the active scope (--pinned=false clears)")
 	cmd.Flags().StringVar(&anchor, "anchor", "", "set or move the box's calendar day (YYYY-MM-DD); a move shifts every follower's due by the day delta, previewed until --yes")
 	cmd.Flags().BoolVar(&clearAnchor, "clear-anchor", false, "drop the box's day (followers keep their pointer and are disclosed)")
-	cmd.Flags().BoolVar(&yes, "yes", false, "apply the follower due moves an --anchor change previews")
+	cmd.Flags().BoolVar(&yes, "yes", false, "apply the follower due moves an --anchor change previews (the preview also names every other edit on the line, held back until --yes)")
 	cmd.MarkFlagsMutuallyExclusive("anchor", "clear-anchor")
 	return cmd
 }
