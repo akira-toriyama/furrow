@@ -628,9 +628,10 @@ series), `meta.json`, or a shard one side deleted: sync **aborts the rebase
 automatically** (the board is never left with markers; your local sync commit
 survives) and exits 3 with `"kind": "sync-conflict"` + `"details": {"paths":
 [...], "fields": {<path>: [<field>...]}}` — `paths` names only the shards that
-need a decision (`fields` the fields, where that is the reason); set those
-fields to the value you want with a furrow command on this checkout and re-run,
-and the rest merges on its own. The progress object
+need a decision (`fields` the fields, where that is the reason); to take the
+other side's value, set it with a furrow command on this checkout (`git show
+@{u}:<path>` in the board shows it) and re-run — the merge then keeps your other
+fields; to keep yours, the other side has to take it. The progress object
 `{committed, pulled, pushed, conflict, complete, committed_bodies,
 pending_bodies, pending_stash, foreign_files, switches, incoming, merged_shards}` prints to
 stdout on

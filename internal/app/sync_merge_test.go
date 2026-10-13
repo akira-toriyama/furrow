@@ -328,6 +328,37 @@ func TestSyncConflictNamesTheDisagreeingFields(t *testing.T) {
 	if tk, _, err := bb.Get(other.ID); err != nil || tk.Status == "done" {
 		t.Errorf("the mergeable shard must not be half-applied by an aborted sync: %+v %v", tk, err)
 	}
+
+	// The remedy, followed to the letter: B takes the other side's title and
+	// re-runs. The rebase replays B's FIRST commit ("B wins") on its own, so
+	// without the tip-aware settling that pick conflicted forever and every
+	// retry grew the unpushed stack (t-kge6). Now the dispute is settled from
+	// the tip, the pick merges, and the rest of B's edits ride along.
+	if _, err := boardAt(t, cloneB, t2.Add(time.Minute)).SetTitle(id, "A wins"); err != nil {
+		t.Fatal(err)
+	}
+	p, err = openBoard(t, cloneB).Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatalf("following the remedy must merge and push: %v", err)
+	}
+	if !p.Pushed || p.Conflict {
+		t.Errorf("progress after the remedy = %+v; want pushed, no conflict", p)
+	}
+	if strings.TrimSpace(gittest.RunGit(t, git, cloneB, "log", "--oneline", "@{u}..HEAD")) != "" {
+		t.Errorf("unpushed commits remain after the remedy:\n%s", gittest.RunGit(t, git, cloneB, "log", "--oneline", "@{u}..HEAD"))
+	}
+	if _, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	for name, dir := range map[string]string{"A": cloneA, "B": cloneB} {
+		board := openBoard(t, dir)
+		if tk, _, err := board.Get(id); err != nil || tk.Title != "A wins" {
+			t.Errorf("%s: title = %v %v; want the value both sides agreed on", name, tk, err)
+		}
+		if tk, _, err := board.Get(other.ID); err != nil || tk.Status != "done" || tk.Value == nil || *tk.Value != 2 {
+			t.Errorf("%s: the mergeable shard must carry A's close AND B's value: %+v %v", name, tk, err)
+		}
+	}
 }
 
 func TestShardKindOf(t *testing.T) {

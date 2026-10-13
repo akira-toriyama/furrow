@@ -407,3 +407,24 @@ func TestMergeShardRejectsEmptyAndIdentitylessSides(t *testing.T) {
 		t.Error("a repo merge naming no repo must fail")
 	}
 }
+
+// The remedy for a field conflict is to take the other side's value: a local
+// tip that did so settles the pick's dispute in ours' favour; a tip that still
+// holds the pick's value (or a third one) leaves it standing.
+func TestSettleFromTip(t *testing.T) {
+	ours := []byte(`{"id":"t-1","title":"Alpha","value":3}`)
+	theirs := []byte(`{"id":"t-1","title":"Beta","value":3}`)
+	settled, ok, err := SettleFromTip(ours, theirs, []byte(`{"id":"t-1","title":"Alpha","value":5}`), []string{"title"})
+	if err != nil || !ok {
+		t.Fatalf("a tip agreeing with ours must settle: ok=%v err=%v", ok, err)
+	}
+	if !bytes.Contains(settled, []byte(`"title":"Alpha"`)) || !bytes.Contains(settled, []byte(`"value":3`)) {
+		t.Fatalf("settled theirs = %s; want ours' title and theirs' other fields", settled)
+	}
+	if _, ok, _ := SettleFromTip(ours, theirs, theirs, []string{"title"}); ok {
+		t.Fatal("a tip still holding the pick's value must not settle")
+	}
+	if _, ok, _ := SettleFromTip(ours, theirs, []byte(`{"id":"t-1","title":"Gamma"}`), []string{"title"}); ok {
+		t.Fatal("a tip holding a third value must not settle")
+	}
+}

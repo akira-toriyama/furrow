@@ -139,7 +139,9 @@ func newSyncCmd() *cobra.Command {
 			"never left with conflict markers; your local sync commit survives) and the\n" +
 			"error envelope carries kind \"sync-conflict\" plus the paths that need a\n" +
 			"decision and, per shard refused over a field, those fields (details.fields):\n" +
-			"set them to the value you want on this checkout and re-run. A co-writer's\n" +
+			"to take the other side's value, set it on this checkout with a furrow command\n" +
+			"(`git show @{u}:<path>` in the board shows it) and re-run — the merge then\n" +
+			"keeps your other fields; to keep yours, the other side has to take it. A co-writer's\n" +
 			"fetch racing a ref/index lock during the pull is waited out with a bounded\n" +
 			"backoff; a live race clears in under a second, so a lock that persists is a\n" +
 			"likely-stale .git/*.lock and sync fails terminally naming it (kind\n" +

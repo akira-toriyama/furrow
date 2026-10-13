@@ -107,6 +107,20 @@ func (a *App) resolveShardConflicts(ctx context.Context, r *gitrepo.Repo, spec s
 				continue
 			}
 			data, fields, merr := core.MergeShard(kind, base, ours, theirs)
+			if merr == nil && len(fields) > 0 {
+				// theirs is ONE replayed local commit, not the local branch:
+				// when the branch's tip (ORIG_HEAD, the pre-rebase head) already
+				// agrees with upstream on every disputed field — the operator
+				// followed the remedy and set it to the other side's value —
+				// the dispute is settled in its favour and the pick merges
+				// (t-kge6: without this, the aligning commit was never reached
+				// and the sync wedged for good).
+				if tip := r.FileAt(ctx, "ORIG_HEAD", p); len(tip) > 0 {
+					if settledTheirs, settled, serr := core.SettleFromTip(ours, theirs, tip, fields); serr == nil && settled {
+						data, fields, merr = core.MergeShard(kind, base, ours, settledTheirs)
+					}
+				}
+			}
 			if merr != nil || len(fields) > 0 {
 				unresolved = append(unresolved, shardConflict{Path: p, Fields: fields})
 				continue
