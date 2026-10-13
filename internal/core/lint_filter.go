@@ -64,6 +64,7 @@ var lintCodes = map[string]bool{
 	"repeat-invalid":       true,
 	"repeat-no-timezone":   true,
 	"repeat-on-closed":     true,
+	"archived-not-done":    true,
 	"repeat-orphan-anchor": true,
 	"repo-as-label":        true,
 	"repo-shape":           true,

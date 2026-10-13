@@ -83,6 +83,11 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 		return nil, err
 	}
 	ps := a.lintIndex(idx, epics)
+	arcPs, err := a.lintArchive()
+	if err != nil {
+		return nil, err
+	}
+	ps = append(ps, arcPs...)
 
 	// Provenance ([lint].provenance_markers, OFF by default): warn on an open,
 	// non-terminal task whose body carries none of the board's provenance
@@ -802,6 +807,28 @@ func (a *App) archivedIDs() ([]string, error) {
 		return nil, err
 	}
 	return append(ids, eids...), nil
+}
+
+// lintArchive judges the archive store's tasks on the one invariant that
+// store carries: everything in it is done. An open task there is a sync that
+// crossed an archive with a reopen (git's rename detection used to pair the
+// archive's delete+add with the other side's edit and apply the reopen onto
+// the ARCHIVE copy — t-pmz8), and no read shows it until it is brought back.
+func (a *App) lintArchive() ([]core.Problem, error) {
+	arcIdx, _, err := a.archiveSnapshot()
+	if err != nil || arcIdx == nil {
+		return nil, err
+	}
+	var ps []core.Problem
+	for i := range arcIdx.Tasks {
+		t := &arcIdx.Tasks[i]
+		if t.Status == a.Cfg.DoneLane {
+			continue
+		}
+		ps = append(ps, core.Problem{Severity: core.SevError, Code: "archived-not-done", ID: t.ID,
+			Msg: fmt.Sprintf("is in archive/ but in lane %q — an archive and a reopen crossed in a sync; `furrow unarchive %s` brings it back to the board, or `furrow unarchive %s` then `furrow done %s` if it is finished", t.Status, t.ID, t.ID, t.ID)})
+	}
+	return ps, nil
 }
 
 // assetOwner returns the task id that owns asset name — the id in taskIDs for

@@ -365,7 +365,14 @@ func (r *Repo) PullRebase(ctx context.Context) error {
 	// rebase onto @{u} (the ref fetch just moved), autostashing anything outside
 	// the sync commit. A conflict stops the rebase in progress (the caller's to
 	// abort); a transient race here left no rebase to abort, so classify it.
-	if _, stderr, err := runGit(ctx, r.git, r.top, "rebase", "--autostash", "-q", "@{u}"); err != nil {
+	// --strategy-option=no-renames: an archive is a delete under tasks/ plus an
+	// add under archive/tasks/ with near-identical bytes, which git's rename
+	// detection pairs up — and then applies the other side's edit of the hot
+	// shard (a reopen) onto the ARCHIVE copy, cleanly, leaving an open task in
+	// archive/ that no read shows (t-pmz8). Without rename detection the two
+	// sides meet as delete-vs-modify on tasks/<id>.json, which the resolver
+	// reports as the conflict it is.
+	if _, stderr, err := runGit(ctx, r.git, r.top, "rebase", "--autostash", "--strategy-option=no-renames", "-q", "@{u}"); err != nil {
 		if !r.RebaseInProgress(ctx) && isTransientRace(stderr) {
 			return fmt.Errorf("%w: %s", ErrTransientRace, firstLine(stderr))
 		}
