@@ -58,10 +58,11 @@ func Boards() (*BoardsList, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	entries, warn, err := config.LoadGlobalBoards(path)
+	global, warn, err := config.LoadGlobal(path)
 	if err != nil {
 		return nil, warn, err
 	}
+	entries := global.Boards
 	cfgDir := filepath.Dir(path)
 	list := &BoardsList{Config: path, Boards: []BoardEntry{}}
 	for _, b := range entries {

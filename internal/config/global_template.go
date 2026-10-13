@@ -32,12 +32,36 @@ const GlobalTemplate = `# furrow — user-level configuration (~/.config/furrow/
 # sitting in one checkout. Backing many repos is what that buys, not what it means.
 #
 # Ordinary furrow commands only READ this file (` + "`furrow config set --user`" + `
-# edits one key of one [[board]] entry surgically); a half-written [[board]] is clamped away with a
-# warning (` + "`furrow lint`" + ` and ` + "`furrow config path`" + ` report it), never an error, so a
-# typo here can't break furrow in an unrelated directory.
+# edits one key surgically — of [session], or of one [[board]] entry); a
+# half-written [[board]] or an out-of-range [session] value is clamped away
+# with a warning (` + "`furrow lint`" + ` and ` + "`furrow config path`" + ` report it), never an
+# error, so a typo here can't break furrow in an unrelated directory.
 #
 # Write it with ` + "`furrow config init`" + ` (it fills path/scopes in from the nearest
 # .furrow when run inside a board); find it with ` + "`furrow config path`" + `.
+
+[session]
+# The co-located-session write guard. Under an AI agent session (the adapter
+# today reads Claude Code's registry, detected by its environment; a human
+# shell and CI pass untouched) a task or epic write that touches a repo
+# another, EARLIER-started session on this machine sits in is judged against
+# that session's activity:
+#   "refuse"  refused (exit 2, kind ` + "`session-busy`" + `; ` + "`add`" + ` escapes with --draft)
+#             while that session is working, and through with a warning
+#             (stderr + ` + "`session_warn`" + ` in the --json envelope) once it is idle.
+#   "warn"    never refused: every clash, working or idle, is the warning.
+#   "off"     the registry is not read: no refusal, no warning, no note.
+# PER-MACHINE by design (this file, not a board's shared config.toml): the
+# sessions it judges are this machine's, and one operator's choice must not
+# reach other clones or CI. Default "refuse".
+guard = "refuse"
+# Idle = that session's transcript ends in a turn-ended record (its turn is
+# over, however recent the write), or, when the turn is not known to have
+# ended, it has been silent for more than this many seconds — the ceiling that
+# keeps a long tool call or an unanswered permission prompt from refusing
+# forever. A session whose transcript cannot be found is measured from its
+# start under the same ceiling. A positive count; warn-only is guard = "warn".
+busy_seconds = 300
 
 [[board]]
 # Path to the central .furrow (~, relative to this file, or absolute).

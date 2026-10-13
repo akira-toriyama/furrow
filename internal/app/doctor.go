@@ -155,8 +155,13 @@ func Doctor(ctx context.Context, cwd string, assertDirs []string) (*DoctorReport
 	// to is the one the operator is asking about, and it is probed FIRST —
 	// whether or not a [[board]] entry names it (doctorResolvedBoards).
 	r.Problems = append(r.Problems, doctorResolutions(r, cwd, assertDirs)...)
-	r.Problems = append(r.Problems, doctorBoards(ctx, r, path)...)
-	r.Problems = append(r.Problems, doctorSessionRegistry()...)
+	// The user config is read ONCE: its boards feed the board probes, its
+	// [session] section decides whether the registry probe runs at all.
+	global, warn, gerr := config.LoadGlobal(path)
+	r.Problems = append(r.Problems, doctorBoards(ctx, r, path, global, warn, gerr)...)
+	if gerr == nil && global.Session.Guard != config.SessionGuardOff {
+		r.Problems = append(r.Problems, doctorSessionRegistry()...)
+	}
 
 	sortDoctorProblems(r.Problems)
 	r.Healthy = true
@@ -174,7 +179,8 @@ func Doctor(ctx context.Context, cwd string, assertDirs []string) (*DoctorReport
 // format, so the one failure worth a finding is the format drifting under
 // furrow: an entry that no longer parses, or a registry that yields nothing
 // readable — in which case the guard silently protects nothing but a stderr
-// note. A machine without the registry raises nothing.
+// note. A machine without the registry raises nothing, and Doctor skips the
+// probe when the user config switches the guard off (nothing reads it then).
 func doctorSessionRegistry() []core.Problem {
 	dir, err := claudecode.DefaultDir()
 	if err != nil {
@@ -235,15 +241,15 @@ func envOverrideProblems(envDir, envBoard string) []core.Problem {
 	return ps
 }
 
-// doctorBoards loads the user config, probes every [[board]] into r.Boards,
-// and returns the config- and board-level findings.
-func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string) []core.Problem {
+// doctorBoards takes the user config as Doctor loaded it, probes every
+// [[board]] into r.Boards, and returns the config- and board-level findings.
+func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string, global *config.Global, warn []string, err error) []core.Problem {
 	var ps []core.Problem
-	entries, warn, err := config.LoadGlobalBoards(cfgPath)
 	if err != nil {
 		return append(ps, core.Problem{Severity: core.SevError, Code: "global-config-unreadable", ID: "config",
 			Msg: fmt.Sprintf("cannot parse %s: %v — no central board resolves anywhere until it parses", cfgPath, err)})
 	}
+	entries := global.Boards
 	for _, w := range warn {
 		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "global-config-clamp", ID: "config", Msg: w})
 	}
@@ -264,7 +270,7 @@ func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string) []core.P
 	for _, b := range entries {
 		// Same resolution and the same wording `furrow boards` uses (one helper),
 		// rendered into doctor's sink. These are already surfaced by
-		// LoadGlobalBoards' clamp warnings via discovery; naming them here too
+		// LoadGlobal's clamp warnings via discovery; naming them here too
 		// keeps each finding self-contained.
 		entry, w, ok := resolveBoardEntry(cfgDir, b, present)
 		for _, msg := range w {

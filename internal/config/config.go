@@ -50,15 +50,6 @@ type raw struct {
 	Review struct {
 		StaleAfterDays *int `toml:"stale_after_days"`
 	} `toml:"review"`
-	// Session is the [session] section: the co-located-session write guard's
-	// one knob, how many seconds of transcript silence make a mid-turn
-	// occupant count as idle (an ended turn is idle at once) — the line between
-	// a WORKING occupant (the write is refused) and an idle one (it goes through
-	// with a warning). Board-level and committed on purpose: what "still working"
-	// means is a policy of the board the sessions share, not of one machine.
-	Session struct {
-		BusySeconds *int `toml:"busy_seconds"`
-	} `toml:"session"`
 	Lint struct {
 		ArchiveDone       *int     `toml:"archive_done"`
 		IgnoreCodes       []string `toml:"ignore_codes"`
@@ -385,17 +376,6 @@ func fromRaw(r raw) (*Config, []string, error) {
 			warn = append(warn, fmt.Sprintf("review.stale_after_days %d < 0; using %d", *r.Review.StaleAfterDays, DefaultReviewStaleAfterDays))
 		} else {
 			c.ReviewStaleAfterDays = *r.Review.StaleAfterDays
-		}
-	}
-
-	// [session].busy_seconds: a "seconds" knob — 0 is valid (no occupant with a
-	// readable activity record ever counts as busy, so the guard only warns);
-	// only a negative value clamps to the default.
-	if r.Session.BusySeconds != nil {
-		if *r.Session.BusySeconds < 0 {
-			warn = append(warn, fmt.Sprintf("session.busy_seconds %d < 0; using %d", *r.Session.BusySeconds, DefaultSessionBusySeconds))
-		} else {
-			c.SessionBusySeconds = *r.Session.BusySeconds
 		}
 	}
 

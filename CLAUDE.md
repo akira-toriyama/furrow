@@ -156,16 +156,18 @@ in the envelope's `renumbered` without advancing the neighbours' `updated`.
 `.furrow/config.toml` reads are **clamp-don't-reject**: unknown keys and
 out-of-range values fall back to defaults with a warning that
 `furrow lint` surfaces. Read it through `internal/config`. **The one writer is
-`furrow config set`** (`--user` for a `[[board]]` entry of the user config): a surgical,
+`furrow config set`** (`--user` for the user config: its `[session]` keys, or a `[[board]]` entry with `--board`): a surgical,
 git-config-style edit — comments and every untouched byte survive — that is
 STRICT where reads are lenient (an unknown key is exit 2 with the vocabulary in
 candidates; a value the reader would clamp is refused before the write). Every
 other command still only reads. The shipped sections
 are `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`,
-`[archive]`, `[lint]`, `[due]`, `[revisit]`, `[review]`, `[session]`, `[alias]`,
+`[archive]`, `[lint]`, `[due]`, `[revisit]`, `[review]`, `[alias]`,
 and the top-level `mode` and `default_repo` — the repo-root `config.toml` (which `furrow init` writes
 and check.sh diffs byte-for-byte) is the canonical annotated copy; read it rather
-than trusting a prose list here. **The board's own `default_repo` is the
+than trusting a prose list here. The session write guard's `[session]`
+(`guard = refuse|warn|off`, `busy_seconds`) is the USER-LEVEL config's, per
+machine (repo-root `config.global.toml` is its annotated copy). **The board's own `default_repo` is the
 FALLBACK scope**, applied only when discovery (the user-level
 `~/.config/furrow/config.toml` `[[board]]` entries, scoped by repo) supplied
 none; it is a literal `owner/repo` only, because `config.toml` is committed and

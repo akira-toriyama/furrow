@@ -119,11 +119,17 @@ type App struct {
 
 	// Sessions is the co-located-session write guard's registry (see
 	// session_guard.go); nil = the guard is off, which is every process not
-	// running under Claude Code (a human shell, CI, tests). Open wires
+	// running under an AI agent (a human shell, CI, tests) and every one whose
+	// user config says `[session] guard = "off"`. Open wires
 	// internal/claudecode's registry when the environment says otherwise.
 	Sessions core.SessionRegistry
 	// Self identifies this process's session in that registry.
 	Self SessionRef
+	// Session is the user-level [session] section the guard runs under: the
+	// mode (refuse | warn — off never reaches guardRepos, it leaves Sessions
+	// nil) and the busy window. Per-machine, read by Open; the defaults
+	// otherwise.
+	Session config.GlobalSession
 	// The guard's per-process state: the registry is read once (sessionRead),
 	// self located (sessionSelf/sessionSelfOK), cwd→repo memoized
 	// (sessionRepos), idle clashes recorded for the CLI's warning
@@ -202,16 +208,41 @@ func Open(startDir string) (*App, error) {
 	if res.DefaultRepo != "" {
 		a.BoardRepos = []string{res.DefaultRepo}
 	}
-	// The write guard is armed by the environment alone: under Claude Code
-	// every write is an AI write. A missing config dir is not an error here —
+	// The write guard is armed by the environment (under Claude Code every
+	// write is an AI write) and disarmed only by the user config's
+	// `[session] guard = "off"`: the one per-machine switch, read here so a
+	// human shell never pays for it. A missing registry dir is not an error —
 	// the registry read reports (and stands down on) whatever it finds.
 	if pid, id, ok := claudecode.Self(); ok {
 		a.Self = SessionRef{PID: pid, ID: id}
-		if dir, err := claudecode.DefaultDir(); err == nil {
-			a.Sessions = claudecode.Registry{Dir: dir}
+		var notes []string
+		a.Session, notes = userSession()
+		a.sessionNotes = append(a.sessionNotes, notes...)
+		if a.Session.Guard != config.SessionGuardOff {
+			if dir, err := claudecode.DefaultDir(); err == nil {
+				a.Sessions = claudecode.Registry{Dir: dir}
+			}
 		}
 	}
 	return a, nil
+}
+
+// userSession reads the user config's [session] section for the guard. A
+// file that cannot be read is one stand-down note and the defaults (the
+// guard refuses as shipped), never an error: the board opened fine, and the
+// user-config discovery arm reports the broken file loudly when it is the one
+// resolving. Clamp warnings are not repeated here — `furrow lint` and
+// `furrow config path` surface them.
+func userSession() (config.GlobalSession, []string) {
+	path, err := globalConfigPath()
+	if err != nil {
+		return config.DefaultGlobalSession(), []string{fmt.Sprintf("session guard: cannot locate the user config (%v); running with its defaults", err)}
+	}
+	g, _, err := config.LoadGlobal(path)
+	if err != nil {
+		return config.DefaultGlobalSession(), []string{fmt.Sprintf("session guard: the user config cannot be read (%v); running with its defaults", err)}
+	}
+	return g.Session, nil
 }
 
 // DiscoverAliases returns the board config's [alias] table for the store
@@ -237,12 +268,12 @@ func openAt(dir string) (*App, error) {
 		return nil, core.Validationf("config", "%v", err)
 	}
 	st := fsstore.New(dir, cfg.Lanes, cfg.IDPrefix, cfg.EpicIDPrefix, cfg.IDWidth)
-	return &App{Store: st, Cfg: cfg, Clock: core.SystemClock(), Dir: dir, Warnings: warn, Loc: cfg.DueTimezone}, nil
+	return &App{Store: st, Cfg: cfg, Clock: core.SystemClock(), Dir: dir, Warnings: warn, Loc: cfg.DueTimezone, Session: config.DefaultGlobalSession()}, nil
 }
 
 // NewWithStore builds an App over an arbitrary Store (for tests / dry-runs).
 func NewWithStore(st Store, cfg *config.Config, clk core.Clock) *App {
-	return &App{Store: st, Cfg: cfg, Clock: clk, Loc: cfg.DueTimezone}
+	return &App{Store: st, Cfg: cfg, Clock: clk, Loc: cfg.DueTimezone, Session: config.DefaultGlobalSession()}
 }
 
 // load reads the index and canonicalizes it, so every read path sees tasks in

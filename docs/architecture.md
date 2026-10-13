@@ -490,14 +490,18 @@ strictly EARLIER and whose cwd derives to a repo the write touches (the
 `repo = "auto"` derivation, worktree-aware). A clash is *idle* when the
 occupant's turn is known to have ENDED (`TurnEnded`: the transcript's last
 record is an assistant `end_turn` — however fresh, the closing message IS the
-last write) or when it has been silent past `[session].busy_seconds`;
-otherwise *busy*. The window is the ceiling on a mid-turn reading, not the
-signal, so a long tool call goes idle after it rather than refusing forever;
-`busy_seconds = 0` makes every clash idle (refusals off, guard on). Busy
-refuses (exit 2, `session-busy`, `details.clashes`, `details.hint` = `--draft`
-on an add); idle puts `session_warn {clashes}` in the `--json` envelope and
-warns on stderr. First come, first served keeps the autonomous session safe:
-its own writes never clash with a later watcher.
+last write) or when it has been silent past the user config's
+`[session].busy_seconds`; otherwise *busy*. The window is the ceiling on a
+mid-turn reading, not the signal, so a long tool call goes idle after it
+rather than refusing forever. Busy refuses (exit 2, `session-busy`,
+`details.clashes`, `details.hint` = `--draft` on an add); idle puts
+`session_warn {clashes}` in the `--json` envelope and warns on stderr. The
+user config's `[session].guard` (`config.SessionGuard`, read into
+`App.Session` by `Open`) sets the mode: `refuse` is that rule; `warn` records
+a busy clash as the warning instead (its `busy` flag kept, so the line says
+working); `off` leaves `App.Sessions` nil, so nothing below runs. First come,
+first served keeps the autonomous session safe: its own writes never clash
+with a later watcher.
 
 The stderr line is news, not noise (`app.UnheardClashes`,
 `session_warn_ledger.go`): a session that ran ~40 mutations beside one quiet
@@ -516,11 +520,16 @@ the error envelope parses it the same way.
 
 Four stand-downs, each one stderr `note: session guard: …` line and never a
 refusal: no `CLAUDECODE` env (a human shell, CI), an unreadable registry
-(`doctor`: `session-registry-unreadable`), a self not in it, and a self whose
-own transcript cannot be found (a refusal on a guess would be a new failure,
-worse than the one prevented). The registry format is read in exactly one
-package (`internal/claudecode`); the board-level `[session]` section holds the
-one knob because what "still working" means is a policy of the shared board.
+(`doctor`: `session-registry-unreadable`, a probe `doctor` skips under
+`guard = "off"`), a self not in it, and a self whose own transcript cannot be
+found (a refusal on a guess would be a new failure, worse than the one
+prevented); an unreadable user config is a fifth note and the defaults, never
+an error. The registry format is read in exactly one package
+(`internal/claudecode`); `[session]` is the USER-LEVEL config's section
+(per-machine — the sessions it judges are this machine's, and a committed
+board config would carry one operator's `off` to every clone), with no key
+per agent: another agent is one more `core.SessionRegistry` adapter plus a
+`Self()` detection, never a config change.
 
 ### CLI commands
 
@@ -589,7 +598,7 @@ table above.
 
 Sections and their defaults:
 `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`, `[archive]`, `[lint]`,
-`[due]`, `[revisit]`, `[review]`, `[session]`, `[alias]`, and the top-level
+`[due]`, `[revisit]`, `[review]`, `[alias]`, and the top-level
 `mode` and `default_repo`. The keys and per-key reasoning live in the repo-root
 [`config.toml`](../config.toml), the exact file `furrow init` writes and
 check.sh diffs byte-for-byte; `scripts/check-docs-vocab.sh` holds this list to
@@ -601,11 +610,14 @@ in `config.toml`, not `meta.json`. `[alias]` expands before cobra dispatch,
 builtin-first (a shadowing alias is inert; `lint` warns `alias-shadow`), and
 command knowledge stays in `internal/cli`, so it needs no port.
 
-### User-level config: central boards
+### User-level config: central boards and the session guard
 
 The user-level `${XDG_CONFIG_HOME:-~/.config}/furrow/config.toml` declares
 central boards as `[[board]]` entries (`path`, `scopes`, `repo`, `label`,
-`auto_filter`, `autocommit`); its shape and setup are README's ([Central
+`auto_filter`, `autocommit`) and the per-machine `[session]` section of the
+[session write guard](#the-session-write-guard) (`guard`, `busy_seconds`;
+`config.LoadGlobal` returns both as one `config.Global`, clamped per key);
+its shape and setup are README's ([Central
 board](../README.md#user-level-config-no-per-repo-file)). What lives here is
 the resolution, split to honour the purity rule:
 
