@@ -245,3 +245,31 @@ func TestRevisitSummaryOmitsEmptyLists(t *testing.T) {
 		t.Errorf("an empty summary = %s; want {}", data)
 	}
 }
+
+// The whole flow under a hook's environment: a sync run from another repo's
+// git hook (GIT_DIR and friends pointing there) must still commit and push
+// the BOARD's repo, and the other clone must see the write.
+func TestSyncUnderAnotherReposHookEnvironmentPublishesTheBoard(t *testing.T) {
+	git, cloneA, cloneB := setupClones(t)
+	other := t.TempDir()
+	gittest.RunGit(t, git, other, "init", "-q", "-b", "main")
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(other, ".git", "index"))
+
+	a := openBoard(t, cloneA)
+	x, err := a.Add("from the hook", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := a.Sync(context.Background(), SyncOpts{})
+	if err != nil || !p.Pushed {
+		t.Fatalf("sync under the hook's GIT_DIR: err=%v progress=%+v", err, p)
+	}
+	if _, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := openBoard(t, cloneB).Get(x.ID); err != nil {
+		t.Errorf("the write never reached the board's remote: %v", err)
+	}
+}
