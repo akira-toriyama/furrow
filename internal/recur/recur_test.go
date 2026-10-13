@@ -858,3 +858,16 @@ func TestAnOccurrenceMovesForwardWhenMidnightItselfIsMissing(t *testing.T) {
 		t.Errorf("occurrence = %s, want it on 2026-09-06 — the day the rule named", got.Format(time.RFC3339))
 	}
 }
+
+// A stored line with COUNT=0 is what Compile refuses in the other spelling;
+// Valid read the parsed option, on which a zero count is "no count", and let
+// it through (an endless series where a bounded one was written).
+func TestValidRefusesAZeroCount(t *testing.T) {
+	anchor := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	if err := Valid("FREQ=DAILY;COUNT=0", anchor, nil); err == nil || !strings.Contains(err.Error(), "count") {
+		t.Errorf("Valid(COUNT=0) = %v; want a count refusal", err)
+	}
+	if err := Valid("FREQ=DAILY;COUNT=3", anchor, nil); err != nil {
+		t.Errorf("Valid(COUNT=3) = %v; want ok", err)
+	}
+}

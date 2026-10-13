@@ -530,20 +530,22 @@ func (a *App) EpicActivate(ref, reason string) (before, after *core.Epic, openDe
 // checkRepoSlots refuses an activation that would give a repo two active boxes,
 // naming the repo AND the incumbent so the fix is one command away.
 func (a *App) checkRepoSlots(target *core.Epic, epics []core.Epic) error {
-	held := map[string]string{} // repo -> the epic already holding its slot
+	// Keyed by the folded name: repos compare case-insensitively everywhere
+	// else (anyRepoMatch), and `O/R` beside `o/r` used to hold two slots.
+	held := map[string]string{} // repo (folded) -> the epic already holding its slot
 	for i := range epics {
 		e := &epics[i]
 		if e.ID == target.ID || !e.Active || !e.IsOpen() {
 			continue
 		}
 		for _, r := range e.Repos {
-			held[r] = e.ID
+			held[strings.ToLower(r)] = e.ID
 		}
 	}
 	var clashes []string
 	details := map[string]any{}
 	for _, r := range target.Repos {
-		if other, ok := held[r]; ok {
+		if other, ok := held[strings.ToLower(r)]; ok {
 			clashes = append(clashes, fmt.Sprintf("%s (held by %s)", r, other))
 			details[r] = other
 		}

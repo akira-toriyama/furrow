@@ -271,3 +271,61 @@ func parityTask(id, title string) core.Task {
 	return core.Task{ID: id, Title: title, Status: "inbox", Priority: 100,
 		Created: now, Updated: now, Body: core.BodyPath(id)}
 }
+
+// Four more places the double promised less (or more) than fsstore (t-hw7m):
+// SaveAssetRaw bypassed the write gate; a box's Reviewed and a task's
+// RepeatAnchor were handed out by pointer, so a caller could rewrite the
+// store without saving; and the id listings answered [] where fsstore answers
+// nil for an empty store.
+func TestFourDriftsCloseLikeFsstore(t *testing.T) {
+	for _, sc := range storeCases() {
+		t.Run(sc.name, func(t *testing.T) {
+			s := sc.make(t)
+			// Empty listings are nil on both.
+			ids, err := s.ListTaskIDs()
+			if err != nil || ids != nil {
+				t.Errorf("ListTaskIDs on an empty store = %#v (%v); want nil", ids, err)
+			}
+			bodies, err := s.ListBodyIDs()
+			if err != nil || bodies != nil {
+				t.Errorf("ListBodyIDs on an empty store = %#v (%v); want nil", bodies, err)
+			}
+			// A read never aliases the store: a task's repeat anchor and a box's
+			// review stamp survive a caller scribbling on what it was handed.
+			anchor := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+			idx := &core.Index{Tasks: []core.Task{{ID: "t-00001", Title: "x", Status: "inbox", Priority: 10, Created: anchor, Updated: anchor, Due: &anchor, Repeat: "FREQ=DAILY", RepeatAnchor: &anchor}}}
+			if err := s.Save(idx); err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.Load()
+			if err != nil || len(got.Tasks) != 1 || got.Tasks[0].RepeatAnchor == nil {
+				t.Fatalf("Load = %+v (%v); want the repeat anchor back", got, err)
+			}
+			*got.Tasks[0].RepeatAnchor = anchor.Add(24 * time.Hour)
+			again, _ := s.Load()
+			if !again.Tasks[0].RepeatAnchor.Equal(anchor) {
+				t.Errorf("a Load result aliased the store's repeat anchor")
+			}
+			reviewed := anchor.Add(time.Hour)
+			if err := s.SaveEpic(&core.Epic{ID: "e-00001", Title: "box", Created: anchor, Updated: anchor, Reviewed: &reviewed}); err != nil {
+				t.Fatal(err)
+			}
+			e, ok, err := s.LoadEpic("e-00001")
+			if err != nil || !ok || e.Reviewed == nil {
+				t.Fatalf("LoadEpic = %+v (%v %v); want the review stamp back", e, ok, err)
+			}
+			*e.Reviewed = anchor.Add(48 * time.Hour)
+			e2, _, _ := s.LoadEpic("e-00001")
+			if !e2.Reviewed.Equal(reviewed) {
+				t.Errorf("a LoadEpic result aliased the store's review stamp")
+			}
+			// SaveAssetRaw respects the write gate like SaveAsset.
+			if err := s.SetBoardVersion(1); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.SaveAssetRaw("t-00001-x.png", []byte("x")); err == nil {
+				t.Errorf("SaveAssetRaw on a stale board must be refused")
+			}
+		})
+	}
+}

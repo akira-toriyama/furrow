@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
@@ -362,10 +363,10 @@ func (a *App) unreviewedRepos(o QueryOpts, now time.Time) ([]UnreviewedRepo, err
 	threshold := time.Duration(days) * 24 * time.Hour
 	var out []UnreviewedRepo
 	for _, rec := range recs {
-		if o.ScopeRepo != "" && rec.Repo != o.ScopeRepo {
+		if o.ScopeRepo != "" && !strings.EqualFold(rec.Repo, o.ScopeRepo) {
 			continue
 		}
-		if o.Repo != "" && rec.Repo != o.Repo {
+		if o.Repo != "" && !strings.EqualFold(rec.Repo, o.Repo) {
 			continue
 		}
 		if rec.LastReviewed == nil {
