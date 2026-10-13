@@ -358,6 +358,30 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 	return nil
 }
 
+// VetSet judges a SetOpts the way SetMany does BEFORE it loads the index —
+// the lane, the epic and anchor refs, the due and shift spellings, the repeat
+// rule, the flag combinations — so a selection's preview can refuse up front
+// exactly what --yes would refuse. The index-bound refusals (an undated row
+// under --due-shift, a repeating row under --anchor, a follower under
+// --repeat) are the preview tails' to mark per row.
+func (a *App) VetSet(o SetOpts) error {
+	if err := a.validateSetOpts("", o); err != nil {
+		return err
+	}
+	if _, err := a.resolveDue(o); err != nil {
+		return err
+	}
+	if _, err := a.resolveAnchor(o); err != nil {
+		return err
+	}
+	if o.Repeat != nil {
+		if _, err := a.compileRepeat("", *o.Repeat); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SetMany applies the same edits to every id in one write and returns the
 // per-id series reports, one entry per id in the same order — the batch twin
 // of Set, so a bulk `set -s done` owes the same receipt a single one does. A
@@ -420,6 +444,20 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 		}
 		if len(repeating) > 0 {
 			return nil, nil, repeatingAnchorErr(repeating, len(order))
+		}
+	}
+	if o.Repeat != nil && !o.ClearAnchor {
+		// The mirror scan: a rule bound onto a follower. The per-task check
+		// below would name --clear-repeat (the rule the caller just asked for)
+		// as the remedy; the pointer is what has to go.
+		var followers []string
+		for _, id := range order {
+			if t, _ := idx.Find(id); t.Anchor != "" {
+				followers = append(followers, id)
+			}
+		}
+		if len(followers) > 0 {
+			return nil, nil, anchoredRepeatErr(followers, len(order))
 		}
 	}
 	var successors []*pendingSuccessor
@@ -603,6 +641,11 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 		return nil, nil, nil, undatedAnchorErr([]string{id}, 1)
 	}
 	if t.Anchor != "" && t.Repeat != "" {
+		if o.Repeat != nil && o.Anchor == nil {
+			// This write bound the rule onto an existing follower: the pointer
+			// is the thing to drop, not the rule just asked for.
+			return nil, nil, nil, anchoredRepeatErr([]string{id}, 1)
+		}
 		return nil, nil, nil, repeatingAnchorErr([]string{id}, 1)
 	}
 	if o.Epic != nil {

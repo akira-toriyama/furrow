@@ -220,7 +220,7 @@ func TestSetAnchorRefusals(t *testing.T) {
 	}
 	preview := mustRun(t, "set", "-q", "epic:"+epic, "-r", "", "--anchor", epic)
 	if !strings.Contains(preview, "would set 0 of") || !strings.Contains(preview, fresh+"  [inbox] fresh  no due — refused") ||
-		!strings.Contains(preview, repeating+"  [inbox] weekly  due 2026-10-05 23:59  repeats — refused  repeats") {
+		!strings.Contains(preview, repeating+"  [inbox] weekly  due 2026-10-05 23:59  follows its own rule — refused  repeats") {
 		t.Errorf("preview must mark the rows --yes would refuse:\n%s", preview)
 	}
 }

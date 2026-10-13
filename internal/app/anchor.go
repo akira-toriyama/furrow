@@ -260,6 +260,22 @@ func undatedAnchorErr(undated []string, total int) *core.Error {
 	}
 }
 
+// anchoredRepeatErr is `--repeat` on a task that FOLLOWS a box's day: the
+// same invariant seen from the other side, so the remedy names the pointer
+// (--clear-anchor), not the rule the caller just asked for. Ids in
+// details.anchored.
+func anchoredRepeatErr(anchored []string, total int) *core.Error {
+	subject := ""
+	if total == 1 {
+		subject = anchored[0]
+	}
+	return &core.Error{
+		Code: core.CodeValidation, Kind: core.KindValidation, Subject: subject,
+		Msg:     fmt.Sprintf("%d of %d task(s) follow a box's day (anchor), and a series follows its own repeat_anchor, not a box's — nothing was set; narrow the selection (-q no:anchor) or drop the pointer in the same write (--clear-anchor)", len(anchored), total),
+		Details: map[string]any{"anchored": anchored},
+	}
+}
+
 // repeatingAnchorErr is `--anchor` on a task that repeats: a series follows
 // its own repeat_anchor, and a box's day moving would shift this occurrence
 // alone. Same all-or-nothing shape, ids in details.repeating.

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
 	"github.com/akira-toriyama/furrow/v9/internal/core"
@@ -113,9 +114,65 @@ func taskIDs(tasks []core.Task) []string {
 type previewTail struct {
 	tag     func(*core.Task) string // per-row tag, after the due; "" for none
 	refused func(*core.Task) bool   // a row that makes --yes exit 2
-	key     string                  // JSON key for the refused ids
-	why     string                  // what such a row lacks ("carry no due to shift")
-	remedy  string                  // the human closing line when any row is refused
+	// move is the JSON twin of a tag that names a landing: the row's value
+	// before and after the write (a shifted due), emitted under `moves` as
+	// {id, from, to} — the human tag's arrow was the only place the preview
+	// said where a row would land, and an agent reads the object.
+	move   func(*core.Task) (from, to string, ok bool)
+	key    string // JSON key for the refused ids
+	why    string // what such a row lacks ("carry no due to shift")
+	remedy string // the human closing line when any row is refused
+}
+
+// composeTails folds several flags' tails into one: every tag rides the row,
+// any refusal refuses it, the why names each flag's, and the remedy is the
+// generic one — a row refused for two reasons has no single -q to narrow by.
+// One tail is itself; none is nil. (`--due-shift --anchor` used to keep the
+// anchor's tail alone, so the shift's refusals went unmarked and the apply's
+// first error named a flag the preview never mentioned.)
+func composeTails(tails ...*previewTail) *previewTail {
+	switch len(tails) {
+	case 0:
+		return nil
+	case 1:
+		return tails[0]
+	}
+	whys := make([]string, len(tails))
+	for i, t := range tails {
+		whys[i] = t.why
+	}
+	return &previewTail{
+		tag: func(t *core.Task) string {
+			var parts []string
+			for _, tl := range tails {
+				if tl.tag != nil {
+					if s := tl.tag(t); s != "" {
+						parts = append(parts, s)
+					}
+				}
+			}
+			return strings.Join(parts, "  ")
+		},
+		refused: func(t *core.Task) bool {
+			for _, tl := range tails {
+				if tl.refused != nil && tl.refused(t) {
+					return true
+				}
+			}
+			return false
+		},
+		move: func(t *core.Task) (string, string, bool) {
+			for _, tl := range tails {
+				if tl.move != nil {
+					return tl.move(t)
+				}
+			}
+			return "", "", false
+		},
+		key:    "refused",
+		why:    strings.Join(whys, " / "),
+		remedy: "narrow the selection to the rows without a refusal above — --yes would exit 2",
+	}
 }
 
 // emitSelectPreview renders the would-be write without performing it —
@@ -140,6 +197,17 @@ func emitSelectPreview(a *app.App, action string, tasks []core.Task, tail *previ
 		obj := map[string]any{"dry_run": true, "tasks": tasks}
 		if len(refused) > 0 {
 			obj[tail.key] = refused
+		}
+		if tail != nil && tail.move != nil {
+			moves := []map[string]string{}
+			for i := range tasks {
+				if from, to, ok := tail.move(&tasks[i]); ok {
+					moves = append(moves, map[string]string{"id": tasks[i].ID, "from": from, "to": to})
+				}
+			}
+			if len(moves) > 0 {
+				obj["moves"] = moves
+			}
 		}
 		emitObject(obj)
 		return
