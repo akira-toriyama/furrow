@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
@@ -119,7 +121,15 @@ func (a *App) AutoCommitFlush(ctx context.Context, cmd string, args []string) *A
 		return res
 	}
 
-	if err := r.Commit(ctx, autoCommitMessage(cmd, a.Cfg.IDPrefix, args), commitPaths...); err != nil {
+	// Parallel mutations in one checkout race on the index lock exactly as two
+	// syncs do: the same bounded backoff, and a race lost outright (the other
+	// writer's commit already carries these paths) is silent — the change is
+	// published either way.
+	commit := func() error { return r.Commit(ctx, autoCommitMessage(cmd, a.Cfg.IDPrefix, args), commitPaths...) }
+	switch err := retryTransient(commit, func(d time.Duration) error { return a.ctxSleep(ctx, d) }, defaultConcurrentWait, r.Toplevel()); {
+	case errors.Is(err, gitrepo.ErrNothingToCommit):
+		return res
+	case err != nil:
 		warn("git commit failed (%v) — the change is on disk but uncommitted; commit it by hand or run `furrow sync`", err)
 		return res
 	}
