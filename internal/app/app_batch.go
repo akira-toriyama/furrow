@@ -528,6 +528,9 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		if err := a.guardRespace(idx, changes); err != nil {
+			return nil, nil, nil, err
+		}
 		t.Priority = target
 		for _, c := range changes {
 			ct, _ := idx.Find(c.ID)

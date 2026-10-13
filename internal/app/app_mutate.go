@@ -122,6 +122,9 @@ func (a *App) ReorderRelative(id, ref string, before bool) (*core.Task, []core.P
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := a.guardRespace(idx, changes); err != nil {
+		return nil, nil, err
+	}
 	// The neighbours a respace moves are edited directly, outside the stamp:
 	// positional bookkeeping, not progress, so their `updated` stays put.
 	saved, err := a.mutateIn(idx, id, func(t *core.Task) {
@@ -135,6 +138,26 @@ func (a *App) ReorderRelative(id, ref string, before bool) (*core.Task, []core.P
 		return nil, nil, err
 	}
 	return saved, changes, nil
+}
+
+// guardRespace runs the session guard over the NEIGHBOURS a respace rewrites:
+// their shards are written too, so a repo one of them carries that another
+// session holds refuses the whole write before anything lands — exactly as
+// `rm --force` and an anchor move guard every entity they edit. The target
+// task itself is guarded by the mutate skeleton (t-s895).
+func (a *App) guardRespace(idx *core.Index, changes []core.PriorityChange) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	var repos []string
+	ids := make([]string, 0, len(changes))
+	for _, c := range changes {
+		if t, i := idx.Find(c.ID); i >= 0 {
+			repos = unionRepos(repos, t.Repos)
+			ids = append(ids, c.ID)
+		}
+	}
+	return a.guardRepos(strings.Join(ids, ","), repos, "")
 }
 
 // SetValue records a task's value estimate, or clears it when v is nil (back to
