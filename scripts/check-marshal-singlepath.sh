@@ -20,6 +20,14 @@ cd "$(dirname "$0")/.."
 #                                    input — into its own line struct, the same
 #                                    shape as claudecode: an unknown field is exit
 #                                    2, never parked, and no shard type is in reach)
+#   - internal/app/session_warn_ledger.go
+#                                   (reads and writes furrow's OWN per-user
+#                                    state file — the session guard's warning
+#                                    ledger, under $XDG_STATE_HOME — into its own
+#                                    struct: not a board file, no shard type in
+#                                    reach, and an unknown key there is nothing
+#                                    to preserve, so the single path has no
+#                                    invariant to protect)
 #   - *_test.go                     (tests may encode freely)
 #
 # DECODERS are guarded too, and that is not symmetry for its own sake: a raw
@@ -32,6 +40,7 @@ hits="$(grep -rnE 'json\.(Marshal|NewEncoder|Unmarshal|NewDecoder)' --include='*
   | grep -vE 'internal/core/(marshal|passthrough)\.go' \
   | grep -vE 'internal/cli/output\.go' \
   | grep -vE 'internal/cli/add_batch\.go' \
+  | grep -vE 'internal/app/session_warn_ledger\.go' \
   | grep -vE 'internal/claudecode/' || true)"
 
 if [ -n "$hits" ]; then

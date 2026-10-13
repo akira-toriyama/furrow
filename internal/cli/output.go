@@ -108,6 +108,20 @@ func emitObject(v any) {
 	printJSON(v)
 }
 
+// emitStderrObject writes one value as a single compact JSON line on stderr —
+// the machine form of a stderr notice under --json/--ndjson, so a caller
+// that parses stderr for the error envelope parses a notice the same way.
+// Stdout stays pure data. Its one caller today is the session guard's
+// idle-occupant warning.
+func emitStderrObject(v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		fmt.Fprintln(errOut, v)
+		return
+	}
+	fmt.Fprintln(errOut, string(b))
+}
+
 // isTTY reports whether stdout is a terminal, so a path that would otherwise
 // hand control to an interactive program prints its output instead when nobody
 // is there to drive it.

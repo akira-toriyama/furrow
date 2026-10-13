@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/akira-toriyama/furrow/internal/app"
 	"github.com/akira-toriyama/furrow/internal/claudecode"
 	"github.com/akira-toriyama/furrow/internal/core"
 )
@@ -67,6 +68,7 @@ func armGuard(t *testing.T, idle time.Duration) (cc string, occupantTranscript s
 	t.Helper()
 	cc = t.TempDir()
 	t.Setenv(claudecode.EnvConfigDir, cc)
+	t.Setenv(app.EnvStateHome, t.TempDir()) // the warning ledger, never the developer's own
 	t.Setenv(claudecode.EnvActive, "1")
 	t.Setenv(claudecode.EnvPID, strconv.Itoa(os.Getpid()))
 	t.Setenv(claudecode.EnvSessionID, "self-sid")
@@ -118,8 +120,19 @@ func TestCLISessionGuardIdleOccupantWarnsAndAnnotates(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("idle occupant must not refuse: exit %d\n%s%s", code, so, se)
 	}
-	if !strings.Contains(se, "warning:") || !strings.Contains(se, "o/glyph") || !strings.Contains(se, "n-occ-sid") {
-		t.Fatalf("stderr should carry the warning line: %q", se)
+	// Under --json the stderr line is one JSON object (the error envelope's
+	// reader parses it the same way), carrying the prose and the clashes.
+	var line struct {
+		Warn struct {
+			Message string           `json:"message"`
+			Clashes []map[string]any `json:"clashes"`
+		} `json:"session_warn"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(se)), &line); err != nil || line.Warn.Message == "" {
+		t.Fatalf("stderr under --json should be one session_warn JSON line: %v\n%q", err, se)
+	}
+	if !strings.Contains(line.Warn.Message, "o/glyph") || !strings.Contains(line.Warn.Message, "n-occ-sid") || len(line.Warn.Clashes) != 1 {
+		t.Fatalf("session_warn line = %+v", line.Warn)
 	}
 	var created struct {
 		ID string `json:"id"`
@@ -144,8 +157,11 @@ func TestCLISessionGuardIdleOccupantWarnsAndAnnotates(t *testing.T) {
 	if c["repo"] != "o/glyph" || c["busy"] != false || c["idle_seconds"] == nil || c["session_id"] != "occ-sid" {
 		t.Errorf("clash = %v", c)
 	}
-	if strings.Count(se, "warning:") != 1 {
-		t.Errorf("the warning prints once: %q", se)
+	// The same quiet occupant was reported by the `add` above: the envelope
+	// still carries the clash (each write's own fact), the stderr line is
+	// not repeated (t-zk3f — see TestCLISessionGuardWarnsOncePerSession).
+	if strings.Contains(se, "session_warn") || strings.Contains(se, "warning:") {
+		t.Errorf("an already-reported occupant must not print again: %q", se)
 	}
 	// A clean write carries no key.
 	t.Setenv(claudecode.EnvActive, "")
@@ -209,5 +225,54 @@ func TestCLISessionGuardRefusalNeverClaimsTheWriteWentThrough(t *testing.T) {
 	}
 	if strings.Contains(se, "went through") || strings.Contains(so, "session_warn") {
 		t.Fatalf("a refused run must not print the idle warning:\n%s%s", so, se)
+	}
+}
+
+// The stderr warning is news, not noise: one line per (occupant, repo) per
+// Claude Code session, across furrow processes — again only when the
+// occupant has been active since. The envelope's session_warn is untouched.
+func TestCLISessionGuardWarnsOncePerSession(t *testing.T) {
+	initStore(t)
+	_, transcript := armGuard(t, 20*time.Minute)
+	t.Setenv(claudecode.EnvActive, "")
+	id := addTask(t, "in glyph", "-r", "o/glyph", "-s", "ready")
+	t.Setenv(claudecode.EnvActive, "1")
+
+	_, se, code := runSplit(t, "note", id, "one")
+	if code != 0 || strings.Count(se, "warning:") != 1 {
+		t.Fatalf("first write warns once: exit %d\n%q", code, se)
+	}
+	for i, args := range [][]string{{"note", id, "two"}, {"label", id, "--add", "x"}, {"set", id, "-s", "backlog"}} {
+		so, se, code := runSplit(t, append([]string{"--json"}, args...)...)
+		if code != 0 {
+			t.Fatalf("write %d: exit %d\n%s%s", i, code, so, se)
+		}
+		if strings.Contains(se, "session_warn") || strings.Contains(se, "warning:") {
+			t.Errorf("write %d: the quiet occupant must not be reported again: %q", i, se)
+		}
+		if !strings.Contains(so, "session_warn") {
+			t.Errorf("write %d: the envelope still carries session_warn:\n%s", i, so)
+		}
+	}
+
+	// The occupant was active since (its transcript moved): news again, once.
+	later := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(transcript, later, later); err != nil {
+		t.Fatal(err)
+	}
+	if _, se, _ := runSplit(t, "note", id, "three"); strings.Count(se, "warning:") != 1 {
+		t.Errorf("an occupant active since the last report is reported again: %q", se)
+	}
+	if _, se, _ := runSplit(t, "note", id, "four"); strings.Contains(se, "warning:") {
+		t.Errorf("…and only once: %q", se)
+	}
+
+	// A NEW Claude Code session has heard nothing.
+	t.Setenv(claudecode.EnvSessionID, "self-2")
+	t.Setenv(claudecode.EnvPID, strconv.Itoa(os.Getpid()))
+	cc := os.Getenv(claudecode.EnvConfigDir)
+	plantSession(t, cc, os.Getpid(), "self-2", t.TempDir(), time.Now().Add(-5*time.Minute), time.Now())
+	if _, se, _ := runSplit(t, "note", id, "five"); strings.Count(se, "warning:") != 1 {
+		t.Errorf("a new session is told once: %q", se)
 	}
 }
