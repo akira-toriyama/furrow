@@ -12,7 +12,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // EnvStateHome is the XDG base for furrow's per-user, per-machine state —

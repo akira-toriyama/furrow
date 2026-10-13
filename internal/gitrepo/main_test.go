@@ -3,7 +3,7 @@ package gitrepo
 import (
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/gittest"
+	"github.com/akira-toriyama/furrow/v9/internal/gittest"
 )
 
 // TestMain isolates this package's real-git tests from the developer's ambient

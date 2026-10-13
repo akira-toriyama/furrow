@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 func day(d int) time.Time { return time.Date(2026, 6, d, 0, 0, 0, 0, time.UTC) }

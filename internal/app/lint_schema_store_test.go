@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // schema-outdated names the store that fell behind: id `meta` for the board,

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // The t-44h4 repro: the task-status bot appends a marker line to a body while

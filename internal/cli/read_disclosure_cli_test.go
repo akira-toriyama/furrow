@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/app"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // This file pins the one disclosure rule every listing read follows (t-sv35):

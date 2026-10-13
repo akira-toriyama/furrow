@@ -8,8 +8,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
 )
 
 // The incoming kinds, one closed vocabulary (`furrow vocab incoming-kinds`):

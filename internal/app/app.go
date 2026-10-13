@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/claudecode"
-	"github.com/akira-toriyama/furrow/internal/config"
-	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/store/fsstore"
+	"github.com/akira-toriyama/furrow/v9/internal/claudecode"
+	"github.com/akira-toriyama/furrow/v9/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/store/fsstore"
 )
 
 // DirName is the per-repo store directory.

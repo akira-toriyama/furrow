@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // The epic entity's app layer: the single mutation funnel for boxes, shaped like

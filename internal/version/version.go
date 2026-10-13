@@ -1,5 +1,5 @@
 // Package version carries the build identity, overridden at release time via
-// -ldflags "-X github.com/akira-toriyama/furrow/internal/version.<Field>=...".
+// -ldflags "-X github.com/akira-toriyama/furrow/v9/internal/version.<Field>=...".
 // Defaults describe a from-source build: Version "dev", with Commit/Date left
 // for the runtime/debug VCS stamp to fill in (see build.sh / .goreleaser.yaml).
 package version

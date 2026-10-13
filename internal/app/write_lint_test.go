@@ -4,7 +4,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // plantDeps writes deps straight to the store, the way a merge of two

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 var lanes = []string{"inbox", "backlog", "ready", "in-progress", "done", "icebox"}

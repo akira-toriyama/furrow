@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 func julyUTC(d int) time.Time { return time.Date(2026, 7, d, 0, 0, 0, 0, time.UTC) }

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/app"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // End-to-end asset-lint over a real on-disk fsstore board: exercises

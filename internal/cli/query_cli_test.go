@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/app"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // qIDs runs `ls -q <query> --json` and returns the matched ids (fails on error).

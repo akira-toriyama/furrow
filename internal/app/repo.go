@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // Repo resolution. A repo argument (-r/--repo, repo --add/--rm) is either a

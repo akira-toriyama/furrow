@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/config"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // A series is expanded in the zone of whichever machine closes it when the

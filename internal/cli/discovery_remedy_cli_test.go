@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/app"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // t-1dre: the discovery give-up error used to say "run `furrow init`"

@@ -1,6 +1,6 @@
 package app
 
-import "github.com/akira-toriyama/furrow/internal/core"
+import "github.com/akira-toriyama/furrow/v9/internal/core"
 
 // AttachResult reports the outcome of attaching a file to a task, so the
 // CLI can echo the stored path/reference back to the caller (agents want the

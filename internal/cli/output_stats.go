@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
 )
 
 // laneCountView / repoCountView / labelCountView are one distribution row each,

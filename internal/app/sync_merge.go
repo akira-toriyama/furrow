@@ -13,9 +13,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/gitrepo"
-	"github.com/akira-toriyama/furrow/internal/store/fsstore"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v9/internal/store/fsstore"
 )
 
 // shardKindOf classifies a repo-relative path under the board dir (spec) as a

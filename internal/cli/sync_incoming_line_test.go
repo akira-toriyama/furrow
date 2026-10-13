@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
 )
 
 // incomingLine: grouped by kind in classifier order, moves carry from→to,

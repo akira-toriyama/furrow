@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // writeUserConfig points XDG_CONFIG_HOME at a fresh dir holding the given

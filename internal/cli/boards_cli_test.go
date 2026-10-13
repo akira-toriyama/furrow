@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
 )
 
 // initGlobalConfig points XDG_CONFIG_HOME at a fresh dir, creates one real

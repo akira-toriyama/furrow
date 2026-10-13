@@ -1,6 +1,6 @@
 package app
 
-import "github.com/akira-toriyama/furrow/internal/core"
+import "github.com/akira-toriyama/furrow/v9/internal/core"
 
 // TaskRef is an EDGE resolved for legibility: the referenced task's id plus its
 // title and lane, so a reader (agent or human) sees what an edge points at without

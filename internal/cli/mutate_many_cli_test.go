@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // done/move accept several ids (the write-side twin of `show <id>...`): one

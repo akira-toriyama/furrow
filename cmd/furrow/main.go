@@ -16,7 +16,7 @@ import (
 	// identical write path.
 	_ "time/tzdata"
 
-	"github.com/akira-toriyama/furrow/internal/cli"
+	"github.com/akira-toriyama/furrow/v9/internal/cli"
 )
 
 func main() {

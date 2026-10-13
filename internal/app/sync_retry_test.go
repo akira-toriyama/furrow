@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/gitrepo"
-	"github.com/akira-toriyama/furrow/internal/gittest"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v9/internal/gittest"
 )
 
 var testRebaseWait = retryPolicy{

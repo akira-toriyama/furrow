@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/recur"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/recur"
 )
 
 // RepeatReport is what a close says about the series it advanced.

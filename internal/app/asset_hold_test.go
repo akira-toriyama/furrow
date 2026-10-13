@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // The t-7hhb contract: a store loses an asset only when nothing remaining in

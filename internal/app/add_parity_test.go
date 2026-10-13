@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // `add` and `add --stdin` are the same command with a different input shape, so

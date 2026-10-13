@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/config"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 var idRe = regexp.MustCompile(`^t-[0-9a-z]{5}$`)

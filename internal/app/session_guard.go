@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/config"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // The co-located-session write guard.

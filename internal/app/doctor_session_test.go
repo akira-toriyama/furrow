@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/claudecode"
+	"github.com/akira-toriyama/furrow/v9/internal/claudecode"
 )
 
 func countDoctorCode(r *DoctorReport, code string) int {

@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // sameIDs reports whether tasks carry exactly want's ids, in order.

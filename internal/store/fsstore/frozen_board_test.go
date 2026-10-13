@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // The frozen board: a REAL board's bytes, committed under testdata/, that a

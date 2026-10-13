@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/gittest"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/gittest"
 )
 
 // These are the real-git two-clone e2e tests for `furrow sync`: what sync

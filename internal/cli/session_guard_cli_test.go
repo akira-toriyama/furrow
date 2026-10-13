@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/app"
-	"github.com/akira-toriyama/furrow/internal/claudecode"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/claudecode"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // plantSession writes a registry entry (and, when active is non-zero, a

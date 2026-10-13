@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // t-5r9g: the verb-first spellings a first-time agent reaches for — `dep add

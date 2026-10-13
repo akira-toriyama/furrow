@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // loadSpy counts index Loads and can tamper with what a given Load hands back —

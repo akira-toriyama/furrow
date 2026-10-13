@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // moveOne moves one task and returns the series report a close produces when

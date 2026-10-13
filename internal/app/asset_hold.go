@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // Asset transport for the entity moves and removals — archive, unarchive, rm,

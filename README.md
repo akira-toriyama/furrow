@@ -10,7 +10,7 @@
 
 **Multi-person, honestly.** furrow is single-operator-first today, and that is the polished path. Several people *can* work one board — it is a git repo, so they clone, push, and `furrow sync` (per-task shards make concurrent edits a clean union). But per-person niceties — an `@mention` and a task **assignee** — are **not built yet**; they are on the roadmap, not a permanent non-goal.
 
-Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.25+). No database, no daemon, no cloud.
+Written in Go (module `github.com/akira-toriyama/furrow/v9`, Go 1.25+). No database, no daemon, no cloud.
 
 > **Status:** furrow is **CLI-only** and shipping — the core domain, the full
 > CLI, and `migrate` all work. A TUI/GUI is a separate, planned front-end over
@@ -28,7 +28,7 @@ Written in Go (module `github.com/akira-toriyama/furrow`, Go 1.25+). No database
 brew install akira-toriyama/tap/furrow
 
 # Go toolchain (from source)
-go install github.com/akira-toriyama/furrow/cmd/furrow@latest
+go install github.com/akira-toriyama/furrow/v9/cmd/furrow@latest
 
 # Nix
 nix run github:akira-toriyama/furrow

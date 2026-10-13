@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
 )
 
 // tidy through the CLI: a bare run previews both classes and writes nothing,

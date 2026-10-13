@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // Get returns a task and its body. NotFound when the id is unknown.

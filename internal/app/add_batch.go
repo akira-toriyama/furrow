@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // BatchSpec is one line of `furrow add --batch`: an AddSpec plus an optional

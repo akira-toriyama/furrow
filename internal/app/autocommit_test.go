@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/gittest"
+	"github.com/akira-toriyama/furrow/v9/internal/gittest"
 )
 
 // These are real-git tests for post-mutation autocommit (AutoCommitFlush). They

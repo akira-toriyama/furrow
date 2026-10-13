@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/schema"
-	"github.com/akira-toriyama/furrow/internal/version"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/schema"
+	"github.com/akira-toriyama/furrow/v9/internal/version"
 	"github.com/spf13/cobra"
 )
 

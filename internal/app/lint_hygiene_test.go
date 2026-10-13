@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // title-scope-marker is opt-in and title-only: with the board vocabulary set,
