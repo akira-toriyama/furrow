@@ -1,6 +1,6 @@
 package app
 
-import "github.com/akira-toriyama/furrow/internal/core"
+import "github.com/akira-toriyama/furrow/v9/internal/core"
 
 // ReviewTask stamps a task's `reviewed` timestamp — the record that a human
 // looked at and re-assessed this task. Unlike every other single-task edit it

@@ -8,10 +8,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/claudecode"
-	"github.com/akira-toriyama/furrow/internal/config"
-	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v9/internal/claudecode"
+	"github.com/akira-toriyama/furrow/v9/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
 )
 
 // SevInfo is the doctor-only third severity: a fact worth SEEING that is not a

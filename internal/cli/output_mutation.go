@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/app"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // printOK prints a short confirmation line for a mutation (human mode) or the

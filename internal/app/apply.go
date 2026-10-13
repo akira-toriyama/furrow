@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // ApplyMode is when directives are applied: at PR open or PR merge. It changes

@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // Board-scope repo derivation (repo = "auto"): turn the enclosing checkout into

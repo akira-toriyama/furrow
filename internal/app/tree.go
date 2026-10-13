@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // The board, grouped by box. Before v6 this drew a task->task `parent` forest of

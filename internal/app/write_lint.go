@@ -3,7 +3,7 @@ package app
 import (
 	"sort"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // saveIndex is the one write of the hot store's task index. The first call in

@@ -11,9 +11,9 @@ builds:
     env: [CGO_ENABLED=0]
     ldflags:
       - -s -w
-      - -X github.com/akira-toriyama/furrow/internal/version.Version={{.Version}}
-      - -X github.com/akira-toriyama/furrow/internal/version.Commit={{.FullCommit}}
-      - -X github.com/akira-toriyama/furrow/internal/version.Date={{.CommitDate}}
+      - -X github.com/akira-toriyama/furrow/v9/internal/version.Version={{.Version}}
+      - -X github.com/akira-toriyama/furrow/v9/internal/version.Commit={{.FullCommit}}
+      - -X github.com/akira-toriyama/furrow/v9/internal/version.Date={{.CommitDate}}
     goos: [linux, darwin]
     goarch: [amd64, arm64]
 

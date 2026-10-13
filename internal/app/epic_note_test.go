@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/config"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // A box's progress record is the SAME operation as a task's: the paragraph

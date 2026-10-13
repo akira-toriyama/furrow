@@ -40,8 +40,8 @@
           vendorHash = "sha256-GRQ9gX/ayoQowSQV37jNokUbRvR4FS/o2dwLrbYiXEU=";
           ldflags = [
             "-s" "-w"
-            "-X github.com/akira-toriyama/furrow/internal/version.Version=${version}"
-            "-X github.com/akira-toriyama/furrow/internal/version.Commit=${rev}"
+            "-X github.com/akira-toriyama/furrow/v9/internal/version.Version=${version}"
+            "-X github.com/akira-toriyama/furrow/v9/internal/version.Commit=${rev}"
           ];
           subPackages = [ "cmd/furrow" ];
           meta = with pkgs.lib; {

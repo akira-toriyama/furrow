@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
 )
 
 // retryPolicy bounds how long Sync waits out a transient concurrent-writer

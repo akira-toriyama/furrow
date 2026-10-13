@@ -6,7 +6,7 @@ package app
 import (
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // Check sets a checklist item's done state by zero-based index. An out-of-range

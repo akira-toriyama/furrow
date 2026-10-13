@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/gittest"
+	"github.com/akira-toriyama/furrow/v9/internal/gittest"
 )
 
 // TestMain isolates every test in this package from the developer's real

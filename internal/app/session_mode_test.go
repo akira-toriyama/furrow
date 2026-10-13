@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/claudecode"
-	"github.com/akira-toriyama/furrow/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/claudecode"
+	"github.com/akira-toriyama/furrow/v9/internal/config"
 )
 
 // t-hyr0: `guard = "warn"` never refuses — a working occupant is recorded as

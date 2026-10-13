@@ -1,7 +1,7 @@
 package app
 
 import (
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // `furrow tidy` — the mechanized tidy pass (preview unless --yes), for the two

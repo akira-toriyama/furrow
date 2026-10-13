@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/gittest"
+	"github.com/akira-toriyama/furrow/v9/internal/gittest"
 )
 
 // TestEmptyCloneLandsOnMain is the anchor for the process-env git isolation

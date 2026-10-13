@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/akira-toriyama/furrow/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/config"
 )
 
 // BoardsList is what `furrow boards` prints: the user-level config file and one

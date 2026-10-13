@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // dueLayouts are the absolute spellings `--due` accepts, tried in order after

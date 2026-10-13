@@ -3,8 +3,8 @@ package cli
 import (
 	"fmt"
 
-	"github.com/akira-toriyama/furrow/internal/app"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 	"github.com/spf13/cobra"
 )
 

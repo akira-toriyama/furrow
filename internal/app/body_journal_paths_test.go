@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // Every body the upgrade writes on the HOT store is journaled: a renamed

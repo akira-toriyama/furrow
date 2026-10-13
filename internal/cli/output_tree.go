@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/app"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // groupView is one epic's group in `ls --tree --json`. Epic is a pointer so the

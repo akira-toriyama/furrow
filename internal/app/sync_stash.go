@@ -8,7 +8,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
 )
 
 // StashEntry is one autostash entry left holding working-tree changes. Commit is

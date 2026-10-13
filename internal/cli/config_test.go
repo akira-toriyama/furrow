@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/config"
+	"github.com/akira-toriyama/furrow/v9/internal/config"
 )
 
 func TestConfigPath_PrintsResolvedPath(t *testing.T) {

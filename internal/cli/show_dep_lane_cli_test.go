@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
 )
 
 // t-3acv: `show` printed `deps: t-xvh65` and `epic: e-k3m9` — ids alone, with

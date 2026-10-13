@@ -4,7 +4,7 @@
 package app
 
 import (
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // UncheckedItems is the `--check` spelling of a checklist seed: every text an

@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/app"
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // showFacts are the derived facts every `show` JSON shape carries beside the

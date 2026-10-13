@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/core"
-	"github.com/akira-toriyama/furrow/internal/gittest"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/gittest"
 )
 
 // seedTrackedFile commits a file OUTSIDE .furrow in clone A and pushes it, then

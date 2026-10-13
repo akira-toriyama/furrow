@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
 )
 
 // The touched-bodies journal makes "furrow itself wrote this body" durable

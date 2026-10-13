@@ -7,7 +7,7 @@ package app
 import (
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // EditPath ensures the body file of the entity ref names exists (creating an

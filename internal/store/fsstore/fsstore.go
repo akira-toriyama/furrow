@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // Store reads and writes a .furrow directory laid out as per-task shards:

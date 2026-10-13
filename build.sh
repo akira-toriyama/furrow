@@ -11,7 +11,7 @@ VERSION="$(git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null ||
 COMMIT="$(git rev-parse HEAD 2>/dev/null || echo '')"
 DATE="$(git show -s --format=%cI HEAD 2>/dev/null || echo '')"
 
-PKG=github.com/akira-toriyama/furrow/internal/version
+PKG=github.com/akira-toriyama/furrow/v9/internal/version
 mkdir -p bin
 GOTOOLCHAIN=local go build -trimpath \
   -ldflags "-s -w \

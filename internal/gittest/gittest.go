@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/internal/claudecode"
+	"github.com/akira-toriyama/furrow/v9/internal/claudecode"
 )
 
 // isolatedConfig is the throwaway global git config the tests run under. It

@@ -3,7 +3,7 @@ package app
 import (
 	"strings"
 
-	"github.com/akira-toriyama/furrow/internal/core"
+	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
 // UpgradeStore is one store's part of a flag day. A board is usually two stores

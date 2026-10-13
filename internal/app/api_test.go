@@ -1,6 +1,6 @@
 package app
 
-import "github.com/akira-toriyama/furrow/internal/core"
+import "github.com/akira-toriyama/furrow/v9/internal/core"
 
 // The single-target conveniences the tests read naturally — one task in, one
 // task out — over the batch entry points production actually has. They live
