@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -58,6 +59,18 @@ func (c *batchCheck) UnmarshalJSON(data []byte) error {
 	var obj struct {
 		Text *string `json:"text"`
 		Done *bool   `json:"done"`
+	}
+	// DisallowUnknownFields matches keys case-insensitively (encoding/json's
+	// rule), which let {"TEXT": ...} through while a top-level "Title" was
+	// refused; the keys are checked by their exact spelling first (t-xm83).
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &keys); err != nil {
+		return fmt.Errorf("checklist entry %s: want a string or {\"text\": ..., \"done\": true|false}: %v", strings.TrimSpace(string(data)), err)
+	}
+	for k := range keys {
+		if k != "text" && k != "done" {
+			return fmt.Errorf("checklist entry %s: unknown key %q (want \"text\" and optionally \"done\")", strings.TrimSpace(string(data)), k)
+		}
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -137,11 +150,14 @@ func addFromBatch(cmd *cobra.Command, a *app.App, src string, shared app.AddOpts
 func parseBatch(r io.Reader, shared app.AddOpts) ([]app.BatchSpec, error) {
 	var specs []app.BatchSpec
 	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // a body rides the line
+	sc.Buffer(make([]byte, 0, 64*1024), batchLineMax) // a body rides the line
 	lineNo := 0
 	for sc.Scan() {
 		lineNo++
 		raw := strings.TrimSpace(sc.Text())
+		if lineNo == 1 {
+			raw = strings.TrimPrefix(raw, "\uFEFF") // an editor's byte-order mark is not line 1's first field
+		}
 		if raw == "" {
 			continue
 		}
@@ -174,6 +190,9 @@ func parseBatch(r io.Reader, shared app.AddOpts) ([]app.BatchSpec, error) {
 		specs = append(specs, app.BatchSpec{Key: l.Key, AddSpec: app.AddSpec{Title: l.Title, AddOpts: l.merge(shared)}})
 	}
 	if err := sc.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return nil, core.Validationf("", "--batch line %d is longer than the %d MiB a line may carry; give that task its body with `furrow add --body-file` instead", lineNo+1, batchLineMax/(1024*1024))
+		}
 		return nil, core.Internalf("", "--batch: reading input: %v", err)
 	}
 	return specs, nil
@@ -227,16 +246,23 @@ func (l batchLine) merge(shared app.AddOpts) app.AddOpts {
 }
 
 // unionChecks is unionStrings for checklist items, keyed by text: the flag's
-// items first, then the line's entries whose text is new — an entry repeating
-// a flag's text adds nothing, tick included, exactly as a repeated label adds
-// nothing. nil in, nil out, for the same reason as unionStrings.
+// items first, then the line's entries whose text the FLAG did not already
+// give — an entry repeating a flag's text adds nothing, tick included, exactly
+// as a repeated label adds nothing. The line's own entries are kept as
+// written, duplicates and ticks included: a checklist exported with `show
+// --json` reads back with every row (t-xm83; `add --check a --check a` keeps
+// both too). nil in, nil out, for the same reason as unionStrings.
+// batchLineMax is the longest NDJSON line add --batch reads; a body past it
+// belongs in --body-file.
+const batchLineMax = 4 * 1024 * 1024
+
 func unionChecks(a []core.ChecklistItem, b []batchCheck) []core.ChecklistItem {
 	if len(a) == 0 && len(b) == 0 {
 		return nil
 	}
 	out := append([]core.ChecklistItem(nil), a...)
 	for _, c := range b {
-		if !slices.ContainsFunc(out, func(it core.ChecklistItem) bool { return it.Text == c.Text }) {
+		if !slices.ContainsFunc(a, func(it core.ChecklistItem) bool { return it.Text == c.Text }) {
 			out = append(out, core.ChecklistItem(c))
 		}
 	}
