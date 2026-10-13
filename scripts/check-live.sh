@@ -15,6 +15,11 @@ cd "$(dirname "$0")/.."
 
 BIN="${FURROW_BIN:?set FURROW_BIN to the built furrow binary}"
 
+# Every mktemp dir below is removed on exit, whichever guard ends the run; the
+# four used to pile up under $TMPDIR, one set per run.
+tmp="" gtmp="" ctmp="" sb=""
+trap 'rm -rf "$tmp" "$gtmp" "$ctmp" "$sb"' EXIT
+
 # NB: run each `diff` as a bare command (not `diff … && echo`). Under `set -e`,
 # a command on the LEFT of `&&` is exempt from errexit, so `diff … && echo`
 # would SWALLOW a real drift and exit 0. A standalone `diff` aborts on drift
@@ -32,7 +37,14 @@ echo "  epic schema matches docs/schema/furrow.epic.v2.json"
 
 echo "→ config template drift guard"
 tmp="$(mktemp -d)"
-( cd "$tmp" && "$BIN" init >/dev/null )
+# The same isolation as the smoke below: init reads the user config (a
+# [[board]] whose scope encloses $TMPDIR would redirect it) and, inside Claude
+# Code, arms the session guard — neither belongs in a template diff.
+( cd "$tmp"
+  export XDG_CONFIG_HOME="$tmp/xdg"
+  unset CLAUDECODE
+  "$BIN" init >/dev/null
+)
 diff -u config.toml "$tmp/.furrow/config.toml"
 echo "  config.toml matches init template"
 
@@ -40,7 +52,11 @@ echo "→ global config template drift guard"
 gtmp="$(mktemp -d)"
 # Run from a dir with no enclosing .furrow so `config init` derives nothing and
 # writes the placeholder template; XDG_CONFIG_HOME isolates where it lands.
-( cd "$gtmp" && XDG_CONFIG_HOME="$gtmp/xdg" "$BIN" config init >/dev/null )
+( cd "$gtmp"
+  export XDG_CONFIG_HOME="$gtmp/xdg"
+  unset CLAUDECODE
+  "$BIN" config init >/dev/null
+)
 diff -u config.global.toml "$gtmp/xdg/furrow/config.toml"
 echo "  config.global.toml matches config-init placeholder template"
 

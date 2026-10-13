@@ -87,14 +87,15 @@ sh scripts/repin-vendorhash.sh            # after go.mod/go.sum change: re-deriv
 
 ```sh
 sh scripts/check.sh   # the one command: marshaller + schema-write guards +
-                      # build/vet/test + golangci (warns when its version is
-                      # not build.yml's pin) + govulncheck of source AND binary +
-                      # schema/config/docs drift + a CLI smoke + (if goreleaser &
-                      # syft are installed) a release dry-run + (if installed)
-                      # actionlint / taplo / zizmor. Green here is NOT green CI:
-                      # go-bite, the commit/PR-title lint (glyph) and repo-policy
-                      # run only in CI, and an uninstalled tool is skipped with a
-                      # note, not failed. Run it before finishing.
+                      # build/vet/test + golangci (warns when its version, or
+                      # the local Go, is not what CI runs) + govulncheck of
+                      # source AND binary + schema/config/docs drift + a CLI
+                      # smoke + (if goreleaser & syft are installed) a release
+                      # dry-run + (if installed) actionlint / taplo / zizmor /
+                      # glyph lint over origin/main..HEAD. Green here is NOT
+                      # green CI: go-bite, the PR-title half of commit-lint and
+                      # repo-policy run only in CI, and an uninstalled tool is
+                      # skipped with a note, not failed. Run it before finishing.
 ```
 
 - **CLI**: directly runnable headless; tests cover core + store + app + cli + migrate.
