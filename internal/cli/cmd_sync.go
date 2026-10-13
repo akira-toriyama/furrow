@@ -131,11 +131,13 @@ func newSyncCmd() *cobra.Command {
 			"  3. git push (one pull→push retry on non-fast-forward)\n\n" +
 			"A rebase stop on machine-written shards (tasks/, epics/, repos/ *.json, hot or\n" +
 			"archived) that both sides wrote in DIFFERENT fields is merged field by field —\n" +
-			"the status bot's close and your checklist tick both land, `updated` takes the\n" +
-			"later stamp, `closed` the first close — and the rebase continues; the shards\n" +
-			"are listed in merged_shards and one \"merged:\" line. Any other conflict (a\n" +
-			"field both sides set differently, a `closed` change on a repeating task,\n" +
-			"meta.json, a deleted shard) aborts the rebase automatically (the board is\n" +
+			"the status bot's close and your checklist tick both land, `updated` and the\n" +
+			"review stamps take the later stamp, `closed` the first close, and a shard both\n" +
+			"sides created merges the same way (a field one side left null is unset there)\n" +
+			"— and the rebase continues; the shards are listed in merged_shards and one\n" +
+			"\"merged:\" line. Any other conflict (a field both sides set differently, a\n" +
+			"`closed` change on a task that repeats on either side, meta.json, a deleted\n" +
+			"shard) aborts the rebase automatically (the board is\n" +
 			"never left with conflict markers; your local sync commit survives) and the\n" +
 			"error envelope carries kind \"sync-conflict\" plus the paths that need a\n" +
 			"decision and, per shard refused over a field, those fields (details.fields):\n" +

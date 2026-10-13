@@ -538,3 +538,104 @@ func TestResolveShardConflictsNamesACancelledContext(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Two clones each make the FIRST review of the same repo — one human, one
+// agent — so both create the record, each with the other stamp at null. The
+// merge must carry both: refusing it left both clones unable to sync, since
+// `review` can only press "now" and neither could take the other's value.
+func TestSyncMergesBothSidesFirstReviewOfARepo(t *testing.T) {
+	_, cloneA, cloneB := setupClones(t)
+	t1 := time.Date(2026, 10, 5, 4, 47, 41, 0, time.UTC)
+	if _, err := boardAt(t, cloneA, t1).ReviewRepo("me/z", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := boardAt(t, cloneB, t1.Add(time.Second)).ReviewRepo("me/z", true); err != nil {
+		t.Fatal(err)
+	}
+	p, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatalf("two first reviews of one repo must merge: %v", err)
+	}
+	if !p.Pushed || len(p.MergedShards) != 1 || p.MergedShards[0] != ".furrow/repos/me__z.json" {
+		t.Errorf("progress = %+v; want the repo record pushed as a merged shard", p)
+	}
+	rec, ok, err := openBoard(t, cloneB).Store.LoadRepo("me/z")
+	if err != nil || !ok {
+		t.Fatalf("record after merge: ok=%v err=%v", ok, err)
+	}
+	if rec.LastReviewed == nil || !rec.LastReviewed.Equal(t1) || rec.LastAgentReviewed == nil || !rec.LastAgentReviewed.Equal(t1.Add(time.Second)) {
+		t.Errorf("merged record = %+v; want both stamps", rec)
+	}
+}
+
+// Both clones review the same task: a review changes no content, so two of
+// them are one review — the later — and never a conflict.
+func TestSyncMergesConcurrentReviewsOfATask(t *testing.T) {
+	_, cloneA, cloneB, id, t1, t2 := mergeClones(t)
+	if _, err := boardAt(t, cloneA, t1).ReviewTask(id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := boardAt(t, cloneB, t2).ReviewTask(id); err != nil {
+		t.Fatal(err)
+	}
+	p, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{})
+	if err != nil {
+		t.Fatalf("two reviews of one task must merge: %v", err)
+	}
+	if !p.Pushed || len(p.MergedShards) != 1 {
+		t.Errorf("progress = %+v; want the task pushed as a merged shard", p)
+	}
+	got, _, err := openBoard(t, cloneB).Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Reviewed == nil || !got.Reviewed.Equal(t2) {
+		t.Errorf("reviewed = %v; want the later review %s", got.Reviewed, t2)
+	}
+}
+
+// One clone binds a repeat rule to a task the other clone closes in the same
+// window. Field by field that is a done task carrying a rule — no successor
+// minted, the series dead with only lint's repeat-on-closed to say so — so it
+// must stop the sync as a `closed` conflict, exactly as a close racing an edit
+// of an already repeating task does.
+func TestSyncMakingATaskRepeatVersusClosingItIsAConflict(t *testing.T) {
+	_, cloneA, cloneB, id, t1, t2 := mergeClones(t)
+	due, daily := "2026-10-06", "daily"
+	if _, _, _, err := boardAt(t, cloneA, t1).Set(id, SetOpts{Due: &due, Repeat: &daily}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := boardAt(t, cloneB, t2).Done(id); err != nil {
+		t.Fatal(err)
+	}
+	p, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{})
+	if err == nil || !p.Conflict || p.Pushed {
+		t.Fatalf("a close racing a new repeat rule must conflict, got err=%v progress=%+v", err, p)
+	}
+	fe := core.AsError(err)
+	if fe == nil || fe.Kind != core.KindSyncConflict {
+		t.Fatalf("want sync-conflict, got %+v", err)
+	}
+	details, _ := fe.Details.(map[string]any)
+	fields, _ := details["fields"].(map[string][]string)
+	if got := fields[".furrow/tasks/"+id+".json"]; len(got) == 0 || got[0] != "closed" {
+		t.Errorf("details.fields = %v; want closed named on the task", fields)
+	}
+	// The board is restored: B still holds its own close, unmerged.
+	got, _, err := openBoard(t, cloneB).Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Closed == nil || got.Repeat != "" {
+		t.Errorf("after the refused sync B's task = closed %v repeat %q; want its own close kept", got.Closed, got.Repeat)
+	}
+}

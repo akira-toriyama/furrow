@@ -620,11 +620,14 @@ by git (union on JSON would corrupt it): when the rebase stops on a
 machine-written shard (`tasks/`, `epics/`, `repos/` `*.json`, hot or archived)
 that both sides wrote in *different* fields — the status bot's close and your
 checklist tick, which collide only on the `updated` stamp every write advances —
-sync merges the two field by field (`updated` takes the later stamp, `closed` the
-first close), continues the rebase, and lists the shards in `merged_shards`. A
-field both sides set *differently* is a real conflict, as is any `closed` change
-on a **repeating** task (a close mints the successor, so two closes are two
-series), `meta.json`, or a shard one side deleted: sync **aborts the rebase
+sync merges the two field by field (`updated` and the review stamps take the
+later stamp, `closed` the first close; a shard both sides *created* merges the
+same way, a field one side left null being unset there), continues the rebase,
+and lists the shards in `merged_shards`. A field both sides set *differently* is
+a real conflict, as is any `closed` change on a task that **repeats** on either
+side (a close mints the successor, so two closes are two series, and a rule
+bound beside a close is a series that never ran), `meta.json`, or a shard one
+side deleted: sync **aborts the rebase
 automatically** (the board is never left with markers; your local sync commit
 survives) and exits 3 with `"kind": "sync-conflict"` + `"details": {"paths":
 [...], "fields": {<path>: [<field>...]}}` — `paths` names only the shards that
