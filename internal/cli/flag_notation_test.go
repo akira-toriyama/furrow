@@ -93,6 +93,36 @@ func TestRepeatableFlagNotationFrozen(t *testing.T) {
 		"search --status":     "stringArray",
 		"stats --label":       "stringArray",
 		"stats --status":      "stringArray",
+
+		// -q is free text (a query may carry commas and quotes), verbatim per
+		// occurrence and ANDed by joinQuery; -r and -e hold ONE identifier
+		// and are arrays only so that a second occurrence can be refused
+		// (singleFlag) instead of silently replacing the first (t-mp2t). A
+		// comma never splits them: `-r a,b` is one (unknown) repo, and the OR
+		// spelling is -q 'repo:a,b'.
+		"brief --repo":    "stringArray",
+		"done --query":    "stringArray",
+		"done --repo":     "stringArray",
+		"epic ls --repo":  "stringArray",
+		"ls --epic":       "stringArray",
+		"ls --query":      "stringArray",
+		"ls --repo":       "stringArray",
+		"move --query":    "stringArray",
+		"move --repo":     "stringArray",
+		"next --epic":     "stringArray",
+		"next --query":    "stringArray",
+		"next --repo":     "stringArray",
+		"revisit --epic":  "stringArray",
+		"revisit --query": "stringArray",
+		"revisit --repo":  "stringArray",
+		"search --epic":   "stringArray",
+		"search --query":  "stringArray",
+		"search --repo":   "stringArray",
+		"set --query":     "stringArray",
+		"set --repo":      "stringArray",
+		"stats --epic":    "stringArray",
+		"stats --query":   "stringArray",
+		"stats --repo":    "stringArray",
 	}
 
 	got := map[string]string{}

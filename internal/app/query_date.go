@@ -73,7 +73,7 @@ func (c *queryCompiler) parseDateScalar(field, s string) (dateBound, error) {
 		u := ts.UTC()
 		return dateBound{lo: u, hi: u}, nil
 	}
-	return dateBound{}, unknownQueryErr("query-type",
+	return dateBound{}, unknownQueryErr(core.KindQueryType,
 		"field "+strconv.Quote(field)+" needs a date (YYYY-MM-DD, RFC3339, or a relative offset like -2w), got "+strconv.Quote(s), nil)
 }
 
@@ -161,14 +161,14 @@ func (c *queryCompiler) compileDate(term query.Term, neg func(func(*core.Task) b
 		if haveLo {
 			b, err := c.parseDateScalar(f, term.Values[0].Text)
 			if err != nil {
-				return nil, err
+				return nil, withTerm(err, term)
 			}
 			lo = b.lo
 		}
 		if haveHi {
 			b, err := c.parseDateScalar(f, term.Values[1].Text)
 			if err != nil {
-				return nil, err
+				return nil, withTerm(err, term)
 			}
 			hi = b.hi
 		}
@@ -188,11 +188,11 @@ func (c *queryCompiler) compileDate(term query.Term, neg func(func(*core.Task) b
 		for _, v := range term.Values {
 			b, err := c.parseDateScalar(f, v.Text)
 			if err != nil {
-				return nil, err
+				return nil, withTerm(err, term)
 			}
 			if b.rel {
-				return nil, unknownQueryErr("query-type",
-					"a relative date offset needs a comparison or range (e.g. "+f+":>="+v.Text+"), not a bare equality", nil)
+				return nil, termErr(unknownQueryErr(core.KindQueryType,
+					"a relative date offset needs a comparison or range (e.g. "+f+":>="+v.Text+"), not a bare equality", nil), term, nil)
 			}
 			bounds = append(bounds, b)
 		}
@@ -212,7 +212,7 @@ func (c *queryCompiler) compileDate(term query.Term, neg func(func(*core.Task) b
 	default: // Gt/Ge/Lt/Le — interval-aware, so a bare day behaves as a whole day.
 		b, err := c.parseDateScalar(f, term.Values[0].Text)
 		if err != nil {
-			return nil, err
+			return nil, withTerm(err, term)
 		}
 		op := term.Op
 		return neg(func(t *core.Task) bool {

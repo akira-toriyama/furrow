@@ -27,6 +27,7 @@ package query
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // Kind classifies a term.
@@ -161,6 +162,12 @@ func lex(s string) ([]rawTerm, error) {
 			b.WriteRune(r)
 		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
 			flush()
+		case unicode.IsSpace(r):
+			// An ideographic space (U+3000, what an IME puts between words) or
+			// a no-break space is not a separator here, and letting it ride
+			// inside a term made `label:ui　is:open` one term matching nothing
+			// — [] at exit 0 for a typo. A parse fault with the offset instead.
+			return nil, &ParseError{Msg: fmt.Sprintf("non-ASCII whitespace U+%04X — separate terms with a plain space, or quote a value that must contain it", r), Term: string(r), Offset: i}
 		default:
 			if !inTerm {
 				start = i

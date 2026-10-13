@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
 	"github.com/akira-toriyama/furrow/v9/internal/core"
@@ -25,12 +26,50 @@ import (
 type filterFlags struct {
 	status   []string
 	label    []string
-	repo     string
-	epic     string
+	repo     []string // at most one value — see singleFlag
+	epic     []string // at most one value — see singleFlag
 	limit    int
 	archived bool
 	since    string
 	until    string
+}
+
+// repoValue / epicValue are the one value -r / -e may carry ("" when absent).
+func (f *filterFlags) repoValue() string { return firstOf(f.repo) }
+func (f *filterFlags) epicValue() string { return firstOf(f.epic) }
+
+func firstOf(vs []string) string {
+	if len(vs) == 0 {
+		return ""
+	}
+	return vs[0]
+}
+
+// singleFlag refuses a flag given twice. -r and -e were plain string flags, so
+// a second occurrence silently replaced the first: `ls -r o/a -r o/b` listed
+// o/b alone, and a write selector `-r a -r b` previewed — and with --yes
+// applied — a narrower set than the operator had asked for. One repo and one
+// box is what a read scopes to; an OR over several is -q's job, and the
+// refusal names that spelling.
+func singleFlag(cmd *cobra.Command, name, short string, vals []string, qualifier string) error {
+	if len(vals) <= 1 {
+		return nil
+	}
+	return core.Validationf("", "-%s given %d times — a read scopes to one %s; for an OR over several use -q '%s:%s'", short, len(vals), name, qualifier, strings.Join(vals, ","))
+}
+
+// joinQuery ANDs repeated -q values: the grammar ANDs terms by juxtaposition,
+// so the queries are joined with a space. A lone `-q ”` stays the deliberate
+// match-everything query. (A second -q used to replace the first in silence,
+// which widened a write selector's target set.)
+func joinQuery(qs []string) string {
+	parts := make([]string, 0, len(qs))
+	for _, q := range qs {
+		if strings.TrimSpace(q) != "" {
+			parts = append(parts, q)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // filterFlag selects one shared flag, optionally overriding the canonical
@@ -81,9 +120,11 @@ func addFilterFlags(cmd *cobra.Command, f *filterFlags, flags ...filterFlag) {
 		case "label":
 			cmd.Flags().StringArrayVarP(&f.label, "label", "l", nil, use(usageLabel))
 		case "repo":
-			cmd.Flags().StringVarP(&f.repo, "repo", "r", "", use(usageRepo))
+			cmd.Flags().StringArrayVarP(&f.repo, "repo", "r", nil, use(usageRepo))
+			guardSingle(cmd, "repo", "r", &f.repo, "repo")
 		case "epic":
-			cmd.Flags().StringVarP(&f.epic, "epic", "e", "", use(usageEpic))
+			cmd.Flags().StringArrayVarP(&f.epic, "epic", "e", nil, use(usageEpic))
+			guardSingle(cmd, "epic", "e", &f.epic, "epic")
 		case "limit":
 			cmd.Flags().IntVarP(&f.limit, "limit", "n", f.limit, use(usageLimit))
 			// A negative cap read as "all" (every consumer treats <= 0 as
@@ -109,6 +150,19 @@ func addFilterFlags(cmd *cobra.Command, f *filterFlags, flags ...filterFlag) {
 		default:
 			panic(fmt.Sprintf("addFilterFlags: unknown filter flag %q", fl.name))
 		}
+	}
+}
+
+// guardSingle chains singleFlag into cmd's PreRunE (the -n guard's shape).
+func guardSingle(cmd *cobra.Command, name, short string, vals *[]string, qualifier string) {
+	prev := cmd.PreRunE
+	cmd.PreRunE = func(c *cobra.Command, args []string) error {
+		if prev != nil {
+			if err := prev(c, args); err != nil {
+				return err
+			}
+		}
+		return singleFlag(c, name, short, *vals, qualifier)
 	}
 }
 

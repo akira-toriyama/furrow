@@ -1,6 +1,7 @@
 package query
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -244,21 +245,23 @@ func TestParseEmptyFieldIsParseFault(t *testing.T) {
 
 func TestParseErrors(t *testing.T) {
 	bad := []string{
-		`title:'unterminated`, // stray quote
-		`"open phrase`,        // unterminated quote (whole string)
-		`value:>`,             // comparison without a value
-		`value:..4`,           // range missing lo
-		`value:4..`,           // range missing hi
-		`label:`,              // qualifier without a value
-		`is:`,                 // is: without a flag
-		`has:`,                // has: without a field
-		`label:a,,b`,          // empty OR member (t-hwav: used to be dropped in silence)
-		`label:a,`,            // trailing empty member
-		`label:,a`,            // leading empty member
-		`-`,                   // a negation with no term (was free text "-")
-		`--`,                  // ditto
-		`,`,                   // an OR separator with no values (was free text ",")
-		`,,`,                  // ditto
+		`title:'unterminated`,   // stray quote
+		`"open phrase`,          // unterminated quote (whole string)
+		`value:>`,               // comparison without a value
+		`value:..4`,             // range missing lo
+		`value:4..`,             // range missing hi
+		`label:`,                // qualifier without a value
+		`is:`,                   // is: without a flag
+		`has:`,                  // has: without a field
+		`label:a,,b`,            // empty OR member (t-hwav: used to be dropped in silence)
+		`label:a,`,              // trailing empty member
+		`label:,a`,              // leading empty member
+		`-`,                     // a negation with no term (was free text "-")
+		`--`,                    // ditto
+		"label:ui\u3000is:open", // an ideographic space is not a separator and not a value either (t-mp2t)
+		"label:ui\u00a0is:open", // nor a no-break space
+		`,`,                     // an OR separator with no values (was free text ",")
+		`,,`,                    // ditto
 	}
 	for _, in := range bad {
 		if _, err := Parse(in); err == nil {
@@ -317,5 +320,19 @@ func TestParseLeadingDashesAndQuotedPunctuation(t *testing.T) {
 		if len(q) != 1 || q[0].Kind != FreeText || q[0].Not {
 			t.Errorf("Parse(%q) = %+v, want one positive free-text term", in, q)
 		}
+	}
+}
+
+// A non-ASCII space is refused with its position, like every parse fault —
+// inside quotes it is ordinary text.
+func TestParseRefusesNonASCIIWhitespaceWithPosition(t *testing.T) {
+	_, err := Parse("is:open label:ui\u3000x")
+	var pe *ParseError
+	if !errors.As(err, &pe) || pe.Term != "\u3000" || pe.Offset != 16 {
+		t.Fatalf("want a ParseError at the U+3000 (offset 16), got %+v (%v)", pe, err)
+	}
+	q, err := Parse("title:'a\u3000b'")
+	if err != nil || len(q) != 1 || q[0].Values[0].Text != "a\u3000b" {
+		t.Errorf("a quoted U+3000 is text: %+v %v", q, err)
 	}
 }
