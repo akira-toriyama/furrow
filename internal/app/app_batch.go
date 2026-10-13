@@ -84,7 +84,7 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 		if reports[id] != nil {
 			consumeRepeat(t)
 		}
-		a.applyLane(t, lane)
+		a.applyLane(idx, t, lane)
 		// A note is prose: it changed the task's content without touching the
 		// shard, so a close that carries one always stamps (stampIfChanged's
 		// comparison structurally cannot see a body). Without one, a move to the
@@ -516,12 +516,13 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 		// The lane lands HERE, before the position block: `--before/--after`
 		// resolve against the DESTINATION lane, which is what a cross-column
 		// drop means. Only the series advance waits until the end.
-		a.applyLane(t, *o.Status)
+		a.applyLane(idx, t, *o.Status)
 	}
 	var renumbered []core.PriorityChange
 	switch {
 	case o.Priority != nil:
 		t.Priority = *o.Priority
+		a.noteSharedPriority(idx, t)
 	case relRef != "":
 		target, changes, err := idx.PlanRelativePriority(id, relRef, relBefore, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
 		if err != nil {

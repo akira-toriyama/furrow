@@ -299,6 +299,21 @@ func TestNextPriority(t *testing.T) {
 	}
 }
 
+func TestPriorityPeers(t *testing.T) {
+	idx := &Index{Tasks: []Task{
+		{ID: "t-1", Status: "ready", Priority: 100},
+		{ID: "t-2", Status: "ready", Priority: 100},
+		{ID: "t-3", Status: "backlog", Priority: 100},
+		{ID: "t-0", Status: "ready", Priority: 100},
+	}}
+	if got := idx.PriorityPeers("ready", 100, "t-1"); len(got) != 2 || got[0] != "t-0" || got[1] != "t-2" {
+		t.Errorf("PriorityPeers(ready,100,except t-1) = %v, want [t-0 t-2] (same lane, same value, sorted, self excluded)", got)
+	}
+	if got := idx.PriorityPeers("backlog", 100, "t-3"); len(got) != 0 {
+		t.Errorf("PriorityPeers(backlog) = %v, want none", got)
+	}
+}
+
 func TestRandomIDSuffix(t *testing.T) {
 	// Each byte is masked to its low 5 bits and indexes the 32-char alphabet.
 	in := []byte{0, 1, 2, 31, 32, 33} // 32&31=0, 33&31=1

@@ -84,6 +84,18 @@ func (a *App) TakeSessionNotes() []string {
 	return n
 }
 
+// TakeNotes returns and clears the write disclosures queued since the last
+// call (see App.notes). The CLI prints each as one `note:` stderr line.
+func (a *App) TakeNotes() []string {
+	n := a.notes
+	a.notes = nil
+	return n
+}
+
+func (a *App) note(format string, args ...any) {
+	a.notes = append(a.notes, fmt.Sprintf(format, args...))
+}
+
 // guardTask guards a write to an existing task, judged on the repos it
 // carries now (call it before the edit) — the shorthand every batch path uses.
 func (a *App) guardTask(t *core.Task) error {
