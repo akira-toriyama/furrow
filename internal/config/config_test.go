@@ -483,3 +483,67 @@ func TestIDPrefixesAreClampedToFilenameStems(t *testing.T) {
 		t.Errorf("equal prefixes survived the fallback: task %q epic %q (%v)", c.IDPrefix, c.EpicIDPrefix, warns)
 	}
 }
+
+// A wrong-typed ELEMENT of a multi-line array used to blank only its own
+// line, so `order = [inbox, 1, done]` read as [inbox, done] while the warning
+// claimed "using the default". The whole value span is blanked, and the
+// warning names the key's own line.
+func TestSalvageBlanksTheWholeValueSpan(t *testing.T) {
+	doc := "[lanes]\norder = [\n  \"inbox\",\n  1,\n  \"done\",\n]\ndefault = \"inbox\"\n"
+	c, warn, err := LoadBytes([]byte(doc), "config.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(c.Lanes, ",") != strings.Join(DefaultLanes, ",") {
+		t.Errorf("lanes = %v; want the defaults, as the warning says", c.Lanes)
+	}
+	if len(warn) != 1 || !strings.HasPrefix(warn[0], "config.toml:2: key \"lanes.order\" has the wrong type") {
+		t.Errorf("warnings = %v; want one naming lanes.order at its key line", warn)
+	}
+	if c.DefaultLane != "inbox" {
+		t.Errorf("the keys after the span must still read: default = %q", c.DefaultLane)
+	}
+}
+
+// Two reads of one file word their warnings in one order: the map-walked
+// sections ([lint.severity], [alias], a salvaged [[board]], [session]) are
+// walked sorted.
+func TestWarningsAreOrderedDeterministically(t *testing.T) {
+	doc := "[alias]\nb = \"\"\na = \"\"\nc = \"\"\n\n[lint.severity]\nz = \"loud\"\ny = \"loud\"\nx = \"loud\"\n"
+	_, first, err := LoadBytes([]byte(doc), "config.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 6 {
+		t.Fatalf("warnings = %v; want 6", first)
+	}
+	for i := 0; i < 30; i++ {
+		_, again, _ := LoadBytes([]byte(doc), "config.toml")
+		if strings.Join(again, "|") != strings.Join(first, "|") {
+			t.Fatalf("run %d ordered the warnings differently:\n%v\n%v", i, first, again)
+		}
+	}
+	g := "[[board]]\npath = \"p\"\nscopes = [\"/s\"]\nzz = 1\nyy = 1\nxx = 1\nrepo = 1\n\n[session]\nbb = 1\naa = 1\n"
+	_, gfirst, err := LoadGlobalBytes([]byte(g), "user.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 30; i++ {
+		_, again, _ := LoadGlobalBytes([]byte(g), "user.toml")
+		if strings.Join(again, "|") != strings.Join(gfirst, "|") {
+			t.Fatalf("run %d ordered the user-config warnings differently:\n%v\n%v", i, gfirst, again)
+		}
+	}
+}
+
+// A [session] table in a BOARD config is the pre-#458 layout: the warning
+// says where it went, not just "unknown key".
+func TestBoardSessionTableIsATombstone(t *testing.T) {
+	_, warn, err := LoadBytes([]byte("[session]\nguard = \"warn\"\n"), "config.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warn) != 1 || !strings.Contains(warn[0], "config set --user session.") {
+		t.Errorf("warnings = %v; want the tombstone pointing at --user", warn)
+	}
+}

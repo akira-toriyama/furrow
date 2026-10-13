@@ -50,11 +50,108 @@ func TestSetReplacePreservesEverythingElse(t *testing.T) {
 }
 
 // TestSetKeepsTrailingComment: replacing a value keeps the line's `# inline
-// note`.
+// note` — and the gap before it, byte for byte (the editor used to re-join
+// with two spaces, so `width = 5 # t-k3m9p` came back one byte wider).
 func TestSetKeepsTrailingComment(t *testing.T) {
 	res := mustSet(t, editFixture, "lanes", "order", `["a", "b"]`)
-	if !strings.Contains(res.Doc, `order = ["a", "b"]  # inline note`) {
-		t.Errorf("trailing comment must survive a value replace:\n%s", res.Doc)
+	if !strings.Contains(res.Doc, `order = ["a", "b"] # inline note`) {
+		t.Errorf("trailing comment must survive a value replace with its gap:\n%s", res.Doc)
+	}
+	doc := "[ids]\nwidth = 5   # t-k3m9p\nprefix\t=\t\"t-\"  # tabbed\n"
+	res = mustSet(t, doc, "ids", "width", "2")
+	if res.Doc != "[ids]\nwidth = 2   # t-k3m9p\nprefix\t=\t\"t-\"  # tabbed\n" {
+		t.Errorf("the gap before the comment must survive:\n%s", res.Doc)
+	}
+	res = mustSet(t, res.Doc, "ids", "prefix", `"x-"`)
+	if res.Doc != "[ids]\nwidth = 2   # t-k3m9p\nprefix\t=\t\"x-\"  # tabbed\n" {
+		t.Errorf("tabs around '=' must survive:\n%s", res.Doc)
+	}
+	// Set back: the document is byte-identical to the original.
+	back := mustSet(t, mustSet(t, res.Doc, "ids", "width", "5").Doc, "ids", "prefix", `"t-"`)
+	if back.Doc != doc {
+		t.Errorf("a round trip must restore every byte:\n--- got ---\n%s\n--- want ---\n%s", back.Doc, doc)
+	}
+}
+
+// A key TOML cannot spell bare (an alias named 日本, or one with a space) is
+// written quoted and found again on the next set — never duplicated, never a
+// document that fails to parse.
+func TestSetQuotesANonBareKeyAndFindsItAgain(t *testing.T) {
+	res := mustSet(t, editFixture, "alias", "日本", `"ls"`)
+	if !strings.Contains(res.Doc, "\n\"日本\" = \"ls\"\n") {
+		t.Errorf("a non-bare key must be written quoted:\n%s", res.Doc)
+	}
+	res = mustSet(t, res.Doc, "alias", "日本", `"next"`)
+	if !res.Existed || strings.Count(res.Doc, "日本") != 1 || !strings.Contains(res.Doc, "\"日本\" = \"next\"") {
+		t.Errorf("the quoted key must be found and replaced in place:\n%s", res.Doc)
+	}
+	res = mustSet(t, "[alias]\n'has space' = \"ls\"\n", "alias", "has space", `"next"`)
+	if !res.Existed || !strings.Contains(res.Doc, "'has space' = \"next\"") {
+		t.Errorf("an operator's literal-quoted key must match:\n%s", res.Doc)
+	}
+}
+
+// A header the operator padded or quoted (`[ lanes ]`, `["lanes"]`,
+// `[[ board ]]`) names the same table as `[lanes]`; the editor used to miss it
+// and append a second [lanes] — a table defined twice.
+func TestSetMatchesPaddedAndQuotedHeaders(t *testing.T) {
+	doc := "[ lanes ]\ndefault = \"inbox\"\n\n[\"next\"]\nlanes = [\"ready\"]\n\n[[ board ]]\npath = \"a\"\n"
+	res := mustSet(t, doc, "lanes", "default", `"ready"`)
+	if !res.Existed || strings.Count(res.Doc, "[ lanes ]") != 1 || strings.Contains(res.Doc, "\n[lanes]") || !strings.Contains(res.Doc, "[ lanes ]\ndefault = \"ready\"") {
+		t.Errorf("[ lanes ] must be the lanes table:\n%s", res.Doc)
+	}
+	res = mustSet(t, doc, "next", "lanes", `["backlog"]`)
+	if !res.Existed || !strings.Contains(res.Doc, "[\"next\"]\nlanes = [\"backlog\"]") {
+		t.Errorf("[\"next\"] must be the next table:\n%s", res.Doc)
+	}
+	ares, err := SetInArrayTable(doc, "board", 0, "path", `"b"`)
+	if err != nil || !ares.Existed || !strings.Contains(ares.Doc, "[[ board ]]\npath = \"b\"") {
+		t.Errorf("[[ board ]] must be the board entry: err=%v\n%s", err, ares.Doc)
+	}
+}
+
+// A control character in a value is escaped as TOML's \uXXXX, so the written
+// document parses and reads the same rune back.
+func TestRenderTOMLStringEscapesControlCharacters(t *testing.T) {
+	got := RenderTOMLValue("a\x01b\x7fc")
+	if got != `"a\u0001b\u007Fc"` {
+		t.Fatalf("rendered %s", got)
+	}
+	if v := ParseTOMLValueText(got); v != "a\x01b\x7fc" {
+		t.Errorf("round trip = %q", v)
+	}
+}
+
+// An empty list member is refused, not dropped: "ready,,in-progress" used
+// to write ["ready", "in-progress"] and report "unchanged".
+func TestParseCLIValueRefusesAnEmptyListMember(t *testing.T) {
+	k := Key{Section: "next", Name: "lanes", Kind: KindStringSlice}
+	for _, bad := range []string{"ready,,in-progress", "ready,", ",ready", " , "} {
+		if _, err := ParseCLIValue(k, bad); err == nil {
+			t.Errorf("ParseCLIValue(%q) must refuse the empty member", bad)
+		}
+	}
+	if v, err := ParseCLIValue(k, ""); err != nil || len(v.([]string)) != 0 {
+		t.Errorf("an empty list is still a list: %v %v", v, err)
+	}
+	if v, err := ParseCLIValue(k, "ready, in-progress"); err != nil || strings.Join(v.([]string), ",") != "ready,in-progress" {
+		t.Errorf("a padded list still splits: %v %v", v, err)
+	}
+}
+
+// UnsetInSection removes the key's whole span (the regression guard's
+// baseline); a key that is not there leaves the document alone.
+func TestUnsetRemovesTheWholeSpan(t *testing.T) {
+	got := UnsetInSection(editFixture, "next", "lanes")
+	if strings.Contains(got, "in-progress") || !strings.Contains(got, "[next]\n\n[alias]") {
+		t.Errorf("the multi-line span must go:\n%s", got)
+	}
+	if UnsetInSection(editFixture, "next", "nope") != editFixture || UnsetInSection(editFixture, "nope", "x") != editFixture {
+		t.Error("an absent key or section must change nothing")
+	}
+	doc := "[[board]]\npath = \"a\"\nrepo = \"auto\"\n\n[[board]]\npath = \"b\"\n"
+	if got := UnsetInArrayTable(doc, "board", 1)("path"); got != "[[board]]\npath = \"a\"\nrepo = \"auto\"\n\n[[board]]\n" {
+		t.Errorf("the second entry's path must go:\n%s", got)
 	}
 }
 

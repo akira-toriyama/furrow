@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -185,14 +186,19 @@ func ParseCLIValue(k Key, s string) (any, error) {
 		}
 		return n, nil
 	case KindStringSlice:
-		var items []string
-		for _, it := range strings.Split(s, ",") {
-			if it = strings.TrimSpace(it); it != "" {
-				items = append(items, it)
-			}
+		// An empty member ("ready,,in-progress", a trailing comma) is refused,
+		// not dropped: the strict writer must not silently write less than it
+		// was given — the drop read as "unchanged" when the rest already matched.
+		items := []string{}
+		if strings.TrimSpace(s) == "" {
+			return items, nil
 		}
-		if items == nil {
-			items = []string{}
+		for _, it := range strings.Split(s, ",") {
+			it = strings.TrimSpace(it)
+			if it == "" {
+				return nil, fmt.Errorf("%q has an empty list member", s)
+			}
+			items = append(items, it)
 		}
 		return items, nil
 	default:
@@ -238,6 +244,12 @@ func renderTOMLString(s string) string {
 		case '\r':
 			b.WriteString(`\r`)
 		default:
+			// A bare control character is not TOML; \uXXXX is, and reads back
+			// as the same rune.
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&b, `\u%04X`, r)
+				continue
+			}
 			b.WriteRune(r)
 		}
 	}
@@ -272,7 +284,7 @@ func SetInSection(doc, section, key, rendered string) (SetResult, error) {
 		if out != "" {
 			out += "\n\n"
 		}
-		out += "[" + section + "]\n" + key + " = " + rendered + "\n"
+		out += "[" + section + "]\n" + renderKey(key) + " = " + rendered + "\n"
 		return SetResult{Doc: out}, nil
 	}
 	if kl, ok := findKeyLine(lines, start, end, key); ok {
@@ -289,8 +301,47 @@ func SetInSection(doc, section, key, rendered string) (SetResult, error) {
 			at = i
 		}
 	}
-	lines = append(lines[:at+1], append([]string{key + " = " + rendered}, lines[at+1:]...)...)
+	lines = append(lines[:at+1], append([]string{renderKey(key) + " = " + rendered}, lines[at+1:]...)...)
 	return SetResult{Doc: strings.Join(lines, "\n")}, nil
+}
+
+// UnsetInSection returns doc with `key`'s whole value span removed from
+// [section] — the baseline the regression guard compares an edit against: the
+// warnings a document carries WITH the key that the same document without it
+// does not. A key that is not there leaves doc unchanged.
+func UnsetInSection(doc, section, key string) string {
+	lines := strings.Split(doc, "\n")
+	start, end, found := sectionSpan(lines, section)
+	if !found {
+		return doc
+	}
+	return unsetKey(lines, start, end, key)
+}
+
+// UnsetInArrayTable is UnsetInSection for the index-th [[table]] block.
+func UnsetInArrayTable(doc, table string, index int) func(key string) string {
+	return func(key string) string {
+		lines := strings.Split(doc, "\n")
+		start, end, ok := arrayTableSpan(lines, table, index)
+		if !ok {
+			return doc
+		}
+		return unsetKey(lines, start, end, key)
+	}
+}
+
+func unsetKey(lines []string, start, end int, key string) string {
+	kl, ok := findKeyLine(lines, start, end, key)
+	if !ok {
+		return strings.Join(lines, "\n")
+	}
+	eq := strings.IndexByte(lines[kl], '=')
+	_, _, lastLine, err := scanValue(lines, kl, eq+1, end)
+	if err != nil {
+		return strings.Join(lines, "\n")
+	}
+	out := append(append([]string{}, lines[:kl]...), lines[lastLine+1:]...)
+	return strings.Join(out, "\n")
 }
 
 // SetInArrayTable edits `key = value` inside the index-th [[table]] block —
@@ -298,27 +349,9 @@ func SetInSection(doc, section, key, rendered string) (SetResult, error) {
 // init`'s and the operator's job, not the writer's).
 func SetInArrayTable(doc, table string, index int, key, rendered string) (SetResult, error) {
 	lines := strings.Split(doc, "\n")
-	header := "[[" + table + "]]"
-	n := -1
-	start := -1
-	for i, l := range lines {
-		if trimComment(strings.TrimSpace(l)) == header {
-			n++
-			if n == index {
-				start = i
-				break
-			}
-		}
-	}
-	if start < 0 {
-		return SetResult{}, fmt.Errorf("no %s entry #%d in the document", header, index+1)
-	}
-	end := len(lines)
-	for i := start + 1; i < end; i++ {
-		if strings.HasPrefix(strings.TrimSpace(lines[i]), "[") {
-			end = i
-			break
-		}
+	start, end, ok := arrayTableSpan(lines, table, index)
+	if !ok {
+		return SetResult{}, fmt.Errorf("no [[%s]] entry #%d in the document", table, index+1)
 	}
 	if kl, ok := findKeyLine(lines, start, end, key); ok {
 		return replaceValue(lines, kl, end, key, rendered)
@@ -329,8 +362,57 @@ func SetInArrayTable(doc, table string, index int, key, rendered string) (SetRes
 			at = i
 		}
 	}
-	lines = append(lines[:at+1], append([]string{key + " = " + rendered}, lines[at+1:]...)...)
+	lines = append(lines[:at+1], append([]string{renderKey(key) + " = " + rendered}, lines[at+1:]...)...)
 	return SetResult{Doc: strings.Join(lines, "\n")}, nil
+}
+
+// arrayTableSpan finds the index-th [[table]] block: [start(header), end).
+func arrayTableSpan(lines []string, table string, index int) (int, int, bool) {
+	n := -1
+	start := -1
+	for i, l := range lines {
+		if name, isArray, ok := headerName(l); ok && isArray && name == table {
+			n++
+			if n == index {
+				start = i
+				break
+			}
+		}
+	}
+	if start < 0 {
+		return 0, 0, false
+	}
+	end := len(lines)
+	for i := start + 1; i < end; i++ {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "[") {
+			end = i
+			break
+		}
+	}
+	return start, end, true
+}
+
+// headerName reads a table header line as TOML does: `[lanes]`, `[ lanes ]`
+// and `["lanes"]` all name the table lanes, and `[[board]]` names an array
+// table. ok is false for any other line. The editor used to match the literal
+// `[section]` only, so a header the operator had padded (`[ lanes ]`) was
+// never found: the key was appended under a SECOND `[lanes]` at EOF, which is
+// a table defined twice, and the write failed as an internal error.
+func headerName(line string) (name string, arrayTable bool, ok bool) {
+	t := trimComment(strings.TrimSpace(line))
+	if !strings.HasPrefix(t, "[") || !strings.HasSuffix(t, "]") {
+		return "", false, false
+	}
+	inner := t[1 : len(t)-1]
+	if strings.HasPrefix(inner, "[") && strings.HasSuffix(inner, "]") {
+		arrayTable = true
+		inner = inner[1 : len(inner)-1]
+	}
+	parts := strings.Split(inner, ".")
+	for i, p := range parts {
+		parts[i] = unquoteKey(strings.TrimSpace(p))
+	}
+	return strings.Join(parts, "."), arrayTable, true
 }
 
 // sectionSpan finds [section]'s body span [start(header), end) — end exclusive,
@@ -349,10 +431,9 @@ func sectionSpan(lines []string, section string) (int, int, bool) {
 		}
 		return -1, end, true
 	}
-	want := "[" + section + "]"
 	start := -1
 	for i, l := range lines {
-		if trimComment(strings.TrimSpace(l)) == want {
+		if name, isArray, ok := headerName(l); ok && !isArray && name == section {
 			start = i
 			break
 		}
@@ -393,11 +474,40 @@ func findKeyLine(lines []string, start, end int, key string) (int, bool) {
 		if eq < 0 {
 			continue
 		}
-		if strings.TrimSpace(t[:eq]) == key {
+		if unquoteKey(strings.TrimSpace(t[:eq])) == key {
 			return i, true
 		}
 	}
 	return 0, false
+}
+
+// bareKeyPattern is what TOML lets stand unquoted as a key.
+var bareKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// renderKey spells a key for a line the editor writes: bare when TOML allows
+// it, a basic string otherwise (an alias named 日本 or "has space" is a
+// legitimate key — written bare it was not TOML at all, and the set failed
+// as "report this").
+func renderKey(key string) string {
+	if bareKeyPattern.MatchString(key) {
+		return key
+	}
+	return renderTOMLString(key)
+}
+
+// unquoteKey reads a key as written — bare, or a basic/literal string — back
+// to its name, so findKeyLine matches the line renderKey wrote (and one the
+// operator quoted by hand). Text that is not a quoted key comes back as is.
+func unquoteKey(k string) string {
+	if len(k) >= 2 && k[0] == '"' && k[len(k)-1] == '"' {
+		if s, err := strconv.Unquote(k); err == nil {
+			return s
+		}
+	}
+	if len(k) >= 2 && k[0] == '\'' && k[len(k)-1] == '\'' {
+		return k[1 : len(k)-1]
+	}
+	return k
 }
 
 // insertTopLevel places a top-level key before the first table header (TOML
@@ -439,9 +549,18 @@ func replaceValue(lines []string, kl, end int, key, rendered string) (SetResult,
 	if old == rendered {
 		return SetResult{Doc: strings.Join(lines, "\n"), OldText: old, Existed: true, Unchanged: true}, nil
 	}
-	newLine := prefix + " " + rendered
+	// The whitespace around the value is the operator's too: the gap before an
+	// inline comment (`width = 5 # t-k3m9p`) used to come back as two spaces,
+	// one byte the help promised would survive. A span that collapses from
+	// several lines keeps the first line's lead and the last line's gap.
+	lead := valText[:len(valText)-len(strings.TrimLeft(valText, " \t"))]
+	gap := valText[len(strings.TrimRight(valText, " \t")):]
+	newLine := prefix + lead + rendered
 	if comment != "" {
-		newLine += "  " + comment
+		if gap == "" {
+			gap = " "
+		}
+		newLine += gap + comment
 	}
 	out := append(append([]string{}, lines[:kl]...), newLine)
 	out = append(out, lines[lastLine+1:]...)

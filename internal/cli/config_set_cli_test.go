@@ -169,3 +169,67 @@ func TestConfigSetUserEntry(t *testing.T) {
 		t.Errorf("an unknown user-entry key must carry ITS vocabulary, got %+v", fe)
 	}
 }
+
+// An alias named after a builtin never runs (the builtin wins) and lint warns
+// alias-shadow about it; the strict writer refuses it instead of writing a
+// dead entry.
+func TestConfigSetRefusesAnAliasThatShadowsABuiltin(t *testing.T) {
+	initStore(t)
+	before := readBoardConfig(t)
+	for _, name := range []string{"ls", "list", "help"} {
+		fe, _ := runErr(t, "config", "set", "alias."+name, "ls -s inbox")
+		if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, name) {
+			t.Errorf("alias.%s must be refused as a shadow, got %+v", name, fe)
+		}
+	}
+	if readBoardConfig(t) != before {
+		t.Error("a refused alias wrote the file")
+	}
+	if out, code := run(t, "config", "set", "alias.triage", "ls -s inbox"); code != 0 {
+		t.Fatalf("a non-shadowing alias still sets: %d\n%s", code, out)
+	}
+}
+
+// An empty list member is refused: "ready,,in-progress" used to drop the
+// empty and report "unchanged" when the rest already matched.
+func TestConfigSetRefusesAnEmptyListMember(t *testing.T) {
+	initStore(t)
+	if fe, _ := runErr(t, "config", "set", "next.lanes", "ready,,in-progress"); fe == nil || fe.Code != core.CodeValidation {
+		t.Errorf("an empty list member must be exit 2, got %+v", fe)
+	}
+}
+
+// A key TOML cannot spell bare, a padded header and a control character in a
+// value are all written as TOML the reader parses — exit 0, never "report
+// this".
+func TestConfigSetWritesNonBareKeysPaddedHeadersAndControlCharacters(t *testing.T) {
+	initStore(t)
+	for _, name := range []string{"日本", "has space"} {
+		if out, code := run(t, "config", "set", "alias."+name, "ls"); code != 0 {
+			t.Fatalf("alias.%s exit = %d:\n%s", name, code, out)
+		}
+		if out, code := run(t, "config", "set", "alias."+name, "next"); code != 0 || !strings.Contains(out, "set") {
+			t.Fatalf("re-set of alias.%s exit = %d:\n%s", name, code, out)
+		}
+	}
+	cfg := readBoardConfig(t)
+	if strings.Count(cfg, "日本") != 1 || !strings.Contains(cfg, `"日本" = "next"`) || !strings.Contains(cfg, `"has space" = "next"`) {
+		t.Errorf("non-bare aliases must be quoted once each:\n%s", cfg)
+	}
+	padded := strings.Replace(cfg, "[lanes]", "[ lanes ]", 1)
+	if err := os.WriteFile(filepath.Join(os.Getenv(app.EnvDir), "config.toml"), []byte(padded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, code := run(t, "config", "set", "lanes.default", "ready"); code != 0 {
+		t.Fatalf("set under a padded header exit = %d:\n%s", code, out)
+	}
+	if cfg := readBoardConfig(t); strings.Count(cfg, "lanes ]") != 1 || strings.Contains(cfg, "\n[lanes]") {
+		t.Errorf("the padded header must be edited in place, not duplicated:\n%s", cfg)
+	}
+	if out, code := run(t, "config", "set", "alias.ctl", "ls\x01"); code != 0 {
+		t.Fatalf("a control character in a value exit = %d:\n%s", code, out)
+	}
+	if o, code := run(t, "--json", "ls"); code != 0 {
+		t.Errorf("the board must still read after those writes: %d\n%s", code, o)
+	}
+}

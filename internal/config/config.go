@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -130,7 +131,21 @@ func LoadBytes(data []byte, path string) (*Config, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return c, append(unknown, warn...), nil
+	return c, append(boardTombstones(unknown), warn...), nil
+}
+
+// boardTombstones rewrites the unknown-key warning for a key that USED to
+// live in the board config and moved: a `[session]` table here is the
+// pre-#458 layout (the write guard's mode is per machine, so it lives in the
+// user-level config now), and a bare "unknown key" sent the operator to look
+// for a typo. A tombstone names where the key went, as label="auto"'s does.
+func boardTombstones(warn []string) []string {
+	for i, w := range warn {
+		if strings.Contains(w, `unknown key "session"`) || strings.Contains(w, `unknown key "session.`) {
+			warn[i] = w + " — [session] moved to the user-level config: `furrow config set --user session.<key> <value>` (furrow config path)"
+		}
+	}
+	return warn
 }
 
 // decodeSalvaging is decodeStrict with the clamp-don't-reject policy applied to
@@ -150,21 +165,29 @@ func LoadBytes(data []byte, path string) (*Config, []string, error) {
 func decodeSalvaging(data []byte, v any, path string) ([]string, error) {
 	work := append([]byte(nil), data...)
 	var typeWarn []string
+	// first is the error the ORIGINAL document raised: every bail-out below
+	// reports it, never the error a blanked copy raises — the operator never
+	// wrote that document, and its syntax error named a line they could not
+	// find.
+	var first error
 	// One iteration per bad key; the bound only stops a pathological document.
 	for range 128 {
 		unknown, err := decodeStrict(work, v, path)
 		if err == nil {
 			return append(typeWarn, unknown...), nil
 		}
+		if first == nil {
+			first = err
+		}
 		var de *toml.DecodeError
 		if !errors.As(err, &de) {
-			return nil, err // malformed TOML, not a value of the wrong type
+			return nil, first // malformed TOML, not a value of the wrong type
 		}
 		row, _ := de.Position()
 		key := strings.Join(de.Key(), ".")
 		lines := bytes.Split(work, []byte("\n"))
 		if key == "" || row < 1 || row > len(lines) {
-			return nil, err // cannot isolate the damage — fail honestly
+			return nil, first // cannot isolate the damage — fail honestly
 		}
 		blanked := append([]byte(nil), lines[row-1]...)
 		if bytes.HasPrefix(bytes.TrimSpace(blanked), []byte("[")) {
@@ -176,15 +199,59 @@ func decodeSalvaging(data []byte, v any, path string) ([]string, error) {
 			// says a table twice is malformed, and stays fatal.
 			return nil, fmt.Errorf("%s:%d: %w — a table defined twice cannot be salvaged; merge the two %s sections", path, row, err, strings.TrimSpace(string(blanked)))
 		}
-		lines[row-1] = nil
+		// go-toml points at the VALUE that failed, which for a multi-line
+		// array is the element's line, not the key's: blanking that one line
+		// kept the rest of the array — `order = [inbox, 1, done]` read as
+		// [inbox, done] while the warning said "using the default". Blank the
+		// key's whole value span instead, so the warning is true.
+		from, to := valueSpan(lines, row-1, de.Key())
+		for i := from; i <= to; i++ {
+			lines[i] = nil
+		}
 		next := bytes.Join(lines, []byte("\n"))
 		if bytes.Equal(next, work) {
-			return nil, err // no progress (already-blank line) — fail, don't loop
+			return nil, first // no progress (already-blank line) — fail, don't loop
 		}
 		work = next
-		typeWarn = append(typeWarn, fmt.Sprintf("%s:%d: key %q has the wrong type (%s); using the default", path, row, key, strings.TrimSpace(string(blanked))))
+		typeWarn = append(typeWarn, fmt.Sprintf("%s:%d: key %q has the wrong type (%s); using the default", path, from+1, key, strings.TrimSpace(string(blanked))))
 	}
 	return nil, fmt.Errorf("%s: too many wrong-typed values to salvage", path)
+}
+
+// valueSpan finds the line range [from, to] of the value whose decode failed
+// at line row (0-based): the nearest line at or above row that starts the
+// key (its last dotted segment, bare or quoted, before `=`), through the end
+// of that value as scanValue reads it. When no key line is found, or the
+// value does not scan, the span is row alone.
+func valueSpan(lines [][]byte, row int, key []string) (from, to int) {
+	if len(key) == 0 {
+		return row, row
+	}
+	last := key[len(key)-1]
+	for i := row; i >= 0; i-- {
+		t := strings.TrimSpace(string(lines[i]))
+		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, "[") {
+			continue
+		}
+		eq := strings.IndexByte(t, '=')
+		if eq < 0 {
+			continue
+		}
+		segs := strings.Split(strings.TrimSpace(t[:eq]), ".")
+		if unquoteKey(strings.TrimSpace(segs[len(segs)-1])) != last {
+			continue
+		}
+		strs := make([]string, len(lines))
+		for j := range lines {
+			strs[j] = string(lines[j])
+		}
+		eqAbs := strings.IndexByte(strs[i], '=')
+		if _, _, lastLine, err := scanValue(strs, i, eqAbs+1, len(strs)); err == nil && lastLine >= row {
+			return i, lastLine
+		}
+		return row, row
+	}
+	return row, row
 }
 
 // decodeStrict decodes data into v with unknown keys DISALLOWED, then converts
@@ -440,7 +507,8 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// level is refused at `config set` time by the regression guard instead of
 	// surfacing only in a later lint. Whether the CODE names a real check is
 	// core's vocabulary and therefore app.Lint's job (the ignore_codes split).
-	for code, level := range r.Lint.Severity {
+	for _, code := range sortedKeys(r.Lint.Severity) {
+		level := r.Lint.Severity[code]
 		sc, sl := strings.TrimSpace(code), strings.TrimSpace(level)
 		if sc == "" {
 			warn = append(warn, "lint.severity entry with an empty code; ignored")
@@ -474,7 +542,8 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// with a warning `furrow lint` surfaces). Builtin-shadow refusal is the CLI's
 	// job (it owns the command set): a shadowing alias is inert because expansion
 	// checks builtins first, and lint warns about it there.
-	for name, cmd := range r.Alias {
+	for _, name := range sortedKeys(r.Alias) {
+		cmd := r.Alias[name]
 		if strings.TrimSpace(name) == "" {
 			warn = append(warn, "alias with an empty name; ignored")
 			continue
@@ -551,6 +620,19 @@ func clampPositive(v *int, fallback int, key string, warn *[]string) int {
 		return fallback
 	}
 	return *v
+}
+
+// sortedKeys is a map's keys in sorted order: every warning list a read emits
+// is walked through it, so two reads of one file word their warnings in one
+// order (a map walk re-shuffled them per run, and the regression guard's
+// before/after comparison — and any operator diffing two runs — saw churn).
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func contains(ss []string, s string) bool {
