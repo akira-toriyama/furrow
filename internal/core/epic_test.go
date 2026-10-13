@@ -28,6 +28,12 @@ func sampleEpic() *Epic {
 		Closed:  nil,
 		Body:    "bodies/e-k3m9.md",
 		Deps:    []string{"e-zz10", "e-aa01", "e-zz10"}, // unsorted + duplicated, like Labels
+		Pinned:  true,
+		Reviewed: func() *time.Time {
+			r := time.Date(2026, 7, 29, 6, 30, 0, 789_000_000, time.UTC) // sub-second: must truncate
+			return &r
+		}(),
+		Anchor: "2026-08-10", // the v11 anchor day
 	}
 }
 

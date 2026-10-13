@@ -183,11 +183,32 @@ func TestFrozenBoardParksUnknownKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(epics) != 1 {
-		t.Fatalf("the frozen board must carry one epic, got %d", len(epics))
+	if len(epics) != 2 {
+		t.Fatalf("the frozen board must carry two epics (one with an unknown key, one with the v11 anchor), got %d", len(epics))
 	}
-	if got := epics[0].ExtraKeys(); !slices.Equal(got, []string{"budget"}) {
+	var frzn1, frzn2 *core.Epic
+	for i := range epics {
+		switch epics[i].ID {
+		case "e-frzn1":
+			frzn1 = &epics[i]
+		case "e-frzn2":
+			frzn2 = &epics[i]
+		}
+	}
+	if frzn1 == nil || frzn2 == nil {
+		t.Fatalf("the frozen board must carry e-frzn1 and e-frzn2, got %+v", epics)
+	}
+	if got := frzn1.ExtraKeys(); !slices.Equal(got, []string{"budget"}) {
 		t.Errorf("e-frzn1's unknown key must be parked: got %v", got)
+	}
+	// The v10/v11 fields are HONOURED, not parked: a hand-written shard
+	// carrying them reads back as the fields, so a renamed key would show as
+	// a parked unknown here and as a byte change in the round-trip above.
+	if frzn2.Anchor != "2026-08-10" || len(frzn2.ExtraKeys()) != 0 {
+		t.Errorf("e-frzn2's anchor must read as the field: anchor=%q extras=%v", frzn2.Anchor, frzn2.ExtraKeys())
+	}
+	if series, j := idx.Find("t-frzn4"); j < 0 || series.Repeat != "FREQ=WEEKLY;BYDAY=MO" || series.RepeatAnchor == nil || series.Anchor != "e-frzn2" || len(series.ExtraKeys()) != 0 {
+		t.Errorf("t-frzn4's repeat, repeat_anchor and anchor must read as fields: %+v", series)
 	}
 	meta, err := s.LoadMeta()
 	if err != nil {

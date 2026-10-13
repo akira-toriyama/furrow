@@ -33,6 +33,11 @@ func sampleTask() *Task {
 		Reviewed: tp(mk(2026, 6, 20)),
 		Body:     BodyPath("t-0001"),
 		Due:      tp(time.Date(2026, 7, 1, 14, 59, 59, 0, time.UTC)),
+		// The v10/v11 fields: the golden must freeze their keys too, or a
+		// renamed tag would silently rewrite every series on the board.
+		Repeat:       "FREQ=WEEKLY;BYDAY=MO",
+		RepeatAnchor: tp(time.Date(2026, 7, 1, 14, 59, 59, 123_000_000, time.UTC)), // sub-second: must truncate
+		Anchor:       "e-k3m9p",
 	}
 }
 
