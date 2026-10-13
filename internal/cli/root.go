@@ -202,6 +202,10 @@ func newRootCmd() *cobra.Command {
 			"Session start on a shared (multi-machine) board: `furrow sync && furrow\n" +
 			"brief` — converge the board, then orient (due band, active epic, top\n" +
 			"actionable picks with bodies, blocked, revisit) in one read.\n\n" +
+			"Where the verbs live: a task joins a box with `set <id> -e <epic>` (`epic add`\n" +
+			"only CREATES a box); a dep is `dep <id> <dep-id>` (`dep add` / `dep rm` are\n" +
+			"accepted spellings of the add and the --rm); labels, repos and refs are\n" +
+			"`label|repo|ref <id> --add/--rm`.\n\n" +
 			"Exit codes: 0 ok (an empty query result is still 0) · 1 a specifically requested\n" +
 			"id was not found (e.g. show <id>) or `furrow doctor` found problems (kind\n" +
 			"doctor-unhealthy) · 2 bad usage / validation (fix the args, do\n" +

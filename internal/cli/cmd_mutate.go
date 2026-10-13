@@ -815,7 +815,9 @@ func newDepCmd() *cobra.Command {
 		Long: "Make <id> depend on each <dep-id> (id waits on them). Several dep-ids in one\n" +
 			"call apply in a single write. With --rm, remove those dependencies instead.\n" +
 			"Every dep must exist; adding is acyclic and idempotent, and the batch is\n" +
-			"all-or-nothing (a bad dep-id aborts without a partial change).\n\n" +
+			"all-or-nothing (a bad dep-id aborts without a partial change). The\n" +
+			"verb-first spellings `dep add <id> <dep-id>...` and `dep rm <id> <dep-id>...`\n" +
+			"are the same two writes.\n\n" +
 			"With --list, don't mutate — read <id>'s dependency neighborhood in BOTH\n" +
 			"directions: what it depends_on (its own deps — what it waits on) and what it\n" +
 			"blocks (the reverse edge — the tasks waiting on it), each resolved to\n" +
@@ -831,13 +833,10 @@ func newDepCmd() *cobra.Command {
 		Example: "  furrow dep t-k3m9p t-a1b2c\n" +
 			"  furrow dep t-k3m9p t-a1b2c t-d4e5f    # depend on both in one write\n" +
 			"  furrow dep t-k3m9p t-a1b2c --rm\n" +
+			"  furrow dep add t-k3m9p t-a1b2c        # the same two writes, verb first\n" +
+			"  furrow dep rm t-k3m9p t-a1b2c\n" +
 			"  furrow dep t-k3m9p --list --json      # what it waits on and what it blocks",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("list") {
-				return cobra.ExactArgs(1)(cmd, args)
-			}
-			return cobra.MinimumNArgs(2)(cmd, args)
-		},
+		Args: depVerbArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -850,10 +849,11 @@ func newDepCmd() *cobra.Command {
 				}
 				return emitDepList(res, a.Cfg.Terminal, a.Cfg.DoneLane)
 			}
+			spelled, args := depVerb(args)
 			id, deps := args[0], args[1:]
 			verb := "dep+"
 			mutate := func() (*core.Task, error) { return a.AddDeps(id, deps) }
-			if rm {
+			if rm || spelled == "rm" {
 				verb = "dep-"
 				mutate = func() (*core.Task, error) { return a.RemoveDeps(id, deps) }
 			}
