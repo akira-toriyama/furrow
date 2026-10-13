@@ -213,8 +213,11 @@ the worked example; a stale one is read-only for the reader who follows the link
 
 - Commits: gitmoji-driven — `<:gitmoji:>[(<scope>)][!] <subject>` (the leading
   `:code:` is the type and drives release semver). Enable the hook once with
-  `git config core.hooksPath scripts/hooks`; it runs `glyph lint --stdin` (the
-  checker CI runs over the range) and skips with a note when `glyph` is absent.
+  `git config core.hooksPath scripts/hooks`. `scripts/hooks/commit-msg` is
+  glyph's own script (`glyph hook install --print commit-msg`; regenerate, never
+  hand-edit): it runs `glyph lint --stdin` (the checker CI runs over the range),
+  and only glyph's exit 3 (a convention violation) stops the commit — an absent
+  or unwell `glyph` lets it through with a note, because CI is the authority.
   Spec: [CONTRIBUTING.md](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md).
 - `go build ./...` and `go test ./...` must pass before finishing a turn.
 - English is the only committed language — **there is no `README.ja.md`;
