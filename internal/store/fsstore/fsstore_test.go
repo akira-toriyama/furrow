@@ -579,6 +579,76 @@ func TestSaveRepairsMisnamedShardWithUniqueID(t *testing.T) {
 	}
 }
 
+// On a case-folding filesystem (macOS's default) a shard spelled T-ALONE.json
+// IS the file t-alone.json resolves to: Save must respell it, never treat the
+// stem as a stale shard and unlink the only copy (an unrelated `add` then exited
+// 0 and the task was gone — t-x3rt).
+//
+// bite-exempt: bites only on a case-folding filesystem (bitten by hand on
+// macOS, recorded in t-x3rt); the Linux bite runner skips it, the macOS test
+// job runs it for real.
+func TestSaveRespellsCaseAliasedShardInsteadOfDeletingIt(t *testing.T) {
+	s := newStore(t)
+	if !caseFoldingFS(t, s.tasksDir()) {
+		t.Skip("filesystem distinguishes case; a case alias cannot exist here")
+	}
+	if err := s.Save(&core.Index{Tasks: []core.Task{mkTask("t-alone", "alone", "inbox", 100)}}); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(s.tasksDir(), "T-ALONE.json")
+	if err := os.Rename(s.taskPath("t-alone"), alias); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx.Tasks) != 1 {
+		t.Fatalf("loaded %d tasks, want 1", len(idx.Tasks))
+	}
+	if err := s.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(s.tasksDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if len(names) != 1 || names[0] != "t-alone.json" {
+		t.Fatalf("tasks/ after Save = %v, want exactly [t-alone.json] (the shard respelled, not deleted)", names)
+	}
+	again, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Tasks) != 1 || again.Tasks[0].ID != "t-alone" {
+		t.Fatalf("task lost: reloaded %+v", again.Tasks)
+	}
+}
+
+// caseFoldingFS reports whether dir's filesystem resolves two spellings of a
+// name to one file (the only way a case alias of a shard can exist).
+func caseFoldingFS(t *testing.T, dir string) bool {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	probe := filepath.Join(dir, ".casefold-probe")
+	if err := os.WriteFile(probe, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(probe)
+	lower, err := os.Stat(probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upper, err := os.Stat(filepath.Join(dir, ".CASEFOLD-PROBE"))
+	return err == nil && os.SameFile(lower, upper)
+}
+
 // SaveBodies stages every body before renaming any: a body the batch cannot
 // stage (here an id under a directory that does not exist, sorted last so two
 // bodies are already staged) leaves the others' files exactly as they were and

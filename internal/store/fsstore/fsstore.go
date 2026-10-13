@@ -326,10 +326,58 @@ func (s *Store) Save(idx *core.Index) error {
 		if want[stem] {
 			continue
 		}
+		// A stem that differs from a wanted id only by letter case is, on a
+		// case-insensitive filesystem (macOS's default), the SAME file the id's
+		// path resolves to: writeIfChanged read the shard through that alias,
+		// found the bytes equal and wrote nothing, so unlinking the stem here
+		// would unlink the only copy. Fix the spelling instead — a rename through
+		// a temporary name, because a direct rename between two spellings of one
+		// entry is a no-op on such filesystems.
+		if id := s.caseAliasOf(stem, want); id != "" {
+			if err := s.respellShard(stem, id); err != nil {
+				return err
+			}
+			idx.Forget(stem)
+			continue
+		}
 		if err := os.Remove(s.taskPath(stem)); err != nil && !os.IsNotExist(err) {
 			return core.Internalf(stem, "delete stale shard: %v", err)
 		}
 		idx.Forget(stem)
+	}
+	return nil
+}
+
+// caseAliasOf returns the wanted id whose shard path is the same file as stem's
+// (the two spellings differ only by case and the filesystem folds case), or ""
+// when stem's file is its own. Ids are ASCII, so a case fold is the only alias
+// a filesystem can create between two distinct stems.
+func (s *Store) caseAliasOf(stem string, want map[string]bool) string {
+	stemInfo, err := os.Stat(s.taskPath(stem))
+	if err != nil {
+		return ""
+	}
+	for id := range want {
+		if id == stem || !strings.EqualFold(id, stem) {
+			continue
+		}
+		if idInfo, err := os.Stat(s.taskPath(id)); err == nil && os.SameFile(stemInfo, idInfo) {
+			return id
+		}
+	}
+	return ""
+}
+
+// respellShard renames the directory entry stem to id's canonical spelling via
+// a temporary name. The temporary name must not end in ".json" (Load would read
+// it as a shard) and uses the .tmp- prefix every sweep already ignores.
+func (s *Store) respellShard(stem, id string) error {
+	tmp := filepath.Join(s.tasksDir(), ".tmp-respell-"+id)
+	if err := os.Rename(s.taskPath(stem), tmp); err != nil {
+		return core.Internalf(stem, "respell shard: %v", err)
+	}
+	if err := os.Rename(tmp, s.taskPath(id)); err != nil {
+		return core.Internalf(id, "respell shard: %v", err)
 	}
 	return nil
 }
