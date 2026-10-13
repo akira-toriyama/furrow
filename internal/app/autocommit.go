@@ -181,7 +181,7 @@ func (a *App) dropMarkedBodies(spec string, commitPaths, committedBodies []strin
 	}
 	markedPath := make(map[string]bool, len(marked))
 	for id := range marked {
-		markedPath[spec+"/bodies/"+id+".md"] = true
+		markedPath[specJoin(spec, "bodies/"+id+".md")] = true
 	}
 	for _, p := range commitPaths {
 		if !markedPath[p] {

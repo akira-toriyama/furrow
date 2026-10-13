@@ -49,8 +49,13 @@ func TestCLIBriefJSONShape(t *testing.T) {
 	if b.Drafts != 1 {
 		t.Errorf("drafts = %d, want 1", b.Drafts)
 	}
-	if _, ok := b.Revisit["dep_done"]; !ok {
-		t.Errorf("revisit summary must keep its sync shape (dep_done key):\n%s", out)
+	// Sync's revisit shape: the key is present, its lists omitted when empty
+	// (nothing here has a done dep, so dep_done must not appear as null or []).
+	if b.Revisit == nil {
+		t.Errorf("revisit summary must be present in brief:\n%s", out)
+	}
+	if _, ok := b.Revisit["dep_done"]; ok {
+		t.Errorf("an empty dep_done must be omitted, not emitted:\n%s", out)
 	}
 }
 

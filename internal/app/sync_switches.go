@@ -31,7 +31,7 @@ var switchLineRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) activate
 // records on files that belong to an EPIC. Best-effort display data: any read
 // failure returns nil — a summary line must never fail a sync.
 func (a *App) publishedSwitches(ctx context.Context, r *gitrepo.Repo, spec string) []EpicSwitch {
-	added := r.AddedLines(ctx, spec+"/bodies")
+	added := r.AddedLines(ctx, specJoin(spec, "bodies"))
 	if len(added) == 0 {
 		return nil
 	}
@@ -43,7 +43,7 @@ func (a *App) publishedSwitches(ctx context.Context, r *gitrepo.Repo, spec strin
 	for i := range epics {
 		titles[epics[i].ID] = epics[i].Title
 	}
-	prefix := spec + "/bodies/"
+	prefix := specJoin(spec, "bodies/")
 	var out []EpicSwitch
 	for _, l := range added {
 		rest, ok := strings.CutPrefix(l.Path, prefix)

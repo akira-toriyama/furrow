@@ -584,6 +584,36 @@ func isNoUpstream(stderr string) bool {
 		strings.Contains(s, "does not point to a branch")
 }
 
+// Branch reports the checked-out branch's short name; detached is true (with
+// branch "") when HEAD points at a commit rather than a branch. An unborn
+// branch (a repo with no commits yet) is still a branch.
+func (r *Repo) Branch(ctx context.Context) (branch string, detached bool, err error) {
+	out, stderr, err := runGit(ctx, r.git, r.top, "symbolic-ref", "-q", "--short", "HEAD")
+	if err != nil {
+		// -q: a detached HEAD exits 1 and says nothing; anything with words is
+		// a real failure.
+		if strings.TrimSpace(stderr) == "" {
+			return "", true, nil
+		}
+		return "", false, gitFailed("git symbolic-ref HEAD: %s", firstLine(stderr))
+	}
+	return strings.TrimSpace(out), false, nil
+}
+
+// HasUpstream reports whether the checked-out branch tracks an upstream ref —
+// the thing sync pulls from and pushes to. false (with a nil error) on an
+// un-tracked branch and on a detached HEAD, classified by isNoUpstream.
+func (r *Repo) HasUpstream(ctx context.Context) (bool, error) {
+	_, stderr, err := runGit(ctx, r.git, r.top, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err != nil {
+		if isNoUpstream(stderr) {
+			return false, nil
+		}
+		return false, gitFailed("git rev-parse @{u}: %s", firstLine(stderr))
+	}
+	return true, nil
+}
+
 // AbortRebase restores the pre-rebase state (`git rebase --abort`). The local
 // sync commit survives; the working tree is never left with conflict markers —
 // a half-rebased board would make every later furrow command die in
