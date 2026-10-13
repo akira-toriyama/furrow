@@ -106,7 +106,7 @@ Every filtering read — `ls`, `next`, `revisit`, `stats`, `search` — takes `-
 The same filters drive the WRITE side: `set`, `done` and `move` take `-q`
 (plus `-l`/`-r`) as a **selector** instead of an id list — one all-or-nothing
 write, no `ls --json | jq | xargs`. A selection refuses to combine with ids,
-**previews until `--yes`** (`{dry_run: true, tasks}`), and matches-nothing is
+**previews until `--yes`** (`{dry_run: true, tasks}`; a row the all-or-nothing apply would refuse is listed under `refused` and the count line says 0 will be written, a `--due-shift` lists each landing under `moves` as `{id, from, to}`, and a flag the apply would refuse on its own — a box or rule that does not resolve — is exit 2 before any preview), and matches-nothing is
 exit 0 with a stderr note; the board scope applies exactly as in `ls`, so
 `furrow ls <flags>` previews precisely what `furrow done <flags>` would close.
 

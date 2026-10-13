@@ -350,23 +350,12 @@ func resetChecklist(items []core.ChecklistItem) []core.ChecklistItem {
 // an import — the id is minted before the rule is checked, and a refusal that
 // named it handed a tool an id no shard or body would ever carry (t-qps2).
 func (a *App) bindRepeat(subject string, t *core.Task, spec string) error {
-	if strings.TrimSpace(spec) == "" {
-		return core.Validationf(subject, "--repeat needs a rule (e.g. `monthly on 15`, `every 2 weeks on mon,thu`); use --clear-repeat to remove one")
+	line, err := a.compileRepeat(subject, spec)
+	if err != nil {
+		return err
 	}
 	if t.Due == nil {
 		return core.Validationf(subject, "--repeat needs a --due: the date of the FIRST occurrence is what the rule counts from")
-	}
-	if a.Cfg.DefaultLane == a.Cfg.DoneLane {
-		// The successor is born in the default lane. If that IS the done lane it
-		// would be closed at birth holding a live rule — the state `add -s done
-		// --repeat` refuses — and nothing would ever fire it.
-		return core.Validationf(subject, "this board's default lane (%q) is its done lane, so a generated occurrence would be closed at birth — recurrence needs a board whose [lanes].default is open", a.Cfg.DefaultLane)
-	}
-	line, err := recur.Compile(spec, func(text string) (time.Time, error) {
-		return ParseDue(text, a.Clock.Now(), a.loc())
-	})
-	if err != nil {
-		return core.Validationf(subject, "%v", err)
 	}
 	if err := recur.Bindable(line, *t.Due, a.loc()); err != nil {
 		return core.Validationf(subject, "%v", err)
@@ -375,6 +364,29 @@ func (a *App) bindRepeat(subject string, t *core.Task, spec string) error {
 	anchor := *t.Due
 	t.RepeatAnchor = &anchor
 	return nil
+}
+
+// compileRepeat is bindRepeat's task-free half: the spelling and the board's
+// lane shape, judged without a task — so a selection's preview can refuse a
+// rule the apply would refuse (VetSet), and the single-id path reports the
+// same error.
+func (a *App) compileRepeat(subject, spec string) (string, error) {
+	if strings.TrimSpace(spec) == "" {
+		return "", core.Validationf(subject, "--repeat needs a rule (e.g. `monthly on 15`, `every 2 weeks on mon,thu`); use --clear-repeat to remove one")
+	}
+	if a.Cfg.DefaultLane == a.Cfg.DoneLane {
+		// The successor is born in the default lane. If that IS the done lane it
+		// would be closed at birth holding a live rule — the state `add -s done
+		// --repeat` refuses — and nothing would ever fire it.
+		return "", core.Validationf(subject, "this board's default lane (%q) is its done lane, so a generated occurrence would be closed at birth — recurrence needs a board whose [lanes].default is open", a.Cfg.DefaultLane)
+	}
+	line, err := recur.Compile(spec, func(text string) (time.Time, error) {
+		return ParseDue(text, a.Clock.Now(), a.loc())
+	})
+	if err != nil {
+		return "", core.Validationf(subject, "%v", err)
+	}
+	return line, nil
 }
 
 // RepeatWarnings returns what is worth saying at bind time, and nothing when

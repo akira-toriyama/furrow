@@ -961,7 +961,11 @@ func newSetCmd() *cobra.Command {
 			"more ids.\n\n" +
 			"Instead of enumerating ids, SELECT the targets with the read side's own\n" +
 			"filters — -q/-l/-r, ANDed under the board scope exactly as in ls. The\n" +
-			"selection previews until --yes ({dry_run: true, tasks} in JSON), applies\n" +
+			"selection previews until --yes ({dry_run: true, tasks} in JSON — plus the\n" +
+			"rows the apply would refuse under `refused`, and with --due-shift each\n" +
+			"landing under `moves` {id, from, to}; a flag the apply would refuse on its\n" +
+			"own, like a box or rule that does not resolve, is exit 2 before any\n" +
+			"preview), applies\n" +
 			"as the same single all-or-nothing write, matches-nothing is exit 0 with a\n" +
 			"stderr note, and it refuses to combine with ids, --expect-updated, or the\n" +
 			"position flags (a position places ONE task) — the full contract is\n" +
@@ -1085,37 +1089,64 @@ func newSetCmd() *cobra.Command {
 				if !hasEdit {
 					return core.Validationf("", "a selection needs at least one edit flag (-s, --value, --add-label, -e, --due, …) to apply")
 				}
-				if o.Status != nil {
-					if err := a.CheckLane(*o.Status); err != nil {
-						return err
-					}
+				// Everything the apply judges WITHOUT the index — the lane, the
+				// epic and anchor refs, the due/shift/repeat spellings, the flag
+				// combinations — is judged here, so the preview never shows a
+				// write that --yes would refuse for its flags alone (a `-e
+				// nosuchbox` used to preview "would set N" at exit 0).
+				if err := a.VetSet(o); err != nil {
+					return err
 				}
-				var tail *previewTail
+				// The per-row refusals, one tail per flag that has them; several
+				// flags compose, each row carrying every tag and refused by any.
+				var tails []*previewTail
 				if o.DueShift != nil {
-					if err := app.CheckDueShift(*o.DueShift); err != nil {
-						return err
-					}
-					tail = &previewTail{
+					tails = append(tails, &previewTail{
 						tag:     func(t *core.Task) string { return shiftPreviewTag(a, t, *o.DueShift) },
 						refused: func(t *core.Task) bool { return !strings.HasPrefix(shiftPreviewTag(a, t, *o.DueShift), "→") },
+						move:    func(t *core.Task) (string, string, bool) { return shiftPreviewMove(a, t, *o.DueShift) },
 						key:     "refused",
 						why:     "cannot be shifted",
 						remedy:  "narrow the selection to the rows that can be shifted (-q has:due) — --yes would exit 2",
-					}
+					})
 				}
 				if o.Anchor != nil {
 					// The pointer's two invariants, so the preview marks the rows
 					// --yes would refuse (undated unless --due rides along,
 					// repeating unless --clear-repeat does) instead of promising
-					// them; the epic itself is resolved by the apply.
-					tail = &previewTail{
+					// them; the epic itself was resolved by VetSet.
+					tails = append(tails, &previewTail{
 						tag:     func(t *core.Task) string { return anchorPreviewTag(t, o) },
 						refused: func(t *core.Task) bool { return anchorPreviewTag(t, o) != "" },
 						key:     "refused",
 						why:     "cannot follow an anchor",
 						remedy:  "narrow the selection to the rows that can follow (-q 'has:due no:repeat') — --yes would exit 2",
-					}
+					})
 				}
+				if o.Repeat != nil {
+					// The rule's two invariants from the row's side: it counts from
+					// a due, and it cannot sit on a follower.
+					tails = append(tails, &previewTail{
+						tag:     func(t *core.Task) string { return repeatPreviewTag(t, o) },
+						refused: func(t *core.Task) bool { return repeatPreviewTag(t, o) != "" },
+						key:     "refused",
+						why:     "cannot take the rule",
+						remedy:  "narrow the selection to the rows that can repeat (-q 'has:due no:anchor') — --yes would exit 2",
+					})
+				}
+				if o.ClearDue {
+					// A rule counts from the due, so a repeating row keeps it (the
+					// apply refuses unless the same write drops the rule); the
+					// table test found this one — the preview promised the write.
+					tails = append(tails, &previewTail{
+						tag:     func(t *core.Task) string { return clearDuePreviewTag(t, o) },
+						refused: func(t *core.Task) bool { return clearDuePreviewTag(t, o) != "" },
+						key:     "refused",
+						why:     "cannot lose the due",
+						remedy:  "narrow the selection to the rows that do not repeat (-q no:repeat) or drop the rule in the same write (--clear-repeat) — --yes would exit 2",
+					})
+				}
+				tail := composeTails(tails...)
 				tasks, err := sel.resolve(cmd, a)
 				if err != nil {
 					return err
@@ -1296,16 +1327,52 @@ func shiftPreviewTag(a *app.App, t *core.Task, spelling string) string {
 	return "→ " + shifted.In(a.Calendar()).Format("2006-01-02 15:04")
 }
 
+// shiftPreviewMove is shiftPreviewTag's JSON twin: the due before and after
+// the shift as RFC 3339 instants, for a row the shift can move.
+func shiftPreviewMove(a *app.App, t *core.Task, spelling string) (from, to string, ok bool) {
+	if t.Due == nil {
+		return "", "", false
+	}
+	shifted, err := app.ShiftDue(*t.Due, spelling, a.Calendar())
+	if err != nil {
+		return "", "", false
+	}
+	return t.Due.UTC().Format(time.RFC3339), shifted.UTC().Format(time.RFC3339), true
+}
+
 // anchorPreviewTag is the preview row's verdict on `set -q --anchor`: "" for a
 // row the apply would mark, else why it would be refused — no due (unless the
 // same write promises one) or a repeat rule (unless the same write drops it).
-// previewTail.refused reads the non-empty case.
+// previewTail.refused reads the non-empty case. The rule case is worded so it
+// does not repeat the row's own `repeats` tag beside it.
 func anchorPreviewTag(t *core.Task, o app.SetOpts) string {
 	switch {
 	case t.Due == nil && o.Due == nil:
 		return "no due — refused"
 	case t.Repeat != "" && !o.ClearRepeat:
-		return "repeats — refused"
+		return "follows its own rule — refused"
+	}
+	return ""
+}
+
+// clearDuePreviewTag is the verdict on `set -q --clear-due`: a repeating row
+// keeps its due unless the same write drops the rule.
+func clearDuePreviewTag(t *core.Task, o app.SetOpts) string {
+	if t.Repeat != "" && !o.ClearRepeat {
+		return "keeps the due for its rule — refused"
+	}
+	return ""
+}
+
+// repeatPreviewTag is the verdict on `set -q --repeat`: a rule counts from a
+// due (unless the same write promises one) and cannot sit on a follower
+// (unless the same write drops the pointer).
+func repeatPreviewTag(t *core.Task, o app.SetOpts) string {
+	switch {
+	case t.Due == nil && o.Due == nil:
+		return "no due — refused"
+	case t.Anchor != "" && !o.ClearAnchor:
+		return "follows a box — refused"
 	}
 	return ""
 }
