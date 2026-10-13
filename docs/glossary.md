@@ -10,7 +10,7 @@
 > order *is* the JSON key order — see `internal/core/marshal.go`). Each entry
 > is a definition, not a manual: the mechanism behind it is `furrow <cmd>
 > --help`, README, or [`architecture.md`](architecture.md), and every closed
-> vocabulary (lanes, codes, keys) is printed by the hidden `furrow vocab
+> vocabulary (lanes, codes, keys) is printed by `furrow vocab
 > <name>` rather than copied here.
 
 ## Terms

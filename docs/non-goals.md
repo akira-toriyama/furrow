@@ -295,7 +295,7 @@ To keep this list honest about today's reality (not aspirations):
   `note`, `attach`, `done`, `move`, `set`, `reorder`,
   `retitle`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`,
   `review`, `apply`, `sync`,
-  `migrate`, `archive`, `unarchive`, `rm`, `tidy`, `upgrade`, `lint`, `config init|path|set`, `schema`, `version`.
+  `migrate`, `archive`, `unarchive`, `rm`, `tidy`, `upgrade`, `lint`, `config init|path|set`, `schema`, `version`, `vocab`.
   Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
   `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, `--drafts`, and the typed
   query `-q` (which `next`, `revisit`, `stats` and `search` take too).

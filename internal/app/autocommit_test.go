@@ -399,3 +399,22 @@ func TestAutoCommitDefaultsFalseFromUserConfig(t *testing.T) {
 		t.Errorf("a.AutoCommit = true, want false when autocommit is omitted")
 	}
 }
+
+// The subject echoes ids by the board's patterns — a task AND a box id — not
+// by a `t-` prefix test that read the title word "t-shirt" as an id and no
+// epic id at all.
+func TestAutoCommitMessageEchoesIDsByPattern(t *testing.T) {
+	a := newApp()
+	task, err := a.Add("t-shirt order", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	box, err := a.EpicAdd("box", EpicAddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := autoCommitMessage("add", a.targetedID, []string{"t-shirt", "order", task.ID, box.ID, "t-nope0"})
+	if got != ":card_file_box:(board)= furrow add "+task.ID+" "+box.ID {
+		t.Errorf("subject = %q", got)
+	}
+}

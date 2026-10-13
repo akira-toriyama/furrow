@@ -575,6 +575,12 @@ func newBriefCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The same -l guard the other filtering reads apply: a tag that
+			// matched nothing but names a repo is exit 2 with the repo (brief
+			// alone printed an empty dashboard at exit 0).
+			if err := labelDidYouMean(cmd, a, o, b.NextTotal+b.BlockedTotal+b.Due.Total()); err != nil {
+				return err
+			}
 			scope := o.Repo
 			if scope == "" {
 				scope = o.ScopeRepo

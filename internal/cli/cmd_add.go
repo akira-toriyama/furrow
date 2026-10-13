@@ -254,7 +254,7 @@ func noteRepeatBinds(a *app.App, created []core.Task) {
 				continue
 			}
 			said[w] = true
-			fmt.Fprintln(errOut, w)
+			stderrNote(w)
 		}
 	}
 }
@@ -290,7 +290,7 @@ func warnShadowedDraft(a *app.App, draftFlag, drafted bool) {
 		return
 	}
 	if w := a.ShadowedDraftWarning("."); w != "" {
-		fmt.Fprintln(errOut, w)
+		stderrWarn(w)
 	}
 }
 

@@ -150,20 +150,23 @@ func DueInversionProblems(idx *Index, loc *time.Location, skipLanes map[string]b
 		if t.Due == nil || skipLanes[t.Status] {
 			continue
 		}
-		var later []string
+		var later, laterIDs []string
 		for _, dep := range t.Deps {
 			d, ok := byID[dep]
 			if !ok || d.Due == nil || skipLanes[d.Status] || !d.Due.After(*t.Due) {
 				continue
 			}
 			later = append(later, fmt.Sprintf("%s (due %s)", d.ID, FormatDue(d, loc)))
+			laterIDs = append(laterIDs, d.ID)
 		}
 		if len(later) == 0 {
 			continue
 		}
+		// The remedy names the dep (the ids are known); `<dep>` was a literal
+		// the reader had to fill from the sentence before it.
 		out = append(out, Problem{SevWarn, "due-inversion", t.ID, fmt.Sprintf(
-			"due %s, but it waits on %s, promised later — a task cannot close before the dep it waits on: re-date one side (`furrow set %s --due <date>`) or drop the edge (`furrow dep %s <dep> --rm`)",
-			FormatDue(t, loc), strings.Join(later, ", "), t.ID, t.ID)})
+			"due %s, but it waits on %s, promised later — a task cannot close before the dep it waits on: re-date one side (`furrow set %s --due <date>`) or drop the edge (`furrow dep %s %s --rm`)",
+			FormatDue(t, loc), strings.Join(later, ", "), t.ID, t.ID, strings.Join(laterIDs, " "))})
 	}
 	sortProblems(out)
 	return out

@@ -71,6 +71,9 @@ func newEpicAddCmd() *cobra.Command {
 			"naming that call in candidates.",
 		Args: epicAddArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := emptyFlagErr(cmd, "", "repo", "label", "meta"); err != nil {
+				return err
+			}
 			a, err := openApp()
 			if err != nil {
 				return err
@@ -302,6 +305,9 @@ func newEpicSetCmd() *cobra.Command {
 			"  furrow epic set e-v0zd --clear-anchor                   # drop the day (followers keep their pointer, disclosed)",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := emptyFlagErr(cmd, args[0], "add-label", "rm-label", "add-repo", "rm-repo", "meta", "rm-meta"); err != nil {
+				return err
+			}
 			a, err := openApp()
 			if err != nil {
 				return err
@@ -502,7 +508,7 @@ func newEpicDoneCmd() *cobra.Command {
 			// so nothing here may refuse or alter the close.
 			members := a.EpicOpenMembers(after.ID)
 			for _, line := range openMembersNotes(after.ID, members) {
-				fmt.Fprintln(errOut, line)
+				stderrNote(line)
 			}
 			return emitWithPreviousSuggest(a, before, after, map[string]any{"open_members": members})
 		},

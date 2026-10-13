@@ -51,20 +51,21 @@ func TestVocabMembersMatchRegistries(t *testing.T) {
 	}
 }
 
-// The commands vocabulary is the visible cobra tree: real commands present,
-// hidden repo tooling (commands/vocab) and cobra furniture absent.
+// The commands vocabulary is the visible cobra tree: real commands present
+// (vocab itself among them — the docs send the reader to it, so it is
+// contract), the hidden README generator (commands) and cobra furniture absent.
 func TestVocabCommands(t *testing.T) {
 	got := vocabLines(t, "commands")
 	set := map[string]bool{}
 	for _, n := range got {
 		set[n] = true
 	}
-	for _, mustHave := range []string{"init", "add", "ls", "next", "config", "sync", "version"} {
+	for _, mustHave := range []string{"init", "add", "ls", "next", "config", "sync", "version", "vocab"} {
 		if !set[mustHave] {
 			t.Errorf("vocab commands is missing %q: %v", mustHave, got)
 		}
 	}
-	for _, mustNot := range []string{"commands", "vocab", "help", "completion"} {
+	for _, mustNot := range []string{"commands", "help", "completion"} {
 		if set[mustNot] {
 			t.Errorf("vocab commands must not list %q (hidden/furniture): %v", mustNot, got)
 		}

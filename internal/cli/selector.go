@@ -60,7 +60,7 @@ func (s *writeSelector) active(cmd *cobra.Command) bool {
 func (s *writeSelector) guard(cmd *cobra.Command, ids []string) error {
 	if !s.active(cmd) {
 		if s.yes {
-			return core.Validationf("", "--yes confirms a -q/-l/-r selection; with explicit ids there is no preview to confirm")
+			return core.Validationf("", "--yes confirms a -q/-l/-r selection; explicit ids apply directly, with no preview to confirm — drop --yes")
 		}
 		return nil
 	}

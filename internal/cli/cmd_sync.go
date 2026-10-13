@@ -222,7 +222,7 @@ func newSyncCmd() *cobra.Command {
 				if s, err := a.RevisitSummary(syncScope(a), a.Cfg.RevisitStaleDays); err == nil {
 					sum = s
 				} else {
-					fmt.Fprintf(errOut, "revisit summary skipped: %v\n", err)
+					stderrNote(fmt.Sprintf("revisit summary skipped: %v", err))
 				}
 				// The lint ride-along: sync is the one loop that always runs, so an
 				// ERROR count surfaces here (codes only; the detail is `furrow lint`).
@@ -268,7 +268,7 @@ func newSyncCmd() *cobra.Command {
 			// (the -n cap note, the clamp note, the hidden-drafts hint). stderr
 			// only, so `sync --json`'s stdout stays pure JSON.
 			if len(prog.PendingBodies) > 0 {
-				fmt.Fprintln(errOut, pendingBodiesNote(prog.PendingBodies))
+				stderrNote(pendingBodiesNote(prog.PendingBodies))
 			}
 			if len(prog.ForeignFiles) > 0 {
 				fmt.Fprintf(errOut, "note: %d foreign file(s) in .furrow/ left uncommitted (%s) — not furrow's to publish; delete them or move them out\n",
@@ -290,7 +290,8 @@ func newSyncCmd() *cobra.Command {
 			// none of them (t-7kvj). stderr in both modes, so --json stdout stays
 			// pure while the operator still sees WHY before the error lands.
 			if s := pushStderr(syncErr); s != "" {
-				fmt.Fprintf(errOut, "git push stderr:\n%s\n", s)
+				stderrNote("git push said:")
+				fmt.Fprintln(errOut, s) // stderr-raw: git's own lines, relayed verbatim under the note above
 			}
 			return syncErr
 		},

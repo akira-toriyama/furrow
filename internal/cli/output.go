@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
@@ -53,6 +54,24 @@ func printNDJSONValue(v any) {
 	e.SetEscapeHTML(false)
 	_ = e.Encode(v)
 	fmt.Fprint(out, b.String())
+}
+
+// stderrNote and stderrWarn print one human stderr line under the convention
+// every stderr line follows — `note:` for a disclosure, `warning:` for a state
+// worth fixing, `error:` from the envelope, or a JSON object under --json —
+// so a reader can classify stderr by its first word. A line that already
+// carries one of the prefixes is printed as it is; TestStderrLinesCarryAPrefix
+// scans this package for a print that bypasses them.
+func stderrNote(s string) { fmt.Fprintln(errOut, stderrPrefixed("note: ", s)) }
+func stderrWarn(s string) { fmt.Fprintln(errOut, stderrPrefixed("warning: ", s)) }
+
+func stderrPrefixed(prefix, s string) string {
+	for _, p := range []string{"note: ", "warning: ", "error: ", "{"} {
+		if strings.HasPrefix(s, p) {
+			return s
+		}
+	}
+	return prefix + s
 }
 
 // emitList is the one list-shaped emitter: --ndjson streams one view per

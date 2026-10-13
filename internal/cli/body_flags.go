@@ -53,8 +53,17 @@ func (b *bodyFlags) stdinFlag() string {
 // escape for a body that really is that one line is stdin, which is never
 // path-checked.
 func (b *bodyFlags) text(cmd *cobra.Command, stdinFree bool) (string, error) {
-	if b.stdinFlag() != "" {
-		return readTextArg(cmd, "-")
+	if flag := b.stdinFlag(); flag != "" {
+		s, err := readTextArg(cmd, "-")
+		if err != nil {
+			return "", err
+		}
+		// The file spelling refuses an empty file; stdin refuses the same
+		// (a default heading used to be written for an empty pipe).
+		if strings.TrimSpace(s) == "" {
+			return "", core.Validationf("", "%s -: stdin was empty; a body named as the body must carry one", flag)
+		}
+		return s, nil
 	}
 	if cmd.Flags().Changed("body-file") {
 		return readBodyFile(b.file)

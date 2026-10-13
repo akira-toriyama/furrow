@@ -137,6 +137,9 @@ func (a *App) EpicAdd(title string, o EpicAddOpts) (*core.Epic, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := requireNonBlank("", "-r/--repo", o.Repos); err != nil {
+		return nil, err
+	}
 	repos, err := a.resolveEpicRepos(o.Repos)
 	if err != nil {
 		return nil, err
@@ -327,8 +330,13 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 	if o.Anchor != nil && o.ClearAnchor {
 		return nil, nil, nil, core.Validationf(ref, "--anchor and --clear-anchor say two different things about the box's day; pass one")
 	}
-	if err := requireNonBlank(ref, "--add-label", o.AddLabels); err != nil {
-		return nil, nil, nil, err
+	for _, l := range []struct {
+		flag string
+		vals []string
+	}{{"--add-label", o.AddLabels}, {"--rm-label", o.RmLabels}, {"--add-repo", o.AddRepos}, {"--rm-repo", o.RmRepos}} {
+		if err := requireNonBlank(ref, l.flag, l.vals); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 	var universe []string
 	if len(o.AddRepos) > 0 || len(o.RmRepos) > 0 {

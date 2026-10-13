@@ -777,6 +777,11 @@ func newCheckCmd() *cobra.Command {
 			var mutate func() (*core.Task, error)
 			switch {
 			case len(adds) > 0:
+				// --add appends; an index beside it was dropped in silence
+				// (`check <id> 5 --add x` appended and said nothing about the 5).
+				if len(args) == 2 {
+					return core.Validationf(args[0], "--add appends a new item and takes no index (an index selects an existing item: toggle, --off, --rm, --reword) — drop the %q", args[1])
+				}
 				verb = "checklist+"
 				mutate = func() (*core.Task, error) { return a.AddChecks(args[0], adds) }
 			case rm:
@@ -854,6 +859,9 @@ func newDepCmd() *cobra.Command {
 				return err
 			}
 			if list {
+				if f := cmd.Flags().Lookup(expectUpdatedFlag); f != nil && f.Changed {
+					return core.Validationf(args[0], "--expect-updated guards a write; --list reads and takes none")
+				}
 				res, err := a.DepList(args[0])
 				if err != nil {
 					return err
@@ -1550,7 +1558,7 @@ func noteBoundRules(a *app.App, bound bool, tasks []*core.Task, rs *seriesReport
 				continue
 			}
 			said[w] = true
-			fmt.Fprintln(errOut, w)
+			stderrNote(w)
 		}
 	}
 }

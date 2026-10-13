@@ -213,7 +213,7 @@ func TestSyncRelaysPushHookStderr(t *testing.T) {
 		t.Errorf("details.stderr %q should carry the hook's block reason", s)
 	}
 
-	if !strings.Contains(relay, "git push stderr:") {
+	if !strings.Contains(relay, "note: git push said:") {
 		t.Errorf("stderr should introduce the relay, got:\n%s", relay)
 	}
 	for _, want := range []string{"epic-required", "--no-verify"} {

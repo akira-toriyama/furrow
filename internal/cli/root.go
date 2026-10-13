@@ -288,7 +288,7 @@ func newRootCmd() *cobra.Command {
 			}
 			if a.AutoCommit {
 				for _, w := range a.AutoCommitFlush(cmd.Context(), path, args).Warnings {
-					fmt.Fprintln(errOut, w)
+					stderrWarn(w)
 				}
 			}
 			// Whatever this command's own body writes the flush did NOT commit
@@ -484,7 +484,7 @@ func openApp() (*app.App, error) {
 	}
 	autoCommitApp = a // hand the resolved App to the root PersistentPostRunE autocommit hook
 	for _, w := range a.ScopeWarnings {
-		fmt.Fprintln(errOut, w)
+		stderrWarn(w)
 	}
 	return a, nil
 }
@@ -518,5 +518,5 @@ func renderError(fe *core.Error) {
 	// Errors are always JSON on stderr — machine-readable for Claude/scripts,
 	// still readable for humans.
 	b := mustJSON(env)
-	fmt.Fprintln(errOut, string(b))
+	fmt.Fprintln(errOut, string(b)) // stderr-raw: the error envelope is JSON, never a prefixed line
 }
