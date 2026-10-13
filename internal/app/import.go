@@ -106,6 +106,21 @@ func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
 // "spec %d (%q): " error prefix — the bulk callers keep it (a failing spec must
 // be nameable in a batch), single Add drops it (its errors keep the classic
 // single-task wording).
+// specErr prefixes a batch spec's error with WHICH spec failed (prefixed
+// callers only). A closed-vocabulary gate must reuse the SAME constructor
+// single Add uses and only prefix its message: rebuilding it with Validationf
+// would drop Candidates (the bulk-vs-single divergence class of t-adx9/t-ek9y,
+// in the error shape instead of the write).
+func specErr(prefixed bool, i int, title string, err error) error {
+	if !prefixed {
+		return err
+	}
+	if fe := core.AsError(err); fe != nil {
+		return fe.WithPrefixf("spec %d (%q): ", i, title)
+	}
+	return err
+}
+
 func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 	if len(specs) == 0 {
 		return nil, nil
@@ -155,15 +170,7 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 		// to exit 2 with no did-you-mean list while `add -s ghots` had one — the
 		// bulk-vs-single divergence class of t-adx9/t-ek9y, in the error shape
 		// instead of the write.
-		specf := func(err error) error {
-			if !prefixed {
-				return err
-			}
-			if fe := core.AsError(err); fe != nil {
-				return fe.WithPrefixf("spec %d (%q): ", i, s.Title)
-			}
-			return err
-		}
+		specf := func(err error) error { return specErr(prefixed, i, s.Title, err) }
 		if s.Title == "" {
 			if prefixed {
 				return nil, core.Validationf("", "spec %d has an empty title", i)
@@ -171,7 +178,7 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 			return nil, core.Validationf("", "title must not be empty")
 		}
 		if why := core.TitleTooLong(s.Title); why != "" {
-			return nil, core.Validationf("", "%s", why)
+			return nil, specf(core.Validationf("", "%s", why))
 		}
 		lane := s.Status
 		if lane == "" {
@@ -270,7 +277,13 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 	}
 
 	ids := make([]string, 0, len(specs))
+	// Bodies are composed here and written AFTER the last spec passed, in one
+	// staged write: a per-spec saveBody left the earlier specs' bodies on disk
+	// when a later spec was refused (an `orphan-body` the next sync published —
+	// t-t2fv), while the error said nothing was written.
+	bodies := make(map[string]string, len(specs))
 	for i, s := range specs {
+		specf := func(err error) error { return specErr(prefixed, i, s.Title, err) }
 		lane := s.Status
 		if lane == "" {
 			lane = a.Cfg.DefaultLane
@@ -310,23 +323,30 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 			// advances a series — so the rule would sit on a task that can never
 			// fire it, a series with no live occurrence and nothing to say so.
 			if lane == a.Cfg.DoneLane {
-				return nil, core.Validationf("", "a task created in the %q lane is closed at birth, so a --repeat rule on it could never fire — create it open, or drop --repeat", lane)
+				return nil, specf(core.Validationf("", "a task created in the %q lane is closed at birth, so a --repeat rule on it could never fire — create it open, or drop --repeat", lane))
 			}
 			if err := a.bindRepeat("", &t, s.Repeat); err != nil { // no task exists yet to name
-				return nil, err
+				return nil, specf(err)
 			}
 		}
 		body := s.Body
 		if body == "" {
 			body = "# " + t.Title + "\n"
 		}
-		if err := a.saveBody(id, body); err != nil {
-			return nil, err
-		}
+		bodies[id] = body
 		idx.Add(t)
 		ids = append(ids, id)
 	}
+	if err := a.saveBodies(bodies); err != nil {
+		return nil, err
+	}
 	if err := a.saveIndex(idx); err != nil {
+		// The index refused (a duplicate id on disk, a marshal failure): the
+		// bodies just staged belong to tasks that do not exist, so take them
+		// back out — best effort, the refusal is the error worth reporting.
+		for id := range bodies {
+			_ = a.deleteBody(id)
+		}
 		return nil, err
 	}
 	// Return the tasks as a subsequent read emits them: Save normalized each of
