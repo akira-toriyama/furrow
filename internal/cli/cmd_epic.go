@@ -58,8 +58,11 @@ func newEpicAddCmd() *cobra.Command {
 			"release, the deadline its members' dates count back from. Tasks whose\n" +
 			"due follows it are marked with `set --anchor <this epic>`; when the day\n" +
 			"moves (`epic set --anchor <new day>`) every follower's due moves with\n" +
-			"it. See `furrow epic set --help`.",
-		Args: cobra.ExactArgs(1),
+			"it. See `furrow epic set --help`.\n\n" +
+			"`epic add` only CREATES a box. A task joins one with `furrow set <task>\n" +
+			"-e <epic>` (or `add -e` at creation); an `epic add <epic> <task>` is exit 2\n" +
+			"naming that call in candidates.",
+		Args: epicAddArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -97,6 +100,21 @@ func newEpicAddCmd() *cobra.Command {
 	body.register(cmd, "initial body markdown itself, never a path ('-' reads stdin; default: a heading from the title)")
 	cmd.Flags().StringVar(&anchor, "anchor", "", "the box's calendar day (YYYY-MM-DD) that its followers' dues are derived from")
 	return cmd
+}
+
+// epicAddArgs is `epic add`'s arity check with the two first-time mistakes
+// spelled out (t-5r9g): an unquoted multi-word title, and `epic add <epic>
+// <task>` meant as "put this task into that box" — which is `set -e`, named as
+// the exact call in candidates when both arguments have an id's shape.
+func epicAddArgs(_ *cobra.Command, args []string) error {
+	if len(args) == 1 {
+		return nil
+	}
+	e := core.Validationf("", "`epic add` takes exactly one argument, the new box's title (quote a title with spaces), received %d; a task joins a box with `furrow set <task> -e <epic>`, not with `epic add`", len(args))
+	if len(args) == 2 && looksLikeID(args[0]) && looksLikeID(args[1]) {
+		e.Candidates = []string{"furrow set " + args[1] + " -e " + args[0]}
+	}
+	return e
 }
 
 func newEpicLsCmd() *cobra.Command {
@@ -549,7 +567,8 @@ func newEpicDepCmd() *cobra.Command {
 		Use:   "dep <epic> [<dep-epic>...]",
 		Short: "Add/remove an epic's deps (open after those close), or list them both ways with --list",
 		Long: "Make <epic> wait on each <dep-epic>: \"open this box after those close\".\n" +
-			"Several deps in one call apply in a single write; --rm removes them instead.\n" +
+			"Several deps in one call apply in a single write; --rm removes them instead\n" +
+			"(`epic dep add` / `epic dep rm` are the same two writes, verb first).\n" +
 			"Adding is acyclic and idempotent, the batch is all-or-nothing, and every\n" +
 			"argument resolves like any epic reference (id, unique prefix, or unique\n" +
 			"title substring — a dangling edge is still removable by its literal id).\n\n" +
@@ -567,13 +586,10 @@ func newEpicDepCmd() *cobra.Command {
 		Example: "  furrow epic dep e-k3m9 e-a1b2\n" +
 			"  furrow epic dep e-k3m9 e-a1b2 e-d4e5   # wait on both in one write\n" +
 			"  furrow epic dep e-k3m9 e-a1b2 --rm\n" +
+			"  furrow epic dep add e-k3m9 e-a1b2      # the same two writes, verb first\n" +
+			"  furrow epic dep rm e-k3m9 e-a1b2\n" +
 			"  furrow epic dep e-k3m9 --list --json   # what it waits on and what it blocks",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("list") {
-				return cobra.ExactArgs(1)(cmd, args)
-			}
-			return cobra.MinimumNArgs(2)(cmd, args)
-		},
+		Args: depVerbArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -586,8 +602,9 @@ func newEpicDepCmd() *cobra.Command {
 				}
 				return emitEpicDepList(res)
 			}
+			spelled, args := depVerb(args)
 			ref, deps := args[0], args[1:]
-			if rm {
+			if rm || spelled == "rm" {
 				return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicRemoveDeps(ref, deps) })
 			}
 			return emitEpicMutation(func() (*core.Epic, *core.Epic, error) { return a.EpicAddDeps(ref, deps) })
