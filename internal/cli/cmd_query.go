@@ -75,7 +75,12 @@ func newLsCmd() *cobra.Command {
 			if cmd.Flags().Changed("tree") {
 				return cobra.MaximumNArgs(1)(cmd, args)
 			}
-			return cobra.NoArgs(cmd, args)
+			if len(args) > 0 {
+				// A bare `ls <epic>` read as an unknown subcommand, naming
+				// neither flag that takes a box.
+				return core.Validationf("", "`ls` takes a box only with --tree: `ls --tree %s` prints that box's group, `ls -e %s` lists its members", args[0], args[0])
+			}
+			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -341,15 +346,19 @@ func newShowCmd() *cobra.Command {
 				// conclude the box is gone).
 				if len(missing) == 1 {
 					fe.Subject = missing[0]
-					if epic, rerr := a.RefTargetsEpic(missing[0]); rerr == nil && epic {
-						if f.archived {
+					if f.archived {
+						if epic, rerr := a.RefTargetsEpic(missing[0]); rerr == nil && epic {
 							fe.Kind = core.KindValidation
 							fe.Code = core.CodeValidation
 							fe.Msg = fmt.Sprintf("%s is an epic — --archived reads the task archive, and boxes are never archived (drop the flag to read it)", missing[0])
-						} else {
-							fe.Kind = core.KindEpicNotFound
-							fe.Msg = fmt.Sprintf("epic not found: %s", missing[0])
 						}
+					} else if ce, rerr := a.EpicRefMiss(missing[0]); rerr == nil && ce != nil {
+						// The box resolution's own verdict, exit code and
+						// candidates included: epic-not-found is exit 2 on every
+						// other reader, and an ambiguous title names its
+						// candidates here as `epic show` does.
+						ce.Details = missDetails(missing, inArchive)
+						return ce
 					}
 				}
 				fe.Msg += archivedSuffix(inArchive)
