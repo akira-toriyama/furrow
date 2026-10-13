@@ -126,22 +126,7 @@ func (s *Store) Load() (*core.Index, error) {
 // covers the scalars). Nil-ness is preserved — a clone that turned [] into nil
 // would change what tests observe. The unexported extras carrier is shared by
 // the struct copy, which is fine: nothing outside core can reach into it.
-func cloneTask(t core.Task) core.Task {
-	t.Labels = cloneStrings(t.Labels)
-	t.Repos = cloneStrings(t.Repos)
-	t.Deps = cloneStrings(t.Deps)
-	t.Refs = cloneStrings(t.Refs)
-	if t.Checklist != nil {
-		t.Checklist = append(make([]core.ChecklistItem, 0, len(t.Checklist)), t.Checklist...)
-	}
-	t.Value = cloneInt(t.Value)
-	t.Effort = cloneInt(t.Effort)
-	t.Closed = cloneTime(t.Closed)
-	t.Reviewed = cloneTime(t.Reviewed)
-	t.Due = cloneTime(t.Due)
-	t.RepeatAnchor = cloneTime(t.RepeatAnchor)
-	return t
-}
+func cloneTask(t core.Task) core.Task { return core.CloneTask(t) }
 
 // cloneEpic is cloneTask's box twin (slices + the Meta map).
 func cloneEpic(e core.Epic) core.Epic {
@@ -165,14 +150,6 @@ func cloneStrings(ss []string) []string {
 		return nil
 	}
 	return append(make([]string, 0, len(ss)), ss...)
-}
-
-func cloneInt(p *int) *int {
-	if p == nil {
-		return nil
-	}
-	v := *p
-	return &v
 }
 
 func cloneTime(p *time.Time) *time.Time {

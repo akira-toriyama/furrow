@@ -72,7 +72,7 @@ type TidyReport struct {
 // per-shard atomic and idempotent — a re-run after any interruption finds only
 // what is still there — and an apply on a clean board writes nothing.
 func (a *App) Tidy(o TidyOpts) (*TidyReport, error) {
-	idx, err := a.Store.Load()
+	idx, err := a.load() // canonical order: the report lists rows as ls does
 	if err != nil {
 		return nil, err
 	}

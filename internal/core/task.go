@@ -334,3 +334,56 @@ func (t *Task) ROI() float64 {
 	}
 	return float64(*t.Value) / float64(*t.Effort)
 }
+
+// CloneTask is a deep copy of t: every slice and pointer field is fresh, so a
+// caller may edit the copy without the original — or a store's own entry —
+// moving under it. The unknown-key carrier is copied too.
+func CloneTask(t Task) Task {
+	t.Labels = cloneStrings(t.Labels)
+	t.Repos = cloneStrings(t.Repos)
+	t.Deps = cloneStrings(t.Deps)
+	t.Refs = cloneStrings(t.Refs)
+	if t.Checklist != nil {
+		t.Checklist = append(make([]ChecklistItem, 0, len(t.Checklist)), t.Checklist...)
+	}
+	t.Value = cloneInt(t.Value)
+	t.Effort = cloneInt(t.Effort)
+	t.Closed = cloneTime(t.Closed)
+	t.Reviewed = cloneTime(t.Reviewed)
+	t.Due = cloneTime(t.Due)
+	t.RepeatAnchor = cloneTime(t.RepeatAnchor)
+	t.extras = cloneExtras(t.extras)
+	return t
+}
+
+// CloneIndex is CloneTask over a whole index.
+func CloneIndex(idx *Index) *Index {
+	out := &Index{Tasks: make([]Task, 0, len(idx.Tasks))}
+	for i := range idx.Tasks {
+		out.Tasks = append(out.Tasks, CloneTask(idx.Tasks[i]))
+	}
+	return out
+}
+
+func cloneStrings(ss []string) []string {
+	if ss == nil {
+		return nil
+	}
+	return append(make([]string, 0, len(ss)), ss...)
+}
+
+func cloneInt(p *int) *int {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func cloneTime(p *time.Time) *time.Time {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}

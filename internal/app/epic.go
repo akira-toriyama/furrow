@@ -476,11 +476,14 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 // way. The CLI prints it to stderr and puts it in the --json envelope; lint's
 // epic-dep-open keeps the state visible afterwards.
 func (a *App) EpicActivate(ref, reason string) (before, after *core.Epic, openDeps []string, err error) {
-	id, err := a.ResolveEpic(ref)
+	// One read of the boxes: the ref resolves, the slot check judges, and the
+	// write lands on the same snapshot (three loads used to put the judgment
+	// and the write on different ones).
+	epics, err := a.Store.LoadEpics()
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	epics, err := a.Store.LoadEpics()
+	id, err := a.resolveEpicIn(ref, epics)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -514,13 +517,13 @@ func (a *App) EpicActivate(ref, reason string) (before, after *core.Epic, openDe
 	// error with Active already true, and the body is the only record
 	// PreviousActiveSuggest and sync's publishedSwitches read, so the box was
 	// open with its "previous" lost for good (t-5n2x).
-	before, after, err = a.mutateEpicProse(id, func(e *core.Epic) error {
+	before, after, err = a.mutateEpicLoaded(target, true, func(e *core.Epic) error {
 		if err := a.recordSwitch(id, reason); err != nil {
 			return err
 		}
 		e.Active = true
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -934,6 +937,14 @@ func (a *App) mutateEpicStamping(ref string, alwaysStamp bool, fn func(*core.Epi
 	if !ok {
 		return nil, nil, core.NotFound(id)
 	}
+	return a.mutateEpicLoaded(e, alwaysStamp, fn, beforeSave)
+}
+
+// mutateEpicLoaded is mutateEpicStamping on a box the caller already holds —
+// the write half, for a verb that resolved and judged the box on its own
+// snapshot (EpicActivate's slot check) and must write that same box.
+func (a *App) mutateEpicLoaded(e *core.Epic, alwaysStamp bool, fn func(*core.Epic) error, beforeSave func() error) (*core.Epic, *core.Epic, error) {
+	id := e.ID
 	// A value copy shares the box's maps and slices with the edit fn is about
 	// to make, so `before` would already show the new meta (t-r6vt): clone
 	// every reference field.

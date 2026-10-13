@@ -181,19 +181,26 @@ func (a *App) inheritableEpic() string {
 	if a.AutoFilter {
 		scope = a.DefaultRepo
 	}
-	items, err := a.EpicList(EpicQueryOpts{Repo: scope})
+	// The boxes alone decide (open, active, in scope — EpicList's own filter
+	// minus the member stats): going through EpicList read the task index a
+	// second time on every add.
+	epics, err := a.Store.LoadEpics()
 	if err != nil {
 		return ""
 	}
 	found := ""
-	for _, it := range items {
-		if !it.Epic.Active {
+	for i := range epics {
+		e := &epics[i]
+		if !e.IsOpen() || !e.Active {
+			continue
+		}
+		if scope != "" && !anyRepoMatch(e.Repos, []string{scope}) {
 			continue
 		}
 		if found != "" {
 			return "" // two actives — never guess between focuses
 		}
-		found = it.Epic.ID
+		found = e.ID
 	}
 	return found
 }

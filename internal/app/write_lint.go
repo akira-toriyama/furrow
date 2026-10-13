@@ -6,14 +6,14 @@ import (
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
-// saveIndex is the one write of the hot store's task index. The first call in
-// this App's life loads the board as it still stands on disk, so
-// NewLintErrors can tell the errors a write created from the ones the board
-// already had, and every call remembers the index it wrote as the board after.
+// saveIndex is the one write of the hot store's task index. The board as it
+// stood before this process's first write is the copy load() kept (preWrite),
+// so NewLintErrors can tell the errors a write created from the ones the board
+// already had; every call remembers the index it wrote as the board after.
 // Every index write in this package goes through here except two that have no
 // "before" worth comparing: Init stamping an empty store, and upgrade's
-// layout rewrite. The diagnostic load is best effort: if it fails the write
-// still lands, and only the note is lost.
+// layout rewrite. A writer that never went through load() (none today) gets
+// its snapshot here, best effort.
 func (a *App) saveIndex(idx *core.Index) error {
 	if a.preWrite == nil {
 		if before, err := a.Store.Load(); err == nil {

@@ -285,13 +285,20 @@ func NewWithStore(st Store, cfg *config.Config, clk core.Clock) *App {
 }
 
 // load reads the index and canonicalizes it, so every read path sees tasks in
-// the same lane->priority->id order regardless of any hand-edit.
+// the same lane->priority->id order regardless of any hand-edit. The FIRST
+// load in this App's life is also kept as a copy (preWrite): it is the board
+// as it stood before any write this process makes, which NewLintErrors
+// compares against — taken here, every write reads the board once, where
+// saveIndex used to read it a second time for the same snapshot.
 func (a *App) load() (*core.Index, error) {
 	idx, err := a.Store.Load()
 	if err != nil {
 		return nil, err
 	}
 	core.Canonicalize(idx, a.Cfg.Lanes)
+	if a.preWrite == nil {
+		a.preWrite = core.CloneIndex(idx)
+	}
 	return idx, nil
 }
 

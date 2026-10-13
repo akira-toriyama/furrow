@@ -84,7 +84,7 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 		if reports[id] != nil {
 			consumeRepeat(t)
 		}
-		a.applyLane(idx, t, lane)
+		a.applyLane(idx, t, lane, now)
 		// A note is prose: it changed the task's content without touching the
 		// shard, so a close that carries one always stamps (stampIfChanged's
 		// comparison structurally cannot see a body). Without one, a move to the
@@ -275,17 +275,22 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, *Rep
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	epic, err := a.resolveEpicOpt(o)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	var (
 		renumbered []core.PriorityChange
 		successor  *pendingSuccessor
 		report     *RepeatReport
 	)
+	now := a.Clock.Now()
 	// applySet does the whole edit against the task mutateInPost hands it (the
 	// repo guard's both sides and the stamp are the skeleton's); the successor
 	// a `-s done` mints goes in through the post hook — inserting moves the
 	// index's backing array, so it must wait until every task pointer is dead.
-	saved, err := a.mutateInPost(idx, id, func(*core.Task) error {
-		renumbered, successor, report, err = a.applySet(idx, id, o, due, anchor, nil)
+	saved, err := a.mutateInPostAt(idx, id, now, func(*core.Task) error {
+		renumbered, successor, report, err = a.applySet(idx, id, o, due, anchor, epic, now, nil)
 		return err
 	}, func(idx *core.Index) error {
 		return a.flushSuccessors(idx, []*pendingSuccessor{successor})
@@ -403,6 +408,10 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 	if err != nil {
 		return nil, nil, err
 	}
+	epic, err := a.resolveEpicOpt(o)
+	if err != nil {
+		return nil, nil, err
+	}
 	idx, err := a.load()
 	if err != nil {
 		return nil, nil, err
@@ -460,13 +469,14 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 			return nil, nil, anchoredRepeatErr(followers, len(order))
 		}
 	}
+	now := a.Clock.Now() // the batch's one instant: the lane stamps and the updated stamps
 	var successors []*pendingSuccessor
 	reports := map[string]*RepeatReport{}
 	reservedIDs := map[string]bool{}
 	for _, id := range order {
 		t, _ := idx.Find(id)
 		reposBefore := append([]string(nil), t.Repos...)
-		_, succ, rep, serr := a.applySet(idx, id, o, due, anchor, reservedIDs)
+		_, succ, rep, serr := a.applySet(idx, id, o, due, anchor, epic, now, reservedIDs)
 		if serr != nil {
 			return nil, nil, serr
 		}
@@ -491,9 +501,12 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 // applySet mutates one task in an ALREADY-LOADED index and returns any respace
 // the relative placement caused. It saves nothing: the caller owns the write, so
 // a batch is one Save. id must already resolve. anchor is the resolved epic id
-// a `--anchor` names ("" when the write does not set one), resolved once by the
-// caller (resolveAnchor) so a batch cannot fan out into N epic reads.
-func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, anchor string, reserved map[string]bool) ([]core.PriorityChange, *pendingSuccessor, *RepeatReport, error) {
+// a `--anchor` names ("" when the write does not set one) and epic the
+// resolved `-e` (nil = untouched, "" = unfile), both resolved once by the
+// caller (resolveAnchor, resolveEpicOpt) so a batch cannot fan out into N epic
+// reads; now is the write's one instant (the lane's closed stamp and the
+// caller's updated stamp carry it alike).
+func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, anchor string, epic *string, now time.Time, reserved map[string]bool) ([]core.PriorityChange, *pendingSuccessor, *RepeatReport, error) {
 	var successor *pendingSuccessor
 	var report *RepeatReport
 	relRef, relBefore := o.Before, true
@@ -554,7 +567,7 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 		// The lane lands HERE, before the position block: `--before/--after`
 		// resolve against the DESTINATION lane, which is what a cross-column
 		// drop means. Only the series advance waits until the end.
-		a.applyLane(idx, t, *o.Status)
+		a.applyLane(idx, t, *o.Status, now)
 	}
 	var renumbered []core.PriorityChange
 	switch {
@@ -648,18 +661,10 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 		}
 		return nil, nil, nil, repeatingAnchorErr([]string{id}, 1)
 	}
-	if o.Epic != nil {
-		// Already validated in validateSetOpts; resolve again to store the ID, not
-		// whatever spelling the caller used.
-		if *o.Epic == "" {
-			t.Epic = ""
-		} else {
-			id, err := a.ResolveEpic(*o.Epic)
-			if err != nil {
-				return renumbered, nil, nil, err
-			}
-			t.Epic = id
-		}
+	if epic != nil {
+		// Resolved ONCE by the caller (resolveEpicOpt) — a batch used to read
+		// the box store for every id it touched.
+		t.Epic = *epic
 	}
 	t.Labels = nextLabels
 	t.Repos = nextRepos
@@ -697,6 +702,24 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 // resolveAnchor binds a set's `--anchor` reference to the epic id it names,
 // once per call (resolveAnchorRef's rules: the box exists and carries a day).
 // "" when the call sets none.
+// resolveEpicOpt resolves a `-e` once for a whole write: nil when the write
+// does not touch the box, a pointer to "" for `-e ”` (unfile), else the
+// resolved id. validateSetOpts already refused a ref that does not resolve.
+func (a *App) resolveEpicOpt(o SetOpts) (*string, error) {
+	if o.Epic == nil {
+		return nil, nil
+	}
+	if *o.Epic == "" {
+		empty := ""
+		return &empty, nil
+	}
+	id, err := a.ResolveEpic(*o.Epic)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
 func (a *App) resolveAnchor(o SetOpts) (string, error) {
 	if o.Anchor == nil {
 		return "", nil

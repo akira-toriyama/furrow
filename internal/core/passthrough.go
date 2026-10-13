@@ -330,3 +330,15 @@ func (r *RepoRecord) ClearExtras() []string { return clearExtras(&r.extras) }
 
 // ClearExtras drops this epic shard's unknown keys — see Task.ClearExtras.
 func (e *Epic) ClearExtras() []string { return clearExtras(&e.extras) }
+
+// cloneExtras copies the passthrough carrier (nil stays nil).
+func cloneExtras(e Extras) Extras {
+	if e == nil {
+		return nil
+	}
+	out := make(Extras, len(e))
+	for k, v := range e {
+		out[k] = append([]byte(nil), v...)
+	}
+	return out
+}
