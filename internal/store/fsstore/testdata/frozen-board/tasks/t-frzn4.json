@@ -1,0 +1,23 @@
+{
+  "id": "t-frzn4",
+  "title": "a frozen task carrying the v10 and v11 fields",
+  "status": "ready",
+  "priority": 120,
+  "labels": [],
+  "repos": [
+    "akira-toriyama/furrow"
+  ],
+  "deps": [],
+  "refs": [],
+  "checklist": [],
+  "created": "2026-07-02T09:00:00Z",
+  "updated": "2026-07-14T04:15:00Z",
+  "closed": null,
+  "reviewed": null,
+  "body": "bodies/t-frzn4.md",
+  "epic": "e-frzn2",
+  "due": "2026-08-10T14:59:59Z",
+  "repeat": "FREQ=WEEKLY;BYDAY=MO",
+  "repeat_anchor": "2026-08-10T14:59:59Z",
+  "anchor": "e-frzn2"
+}

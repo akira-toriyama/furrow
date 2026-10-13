@@ -35,5 +35,8 @@
   "closed": null,
   "reviewed": "2026-06-20T01:02:03Z",
   "body": "bodies/t-0001.md",
-  "due": "2026-07-01T14:59:59Z"
+  "due": "2026-07-01T14:59:59Z",
+  "repeat": "FREQ=WEEKLY;BYDAY=MO",
+  "repeat_anchor": "2026-07-01T14:59:59Z",
+  "anchor": "e-k3m9p"
 }

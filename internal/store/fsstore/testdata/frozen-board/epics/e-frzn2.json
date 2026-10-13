@@ -1,0 +1,20 @@
+{
+  "id": "e-frzn2",
+  "title": "a frozen epic carrying the v11 anchor",
+  "goal": "pin the box's calendar day in bytes a hand wrote",
+  "active": false,
+  "labels": [],
+  "repos": [
+    "akira-toriyama/furrow"
+  ],
+  "meta": {},
+  "created": "2026-07-02T09:00:00Z",
+  "updated": "2026-07-14T04:15:00Z",
+  "closed": null,
+  "body": "bodies/e-frzn2.md",
+  "deps": [],
+  "standing": false,
+  "pinned": true,
+  "reviewed": "2026-07-21T06:30:00Z",
+  "anchor": "2026-08-10"
+}
