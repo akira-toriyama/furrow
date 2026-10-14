@@ -54,7 +54,7 @@ repo = "auto"
 # Optional LITERAL label `furrow add` tags new tasks with — a pure tag, like a
 # GitHub Issues label auto-applied per board. It never filters reads.
 label = ""
-# Auto-filter reads (ls/next/revisit) by the board repo; false shows the whole
+# Auto-filter reads by the board repo; false shows the whole
 # board while `add` still attaches the repo.
 auto_filter = true
 # Commit the board's .furrow/ after every mutating command (best-effort, no

@@ -48,8 +48,8 @@ API."
 The boundary, stated once: the two GitHub touchpoints that **do** exist are
 deliberately not API integrations. `furrow sync` is a **thin git wrapper**
 (git is the transport — see *No sync daemon* below), and the task-status
-GitHub Actions workflow is **PR-event → own-board reflection**: it runs
-`furrow apply` over the PR's own text to update the board *in its own repo*,
+GitHub Actions workflow is **PR-event → tracker-board reflection**: it runs
+`furrow apply` over the PR's own text to update the board *in the tracker repo it checks out*,
 calling no Issues/Projects API and mirroring no external state.
 
 A speculative one-shot `furrow import --from-gh-project` seed (a one-time
@@ -62,7 +62,7 @@ Multi-machine use is `furrow sync` — a **thin git wrapper** (auto-commit
 scoped to `.furrow/` — the machine-written files always, a `bodies/<id>.md`
 when new, when furrow itself wrote it (the per-checkout journal), or when opted
 in with `-b`/`--all-bodies`, otherwise reported in `pending_bodies`; then `fetch` + `rebase --autostash @{u}`,
-`push`, abort-and-report on conflict) that the user or agent runs explicitly. There is no background process, no file
+`push`, a field-wise merge where the sides wrote different fields, else abort-and-report) that the user or agent runs explicitly. There is no background process, no file
 watcher, no hosted relay, and none is planned: git is already the
 synchronization layer, and per-task shards already make concurrent writes
 merge cleanly. — *A daemon would add an always-on failure mode to a tool whose
@@ -133,7 +133,7 @@ another), or a reschedule where the delta genuinely differs per task. The shape
 then is a per-task offset beside the pointer — never a due computed on read.
 
 ### No cancelled close
-`furrow done` is the only way a task stops being open, and it stamps the one
+Entering the done lane (`done`, `move`, `set -s`, `apply`) is the only way a task stops being open, and it stamps the one
 `closed` whether the completion condition was met or the premise behind the task
 went away. There is no cancelled lane that closes, no resolution or close-reason
 field, no second glyph in `ls`, and an epic's `N/M` counts every done member:
@@ -190,7 +190,8 @@ editable) + `.furrow/bodies/assets/` (files of any kind copied in by `furrow att
 collision-free `<id>-<name>` files, referenced from the body by a relative
 markdown line — the explicit binary exception, delegated to git(-lfs); the
 non-binary, clean-git-diff arguments below concern the structured store) +
-`.furrow/config.toml` (human config) +
+`.furrow/epics/<id>.json` (epic shards) + `.furrow/repos/*.json` (per-repo
+`review` stamps) + `.furrow/config.toml` (human config) +
 `.furrow/archive/` (aged done tasks, itself a sibling sharded store). The
 rejected alternatives below are *not*
 shortcuts we skipped — they are formats we evaluated and ruled out.
@@ -302,18 +303,15 @@ To keep this list honest about today's reality (not aspirations):
   Destructive ops are guarded: `archive`, `rm` (and `epic rm`), `tidy`, `upgrade`, `migrate`, and a day move on `epic set --anchor` preview unless `--yes`, as does a `-q`/`-l`/`-r` selection on `set`/`done`/`move`.
   Exit-code
   contract: `0` ok (an empty query result included) / `1` a specifically
-  requested id not found / `2` bad-usage|validation / `3+`
-  internal|IO, with `{"error":{"kind","subject","retryable","exit","message"}}`
+  requested id not found, or `doctor` found problems / `2` bad-usage|validation / `3+`
+  internal|IO (`130`/`143` when SIGINT/SIGTERM interrupted the run), with `{"error":{"kind","subject","retryable","exit","message"}}`
   to stderr (`internal/core/errors.go` — `kind` is the closed branch vocabulary,
   `furrow vocab error-kinds`; `retryable` says whether a re-run is the fix),
   plus optional `candidates` / `details` fields
   when there is something machine-actionable to say. `furrow migrate`
   (importing a legacy `Task.md`) is wired and working too.
-- **Not built here** — furrow is CLI-only: any interactive TUI/GUI is a separate
-  front-end repo consuming the CLI/JSON contract (**ridge**, a TUI; **vista**, a GUI);
-  a hosted/web backend and a rich React UI remain out of scope for now (see
-  *Backend & UI* above); the optional `furrow import
-  --from-gh-project` seed is also unbuilt.
+- **Not built here** — any UI (see *Backend & UI* above) and
+  the optional `furrow import --from-gh-project` seed.
 - **Planned, not a non-goal** — the per-person collaboration niceties, namely an
   `@mention` (a *person*-directed notation, distinct from the task→task `[[id]]`
   **link** that already ships) and a task **assignee**, are **unbuilt but on the

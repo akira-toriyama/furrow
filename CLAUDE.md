@@ -229,7 +229,7 @@ the worked example; a stale one is read-only for the reader who follows the link
   (English-only, code-first, reduction-first — truth lives in the code/CLI and
   docs point at it), for which this repo is the reference implementation.
   Keep [README.md](README.md) and the docs/ tier
-  (architecture/glossary/non-goals) carrying the same FACTS on any
+  (architecture/glossary/non-goals) agreeing with the code on any
   user-visible change, and **sweep the docs/ tier in the same change**: drift
   pools exactly where no guard looks. The guards that do look:
   [`scripts/check-readme-parity.sh`](scripts/check-readme-parity.sh) (README's

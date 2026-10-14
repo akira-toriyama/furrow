@@ -117,7 +117,8 @@ script's absolute path (`chmod +x` it first) and gives `StartCalendarInterval`
 an array of five dicts — one per `Weekday` 1–5 (Mon–Fri), each with `Hour` 9 and
 `Minute` 0; a single dict fires on its one weekday only. Because `next` on an
 empty board exits 0 (an empty result is healthy), the digest fails only when
-furrow does, never just because there is nothing to do. The title travels as an
+furrow does, never just because there is nothing to do. With epics but none
+active, add `--all-epics` (`next` alone returns only pinned work). The title travels as an
 argument, so a quote in it cannot break the AppleScript.
 
 ## Recipe 3 — interval instead of a clock time
@@ -130,8 +131,9 @@ For "every 4 hours" use `StartInterval` (seconds) instead of
 <integer>14400</integer>
 ```
 
-launchd also fires a missed job **once** on wake if the machine was asleep at the
-scheduled time — which is exactly what you want for a housekeeping task.
+An interval missed while the machine was asleep is skipped, not run on wake; only
+`StartCalendarInterval` fires a missed job **once** on wake — which is exactly
+what you want for a housekeeping task.
 
 ## Recipe 4 — a weekly review reminder
 
@@ -139,7 +141,7 @@ scheduled time — which is exactly what you want for a housekeeping task.
 per-repo review clock, and `furrow sync` / `furrow brief` surface the repos
 whose clock has lapsed (`unreviewed`). The same launchd pattern as Recipe 2 —
 its `FURROW_DIR` export, a weekly `StartCalendarInterval` — schedules the nudge;
-point the script at `furrow brief --json | jq '.revisit.unreviewed'` and post
+point the script at `furrow brief --json | jq -c '.revisit | .unreviewed // [], .epic_review_due // []'` and post
 the digest, then `furrow review <repo>` after the review to reset the clock.
 
 `furrow revisit` is the per-TASK view (`no_repo`, `value_unset`, `effort_unset`,
