@@ -2,7 +2,7 @@
 
 furrow is a clonable, git-native, plain-text task tracker — an alternative to
 GitHub Projects/Issues — written in Go (module
-`github.com/akira-toriyama/furrow/v9`, Go 1.25+). One board can live outside the
+`github.com/akira-toriyama/furrow/v9`, Go 1.26+). One board can live outside the
 repos it backs and be reached by configuration (a central board — each task
 carries its repos as first-class `owner/repo` identifiers, so one board can back
 many) or sit repo-local in a single repo's `.furrow/`. This document describes
@@ -29,8 +29,6 @@ library.
                                  v
      internal/cli (cobra) — the ONLY presentation layer in-repo
      command/flag parsing, human/JSON rendering
-     (a TUI/GUI is a SEPARATE front-end repo — ridge / vista —
-      that drives furrow through its CLI/JSON contract, not its Go packages)
                                  |
                                  |  (every mutation & query)
                                  v
@@ -42,18 +40,18 @@ library.
               |                  |                  |                      |
               v                  v                  v                      v
      internal/config   internal/store/fsstore  internal/store/memstore  internal/gitrepo
-     read config.toml  the ONLY FS package      in-memory fake           git subprocess
+     read config.toml  the store's FS adapter   in-memory fake           git subprocess
      (clamp, no write) (atomic write,           (tests, dry-runs)        adapter (git ops;
                          lazy body load,                                 implements no
                          random ids)                                     core port)
-              |                  |                  |
-              +------------------+------------------+
+                                 |                  |
+                                 +------------------+
                                  |  (implement core ports)
                                  v
                           internal/core
                   PURE domain: Index/Task structs,
                   the core.MarshalTask/MarshalMeta paths,
-                  ports (Store, Clock), validate, index ops
+                  ports (Store, Clock, SessionRegistry), validate, index ops
                   imports: stdlib only
 
    adapter beside gitrepo: internal/claudecode (Claude Code's private session
@@ -74,19 +72,19 @@ same `--json`/`--ndjson` contract an agent does.
 | Package | Role |
 |---|---|
 | `cmd/furrow/main.go` | Entry point. Just `os.Exit(cli.Execute())` — no logic. |
-| `internal/cli` | cobra adapter and the **only** in-repo presentation layer: parse flags, call `app`, render (human table or `--json`/`--ndjson`), map errors to exit codes. Holds no task logic. The front-ends (ridge, a TUI; vista, a GUI) are out-of-repo, driving this same CLI/JSON contract. |
+| `internal/cli` | cobra adapter and the **only** in-repo presentation layer: parse flags, call `app`, render (human table or `--json`/`--ndjson`), map errors to exit codes. Holds no task logic. |
 | `internal/app` | Coordinator. Wires a `Store` + `Config` + `Clock`; exposes every mutation/query as a method. The **only** place that mutates state. |
 | `internal/config` | Loads `.furrow/config.toml` (clamp-don't-reject). Produces an effective `Config`. Also owns the surgical single-key editor behind `furrow config set`, the one config writer. |
-| `internal/store/fsstore` | The **only** package that touches the filesystem for the store: atomic writes, lazy body load, random id generation. |
+| `internal/store/fsstore` | The filesystem adapter behind `core.Store`: atomic writes, lazy body load, random id generation. |
 | `internal/store/memstore` | In-memory `core.Store` twin for tests (a normal package, not a test helper). |
 | `internal/gitrepo` | git subprocess adapter behind `sync`, `doctor`'s freshness probe and autocommit (command assembly + error classification). Driven only through `internal/app`. |
 | `internal/claudecode` | Adapter over Claude Code's **private** session registry (`~/.claude/sessions/<pid>.json`; the transcript's mtime as activity, its last message record as the turn state): implements the `core.SessionRegistry` port for the session write guard. The ONE place that knows the format, and best-effort by contract (a dead pid is dropped, an unparsable entry skipped and named for `doctor`). |
 | `internal/core` | Pure domain: the entity structs, the `Marshal*`/`Unmarshal*` single path (incl. the unknown-key passthrough), the `Store`/`Clock`/`SessionRegistry` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The four JSON Schemas as Go constants; emitted by `furrow schema [task\|meta\|repo\|epic]`. |
 | `internal/migrate` | Pure `Task.md` parser behind `furrow migrate` (dry-run by default; LOUD warnings for the unmappable). |
-| `internal/recur` | Recurrence, a leaf beside `query`: the short `--repeat` spelling to one RFC 5545 RRULE line, a stored rule to its next occurrence. The only importer of the RRULE library and the only package that knows the grammar; `internal/app` owns WHEN a rule advances (a close). The five library traps it contains (an exhausted rule is a zero time with no error, day-of-month skips per RFC 5545 §3.3.10, DTSTART dropped and rebuilt, an off-lattice anchor never emitted, the local-midnight day grid) are its package doc. |
+| `internal/recur` | Recurrence, a leaf beside `query`: the short `--repeat` spelling to one RFC 5545 RRULE line, a stored rule to its next occurrence. The only importer of the RRULE library and the only package that knows the grammar; `internal/app` owns WHEN a rule advances (a close). The five library traps it contains (an exhausted rule is a zero time with no error, day-of-month skips per RFC 5545 §3.3.10, DTSTART dropped and rebuilt, an off-lattice anchor never emitted, the local-midnight day grid) are its functions' doc comments. |
 | `internal/query` | Pure parser (stdlib only) for the `-q` typed-query DSL, producing an AST. It knows the GRAMMAR, not furrow's fields; `internal/app`'s `compileQuery` binds each term to a task predicate against the index, the `Clock` and the store's bodies (loaded on demand). One compiled predicate serves every filtering read. |
-| `internal/gittest` | Test-only: `Isolate()` neutralizes global/system git config (and background maintenance) at the process-env level from `TestMain`, plus the shared `GitOrSkip`/`RunGit`. Imported only by `_test.go` files. |
+| `internal/gittest` | Test-only: `Isolate()` neutralizes global/system git config (and background maintenance) at the process-env level from `TestMain`, plus the shared `Main`/`MainIsolated` (TestMain bodies) and `GitOrSkip`/`RunGit`. Imported only by `_test.go` files. |
 | `internal/testutil` | Test-only, like `gittest`: the user-level config under an isolated config home (`ConfigHome`, `UserConfig`, `UserConfigIn`) and the `[[board]]` table it is built from (`BoardEntry`). Imports nothing of furrow's own, so any package's `_test.go` files may use it. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |
 
@@ -95,7 +93,7 @@ same `--json`/`--ndjson` contract an agent does.
 ## The purity rule
 
 `internal/core` is the spine, and it is **pure**: it imports only the Go
-standard library (`encoding/json`, `sort`, `time`, `fmt`, `errors`, `regexp`,
+standard library (e.g. `encoding/json`, `sort`, `time`, `fmt`, `errors`, `regexp`,
 `strings`, `reflect` — the passthrough asks json's own field matcher).
 It must **not** import:
 
@@ -113,8 +111,7 @@ The seams between the pure core and the outside world are interfaces declared in
 
 - **`Store`** — persists the shards and bodies, owning *all* path construction
   and *all* atomicity. The method set is the interface in
-  [`internal/core/ports.go`](../internal/core/ports.go) — read it there (a list
-  here drifted to 14 of 27). Four methods carry an invariant: **`LoadMeta`**
+  [`internal/core/ports.go`](../internal/core/ports.go) — read it there. Five methods carry an invariant: **`LoadMeta`**
   returns `meta.json` whole (version + the passthrough's parked keys) and
   **`BoardVersion`** projects the one field, ungated, so `furrow board` can
   diagnose a board nothing else can open; **`Writable`** is the side-effect-free
@@ -133,8 +130,8 @@ The seams between the pure core and the outside world are interfaces declared in
   for Claude Code, and the decision itself (`core.SessionClashes`) stays pure —
   it takes a `repoOf(cwd)` function so core never touches git.
 
-Both adapters carry `var _ core.Store = (*Store)(nil)`; `app` and `cli` depend
-on the interface, never on an adapter. `internal/app` widens it slightly as
+Both adapters carry `var _ core.Store = (*Store)(nil)`; `cli` never imports a store
+adapter; `app` also imports `fsstore` to build its stores and for `WriteFileAtomic`. `internal/app` widens it slightly as
 `app.Store` (`DeleteBody`, `BodyFile` for the `$EDITOR` shell-out).
 
 ### "Crossing a layer means a missing port"
@@ -151,9 +148,10 @@ implements.
 The serializers in
 [`internal/core/marshal.go`](../internal/core/marshal.go) are the **one and only**
 paths that serialize task metadata to bytes. Persistence goes per shard:
-`core.MarshalTask(Task) ([]byte, error)` writes one `tasks/<id>.json`, and
+`core.MarshalTask(*Task) ([]byte, error)` writes one `tasks/<id>.json`, and
 `core.MarshalMeta(...) ([]byte, error)` writes `meta.json` — the latter only from
-`Store.SetBoardVersion` (i.e. `furrow upgrade`) and the fresh-store stamp, never
+`Store.SetBoardVersion` (i.e. `furrow upgrade`), the fresh-store stamp and
+`Store.PruneMetaExtras` (`furrow tidy --unknown-keys`), never
 on the ordinary write path (see the version gate). Every writer —
 `fsstore.Save`, and `migrate` — goes through them; the index has no serialized
 form (its normal form is what `core.Canonicalize` enforces in memory). No other
@@ -187,7 +185,7 @@ internal fault.
 ### Unknown-key passthrough (the other half of the version gate)
 
 [`internal/core/passthrough.go`](../internal/core/passthrough.go) makes the
-round-trip **lossless**: `core.UnmarshalTask` / `UnmarshalRepo` / `UnmarshalMeta`
+round-trip **lossless**: `core.UnmarshalTask` / `UnmarshalEpic` / `UnmarshalRepo` / `UnmarshalMeta`
 park every **top-level** key the binary does not know in an unexported `extras`
 field, and the matching `Marshal*` re-emit them sorted, after the known keys.
 Why: the version gate below fires only when someone **bumps**; a field added
@@ -215,7 +213,7 @@ the struct).
 
 ### How the invariant is guarded
 
-- **Golden round-trip tests.** `internal/core`'s shard goldens freeze each
+- **Golden round-trip tests.** `internal/core`'s shard goldens freeze each shard
   marshaller's bytes, and write → read → write must stay byte-identical.
 - **Schema drift test.** `furrow schema [task|meta|repo|epic]` prints
   `internal/schema.TaskV2` / `MetaV2` / `RepoV1` / `EpicV2` (JSON Schema draft
@@ -236,7 +234,7 @@ the struct).
 - **Frozen board.** `TestFrozenBoardRoundTripsByteIdentical`
   (`internal/store/fsstore/testdata/frozen-board/`) is the byte-level twin and
   the only fixture **the code under test did not write**: Copy → `Load` →
-  `Save` + `SaveRepo` + `SetBoardVersion` → every file byte-identical, same file
+  `Save` + `SaveRepo` + `SaveEpic` + `SetBoardVersion` → every file byte-identical, same file
   set, **untouched mtimes**. It shows the *damage*, not the diff — a new
   non-`omitempty` field as `+ "sprint": ""` in **every** shard, a renamed key
   re-emitted after the known ones by the passthrough — and pins `meta.json`'s
@@ -248,7 +246,7 @@ the struct).
   so the next write destroys the shard's unknown keys.
 - **Schema write guard.** `scripts/check-schema-write-guard.sh` greps the other
   single path: `core.SchemaVersion` may be named only in `internal/core/*`, the
-  two stores, `internal/app/{upgrade,board,lint}.go`, `cmd_board.go`,
+  two stores, `internal/app/{upgrade,schema_state,board,lint}.go`, `cmd_board.go`,
   `schema.go` and tests. The regression it guards is one line and fails
   **silently** (every test on a fresh store still passes) — see the outage below.
 
@@ -312,7 +310,7 @@ one annotated error when `.writable != true`.
 ### `board` reports; it never fails
 
 `App.Board` reads the version **ungated** (`Store.BoardVersion`) and **reports**
-the schema triple — `schema_version`, `binary_schema_version`, `schema_state`
+the schema fields — `schema_version`, `binary_schema_version`, `schema_state`
 (`current` | `outdated` | `too-new` | `unreadable`) and `writable` — instead of
 raising: `board` is the last command that works when board and binary
 disagree, which is what makes it the CI pre-flight. `furrow lint` complements
@@ -331,7 +329,7 @@ source edit never reads as a dirty BOARD.
 ## The store
 
 `internal/store/fsstore` is the only package that touches the filesystem for the
-store; it takes the few config values it needs (lane order, id prefix/width) as
+store; it takes the few config values it needs (lane order, id prefixes/width) as
 arguments so it never imports `internal/config`.
 
 A `.furrow/` store directory contains:
@@ -342,13 +340,14 @@ A `.furrow/` store directory contains:
   epics/<id>.json      one shard per epic (e- ids) — core.MarshalEpic
   bodies/<id>.md       prose, one file per task OR epic (hand/agent editable;
                          ids are prefix-disjoint, so one directory is unambiguous)
-  bodies/assets/       <id>-<sanitized-name>, written ONLY via Store.SaveAsset
+  bodies/assets/       <id>-<sanitized-name>, written ONLY via Store.SaveAsset / SaveAssetRaw
   meta.json            {"schema_version": 11} — MarshalMeta; stamped only on a
                          fresh store (`init`) or by `furrow upgrade`; an ordinary
                          Save READS it (the write gate) and leaves it alone
   repos/<owner>__<repo>.json   one review shard per repo — MarshalRepo
-  config.toml          human config (written only by `furrow config set`)
+  config.toml          human config (written by `init`, then only by `furrow config set`)
   archive/             a sibling sharded store for aged done tasks
+  .gitattributes       bodies/*.md + archive/bodies/*.md merge=union (init)
 ```
 
 ### Load and Save (shard fold / split)
@@ -393,7 +392,7 @@ save.
 The `Index` holds only metadata; `Task.Body` is a *relative path*, never the
 prose, which `LoadBody` reads on demand (`""` when absent). Metadata diffs per
 field, prose per task, and long markdown never collapses into an escaped JSON
-string. `core.BodyPath(id)` is the single source of the path.
+string.
 
 ### Frozen, collision-free random ids
 
@@ -420,7 +419,7 @@ parses fresh bytes on read, so canonicalization and isolation come for free; the
 twin does both explicitly (`Save`/`SaveRepo`/`SaveEpic` round-trip through the
 single `core.Marshal*`/`Unmarshal*` path; every read deep-copies out), because
 every divergence lands as a test that is green against a shape no real board
-can hold. `internal/store/memstore/parity_test.go` pins the two divergences
+can hold. `internal/store/memstore/parity_test.go` pins the divergences
 that shipped, against a real `fsstore`.
 
 ---
@@ -430,7 +429,7 @@ that shipped, against a real `fsstore`.
 `internal/app` is the **only mutation funnel**: the CLI (and any front-end,
 through the CLI/JSON contract) calls `App` methods, one per verb; the
 authoritative list is the exported method set of [`internal/app`](../internal/app)
-itself (a hand copy here rotted to 25 of 88). One place for every edit is what
+itself (a hand copy here rotted). One place for every edit is what
 keeps the invariants from being re-implemented. `App.load()` canonicalizes on
 every read, so reads see lane→priority→id order regardless of any hand-edit.
 
@@ -457,10 +456,10 @@ The invariants the funnel keeps, beyond what each verb's `--help` promises:
   clears it; other terminal lanes (`icebox`, `waiting`) leave it alone — *parked
   is not closed*.
 - **Actionable has one definition** (`App.actionable`: in a `[next].lanes` lane,
-  every dep done — deliberately NOT epic-aware), shared by `next`, `ls
-  --actionable`, `is:actionable` and `ls --tree`'s ★; `next` narrows it further
+  every dep done — deliberately NOT epic-aware), shared by `ls
+  --actionable`, `is:actionable` and `ls --tree`'s ★; `next` inlines it and narrows it further
   with the active/pinned epic scope (`App.NextScope`), so ★ is a strict superset
-  of what `next` hands out. Lane semantics live in config, never in core.
+  of what a plain `next` hands out. Lane semantics live in config, never in core.
 - **Epic roll-ups are derived, never stored**, and computed for every box in
   ONE pass over the full index (`epicMemberStats`) so a read filter cannot
   under-count a box; `epic` is the GROUPING and `deps` the GATE (a DAG across
@@ -486,7 +485,7 @@ the whole batch before `moveMany`'s per-id loop
 (`TestSessionGuardRefusalLeavesEveryFileUntouched`).
 
 The decision is pure (`core.SessionClashes`): self is the registry entry with
-this process's `CLAUDE_PID`; an occupant is any other live session that started
+this process's `CLAUDE_PID` (failing that, its `CLAUDE_CODE_SESSION_ID`); an occupant is any other live session that started
 strictly EARLIER and whose cwd derives to a repo the write touches (the
 `repo = "auto"` derivation, worktree-aware). A clash is *idle* when the
 occupant's turn is known to have ENDED (`TurnEnded`: the transcript's last
@@ -519,12 +518,13 @@ stand-down note says the line will repeat. Under `--json`/`--ndjson` the line
 is one `{"session_warn": {message, clashes}}` object on stderr, so a reader of
 the error envelope parses it the same way.
 
-Four stand-downs, each one stderr `note: session guard: …` line and never a
-refusal: no `CLAUDECODE` env (a human shell, CI), an unreadable registry
+Without `CLAUDECODE` (a human shell, CI) the guard is silently off. Three
+stand-downs, each one stderr `note: session guard: …` line and never a
+refusal: an unreadable registry
 (`doctor`: `session-registry-unreadable`, a probe `doctor` skips under
 `guard = "off"`), a self not in it, and a self whose own transcript cannot be
 found (a refusal on a guess would be a new failure, worse than the one
-prevented); an unreadable user config is a fifth note and the defaults, never
+prevented); an unreadable user config is a fourth note and the defaults, never
 an error. The registry format is read in exactly one package
 (`internal/claudecode`); `[session]` is the USER-LEVEL config's section
 (per-machine — the sessions it judges are this machine's, and a committed
@@ -552,10 +552,11 @@ command notes (the README table is generated from this tree), never a copy here:
   the single emitters (indented, or compact one-per-line). A command whose `Use`
   says `<id>...` (`show`, `done`, `move`, `set`) is ALWAYS an array, whatever
   the argv length; a one-id mutation is an object; the report-shaped commands
-  (`rm`, `archive`, `tidy`, `upgrade`, `apply`) are one object; `lint` streams
-  one problem per line. CLI JSON uses the shards' encoding.
+  (`rm`, `archive`, `tidy`, `upgrade`, `apply`) are one object; `lint` is one
+  array (`--ndjson`: one problem per line). CLI JSON uses the shards' encoding.
 - **Read filters resolve through one path.** Every filtering read (`ls`, `next`,
-  `revisit`, `stats`, `search`) takes the same `-s`/`-l`/`-r`/`-n`/`-q`, and the
+  `revisit`, `stats`, `search`) takes the same `-l`/`-r`/`-q`/`-e` (`-s` all but
+  `next`/`revisit`, `-n` all but `stats`), and the
   batch mutators (`set`/`done`/`move`) take `-q`/`-l`/`-r` as a write-side
   selector resolved through that very path, so `ls <flags>` previews exactly
   what the write would touch. `-r` is the scope control, `-l` a pure tag filter;
@@ -566,15 +567,14 @@ command notes (the README table is generated from this tree), never a copy here:
   freezes which repeatable flags split on comma (identifiers) and which take
   values verbatim (free text, paths, URLs). `furrow board [--json]` is the
   introspection read: store path, discovery source, mode/layout, scope, the
-  lane vocabulary and the schema triple, without provoking an error.
+  lane vocabulary and the schema fields, without provoking an error.
 - **Non-interactive by default**: no prompts; `furrow edit` on a non-TTY prints
-  the body path instead of launching an editor; `NO_COLOR`/non-TTY suppress
-  color. **Destructive ops preview unless `--yes`** — the one list, printed by
+  the body path instead of launching an editor. **Destructive ops preview unless `--yes`** — the one list, printed by
   `furrow --help`: `archive`, `rm`, `epic rm`, `tidy`, `upgrade`, `migrate`, a
   day move on `epic set --anchor`, and a `-q/-l/-r` selection on a write.
 - **Exit-code contract** (`internal/core/errors.go`): `0` ok — **including an
   empty query result** / `1` a **specifically requested id** was not found,
-  never an empty list / `2` bad-usage or validation / `3+` internal or IO, with
+  never an empty list, or `doctor` found problems (`doctor-unhealthy`) / `2` bad-usage or validation / `3+` internal or IO, with
   `130`/`143` (128+signal) for an interrupted run (`sync-interrupted`). On a
   non-zero exit the CLI prints `{"error":{"kind","subject","retryable","exit",
   "message"}}` to stderr — `kind` a closed vocabulary (`furrow vocab
@@ -625,8 +625,8 @@ the resolution, split to honour the purity rule:
 
 - **`internal/config`** parses and **clamps per entry** (no `path`, or no
   `scopes` after blanks are pruned: dropped with a warning; all dropped: "no
-  user-level board"). It never touches cwd or the filesystem.
-- **`internal/app`** (the only fs/cwd-aware layer) is the last arm of `discover`
+  user-level board"). It never touches cwd and reads only the files it is handed.
+- **`internal/app`** (the fs/cwd-aware side) is the last arm of `discover`
   after `FURROW_DIR`, a local `.furrow`, and `.furrow-pointer.toml`: it resolves
   paths, canonicalizes cwd and scopes (symlinks), and picks the board whose
   scope is the **longest canonical prefix** of cwd; only the winner is
