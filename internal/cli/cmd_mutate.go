@@ -325,7 +325,7 @@ func newDoneCmd() *cobra.Command {
 			"just past midnight settles the NEW day. --json carries `repeat`\n" +
 			"{created, due, skipped, completed} on the envelope. The calendar is the\n" +
 			"board's [due].timezone — undeclared, the zone of the machine that closes,\n" +
-			"which `furrow lint` errors on a shared board (repeat-no-timezone).",
+			"which `furrow lint` errors on, whatever the board's mode (repeat-no-timezone).",
 		Example: "  furrow done t-k3m9p\n" +
 			"  furrow done t-k3m9p --note \"→ continued in t-x7q2m\"\n" +
 			"  furrow done t-k3m9p t-x7q2m t-9d4nk   # triage sweep, one write\n" +
