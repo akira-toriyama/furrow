@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -168,7 +170,7 @@ func spliceExtras(obj []byte, extras Extras) ([]byte, error) {
 	if !bytes.HasSuffix(obj, []byte("}")) {
 		return nil, Internalf("", "cannot splice unknown keys into a non-object: %s", obj)
 	}
-	keys := sortedKeys(extras)
+	keys := slices.Sorted(maps.Keys(extras))
 
 	out := bytes.NewBuffer(obj[:len(obj)-1])
 	empty := out.Len() == 1 // the object was "{}" — no comma before the first key
@@ -279,10 +281,7 @@ func rawString(raw json.RawMessage) (s string, ok bool) {
 // --unknown-keys`). Nothing else may drop one: auto-deleting a key we do not
 // understand is the bug this file exists to prevent.
 func extraKeys(e Extras) []string {
-	if len(e) == 0 {
-		return nil
-	}
-	return sortedKeys(e)
+	return slices.Sorted(maps.Keys(e))
 }
 
 // ExtraKeys reports the keys this record carried that furrow does not know.

@@ -15,10 +15,7 @@ import (
 // cycle guard: adding `dep` to `id` is refused when EpicDependsOn(dep, id).
 // Unknown ids contribute no edges, so a dangling dep never fabricates a path.
 func EpicDependsOn(epics []Epic, from, to string) bool {
-	byID := make(map[string]*Epic, len(epics))
-	for i := range epics {
-		byID[epics[i].ID] = &epics[i]
-	}
+	byID := EpicsByID(epics)
 	seen := map[string]bool{}
 	var walk func(id string) bool
 	walk = func(id string) bool {
@@ -61,10 +58,7 @@ func EpicDependsOn(epics []Epic, from, to string) bool {
 func epicDepProblems(epics []Epic) []Problem {
 	var out []Problem
 
-	byID := make(map[string]*Epic, len(epics))
-	for i := range epics {
-		byID[epics[i].ID] = &epics[i]
-	}
+	byID := EpicsByID(epics)
 
 	// A dep on a box that does not exist is reported (a task's dangling dep
 	// has its own rule); the graph itself is limited to known ids.

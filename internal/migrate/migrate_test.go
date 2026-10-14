@@ -3,6 +3,7 @@ package migrate
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -91,13 +92,13 @@ func TestParseSynthetic(t *testing.T) {
 	}
 
 	first := got["first open task（旧 R1）"]
-	if !hasRef(first.Refs, "Sources/Foo.swift#L10") {
+	if !slices.Contains(first.Refs, "Sources/Foo.swift#L10") {
 		t.Errorf("expected file:line ref, got %v", first.Refs)
 	}
 	if !strings.Contains(first.Body, "[[some-note]]") {
 		t.Errorf("wikilink should remain in body, body=%q", first.Body)
 	}
-	if !hasRef(got["second open task"].Refs, "https://example.com/spec") {
+	if !slices.Contains(got["second open task"].Refs, "https://example.com/spec") {
 		t.Errorf("expected bare URL ref, got %v", got["second open task"].Refs)
 	}
 
@@ -131,7 +132,7 @@ func TestRefExtractionCJKAndTitleAttr(t *testing.T) {
 	}
 	refs := res.Tasks[0].Refs
 	// fullwidth paren + trailing Japanese must be trimmed off the URL.
-	if !hasRef(refs, "https://example.com/spec") {
+	if !slices.Contains(refs, "https://example.com/spec") {
 		t.Errorf("CJK-abutting URL not cleaned: %v", refs)
 	}
 	for _, r := range refs {
@@ -140,10 +141,10 @@ func TestRefExtractionCJKAndTitleAttr(t *testing.T) {
 		}
 	}
 	// title attr collapsed so it does not double with the bare-URL pass.
-	if !hasRef(refs, "https://example.com/x") {
+	if !slices.Contains(refs, "https://example.com/x") {
 		t.Errorf("title-attr URL not cleaned to bare url: %v", refs)
 	}
-	if !hasRef(refs, "Sources/Foo.swift#L10") {
+	if !slices.Contains(refs, "Sources/Foo.swift#L10") {
 		t.Errorf("file:line ref missing: %v", refs)
 	}
 }
@@ -215,14 +216,6 @@ func checkLane(t *testing.T, got map[string]Task, title, lane string) {
 	if got[title].Status != lane {
 		t.Errorf("task %q lane = %q, want %q", title, got[title].Status, lane)
 	}
-}
-func hasRef(refs []string, want string) bool {
-	for _, r := range refs {
-		if r == want {
-			return true
-		}
-	}
-	return false
 }
 func anyContains(ss []string, sub string) bool {
 	for _, s := range ss {

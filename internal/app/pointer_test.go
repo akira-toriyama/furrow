@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -203,7 +204,7 @@ func TestAdd_PointerRepoDoesNotSatisfyLabelsRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add with an explicit label: %v", err)
 	}
-	if !contains(task.Repos, "me/chord") {
+	if !slices.Contains(task.Repos, "me/chord") {
 		t.Errorf("repos = %v, want me/chord unioned", task.Repos)
 	}
 }
@@ -231,15 +232,6 @@ func TestDiscover_PointerBadBoardErrors(t *testing.T) {
 	}
 }
 
-func hasLabel(ss []string, s string) bool {
-	for _, x := range ss {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
 func TestAdd_PointerUnionsDefaultRepo(t *testing.T) {
 	repoDir, _ := pointerLayout(t, "me/chord")
 	a, err := Open(repoDir)
@@ -250,7 +242,7 @@ func TestAdd_PointerUnionsDefaultRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if !contains(task.Repos, "me/chord") {
+	if !slices.Contains(task.Repos, "me/chord") {
 		t.Errorf("repos = %v, want to contain me/chord", task.Repos)
 	}
 }
@@ -265,7 +257,7 @@ func TestAdd_PointerUnionsWithExplicitRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if !contains(task.Repos, "me/chord") || !contains(task.Repos, "other/repo") {
+	if !slices.Contains(task.Repos, "me/chord") || !slices.Contains(task.Repos, "other/repo") {
 		t.Errorf("repos = %v, want both me/chord and other/repo", task.Repos)
 	}
 }
@@ -281,7 +273,7 @@ func TestAddMany_PointerUnionsDefaultRepo(t *testing.T) {
 		t.Fatalf("AddMany: %v", err)
 	}
 	for _, task := range created {
-		if !contains(task.Repos, "me/chord") {
+		if !slices.Contains(task.Repos, "me/chord") {
 			t.Errorf("%s repos = %v, want to contain me/chord", task.ID, task.Repos)
 		}
 	}

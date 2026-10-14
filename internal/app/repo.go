@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -163,7 +164,7 @@ func (a *App) DidYouMeanRepo(label string) error {
 		return nil // the primary query already surfaced any load error
 	}
 	for i := range idx.Tasks {
-		if contains(idx.Tasks[i].Labels, label) {
+		if slices.Contains(idx.Tasks[i].Labels, label) {
 			return nil // the label exists as a tag; the empty result is genuine
 		}
 	}
@@ -173,7 +174,7 @@ func (a *App) DidYouMeanRepo(label string) error {
 	}
 	n := 0
 	for i := range idx.Tasks {
-		if contains(idx.Tasks[i].Repos, m[0]) {
+		if slices.Contains(idx.Tasks[i].Repos, m[0]) {
 			n++
 		}
 	}

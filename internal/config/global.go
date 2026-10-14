@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -195,7 +197,7 @@ func coerceBoard(m map[string]any, path string, n int) (*rawBoard, []string) {
 	bad := func(key string) (*rawBoard, []string) {
 		return nil, append(warn, fmt.Sprintf("%s: [[board]] #%d: key %q has the wrong type; ignoring this board", path, n, key))
 	}
-	for _, key := range sortedKeys(m) {
+	for _, key := range slices.Sorted(maps.Keys(m)) {
 		v := m[key]
 		switch key {
 		case "path":

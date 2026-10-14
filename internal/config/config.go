@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -296,13 +297,13 @@ func fromRaw(r raw) (*Config, []string, error) {
 
 	// The default lane must always exist in the lane order.
 	defaultFallback := DefaultLane
-	if !contains(c.Lanes, defaultFallback) {
+	if !slices.Contains(c.Lanes, defaultFallback) {
 		defaultFallback = c.Lanes[0]
 	}
 	c.DefaultLane = clampLane(r.Lanes.Default, defaultFallback, c.Lanes, "lanes.default", &warn)
 	// done lane: prefer config, else "done" if present, else the last lane.
 	doneFallback := DefaultDoneLane
-	if !contains(c.Lanes, doneFallback) {
+	if !slices.Contains(c.Lanes, doneFallback) {
 		doneFallback = c.Lanes[len(c.Lanes)-1]
 	}
 	c.DoneLane = clampLane(r.Lanes.Done, doneFallback, c.Lanes, "lanes.done", &warn)
@@ -310,7 +311,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 	if r.Lanes.Terminal != nil {
 		var keep []string
 		for _, l := range r.Lanes.Terminal {
-			if contains(c.Lanes, l) {
+			if slices.Contains(c.Lanes, l) {
 				keep = append(keep, l)
 			} else {
 				warn = append(warn, fmt.Sprintf("lanes.terminal entry %q is not a lane; ignored", l))
@@ -320,7 +321,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 	} else {
 		var keep []string
 		for _, l := range DefaultTerminal {
-			if contains(c.Lanes, l) {
+			if slices.Contains(c.Lanes, l) {
 				keep = append(keep, l)
 			}
 		}
@@ -334,7 +335,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 	if r.Due.IgnoreLanes != nil {
 		var keep []string
 		for _, l := range r.Due.IgnoreLanes {
-			if contains(c.Lanes, l) {
+			if slices.Contains(c.Lanes, l) {
 				keep = append(keep, l)
 			} else {
 				warn = append(warn, fmt.Sprintf("due.ignore_lanes entry %q is not a lane; ignored", l))
@@ -344,7 +345,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 	} else {
 		var keep []string
 		for _, l := range DefaultDueIgnoreLanes {
-			if contains(c.Lanes, l) {
+			if slices.Contains(c.Lanes, l) {
 				keep = append(keep, l)
 			}
 		}
@@ -380,7 +381,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 	if r.Next.Lanes != nil {
 		var keep []string
 		for _, l := range r.Next.Lanes {
-			if contains(c.Lanes, l) {
+			if slices.Contains(c.Lanes, l) {
 				keep = append(keep, l)
 			} else {
 				warn = append(warn, fmt.Sprintf("next.lanes entry %q is not a lane; ignored", l))
@@ -507,7 +508,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// level is refused at `config set` time by the regression guard instead of
 	// surfacing only in a later lint. Whether the CODE names a real check is
 	// core's vocabulary and therefore app.Lint's job (the ignore_codes split).
-	for _, code := range sortedKeys(r.Lint.Severity) {
+	for _, code := range slices.Sorted(maps.Keys(r.Lint.Severity)) {
 		level := r.Lint.Severity[code]
 		sc, sl := strings.TrimSpace(code), strings.TrimSpace(level)
 		if sc == "" {
@@ -542,7 +543,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// with a warning `furrow lint` surfaces). Builtin-shadow refusal is the CLI's
 	// job (it owns the command set): a shadowing alias is inert because expansion
 	// checks builtins first, and lint warns about it there.
-	for _, name := range sortedKeys(r.Alias) {
+	for _, name := range slices.Sorted(maps.Keys(r.Alias)) {
 		cmd := r.Alias[name]
 		if strings.TrimSpace(name) == "" {
 			warn = append(warn, "alias with an empty name; ignored")
@@ -564,7 +565,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// (the writer refuses any value the reader would clamp away).
 	if r.Mode != nil {
 		v := strings.TrimSpace(*r.Mode)
-		if contains(Modes(), v) {
+		if slices.Contains(Modes(), v) {
 			c.Mode = v
 		} else {
 			warn = append(warn, fmt.Sprintf("mode %q is not one of %s; using %q",
@@ -586,7 +587,7 @@ func clampLane(v, fallback string, lanes []string, key string, warn *[]string) s
 	if v == "" {
 		return fallback
 	}
-	if contains(lanes, v) {
+	if slices.Contains(lanes, v) {
 		return v
 	}
 	*warn = append(*warn, fmt.Sprintf("%s %q is not in lanes.order; using %q", key, v, fallback))
@@ -620,28 +621,6 @@ func clampPositive(v *int, fallback int, key string, warn *[]string) int {
 		return fallback
 	}
 	return *v
-}
-
-// sortedKeys is a map's keys in sorted order: every warning list a read emits
-// is walked through it, so two reads of one file word their warnings in one
-// order (a map walk re-shuffled them per run, and the regression guard's
-// before/after comparison — and any operator diffing two runs — saw churn).
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func contains(ss []string, s string) bool {
-	for _, x := range ss {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 // dedupeNonEmpty drops empty strings and later duplicates, preserving order.

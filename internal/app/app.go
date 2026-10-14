@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -330,15 +331,6 @@ func cloneIntp(p *int) *int {
 	return &n
 }
 
-func contains(ss []string, s string) bool {
-	for _, x := range ss {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
 // matchAnyLane reports whether lane satisfies the -s filter. A comma splits the
 // filter into an OR-set: an empty filter (or one that trims to no tokens) is no
 // constraint; otherwise lane must equal one of the trimmed, non-empty tokens.
@@ -407,7 +399,7 @@ func matchAnyLabel(filter string, labels []string) bool {
 			continue
 		}
 		any = true
-		if contains(labels, tok) {
+		if slices.Contains(labels, tok) {
 			matched = true
 		}
 	}

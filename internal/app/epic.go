@@ -281,10 +281,7 @@ func (a *App) EpicShow(ref string) (*EpicDetail, error) {
 // so a batch of refs is still one index read and one epic read. withBody false
 // skips the body file.
 func (a *App) epicDetailIn(idx *core.Index, epics []core.Epic, id string, withBody bool) (*EpicDetail, error) {
-	byID := make(map[string]*core.Epic, len(epics))
-	for i := range epics {
-		byID[epics[i].ID] = &epics[i]
-	}
+	byID := core.EpicsByID(epics)
 	e := byID[id]
 	deps := []EpicRef{}
 	for _, d := range e.Deps {

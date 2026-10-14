@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"crypto/rand"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"time"
 
@@ -358,11 +360,7 @@ func (s *Store) ListEpicIDs() ([]string, error) {
 // NextEpicID returns a fresh random epic id — the epic prefix plus the same
 // random suffix NextID uses.
 func (s *Store) NextEpicID() (string, error) {
-	suffix, err := core.RandomIDSuffix(s.idLen, rand.Reader)
-	if err != nil {
-		return "", err
-	}
-	return s.epicPrefix + suffix, nil
+	return core.RandomID(s.epicPrefix, s.idLen, rand.Reader)
 }
 
 func (s *Store) LoadBody(id string) (string, error) { return s.bodies[id], nil }
@@ -473,26 +471,15 @@ func (s *Store) DeleteBody(id string) error {
 	return nil
 }
 
-func (s *Store) ListBodyIDs() ([]string, error) { return sortedKeys(s.bodies), nil }
+// ListBodyIDs returns the ids that have a body, sorted; nil when there are none
+// (slices.Sorted's contract), as fsstore's listStems answers for an empty or
+// missing directory — a reflect-equal consumer once saw [] here.
+func (s *Store) ListBodyIDs() ([]string, error) { return slices.Sorted(maps.Keys(s.bodies)), nil }
 
-// ListTaskIDs returns the ids of all task shards, sorted — the twin of
-// fsstore.ListTaskIDs (in-memory the "shard filename" is just the map key, so
-// it always matches the task's id).
-func (s *Store) ListTaskIDs() ([]string, error) { return sortedKeys(s.tasks), nil }
-
-// sortedKeys is nil for an empty map — fsstore's listStems answers nil for an
-// empty or missing directory, and a reflect-equal consumer saw [] here.
-func sortedKeys[V any](m map[string]V) []string {
-	if len(m) == 0 {
-		return nil
-	}
-	ids := make([]string, 0, len(m))
-	for id := range m {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
-}
+// ListTaskIDs returns the ids of all task shards, sorted and nil when there are
+// none — the twin of fsstore.ListTaskIDs (in-memory the "shard filename" is
+// just the map key, so it always matches the task's id).
+func (s *Store) ListTaskIDs() ([]string, error) { return slices.Sorted(maps.Keys(s.tasks)), nil }
 
 // NextID returns a fresh id via the configured generator (random by default,
 // matching fsstore). No shared counter, so it is collision-resistant; the app
@@ -500,11 +487,7 @@ func sortedKeys[V any](m map[string]V) []string {
 func (s *Store) NextID() (string, error) { return s.nextID() }
 
 func (s *Store) randomID() (string, error) {
-	suffix, err := core.RandomIDSuffix(s.idLen, rand.Reader)
-	if err != nil {
-		return "", err
-	}
-	return s.idPrefix + suffix, nil
+	return core.RandomID(s.idPrefix, s.idLen, rand.Reader)
 }
 
 // SeedSequentialIDs switches NextID to deterministic, zero-padded sequential ids

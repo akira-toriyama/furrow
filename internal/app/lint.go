@@ -2,6 +2,8 @@ package app
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -659,7 +661,7 @@ func (a *App) lintConfigProblems() []core.Problem {
 	// config loader (two literals it owns), but only this layer can tell a code
 	// that exists from a typo — a dead entry overrides nothing, and this warn is
 	// its only signal.
-	for _, code := range sortedKeys(a.Cfg.LintSeverity) {
+	for _, code := range slices.Sorted(maps.Keys(a.Cfg.LintSeverity)) {
 		if !core.IsLintCode(code) {
 			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "config-clamp", ID: "config",
 				Msg: fmt.Sprintf("lint.severity entry %q is not a known lint code; it overrides nothing", code)})
@@ -795,17 +797,6 @@ func (a *App) LintSeverityOverrides() map[string]string {
 		}
 	}
 	return out
-}
-
-// sortedKeys returns m's keys sorted — lint output is deterministic, so a
-// map-driven warning loop must not iterate in map order.
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // archivedIDs returns the task AND epic ids in the sibling archive store

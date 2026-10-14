@@ -10,6 +10,7 @@ package config
 
 import (
 	"regexp"
+	"slices"
 	"time"
 )
 
@@ -240,7 +241,7 @@ func Default() *Config {
 func defaultNextLanes(lanes []string, terminal map[string]bool) []string {
 	var out []string
 	for _, l := range DefaultNextLanes {
-		if contains(lanes, l) {
+		if slices.Contains(lanes, l) {
 			out = append(out, l)
 		}
 	}

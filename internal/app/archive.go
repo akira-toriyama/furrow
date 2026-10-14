@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -35,7 +36,7 @@ func Archivable(idx *core.Index, doneLane string, cutoff time.Time, repos ...str
 
 func containsAny(have, want []string) bool {
 	for _, w := range want {
-		if contains(have, w) {
+		if slices.Contains(have, w) {
 			return true
 		}
 	}
@@ -118,7 +119,7 @@ func depHolds(idx *core.Index, leaving map[string]bool) map[string][]string {
 			continue
 		}
 		for _, dep := range t.Deps {
-			if leaving[dep] && !contains(holds[dep], t.ID) {
+			if leaving[dep] && !slices.Contains(holds[dep], t.ID) {
 				holds[dep] = append(holds[dep], t.ID)
 			}
 		}
@@ -198,7 +199,7 @@ func archivedDepsOf(moved []core.Task, arcIdx, hot *core.Index, leaving map[stri
 func (r References) archivedDeps() []string {
 	var out []string
 	for _, e := range r.Deps {
-		if !contains(out, e.To) {
+		if !slices.Contains(out, e.To) {
 			out = append(out, e.To)
 		}
 	}

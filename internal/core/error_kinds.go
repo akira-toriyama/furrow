@@ -1,6 +1,9 @@
 package core
 
-import "sort"
+import (
+	"maps"
+	"slices"
+)
 
 // Error kinds — the closed vocabulary behind Error.Kind, the field consumers
 // branch on (never the message prose, never the exit code alone). Every failure
@@ -101,15 +104,4 @@ var errorKinds = map[string]bool{
 
 // ErrorKindList returns every registered error kind, sorted — the machine
 // source behind `furrow vocab error-kinds` and the docs drift guard.
-func ErrorKindList() []string { return sortedKeys(errorKinds) }
-
-// sortedKeys is a map's keys, sorted — the shape every registry publishes
-// and every extras splice walks (four hand-written copies, t-2xqp).
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
+func ErrorKindList() []string { return slices.Sorted(maps.Keys(errorKinds)) }

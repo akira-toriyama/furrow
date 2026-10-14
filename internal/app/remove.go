@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -168,7 +169,7 @@ func (a *App) RemoveTasks(ids []string, o RemoveOpts) (*RemoveTasksReport, error
 	var missing []string
 	targetSet := map[string]bool{}
 	for _, id := range ids {
-		if targetSet[id] || contains(missing, id) {
+		if targetSet[id] || slices.Contains(missing, id) {
 			continue
 		}
 		t, i := idx.Find(id)
@@ -299,7 +300,7 @@ func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 		if epics[i].ID == id {
 			continue
 		}
-		if contains(epics[i].Deps, id) {
+		if slices.Contains(epics[i].Deps, id) {
 			refs.EpicDeps = append(refs.EpicDeps, DepEdge{From: epics[i].ID, To: id})
 		}
 	}
@@ -344,7 +345,7 @@ func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 		return nil, err
 	}
 	for i := range epics {
-		if epics[i].ID == id || !contains(epics[i].Deps, id) {
+		if epics[i].ID == id || !slices.Contains(epics[i].Deps, id) {
 			continue
 		}
 		epics[i].Deps = without(epics[i].Deps, targetSet)
@@ -429,10 +430,7 @@ func (a *App) unlinkBodies(links []LinkRef, re *regexp.Regexp, targetSet map[str
 // boxes losing a dep edge, and the owners of the de-linked bodies (a task, a
 // box, or nobody for an orphan body). epics may be nil when no box is in play.
 func (a *App) guardReferenceOwners(idx *core.Index, epics []core.Epic, refs References) error {
-	epicByID := make(map[string]*core.Epic, len(epics))
-	for i := range epics {
-		epicByID[epics[i].ID] = &epics[i]
-	}
+	epicByID := core.EpicsByID(epics)
 	guardOwner := func(id string) error {
 		if t, i := idx.Find(id); i >= 0 {
 			return a.guardTask(t)

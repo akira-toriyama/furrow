@@ -23,6 +23,17 @@ func (idx *Index) Has(id string) bool {
 	return i >= 0
 }
 
+// TasksByID maps each id to its task. The pointers are into idx.Tasks, so the
+// map is valid only until the slice is next grown or reordered; on a duplicate
+// id the later task wins.
+func (idx *Index) TasksByID() map[string]*Task {
+	byID := make(map[string]*Task, len(idx.Tasks))
+	for i := range idx.Tasks {
+		byID[idx.Tasks[i].ID] = &idx.Tasks[i]
+	}
+	return byID
+}
+
 // Add appends a task. The caller is responsible for a unique id (the store's
 // NextID guarantees it); Add does not check, so migrate can bulk-load.
 func (idx *Index) Add(t Task) {

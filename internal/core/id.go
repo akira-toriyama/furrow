@@ -10,7 +10,7 @@ const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz"
 
 // RandomIDSuffix returns n characters drawn uniformly from idAlphabet, reading
 // randomness from rd (crypto/rand.Reader in production). It is the random part
-// of a task id — the store prepends the configured prefix. This is what makes
+// of a task id — RandomID prepends the configured prefix. This is what makes
 // concurrent `furrow add` from separate operators collision-resistant without
 // any shared counter; the app additionally retries on the (astronomically rare)
 // in-store collision. n must be positive; a non-positive n is treated as 1.
@@ -27,4 +27,14 @@ func RandomIDSuffix(n int, rd io.Reader) (string, error) {
 		out[i] = idAlphabet[b&31] // 32-symbol alphabet => low 5 bits, unbiased
 	}
 	return string(out), nil
+}
+
+// RandomID returns prefix followed by RandomIDSuffix(n, rd) — the whole fresh
+// id both stores hand out for tasks and epics.
+func RandomID(prefix string, n int, rd io.Reader) (string, error) {
+	suffix, err := RandomIDSuffix(n, rd)
+	if err != nil {
+		return "", err
+	}
+	return prefix + suffix, nil
 }

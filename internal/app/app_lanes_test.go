@@ -146,7 +146,7 @@ func TestNextFiltersByLabel(t *testing.T) {
 		t.Fatalf("--label furrow should return 2 (furrow task + both), got %+v", titlesOf(furrowOnly))
 	}
 	for _, tk := range furrowOnly {
-		if !contains(tk.Labels, "furrow") {
+		if !slices.Contains(tk.Labels, "furrow") {
 			t.Errorf("filtered task %q lacks the furrow label", tk.Title)
 		}
 	}

@@ -27,7 +27,9 @@ import (
 // release (the fleet's task-status CI). Order matters — release furrow, bump
 // every caller's pin, THEN `furrow upgrade --yes` the board. Bump only on a
 // read-breaking layout change, and update docs/schema/ + goldens in the same
-// change. v11 = the anchor pair: an epic's `anchor` (the calendar day its
+// change. The history below is the only copy (the published meta schema's
+// description points here), so extend it on every bump.
+// v11 = the anchor pair: an epic's `anchor` (the calendar day its
 // followers' dues are derived from) and a task's `anchor` (the epic whose day
 // its due follows). `epic set --anchor` moves every follower's due by the day
 // delta and `-q anchor:` / `has:anchor` select on it, so a binary that merely

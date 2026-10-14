@@ -34,10 +34,7 @@ func CycleProblems(idx *Index) []Problem {
 // region's smallest id — the id CycleProblems files the region's finding under,
 // so a reader of that finding can recover everyone it is about.
 func CycleRegions(idx *Index) map[string][]string {
-	byID := make(map[string]*Task, len(idx.Tasks))
-	for i := range idx.Tasks {
-		byID[idx.Tasks[i].ID] = &idx.Tasks[i]
-	}
+	byID := idx.TasksByID()
 	order, adj := buildIDGraph(byID, func(t *Task) []string { return t.Deps })
 	out := map[string][]string{}
 	for _, scc := range stronglyConnected(order, adj) {
@@ -57,11 +54,8 @@ func CycleRegions(idx *Index) map[string][]string {
 // v7 the epic dep graph is the third — the epic dep lint enters at
 // cycleProblemsGraph, the id level, instead of growing a second walk.
 func cycleProblems(idx *Index, code, label, knot string, edges func(*Task) []string) []Problem {
-	byID := make(map[string]*Task, len(idx.Tasks))
-	for i := range idx.Tasks {
-		byID[idx.Tasks[i].ID] = &idx.Tasks[i]
-	}
-	order, adj := buildIDGraph(byID, func(t *Task) []string { return edges(t) })
+	byID := idx.TasksByID()
+	order, adj := buildIDGraph(byID, edges)
 	return cycleProblemsGraph(order, adj, code, label, knot)
 }
 
@@ -102,10 +96,7 @@ func cycleProblemsGraph(order []string, adj map[string][]string, code, label, kn
 			continue // a lone task with no self-edge is not a cycle
 		}
 		sort.Strings(scc)
-		member := make(map[string]bool, len(scc))
-		for _, id := range scc {
-			member[id] = true
-		}
+		member := setFromSlice(scc)
 		cyc := representativeCycle(scc[0], adj, member)
 		msg := fmt.Sprintf("%s: %s -> %s", label, strings.Join(cyc, " -> "), cyc[0])
 		// When the region is bigger than the representative path, the path alone

@@ -4,6 +4,8 @@
 package app
 
 import (
+	"slices"
+
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
@@ -160,7 +162,7 @@ func (a *App) uniqueIDExcluding(idx *core.Index, reserved map[string]bool) (stri
 // label set, so `add` on that board carries the tag without an explicit -l.
 // Returns a copy; a no-op when no board label is set or it is already present.
 func (a *App) withDefaultLabel(labels []string) []string {
-	if a.DefaultLabel == "" || contains(labels, a.DefaultLabel) {
+	if a.DefaultLabel == "" || slices.Contains(labels, a.DefaultLabel) {
 		return labels
 	}
 	return append(append([]string(nil), labels...), a.DefaultLabel)
@@ -211,7 +213,7 @@ func (a *App) inheritableEpic() string {
 // draft); an explicit -r adds to the board repo rather than replacing it,
 // mirroring the old label-union semantics. Returns a copy.
 func (a *App) withBoardRepo(repos []string, draft bool) []string {
-	if draft || a.DefaultRepo == "" || contains(repos, a.DefaultRepo) {
+	if draft || a.DefaultRepo == "" || slices.Contains(repos, a.DefaultRepo) {
 		return repos
 	}
 	return append(append([]string(nil), repos...), a.DefaultRepo)

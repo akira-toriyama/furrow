@@ -550,22 +550,7 @@ func (s *Store) DeleteEpic(id string) error {
 // the shard-filename/id integrity lint — the epics/ twin of ListTaskIDs. A
 // missing epics/ dir yields nil, not an error.
 func (s *Store) ListEpicIDs() ([]string, error) {
-	entries, err := os.ReadDir(s.epicsDir())
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, core.Internalf("epics", "read epics/: %v", err)
-	}
-	var ids []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		ids = append(ids, strings.TrimSuffix(e.Name(), ".json"))
-	}
-	sort.Strings(ids)
-	return ids, nil
+	return s.listStems(s.epicsDir(), ".json")
 }
 
 // NextEpicID returns a fresh random epic id: the configured epic prefix plus a
@@ -573,11 +558,7 @@ func (s *Store) ListEpicIDs() ([]string, error) {
 // argument as NextID (no shared counter); the app verifies the id isn't already
 // in the store, and `furrow lint` flags a duplicate as a backstop.
 func (s *Store) NextEpicID() (string, error) {
-	suffix, err := core.RandomIDSuffix(s.idLen, rand.Reader)
-	if err != nil {
-		return "", err
-	}
-	return s.epicPrefix + suffix, nil
+	return core.RandomID(s.epicPrefix, s.idLen, rand.Reader)
 }
 
 // LoadBody returns bodies/<id>.md, or "" when absent (a task may legitimately
@@ -635,7 +616,7 @@ func (s *Store) SaveBodies(bodies map[string]string) error {
 		}
 	}()
 	for _, id := range ids {
-		f, err := s.stage(s.bodyPath(id), []byte(bodies[id]))
+		f, err := stage(s.bodyPath(id), []byte(bodies[id]))
 		if err != nil {
 			return err
 		}
@@ -804,11 +785,7 @@ func (s *Store) listStems(dir, ext string) ([]string, error) {
 // flags any duplicate as a backstop. Existing numeric ids (t-0042) stay frozen
 // and coexist.
 func (s *Store) NextID() (string, error) {
-	suffix, err := core.RandomIDSuffix(s.idLen, rand.Reader)
-	if err != nil {
-		return "", err
-	}
-	return s.idPrefix + suffix, nil
+	return core.RandomID(s.idPrefix, s.idLen, rand.Reader)
 }
 
 // atomicWrite writes data to a temp file in the destination directory, fsyncs,
@@ -862,8 +839,6 @@ type stagedFile struct{ tmp, path string }
 
 // stage writes data to a temp file beside path and fsyncs it. The temp is the
 // caller's to rename or remove.
-func (s *Store) stage(path string, data []byte) (stagedFile, error) { return stage(path, data) }
-
 func stage(path string, data []byte) (stagedFile, error) {
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, tempPrefix+"*")
