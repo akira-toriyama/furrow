@@ -9,29 +9,25 @@ this page is a set of copy-paste recipes. (For Linux use `cron` or a
 
 ## The one thing to get right: discovery
 
-A furrow command discovers its store from the current directory (walking up for a
-`.furrow`, a `.furrow-pointer.toml`, or a user-level board — see the README's
-*Discovery precedence*). A launchd job starts **in `/` with a minimal
-environment** unless its plist says otherwise, so make the store explicit. Two
-clean options:
+Discovery starts from the current directory
+([README → Discovery precedence](../README.md#discovery-precedence)), and a
+launchd job starts **in `/` with a minimal environment** unless its plist says
+otherwise, so make the store explicit. Two clean options:
 
-- **`FURROW_DIR=/abs/path/to/.furrow`** — name the store: the `.furrow`
-  directory itself, as an absolute path (furrow does not expand `~`). No walk
-  and no scope gate, so it works from any cwd. It declares no repo scope, so
-  the job sees the whole board — unless the board's own `config.toml` sets
-  `default_repo`, which then narrows the filtering reads (`next`, `ls`,
-  `revisit`, `brief`'s picks, …) and the `archive` sweep, though never `lint` or
-  brief's due band (Recipe 5); `-r ''` (in a plist, the one argument `--repo=`)
-  widens such a command back to the whole board. Best for a central board,
-  whatever number of repos it backs.
+- **`FURROW_DIR=/abs/path/to/.furrow`** — the `.furrow` directory itself, as an
+  absolute path (furrow does not expand `~`); it works from any cwd. Best for a
+  central board, whatever number of repos it backs. It declares no repo scope,
+  so the board's own `default_repo`, if set, still narrows the filtering reads
+  (same README section) and the `archive` sweep (`furrow archive --help`); `-r ''`
+  (in a plist, the one argument `--repo=`) widens such a command back to the
+  whole board.
 - **`WorkingDirectory=/abs/path/to/repo`** — run "inside" a repo whose store (or
   pointer, or enclosing board scope) discovery then finds normally.
 
-Not `FURROW_BOARD`: it is gated like a `[[board]]` entry, with one scope two
-levels above its store (`…/you/projects/.furrow` → `…/you`), so from `/` it
-resolves no board and every furrow call below exits 2 (kind `validation`) —
-which Recipe 1's log shows, but a digest that discards stderr turns into a blank
-notification.
+Not `FURROW_BOARD`: its one scope sits two levels above its store
+([glossary.md](glossary.md) → *scope*), so from `/` no board resolves and every
+furrow call below exits 2 (kind `validation`) — Recipe 1's log shows it, but a
+digest that discards stderr turns it into a blank notification.
 
 Always use the **absolute path to the `furrow` binary** (launchd's `PATH` does
 not include Homebrew/nix profiles). Find it with `command -v furrow`.
@@ -144,29 +140,22 @@ its `FURROW_DIR` export, a weekly `StartCalendarInterval` — schedules the nudg
 point the script at `furrow brief --json | jq -c '.revisit | .unreviewed // [], .epic_review_due // []'` and post
 the digest, then `furrow review <repo>` after the review to reset the clock.
 
-`furrow revisit` is the per-TASK view (`no_repo`, `value_unset`, `effort_unset`,
-`stale`, `dep_done`); a box's signals (`epic_all_done` / `epic_stuck` /
-`epic_stale` / `epic_dep_done` / `epic_review_due`) and the repo clock are
-board-level tallies, so they ride on the summary that `sync` and `brief`
-return, not on `revisit`. Since board layout v9 the same `stale_after_days`
-clock also drives a STANDING box's review cadence: `furrow review <epic-ref>`
-stamps the box, and `epic_review_due` fires when that review lapses — fold the
-boxes into the same weekly ritual as the repos.
+The box signals and the repo clock ride on the summary `sync` and `brief`
+return, not on the per-task `furrow revisit` (README → *Command notes*,
+`revisit`). A STANDING box's review runs on the same clock: `furrow review
+<epic-ref>` stamps it, and `epic_review_due` fires when that review lapses —
+fold the boxes into the same weekly ritual as the repos.
 
 ## Recipe 5 — a due-date digest
 
 A task can carry a **due** stamp (`furrow add --due` / `furrow set --due`), but
-furrow never pushes: nothing fires at the promised instant. The date is surfaced
-by the two reads that already exist — `furrow brief` LEADS with it (the session
-you start is where it lands), and `furrow lint` finds it (`due-overdue` is an
-error, `due-today` a warning, and `due-inversion` — a dated task waiting on a
-dependency promised later than itself — a warning too). **Both are board-wide**: `lint` has no repo filter
-at all, and brief's band drops every AUTOMATIC narrowing (the epic focus, the
-lane filter, the board repo scope — cwd-derived or the board's `default_repo`),
-so the two count the same set and
-a digest built on either sees the whole promise whichever repo you are sitting
-in. Only an explicitly typed `-r`/`-l` narrows brief's band. Scheduling only turns those
-pull-reads into a push, with the same launchd pattern as Recipe 2:
+nothing fires at the promised instant. `furrow brief` LEADS with it and
+`furrow lint` finds it (`due-overdue` an error, `due-today` a warning — the
+codes: [glossary.md](glossary.md) → *due*). **Both are board-wide**: `lint` has
+no repo filter, and brief's band drops every AUTOMATIC narrowing (`furrow brief
+--help`), so a digest built on either sees the whole promise whichever repo you
+are sitting in; only an explicit `-r`/`-l` narrows the band. Scheduling turns
+those pull-reads into a push, with the same launchd pattern as Recipe 2:
 
 ```sh
 export FURROW_DIR="/Users/you/src/github.com/you/projects/.furrow"
@@ -186,9 +175,6 @@ job does something else afterwards.
 
 ## Not this
 
-furrow will not grow a `--daemon`, a `furrow schedule` subcommand, or a built-in
-notifier — that would put an always-on process behind a tool whose whole premise
-is "plain files in your repo" (see [non-goals.md](non-goals.md)). The scheduler
-is the OS's job; furrow stays a one-shot command. A **due date is not a
-reminder** in that sense either: it is state a read reports when you run one,
-never an alarm furrow rings.
+No daemon, `furrow schedule` subcommand or built-in notifier, and a due date never
+rings: [non-goals.md](non-goals.md) → *No sync daemon / server*, *No reminders or
+alarms*, *No recurrence on a CLOCK*.

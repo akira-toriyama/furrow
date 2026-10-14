@@ -5,7 +5,6 @@
 > purpose. Recording them keeps the scope honest and saves the next person (or
 > agent) from "re-discovering" a road we already chose not to take.
 >
-> The rationale for each choice is recorded inline below.
 > See also [`architecture.md`](architecture.md) and [`glossary.md`](glossary.md).
 
 ---
@@ -14,9 +13,8 @@
 
 ### No MCP server
 furrow ships no Model Context Protocol server. — *The plain CLI is already the
-agent interface: `--json`/`--ndjson` on every read, `{before, after, changed}`
-on mutations, machine-actionable error envelopes (`candidates`,
-`sync-conflict` paths), and a plain-text store the agent can read — and, for
+agent interface: `--json`/`--ndjson` on every read and write,
+machine-actionable error envelopes, and a plain-text store the agent can read — and, for
 bodies, write — directly. That holds for a shared central board backing many
 repos too: the board is a git repo, so "remote access" is `git clone`, not a
 protocol. An MCP server would add a daemon to run and a second interface to
@@ -31,11 +29,9 @@ that can go stale against the board it drives, and (as with MCP) it would add
 no capability the CLI does not already expose.*
 
 The actual integration layer is deliberate and CLI-shaped: a `CLAUDE.md`
-contract plus `--json` on the read commands. The rules that block encodes:
-never hand-edit `.furrow/tasks/<id>.json` (a single deterministic marshaller in
-`internal/core` owns it, so manual edits churn git and can break the
-determinism contract); `.furrow/bodies/<id>.md` files **are** meant to be
-hand- or agent-edited; mutate state through the CLI commands, not the JSON.
+contract plus `--json` on the read commands. Its rules (shards are furrow's to
+write, bodies are yours) are README's
+[Claude Code / agent integration](../README.md#claude-code--agent-integration).
 
 ### No GitHub Issue sync
 furrow does not sync to, mirror, or import from GitHub Issues. furrow is an
@@ -52,23 +48,19 @@ GitHub Actions workflow is **PR-event → tracker-board reflection**: it runs
 `furrow apply` over the PR's own text to update the board *in the tracker repo it checks out*,
 calling no Issues/Projects API and mirroring no external state.
 
-A speculative one-shot `furrow import --from-gh-project` seed (a one-time
-import, not an ongoing sync) has been floated but is **not built** today.
-
 ---
 
 ### No sync daemon / server
-Multi-machine use is `furrow sync` — a **thin git wrapper** (auto-commit
-scoped to `.furrow/` — the machine-written files always, a `bodies/<id>.md`
-when new, when furrow itself wrote it (the per-checkout journal), or when opted
-in with `-b`/`--all-bodies`, otherwise reported in `pending_bodies`; then `fetch` + `rebase --autostash @{u}`,
-`push`, a field-wise merge where the sides wrote different fields, else abort-and-report) that the user or agent runs explicitly. There is no background process, no file
+Multi-machine use is `furrow sync` — a **thin git wrapper** (scoped
+auto-commit, fetch + rebase, push; steps and failure modes:
+`furrow sync --help` and README's
+[Multi-machine: `furrow sync`](../README.md#multi-machine-furrow-sync)) that the
+user or agent runs explicitly. There is no background process, no file
 watcher, no hosted relay, and none is planned: git is already the
 synchronization layer, and per-task shards already make concurrent writes
 merge cleanly. — *A daemon would add an always-on failure mode to a tool whose
-whole premise is "plain files in your repo".* To run furrow **on a schedule**
-(periodic archive, a `next` digest), the trigger lives outside furrow in your OS
-scheduler — see [scheduling.md](scheduling.md) for launchd recipes.
+whole premise is "plain files in your repo".* To run furrow **on a schedule**, the
+trigger lives outside furrow in your OS scheduler — see [scheduling.md](scheduling.md) for launchd recipes.
 
 ### No reminders or alarms
 A task can be **promised** for an instant (`due`), but nothing fires at it.
@@ -81,8 +73,8 @@ Pushing the pull-read to a schedule is the OS's job — see
 
 ### No recurrence on a CLOCK
 A task **can** recur (`--repeat`, board layout v10), but only a `furrow done`
-ever makes it happen: the close that settles one occurrence writes the next, in
-the same all-or-nothing index write, and hands the rule on with it. Nothing
+ever makes it happen: the close that settles one occurrence writes the next and
+hands the rule on with it. Nothing
 generates a task while furrow is not running.
 
 That is the whole of the design, and it is what keeps recurrence inside the
@@ -93,19 +85,14 @@ task. The on-done rule cannot drift: the series only advances when a human or
 an agent says this one is finished, and a late close says how many cycles it
 skipped rather than quietly minting one task per lapsed month.*
 
-The consequences are deliberate, not gaps: a repeating task you never close
-NEVER piles up (there is only ever one open occurrence), and the next due is
-computed from the series anchor as the first occurrence after what the close
-settles — on a bare-date series the whole board-calendar day of the later of
-now and the due, so a snoozed or late close never hands the same day back — so
-an on-time close advances exactly one step and a late one moves you forward
-rather than into a backlog you did not accrue.
+The consequence is deliberate, not a gap: a repeating task you never close
+NEVER piles up (there is only ever one open occurrence). The next-due rule is
+`furrow done --help` and README's `done` [command note](../README.md#command-notes).
 
 ### No stored offset, no cascade
 A box can carry a calendar day (`epic --anchor`, board layout v11) and a task's
-due can **follow** it (`set --anchor <epic>`): when the day moves, every
-follower's due moves by the same calendar-day delta, in one previewed write.
-That is the whole of the schedule model. A due stays one absolute instant; no
+due can **follow** it (`set --anchor <epic>`); the reschedule is README's `epic`
+[command note](../README.md#command-notes). That is the whole of the schedule model. A due stays one absolute instant; no
 task stores "D-14" and no read recomputes a date from an offset; nothing
 propagates along a dependency edge; a box's day is never rolled up from its
 members' dates.
@@ -133,7 +120,7 @@ another), or a reschedule where the delta genuinely differs per task. The shape
 then is a per-task offset beside the pointer — never a due computed on read.
 
 ### No cancelled close
-Entering the done lane (`done`, `move`, `set -s`, `apply`) is the only way a task stops being open, and it stamps the one
+Entering the done lane is the only way a task stops being open, and it stamps the one
 `closed` whether the completion condition was met or the premise behind the task
 went away. There is no cancelled lane that closes, no resolution or close-reason
 field, no second glyph in `ls`, and an epic's `N/M` counts every done member:
@@ -167,8 +154,7 @@ carries, read by `revisit`'s `dep_done` and by `N/M` — never a lane.
 ### No free-form meta on a task
 An epic takes `--meta key=value` that furrow never interprets; a task does not,
 and the asymmetry is deliberate. A box's meta labels the box for whoever reads
-it (which board a scenario lives on, what it simulates), and nothing ranks or
-filters boxes by it. A task shard is the other kind of record: each field on it
+it, and nothing ranks or filters boxes by it. A task shard is the other kind of record: each field on it
 is something `next`, `ls`, a `-q` qualifier or `lint` reads — which is why a new
 one is a schema bump — and a key/value bag furrow never reads would be a second
 body with a key syntax. The case that asked for one does not need it: two tasks
@@ -182,19 +168,13 @@ and that value then gets a field of its own, with the bump. A per-person
 
 ## Storage format
 
-The storage model is a hybrid: per-task `.furrow/tasks/<id>.json` shards
-(structured metadata, machine-written) + `.furrow/meta.json`
-(`{"schema_version": 11}`, the board-wide layout version) +
-`.furrow/bodies/<id>.md` (long-form prose, hand/agent
-editable) + `.furrow/bodies/assets/` (files of any kind copied in by `furrow attach` as
-collision-free `<id>-<name>` files, referenced from the body by a relative
-markdown line — the explicit binary exception, delegated to git(-lfs); the
-non-binary, clean-git-diff arguments below concern the structured store) +
-`.furrow/epics/<id>.json` (epic shards) + `.furrow/repos/*.json` (per-repo
-`review` stamps) + `.furrow/config.toml` (human config) +
-`.furrow/archive/` (aged done tasks, itself a sibling sharded store). The
-rejected alternatives below are *not*
-shortcuts we skipped — they are formats we evaluated and ruled out.
+The storage model is a hybrid — machine-written JSON shards for structured
+metadata, a hand/agent-editable Markdown body per task for prose — laid out in
+README's [The store](../README.md#the-store). `bodies/assets/` (`furrow attach`)
+is the explicit binary exception, delegated to git(-lfs); the non-binary,
+clean-git-diff arguments below concern the structured store. The rejected
+alternatives below are *not* shortcuts we skipped — they are formats we
+evaluated and ruled out.
 
 ### No single-file `tasks.json`
 We do not keep everything in one JSON file. — *Long-form prose collapses into a
@@ -209,8 +189,7 @@ identical to single-file JSON.*
 
 ### No YAML config
 `.furrow/config.toml` is TOML, not YAML. — *YAML is whitespace-fragile, which
-makes it easy for an agent to break on edit; TOML survives mechanical edits*
-(the config loader uses `pelletier/go-toml/v2`).
+makes it easy for an agent to break on edit; TOML survives mechanical edits.*
 
 ### No SQLite (or any binary store)
 furrow does not use SQLite or any binary database. — *A binary file is not
@@ -218,8 +197,8 @@ git-diffable, which violates the core "non-binary, clean git-diff" requirement*
 (Taskwarrior v3's binary SQLite is named as a reason it was passed over).
 
 ### Not pure markdown-with-frontmatter
-For completeness: a pure "one markdown file per task with YAML frontmatter"
-store was also rejected, because cross-cutting queries ("open tasks by
+A pure "one markdown file per task with YAML frontmatter" store was also
+rejected, because cross-cutting queries ("open tasks by
 priority") would require scanning every file and cross-cutting updates would
 rewrite many files. The hybrid keeps small structured metadata in per-task
 JSON shards (fast `jq`/Go queries, field-level diffs) and prose in per-task
@@ -227,9 +206,9 @@ markdown (no escaping, task-level diffs).
 
 ### No automatic schema migration
 furrow never raises a board's layout version on its own. An ordinary write to a
-board older than the binary is **refused** (`schema-upgrade-required`, exit 2 —
-the board stays fully readable, just read-only) rather than silently upgraded;
-only the explicit `furrow upgrade` (preview unless `--yes`) moves the number. —
+board older than the binary is **refused** (`schema-upgrade-required`; the board
+stays readable) rather than silently upgraded; only the explicit `furrow upgrade`
+moves the number. —
 *A board is shared by default: one clone, many machines, and — through each repo's
 pinned `sync-task-status.yml@vX.Y.Z` — many binaries that are deliberately NOT the
 newest. Raising the layout is therefore a **flag day** for every one of them, and
@@ -237,8 +216,8 @@ a flag day cannot be a side effect. It was one, once: on 2026-07-13 a routine
 `furrow sync` from an unreleased source build migrated the shared central board
 3 → 4 because `Save` stamped `meta.json` with the binary's version on every
 write, and every pinned release in the fleet lost the board within the hour
-(v0.6.1, the version every repo's task-status CI pinned, reported "task not
-found" for every id; v0.7.0 exited 3).
+(v0.6.1, every repo's pinned task-status CI, reported "task not found" for
+every id; v0.7.0 exited 3).
 "Helpfully" auto-migrating is exactly the convenience that broke it.* The
 ordering the tool cannot enforce (it cannot see other repos' pins) is stated by
 the `upgrade` preview itself: release furrow → bump every caller's pin → then
@@ -269,60 +248,31 @@ remote backend.*
 furrow is **CLI-only**. The one presentation layer in-repo is `internal/cli`;
 any interactive TUI or GUI lives in its own front-end repo and drives furrow
 through the **CLI/JSON contract** (it does not import furrow's Go packages). —
-*The front-ends: **ridge** (a charm-v2 TUI) and **vista** (a GUI), both CLI/JSON
-clients of furrow. A rich hosted web or React UI remains out of scope;
-cloud-/Issue-/account-backed candidates were dropped for assuming a remote
-backend.*
+*The front-ends: **ridge** (a charm-v2 TUI) and **vista** (a GUI). A rich hosted
+web or React UI remains out of scope.*
 
-If web does happen, the first step is a *read-only* static viewer built on Go
-`net/http` + `embed.FS` that simply reads the `tasks/*.json` shards — no Node
-toolchain,
-single binary. `templ+htmx`, `Wails`, and the React + Electron stack are out of
-scope for that viewer (the React *component shape* may be borrowed later; the
-host — Electron vs. Go static — is held open). A future React UI works precisely
-because it only has to read the JSON shards — which is itself an argument for
-keeping them as plain JSON. Every such front-end consumes furrow's `--json` /
-`--ndjson` output rather than linking its packages.
+If web does happen, the first step is a *read-only* static viewer — Go
+`net/http` + `embed.FS` over the `tasks/*.json` shards, single binary, no Node
+toolchain; `templ+htmx`, `Wails` and React + Electron are out of scope for it
+(React's *component shape* may be borrowed later; the host stays open). That a
+viewer only has to read the JSON shards is itself an argument for keeping them
+plain JSON.
 
 ---
 
 ## Built vs. planned — honesty note
 
-To keep this list honest about today's reality (not aspirations):
-
-- **Built and real today** (`internal/cli`): `init`, `add`, `ls` (alias
-  `list`), `show`, `next`, `brief`, `revisit`, `search`, `stats`, `board`,
-  `boards`, `doctor`, `edit`,
-  `note`, `attach`, `done`, `move`, `set`, `reorder`,
-  `retitle`, `value`, `effort`, `check`, `dep`, `epic`, `label`, `repo`, `ref`,
-  `review`, `apply`, `sync`,
-  `migrate`, `archive`, `unarchive`, `rm`, `tidy`, `upgrade`, `lint`, `config init|path|set`, `schema`, `version`, `vocab`.
-  Read commands honor `--json` / `--ndjson`; `ls` supports `--status`/`-s`,
-  `--label`/`-l`, `--repo`/`-r`, `--limit`/`-n`, `--drafts`, and the typed
-  query `-q` (which `next`, `revisit`, `stats` and `search` take too).
-  Destructive ops are guarded: `archive`, `rm` (and `epic rm`), `tidy`, `upgrade`, `migrate`, and a day move on `epic set --anchor` preview unless `--yes`, as does a `-q`/`-l`/`-r` selection on `set`/`done`/`move`.
-  Exit-code
-  contract: `0` ok (an empty query result included) / `1` a specifically
-  requested id not found, or `doctor` found problems / `2` bad-usage|validation / `3+`
-  internal|IO (`130`/`143` when SIGINT/SIGTERM interrupted the run), with `{"error":{"kind","subject","retryable","exit","message"}}`
-  to stderr (`internal/core/errors.go` — `kind` is the closed branch vocabulary,
-  `furrow vocab error-kinds`; `retryable` says whether a re-run is the fix),
-  plus optional `candidates` / `details` fields
-  when there is something machine-actionable to say. `furrow migrate`
-  (importing a legacy `Task.md`) is wired and working too.
-- **Not built here** — any UI (see *Backend & UI* above) and
-  the optional `furrow import --from-gh-project` seed.
-- **Planned, not a non-goal** — the per-person collaboration niceties, namely an
-  `@mention` (a *person*-directed notation, distinct from the task→task `[[id]]`
-  **link** that already ships) and a task **assignee**, are **unbuilt but on the
-  roadmap**. They are called out here so the gap stays honest: their absence
-  today is a *not-yet*, **not** a deliberate permanent non-goal like the rows
-  above.
+- **Built and real today** — what the binary says: `furrow --help` (exit
+  codes, the error envelope, the destructive ops that preview unless `--yes`)
+  and README's generated [command reference](../README.md#command-reference).
+- **Not built here** — any UI (see *Backend & UI* above) and a one-shot
+  `furrow import --from-gh-project` seed (a one-time import, not an ongoing sync).
+- **Planned, not a non-goal** — an `@mention` (a *person*-directed notation,
+  distinct from the task→task `[[id]]` **link** that already ships) and a task
+  **assignee**: unbuilt but on the roadmap, a *not-yet* rather than a deliberate
+  non-goal like the rows above.
 
 ---
 
-*(rationales for "No MCP server" and "No Claude Code
-plugin" rewritten for the repos pivot: the non-goals stand, but their old
-"local, single-repo / single-author" grounds became false once central boards
-went multi-repo and multi-machine.)* — When a non-goal changes, update this
-file and the relevant `docs/` so the scope stays honest.
+When a non-goal changes, update this file and the relevant `docs/` so the scope
+stays honest.

@@ -510,7 +510,6 @@ done <<'CLAIMS'
 complete|commands||CLAUDE.md|^- Canonical commands:|^  \*\*`furrow brief \[--json\]`
 complete|error-kinds||README.md|^- \*\*`kind`\*\*|^- \*\*`retryable`\*\*
 complete|sync-progress-keys||README.md|^.\{committed, pulled, pushed|^failure alike
-complete|commands||docs/non-goals.md|^- \*\*Built and real today\*\*|^  Destructive ops are guarded
 complete|config-keys||CLAUDE.md|^`furrow lint` surfaces\. Read it through `internal/config`|^### Schema
 complete|config-keys||docs/architecture.md|^Sections and their defaults:|^`status` is just a lane
 complete|config-keys||README.md|^## Configuration|^A board `\[alias\]` names
