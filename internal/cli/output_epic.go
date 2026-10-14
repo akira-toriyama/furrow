@@ -6,7 +6,8 @@ package cli
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
@@ -193,7 +194,7 @@ func printEpicDetail(a *app.App, d *app.EpicDetail) {
 		}
 		fmt.Fprintf(out, "deps:     %s\n", strings.Join(parts, ", "))
 	}
-	for _, k := range sortedKeys(d.Epic.Meta) {
+	for _, k := range slices.Sorted(maps.Keys(d.Epic.Meta)) {
 		fmt.Fprintf(out, "meta:     %s = %s\n", k, d.Epic.Meta[k])
 	}
 	if d.Epic.Reviewed != nil {
@@ -402,13 +403,4 @@ func metaEq(a, b map[string]string) bool {
 		}
 	}
 	return true
-}
-
-func sortedKeys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -185,7 +186,7 @@ func carries(idx *core.Index, field, literal string) bool {
 				return true
 			}
 		default:
-			if contains(t.Deps, literal) {
+			if slices.Contains(t.Deps, literal) {
 				return true
 			}
 		}
@@ -446,7 +447,7 @@ func (c *queryCompiler) resolveTaskRefs(term query.Term) ([]taskRef, error) {
 	// hint found nothing.
 	var nowhere []string
 	for _, id := range missing {
-		if !contains(anyStrings(extra["archived"]), id) && !contains(anyStrings(extra["live"]), id) && !contains(anyStrings(extra["carried_elsewhere"]), id) {
+		if !slices.Contains(anyStrings(extra["archived"]), id) && !slices.Contains(anyStrings(extra["live"]), id) && !slices.Contains(anyStrings(extra["carried_elsewhere"]), id) {
 			nowhere = append(nowhere, id)
 		}
 	}
@@ -704,7 +705,7 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 		}), nil
 
 	case query.State:
-		if !contains(stateVocab, term.Field) {
+		if !slices.Contains(stateVocab, term.Field) {
 			return nil, termErr(unknownQueryErr(core.KindQueryUnknownFlag, "unknown is: flag "+strconv.Quote(term.Field), stateVocab), term, nil)
 		}
 		f := term.Field
@@ -738,7 +739,7 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 		}), nil
 
 	case query.Presence:
-		if !contains(presenceVocab, term.Field) {
+		if !slices.Contains(presenceVocab, term.Field) {
 			return nil, termErr(unknownQueryErr(core.KindQueryUnknownField, "has:/no: unknown field "+strconv.Quote(term.Field), presenceVocab), term, nil)
 		}
 		f := term.Field
@@ -798,7 +799,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	// documented only with >= and .. idioms, so that is the likeliest typo)
 	// fell into the ordered-field gate and was answered with `query-type` and
 	// NO candidates, in a message asserting the field exists.
-	if !contains(qualifierVocab, f) {
+	if !slices.Contains(qualifierVocab, f) {
 		return nil, termErr(unknownQueryErr(core.KindQueryUnknownField, "unknown qualifier "+strconv.Quote(f), qualifierVocab), term, nil)
 	}
 	// Ordered fields — the ordinals and the date timestamps — take
@@ -821,7 +822,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 			}
 		}
 		vals := valTexts(term.Values)
-		return neg(func(t *core.Task) bool { return contains(vals, t.Status) }), nil
+		return neg(func(t *core.Task) bool { return slices.Contains(vals, t.Status) }), nil
 
 	case "epic":
 		// A box's members. The ref resolves as -e does (resolveEpicRefs);
@@ -830,7 +831,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 		if err != nil {
 			return nil, err
 		}
-		return neg(func(t *core.Task) bool { return contains(vals, t.Epic) }), nil
+		return neg(func(t *core.Task) bool { return slices.Contains(vals, t.Epic) }), nil
 
 	case "anchor":
 		// The tasks whose due follows a box's day. The ref resolves as -e does
@@ -843,7 +844,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 		if err != nil {
 			return nil, err
 		}
-		return neg(func(t *core.Task) bool { return contains(vals, t.Anchor) }), nil
+		return neg(func(t *core.Task) bool { return slices.Contains(vals, t.Anchor) }), nil
 
 	case "label":
 		// A value containing `*` is a wildcard (the v2 token reserved since v1):
@@ -903,7 +904,7 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 			return nil, err
 		}
 		vals := refIDs(refs)
-		return neg(func(t *core.Task) bool { return anyContains(t.Deps, vals) }), nil
+		return neg(func(t *core.Task) bool { return containsAny(t.Deps, vals) }), nil
 
 	case "blocks":
 		// t blocks any named id — the same edge read from the other side:
@@ -1144,15 +1145,6 @@ func anyTextMatch(field string, vals []query.Value, exactOnQuote bool) bool {
 				return true
 			}
 		} else if core.ContainsFold(field, v.Text) {
-			return true
-		}
-	}
-	return false
-}
-
-func anyContains(set, vals []string) bool {
-	for _, v := range vals {
-		if contains(set, v) {
 			return true
 		}
 	}

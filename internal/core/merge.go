@@ -3,6 +3,8 @@ package core
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
+	"slices"
 	"sort"
 	"time"
 )
@@ -276,7 +278,7 @@ func timestampValue(v json.RawMessage) (time.Time, bool) {
 // key. The order is immaterial — canonicalShard re-emits the document in the
 // struct's key order — sorted only so the intermediate is deterministic.
 func composeObject(m map[string]json.RawMessage) ([]byte, error) {
-	keys := sortedKeys(m)
+	keys := slices.Sorted(maps.Keys(m))
 	var out bytes.Buffer
 	out.WriteByte('{')
 	for i, k := range keys {

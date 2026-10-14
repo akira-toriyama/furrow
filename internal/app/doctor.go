@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -275,7 +277,7 @@ func doctorBoards(ctx context.Context, r *DoctorReport, cfgPath string, global *
 			seenPath[canonicalPath(p)] = append(seenPath[canonicalPath(p)], i+1)
 		}
 	}
-	for _, store := range sortedStrings(seenPath) {
+	for _, store := range slices.Sorted(maps.Keys(seenPath)) {
 		if ns := seenPath[store]; len(ns) > 1 {
 			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "board-duplicate-path", ID: "config",
 				Msg: fmt.Sprintf("[[board]] entries %s all declare the store %q — the first wins at discovery and `furrow config set --user --board` cannot pick between them; merge them into one entry (its scopes can list every directory) in %s", joinEntryNumbers(ns), store, cfgPath)})
@@ -368,15 +370,6 @@ func doctorOrderBoards(ctx context.Context, r *DoctorReport, cfgPath string, con
 		}
 	}
 	return ps
-}
-
-func sortedStrings[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func joinEntryNumbers(ns []int) string {

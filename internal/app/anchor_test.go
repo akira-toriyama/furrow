@@ -2,6 +2,7 @@ package app
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -248,7 +249,7 @@ func TestSetAnchorInvariants(t *testing.T) {
 	if n := len(idsOf(mustList(t, a, QueryOpts{Query: "anchor:" + epic}))); n != 3 {
 		t.Errorf("anchor: selects the three pointers (cross, done, undated-now-dated), got %d", n)
 	}
-	if got := idsOf(mustList(t, a, QueryOpts{Query: "has:due no:anchor"})); !contains(got, fixed.ID) {
+	if got := idsOf(mustList(t, a, QueryOpts{Query: "has:due no:anchor"})); !slices.Contains(got, fixed.ID) {
 		t.Errorf("has:due no:anchor should list the fixed date, got %v", got)
 	}
 }

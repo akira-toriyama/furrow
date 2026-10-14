@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ func TestSetCombinedEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != "ready" || got.Value == nil || *got.Value != 4 || got.Effort == nil || *got.Effort != 2 || !contains(got.Labels, "bug") {
+	if got.Status != "ready" || got.Value == nil || *got.Value != 4 || got.Effort == nil || *got.Effort != 2 || !slices.Contains(got.Labels, "bug") {
 		t.Fatalf("set should apply every edit at once: %+v", got)
 	}
 
@@ -28,7 +29,7 @@ func TestSetCombinedEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Value != nil || contains(got.Labels, "bug") {
+	if got.Value != nil || slices.Contains(got.Labels, "bug") {
 		t.Errorf("set --clear-value/--rm-label should unset: %+v", got)
 	}
 
@@ -52,7 +53,7 @@ func TestDepsVariadicBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !contains(got.Deps, b1.ID) || !contains(got.Deps, b2.ID) {
+	if !slices.Contains(got.Deps, b1.ID) || !slices.Contains(got.Deps, b2.ID) {
 		t.Fatalf("AddDeps should add both: %v", got.Deps)
 	}
 
@@ -61,7 +62,7 @@ func TestDepsVariadicBatch(t *testing.T) {
 		t.Fatalf("AddDeps with a missing dep should be a validation error, got %v", err)
 	}
 	after, _, _ := a.Get(base.ID)
-	if contains(after.Deps, b3.ID) {
+	if slices.Contains(after.Deps, b3.ID) {
 		t.Errorf("a failed batch must not partially add b3: %v", after.Deps)
 	}
 

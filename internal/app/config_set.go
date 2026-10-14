@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/v9/internal/config"
@@ -249,7 +250,7 @@ func resolveUserBoard(entries []config.UserBoardEntry, ref, path string) (int, e
 	// both exact, and the first used to win silently; name them instead.
 	var exact, hits []int
 	for i, e := range entries {
-		if e.Path == ref || contains(e.Scopes, ref) {
+		if e.Path == ref || slices.Contains(e.Scopes, ref) {
 			exact = append(exact, i)
 			continue
 		}

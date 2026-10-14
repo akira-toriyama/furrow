@@ -72,10 +72,7 @@ func SessionClashes(self Session, others []Session, repoOf func(cwd string) stri
 	if self.StartedAt.IsZero() || len(repos) == 0 {
 		return nil
 	}
-	touched := make(map[string]bool, len(repos))
-	for _, r := range repos {
-		touched[r] = true
-	}
+	touched := setFromSlice(repos)
 	var out []SessionClash
 	for _, o := range others {
 		if o.PID == self.PID || (o.ID != "" && o.ID == self.ID) {

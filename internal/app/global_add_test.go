@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ func TestGlobal_AddUnionsDerivedRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if !contains(task.Repos, "me/repoX") {
+	if !slices.Contains(task.Repos, "me/repoX") {
 		t.Errorf("repos = %v, want me/repoX", task.Repos)
 	}
 	if len(task.Labels) != 0 {
@@ -61,7 +62,7 @@ func TestGlobal_AddExplicitRepoUnionsWithBoardRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if !contains(task.Repos, "other/repo") || !contains(task.Repos, "me/repoX") {
+	if !slices.Contains(task.Repos, "other/repo") || !slices.Contains(task.Repos, "me/repoX") {
 		t.Errorf("repos = %v, want both other/repo and me/repoX", task.Repos)
 	}
 }
@@ -99,7 +100,7 @@ func TestGlobal_AddManyUnionsBoardRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddMany: %v", err)
 	}
-	if !contains(created[0].Repos, "me/repoX") {
+	if !slices.Contains(created[0].Repos, "me/repoX") {
 		t.Errorf("x repos = %v, want me/repoX", created[0].Repos)
 	}
 	if len(created[1].Repos) != 0 {
@@ -128,10 +129,10 @@ func TestGlobal_LiteralLabelUnionsOnAdd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !hasLabel(task.Labels, "tracked") {
+	if !slices.Contains(task.Labels, "tracked") {
 		t.Errorf("labels = %v, want tracked", task.Labels)
 	}
-	if !contains(task.Repos, "me/repoX") {
+	if !slices.Contains(task.Repos, "me/repoX") {
 		t.Errorf("repos = %v, want me/repoX (label and repo are orthogonal)", task.Repos)
 	}
 }
@@ -166,7 +167,7 @@ func TestGlobal_LabelAutoTombstoneWarnsOnOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(task.Labels) != 0 || !contains(task.Repos, "me/repoX") {
+	if len(task.Labels) != 0 || !slices.Contains(task.Repos, "me/repoX") {
 		t.Errorf("labels=%v repos=%v, want no labels + me/repoX", task.Labels, task.Repos)
 	}
 }

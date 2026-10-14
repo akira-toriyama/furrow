@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -73,7 +74,7 @@ func TestSearchScopeByStatusAndLabel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(hits) != 1 || !contains(hits[0].Task.Labels, "cli") {
+	if len(hits) != 1 || !slices.Contains(hits[0].Task.Labels, "cli") {
 		t.Fatalf("label filter should narrow to the cli task, got %+v", hits)
 	}
 }

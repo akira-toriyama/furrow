@@ -154,6 +154,16 @@ type Epic struct {
 // The store owns this path; callers never assemble it.
 func EpicPath(id string) string { return "epics/" + id + ".json" }
 
+// EpicsByID maps each id to its epic, the epic twin of Index.TasksByID: the
+// pointers are into epics, and on a duplicate id the later epic wins.
+func EpicsByID(epics []Epic) map[string]*Epic {
+	byID := make(map[string]*Epic, len(epics))
+	for i := range epics {
+		byID[epics[i].ID] = &epics[i]
+	}
+	return byID
+}
+
 // IsOpen reports whether the epic has not been closed. The single predicate for
 // "open", so no caller re-derives it as `Closed == nil` and drifts if the state
 // model ever grows.

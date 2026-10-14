@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
@@ -75,7 +76,7 @@ func (a *App) EpicAddDeps(ref string, depRefs []string) (*core.Epic, *core.Epic,
 		if core.EpicDependsOn(epics, dep, id) {
 			return nil, nil, core.Validationf(id, "adding dep %q would create a cycle (%s already waits on %s)", dep, dep, id)
 		}
-		if !contains(target.Deps, dep) {
+		if !slices.Contains(target.Deps, dep) {
 			// Mutating the loaded slice is what makes the NEXT iteration's cycle
 			// check see this batch's earlier edges.
 			target.Deps = append(target.Deps, dep)
@@ -115,14 +116,14 @@ func (a *App) EpicRemoveDeps(ref string, depRefs []string) (*core.Epic, *core.Ep
 	rm := make(map[string]bool, len(depRefs))
 	for _, dr := range depRefs {
 		dep := dr
-		if !contains(target.Deps, dep) {
+		if !slices.Contains(target.Deps, dep) {
 			resolved, err := a.resolveEpicIn(dr, epics)
 			if err != nil {
 				return nil, nil, err
 			}
 			dep = resolved
 		}
-		if !contains(target.Deps, dep) {
+		if !slices.Contains(target.Deps, dep) {
 			return nil, nil, core.Validationf(id, "%q is not a dependency of %s", dep, id)
 		}
 		rm[dep] = true
@@ -153,10 +154,7 @@ func (a *App) EpicDepList(ref string) (EpicDepListResult, error) {
 	if err != nil {
 		return EpicDepListResult{}, err
 	}
-	byID := make(map[string]*core.Epic, len(epics))
-	for i := range epics {
-		byID[epics[i].ID] = &epics[i]
-	}
+	byID := core.EpicsByID(epics)
 	target := byID[id]
 	res := EpicDepListResult{ID: target.ID, Title: target.Title, DependsOn: []EpicRef{}, Blocks: []EpicRef{}}
 	for _, d := range target.Deps {
@@ -164,7 +162,7 @@ func (a *App) EpicDepList(ref string) (EpicDepListResult, error) {
 	}
 	var blockIDs []string
 	for i := range epics {
-		if epics[i].ID != id && contains(epics[i].Deps, id) {
+		if epics[i].ID != id && slices.Contains(epics[i].Deps, id) {
 			blockIDs = append(blockIDs, epics[i].ID)
 		}
 	}

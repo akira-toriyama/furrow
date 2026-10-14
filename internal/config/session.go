@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -92,7 +94,7 @@ func coerceSession(v any, path string) (GlobalSession, []string) {
 	}
 	var r rawSession
 	var warn []string
-	for _, key := range sortedKeys(m) {
+	for _, key := range slices.Sorted(maps.Keys(m)) {
 		val := m[key]
 		switch key {
 		case "guard":

@@ -140,10 +140,7 @@ func DueProblems(idx *Index, now time.Time, loc *time.Location, skipLanes, termi
 // akira-toriyama/furrow-test carried one such edge (t-fejrz → t-ehf4f) until a
 // rebuild found it by hand; this is the check that would have said so.
 func DueInversionProblems(idx *Index, loc *time.Location, skipLanes map[string]bool) []Problem {
-	byID := make(map[string]*Task, len(idx.Tasks))
-	for i := range idx.Tasks {
-		byID[idx.Tasks[i].ID] = &idx.Tasks[i]
-	}
+	byID := idx.TasksByID()
 	var out []Problem
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]

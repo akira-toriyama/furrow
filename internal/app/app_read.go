@@ -5,6 +5,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -405,10 +406,10 @@ func (o QueryOpts) match(t *core.Task) bool {
 	if o.Drafts {
 		return len(t.Repos) == 0
 	}
-	if o.ScopeRepo != "" && !contains(t.Repos, o.ScopeRepo) {
+	if o.ScopeRepo != "" && !slices.Contains(t.Repos, o.ScopeRepo) {
 		return false
 	}
-	if o.Repo != "" && !contains(t.Repos, o.Repo) {
+	if o.Repo != "" && !slices.Contains(t.Repos, o.Repo) {
 		return false
 	}
 	return true

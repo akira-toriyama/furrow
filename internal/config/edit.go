@@ -60,9 +60,9 @@ func (k Key) Dotted() string {
 }
 
 // BoardKeys is the settable-key vocabulary of a BOARD config.toml, derived by
-// reflection from the same raw decode struct Load reads — the TopLevelKeys
-// pattern: one registration, so the writer can never accept a key the reader
-// ignores (or reject one it honors).
+// reflection from the same raw decode struct Load reads (TopLevelKeys is in
+// turn derived from it): one registration, so the writer can never accept a
+// key the reader ignores (or reject one it honors).
 func BoardKeys() []Key { return structKeys(reflect.TypeOf(raw{})) }
 
 // UserEntryKeys is the settable-key vocabulary of one [[board]] entry of the
@@ -78,11 +78,8 @@ func structKeys(t reflect.Type) []Key {
 	var keys []Key
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		tag := f.Tag.Get("toml")
-		if idx := strings.IndexByte(tag, ','); idx >= 0 {
-			tag = tag[:idx]
-		}
-		if tag == "" || tag == "-" {
+		tag, ok := tomlName(f)
+		if !ok {
 			continue
 		}
 		ft := f.Type
@@ -92,11 +89,8 @@ func structKeys(t reflect.Type) []Key {
 		if ft.Kind() == reflect.Struct {
 			for j := 0; j < ft.NumField(); j++ {
 				sf := ft.Field(j)
-				stag := sf.Tag.Get("toml")
-				if idx := strings.IndexByte(stag, ','); idx >= 0 {
-					stag = stag[:idx]
-				}
-				if stag == "" || stag == "-" {
+				stag, ok := tomlName(sf)
+				if !ok {
 					continue
 				}
 				// A map INSIDE a section is a dynamic SUB-table ([lint.severity]):
@@ -287,14 +281,19 @@ func SetInSection(doc, section, key, rendered string) (SetResult, error) {
 		out += "[" + section + "]\n" + renderKey(key) + " = " + rendered + "\n"
 		return SetResult{Doc: out}, nil
 	}
+	return setInSpan(lines, start, end, key, rendered)
+}
+
+// setInSpan sets key inside the block [start(header), end): an existing key's
+// value span is replaced; a missing key is inserted after the block's last
+// non-blank line (its header when empty), so trailing blank lines keep
+// separating it from the next block. start is the header line, or -1 for the
+// headerless top-level span — either way the body begins at start+1 and an
+// all-blank span inserts right after start.
+func setInSpan(lines []string, start, end int, key, rendered string) (SetResult, error) {
 	if kl, ok := findKeyLine(lines, start, end, key); ok {
 		return replaceValue(lines, kl, end, key, rendered)
 	}
-	// Insert after the section's last non-blank line (its header when empty),
-	// so trailing blank lines keep separating it from the next section. start
-	// is the header line, or -1 for the headerless top-level span — either way
-	// the body begins at start+1 and an all-blank span inserts right after
-	// start.
 	at := start
 	for i := start + 1; i < end; i++ {
 		if strings.TrimSpace(lines[i]) != "" {
@@ -353,17 +352,7 @@ func SetInArrayTable(doc, table string, index int, key, rendered string) (SetRes
 	if !ok {
 		return SetResult{}, fmt.Errorf("no [[%s]] entry #%d in the document", table, index+1)
 	}
-	if kl, ok := findKeyLine(lines, start, end, key); ok {
-		return replaceValue(lines, kl, end, key, rendered)
-	}
-	at := start
-	for i := start; i < end; i++ {
-		if strings.TrimSpace(lines[i]) != "" {
-			at = i
-		}
-	}
-	lines = append(lines[:at+1], append([]string{renderKey(key) + " = " + rendered}, lines[at+1:]...)...)
-	return SetResult{Doc: strings.Join(lines, "\n")}, nil
+	return setInSpan(lines, start, end, key, rendered)
 }
 
 // arrayTableSpan finds the index-th [[table]] block: [start(header), end).
@@ -382,14 +371,7 @@ func arrayTableSpan(lines []string, table string, index int) (int, int, bool) {
 	if start < 0 {
 		return 0, 0, false
 	}
-	end := len(lines)
-	for i := start + 1; i < end; i++ {
-		if strings.HasPrefix(strings.TrimSpace(lines[i]), "[") {
-			end = i
-			break
-		}
-	}
-	return start, end, true
+	return start, blockEnd(lines, start), true
 }
 
 // headerName reads a table header line as TOML does: `[lanes]`, `[ lanes ]`
@@ -421,15 +403,7 @@ func headerName(line string) (name string, arrayTable bool, ok bool) {
 // headerless span).
 func sectionSpan(lines []string, section string) (int, int, bool) {
 	if section == "" {
-		end := len(lines)
-		for i, l := range lines {
-			t := strings.TrimSpace(l)
-			if strings.HasPrefix(t, "[") {
-				end = i
-				break
-			}
-		}
-		return -1, end, true
+		return -1, blockEnd(lines, -1), true
 	}
 	start := -1
 	for i, l := range lines {
@@ -441,15 +415,18 @@ func sectionSpan(lines []string, section string) (int, int, bool) {
 	if start < 0 {
 		return 0, 0, false
 	}
-	end := len(lines)
+	return start, blockEnd(lines, start), true
+}
+
+// blockEnd is the exclusive end of the block whose header is lines[start]
+// (-1 for the headerless top-level span): the next table header, or EOF.
+func blockEnd(lines []string, start int) int {
 	for i := start + 1; i < len(lines); i++ {
-		t := strings.TrimSpace(lines[i])
-		if strings.HasPrefix(t, "[") {
-			end = i
-			break
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "[") {
+			return i
 		}
 	}
-	return start, end, true
+	return len(lines)
 }
 
 // trimComment drops a trailing comment from an already-trimmed line — enough

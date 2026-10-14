@@ -6,6 +6,7 @@ package app
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"time"
 
@@ -345,7 +346,7 @@ func labelDelta(cur, add, remove []string) []string {
 		}
 	}
 	for _, l := range add {
-		if !contains(next, l) {
+		if !slices.Contains(next, l) {
 			next = append(next, l)
 		}
 	}

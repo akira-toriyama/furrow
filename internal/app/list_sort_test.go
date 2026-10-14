@@ -57,7 +57,7 @@ func TestListSinceUntilWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids := idsOf(got); len(ids) != 2 || !contains(ids, mid.ID) || !contains(ids, recent.ID) {
+	if ids := idsOf(got); len(ids) != 2 || !slices.Contains(ids, mid.ID) || !slices.Contains(ids, recent.ID) {
 		t.Errorf("since july-5 should keep mid+recent, got %v", ids)
 	}
 

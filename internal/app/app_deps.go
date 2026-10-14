@@ -4,6 +4,7 @@
 package app
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/v9/internal/core"
@@ -96,7 +97,7 @@ func (a *App) AddDeps(id string, deps []string) (*core.Task, error) {
 			if idx.DependsOn(dep, id) {
 				return core.Validationf(id, "adding dep %q would create a cycle (%s already depends on %s)", dep, dep, id)
 			}
-			if !contains(t.Deps, dep) {
+			if !slices.Contains(t.Deps, dep) {
 				t.Deps = append(t.Deps, dep)
 			}
 		}
@@ -119,7 +120,7 @@ func (a *App) RemoveDeps(id string, deps []string) (*core.Task, error) {
 	return a.mutateInErr(idx, id, func(t *core.Task) error {
 		rm := make(map[string]bool, len(deps))
 		for _, dep := range deps {
-			if !contains(t.Deps, dep) {
+			if !slices.Contains(t.Deps, dep) {
 				return core.Validationf(id, "%q is not a dependency of %s", dep, id)
 			}
 			rm[dep] = true
