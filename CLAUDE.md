@@ -178,9 +178,11 @@ example; a stale one is read-only for the reader who follows the link).
   user-visible change, and **sweep the docs/ tier in the same change**: drift
   pools exactly where no guard looks. The guards that do look —
   [`scripts/check-readme-parity.sh`](scripts/check-readme-parity.sh) (the
-  README's workflow pin and the schema-version literals) and
-  [`scripts/check-docs-vocab.sh`](scripts/check-docs-vocab.sh) — say in their
-  headers what they hold. **Add a member to a closed vocabulary (a command, a
+  README's workflow pin, the layout version in literal and prose, the Go
+  paths' module major),
+  [`scripts/check-docs-vocab.sh`](scripts/check-docs-vocab.sh) and
+  [`scripts/check-docs-budget.sh`](scripts/check-docs-budget.sh) (a word cap
+  per prose doc) — say in their headers what they hold. **Add a member to a closed vocabulary (a command, a
   `[section]`, a revisit signal, a `-q` qualifier) and the doc regions its
   claims table names must enumerate it, or CI fails.**
 - README's command table is **generated** by `scripts/gen-command-table.sh`
