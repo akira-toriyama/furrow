@@ -56,7 +56,23 @@ func newLsCmd() *cobra.Command {
 			"can't under-count the box) and a stuck flag (open members but no\n" +
 			"actionable one). --json nests tasks under their group and adds\n" +
 			"`actionable` + `blocked_by` to each node; --ndjson streams one whole\n" +
-			"group per line.",
+			"group per line.\n\n" +
+			"--archived lists the archive store INSTEAD of the hot board, and either\n" +
+			"store is ONE snapshot to -q's graph refs. A task ref must be a task the\n" +
+			"snapshot holds or a dep its tasks carry (blocks: and ancestor-of: read\n" +
+			"the named task's own deps, so only the former; else details.outside);\n" +
+			"anything else is exit 2 with details.missing, and where the other store\n" +
+			"knows the id, details.archived / details.live / details.carried_elsewhere\n" +
+			"and the read that sees it. An edge into the other store dangles: on the\n" +
+			"live board it is lint's dep-missing, the dependent's blocked_by still\n" +
+			"lists it and next withholds it, and the walks stop there — blocks:<a task\n" +
+			"whose only dep is archived> is empty, descendant-of:/ancestor-of: never\n" +
+			"cross, as `show --archived` renders such a dep [?]. Reach the far end\n" +
+			"with `show <id> --archived`, and the archived tasks that wait on a live\n" +
+			"id with `ls --archived -q 'depends-on:<id>'`. The one read over both\n" +
+			"snapshots is `stats --since/--until`'s window: it resolves refs against\n" +
+			"both and walks the union's edges, while its distributions stay the hot\n" +
+			"board's and refuse what ls refuses.",
 		Example: "  furrow ls                 # this repo's board, canonical order\n" +
 			"  furrow ls -s ready --json\n" +
 			"  furrow ls -s inbox,backlog     # comma = OR within a field\n" +
@@ -233,8 +249,10 @@ func newShowCmd() *cobra.Command {
 			"id is a one-element array); --ndjson emits one task per line at any arity;\n" +
 			"the human output separates tasks with a --- line. --no-body omits the body\n" +
 			"(the body_text key in JSON) — the lean metadata-only read for agents. When\n" +
-			"some ids are missing, the found tasks are still emitted and the not-found\n" +
-			"error carries details.missing, so a partial read is never wasted.\n" +
+			"some ids are missing, the found tasks are still emitted (a total miss is\n" +
+			"[]) and the not-found error (exit 1) carries details.missing, plus\n" +
+			"details.archived for the ids the archive holds, so a partial read is never\n" +
+			"wasted.\n" +
 			"A checklist prints its tally (checklist: N/M) and then one row per item,\n" +
 			"each led by its zero-based index — the position `furrow check` takes, so\n" +
 			"the number beside a row is the argument that ticks it (--json carries no\n" +
@@ -778,7 +796,9 @@ func newSearchCmd() *cobra.Command {
 			"argument stays required.)\n\n" +
 			"--archived searches the sibling archive store INSTEAD of the hot board —\n" +
 			"the same meaning it has on ls/show, so digging up why something was done\n" +
-			"stops falling back to grepping .furrow/archive/bodies by hand.",
+			"stops falling back to grepping .furrow/archive/bodies by hand. -q's graph\n" +
+			"refs then bind against the archive snapshot alone — the boundary\n" +
+			"`furrow ls --help` spells out under --archived.",
 		Example: "  furrow search teatest\n" +
 			"  furrow search \"single marshaller\" --json\n" +
 			"  furrow search sync -s backlog -n5\n" +

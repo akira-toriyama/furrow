@@ -62,6 +62,10 @@ func newAddCmd() *cobra.Command {
 			"it from a file, and an empty file is exit 2. A one-line --body naming an\n" +
 			"existing file is exit 2 with the spellings that work in candidates —\n" +
 			"never a task whose body is the path.\n\n" +
+			"An out-of-range --value/--effort clamps to 1..5 with a stderr note. An\n" +
+			"-e/--epic miss is exit 2 (epic-not-found, with the boxes in candidates\n" +
+			"when the board has any). Leaving a task unfiled is legal here, but an\n" +
+			"open unfiled task is lint's epic-required error once the board has a box.\n\n" +
 			"--due promises the task for an instant: `2026-08-04` (that WHOLE day — it\n" +
 			"binds 23:59:59 in the board's calendar, so the day never starts out\n" +
 			"overdue), `2026-08-04T10:30`, an RFC3339 instant, or a signed offset such\n" +

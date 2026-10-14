@@ -223,7 +223,11 @@ func newEpicShowCmd() *cobra.Command {
 		Short: "Show one epic: goal, meta, progress, member tasks, and its body",
 		Long: "Show one epic: goal, meta, progress, member tasks, and its body.\n\n" +
 			"--no-body omits the body (body_text under --json) — the lean metadata read,\n" +
-			"the same switch `furrow show <epic-id> --no-body` honors.",
+			"the same switch `furrow show <epic-id> --no-body` honors.\n\n" +
+			"A box with no non-terminal member left and a parked member whose due is\n" +
+			"still ahead is WAITING: it prints `⏳ waiting until <due> (<task>)` for the\n" +
+			"earliest such due (`waiting: {until, task}` in --json), and revisit's\n" +
+			"epic_all_done stays quiet while it waits.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -632,7 +636,9 @@ func newEpicDepCmd() *cobra.Command {
 			"on), and `furrow lint` has no finding for the crossing.\n\n" +
 			"With --list, don't mutate — read the neighborhood in BOTH directions: what\n" +
 			"it waits on (depends_on) and what waits on it (blocks), each resolved to\n" +
-			"id+title+state.",
+			"id+title+state.\n\n" +
+			"`furrow lint` backstops the graph: epic-dep-cycle and epic-dep-missing\n" +
+			"(errors), epic-dep-open (warn: an active box still waiting on an open dep).",
 		Example: "  furrow epic dep e-k3m9p e-a1b2c\n" +
 			"  furrow epic dep e-k3m9p e-a1b2c e-d4e5f   # wait on both in one write\n" +
 			"  furrow epic dep e-k3m9p e-a1b2c --rm\n" +

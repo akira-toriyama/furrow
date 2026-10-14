@@ -594,10 +594,12 @@ func newReorderCmd() *cobra.Command {
 			"lane's order is then undefined (`lint` reports it as priority-duplicate).\n" +
 			"With --before/--after <id>, compute it:\n" +
 			"the task is slotted immediately before/after that task in its lane (both must\n" +
-			"share a lane — relative order across lanes is meaningless). When the sparse\n" +
-			"gap next to the target is exhausted, the whole lane is respaced in the same\n" +
-			"single write (all-or-nothing); --json then adds a `renumbered` array with the\n" +
-			"neighbors' {id, from, to} moves, and a note names the count on stderr.",
+			"share a lane — relative order across lanes is meaningless, so a cross-lane\n" +
+			"target is exit 2). When the sparse gap next to the target is exhausted, the\n" +
+			"whole lane is respaced in the same single write (all-or-nothing); --json then\n" +
+			"adds a `renumbered` array with the neighbors' {id, from, to} moves, and a note\n" +
+			"names the count on stderr. The respaced neighbors' `updated` stays put: a\n" +
+			"respace is positional bookkeeping, not progress.",
 		Example: "  furrow reorder t-k3m9p 90\n" +
 			"  furrow reorder t-k3m9p --before t-x1y2z\n" +
 			"  furrow reorder t-k3m9p --after t-x1y2z",
@@ -666,7 +668,11 @@ func newEstimateCmd(name string, set func(*app.App, string, *int) (*core.Task, e
 			"clamped into 1..5. With --clear, remove the estimate (back to unset, so intake\n" +
 			"stays frictionless). value and effort together derive ROI = value/effort, the\n" +
 			"signal for picking the next task — order by it with `furrow ls --sort value`\n" +
-			"(unset estimates stay last) or select on it with `furrow ls -q 'roi:>=2'`.",
+			"(unset estimates stay last) or select on it with `furrow ls -q 'roi:>=2'`.\n\n" +
+			"A clamp is SIGNALED, so an explicit score is never silently rounded: a\n" +
+			"stderr note plus `clamped." + name + ".{requested, stored}` in the --json\n" +
+			"envelope. Via `add --" + name + "` the clamp is the stderr note alone (add\n" +
+			"--json prints the created task, not an envelope).",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -733,13 +739,13 @@ func newCheckCmd() *cobra.Command {
 		Use:   "check <id> [item-index]",
 		Short: "Toggle, add, remove, or reword a checklist item",
 		Long: "Edit a task's checklist. With no mode flag, mark the item at the given\n" +
-			"zero-based index done (--off unchecks) — the index is the number `show`\n" +
-			"prints beside each row; an index is a position in the CURRENT list, so\n" +
-			"after --rm every item below it moves up by one — remove from the highest\n" +
-			"index down. --add appends one or more items (repeatable, text verbatim).\n" +
-			"--rm deletes the item at the index. --reword replaces the text of the item\n" +
-			"at the index (keeping its done state). The mode flags are mutually\n" +
-			"exclusive; an out-of-range index is exit 2.",
+			"zero-based index done — an idempotent set, not a toggle (--off unchecks).\n" +
+			"The index is the number `show` prints beside each row; an index is a\n" +
+			"position in the CURRENT list, so after --rm every item below it moves up by\n" +
+			"one — remove from the highest index down. --add appends one or more items\n" +
+			"(repeatable, text verbatim). --rm deletes the item at the index. --reword\n" +
+			"replaces the text of the item at the index (keeping its done state). The\n" +
+			"mode flags are mutually exclusive; an out-of-range index is exit 2.",
 		Example: "  furrow check t-k3m9p 0            # mark item 0 done\n" +
 			"  furrow check t-k3m9p 0 --off     # uncheck item 0\n" +
 			"  furrow check t-k3m9p --add \"write tests\" --add \"update docs\"\n" +
@@ -835,7 +841,8 @@ func newDepCmd() *cobra.Command {
 			"Every dep must exist; adding is acyclic and idempotent, and the batch is\n" +
 			"all-or-nothing (a bad dep-id aborts without a partial change). The\n" +
 			"verb-first spellings `dep add <id> <dep-id>...` and `dep rm <id> <dep-id>...`\n" +
-			"are the same two writes.\n\n" +
+			"are the same two writes (neither word can be an id: ids carry a prefix and\n" +
+			"a dash).\n\n" +
 			"With --list, don't mutate — read <id>'s dependency neighborhood in BOTH\n" +
 			"directions: what it depends_on (its own deps — what it waits on) and what it\n" +
 			"blocks (the reverse edge — the tasks waiting on it), each resolved to\n" +
@@ -847,7 +854,11 @@ func newDepCmd() *cobra.Command {
 			"note (nothing moves it), and once <id> is done the same rows read\n" +
 			"`← unblocked` / `← N open deps`. --json/--ndjson emit one object with\n" +
 			"both arrays. The reverse edge is the local, no-server twin of \"what\n" +
-			"unblocks if I finish this\".",
+			"unblocks if I finish this\". A dangling dep resolves to its id alone with\n" +
+			"blocked_by [] (lint's dep-missing flags it). Board-wide, the reverse\n" +
+			"lookup is `ls -q depends-on:<id>`. An archived id is not on the live board:\n" +
+			"--list exits 1 and names `show <id> --archived`, the read of a retired\n" +
+			"task's edges.",
 		Example: "  furrow dep t-k3m9p t-a1b2c\n" +
 			"  furrow dep t-k3m9p t-a1b2c t-d4e5f    # depend on both in one write\n" +
 			"  furrow dep t-k3m9p t-a1b2c --rm\n" +
@@ -962,7 +973,8 @@ func newSetCmd() *cobra.Command {
 			"a relative target outside the destination lane is exit 2, and under\n" +
 			"[labels].required a set that would strip the last label is refused. A\n" +
 			"relative placement that has to respace the lane does so in the same write\n" +
-			"and reports the neighbors in `renumbered`, exactly like reorder.\n\n" +
+			"and reports the neighbors in `renumbered`, exactly like reorder. An empty\n" +
+			"--due '' is exit 2, never a silent clear (--clear-due is the clear).\n\n" +
 			"Several ids apply the SAME edits to all of them in ONE all-or-nothing\n" +
 			"write (bulk triage): a miss sets NOTHING and exits 1 with every miss in\n" +
 			"details.missing, and --json is ALWAYS an array of envelopes, one per id\n" +
@@ -1510,7 +1522,8 @@ func newRepoCmd() *cobra.Command {
 			"name matching exactly one repo already known to the board (case-insensitive,\n" +
 			"at a '/' boundary); anything else is a validation error — never a silent new\n" +
 			"repo. Attaching a repo already present, or detaching one already absent, is\n" +
-			"a no-op. A task with no repos is a draft (see ls --drafts).",
+			"a no-op. A task with no repos is a draft (see ls --drafts). The validation\n" +
+			"error is exit 2 with the matching or known repos in candidates.",
 		Example: "  furrow repo t-k3m9p --add akira-toriyama/furrow\n" +
 			"  furrow repo t-k3m9p --rm furrow                # detach by short name\n" +
 			"  furrow repo t-k3m9p --add cifail --rm furrow   # move across repos",

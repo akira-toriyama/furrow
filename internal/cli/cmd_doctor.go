@@ -41,7 +41,8 @@ func newDoctorCmd() *cobra.Command {
 			"    naming the cause and its fix — add it to a board's scopes when nothing\n" +
 			"    answers it, else what the override, pointer or [[board]] that did\n" +
 			"    answer needs)\n\n" +
-			"Every finding carries a stable kebab-case `code` — branch on it, never on the\n" +
+			"Every finding carries a stable kebab-case `code` (no-boards, board-behind,\n" +
+			"board-ahead, scope-shadowed, dir-unresolved, …) — branch on it, never on the\n" +
 			"message (the `id` field is contextual: a store path, a scope path, a dir, an\n" +
 			"env var name, or `config`). Severity `info` is a fact worth seeing, not a\n" +
 			"problem to fix.\n\n" +

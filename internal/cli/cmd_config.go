@@ -55,8 +55,8 @@ func newConfigSetCmd() *cobra.Command {
 			"~/.config/furrow/config.toml instead: its own [session] keys\n" +
 			"(session.guard refuse|warn|off, session.busy_seconds), or a key of one\n" +
 			"[[board]] entry (--board <ref> picks the entry by path or scope — exact,\n" +
-			"else unique substring; omit it when one entry exists; never beside a\n" +
-			"[session] key).\n\n" +
+			"else unique substring, candidates on a miss; omit it when one entry\n" +
+			"exists; never beside a [session] key).\n\n" +
 			"<key> is dotted (lanes.default, next.lanes, alias.<name>; bare for a\n" +
 			"top-level key like mode). A list value is comma-split\n" +
 			"(next.lanes ready,in-progress). The writer is STRICT where the reader is\n" +

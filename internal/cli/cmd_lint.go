@@ -57,7 +57,13 @@ func newLintCmd() *cobra.Command {
 			"DRIVES THE EXIT CODE: a problem filtered out is treated as if lint never found\n" +
 			"it, so excluding or ignoring the last error exits 0 (the point — silence a\n" +
 			"permanently-dead check so it stops reddening CI), and --severity warn always\n" +
-			"exits 0 (errors, if any, are hidden by the filter).",
+			"exits 0 (errors, if any, are hidden by the filter).\n\n" +
+			"A command that writes runs lint's error rules over the board as it stood\n" +
+			"before its first write and after its last: an ERROR it did not have is\n" +
+			"named in the same command, on stderr\n" +
+			"(`note: this write raised lint error <code> on <id>: <message>`), under the\n" +
+			"board's policy. It never refuses (the write landed), and a write to a task\n" +
+			"already in that error stays quiet.",
 		Example: "  furrow lint\n" +
 			"  furrow lint --severity error         # errors only (the CI gate)\n" +
 			"  furrow lint --exclude-code reconcile-gap,epic-no-active\n" +

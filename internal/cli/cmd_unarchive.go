@@ -33,7 +33,9 @@ func newUnarchiveCmd() *cobra.Command {
 			"noted on stderr). Restoring only puts it back on the board — to REOPEN it, follow with\n" +
 			"`furrow move <id> <lane>`, which clears `closed` on leaving the done lane.\n" +
 			"No --yes: restoring destroys nothing (the destructive direction, archive,\n" +
-			"keeps its preview guard).",
+			"keeps its preview guard).\n\n" +
+			"Every mutator's not-found error names an archived id (details.archived)\n" +
+			"and points here.",
 		Example: "  furrow unarchive t-k3m9p\n" +
 			"  furrow unarchive t-k3m9p t-x7q2m          # one all-or-nothing write\n" +
 			"  furrow unarchive t-k3m9p && furrow move t-k3m9p backlog   # restore AND reopen",
