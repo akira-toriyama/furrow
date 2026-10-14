@@ -6,123 +6,128 @@
 > field of soil — parallel **furrows** are the status **lanes**, and you work
 > the backlog by driving one lane forward at a time.
 >
-> Field names below match `internal/core/task.go` exactly (the struct field
-> order *is* the JSON key order — see `internal/core/marshal.go`). Each entry
-> is a definition, not a manual: the mechanism behind it is `furrow <cmd>
-> --help`, README, or [`architecture.md`](architecture.md), and every closed
-> vocabulary (codes, keys) is printed by `furrow vocab
-> <name>` rather than copied here.
+> Each entry is a definition, not a manual: the mechanism is the pointer it
+> ends on, and every closed vocabulary (codes, kinds, keys) is printed by
+> `furrow vocab <name>` rather than copied here.
 
 ## Terms
 
 | Term | Meaning |
 |---|---|
-| **task** | One tracked item — furrow's unit of work. The `core.Task` struct (metadata only): `id`, `title`, `status`, `priority`, `value`, `effort`, `labels`, `repos`, `deps`, `refs`, `checklist`, `created`, `updated`, `closed`, `reviewed`, `body`, `epic`, `due`, `repeat`, `repeat_anchor`, `anchor`. Its prose is *not* a field — it lives in a separate **body** file. |
-| **epic** | A **box of work**: a first-class entity (`.furrow/epics/<id>.json`, `e-` ids), not a task wearing a type. It carries a one-line `goal`, free-form `meta`, an `active` flag, `deps` on other boxes (the order boxes open in — information, not enforcement, and never a constraint on its members' task deps), the `standing`/`pinned` channel declarations, and an optional **anchor** day. `next` scopes to the active box, `ls --tree` groups by box, and furrow never auto-closes or auto-picks one — choosing stays the human's. |
-| **due** | The instant a task is **promised** for (`due`, optional). An INSTANT, not a day: a bare date binds the end of that day in the board's calendar; `+1d` is the snooze (from now) and `set --due-shift +7d` moves the due a task already carries (the reschedule). `brief` leads with it and `lint` is its board-wide twin (`due-overdue` an error, `due-today` a warn, `due-inversion` a warn when a dependency is promised later than the task waiting on it); furrow never rings — a date is state a read reports ([`scheduling.md`](scheduling.md)). |
-| **repeat** | The recurrence rule a task runs on (`repeat`, one RFC 5545 RRULE line compiled from a short spelling, plus the immutable `repeat_anchor` its first `due` set). Only a **close** advances it: the next occurrence is minted in the same write and the rule handed to it, so exactly one live task carries a series and a snooze moves this occurrence without re-latticing. Spellings, anchor rules and calendar edge cases: `add --help` and README; code: `internal/recur`. |
-| **anchor** | A box's own **calendar day** (`anchor` on the epic, `YYYY-MM-DD` — the event, the release, the deadline its derived dates count back from) and, on a task, the pointer that says its due **follows** that day (`anchor` on the task, an epic id). Not an instant and not a stored offset: a follower's due stays one absolute instant, `D-N` is due − anchor whenever a renderer wants it, and `epic set --anchor <new day>` moves every open follower by the calendar-day delta in one previewed write — the reschedule. The pointer sits on the moving side (a forgotten follower is a stale date, never a fabricated deadline); `has:due no:anchor` is the other side. Distinct from `repeat_anchor`, a series' own start, which a follower may not also carry. |
-| **index** | The in-memory aggregate folded from the per-task **shards** — there is no `.furrow/index.json`. Query it with `ls`/`show`/`next --json`; never hand-edit its shards. |
-| **shard** | The metadata for one task on disk: `.furrow/tasks/<id>.json`, a bare `core.Task` object, 1:1 with its `bodies/<id>.md`, machine-written by `core.MarshalTask`; `epics/<id>.json` and the `repos/` review records are shards too. One file per task is why concurrent edits across worktrees merge as a union. |
-| **meta** | `.furrow/meta.json` — `{"schema_version": 11}`, the board-wide layout version in its own file. The number is the **board's**, an input to every write, never an output: an older board is read-only, a newer one refused, and only `furrow upgrade` raises it (the two-sided version gate, [`architecture.md`](architecture.md)). |
-| **flag day** | The moment a board's **meta** version is raised by `furrow upgrade` — a one-way, coordinated cutover after which no older furrow (a pinned CI included) can write the board. furrow cannot see the pins, so the order is a human's: release, bump every pin, then upgrade. No downgrade; recovery is `git revert`. |
-| **unknown-key passthrough** | A shard's **top-level** keys this binary does not know are **preserved, not dropped**: `core.Unmarshal*` parks them and `core.Marshal*` re-emits them. The gate stops a *bumped* layout from being misread; the passthrough stops an *unbumped* one from being destroyed — and preserving is not honouring, so `lint` warns `unknown-shard-key`. Limits and proofs: `internal/core/passthrough.go`. |
-| **extras** | The unexported carrier the passthrough parks unknown keys in. Not a field on disk and never in a `--json` view (which is why `Task` must never grow a `MarshalJSON` method); `ExtraKeys()` is the only way out, reading a file the only way in. |
-| **body** | The long-form prose for one task **or epic**: `.furrow/bodies/<id>.md`, addressed by the `body` field as a relative path. Plain markdown, hand- and agent-editable; `note` appends and advances `updated`, `edit --body` replaces. Which entity a ref names is store membership, never the id prefix. |
-| **lane** (== status) | A workflow column; the `status` field holds one. The set and its top-to-bottom order is `[lanes].order` in `config.toml` (the shipped defaults are in the repo-root `config.toml`). |
+| **task** | furrow's unit of work: a **shard** of metadata plus a **body** of prose. The fields are `core.Task` (`internal/core/task.go`; struct order is key order), the schema `furrow schema task`. |
+| **epic** | A **box of work**: a first-class entity (`.furrow/epics/<id>.json`, `e-` ids), not a task wearing a type. `next` scopes to the active box; furrow never auto-closes or auto-picks one — choosing stays the human's (`furrow epic --help`). |
+| **standing** | An epic declaration for a permanent box: no lifecycle nags, the review cadence instead (`furrow epic set --help`). |
+| **pinned** | An epic declaration: the box's actionable tasks lead `next`/`brief` regardless of the active scope (`furrow epic set --help`). |
+| **mandate** / **parking lot** | The convention's reserved boxes: a mandate is standing + pinned, a parking lot standing only; furrow stays name-independent (`furrow epic set --help`). |
+| **waiting** (box) | A box's derived "parked until" state: open work done, a parked member's due still ahead. The epic reads and `brief` print `⏳ waiting until <due> (<task>)`; it silences `epic_all_done` (README's `epic` command note). |
+| **due** | The instant a task is **promised** for (`due`, optional) — a bare date binds the end of that day in the board's calendar. `brief` leads with it and `lint` checks it board-wide; furrow never rings ([`scheduling.md`](scheduling.md), `furrow set --help`). |
+| **snooze** | Re-dating a promise from now (`set --due +1d`); on a repeating task it moves this occurrence only. `--due-shift` moves the dues tasks already carry (`furrow set --help`). |
+| **repeat** | The recurrence rule a task runs on (`repeat`, one RFC 5545 RRULE, plus the immutable `repeat_anchor`). Only a **close** advances it, minting the next occurrence in the same write (`furrow done --help`); spellings: `furrow vocab repeat-spellings`; code: `internal/recur`. |
+| **anchor** | A box's own **calendar day** (`anchor` on the epic) and, on a task, the epic whose day its due **follows**. Moving the day re-dates every open follower by the calendar-day delta in one previewed write; no offset is stored (`furrow epic set --help`, [non-goals.md](non-goals.md#no-stored-offset-no-cascade)). Distinct from `repeat_anchor`. |
+| **follower** | A task whose due follows a box's **anchor** day (`set --anchor <epic>`; `-q anchor:<epic>` lists them). |
+| **index** | The in-memory aggregate folded from the per-task **shards** — there is no `.furrow/index.json`. Query it with `ls`/`show`/`next --json` ([`architecture.md`](architecture.md#the-store)). |
+| **shard** | One task's metadata on disk, `.furrow/tasks/<id>.json`, written only by `core.MarshalTask`; `epics/` and `repos/` hold shards too. One file per task is why concurrent edits merge as a union ([`architecture.md`](architecture.md#the-store)). |
+| **meta** | `.furrow/meta.json` — `{"schema_version": 11}`, the board's layout version: an input to every write, never an output. An older board is read-only, a newer one refused, and only `furrow upgrade` raises it (`furrow --help`). |
+| **flag day** | The moment `furrow upgrade` raises a board's **meta** version — a one-way cutover after which no older furrow (pinned CI included) can write the board. Its order and recovery are `furrow --help`'s. |
+| **unknown-key passthrough** | A shard's unknown **top-level** keys are **preserved, not dropped** — and not honoured, so `lint` warns `unknown-shard-key` and `tidy --unknown-keys` prunes them. Contract and limits: `internal/core/passthrough.go`; its place beside the version gate: [`architecture.md`](architecture.md). |
+| **body** | The long-form prose for one task **or epic**: `.furrow/bodies/<id>.md`, plain markdown, hand- and agent-editable. The prose writes advance `updated`; a hand edit does not (`furrow --help`). |
+| **lane** (== status) | A workflow column; the `status` field holds one. The set and its order is `[lanes].order` (defaults: the repo-root `config.toml`; live: `furrow board`). |
 | **waiting** (lane) | The GTD *Waiting-For* lane: blocked on someone or something external (a `dep` is the internal kind). Terminal and parked — it does not stamp `closed`. |
-| **priority** | A *sparse* integer ordering tasks within a lane (lower sorts higher, `[priority].step` apart). `reorder`/`set --before|--after` compute it; only an exhausted gap respaces the lane, reported in the envelope's `renumbered`. |
-| **id** | A task's permanent handle (`t-k3m9p`): `[ids].prefix` + a random Crockford-base32 suffix, generated locally with no shared counter, **frozen** — never reused or renumbered. Legacy numeric ids (`t-0042`) coexist. |
-| **label** | A free-form tag in `labels` (a sorted, deduped set). Filter with `-l`; `[labels].required` makes a label-less task a validation error. A repository is **not** a label. |
-| **repo** (the `repos` field) | An `owner/repo` identifier a task relates to, 0..N per task as a set. `-r` scopes reads (full name, or a short name resolved uniquely against the board's repos); `add` unions in the invocation's scope repo. |
-| **draft** | A task whose `repos` set is empty — the GitHub-Issues-draft analogue, first-class: `add --draft` makes one, `ls --drafts` lists them, `revisit` flags `no_repo`, and a scoped read that hides them says so on stderr. |
-| **checklist item** | A `text` + `done` entry in `checklist`, ticked with `furrow check` — too small for its own task. An unticked item never blocks or warns on `done` (a close asserts the body's completion condition, not the boxes); `show` prints the tally as `checklist: N/M` and leads each row with its zero-based index, the position `check` takes. |
+| **priority** | A *sparse* integer ordering tasks within a lane (lower sorts higher), computed by `reorder`/`set --before|--after`; only an exhausted gap respaces the lane (`furrow reorder --help`). |
+| **id** | A task's permanent handle (`t-k3m9p`): a prefix plus a random suffix minted with no shared counter, **frozen** — never reused or renumbered ([`architecture.md`](architecture.md#frozen-collision-free-random-ids)). |
+| **label** | A free-form tag in `labels` (a sorted, deduped set). Filter with `-l`; `[labels].required` makes a label-less task a validation error. A repository is **not** a label (README, "Fields, estimates and revisit"). |
+| **value** / **effort** | Coarse 1..5 estimates of worth and cost, unset by default; an out-of-range score clamps and says so (`furrow value --help`). |
+| **roi** | value / effort, derived and never stored: selectable as a `-q` ordinal (`roi:>=2`); `next`'s order ignores it (README, "Fields, estimates and revisit"). |
+| **repo** (the `repos` field) | An `owner/repo` identifier a task relates to, 0..N per task as a set — what a **repo scope** filters on. |
+| **repo scope** | The repo filter a read applies: `-r` (`-r ''` = the whole board), else the scope repo the board was reached with (the help texts' *board scope*) — a pointer's or `[[board]]`'s, else **default_repo**. `add` unions it into `repos` (README, "Discovery precedence"). |
+| **draft** | A task whose `repos` set is empty — the GitHub-Issues-draft analogue: `add --draft` makes one, `ls --drafts` lists them, and a read whose **repo scope** hides them says so on stderr. |
+| **checklist item** | A `text` + `done` entry in `checklist`, too small for its own task (`furrow check --help`). An unticked item never blocks `done`: a close asserts the body's completion condition, not the boxes. |
 | **ref** | An entry in `refs`: a pointer *out* of furrow (`file:line` or URL). Context only; never affects `next`. |
-| **asset** | A file of any kind (an image, a video, a PDF, an email — the type is never inspected) attached with `furrow attach`, copied to `.furrow/bodies/assets/<id>-<name>` and shown from the body by a relative markdown line. It moves by the **hold rule** (`internal/app/asset_hold.go`): a store loses a file only when nothing remaining there shows or owns it, which every verb reports. `lint` warns on dangling, orphan and oversized assets. |
-| **dep** (dependency) | An entry in `deps`: the id of another task this one waits on. A task is actionable only once every dep is in the done lane — what `next` reasons over. Every read that names an edge resolves it the same way: `show` prints a `N/M done` tally and one row per dep (`id  [lane]  title`), `dep --list` the same rows in both directions (each with that task's own `blocked_by`, so a blocks row says whether this close is its last open dep), and `blocked_by` names the undone ones on every `--json` task row. |
-| **epic field** (on a task) | The optional `epic`: the box this task is filed under (0..1). Membership only — it never gates like a dep — and `lint` errors `epic-required` on an open, unfiled task once the board has any box. |
-| **link** | A `[[<id>]]` reference in body prose, resolved by the one definition in `internal/core/links.go`: only the brackets count (a bare id is not a link; one inside code is inert). Powers `show --backlinks` and `lint`'s dangling-link warn. Human synonym: "mention". |
-| **backlink** | The reverse view of a **link** — the tasks whose body links to a given one ("Mentioned in", `mentioned_by` under `--json`), computed by scanning local bodies. |
-| **terminal lane** | A lane whose tasks are not actionable: finished or parked (`[lanes].terminal`). The done lane is terminal *and* stamps `closed`; parked lanes are terminal and do not. |
-| **close** | Moving a task into the done lane, which stamps `closed`. What a close asserts is the body's completion condition — **met or gone**: a task whose premise died closes the same way, with the reason in `done --note`. There is no cancelled close and no close-reason field ([non-goals.md](non-goals.md)); parking (the icebox lane) and withdrawal (`rm`) are the other two exits and stay separate verbs. |
-| **actionable** | A task in a non-terminal `[next].lanes` lane with every dep in the done lane (`ls --actionable`, `is:actionable`; `internal/app/tree.go`). `next` further scopes them to the active box. |
-| **typed query** (`-q`) | One filter string on every filtering read and, as a write-side selector, on the batch mutators: a flat AND-list of `field:value` terms (comma = OR, leading `-` = NOT), `has:`/`no:` presence, ordinal and date comparisons, graph edges, free text, and `is:` computed flags (`furrow vocab query-qualifiers` / `query-presence` / `query-is`). Full grammar: README's "Typed query". |
-| **revisit** | The read-only re-evaluation query, the counterpart to `next`: open tasks whose metadata may be out of date, each with **revisit signals** (`furrow vocab revisit-codes`) — every human row ends `← code: detail`, `--json` carries them as a `revisit` array. It never mutates; an empty result is healthy. |
-| **stale** | The revisit signal for an open task whose `updated` is older than `[revisit].stale_days` — the one keyed on elapsed time. |
-| **review / reviewed / unreviewed** | `furrow review <repo>` stamps a per-repo clock (its review shard, `.furrow/repos/`); `reviewed` is also a per-task and, for a **standing** box, a per-epic stamp; **unreviewed** is the resulting repo nudge on `sync`/`brief` once the last HUMAN review is older than `[review].stale_after_days`. A never-reviewed repo or box stays quiet — the first review opts it in. |
-| **board git state** | What `furrow board` reports about the board repo from local knowledge only: HEAD, whether `.furrow/` is dirty, ahead/behind, and a `state` from `doctor`'s git-state vocabulary (`ok`, `not-a-repo`, `no-upstream`, `unavailable`). `ok` needs a tracking ref, so a standalone board reads `no-upstream`; read the **mode** from `mode`, not from this. |
-| **archive** | Cold storage at `.furrow/archive/`, a sibling sharded store for aged done tasks (`furrow archive`, previews unless `--yes`; `--archived` on the reads). `unarchive` is the round trip back; assets follow the hold rule, and a done task a staying task still depends on stays (**held**) rather than leave a dangling dep. Deletion is a different verb: **rm**. |
-| **the store** | The `.furrow/` directory as a whole — task and `epics/` shards, `meta.json`, bodies, assets, `config.toml`, `.gitattributes`, the `repos/` review shards, `archive/` — living in a git repo next to the code or in a tracker repo of its own. |
-| **central board** | A `.furrow` that lives **outside** the repos it backs, reached by configuration (a user-level `[[board]]` entry, a per-repo **pointer**, `FURROW_BOARD`, or `FURROW_DIR`) — the **layout** opposite of a **repo-local board**. It can back many repos (the count is a consequence) and injects a scope **repo** (except through `FURROW_DIR`, which declares none — the board's own **default_repo** is then the fallback); orthogonal to the **mode**. `furrow board`'s `layout` says how this invocation reached the board. |
-| **repo-local board** | A `.furrow/` inside the repo it serves, found by walking up from cwd — the arm that outranks every configured one except `FURROW_DIR` and a nearer pointer (a stray `furrow init` shadows the central board; `doctor` reports it). It declares no scope of its own, which is what a board's **default_repo** fallback is for. |
-| **shared board** | A board with a git **remote**, written by several parties (other checkouts, a co-located session, every repo's pinned CI) and kept converged by **sync**. The default **mode**, declared by omission; it is why raising the layout is a **flag day** and why `due-overdue` ships as an error. Says nothing about layout or repo count. |
-| **standalone** (`mode = "standalone"`) | A board on one machine, under its own git, with no remote — the mode opposite of a **shared board**. Wording only, never behaviour (the write gate and bytes are identical); pair it with **autocommit** for backup. Reports `no-upstream` to `board`/`doctor`. |
-| **scope** | The directory subtree under which a `[[board]]` entry — or `FURROW_BOARD`, whose one scope sits two levels above its store — activates; the longest matching scope wins. Outside every scope furrow behaves as if no board were configured. |
-| **store-to-be** | A directory a configured path (`FURROW_DIR`, a pointer, a `[[board]]`, `FURROW_BOARD`) may name before any store is in it: empty, or holding only dot-entries other than `.furrow` (say, a `.gitkeep`). The first write stamps it, and `FURROW_DIR=<dir> furrow init` fills it (not a git work tree's root: its store belongs in its `.furrow`); any other directory that is not a store is refused, with the `.furrow` inside as the did-you-mean when there is one. |
-| **pointer** | A `.furrow-pointer.toml` at a repo root redirecting to a central board, optionally with a `default_repo`. Wins over the user-level boards, loses to a nearer or same-level `.furrow`. |
-| **default_repo** | Two keys, one name: in a **pointer**, the per-repo scope (`"auto"` allowed); in a board's own committed `config.toml`, that board's *fallback* scope, applied only when discovery ran an arm that declares none (`FURROW_DIR`, a local `.furrow`) — a literal `owner/repo` only, and it never outranks a pointer or `[[board]]`. |
-| **doctor** | The machine-wide board-setup health check: what is *wrong* and how to fix it (`boards` lists what is configured). Read-only, network-free, stable codes (`furrow vocab doctor-codes`), exit 1 = problems found. |
-| **auto-filter** | The per-`[[board]]` `auto_filter` switch: whether the filtering reads scope to the board **repo** (writes attach regardless). A pointer and a board's own **default_repo** always filter. |
-| **autocommit** | The per-machine switch, set on a `[[board]]` entry, that git-commits `.furrow/` after every mutating command but `config set`, `migrate` and `edit` in `$EDITOR` — the standalone board's backup guarantee. Keyed by the store: the entry naming the opened path applies whichever discovery arm reached it. Reuses **sync**'s partition rule, best-effort (a failure warns), never fetches or pushes. |
-| **session write guard** | The refusal or warning raised under Claude Code when a task or epic write touches a repo an **earlier-started** session on this machine sits in: busy → exit 2 `session-busy`; idle → the write lands with a `session_warn` (the stderr line once per session per occupant+repo, again only after that occupant moved). First come, first served; the escape is `add --draft`; it stands down and says so rather than refuse on a guess. Its mode is the **user-level** config's `[session].guard` (`refuse` | `warn` | `off`), per machine. Code: `internal/app/session_guard.go` + `internal/claudecode`. |
-| **sync** | The shared-board ritual as one command: auto-commit scoped to `.furrow/` (machine-written files and furrow-written or opted-in bodies; a co-located operator's prose is left pending and reported), then `fetch` + `rebase --autostash @{u}` + `push`. A thin git wrapper — git is the transport; no daemon — with one resolver of its own: a **shard** both sides wrote in *different* fields is merged field by field on pull (`updated` and the review stamps the later stamp, `closed` the first close, a null on one side of a shard both created unset there; reported in `merged_shards`), since bodies have git's union driver and JSON cannot be unioned; the same field set differently is the `sync-conflict`. Its progress keys (`furrow vocab sync-progress-keys`; `complete` is the fully-published flag), `incoming` kinds (`furrow vocab incoming-kinds`), `revisit` summary keys (`furrow vocab revisit-summary-keys`) and failure kinds (`furrow vocab error-kinds`) are the contract README documents. |
+| **asset** | A file of any kind attached with `furrow attach` into `.furrow/bodies/assets/` and shown from the body by a relative markdown line. It moves by the **hold rule**: a store loses a file only when nothing there still shows or owns it (`internal/app/asset_hold.go`). |
+| **dep** (dependency) | An entry in `deps`: the id of another task this one waits on. A task is actionable only once every dep is in the done lane; `blocked_by` names the undone ones (`furrow dep --help`). |
+| **epic** (the task field) | The optional `epic`: the box a task is filed under (0..1). Membership only, never a gate; `lint` errors `epic-required` on an open, unfiled task once the board has any box (`furrow set --help`). |
+| **link** | A `[[<id>]]` reference in body prose; only the brackets count (a bare id is not a link; one inside code is inert). Human synonym: "mention"; definition: `internal/core/links.go`. |
+| **backlink** | The reverse view of a **link**: the tasks whose body links to a given one (`show --backlinks`, `mentioned_by` under `--json`). |
+| **terminal lane** | A lane whose tasks are not actionable: finished or parked (`[lanes].terminal`). The done lane is terminal *and* stamps `closed`; parked lanes do not (`furrow board`). |
+| **close** | Moving a task into the done lane, which stamps `closed`. A close asserts the completion condition is **met or gone** (the reason in `done --note`); there is no cancelled close ([non-goals.md](non-goals.md#no-cancelled-close)), and parking and `rm` are separate verbs. |
+| **actionable** | A task in a non-terminal `[next].lanes` lane with every dep in the done lane (`ls --actionable`, `is:actionable`). `next` further scopes them to the active box (`furrow next --help`). |
+| **typed query** (`-q`) | One filter string on every filtering read and, as a selector, on the batch mutators: an AND-list of `field:value`, presence, comparison, graph and `is:` terms. Grammar: README, "Typed query — `-q`"; vocabularies: `furrow vocab query-qualifiers` / `query-presence` / `query-is`. |
+| **revisit** | The read-only re-evaluation query, the counterpart to `next`: open tasks whose metadata may be out of date, each with its signals (`furrow vocab revisit-codes`). An empty result is healthy (`furrow revisit --help`). |
+| **stale** | The revisit signal for an open task whose `updated` is older than `[revisit].stale_days` — the one keyed on elapsed time (`furrow revisit --help`). |
+| **review / reviewed / unreviewed** | `furrow review` stamps a review clock on a repo, a task or a **standing** box; **unreviewed** is the repo nudge `sync`/`brief` raise once the last human review is stale. Never-reviewed stays quiet (`furrow review --help`). |
+| **archive** | Cold storage for aged done tasks at `.furrow/archive/`, a sibling sharded store (`furrow archive`; `unarchive` is the way back). A done task a staying task depends on is **held** (`furrow archive --help`). Deletion is a different verb: **rm**. |
+| **the store** | The `.furrow/` directory as a whole, in a git repo next to the code or in a tracker repo of its own (its files: [`architecture.md`](architecture.md#the-store)). |
+| **central board** | A `.furrow` **outside** the repos it backs, reached by configuration (`[[board]]`, a **pointer**, `FURROW_BOARD`, `FURROW_DIR`) — the **layout** opposite of a **repo-local board**, orthogonal to the **mode**. It can back many repos (README, "Central board"). |
+| **repo-local board** | A `.furrow/` inside the repo it serves, found by walking up from cwd. It declares no **repo scope**, so a board's **default_repo** is the fallback (README, "Discovery precedence"). |
+| **shared board** | A board with a git **remote** and several writers, kept converged by **sync** — the default **mode**, declared by omission, and why raising the layout is a **flag day**. Says nothing about layout. |
+| **standalone** (`mode = "standalone"`) | A board on one machine, under its own git, with no remote — the mode opposite of a **shared board**. Wording only; back it up with **autocommit** (README, "Standalone: a local board with no remote"). |
+| **scope** (a `[[board]]`'s `scopes`) | The directory subtree under which a `[[board]]` entry (or `FURROW_BOARD`) activates; the longest match wins, and outside every scope no central board resolves (README, "User-level config (no per-repo file)"). |
+| **store-to-be** | A configured directory with no store in it yet — empty, or only dot-entries other than `.furrow`. The first write stamps it; any other non-store directory is refused (README, "Discovery precedence"). |
+| **pointer** | A `.furrow-pointer.toml` at a repo root redirecting to a central board, optionally with a `default_repo`. It wins over the user-level boards and loses to a nearer or same-level `.furrow` (README, "Per-repo pointer"). |
+| **default_repo** | Two keys, one name: a **pointer**'s **repo scope** (`"auto"` allowed), and a board's own fallback repo scope in `config.toml` — a literal `owner/repo` that never outranks a pointer or `[[board]]` (README, "Discovery precedence"). |
+| **doctor** | The machine-wide board-setup health check: what is *wrong* and how to fix it (`boards` lists what is configured). Read-only, network-free, stable codes (`furrow vocab doctor-codes`; `furrow doctor --help`). |
+| **auto-filter** | The per-`[[board]]` `auto_filter` switch: whether the filtering reads apply the board's **repo scope** (writes attach regardless). A pointer and a board's own **default_repo** always filter (README, "User-level config (no per-repo file)"). |
+| **autocommit** | The per-machine `[[board]]` switch that git-commits `.furrow/` after every mutating command but `config set`, `migrate` and `edit` in `$EDITOR` — the standalone board's backup. Keyed by the store, best-effort, never fetches or pushes (README, "User-level config (no per-repo file)"). |
+| **session write guard** | Under Claude Code, a task or epic write touching a repo an **earlier-started** session on this machine sits in is refused while that session works (`session-busy`) and warned while it idles; the escape is `add --draft` ([`architecture.md`](architecture.md#the-session-write-guard)). |
+| **sync** | The shared-board ritual as one command: a scoped auto-commit of `.furrow/`, then `fetch` + `rebase --autostash @{u}` + `push` — a thin git wrapper, no daemon. Shards both sides wrote in *different* fields merge field by field (`furrow sync --help`; `furrow vocab sync-progress-keys` / `incoming-kinds`). |
+| **envelope** | The JSON object around a command's result: a mutation's `{before, after, changed}` on stdout, or `{"error": {…}}` on stderr (`furrow --help`). |
+| **kind** | The error envelope's stable kebab-case failure class — branch on it, never on the message or exit code (`furrow vocab error-kinds`). |
+| **retryable** | The error envelope's flag: `true` means re-running the same command is the documented recovery; anything else is terminal (`furrow --help`). |
+| **candidates** | The array an error envelope adds when an input *almost* resolved, so a caller picks an alternative instead of parsing prose (README, "Claude Code / agent integration"). |
+| **preview** | What a destructive operation does without `--yes`: report what would change, write nothing. The one list is `furrow --help`'s. |
+| **alias** | A board `[alias]` entry naming a frequent command string, expanded git-style; a real command always wins (README, "Configuration"). |
 
 ## The determinism contract (why "never hand-edit a shard")
 
 `core.MarshalTask` is the single path that serializes a shard, and its bytes
-equal what a human would type by hand (struct-field key order, 2-space indent,
-`SetEscapeHTML(false)`, `[]` not `null`, sorted sets, UTC whole-second
-timestamps, trailing newline), so `Save` rewrites only the shards whose bytes
-changed and an untouched store is **zero git churn**. A stray manual edit is
-exactly what breaks it — and since **unknown-key passthrough**, a misspelled
-key in a hand-edited shard is preserved forever (`lint` warns
-`unknown-shard-key`; `tidy --unknown-keys` is the exit). Edit metadata through
-commands; edit prose in `bodies/*.md`. The guards that freeze the recipe are in
-[`architecture.md`](architecture.md).
+equal a hand-edit's, so `Save` rewrites only changed shards and an untouched
+store is **zero git churn**. A stray manual edit breaks that, and a misspelled
+key in it survives (the **unknown-key passthrough**) until `tidy --unknown-keys`.
+Edit metadata through commands and prose in `bodies/*.md`; the byte recipe is
+`MarshalTask`'s doc comment, its guards [`architecture.md`](architecture.md#how-the-invariant-is-guarded).
 
 ## Don't call it
 
-Non-canonical synonyms, mapped to the term to use. Prefer the right word.
+Non-canonical synonyms, mapped to the term to use. A ban stands only for a
+word the shipped `--help` and README avoid for that concept.
 
 | Don't say | Say | Why |
 |---|---|---|
-| ticket, issue, card, todo, item, entry | **task** | One name for the unit of work. ("Issue" is especially misleading — furrow is an *alternative* to GitHub Issues, not a client of them; there is deliberately no Issues integration.) |
-| database, db, store file, `index.json`, `tasks.json` | **the index** (the in-memory aggregate) / a **shard** (`.furrow/tasks/<id>.json`) | It's a set of deterministic JSON files, not a database, and not one monolithic file; each task is its own shard. "The index" is the aggregate folded from them; "the store" is the whole `.furrow/` directory. |
-| description, notes, content, details, the markdown | **body** (`bodies/<id>.md`) | The prose is a separate file addressed by a relative path, not a field on the task. |
-| column, board/project column, state, bucket, list, category | **lane** (the `status` field) | A lane is a `config.toml`-defined status. Two words for one thing is exactly what the glossary prevents (GitHub Projects' "column" included). |
-| rank, order, weight, position, sort key | **priority** | The orderable field is `priority` — a sparse integer, not an array position. |
-| slug, key, name, number, uuid, hash | **id** | The frozen handle is the `id` (e.g. `t-0042`). It is not derived from the title and never changes. |
-| tag, category, topic | **label** (the `labels` field) | furrow calls them labels (mirroring GitHub Projects "Labels"). A label is a *pure* tag — the repository a task belongs to is **not** a label. |
-| repository, project (as task metadata), repo label | **repo** (the `repos` field) | The `owner/repo` identifier(s) a task relates to — a first-class field, not a label convention. "Project" is GitHub's word; furrow's per-task attachment is `repos` and the whole tracker is the **board/store**. |
-| draft issue, repo-less task, unattached task | **draft** (`repos: []`) | The issue-draft analogue has one name: a task with an empty `repos` set. |
-| subtask, todo, checkbox, AC, acceptance criterion | **checklist item** | An in-task `checklist` entry — the only in-task breakdown (a bigger sub-item is its own task, filed in the same epic). |
-| citation, source, external link | **ref** | The `refs` field — a `file:line` or URL pointer *out* of furrow. A task→task `[[id]]` reference is **not** a ref — that is a **link** (next row). |
-| attachment, upload, screenshot, media file | **asset** | A file attached with `furrow attach`, stored at `.furrow/bodies/assets/<id>-<name>` and referenced from the body by a relative markdown line — never an entry in `refs`. |
-| wikilink, see-also, cross-reference | **link** (a `[[id]]` in a body) / **backlink** (its reverse "who points at me" view) | A task→task reference written as `[[id]]` in body prose is a **link**; the reverse view that `show --backlinks` renders is a **backlink**. "Mention" / "Mentioned in" is the human-facing synonym for the same pair. Note `@mention` (a *person*-directed notation) is **not** this — that one is unbuilt and on the roadmap (see [`non-goals.md`](non-goals.md)), not shipped. |
-| blocker, requirement, prerequisite, "depends on" (as a noun) | **dep** | The `deps` field; the ids a task waits on for `next`. |
-| epic, initiative, project (as a box of work) | **epic** (the entity) | A first-class entity (`furrow epic add`), not a task wearing a type; tasks file under it via the `epic` field (`-e`). (v5 modelled this as `type=epic` + `parent` edges — v6 replaced both.) |
-| group, sub-project, hierarchy | **epic membership** (the `epic` field) | One level of grouping: task → box. Epics do not nest, so there is no deeper hierarchy to name. |
-| deadline, ETA, target date, reminder, due_date | **due** (the `due` field) | One name for "when this is promised for". Not a *deadline* in the contractual sense and not a *reminder* in the notifying sense — furrow rings nothing; `brief` and `lint` report it when you run them. |
-| milestone | **anchor** (an epic's `anchor` field) | A box carries one calendar day, and the dues that follow it point back at the box (`epic set --anchor`; `show` prints a follower's `D-N`). That day is the REFERENCE the dates are counted from, not a deadline the set owes: nothing is due on it unless a task says so, and moving it moves its open followers' dues by the same delta. A per-task **due** is not a milestone either: it dates one task, not a set. |
-| closed lane, final lane, done-only | **terminal lane** | "Terminal" covers both done *and* parked (e.g. icebox); only the done lane stamps `closed`. |
-| ready, available, unblocked, "the next task" | **actionable** | The precise property (a non-terminal `[next].lanes` lane + all deps done) that `furrow next` selects on. |
-| close out, fold, retire | **archive** | `archive` *moves* aged done tasks to `.furrow/archive/`; it doesn't delete them, and it previews unless `--yes`. |
-| delete, purge, trash, withdraw | **rm** (`furrow rm` / `epic rm`) | The one real deletion: shard, body, and the assets nothing else still shows gone, git history the only way back. For a filing that should not have been made — never for finished work (that is `archive`) and never for parking (that is the icebox lane). Refused while anything still references the target (kind `referenced`); `--force` severs; previews unless `--yes`. A target carrying a live **repeat** rule takes its whole series with it — disclosed, not refused. |
-| migration, auto-upgrade, "furrow will convert it" | **flag day** (`furrow upgrade`) | Raising a board's layout is a deliberate, coordinated, one-way cutover a human orders — never something a write does for you in the background. Calling it a "migration" is what makes people expect it to just happen. |
-| `.furrow` repo, the database, the project file | **the store** | The `.furrow/` directory; "repo" is your git repository, which contains the store. |
-| hosted board, hosted-board-only, hosted-board-shaped | **shared board** | One axis, one word. In docs/ "hosted" already means the cloud-backend non-goal, so borrowing it for "has a git remote" collides with a term that is doing other work. |
-| a shared tracker repo (as the thing a standalone board lacks) | **a remote you can push to** | The blocker on a work machine is hosting, not repo count — a standalone board may back several repos, and the documented recipe registers one through the same `[[board]]` mechanism a central board uses. |
+| ticket, issue, card, todo, item, entry | **task** | One name for the unit of work — and furrow is an *alternative* to GitHub Issues, not a client of them. |
+| database, db, store file, `index.json`, `tasks.json` | **the index** / a **shard** | Deterministic per-task JSON files, not a database or one file (**index**, **shard**, **the store** above). |
+| description, notes, content, details, the markdown | **body** (`bodies/<id>.md`) | The prose is its own file, not a field on the task. |
+| state, bucket, list, category | **lane** (the `status` field) | Two words for one thing is what this table prevents. |
+| rank, order, weight, sort key | **priority** | The field is `priority`, a sparse integer, not an array index. |
+| slug, key, name, number, uuid, hash | **id** | The frozen handle, never derived from the title. |
+| category, topic | **label** (the `labels` field) | GitHub Projects' word for a pure tag; a task's repository is **not** a label. |
+| repository, project (as task metadata), repo label | **repo** (the `repos` field) | A first-class `owner/repo` set, not a label convention; "project" is GitHub's word. |
+| draft issue, unattached task | **draft** (`repos: []`) | One name for a task with an empty `repos` set. |
+| subtask, todo, checkbox, AC, acceptance criterion | **checklist item** | The only in-task breakdown; anything bigger is its own task in the same epic. |
+| citation, source, external link | **ref** | A `refs` pointer *out* of furrow; a task→task `[[id]]` is a **link**. |
+| upload, screenshot, media file | **asset** | A file from `furrow attach`, shown from the body — never a `refs` entry. |
+| see-also, cross-reference | **link** (a `[[id]]` in a body) / **backlink** (its reverse view) | "Mention" is fine; the person-directed `@mention` is unbuilt ([`non-goals.md`](non-goals.md#built-vs-planned--honesty-note)). |
+| blocker, requirement, prerequisite, "depends on" (as a noun) | **dep** | The `deps` field; what `next` waits on. |
+| initiative, project (as a box of work) | **epic** (the entity) | A first-class entity, not a task wearing a type. |
+| sub-project, hierarchy | **epic membership** (the `epic` field) | One level, task → box; epics do not nest. |
+| deadline, ETA, target date, reminder, due_date | **due** (the `due` field) | When a task is promised for; furrow reports it, never rings. |
+| milestone | **anchor** (an epic's `anchor` field) | A box's reference day its followers' dues count from; nothing is due on it unless a task says so. |
+| closed lane, final lane, done-only | **terminal lane** | Done *and* parked; only done stamps `closed`. |
+| close out | **archive** | Moves aged done tasks to cold storage; it never deletes them. |
+| purge, trash | **rm** (`furrow rm` / `epic rm`) | The one real deletion, for a filing that should not have been made (`furrow rm --help`). |
+| migration, auto-upgrade, "furrow will convert it" | **flag day** (`furrow upgrade`) | A human-ordered one-way cutover, never a write's side effect ([`non-goals.md`](non-goals.md#no-automatic-schema-migration)). |
+| `.furrow` repo, the database, the project file | **the store** | The `.furrow/` directory; "repo" is the git repository holding it. |
+| hosted board, hosted-board-only, hosted-board-shaped | **shared board** | "Hosted" already names the cloud-backend non-goal. |
+| a shared tracker repo (as the thing a standalone board lacks) | **a remote you can push to** | A standalone board lacks hosting, not repos — it may back several. |
 | multi-machine board (as a noun) | **shared board** | Fine as an inline gloss ("a shared (multi-machine) board"); not as a second name. |
-| global default board, central task tracker, 中央ボード, global 既定ボード | **central board** | One name for the store-location axis, so a grep finds every discussion of it. |
-| shared checkout | **co-located checkout** | Several operators in ONE working tree on ONE machine — true of a standalone board too, and a near-homograph of **shared board**. |
+| global default board, central task tracker, 中央ボード, global 既定ボード | **central board** | One name per axis, so a grep finds every use. |
+| shared checkout | **co-located checkout** | Several operators in ONE working tree, in any mode — a near-homograph of **shared board**. |
 
 ## What's built
 
-Every term above is backed by shipped code (every `internal/` package
-but the test-only `store/memstore`, `testutil` and `gittest`) — furrow is **CLI-only**; the sole
-presentation layer is `internal/cli`. Any interactive TUI/GUI is a separate
-front-end repo that drives furrow through its CLI/JSON contract (**ridge**,
-a charm-v2 TUI; **vista**, a GUI).
+Every term above names shipped code: the packages are
+[`architecture.md` § Package responsibilities](architecture.md#package-responsibilities);
+furrow is CLI-only, and the TUI (**ridge**) and GUI (**vista**) are separate
+front-end repos ([`non-goals.md`](non-goals.md#any-ui-is-a-separate-front-end-not-part-of-this-repo)).
 
 ---
 

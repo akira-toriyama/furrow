@@ -112,14 +112,14 @@ func newSyncCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "sync",
 		Short: "Commit the board, pull --rebase, push (thin git wrapper)",
-		Long: "sync runs the multi-machine board ritual as one command, against the git\n" +
+		Long: "sync runs the shared-board ritual as one command, against the git\n" +
 			"repository enclosing the board:\n\n" +
 			"  1. auto-commit, scoped to the .furrow/ directory (other dirty files in the\n" +
 			"     repo are never swept in). Within .furrow/, machine-written shards\n" +
 			"     (tasks/, meta.json) are always committed; a hand-edited bodies/<id>.md\n" +
 			"     is committed only when it is new or named with -b/--body — a merely\n" +
 			"     modified body is left for its author (listed in pending_bodies) so a\n" +
-			"     shared checkout never commits a co-located operator's WIP — except a\n" +
+			"     co-located checkout never commits another operator's WIP — except a\n" +
 			"     body furrow ITSELF wrote (note / edit --body / done --note / apply):\n" +
 			"     the writing command journals the id per-checkout and a plain sync\n" +
 			"     publishes it as if named with -b. --all-bodies\n" +

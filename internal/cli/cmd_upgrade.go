@@ -25,7 +25,7 @@ func newUpgradeCmd() *cobra.Command {
 			"is one — to the layout this binary writes, re-serializing every shard through\n" +
 			"the current marshaller. This is the ONLY thing that moves a board's version:\n" +
 			"an ordinary write never does (it refuses with schema-upgrade-required, exit 2),\n" +
-			"so a layout migration can never again happen as the side effect of a sync.\n\n" +
+			"so a flag day can never again happen as the side effect of a sync.\n\n" +
 			"It is a FLAG DAY. Afterwards, no older furrow can write this board — including\n" +
 			"any CI pinned to an older release. furrow cannot see those pins, so the order\n" +
 			"is yours to keep: release furrow, bump every caller's pin, THEN upgrade.\n\n" +
