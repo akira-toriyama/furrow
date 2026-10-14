@@ -6,7 +6,7 @@
 # crucially the rebase half of `git pull --rebase` (the rebase-pull workflow this
 # board uses). `git pull` without --rebase fires post-merge instead, so a board
 # wants both hooks. `furrow sync` pulls with --rebase internally, so it trips
-# this hook too — that is why sync itself carries no lint (it is delegated here).
+# this hook too.
 #
 # Detect-only, never blocks (same rationale as post-merge). Hard gate is pre-push.
 # git feeds "<old-sha> <new-sha>" lines on stdin and passes the trigger

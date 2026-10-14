@@ -442,7 +442,7 @@ func newNextCmd() *cobra.Command {
 			"  furrow next -n1 --json    # just the top task, with a reason\n" +
 			"  furrow next -e travel     # one box explicitly, active or not\n" +
 			"  furrow next --all-epics   # ignore the active-epic scope\n" +
-			"  furrow next --lanes backlog,ready   # temporarily widen the lanes considered\n" +
+			"  furrow next --lanes backlog,ready   # replace the lanes considered, for this call\n" +
 			"  furrow next -q 'value:>=4 -label:chore'   # ready AND worth it\n" +
 			"  furrow next -r furrow -l bug",
 		Args: cobra.NoArgs,

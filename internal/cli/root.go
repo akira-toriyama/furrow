@@ -224,7 +224,7 @@ func newRootCmd() *cobra.Command {
 			"vocab error-kinds` prints it) and on `retryable` (true = re-running the same\n" +
 			"command is the documented recovery), never on the message prose.\n\n" +
 			"JSON shapes are read off the signature: a command whose Use says <id>...\n" +
-			"(show, done, move, set) emits an ARRAY at every arity, a one-id mutation\n" +
+			"(show, done, move, set, unarchive) emits an ARRAY at every arity, a one-id mutation\n" +
 			"emits {before, after, changed}, and the report-shaped commands (rm, archive,\n" +
 			"tidy, upgrade, apply, migrate) emit ONE object whatever they took. A mutation\n" +
 			"that changes nothing leaves `updated` alone — an idempotent retry writes no\n" +

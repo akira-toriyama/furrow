@@ -68,7 +68,7 @@ func newEpicAddCmd() *cobra.Command {
 			"it. See `furrow epic set --help`.\n\n" +
 			"`epic add` only CREATES a box. A task joins one with `furrow set <task>\n" +
 			"-e <epic>` (or `add -e` at creation); an `epic add <epic> <task>` is exit 2\n" +
-			"naming that call in candidates.",
+			"naming that call in candidates when both resolve on the board.",
 		Args: epicAddArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := emptyFlagErr(cmd, "", "repo", "label", "meta"); err != nil {
@@ -624,7 +624,7 @@ func newEpicDepCmd() *cobra.Command {
 			"title substring — a dangling edge is still removable by its literal id).\n\n" +
 			"The edge is INFORMATION, not enforcement — deliberately weaker than a task\n" +
 			"dep: `epic activate` warns about a still-open dep and proceeds, a dep on a\n" +
-			"closed epic is simply satisfied, and `furrow revisit` raises epic_dep_done\n" +
+			"closed epic is simply satisfied, and `furrow brief`/`sync` raise epic_dep_done\n" +
 			"when every box this one waited on is closed — its turn to open. Parallel\n" +
 			"branches need no feature: two epics sharing a dep are two branches. Task\n" +
 			"deps are never checked against it: a task edge may run either way across\n" +
