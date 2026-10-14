@@ -33,10 +33,10 @@ user-level config. The essentials, in the order a session meets them:
   holds that repo**: wait, hand the write to that session, or `add --draft`.
   Never look for a force flag; there is none.
 - **Array cardinality is read from the signature, with one exception.** A
-  command whose `Use` says `<id>...` (`show`, `done`, `move`, `set`) emits a
+  command whose `Use` says `<id>...` (`show`, `done`, `move`, `set`, `unarchive`) emits a
   JSON array at every arity; a one-id command (`note`, `retitle`, …) emits an
   object; the report-shaped commands (`rm`, `archive`, `tidy`, `upgrade`,
-  `apply`) emit ONE report object regardless of how many ids they took.
+  `apply`, `migrate`) emit ONE report object regardless of how many ids they took.
 - **A read never narrows silently.** A repo scope that hid drafts or boxes, a
   `-n` cap that bit, a board this binary cannot write: each is one stderr
   line; stdout stays pure data. JSON goes to stdout ONLY.
@@ -46,13 +46,13 @@ user-level config. The essentials, in the order a session meets them:
 - **`config set` is the one write that works on a board this binary cannot
   otherwise write** (an older layout): it edits `config.toml` surgically and
   never touches the store, so a flag day can be prepared from any binary.
-- **Destructive ops preview unless `--yes`** (`archive`, `rm`/`epic rm`,
-  `tidy`), and `rm` refuses a still-referenced target (kind `referenced`)
+- **Destructive ops preview unless `--yes`** (list:
+  `furrow --help`), and `rm` refuses a still-referenced target (kind `referenced`)
   unless `--force`.
 - **`upgrade` is a flag day.** Release the furrow that ships the schema, bump
   every pinned `sync-task-status.yml@vX.Y.Z` caller, and only THEN
   `furrow upgrade --yes` — see Schema.
-- furrow is **CLI-only and non-interactive**; the front-ends (ridge, a TUI;
+- furrow is **CLI-only and non-interactive by default**; the front-ends (ridge, a TUI;
   vista, a GUI) are separate repos driving this CLI/JSON contract.
 
 ## What this is
@@ -66,18 +66,18 @@ board` reports it as `central` or `repo-local`. Orthogonal to it is the
 **mode**: a board with a git remote and other writers is a **shared board** (the
 default, declared by omission), while a board on one machine with no remote sets
 `mode = "standalone"`. Structured metadata lives in
-one JSON shard per task, `.furrow/tasks/<id>.json` (deterministic,
+one JSON shard per task, `.furrow/tasks/<id>.json` (likewise `epics/` and
+`repos/`; deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
 (`{"schema_version": 11}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
-`.furrow/config.toml`. A cobra CLI drives it (CLI-only — any TUI/GUI is a
-separate out-of-repo front-end that speaks the CLI/JSON contract). Go,
+`.furrow/config.toml`. A cobra CLI drives it. Go,
 cross-platform, brew/nix packaged.
 
 ## Build / run
 
 ```sh
-go build ./...                          # compile (use GOTOOLCHAIN=local on Go 1.25+)
+go build ./...                          # compile (use GOTOOLCHAIN=local on Go 1.26+)
 go test ./...                           # all packages
 sh scripts/repin-vendorhash.sh            # after go.mod/go.sum change: re-derive flake.nix vendorHash (needs nix)
 ./run.sh ls --json                      # build + run a subcommand
@@ -98,7 +98,7 @@ sh scripts/check.sh   # the one command: marshaller + schema-write guards +
                       # skipped with a note, not failed. Run it before finishing.
 ```
 
-- **CLI**: directly runnable headless; tests cover core + store + app + cli + migrate.
+- **CLI**: directly runnable headless.
 - **Determinism / drift** is guarded, not promised: the golden round-trip test,
   `scripts/check-marshal-singlepath.sh` (encoders AND decoders),
   `scripts/check-schema-write-guard.sh` (no ordinary write may name
@@ -122,8 +122,8 @@ Consult before adding behavior; keep terms consistent with them: [docs/architect
 
 ### Layer rules (the spine)
 `internal/core` is **pure** (stdlib only — no cobra, os, or filepath).
-Ports (`Store`, `Clock`) are interfaces **defined in core**;
-`internal/store/fsstore` is the **only** package that touches the filesystem;
+Ports (`Store`, `Clock`, `SessionRegistry`) are interfaces **defined in core**;
+`internal/store/fsstore` is the **only** package that loads the store or writes its files;
 `internal/store/memstore` is its in-memory twin for tests. `internal/cli` is the
 only presentation layer and mutates **only** through `internal/app.App` (the
 single mutation funnel); it never touches the store port directly. Any
@@ -133,7 +133,7 @@ import.
 
 ### The single marshaller path — DO NOT regress this
 `core.MarshalTask` / `MarshalEpic` / `MarshalRepo` / `MarshalMeta` are the
-**only** encoders of persisted values, and `core.UnmarshalTask` / `UnmarshalRepo`
+**only** encoders of persisted values, and `core.UnmarshalTask` / `UnmarshalEpic` / `UnmarshalRepo`
 / `UnmarshalMeta` the only decoders (`internal/core/marshal.go`,
 `passthrough.go`). Never call `json.Marshal`/`json.Unmarshal` on a persisted
 type anywhere else: the byte recipe is what makes an app write equal a
@@ -163,7 +163,7 @@ out-of-range values fall back to defaults with a warning that
 git-config-style edit — comments and every untouched byte survive — that is
 STRICT where reads are lenient (an unknown key is exit 2 with the vocabulary in
 candidates; a value the reader would clamp is refused before the write). Every
-other command still only reads. The shipped sections
+other command still only reads, bar `init` and `config init` writing a fresh template. The shipped sections
 are `[lanes]`, `[next]`, `[priority]`, `[ids]`, `[labels]`,
 `[archive]`, `[lint]`, `[due]`, `[revisit]`, `[review]`, `[alias]`,
 and the top-level `mode` and `default_repo` — the repo-root `config.toml` (which `furrow init` writes
@@ -171,9 +171,8 @@ and check.sh diffs byte-for-byte) is the canonical annotated copy; read it rathe
 than trusting a prose list here. The session write guard's `[session]`
 (`guard = refuse|warn|off`, `busy_seconds`) is the USER-LEVEL config's, per
 machine (repo-root `config.global.toml` is its annotated copy). **The board's own `default_repo` is the
-FALLBACK scope**, applied only when discovery (the user-level
-`~/.config/furrow/config.toml` `[[board]]` entries, scoped by repo) supplied
-none; it is a literal `owner/repo` only, because `config.toml` is committed and
+FALLBACK scope**, applied only when no `.furrow-pointer.toml` or user-level `[[board]]` entry
+reached the board (either answers the scope, even with an empty repo); it is a literal `owner/repo` only, because `config.toml` is committed and
 shared, and deriving a repo from the checkout is `internal/app`'s job.
 
 ### Schema
@@ -214,8 +213,8 @@ the worked example; a stale one is read-only for the reader who follows the link
 
 ## Conventions
 
-- Commits: gitmoji-driven — `<:gitmoji:>[(<scope>)][!] <subject>` (the leading
-  `:code:` is the type and drives release semver). Enable the hook once with
+- Commits: gitmoji-driven — the grammar is `glyph.toml`'s `template` (its
+  sigil, not the gitmoji, drives release semver). Enable the hook once with
   `git config core.hooksPath scripts/hooks`. `scripts/hooks/commit-msg` is
   glyph's own script (`glyph hook install --print commit-msg`; regenerate, never
   hand-edit): it runs `glyph lint --stdin` (the checker CI runs over the range),
@@ -241,9 +240,9 @@ the worked example; a stale one is read-only for the reader who follows the link
   [`scripts/check-docs-vocab.sh`](scripts/check-docs-vocab.sh): **add a member
   to a closed vocabulary (a command, a `[section]`, a revisit signal, a `-q`
   qualifier) and the doc regions its claims table names must enumerate it, or
-  CI fails** — the vocabularies come from the registries via the hidden
+  CI fails** — the vocabularies come from the registries via
   `furrow vocab`, never a second hand-kept list.
-- The READMEs' command table is **generated** from the cobra tree (hidden
+- README's command table is **generated** from the cobra tree (hidden
   `furrow commands`, spliced by `scripts/gen-command-table.sh`, drift-checked by
   check.sh/CI): edit `Short`/flag definitions in `internal/cli`, rerun the
   script, commit both — never hand-edit between the `commands:begin/end` markers.
@@ -253,7 +252,7 @@ the worked example; a stale one is read-only for the reader who follows the link
 
 - clig.dev — CLI design guidelines (reviewed 2026-06-25)
 - gitmoji.dev; glyph (gitmoji-driven lint/semver/notes) (reviewed 2026-07-20)
-- GoReleaser brews/nix (reviewed 2026-06-25)
+- GoReleaser homebrew_casks/nix (reviewed 2026-06-25)
 
 ## Multi-session work policy
 

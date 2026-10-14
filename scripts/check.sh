@@ -8,7 +8,7 @@
 # green CI: go-bite (does each new test fail against the pre-PR source?), the
 # PR-title half of commit-lint and repo-policy have no local pass, and a linter
 # that is not installed is skipped with a note, not failed — read the "skipped"
-# lines. Use GOTOOLCHAIN=local on a Go 1.25+ host.
+# lines. Use GOTOOLCHAIN=local on a Go 1.26+ host.
 set -eu
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=local
