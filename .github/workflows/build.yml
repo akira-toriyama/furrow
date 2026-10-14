@@ -91,6 +91,9 @@ jobs:
       - name: release-config invariants guard
         run: sh scripts/check-release-invariants.sh
 
+      - name: docs word-budget guard
+        run: sh scripts/check-docs-budget.sh
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: 'stable'

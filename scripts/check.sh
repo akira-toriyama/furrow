@@ -133,6 +133,9 @@ sh scripts/check-version-lockstep.sh
 echo "→ release-config invariants guard"
 sh scripts/check-release-invariants.sh
 
+echo "→ docs word-budget guard"
+sh scripts/check-docs-budget.sh
+
 # The workflow/TOML linters CI runs as separate gates (actionlint.yml, taplo.yml,
 # zizmor.yml — each a thin caller of the hub reusable). Run when installed, with
 # the reusables' own flags; skipped with a note otherwise.

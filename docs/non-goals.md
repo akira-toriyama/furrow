@@ -72,7 +72,7 @@ Pushing the pull-read to a schedule is the OS's job — see
 [scheduling.md](scheduling.md), Recipe 5.
 
 ### No recurrence on a CLOCK
-A task **can** recur (`--repeat`, board layout v10), but only a `furrow done`
+A task **can** recur (`--repeat`, layout v10), but only a `furrow done`
 ever makes it happen: the close that settles one occurrence writes the next and
 hands the rule on with it. Nothing
 generates a task while furrow is not running.
@@ -90,7 +90,7 @@ NEVER piles up (there is only ever one open occurrence). The next-due rule is
 `furrow done --help` and README's `done` [command note](../README.md#command-notes).
 
 ### No stored offset, no cascade
-A box can carry a calendar day (`epic --anchor`, board layout v11) and a task's
+A box can carry a calendar day (`epic --anchor`, layout v11) and a task's
 due can **follow** it (`set --anchor <epic>`); the reschedule is README's `epic`
 [command note](../README.md#command-notes). That is the whole of the schedule model. A due stays one absolute instant; no
 task stores "D-14" and no read recomputes a date from an offset; nothing
