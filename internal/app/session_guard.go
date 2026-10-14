@@ -44,6 +44,11 @@ import (
 // the idle warning (the clash still says the occupant is working); `off`
 // leaves Sessions nil at Open, so nothing here runs. The busy window is its
 // `busy_seconds`.
+//
+// A refusal leaves every file untouched: each write path guards before its
+// first write — before Save, before Attach's asset write, before fn in the
+// epic funnel, and over the whole batch before moveMany's per-id loop
+// (TestSessionGuardRefusalLeavesEveryFileUntouched).
 
 // SessionRef identifies THIS process's session for the guard: the registry
 // entry with the same PID, or failing that the same non-empty ID.

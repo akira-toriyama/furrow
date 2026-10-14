@@ -78,14 +78,14 @@ same `--json`/`--ndjson` contract an agent does.
 | `internal/store/fsstore` | The filesystem adapter behind `core.Store`: atomic writes, lazy body load, random id generation. |
 | `internal/store/memstore` | In-memory `core.Store` twin for tests (a normal package, not a test helper). |
 | `internal/gitrepo` | git subprocess adapter behind `sync`, `doctor`'s freshness probe and autocommit (command assembly + error classification). Driven only through `internal/app`. |
-| `internal/claudecode` | Adapter over Claude Code's **private** session registry (`~/.claude/sessions/<pid>.json`; the transcript's mtime as activity, its last message record as the turn state): implements the `core.SessionRegistry` port for the session write guard. The ONE place that knows the format, and best-effort by contract (a dead pid is dropped, an unparsable entry skipped and named for `doctor`). |
+| `internal/claudecode` | Adapter over Claude Code's **private** session registry, implementing `core.SessionRegistry` for the session write guard. The ONE place that knows the format, best-effort by contract; its package doc records both. |
 | `internal/core` | Pure domain: the entity structs, the `Marshal*`/`Unmarshal*` single path (incl. the unknown-key passthrough), the `Store`/`Clock`/`SessionRegistry` ports, `Validate`, the two-sided version gate, and in-memory index ops. |
 | `internal/schema` | The four JSON Schemas as Go constants; emitted by `furrow schema [task\|meta\|repo\|epic]`. |
 | `internal/migrate` | Pure `Task.md` parser behind `furrow migrate` (dry-run by default; LOUD warnings for the unmappable). |
-| `internal/recur` | Recurrence, a leaf beside `query`: the short `--repeat` spelling to one RFC 5545 RRULE line, a stored rule to its next occurrence. The only importer of the RRULE library and the only package that knows the grammar; `internal/app` owns WHEN a rule advances (a close). The five library traps it contains (an exhausted rule is a zero time with no error, day-of-month skips per RFC 5545 §3.3.10, DTSTART dropped and rebuilt, an off-lattice anchor never emitted, the local-midnight day grid) are its functions' doc comments. |
-| `internal/query` | Pure parser (stdlib only) for the `-q` typed-query DSL, producing an AST. It knows the GRAMMAR, not furrow's fields; `internal/app`'s `compileQuery` binds each term to a task predicate against the index, the `Clock` and the store's bodies (loaded on demand). One compiled predicate serves every filtering read. |
-| `internal/gittest` | Test-only: `Isolate()` neutralizes global/system git config (and background maintenance) at the process-env level from `TestMain`, plus the shared `Main`/`MainIsolated` (TestMain bodies) and `GitOrSkip`/`RunGit`. Imported only by `_test.go` files. |
-| `internal/testutil` | Test-only, like `gittest`: the user-level config under an isolated config home (`ConfigHome`, `UserConfig`, `UserConfigIn`) and the `[[board]]` table it is built from (`BoardEntry`). Imports nothing of furrow's own, so any package's `_test.go` files may use it. |
+| `internal/recur` | Recurrence, a leaf beside `query`: the short `--repeat` spelling to one RFC 5545 RRULE line, a stored rule to its next occurrence. The only importer of the RRULE library and the only package that knows the grammar; `internal/app` owns WHEN a rule advances (a close). The library traps it contains are the doc comments on `Next`, `Skips`, `refuseDtstart`, `OffLattice` and `naked`. |
+| `internal/query` | Pure parser (stdlib only) for the `-q` typed-query DSL, producing an AST. It knows the GRAMMAR, not furrow's fields; `internal/app`'s `compileQuery` binds it to the one task predicate every filtering read uses. |
+| `internal/gittest` | Test-only: isolates real-git tests from ambient git config at the process-env level, from `TestMain`. Imported only by `_test.go` files. |
+| `internal/testutil` | Test-only, like `gittest`: the user-level config fixture under an isolated config home. Imports nothing of furrow's own, so any package's `_test.go` files may use it. |
 | `internal/version` | Build version, default `"dev"`, overridden via `-ldflags`. |
 
 ---
@@ -93,16 +93,13 @@ same `--json`/`--ndjson` contract an agent does.
 ## The purity rule
 
 `internal/core` is the spine, and it is **pure**: it imports only the Go
-standard library (e.g. `encoding/json`, `sort`, `time`, `fmt`, `errors`, `regexp`,
-`strings`, `reflect` — the passthrough asks json's own field matcher).
-It must **not** import:
+standard library. It must **not** import:
 
 - `cobra` (a presentation concern), or
 - `os` or `path/filepath` (filesystem access is an adapter concern).
 
-Filesystem access lives in `internal/store/fsstore`, presentation in
-`internal/cli`; the domain reaches the outside world only through interfaces it
-declares itself (the doc comment atop `internal/core/task.go` says so in-code).
+The domain reaches the outside world only through interfaces it declares itself;
+the doc comment atop `internal/core/task.go` states the rule in-code.
 
 ### Ports live IN core
 
@@ -110,25 +107,16 @@ The seams between the pure core and the outside world are interfaces declared in
 [`internal/core/ports.go`](../internal/core/ports.go):
 
 - **`Store`** — persists the shards and bodies, owning *all* path construction
-  and *all* atomicity. The method set is the interface in
-  [`internal/core/ports.go`](../internal/core/ports.go) — read it there. Five methods carry an invariant: **`LoadMeta`**
-  returns `meta.json` whole (version + the passthrough's parked keys) and
-  **`BoardVersion`** projects the one field, ungated, so `furrow board` can
-  diagnose a board nothing else can open; **`Writable`** is the side-effect-free
-  predicate behind the write gate, so reporters (`board`, `lint`, `archive`)
-  ask it instead of re-deriving the rule; **`SetBoardVersion`** is the one
-  deliberate raiser (`furrow upgrade` only) and READS the existing `meta.json`
-  before raising it, so an upgrade cannot eat forward-compatible keys; and
-  **`Save` canonicalizes in both directions** — the caller's `*core.Index` is
-  normalized in place, which is why the app hands back a just-saved task
-  straight out of the index.
+  and *all* atomicity. The method set and each method's invariant (`Save`
+  canonicalizing the caller's index in place, the ungated `BoardVersion`, the
+  one raiser `SetBoardVersion`) are the doc comments in
+  [`internal/core/ports.go`](../internal/core/ports.go) — read them there.
 - **`Clock`** — supplies `Now()`; injected so tests are deterministic
   (`core.SystemClock()` in production).
-- **`SessionRegistry`** — `Sessions()`, the live sessions of an AI coding
-  harness on this machine (`core.Session`: pid, id, name, cwd, started, last
-  active, `TurnEnded`). The session write guard's eyes; `internal/claudecode` implements it
-  for Claude Code, and the decision itself (`core.SessionClashes`) stays pure —
-  it takes a `repoOf(cwd)` function so core never touches git.
+- **`SessionRegistry`** — `Sessions()`, the live sessions (`core.Session`) of an
+  AI coding harness on this machine: the session write guard's eyes.
+  `internal/claudecode` implements it, and the decision (`core.SessionClashes`)
+  stays pure — it takes a `repoOf(cwd)` function so core never touches git.
 
 Both adapters carry `var _ core.Store = (*Store)(nil)`; `cli` never imports a store
 adapter; `app` also imports `fsstore` to build its stores and for `WriteFileAtomic`. `internal/app` widens it slightly as
@@ -147,108 +135,73 @@ implements.
 
 The serializers in
 [`internal/core/marshal.go`](../internal/core/marshal.go) are the **one and only**
-paths that serialize task metadata to bytes. Persistence goes per shard:
-`core.MarshalTask(*Task) ([]byte, error)` writes one `tasks/<id>.json`, and
-`core.MarshalMeta(...) ([]byte, error)` writes `meta.json` — the latter only from
-`Store.SetBoardVersion` (i.e. `furrow upgrade`), the fresh-store stamp and
-`Store.PruneMetaExtras` (`furrow tidy --unknown-keys`), never
-on the ordinary write path (see the version gate). Every writer —
-`fsstore.Save`, and `migrate` — goes through them; the index has no serialized
-form (its normal form is what `core.Canonicalize` enforces in memory). No other
-code calls `json.Marshal` on a `Task`, `Index`, or the meta object.
+paths that serialize a persisted value to bytes: `core.MarshalTask` writes one
+`tasks/<id>.json` (likewise `MarshalEpic` and `MarshalRepo`), and
+`core.MarshalMeta` writes `meta.json` — only from `Store.SetBoardVersion` (i.e.
+`furrow upgrade`), the fresh-store stamp and `Store.PruneMetaExtras`
+(`furrow tidy --unknown-keys`), never on the ordinary write path (see the
+version gate). The index has no serialized form (its normal form is what
+`core.Canonicalize` enforces in memory). No other code calls `json.Marshal` on a
+persisted type.
 
-Why one path per file: the byte layout of each shard is a contract. One path
-means **bytes written by `furrow` equal bytes a human or Claude would
+Why one path: **bytes written by `furrow` equal bytes a human or Claude would
 hand-edit**, so re-saving an untouched task produces zero git churn.
 
 ### The determinism contract
 
-Each serializer normalizes (`canonicalizeTask` and friends) and then encodes
-via the one encoder, `encodeCanonicalWithExtras` — the recipe is identical for
-`MarshalTask`, `MarshalEpic`, `MarshalRepo`, and `MarshalMeta`. The contract
-(documented in the `MarshalTask` doc comment and exercised by the per-shard
-goldens under [`internal/core/testdata/`](../internal/core/testdata/)):
-
-- **Key order = struct field order** (reordering fields changes every diff: a
-  schema bump and a golden update, never casually).
-- **2-space indent**, **`SetEscapeHTML(false)`** (CJK and `< > &` survive; the
-  task golden proves it), **trailing newline**.
-- **`[]`, never `null`** for the slice fields; `Labels`/`Deps`/`Repos` are
-  sorted sets, `Refs`/`Checklist` keep user order.
-- **Stable sort: lane-rank → priority → id**, lane rank from `[lanes].order`,
-  unknown lanes last (and flagged by lint).
-- **UTC, whole-second RFC3339 timestamps**; `Closed` is `null` while open.
-
-`Unmarshal` is the inverse; a parse failure is a *validation* error, not an
+`MarshalTask`, `MarshalEpic` and `MarshalRepo` normalize (`canonicalizeTask` and
+friends), and every `Marshal*` encodes via the one encoder,
+`encodeCanonicalWithExtras`. The byte recipe is the
+`MarshalTask` doc comment, the set-vs-sequence slices are `canonicalizeTask`'s,
+and the lane → priority → id order is `core.TaskOrder`'s; the per-shard goldens
+under [`internal/core/testdata/`](../internal/core/testdata/) exercise it.
+Reordering struct fields changes every diff: a schema bump and a golden update,
+never casually. A parse failure in `Unmarshal*` is a *validation* error, not an
 internal fault.
 
 ### Unknown-key passthrough (the other half of the version gate)
 
 [`internal/core/passthrough.go`](../internal/core/passthrough.go) makes the
-round-trip **lossless**: `core.UnmarshalTask` / `UnmarshalEpic` / `UnmarshalRepo` / `UnmarshalMeta`
-park every **top-level** key the binary does not know in an unexported `extras`
-field, and the matching `Marshal*` re-emit them sorted, after the known keys.
-Why: the version gate below fires only when someone **bumps**; a field added
-without a bump leaves `meta.json` unchanged, so an older binary drops the key
-(json's lenient unmarshal) and writes the loss back on its next save — one
-ordinary write, one destroyed field, no error. **The gate stops a bumped layout
-from being misread; the passthrough stops an unbumped one from being
-destroyed.** They are not substitutes: preserved is not honoured (an old binary
-carries a future `"blocked": true` and still hands the task out in `next`), so
-`lint` warns `unknown-shard-key` over all four written file kinds, and the rule
-"bump on a shape change" still stands (`TestShardFieldsGolden`, below).
-
-The two rules that make it safe, with the reproduced corruptions behind them,
-are the file's doc comment and stay there: "known?" is answered with
-`strings.EqualFold` — json's own matcher; a case-sensitive set re-emits a
-`BODY` twin, a `ToLower` set both wedges a task (U+017F) and destroys its id
-(U+0130) — and **`Task` must never grow a `MarshalJSON` method** (the CLI's
-views embed it; a promoted method would silently drop every sibling field).
-The byte recipe is untouched: a shard with no extras marshals byte-identically
-to what furrow always wrote. Limits, none papered over: top-level only
+round-trip **lossless**: the `Unmarshal*` decoders park every **top-level** key
+the binary does not know in an unexported `extras` field, and the matching
+`Marshal*` re-emit them sorted, after the known keys. The file's header says
+why a field added without a bump needs it, and its doc comments keep the two
+rules behind reproduced corruptions: "known?" is `strings.EqualFold`
+(`isKnown`), and **`Task` must never grow a `MarshalJSON` method**
+(`encodeCanonicalWithExtras`). **The gate stops a bumped layout from being
+misread; the passthrough stops an unbumped one from being destroyed.**
+Preserved is not honoured, so `lint` warns `unknown-shard-key` over all four
+written file kinds, and "bump on a shape change" still stands
+(`TestShardFieldsGolden`, below). Limits: top-level only
 (`$defs.checklistItem` stays `additionalProperties: false`); not retroactive
 (a shared board is safe only once EVERY writer, pinned CI callers included, has
-passthrough); position churn across vintages (new shard fields go at the END of
-the struct).
+passthrough); new shard fields go at the END of the struct, or key order churns
+against an old binary's re-emitted extras.
 
 ### How the invariant is guarded
 
 - **Golden round-trip tests.** `internal/core`'s shard goldens freeze each shard
   marshaller's bytes, and write → read → write must stay byte-identical.
 - **Schema drift test.** `furrow schema [task|meta|repo|epic]` prints
-  `internal/schema.TaskV2` / `MetaV2` / `RepoV1` / `EpicV2` (JSON Schema draft
-  2020-12); `docs/schema/furrow.task.v2.json`, `furrow.meta.v2.json`,
-  `furrow.repo.v1.json`, and `furrow.epic.v2.json` are
-  committed copies of the same bytes, and CI diffs all four so they cannot drift.
+  `internal/schema`'s four schemas; [`docs/schema/`](schema/) holds committed
+  copies of the same bytes, and CI diffs all four.
 - **Struct-fingerprint golden.** `TestShardFieldsGolden`
-  (`internal/core/schema_fields_test.go`, frozen in
-  `testdata/shard-fields.golden`) records every persisted type's json keys **in
-  struct order**, plus the layout version they belong to. Change the shape of a
-  shard and it fails, telling you to bump `core.SchemaVersion` — a flag day —
-  unless no query, sort, filter, or lane decision reads the new field — a class
-  that has never had a member, so the default answer is BUMP. Accept a new
-  shape deliberately, with
-  `go test ./internal/core -run TestShardFieldsGolden -update-fields`. This is the
-  teeth on a rule that otherwise fails **silently**: add a field, forget the bump,
-  and every test on a fresh store still passes.
+  (`internal/core/schema_fields_test.go`) fails on any change to a persisted
+  type's json keys or their order, naming the version to bump; its doc comment
+  says why the default answer is BUMP. Accept a deliberate shape with
+  `-update-fields`.
 - **Frozen board.** `TestFrozenBoardRoundTripsByteIdentical`
-  (`internal/store/fsstore/testdata/frozen-board/`) is the byte-level twin and
-  the only fixture **the code under test did not write**: Copy → `Load` →
-  `Save` + `SaveRepo` + `SaveEpic` + `SetBoardVersion` → every file byte-identical, same file
-  set, **untouched mtimes**. It shows the *damage*, not the diff — a new
-  non-`omitempty` field as `+ "sprint": ""` in **every** shard, a renamed key
-  re-emitted after the known ones by the passthrough — and pins `meta.json`'s
-  bytes and where the extras splice lands. `-update-board` rewrites a committed
-  board, putting the flag-day decision in the diff.
+  (`internal/store/fsstore/frozen_board_test.go`) round-trips a committed board
+  **the code under test did not write** through each file kind's writer: same
+  file set, every byte and mtime untouched. Its header lists what only it
+  catches; `-update-board` rewrites the board, putting the flag-day decision in
+  the diff.
 - **Single-path grep guard.** `scripts/check-marshal-singlepath.sh` fails on a
-  stray `encoding/json` call on a persisted type outside `core`'s serializers —
-  **decoders too**: a raw `json.Unmarshal` into a `Task` skips the passthrough,
-  so the next write destroys the shard's unknown keys.
-- **Schema write guard.** `scripts/check-schema-write-guard.sh` greps the other
-  single path: `core.SchemaVersion` may be named only in `internal/core/*`, the
-  two stores, `internal/app/{upgrade,schema_state,board,lint}.go`, `cmd_board.go`,
-  `schema.go` and tests. The regression it guards is one line and fails
-  **silently** (every test on a fresh store still passes) — see the outage below.
+  `json` encode or decode call outside the files its header sanctions —
+  **decoders too**, since a raw `json.Unmarshal` into a `Task` skips the passthrough.
+- **Schema write guard.** `scripts/check-schema-write-guard.sh` confines
+  `core.SchemaVersion` to the files its header lists. The regression it guards
+  fails **silently** — see the outage below.
 
 ---
 
@@ -262,67 +215,48 @@ governing idea is: `core.SchemaVersion` is the layout **this binary writes**;
 different numbers, and the board's is an **INPUT to every write, never an
 output**.
 
-- **`core.CheckSchemaVersion(v)` — the READ gate.** A board declaring a layout
-  *newer* than the binary is refused (kind **`schema-too-new`**, exit 3 — the
-  fix is the binary; `details {board_schema, binary_schema}`): a v3-only binary
-  would load a v4 shard and act as if `reviewed` did not exist. Preserving
-  (the passthrough) is not understanding, which is why this gate stays.
-- **`core.CheckWritable(v)` — the WRITE gate.** A binary writes only a board
-  declaring *exactly* its own layout. An *older* board — or shards with no
-  `meta.json` (`v == 0`) — is fully **readable** but **read-only** (kind
-  **`schema-upgrade-required`**, exit 2 — the board is stale). The exit code
-  alone says which side is stale: 3 = the binary, 2 = the board; the orient and
-  listing reads print one stderr "READ-ONLY for this binary" note
-  (`warnReadOnly`) so a session learns at `furrow brief`, not at its first
-  refused write (`board` and `doctor` stay quiet — reporting the mismatch is
-  their output).
+- **`core.CheckSchemaVersion` — the READ gate.** A board declaring a *newer*
+  layout is refused (kind **`schema-too-new`**, exit 3 — fix the binary):
+  preserving (the passthrough) is not understanding.
+- **`core.CheckWritable` — the WRITE gate.** A binary writes only a board
+  declaring *exactly* its own layout; an *older* or unstamped one is
+  **readable** but **read-only** (kind **`schema-upgrade-required`**, exit 2 —
+  the board is stale). The exit code alone says which side is stale.
 
-Both adapters enforce the read gate on `Load` and the write gate on `Save`.
-**No ordinary write raises `meta.json`'s version**; `Save` stamps it only on a
-genuinely fresh, empty store (`furrow init`). A garbled `meta.json` is an
-**error** (exit 3, kind `internal`, subject `meta`), never a fallback to the
-binary's version — that fallback once quietly *disabled* the gate.
-
-This is the fix for a real outage — the 2026-07-13 side-effect migration of
-the shared board, recorded in [`non-goals.md`](non-goals.md#no-automatic-schema-migration)
-— and `scripts/check-schema-write-guard.sh` makes the regression un-writable.
-The half the gate cannot see — a field added WITHOUT a bump — is the
+Their doc comments (`internal/core/task.go`) carry the reasoning and the
+`details`; the stderr "READ-ONLY" note on reads is `warnReadOnly`'s
+(`internal/cli/scope.go`). Both adapters enforce the read gate on `Load` and
+the write gate on `Save`. **No ordinary write raises `meta.json`'s version**:
+only a genuinely fresh, empty store is stamped, and a garbled `meta.json` is an
+error, never a fallback to the binary's version (`fsstore.Store.LoadMeta` /
+`BoardVersion` say why). This is the fix for the 2026-07-13 outage recorded in
+[`non-goals.md`](non-goals.md#no-automatic-schema-migration), and
+`scripts/check-schema-write-guard.sh` makes the regression un-writable. The
+half the gate cannot see — a field added WITHOUT a bump — is the
 passthrough's (above).
 
 ### `furrow upgrade` — the one raiser, and a flag day
 
 `App.Upgrade` ([`internal/app/upgrade.go`](../internal/app/upgrade.go)) is the
-only caller of `SetBoardVersion`. It previews unless `--yes`, raises
-`.furrow/meta.json` **and the `archive/` store's** (a board is two stores on
-disk), re-serializes every shard through `core.MarshalTask`, is idempotent on a
-current board, and refuses a board newer than the binary — there is **no
-downgrade path** (recovery is `git revert` on the board repo). Its report is
-`{from, to, changed, applied, stores}` under `--json`.
-
-It is a **flag day**: once it lands, no older furrow can write that board,
-pinned CI included, and furrow cannot see the fleet's pins — so the **ordering
-is the human's**: (1) release a furrow shipping the layout, (2) bump every
-caller's `sync-task-status.yml@vX.Y.Z` pin (the workflow installs the binary
-of the tag it is pinned to), (3) only **then** `furrow upgrade --yes` + `furrow
-sync`. `sync-task-status.yml` pre-flights `furrow board --json` and fails with
-one annotated error when `.writable != true`.
+only caller of `SetBoardVersion`; its comments, `UpgradeReport` and
+`furrow upgrade --help` carry the contract (preview unless `--yes`, both
+stores, idempotent, no downgrade). It is a **flag day** whose order furrow
+cannot enforce, because it cannot see the fleet's pins; README's
+[layout-gate section](../README.md#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)
+states that order. `sync-task-status.yml` pre-flights
+`furrow board --json` and fails with one annotated error when
+`.writable != true`.
 
 ### `board` reports; it never fails
 
-`App.Board` reads the version **ungated** (`Store.BoardVersion`) and **reports**
-the schema fields — `schema_version`, `binary_schema_version`, `schema_state`
-(`current` | `outdated` | `too-new` | `unreadable`) and `writable` — instead of
-raising: `board` is the last command that works when board and binary
-disagree, which is what makes it the CI pre-flight. `furrow lint` complements
-it with `schema-outdated` as a **warning**, because a read-only board is the
-legitimate middle of a flag day and must not red every repo's CI.
-
-The same contract makes the `git` key beside it a **state, never an error**:
-`App.boardGit` probes the enclosing repo (HEAD, whether `.furrow/` is dirty,
-ahead/behind from local knowledge only) and folds every failure into `doctor`'s
-closed vocabulary (`ok` / `not-a-repo` / `no-upstream` / `unavailable`), each
-probe independent. Dirty is scoped to `.furrow/`, so a co-located operator's
-source edit never reads as a dirty BOARD.
+`App.Board` reads the version **ungated** (`Store.BoardVersion`) and
+**reports** the schema fields (`SchemaTriple`, `internal/app/board.go`)
+instead of raising: `board` is the last command that works when board and
+binary disagree, which is what makes it the CI pre-flight. `furrow lint`
+complements it with `schema-outdated` as a **warning**, because a read-only
+board is the legitimate middle of a flag day and must not red every repo's CI.
+The same contract makes its `git` key a **state, never an error** — `BoardGit`
+and `boardGit` (same file) give the closed vocabulary and the probes.
 
 ---
 
@@ -352,75 +286,51 @@ A `.furrow/` store directory contains:
 
 ### Load and Save (shard fold / split)
 
-`fsstore.Load` folds every `tasks/*.json` shard into one in-memory
-`core.Index`, checks `meta.json`'s version against the read gate, and records
-the bytes of every shard it read (`Index.MarkSeen`). `fsstore.Save` is the
-inverse and touches **only what this index changed** — a task is rewritten when
-its bytes moved from what `Load` read (an identical file keeps its mtime), a
-shard is deleted only when `Load` met it and the index dropped it. So a no-op
-save touches no files — and a shard this index **never met** is left exactly as
-found. That
-last clause is load-bearing: the store has no lock, so two processes routinely
-sit between each other's `Load` and `Save`; the old sweep deleted every shard
-the other process had just added (ten concurrent `furrow add` left ZERO shards,
-t-msqv). What remains unguarded is a same-task race — the later `Save` wins,
-which is what `--expect-updated` reports. `memstore.Save` answers the same two
-questions per entry.
-
-`Save` *reads* `meta.json` as the write gate's input and stamps it only when
-the store is genuinely empty (`furrow init`); the index carries no version
-field a write could trust.
+`fsstore.Load` folds every `tasks/*.json` shard into one `core.Index` and
+records the bytes it read; `fsstore.Save` is the inverse and touches **only what
+this index changed**, so a no-op save touches no files and a shard this index
+never met is left exactly as found — the store has no lock, and the old sweep
+deleted a concurrent writer's new shards (t-msqv). `Save` *reads* `meta.json`
+as the write gate's input and stamps only a genuinely empty store; the index
+carries no version. The rules and their history are `fsstore.Save`'s doc
+comment (`memstore.Save` answers the same two questions per entry); the
+same-task race that remains — the later `Save` wins — is what
+`--expect-updated` reports (`internal/cli/cmd_mutate.go`).
 
 ### Atomic writes (tmp + rename)
 
-Every write goes through `atomicWrite`: a temp file (`.tmp-*`) in the
-**destination directory**, write, `fsync`, `close`, `os.Rename` over the
-target — a crash never leaves a half-written shard; a bulk change is atomic
-**per shard**, so an interrupted one leaves a coherent, re-runnable store.
-
-**A batch of bodies lands in two phases** (`SaveBodies`): every body is staged
-to its temp file first — the half that can fail — and only then are they all
-renamed over their targets, so a staging failure changes no body and leaves no
-temp. A note is not idempotent: a per-id loop that failed on the third body had
-annotated the first two while the index write never happened, and the retry
-appended the note again (t-5n2x). The app composes every body before writing
-any, so the store's one call is the last step that can refuse before the index
-save.
+Every write is a temp file in the **destination directory**, `fsync`, then
+rename over the target (`atomicWrite`): a crash never leaves a half-written
+shard, and a bulk change is atomic **per shard**. A batch of bodies lands in
+two phases — all staged, then all renamed (`SaveBodies`) — because a note is
+not idempotent (t-5n2x); the why is the `SaveBodies` port doc in
+`internal/core/ports.go`.
 
 ### Lazy body load
 
 The `Index` holds only metadata; `Task.Body` is a *relative path*, never the
-prose, which `LoadBody` reads on demand (`""` when absent). Metadata diffs per
-field, prose per task, and long markdown never collapses into an escaped JSON
-string.
+prose, which `LoadBody` reads on demand. Metadata diffs per field, prose per
+task, and long markdown never collapses into an escaped JSON string.
 
 ### Frozen, collision-free random ids
 
-`NextID` returns a **random** id: `prefix` + a Crockford-base32 suffix from
-`crypto/rand` (`[ids].width` chars, default 5, e.g. `t-k3m9p`). There is **no
-shared counter**, so two operators in separate worktrees never mint the same
-id; the app redraws on the rare in-index clash, `lint` flags a duplicate as the
-cross-branch backstop, and both stores **refuse to `Save`** an index carrying
-one (`core.CheckUniqueIDs`) — shards are keyed by id, so a save would keep one
-file and silently delete the other's. Reads stay open on such a board for
-diagnosis; a misnamed shard with a unique id is repaired, not refused. Ids are
-**frozen** (never reused or renumbered); legacy numeric ids coexist.
-
-`Load` on a missing `tasks/` returns an empty `Index`, so `add` works on day one.
+`NextID` returns a **random** id (prefix + a Crockford-base32 suffix,
+`[ids].width` chars) from **no shared counter**, so separate worktrees never
+mint the same id; both stores **refuse to `Save`** an index carrying a
+duplicate (`core.CheckUniqueIDs`, whose doc says why reads stay open). Ids are
+**frozen** (never reused or renumbered); legacy numeric ids coexist. The
+clash handling is `fsstore.NextID`'s doc comment.
 
 ### memstore
 
 `internal/store/memstore` is the in-memory `core.Store` (a normal package, not
-a test helper); its `BodyFile` returns `""`, so `$EDITOR` shell-out is
-unsupported against it, which `app` reports.
+a test helper; its `BodyFile` returns `""`, so `$EDITOR` is unavailable).
 
-**It may never promise LESS than fsstore.** fsstore serializes on write and
-parses fresh bytes on read, so canonicalization and isolation come for free; the
-twin does both explicitly (`Save`/`SaveRepo`/`SaveEpic` round-trip through the
-single `core.Marshal*`/`Unmarshal*` path; every read deep-copies out), because
-every divergence lands as a test that is green against a shape no real board
-can hold. `internal/store/memstore/parity_test.go` pins the divergences
-that shipped, against a real `fsstore`.
+**It may never promise LESS than fsstore**: every divergence lands as a test
+that is green against a shape no real board can hold. How it canonicalizes and
+isolates is `memstore.Save`'s and `memstore.Load`'s doc;
+`internal/store/memstore/parity_test.go` pins the divergences that shipped,
+against a real `fsstore`.
 
 ---
 
@@ -475,62 +385,30 @@ The invariants the funnel keeps, beyond what each verb's `--help` promises:
 
 ### The session write guard
 
-`internal/app/session_guard.go` mechanizes a rule judgment kept breaking (on
-2026-09-10 one Claude Code session ran `furrow add` into a repo where another
-was working autonomously). The guard runs in the funnel, once per write path,
-on the entity's repos BEFORE ∪ AFTER the edit (an add: after the board-scope
-union), and a refusal leaves the store untouched — it runs before `Save`,
-before the asset write in `Attach`, before `fn` in the epic funnel, and over
-the whole batch before `moveMany`'s per-id loop
-(`TestSessionGuardRefusalLeavesEveryFileUntouched`).
+`internal/app/session_guard.go` mechanizes a rule judgment kept breaking: a
+write from a Claude Code session that touches a repo an EARLIER-started
+session on this machine sits in is refused (exit 2, `session-busy`) while that
+occupant is working, and warned about (`session_warn`) while it is idle. That
+file's header is the canonical description — the repos a write is judged on,
+idle versus busy, what is deliberately unguarded, and the `[session]` modes;
+the decision itself is pure (`core.SessionClashes`), and the registry format
+is read in exactly one package (`internal/claudecode`, its package doc). What
+the funnel keeps:
 
-The decision is pure (`core.SessionClashes`): self is the registry entry with
-this process's `CLAUDE_PID` (failing that, its `CLAUDE_CODE_SESSION_ID`); an occupant is any other live session that started
-strictly EARLIER and whose cwd derives to a repo the write touches (the
-`repo = "auto"` derivation, worktree-aware). A clash is *idle* when the
-occupant's turn is known to have ENDED (`TurnEnded`: the transcript's last
-record is an assistant `end_turn` — however fresh, the closing message IS the
-last write) or when it has been silent past the user config's
-`[session].busy_seconds`; otherwise *busy*. The window is the ceiling on a
-mid-turn reading, not the signal, so a long tool call goes idle after it
-rather than refusing forever. Busy refuses (exit 2, `session-busy`,
-`details.clashes`, `details.hint` = `--draft` on an add); idle puts
-`session_warn {clashes}` in the `--json` envelope and warns on stderr. The
-user config's `[session].guard` (`config.SessionGuard`, read into
-`App.Session` by `Open`) sets the mode: `refuse` is that rule; `warn` records
-a busy clash as the warning instead (its `busy` flag kept, so the line says
-working); `off` leaves `App.Sessions` nil, so nothing below runs. First come,
-first served keeps the autonomous session safe: its own writes never clash
-with a later watcher.
-
-The stderr line is news, not noise (`app.UnheardClashes`,
-`session_warn_ledger.go`): a session that ran ~40 mutations beside one quiet
-occupant got the same line 40 times and learned to drop `^warning` — the way
-the one line that matters (the occupant came back) gets dropped too. So the
-line is printed once per Claude Code session per (occupant session, repo), and
-again only when the occupant's transcript has moved since; the envelope key
-is per write and untouched. The record is a per-user state file,
-`$XDG_STATE_HOME/furrow/session-warn.json` (default `~/.local/state/furrow/`),
-keyed by self session id (a new session has heard nothing) and occupant
-session id (never a reusable pid), pruned of dead sessions on every write and
-replaced whole on an unparsable read; where it cannot be written, one
-stand-down note says the line will repeat. Under `--json`/`--ndjson` the line
-is one `{"session_warn": {message, clashes}}` object on stderr, so a reader of
-the error envelope parses it the same way.
-
-Without `CLAUDECODE` (a human shell, CI) the guard is silently off. Three
-stand-downs, each one stderr `note: session guard: …` line and never a
-refusal: an unreadable registry
-(`doctor`: `session-registry-unreadable`, a probe `doctor` skips under
-`guard = "off"`), a self not in it, and a self whose own transcript cannot be
-found (a refusal on a guess would be a new failure, worse than the one
-prevented); an unreadable user config is a fourth note and the defaults, never
-an error. The registry format is read in exactly one package
-(`internal/claudecode`); `[session]` is the USER-LEVEL config's section
-(per-machine — the sessions it judges are this machine's, and a committed
-board config would carry one operator's `off` to every clone), with no key
-per agent: another agent is one more `core.SessionRegistry` adapter plus a
-`Self()` detection, never a config change.
+- **A refusal leaves every file untouched**: each write path guards before its
+  first write (`TestSessionGuardRefusalLeavesEveryFileUntouched`).
+- **First come, first served**: the earlier session's own writes never clash,
+  so an autonomous session is never stopped by a later watcher.
+- **Never a refusal on a guess**: outside Claude Code (no `CLAUDECODE`) the
+  guard is off, and wherever the facts cannot be read it stands down with one
+  stderr `note: session guard: …` line (`App.sessionSnapshot`; `doctor`
+  reports `session-registry-unreadable`).
+- **`[session]` is the USER-LEVEL config's section and names no agent**
+  (`config.SessionGuard`): another agent is one more `core.SessionRegistry`
+  adapter, never a config change.
+- **The stderr line is news, not noise** (`App.UnheardClashes`): once per
+  session per (occupant, repo), again only when the occupant has been active
+  since; the envelope's `session_warn` carries every clash on every write.
 
 ### CLI commands
 
@@ -549,11 +427,9 @@ command notes (the README table is generated from this tree), never a copy here:
 - `--json` emits JSON to **stdout only**; logs and errors go to stderr. `--json`
   and `--ndjson` are honored **wherever furrow emits JSON**: `jsonMode()`
   (`internal/cli/output.go`) is the single predicate, `emitObject`/`emitList`
-  the single emitters (indented, or compact one-per-line). A command whose `Use`
-  says `<id>...` (`show`, `done`, `move`, `set`) is ALWAYS an array, whatever
-  the argv length; a one-id mutation is an object; the report-shaped commands
-  (`rm`, `archive`, `tidy`, `upgrade`, `apply`) are one object; `lint` is one
-  array (`--ndjson`: one problem per line). CLI JSON uses the shards' encoding.
+  the single emitters (indented, or compact one-per-line). Which command emits
+  an array and which one object is read off its signature — the rule is
+  `furrow --help`'s. CLI JSON uses the shards' encoding.
 - **Read filters resolve through one path.** Every filtering read (`ls`, `next`,
   `revisit`, `stats`, `search`) takes the same `-l`/`-r`/`-q`/`-e` (`-s` all but
   `next`/`revisit`, `-n` all but `stats`), and the
@@ -569,21 +445,14 @@ command notes (the README table is generated from this tree), never a copy here:
   introspection read: store path, discovery source, mode/layout, scope, the
   lane vocabulary and the schema fields, without provoking an error.
 - **Non-interactive by default**: no prompts; `furrow edit` on a non-TTY prints
-  the body path instead of launching an editor. **Destructive ops preview unless `--yes`** — the one list, printed by
-  `furrow --help`: `archive`, `rm`, `epic rm`, `tidy`, `upgrade`, `migrate`, a
-  day move on `epic set --anchor`, and a `-q/-l/-r` selection on a write.
-- **Exit-code contract** (`internal/core/errors.go`): `0` ok — **including an
-  empty query result** / `1` a **specifically requested id** was not found,
-  never an empty list, or `doctor` found problems (`doctor-unhealthy`) / `2` bad-usage or validation / `3+` internal or IO, with
-  `130`/`143` (128+signal) for an interrupted run (`sync-interrupted`). On a
-  non-zero exit the CLI prints `{"error":{"kind","subject","retryable","exit",
-  "message"}}` to stderr — `kind` a closed vocabulary (`furrow vocab
-  error-kinds`), `retryable` whether re-running is the documented recovery —
-  plus `candidates` (a near-miss: an ambiguous repo short name, an unknown lane
-  or (sub)command) and `details` (`sync-conflict`'s paths and, per shard refused
-  over a field, its `fields`; the version gate's
-  `{board_schema, binary_schema}`). The contract also lives in the root
-  command's `--help`. `cmd/furrow/main.go` is literally `os.Exit(cli.Execute())`.
+  the body path instead of launching an editor. **Destructive ops preview unless
+  `--yes`** — the one list is `furrow --help`'s.
+- **Exit codes and the error envelope** are `core.Code` and `core.Error`
+  (`internal/core/errors.go`), and `furrow --help` prints both: an empty query
+  result is exit `0`, never `1`; a non-zero exit writes one `{"error":{...}}`
+  envelope to stderr, and callers branch on its `kind` (`furrow vocab
+  error-kinds`) and `retryable`, never on the message. `cmd/furrow/main.go` is
+  literally `os.Exit(cli.Execute())`.
 
 ---
 
@@ -620,67 +489,46 @@ central boards as `[[board]]` entries (`path`, `scopes`, `repo`, `label`,
 [session write guard](#the-session-write-guard) (`guard`, `busy_seconds`;
 `config.LoadGlobal` returns both as one `config.Global`, clamped per key);
 its shape and setup are README's ([Central
-board](../README.md#user-level-config-no-per-repo-file)). What lives here is
+board](../README.md#user-level-config-no-per-repo-file)), its per-key reasoning
+the repo-root [`config.global.toml`](../config.global.toml). What lives here is
 the resolution, split to honour the purity rule:
 
-- **`internal/config`** parses and **clamps per entry** (no `path`, or no
-  `scopes` after blanks are pruned: dropped with a warning; all dropped: "no
-  user-level board"). It never touches cwd and reads only the files it is handed.
+- **`internal/config`** parses and **clamps per entry** (the cases are
+  `config.LoadGlobal`'s doc comment). It never touches cwd and reads only the
+  files it is handed.
 - **`internal/app`** (the fs/cwd-aware side) is the last arm of `discover`
-  after `FURROW_DIR`, a local `.furrow`, and `.furrow-pointer.toml`: it resolves
-  paths, canonicalizes cwd and scopes (symlinks), and picks the board whose
-  scope is the **longest canonical prefix** of cwd; only the winner is
-  `stat`-ed, so a broken path in another scope never breaks this directory.
-  `FURROW_BOARD=<path>` replaces the file with one synthetic entry (`repo =
-  "auto"`, `auto_filter` on, one scope two levels above the store) that passes
-  the same gate — outside that scope no central board resolves, so a cwd-less
-  caller names the store with `FURROW_DIR` instead. Every configured path
-  (`FURROW_DIR`, a pointer's board, the winning `[[board]]`, `FURROW_BOARD`) must
-  pass `isStoreDir`: one holding furrow's own data (its `meta.json`, its
-  archive's, or a task shard core decodes under its own id) is a store whatever
-  sits beside it (furrow does not guess between two stores); otherwise a marked
-  `.furrow` inside is the repo-root slip unless the path is itself named
-  `.furrow` — refused, with it as the did-you-mean; otherwise a store marker of
-  its kind, or a store-to-be (an empty directory, or one holding only
-  dot-entries other than `.furrow`). The walk's own `.furrow` needs no marker —
-  its name is one.
+  after `FURROW_DIR`, a local `.furrow`, and `.furrow-pointer.toml`
+  (`resolveGlobalBoard`): the board whose scope is the **longest canonical
+  prefix** of cwd wins, and only the winner is `stat`-ed, so a broken path in
+  another scope never breaks this directory (`pickBoard`; `FURROW_BOARD` is one
+  synthetic entry, `loadGlobalBoards`). Every configured path must pass
+  `isStoreDir`, whose doc comment is the rule: furrow's own data makes a store
+  whatever sits beside it, and a repo root holding a marked `.furrow` is
+  refused with it as the did-you-mean. The walk's own `.furrow` needs no
+  marker — its name is one. The user-facing order is README's [Discovery
+  precedence](../README.md#discovery-precedence).
 
-**Scope vs store.** A `[[board]]` injects a scope repo like a pointer does
-(`repo = "auto"` derives it from the checkout); `auto_filter` decides whether
-reads filter by it (writes attach regardless). The board's own **`default_repo`**
-is the FALLBACK, applied by `app.applyBoardScope` only when discovery ran an arm
-that declares no scope at all (`FURROW_DIR`, a local `.furrow`) — the gate is the
-ARM, not an empty repo, or a committed shared file would override a nearer
-per-machine one. `"auto"` is refused there (a cwd-derived repo differs per
-checkout), and `furrow doctor` runs the same function, so its `scope_repo` can
-never disagree with the real commands.
+**Scope vs store.** A `[[board]]` injects a scope repo like a pointer does;
+`auto_filter` decides whether reads filter by it (writes attach regardless).
+The board's own **`default_repo`** is the FALLBACK, applied only when discovery
+ran an arm that declares no scope at all (`FURROW_DIR`, a local `.furrow`) —
+the gate is the ARM, not an empty repo; `app.applyBoardScope`'s doc comment
+holds why, and why `"auto"` is refused there. `furrow doctor` runs the same
+function, so its `scope_repo` can never disagree with the real commands.
 
 **`autocommit`** is per-machine on purpose (the board config syncs to every
-clone and CI): it reuses `partitionSync` — exactly what `furrow sync` commits
-by — plus the ids this command wrote, is best-effort (a commit failure never
-turns a landed mutation into a non-zero exit, which would make an agent
-double-apply), never fetches or pushes, and refuses when the enclosing git repo
-is not the board's own. It is keyed by the **store**, not the arm:
-`app.applyStoreAutoCommit` reads it off the `[[board]]` entry whose `path` is
-the opened store after every arm (the user-config winner keeps its own value;
-any other arm takes the first entry in file order naming the store, reading
-the config file alone — `FURROW_BOARD` replaces the file for scope, not for
-this). Unlike scope, the board's own `config.toml` can carry no fallback here
-(it is shared), which is why the user config is consulted for a local board at
-all; a file that cannot be read is one stderr note and autocommit off, never
-an error on a board that opened without it.
+clone and CI) and keyed by the **store**, not the arm; it commits by `furrow
+sync`'s rule, is best-effort and never fetches or pushes. The contract is
+`App.AutoCommitFlush`'s doc comment, which entry applies is
+`app.applyStoreAutoCommit`'s.
 
-**Repo derivation (`repo = "auto"`)**, in [`internal/app/gitorigin.go`](../internal/app/gitorigin.go),
-is **file reads only — no git subprocess**: find the checkout (a `.git` file's
-`gitdir:` and `commondir` are followed, so a worktree named `chord-fix-y` still
-derives `owner/chord`), take the **first `url` line of `[remote "origin"]`** and
-nothing else (never `pushurl`, a second line, or another remote — a foreign
-URL once sat there), fall back to a ghq-style path, and failing both open
-UNSCOPED with a stderr note so `add` creates drafts. The invariant: **a bare
-directory name is never written into `repos`**. `label = "auto"` is a reserved
-tombstone (warned, ignored). `furrow config init` / `config set --user` are the
-file's two writers, through `internal/app`; discovery stays silent on its inert
-path, so `lint` and `config path` are what report a half-written file.
+**Repo derivation (`repo = "auto"`)** is **file reads only — no git
+subprocess**, and its invariant is that **a bare directory name is never
+written into `repos`**; the chain (origin URL, ghq-style path, unscoped) and its
+worktree handling are [`internal/app/gitorigin.go`](../internal/app/gitorigin.go)'s.
+`furrow config init` / `config set --user` are the file's two writers, through
+`internal/app`; discovery stays silent on its inert path, so `lint` and
+`config path` are what report a half-written file.
 
 ---
 
