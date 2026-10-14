@@ -45,7 +45,8 @@ func newArchiveCmd() *cobra.Command {
 			"days ago. Without --yes it only previews what would move (the destructive-op\n" +
 			"guard from the CLI contract). A task's attached assets go with it; one that\n" +
 			"another hot body still shows (a repeat successor's, a box's) also STAYS in\n" +
-			"the hot store, and the output says so (`assets` in --json).\n\n" +
+			"the hot store, and the output says so (`assets {copied, deleted, kept}` in\n" +
+			"--json).\n\n" +
 			"A done task that a task STAYING in the hot store still depends on is not\n" +
 			"archived: the edge would dangle (lint dep-missing) and the dependent would\n" +
 			"drop out of `next`. The sweep leaves it and says so (`held` in --json, with\n" +

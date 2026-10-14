@@ -115,8 +115,11 @@ func newSyncCmd() *cobra.Command {
 		Long: "sync runs the shared-board ritual as one command, against the git\n" +
 			"repository enclosing the board:\n\n" +
 			"  1. auto-commit, scoped to the .furrow/ directory (other dirty files in the\n" +
-			"     repo are never swept in). Within .furrow/, machine-written shards\n" +
-			"     (tasks/, meta.json) are always committed; a hand-edited bodies/<id>.md\n" +
+			"     repo are never swept in). Within .furrow/, machine-written files (the\n" +
+			"     tasks/ epics/ repos/ *.json shards, meta.json, config.toml, the\n" +
+			"     board's .gitattributes / .gitignore, attach's bodies/assets/, and the\n" +
+			"     same under archive/, archived bodies included) are always committed;\n" +
+			"     a hand-edited bodies/<id>.md\n" +
 			"     is committed only when it is new or named with -b/--body — a merely\n" +
 			"     modified body is left for its author (listed in pending_bodies) so a\n" +
 			"     co-located checkout never commits another operator's WIP — except a\n" +
@@ -126,6 +129,9 @@ func newSyncCmd() *cobra.Command {
 			"     restores the old sweep for a checkout you know is yours alone. A file\n" +
 			"     furrow does not own (an editor swap, a backup ~, a stray .tmp-*) is\n" +
 			"     never committed and is disclosed in foreign_files + a stderr note.\n" +
+			"     The commit carries a \"Furrow-sync: host=… pid=… via=… dir=…\" trailer\n" +
+			"     (via = the parent-process chain), so a shared board's history says\n" +
+			"     which execution wrote it.\n" +
 			"  2. git fetch, then git rebase --autostash @{u} (onto the tracking ref, not\n" +
 			"     FETCH_HEAD, so a co-writer's concurrent fetch can't race it)\n" +
 			"  3. git push (one pull→push retry on non-fast-forward)\n\n" +

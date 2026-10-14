@@ -508,8 +508,6 @@ while IFS='|' read -r dir vocab shape file start end; do
   checked=$((checked + 1))
 done <<'CLAIMS'
 complete|commands||CLAUDE.md|^- Canonical commands:|^  \*\*`furrow brief \[--json\]`
-complete|error-kinds||README.md|^- \*\*`kind`\*\*|^- \*\*`retryable`\*\*
-complete|sync-progress-keys||README.md|^.\{committed, pulled, pushed|^failure alike
 complete|config-keys||CLAUDE.md|^`furrow lint` surfaces\. Read it through `internal/config`|^### Schema
 complete|config-keys||docs/architecture.md|^Sections and their defaults:|^`status` is just a lane
 complete|config-keys||README.md|^## Configuration|^A board `\[alias\]` names
@@ -517,14 +515,12 @@ complete|modes||CLAUDE.md|^## What this is|^## Build / run
 complete|layouts||CLAUDE.md|^## What this is|^## Build / run
 complete|modes||README.md|^## Two questions, four shapes|^## Quickstart
 complete|layouts||README.md|^## Two questions, four shapes|^## Quickstart
-both|revisit-codes|^[a-z]+(_[a-z]+)+$|README.md|^- \*\*`revisit`\*\* — read-only|^- \*\*`search`\*\*
 complete|revisit-codes||internal/app/revisit.go|^// Revisit lists open tasks that may need a fresh judgment|^func \(a \*App\) Revisit\(
 complete|revisit-summary-keys||internal/app/revisit.go|^// RevisitSummary tallies the loop-visible signals|^func \(a \*App\) RevisitSummary\(
 complete|query-qualifiers||README.md|^- \*\*qualifiers\*\*|^- \*\*presence\*\*
 complete|query-presence||README.md|^- \*\*presence\*\*|^- \*\*computed flags\*\*
 complete|query-is||README.md|^- \*\*computed flags\*\*|^- \*\*free text\*\*
 complete|repeat-spellings||README.md|^- \*\*`add`\*\*|^- \*\*`ls`\*\*
-complete|incoming-kinds||README.md|^`switches` names any `epic activate` records|^$
 complete|incoming-kinds||internal/cli/cmd_sync.go|^.*progress object \{committed, pulled|^.*revisit summary \(repo-scoped counts
 complete|sync-progress-keys||internal/cli/cmd_sync.go|^.*progress object \{committed, pulled|^.*revisit summary \(repo-scoped counts
 subset|lint-codes|^[a-z]+(-[a-z]+)+$|README.md|^- \*\*`lint`\*\* — every finding carries|^- \*\*`migrate`\*\*

@@ -29,7 +29,8 @@ func newMigrateCmd() *cobra.Command {
 			"the scope's single active box exactly as a bare `furrow add` does, and\n" +
 			"`-e ''` imports unfiled on purpose. On a board that HAS boxes, an import\n" +
 			"that lands open tasks under none is reported as a warning here rather than\n" +
-			"surfacing later as one `furrow lint` epic-required error per task.",
+			"surfacing later as one `furrow lint` epic-required error per task. -e resolves\n" +
+			"before anything is written, so the preview fails exactly as --yes would.",
 		Example: "  furrow migrate Task.md                       # dry-run preview\n" +
 			"  furrow migrate Task.md -e \"current work\" --yes\n" +
 			"  furrow migrate Task.md -l imported -e e-k3m9p --yes",
