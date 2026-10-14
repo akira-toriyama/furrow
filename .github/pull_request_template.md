@@ -2,13 +2,13 @@
 
 ## What & why
 
-<!-- The change in one or two sentences, and the reason. Link the task id this
-     closes, if any. -->
+<!-- The change in one or two sentences, and the reason. If it moves a task,
+     add a `SetStatus-task: <body URL or id> [<lane>]` line. -->
 
 ## Verification
 
 - `sh scripts/check.sh` green (build, vet, golangci, tests, drift guards, smoke).
-- Docs updated in this PR (README + docs/ tier carry the same facts).
+- Docs updated in this PR (each fact stated once — the rest point at it).
 
 ## Notes
 
