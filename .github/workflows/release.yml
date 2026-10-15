@@ -55,7 +55,7 @@ jobs:
       # the runner); without it the release fails when it tries to catalog each
       # archive. download-syft only fetches the binary (no cataloging here).
       - name: install syft (SBOM generator)
-        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
 
       # The pin is a CONCRETE glyph release tag — the action verifies the
       # binary against that release's checksums + build provenance. Keep both
