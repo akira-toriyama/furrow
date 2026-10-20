@@ -137,19 +137,27 @@ func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Pr
 	if len(epics) == 0 {
 		return out
 	}
-	openRepos := map[string]bool{}
+	// Keyed folded like activeByRepo — the lookup below joins the two maps, and
+	// an unfolded key here left a box spelled `Foo-Bar/baz` invisible to open
+	// work spelled the same way (t-5h94). The value is the spelling to report:
+	// the smallest the open tasks carry, so a repo written two ways is ONE idle
+	// repo, named as its tasks name it and not as the fold does.
+	openRepos := map[string]string{}
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
 		if terminal[t.Status] {
 			continue
 		}
 		for _, r := range t.Repos {
-			openRepos[r] = true
+			k := strings.ToLower(r)
+			if cur, ok := openRepos[k]; !ok || r < cur {
+				openRepos[k] = r
+			}
 		}
 	}
 	var idle []string
-	for repo := range openRepos {
-		if len(activeByRepo[repo]) == 0 {
+	for k, repo := range openRepos {
+		if len(activeByRepo[k]) == 0 {
 			idle = append(idle, repo)
 		}
 	}
