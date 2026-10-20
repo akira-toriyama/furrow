@@ -6,7 +6,9 @@ import (
 )
 
 // Two active boxes naming one repo in two spellings are one repo twice:
-// the slot arithmetic folds case, as every repo match does.
+// the slot arithmetic folds case, as every repo match does, and the problem
+// names the repo in the smallest spelling the boxes carry, not the fold's.
+// One box listing the same repo in two spellings holds ONE slot.
 func TestActiveEpicProblemsFoldRepoCase(t *testing.T) {
 	epics := []Epic{
 		{ID: "e-upper", Title: "u", Active: true, Repos: []string{"O/R"}},
@@ -15,12 +17,19 @@ func TestActiveEpicProblemsFoldRepoCase(t *testing.T) {
 	ps := activeEpicProblems(&Index{}, epics, map[string]bool{})
 	found := false
 	for _, p := range ps {
-		if p.Code == "epic-multi-active" && p.ID == "o/r" {
+		if p.Code == "epic-multi-active" && p.ID == "O/R" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("want epic-multi-active for o/r, got %+v", ps)
+		t.Errorf("want epic-multi-active with id O/R, got %+v", ps)
+	}
+
+	one := []Epic{{ID: "e-both", Title: "b", Active: true, Repos: []string{"O/R", "o/r"}}}
+	for _, p := range activeEpicProblems(&Index{}, one, map[string]bool{}) {
+		if p.Code == "epic-multi-active" {
+			t.Errorf("one box naming O/R and o/r: got %+v", p)
+		}
 	}
 }
 

@@ -103,8 +103,23 @@ func epicMembershipProblems(idx *Index, byID map[string]*Epic, terminal map[stri
 func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Problem {
 	var out []Problem
 
-	// repo (folded: a repo name compares case-insensitively, as every match
-	// of one does) -> the open+active epics naming it.
+	// A repo name compares case-insensitively, as every match of one does
+	// (anyRepoMatch), so both maps below are keyed by fold(r). #489 folded the
+	// slot map alone and the idle lookup joined it by the task's raw spelling,
+	// so a box spelled Foo-Bar/baz covered no open work spelled the same way
+	// (t-5h94). A problem names the repo in the smallest spelling the live
+	// entities carry, never the fold's: the fold is a key, not a name.
+	spelling := map[string]string{} // fold(r) -> the spelling to report
+	fold := func(r string) string {
+		k := strings.ToLower(r)
+		if cur, ok := spelling[k]; !ok || r < cur {
+			spelling[k] = r
+		}
+		return k
+	}
+
+	// fold(repo) -> the open+active epics naming it, each once: a box listing
+	// one repo in two spellings holds one slot, not two.
 	activeByRepo := map[string][]string{}
 	for i := range epics {
 		e := &epics[i]
@@ -112,14 +127,18 @@ func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Pr
 			continue // a closed epic holds no slot, however its flag was left
 		}
 		for _, r := range e.Repos {
-			activeByRepo[strings.ToLower(r)] = append(activeByRepo[strings.ToLower(r)], e.ID)
+			k := fold(r)
+			if ids := activeByRepo[k]; len(ids) == 0 || ids[len(ids)-1] != e.ID {
+				activeByRepo[k] = append(ids, e.ID)
+			}
 		}
 	}
-	for repo, ids := range activeByRepo {
+	for k, ids := range activeByRepo {
 		if len(ids) < 2 {
 			continue
 		}
 		sort.Strings(ids)
+		repo := spelling[k]
 		// Only reachable by a merge: EpicActivate refuses the second one — the
 		// git-merge backstop against a state the write path cannot produce.
 		out = append(out, Problem{SevError, "epic-multi-active", repo, fmt.Sprintf(
@@ -137,28 +156,20 @@ func activeEpicProblems(idx *Index, epics []Epic, terminal map[string]bool) []Pr
 	if len(epics) == 0 {
 		return out
 	}
-	// Keyed folded like activeByRepo — the lookup below joins the two maps, and
-	// an unfolded key here left a box spelled `Foo-Bar/baz` invisible to open
-	// work spelled the same way (t-5h94). The value is the spelling to report:
-	// the smallest the open tasks carry, so a repo written two ways is ONE idle
-	// repo, named as its tasks name it and not as the fold does.
-	openRepos := map[string]string{}
+	openRepos := map[string]bool{}
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
 		if terminal[t.Status] {
 			continue
 		}
 		for _, r := range t.Repos {
-			k := strings.ToLower(r)
-			if cur, ok := openRepos[k]; !ok || r < cur {
-				openRepos[k] = r
-			}
+			openRepos[fold(r)] = true
 		}
 	}
 	var idle []string
-	for k, repo := range openRepos {
+	for k := range openRepos {
 		if len(activeByRepo[k]) == 0 {
-			idle = append(idle, repo)
+			idle = append(idle, spelling[k])
 		}
 	}
 	sort.Strings(idle)
