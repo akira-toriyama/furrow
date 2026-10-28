@@ -188,6 +188,16 @@ func humanTime(t time.Time) string {
 	return t.Local().Format(core.TimeLayout)
 }
 
+// switchStampHuman renders an `epic activate` record's stamp (UTC with no zone
+// suffix, app.SwitchStampTime) through humanTime like any other "when did this
+// happen". A stamp that is no real time is shown as written.
+func switchStampHuman(at string) string {
+	if t, ok := app.SwitchStampTime(at); ok {
+		return humanTime(t)
+	}
+	return at
+}
+
 // calendarTime renders a CALENDAR-BOUND stamp — a due, a repeat anchor — in the
 // BOARD's calendar (app.Calendar), with the same explicit offset humanTime
 // carries, which is what makes the two visibly different calendars rather than

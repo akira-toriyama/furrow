@@ -493,9 +493,11 @@ func newEpicDoneCmd() *cobra.Command {
 			"It does SUGGEST where to return: among the open boxes sharing a repo of\n" +
 			"this one that no other active epic holds, the output names the one with\n" +
 			"the newest activation record (`previous: <id> … — furrow epic activate\n" +
-			"<id>`; a `previous` key in --json, null = no suggestion). Another repo's\n" +
-			"box is never suggested. A box with no repo gets unknown, and one whose\n" +
-			"repos all still have an active epic gets none: that focus never left.\n" +
+			"<id>`, its time in local time with the offset; a `previous` key in\n" +
+			"--json, {id, title, at} with at the UTC stamp as recorded, null = no\n" +
+			"suggestion). Another repo's box is never suggested. A box with no repo\n" +
+			"gets unknown, and one whose repos all still have an active epic gets\n" +
+			"none: that focus never left.\n" +
 			"The answer is COMPUTED fresh from the activation log `epic activate`\n" +
 			"already writes into each box's body — furrow stores no \"previous\"\n" +
 			"pointer that could go stale, and when no record decides it, it says\n" +
@@ -586,7 +588,7 @@ func emitWithPreviousSuggest(a *app.App, before, after *core.Epic, extra map[str
 	}
 	switch {
 	case prev != nil:
-		fmt.Fprintf(out, "previous: %s %q (activated %s) — return with `furrow epic activate %s`\n", prev.ID, prev.Title, prev.At, prev.ID)
+		fmt.Fprintf(out, "previous: %s %q (activated %s) — return with `furrow epic activate %s`\n", prev.ID, prev.Title, switchStampHuman(prev.At), prev.ID)
 	case len(held) > 0:
 		parts := make([]string, 0, len(held))
 		for repo, id := range held {

@@ -4,7 +4,48 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
+
+// The previous line shows the UTC activation stamp in local time with its
+// offset (humanTime), while --json keeps the stamp as recorded: printed bare,
+// a JST operator's 17:51 switch read as 08:51 (t-8gmb).
+func TestEpicPreviousLineShowsLocalTime(t *testing.T) {
+	pinLocalTZ(t, 9*3600)
+	initStore(t)
+	ea := addEpic(t, "box a", "-r", "me/r1")
+	eb := addEpic(t, "box b", "-r", "me/r1")
+	mustRun(t, "epic", "activate", ea)
+	mustRun(t, "epic", "deactivate", ea)
+	mustRun(t, "epic", "activate", eb)
+
+	jgot, code := run(t, "--json", "epic", "deactivate", eb)
+	if code != 0 {
+		t.Fatalf("epic deactivate --json exit = %d:\n%s", code, jgot)
+	}
+	var env struct {
+		Previous *struct {
+			At string `json:"at"`
+		} `json:"previous"`
+	}
+	if err := json.Unmarshal([]byte(jgot), &env); err != nil || env.Previous == nil {
+		t.Fatalf("parse previous: %v\n%s", err, jgot)
+	}
+	stamp, err := time.ParseInLocation("2006-01-02 15:04", env.Previous.At, time.UTC)
+	if err != nil {
+		t.Fatalf("--json at = %q, want the recorded UTC stamp (YYYY-MM-DD HH:MM)", env.Previous.At)
+	}
+
+	mustRun(t, "epic", "activate", eb)
+	got, code := run(t, "epic", "deactivate", eb)
+	if code != 0 {
+		t.Fatalf("epic deactivate exit = %d:\n%s", code, got)
+	}
+	want := "(activated " + stamp.In(time.FixedZone("TST", 9*3600)).Format("2006-01-02 15:04 -07:00") + ")"
+	if !strings.Contains(got, want) {
+		t.Errorf("previous line should carry %q (local time with offset):\n%s", want, got)
+	}
+}
 
 // epic done/deactivate suggest the previous active box: one human line and a
 // `previous` key in --json — computed from the activation log, never executed.

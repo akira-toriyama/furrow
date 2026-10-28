@@ -8,13 +8,15 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
 )
 
 // EpicSwitch is one published activation record: the box, its title (resolved
 // at sync time so the summary is readable without a second command), and the
-// timestamp/reason exactly as recordSwitch wrote them.
+// timestamp/reason exactly as recordSwitch wrote them (At in UTC, the
+// switchStampLayout spelling).
 type EpicSwitch struct {
 	Epic   string `json:"epic"`
 	Title  string `json:"title"`
@@ -26,6 +28,21 @@ type EpicSwitch struct {
 // optionally " — <reason>". Anchored both ends so prose that merely mentions
 // activation never counts.
 var switchLineRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) activated(?: — (.*))?$`)
+
+// switchStampLayout is recordSwitch's stamp: minute precision, in UTC, with no
+// zone suffix. UTC on every writer is what lets stamps from different machines
+// compare directly, and the zero-padded fixed width makes string order time
+// order. A display converts it (SwitchStampTime) rather than printing it bare:
+// a bare UTC wall clock reads as local time.
+const switchStampLayout = "2006-01-02 15:04"
+
+// SwitchStampTime is the instant a recordSwitch stamp names. ok is false for a
+// stamp that has switchLineRe's digits but is no real time (a hand-edited
+// "2026-13-01 25:00"); the caller then shows it as written.
+func SwitchStampTime(at string) (time.Time, bool) {
+	t, err := time.ParseInLocation(switchStampLayout, at, time.UTC)
+	return t, err == nil
+}
 
 // publishedSwitches scans the unpushed commits' added body lines for activation
 // records on files that belong to an EPIC. Best-effort display data: any read

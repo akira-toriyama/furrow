@@ -8,8 +8,8 @@ import (
 // attach to their output: among the open boxes sharing a free repo with the
 // box being left, the most recently activated one — i.e. the focus a session
 // in that repo most likely stepped away from. At is the activation stamp
-// exactly as recordSwitch wrote it (minute precision, the writing machine's
-// local wall clock, no zone).
+// exactly as recordSwitch wrote it (switchStampLayout: minute precision, UTC,
+// no zone suffix).
 type PreviousActive struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
@@ -44,9 +44,10 @@ type PreviousActive struct {
 //     UNKNOWN (no record found), and the caller says so rather than guessing;
 //     activation records only exist since v6 (2026-07-29), so unknown is the
 //     expected answer on older boxes.
-//   - Stamps are minute-precision local time with no zone, so cross-machine
-//     order can be wrong — acceptable for a suggestion, which the human
-//     confirms by running `epic activate` (furrow never activates on its own).
+//   - Stamps are minute-precision UTC (switchStampLayout), so records written
+//     on different machines compare directly. The answer is still only a
+//     suggestion, which the human confirms by running `epic activate` (furrow
+//     never activates on its own).
 //
 // A same-stamp tie breaks to the smaller id, so the answer is deterministic.
 func (a *App) PreviousActiveSuggest(exceptID string) (prev *PreviousActive, held map[string]string) {
@@ -103,10 +104,9 @@ func (a *App) PreviousActiveSuggest(exceptID string) (prev *PreviousActive, held
 
 // latestActivation returns the newest recordSwitch stamp in body ("" when it
 // holds none), read with the same switchLineRe sync uses so the log's consumers
-// can never disagree on what an activation line is. The
-// "YYYY-MM-DD HH:MM" layout is zero-padded fixed-width, so plain string
-// comparison IS chronological order (within one machine's zone — see the
-// caveat on PreviousActiveSuggest).
+// can never disagree on what an activation line is. Every stamp is UTC in the
+// zero-padded fixed-width switchStampLayout, so plain string comparison IS
+// chronological order.
 func latestActivation(body string) string {
 	latest := ""
 	for _, line := range strings.Split(body, "\n") {
