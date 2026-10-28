@@ -1,5 +1,6 @@
 // Package gittest isolates real-git tests from the developer's ambient git
-// configuration. The load-bearing case is the git subprocess that App.Sync
+// configuration and from any repository the temp dir happens to sit in. The
+// load-bearing case is the git subprocess that App.Sync
 // spawns: internal/gitrepo.runGit inherits os.Environ, so a developer's global
 // commit.gpgsign / core.hooksPath / init.templateDir — or a non-"main"
 // init.defaultBranch — would otherwise leak into the tests and flake them.
@@ -45,9 +46,10 @@ const isolatedConfig = `[init]
 	auto = false
 `
 
-// Isolate points git at a throwaway global config and neutralizes the system
-// config, so every git subprocess these tests spawn behaves identically
-// regardless of the developer's ~/.gitconfig or /etc/gitconfig. Call it once
+// Isolate points git at a throwaway global config, neutralizes the system
+// config and stops repository discovery at the temp root, so every git
+// subprocess these tests spawn behaves identically regardless of the
+// developer's ~/.gitconfig, /etc/gitconfig or where TMPDIR points. Call it once
 // from TestMain, before any test runs: it mutates process env, which is unsafe
 // under t.Parallel. The returned cleanup restores the previous env and removes
 // the temp config; ignore it only if the process is about to exit anyway.
@@ -64,10 +66,18 @@ func Isolate() (cleanup func(), err error) {
 	// GIT_CONFIG_GLOBAL swaps our file in for ~/.gitconfig; GIT_CONFIG_SYSTEM
 	// pointed at /dev/null plus GIT_CONFIG_NOSYSTEM=1 silence /etc/gitconfig
 	// (belt-and-suspenders across git versions).
+	//
+	// GIT_CEILING_DIRECTORIES bars git from climbing INTO the temp root while
+	// it looks for a repository, so repos a test makes under t.TempDir() are
+	// found and nothing above them is. Tests take t.TempDir() to be outside
+	// every repository (sync's "outside git" cases); with TMPDIR inside a work
+	// tree it was not, and their sync committed to that tree and pushed to its
+	// upstream (furrow t-tayf). git resolves the entry's symlinks itself.
 	restore := setEnv(map[string]string{
-		"GIT_CONFIG_GLOBAL":   path,
-		"GIT_CONFIG_SYSTEM":   os.DevNull,
-		"GIT_CONFIG_NOSYSTEM": "1",
+		"GIT_CONFIG_GLOBAL":       path,
+		"GIT_CONFIG_SYSTEM":       os.DevNull,
+		"GIT_CONFIG_NOSYSTEM":     "1",
+		"GIT_CEILING_DIRECTORIES": filepath.Clean(os.TempDir()),
 	})
 	return func() {
 		restore()
