@@ -564,11 +564,13 @@ func (a *App) checkRepoSlots(target *core.Epic, epics []core.Epic) error {
 }
 
 // recordSwitch appends the activation to the epic's body. It is deliberately in
-// the BODY and not a shard field: the body is prose furrow never parses, so the
-// log can grow without a schema decision, and it lands in the same git history a
-// reviewer already reads.
+// the BODY and not a shard field, so the log can grow without a schema decision
+// and lands in the same git history a reviewer already reads. furrow reads
+// these lines back as the activation log (switchLineRe, for
+// PreviousActiveSuggest and sync's publishedSwitches), so a line hand-written
+// in the same shape counts as an activation too.
 func (a *App) recordSwitch(id, reason string) error {
-	line := a.Clock.Now().Format("2006-01-02 15:04") + " activated"
+	line := a.Clock.Now().UTC().Format(switchStampLayout) + " activated"
 	if r := strings.TrimSpace(reason); r != "" {
 		line += " — " + r
 	}

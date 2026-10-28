@@ -190,7 +190,8 @@ func newSyncCmd() *cobra.Command {
 			"stdout summary line names those counts), so neither a pushed-but-incomplete\n" +
 			"sync nor a failed one reads as fully published. `foreign_files` names the\n" +
 			"non-furrow files left uncommitted and `switches` the `epic activate` records\n" +
-			"published. `incoming` classifies the task changes the\n" +
+			"published (at = the UTC stamp as recorded; the human line shows it in\n" +
+			"local time with the offset). `incoming` classifies the task changes the\n" +
 			"pull brought IN — the other machines' and CI's writes, from the pre-pull vs\n" +
 			"post-pull shard diff: created / closed / reopened / moved / refiled /\n" +
 			"archived / unarchived / removed / updated, with the old and new lane or epic on the moves\n" +
@@ -431,10 +432,10 @@ func lintLine(sum app.LintErrorSummary) string {
 }
 
 // epicSwitchLine renders one published activation record: "epic: activated
-// e-k3m9p \"title\" 2026-07-29 14:32 — reason" (the reason clause only when one
-// was recorded).
+// e-k3m9p \"title\" 2026-07-29 23:32 +09:00 — reason" (the reason clause only
+// when one was recorded).
 func epicSwitchLine(sw app.EpicSwitch) string {
-	line := fmt.Sprintf("epic: activated %s %q %s", sw.Epic, sw.Title, sw.At)
+	line := fmt.Sprintf("epic: activated %s %q %s", sw.Epic, sw.Title, switchStampHuman(sw.At))
 	if sw.Reason != "" {
 		line += " — " + sw.Reason
 	}

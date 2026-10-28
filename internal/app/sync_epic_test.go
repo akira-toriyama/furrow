@@ -3,15 +3,22 @@ package app
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // A sync publishing an `epic activate` reports the switch in its progress —
 // the record's exit point. Real-git e2e (the setupClones harness), because the
 // capture reads the unpushed commits (@{upstream}..HEAD), which no memstore
-// can fake.
+// can fake. The clock is stopped at a known UTC instant and the machine zone
+// moved off UTC, so `at` must come back as the recorded UTC stamp, which
+// `sync --help` promises, not a local rendering of it.
 func TestSyncReportsPublishedEpicSwitches(t *testing.T) {
+	orig := time.Local
+	time.Local = jst
+	t.Cleanup(func() { time.Local = orig })
 	_, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
+	a.Clock = &fixedClock{t: time.Date(2026, 10, 28, 8, 51, 0, 0, time.UTC)}
 	id := mustEpic(t, a, "focus box", EpicAddOpts{Repos: []string{"o/r"}})
 	if _, _, _, err := a.EpicActivate(id, "session start"); err != nil {
 		t.Fatal(err)
@@ -25,8 +32,8 @@ func TestSyncReportsPublishedEpicSwitches(t *testing.T) {
 		t.Fatalf("switches = %+v, want exactly the one activation", p.Switches)
 	}
 	sw := p.Switches[0]
-	if sw.Epic != id || sw.Title != "focus box" || sw.Reason != "session start" || sw.At == "" {
-		t.Errorf("switch = %+v, want epic %s titled + the recorded reason and timestamp", sw, id)
+	if sw.Epic != id || sw.Title != "focus box" || sw.Reason != "session start" || sw.At != "2026-10-28 08:51" {
+		t.Errorf("switch = %+v, want epic %s titled, the recorded reason, and the UTC stamp 2026-10-28 08:51", sw, id)
 	}
 
 	// Once published, the record must not re-report on every later sync — it
