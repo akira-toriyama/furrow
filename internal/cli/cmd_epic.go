@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/v9/internal/app"
@@ -489,11 +490,12 @@ func newEpicDoneCmd() *cobra.Command {
 			"epic, so the same warn comes back under this closed box every cycle. The\n" +
 			"fix is one-shot — re-file the live occurrence (`furrow set <id> -e\n" +
 			"<open-epic>`) and every later occurrence inherits the new box.\n\n" +
-			"It does SUGGEST where to return: the output names the open, currently\n" +
-			"inactive box that shares a repo with this one and holds the newest\n" +
-			"activation record (`previous: <id> … — furrow epic activate <id>`; a\n" +
-			"`previous` key in --json, null = unknown). Another repo's box is never\n" +
-			"suggested, so a box with no repo always gets unknown.\n" +
+			"It does SUGGEST where to return: among the open boxes sharing a repo of\n" +
+			"this one that no other active epic holds, the output names the one with\n" +
+			"the newest activation record (`previous: <id> … — furrow epic activate\n" +
+			"<id>`; a `previous` key in --json, null = no suggestion). Another repo's\n" +
+			"box is never suggested. A box with no repo gets unknown, and one whose\n" +
+			"repos all still have an active epic gets none: that focus never left.\n" +
 			"The answer is COMPUTED fresh from the activation log `epic activate`\n" +
 			"already writes into each box's body — furrow stores no \"previous\"\n" +
 			"pointer that could go stale, and when no record decides it, it says\n" +
@@ -563,14 +565,15 @@ func namedMemberIDs(members []app.EpicOpenMember) string {
 
 // emitWithPreviousSuggest is done/deactivate's shared tail: the usual epic
 // mutation envelope plus the previous-active suggestion — a `previous` key in
-// JSON (always present on these two verbs; null = unknown, so a consumer can
-// tell "computed, no answer" apart from an older binary that lacks the key)
-// and one human line after the mutation line. The suggestion is display data:
+// JSON (always present on these two verbs; null = no suggestion, so a consumer
+// can tell "computed, no answer" apart from an older binary that lacks the
+// key) and one human line after the mutation line, which alone says WHY there
+// is none (no repo, the repos' focus never left, or no record). The suggestion is display data:
 // it is computed AFTER the mutation succeeded and can never affect it. extra
 // carries the keys only one of the two verbs has (done's open_members — the
 // box is not closed on a deactivate, so nothing is left BEHIND one).
 func emitWithPreviousSuggest(a *app.App, before, after *core.Epic, extra map[string]any) error {
-	prev := a.PreviousActiveSuggest(after.ID)
+	prev, held := a.PreviousActiveSuggest(after.ID)
 	keys := map[string]any{"previous": prev}
 	for k, v := range extra {
 		keys[k] = v
@@ -581,11 +584,21 @@ func emitWithPreviousSuggest(a *app.App, before, after *core.Epic, extra map[str
 	if jsonMode() {
 		return nil
 	}
-	if prev == nil {
-		fmt.Fprintln(out, "previous: unknown (no open inactive box sharing a repo with this one has an activation record — pick one with `furrow epic ls`)")
-		return nil
+	switch {
+	case prev != nil:
+		fmt.Fprintf(out, "previous: %s %q (activated %s) — return with `furrow epic activate %s`\n", prev.ID, prev.Title, prev.At, prev.ID)
+	case len(held) > 0:
+		parts := make([]string, 0, len(held))
+		for repo, id := range held {
+			parts = append(parts, repo+" by "+id)
+		}
+		sort.Strings(parts)
+		fmt.Fprintf(out, "previous: none (still held: %s — nothing to return to)\n", strings.Join(parts, ", "))
+	case len(after.Repos) == 0:
+		fmt.Fprintln(out, "previous: unknown (this box has no repo, so no box shares one — pick one with `furrow epic ls`)")
+	default:
+		fmt.Fprintln(out, "previous: unknown (no open box in its repos has an activation record — pick one with `furrow epic ls`)")
 	}
-	fmt.Fprintf(out, "previous: %s %q (activated %s) — return with `furrow epic activate %s`\n", prev.ID, prev.Title, prev.At, prev.ID)
 	return nil
 }
 
