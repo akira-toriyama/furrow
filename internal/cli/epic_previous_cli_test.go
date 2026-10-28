@@ -84,3 +84,50 @@ func TestEpicDonePreviousUnknown(t *testing.T) {
 		t.Errorf("previous = %s, want null", raw)
 	}
 }
+
+// Closing a parked box while another box holds its repo says none and names
+// the holder (that repo's focus never left); a box with no repo says why it
+// is unknown. --json keeps previous null for both.
+func TestEpicDonePreviousSaysWhyThereIsNone(t *testing.T) {
+	initStore(t)
+	ea := addEpic(t, "box a", "-r", "me/r1")
+	eb := addEpic(t, "box b", "-r", "me/r1")
+	ec := addEpic(t, "box c", "-r", "me/r1")
+	mustRun(t, "epic", "activate", ea)
+	mustRun(t, "epic", "deactivate", ea)
+	mustRun(t, "epic", "activate", eb)
+
+	got, code := run(t, "epic", "done", ec)
+	if code != 0 {
+		t.Fatalf("epic done exit = %d:\n%s", code, got)
+	}
+	if want := "previous: none (still held: me/r1 by " + eb + " — nothing to return to)"; !strings.Contains(got, want) {
+		t.Errorf("done on a parked box beside an active one should say %q:\n%s", want, got)
+	}
+	jgot, code := run(t, "--json", "epic", "deactivate", ea)
+	if code != 0 {
+		t.Fatalf("epic deactivate exit = %d:\n%s", code, jgot)
+	}
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(jgot), &env); err != nil {
+		t.Fatalf("parse envelope: %v\n%s", err, jgot)
+	}
+	if raw, ok := env["previous"]; !ok || string(raw) != "null" {
+		t.Errorf("previous = %s (present %v), want null", raw, ok)
+	}
+
+	en := addEpic(t, "box n")
+	var shown struct {
+		Repos []string `json:"repos"`
+	}
+	if out, _ := run(t, "--json", "epic", "show", en); json.Unmarshal([]byte(out), &shown) != nil || len(shown.Repos) != 0 {
+		t.Fatalf("fixture: box n should have no repo:\n%s", out)
+	}
+	got, code = run(t, "epic", "done", en)
+	if code != 0 {
+		t.Fatalf("epic done exit = %d:\n%s", code, got)
+	}
+	if !strings.Contains(got, "previous: unknown (this box has no repo") {
+		t.Errorf("done on a repo-less box should say it has no repo:\n%s", got)
+	}
+}

@@ -5,18 +5,22 @@ import (
 )
 
 // PreviousActive is the "return here" candidate `epic done`/`epic deactivate`
-// attach to their output: the box that was most recently activated among the
-// open, currently-inactive ones — i.e. the focus a session most likely stepped
-// away from. At is the activation stamp exactly as recordSwitch wrote it
-// (minute precision, the writing machine's local wall clock, no zone).
+// attach to their output: among the open boxes sharing a free repo with the
+// box being left, the most recently activated one — i.e. the focus a session
+// in that repo most likely stepped away from. At is the activation stamp
+// exactly as recordSwitch wrote it (minute precision, the writing machine's
+// local wall clock, no zone).
 type PreviousActive struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	At    string `json:"at"`
 }
 
-// PreviousActiveSuggest computes the previous-active suggestion, excluding
-// exceptID (the box being closed/deactivated — it is the place being LEFT).
+// PreviousActiveSuggest computes the previous-active suggestion for leaving
+// exceptID (the box being closed/deactivated — the place being LEFT, so never
+// a candidate itself). held is set instead when there is nothing to return
+// to: every repo of the box being left still has an active box (the repo as
+// the left box spells it -> that box's id).
 //
 // The mechanism is deliberately STATELESS: furrow records nothing new and
 // keeps no "previous" pointer to go stale — it re-reads the activation log
@@ -25,9 +29,16 @@ type PreviousActive struct {
 // operating rule "never record where to return; compute it, and when it
 // cannot be computed, ask the human". Consequently:
 //
-//   - Only OPEN, currently-INACTIVE boxes are candidates: a closed box cannot
-//     be activated, and a box that is active right now needs no returning to
-//     (another repo's focus would otherwise always win on recency).
+//   - Only boxes sharing a FREE repo of the box being left are candidates — a
+//     repo no other active box holds, folded as the slot map compares repos.
+//     The answer is the focus a session in THAT repo stepped away from:
+//     board-wide recency handed nearly every box on a central board another
+//     repo's focus (t-b5q5). A repo still held already has its focus, so
+//     closing a parked box beside it leaves nothing to return to (held), and
+//     a box suggested there would be one `epic activate` refuses. An active
+//     box never qualifies, since it holds its own repos. A box with no repo
+//     shares none, so leaving it answers unknown.
+//   - Only OPEN boxes are candidates: a closed box cannot be activated.
 //   - Best-effort, never an error: an unreadable epic set or body is a silent
 //     skip — a suggestion must not fail the mutation it rides on. nil means
 //     UNKNOWN (no record found), and the caller says so rather than guessing;
@@ -38,15 +49,41 @@ type PreviousActive struct {
 //     confirms by running `epic activate` (furrow never activates on its own).
 //
 // A same-stamp tie breaks to the smaller id, so the answer is deterministic.
-func (a *App) PreviousActiveSuggest(exceptID string) *PreviousActive {
+func (a *App) PreviousActiveSuggest(exceptID string) (prev *PreviousActive, held map[string]string) {
 	epics, err := a.Store.LoadEpics()
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	var best *PreviousActive
+	holder := map[string]string{} // folded repo -> the active box holding its slot
+	var leaving []string
 	for i := range epics {
 		e := &epics[i]
-		if e.ID == exceptID || !e.IsOpen() || e.Active {
+		switch {
+		case e.ID == exceptID:
+			leaving = e.Repos
+		case e.Active && e.IsOpen():
+			for _, r := range e.Repos {
+				holder[strings.ToLower(r)] = e.ID
+			}
+		}
+	}
+	var free []string
+	for _, r := range leaving {
+		if id, ok := holder[strings.ToLower(r)]; ok {
+			if held == nil {
+				held = map[string]string{}
+			}
+			held[r] = id
+			continue
+		}
+		free = append(free, r)
+	}
+	if len(free) == 0 {
+		return nil, held
+	}
+	for i := range epics {
+		e := &epics[i]
+		if e.ID == exceptID || !e.IsOpen() || !anyRepoMatch(e.Repos, free) {
 			continue
 		}
 		body, err := a.Store.LoadBody(e.ID)
@@ -57,11 +94,11 @@ func (a *App) PreviousActiveSuggest(exceptID string) *PreviousActive {
 		if at == "" {
 			continue
 		}
-		if best == nil || at > best.At || (at == best.At && e.ID < best.ID) {
-			best = &PreviousActive{ID: e.ID, Title: e.Title, At: at}
+		if prev == nil || at > prev.At || (at == prev.At && e.ID < prev.ID) {
+			prev = &PreviousActive{ID: e.ID, Title: e.Title, At: at}
 		}
 	}
-	return best
+	return prev, nil
 }
 
 // latestActivation returns the newest recordSwitch stamp in body ("" when it
