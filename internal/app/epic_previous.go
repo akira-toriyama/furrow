@@ -15,8 +15,9 @@ type PreviousActive struct {
 	At    string `json:"at"`
 }
 
-// PreviousActiveSuggest computes the previous-active suggestion, excluding
-// exceptID (the box being closed/deactivated — it is the place being LEFT).
+// PreviousActiveSuggest computes the previous-active suggestion for leaving
+// exceptID (the box being closed/deactivated — the place being LEFT, so never
+// a candidate itself).
 //
 // The mechanism is deliberately STATELESS: furrow records nothing new and
 // keeps no "previous" pointer to go stale — it re-reads the activation log
@@ -26,8 +27,12 @@ type PreviousActive struct {
 // cannot be computed, ask the human". Consequently:
 //
 //   - Only OPEN, currently-INACTIVE boxes are candidates: a closed box cannot
-//     be activated, and a box that is active right now needs no returning to
-//     (another repo's focus would otherwise always win on recency).
+//     be activated, and a box that is active right now needs no returning to.
+//   - Only boxes sharing a repo with the box being left are candidates
+//     (folded, as the slot map compares repos): the answer is the focus a
+//     session in THAT repo stepped away from. Board-wide recency handed nearly
+//     every box on a central board another repo's focus (t-b5q5). A box with
+//     no repo shares none, so leaving it answers unknown.
 //   - Best-effort, never an error: an unreadable epic set or body is a silent
 //     skip — a suggestion must not fail the mutation it rides on. nil means
 //     UNKNOWN (no record found), and the caller says so rather than guessing;
@@ -43,10 +48,17 @@ func (a *App) PreviousActiveSuggest(exceptID string) *PreviousActive {
 	if err != nil {
 		return nil
 	}
+	var leaving []string
+	for i := range epics {
+		if epics[i].ID == exceptID {
+			leaving = epics[i].Repos
+			break
+		}
+	}
 	var best *PreviousActive
 	for i := range epics {
 		e := &epics[i]
-		if e.ID == exceptID || !e.IsOpen() || e.Active {
+		if e.ID == exceptID || !e.IsOpen() || e.Active || !anyRepoMatch(e.Repos, leaving) {
 			continue
 		}
 		body, err := a.Store.LoadBody(e.ID)

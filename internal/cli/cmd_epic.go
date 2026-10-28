@@ -24,8 +24,8 @@ func newEpicCmd() *cobra.Command {
 			"furrow never chooses which box to open: `epic done` clears the active flag\n" +
 			"but picks no successor, and `furrow lint` warns (epic-no-active) until a\n" +
 			"human does. It does SUGGEST — done/deactivate name the previous active box\n" +
-			"(computed from the activation log, `unknown` when no record decides it) —\n" +
-			"but activating it stays your call.",
+			"in the same repo (computed from the activation log, `unknown` when no\n" +
+			"record decides it) — but activating it stays your call.",
 		// `furrow epic` alone prints help; an unknown subcommand is exit 2 with
 		// the known names in candidates, the root's and `config`'s contract.
 		Args: cobra.ArbitraryArgs,
@@ -490,8 +490,10 @@ func newEpicDoneCmd() *cobra.Command {
 			"fix is one-shot — re-file the live occurrence (`furrow set <id> -e\n" +
 			"<open-epic>`) and every later occurrence inherits the new box.\n\n" +
 			"It does SUGGEST where to return: the output names the open, currently\n" +
-			"inactive box with the newest activation record (`previous: <id> … —\n" +
-			"furrow epic activate <id>`; a `previous` key in --json, null = unknown).\n" +
+			"inactive box that shares a repo with this one and holds the newest\n" +
+			"activation record (`previous: <id> … — furrow epic activate <id>`; a\n" +
+			"`previous` key in --json, null = unknown). Another repo's box is never\n" +
+			"suggested, so a box with no repo always gets unknown.\n" +
 			"The answer is COMPUTED fresh from the activation log `epic activate`\n" +
 			"already writes into each box's body — furrow stores no \"previous\"\n" +
 			"pointer that could go stale, and when no record decides it, it says\n" +
@@ -580,7 +582,7 @@ func emitWithPreviousSuggest(a *app.App, before, after *core.Epic, extra map[str
 		return nil
 	}
 	if prev == nil {
-		fmt.Fprintln(out, "previous: unknown (no activation record on any open inactive box — pick one with `furrow epic ls`)")
+		fmt.Fprintln(out, "previous: unknown (no open inactive box sharing a repo with this one has an activation record — pick one with `furrow epic ls`)")
 		return nil
 	}
 	fmt.Fprintf(out, "previous: %s %q (activated %s) — return with `furrow epic activate %s`\n", prev.ID, prev.Title, prev.At, prev.ID)
