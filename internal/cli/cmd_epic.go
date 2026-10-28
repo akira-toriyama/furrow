@@ -417,9 +417,10 @@ func newEpicActivateCmd() *cobra.Command {
 			"An epic with no repos cannot be activated: with no slot to consume it would\n" +
 			"slip past the per-repo count entirely.\n\n" +
 			"furrow does not police WHO switches — a CLI has no caller identity. It\n" +
-			"RECORDS instead: the switch is appended to the epic's body and `furrow\n" +
-			"sync` surfaces it, so a misread instruction shows up in the same session\n" +
-			"rather than weeks later. Pass --reason to say who asked and why.\n\n" +
+			"RECORDS instead: the switch is appended to the epic's body as a\n" +
+			"`YYYY-MM-DD HH:MM activated[ — reason]` line, the time in UTC, and\n" +
+			"`furrow sync` surfaces it, so a misread instruction shows up in the same\n" +
+			"session rather than weeks later. Pass --reason to say who asked and why.\n\n" +
 			"An epic still waiting on open deps (`furrow epic dep`) activates with a\n" +
 			"WARNING, never a refusal — the ordering is advice, and the stderr note\n" +
 			"plus the envelope's open_deps (and lint's epic-dep-open afterwards) are\n" +

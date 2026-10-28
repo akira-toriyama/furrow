@@ -32,8 +32,9 @@ var switchLineRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) activate
 // switchStampLayout is recordSwitch's stamp: minute precision, in UTC, with no
 // zone suffix. UTC on every writer is what lets stamps from different machines
 // compare directly, and the zero-padded fixed width makes string order time
-// order. A display converts it (SwitchStampTime) rather than printing it bare:
-// a bare UTC wall clock reads as local time.
+// order. The previous and sync lines convert it (SwitchStampTime) rather than
+// print it bare, since a bare UTC wall clock reads as local time. The body copy
+// is shown as written; `epic activate --help` names its zone instead.
 const switchStampLayout = "2006-01-02 15:04"
 
 // SwitchStampTime is the instant a recordSwitch stamp names. ok is false for a

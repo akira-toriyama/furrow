@@ -190,7 +190,8 @@ func humanTime(t time.Time) string {
 
 // switchStampHuman renders an `epic activate` record's stamp (UTC with no zone
 // suffix, app.SwitchStampTime) through humanTime like any other "when did this
-// happen". A stamp that is no real time is shown as written.
+// happen". An unparsable stamp (a hand-edited line) is shown as written:
+// dropping it would hide the record.
 func switchStampHuman(at string) string {
 	if t, ok := app.SwitchStampTime(at); ok {
 		return humanTime(t)

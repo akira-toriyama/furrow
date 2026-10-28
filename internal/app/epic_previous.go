@@ -45,9 +45,9 @@ type PreviousActive struct {
 //     activation records only exist since v6 (2026-07-29), so unknown is the
 //     expected answer on older boxes.
 //   - Stamps are minute-precision UTC (switchStampLayout), so records written
-//     on different machines compare directly. The answer is still only a
-//     suggestion, which the human confirms by running `epic activate` (furrow
-//     never activates on its own).
+//     on different machines compare directly. The answer is a suggestion
+//     only: the human confirms it by running `epic activate` (furrow never
+//     activates on its own).
 //
 // A same-stamp tie breaks to the smaller id, so the answer is deterministic.
 func (a *App) PreviousActiveSuggest(exceptID string) (prev *PreviousActive, held map[string]string) {

@@ -13,10 +13,15 @@ type zonedClock struct{ t time.Time }
 
 func (c zonedClock) Now() time.Time { return c.t }
 
-// recordSwitch stamps UTC whatever zone the Clock reports: the stamp carries
-// no zone suffix, so one zone on every writer is what keeps records from
-// different machines comparable (t-8gmb).
+// recordSwitch stamps UTC whatever zone the Clock reports or the machine runs
+// in: the stamp carries no zone suffix, so one zone on every writer is what
+// keeps records from different machines comparable (t-8gmb). The machine zone
+// is moved off UTC because CI runners sit in UTC, where a stamp written in
+// local time would pass.
 func TestRecordSwitchStampsUTC(t *testing.T) {
+	orig := time.Local
+	time.Local = time.FixedZone("EST", -5*60*60)
+	t.Cleanup(func() { time.Local = orig })
 	cfg := config.Default()
 	a := NewWithStore(newStore(cfg), cfg, zonedClock{t: time.Date(2026, 6, 25, 19, 0, 0, 0, jst)})
 	e, err := a.EpicAdd("box", EpicAddOpts{Repos: []string{"me/r1"}})

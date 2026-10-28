@@ -7,11 +7,19 @@ import (
 	"time"
 )
 
+// instantClock is a Clock stopped at one instant, for asserting exact stamps.
+type instantClock struct{ t time.Time }
+
+func (c instantClock) Now() time.Time { return c.t }
+
 // The previous line shows the UTC activation stamp in local time with its
 // offset (humanTime), while --json keeps the stamp as recorded: printed bare,
-// a JST operator's 17:51 switch read as 08:51 (t-8gmb).
+// a JST operator's 17:51 switch read as 08:51 (t-8gmb). The clock is stopped
+// at a known UTC instant, so a stamp recorded in any other zone fails too.
 func TestEpicPreviousLineShowsLocalTime(t *testing.T) {
 	pinLocalTZ(t, 9*3600)
+	testClock = instantClock{time.Date(2026, 10, 28, 8, 51, 30, 0, time.UTC)}
+	t.Cleanup(func() { testClock = nil })
 	initStore(t)
 	ea := addEpic(t, "box a", "-r", "me/r1")
 	eb := addEpic(t, "box b", "-r", "me/r1")
@@ -31,9 +39,8 @@ func TestEpicPreviousLineShowsLocalTime(t *testing.T) {
 	if err := json.Unmarshal([]byte(jgot), &env); err != nil || env.Previous == nil {
 		t.Fatalf("parse previous: %v\n%s", err, jgot)
 	}
-	stamp, err := time.ParseInLocation("2006-01-02 15:04", env.Previous.At, time.UTC)
-	if err != nil {
-		t.Fatalf("--json at = %q, want the recorded UTC stamp (YYYY-MM-DD HH:MM)", env.Previous.At)
+	if env.Previous.At != "2026-10-28 08:51" {
+		t.Errorf("--json at = %q, want the recorded UTC stamp 2026-10-28 08:51", env.Previous.At)
 	}
 
 	mustRun(t, "epic", "activate", eb)
@@ -41,8 +48,7 @@ func TestEpicPreviousLineShowsLocalTime(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("epic deactivate exit = %d:\n%s", code, got)
 	}
-	want := "(activated " + stamp.In(time.FixedZone("TST", 9*3600)).Format("2006-01-02 15:04 -07:00") + ")"
-	if !strings.Contains(got, want) {
+	if want := "(activated 2026-10-28 17:51 +09:00)"; !strings.Contains(got, want) {
 		t.Errorf("previous line should carry %q (local time with offset):\n%s", want, got)
 	}
 }
