@@ -1,10 +1,12 @@
 // Package gittest isolates real-git tests from the developer's ambient git
-// configuration. The load-bearing case is the git subprocess that App.Sync
-// spawns: internal/gitrepo.runGit inherits os.Environ, so a developer's global
-// commit.gpgsign / core.hooksPath / init.templateDir — or a non-"main"
-// init.defaultBranch — would otherwise leak into the tests and flake them.
-// Isolation therefore happens at the PROCESS-env level, from a package's
-// TestMain (before any test runs), not per command.
+// configuration, and refuses to run them from a temp root that sits in a git
+// work tree or a furrow board. The load-bearing case is the git subprocess
+// that App.Sync spawns: internal/gitrepo.runGit hands git os.Environ minus
+// only the locale keys and git's repository-locating variables (gitEnv), so a
+// developer's global commit.gpgsign / core.hooksPath / init.templateDir — or
+// a non-"main" init.defaultBranch — would otherwise leak into the tests and
+// flake them. Isolation therefore happens at the PROCESS-env level, from a
+// package's TestMain (before any test runs), not per command.
 //
 // This is a TEST-ONLY helper: it is imported solely by _test.go files and never
 // ends up in a production build.
@@ -45,13 +47,74 @@ const isolatedConfig = `[init]
 	auto = false
 `
 
-// Isolate points git at a throwaway global config and neutralizes the system
-// config, so every git subprocess these tests spawn behaves identically
-// regardless of the developer's ~/.gitconfig or /etc/gitconfig. Call it once
-// from TestMain, before any test runs: it mutates process env, which is unsafe
-// under t.Parallel. The returned cleanup restores the previous env and removes
-// the temp config; ignore it only if the process is about to exit anyway.
+// tempRootMarkers make a directory a repository or a board to the code under
+// test: .git (a dir, or a linked worktree's gitdir file) for git's discovery
+// and app.nearestGitDir, app.DirName and app.PointerName for furrow's board
+// walk. gittest cannot import app, so they are spelled out here.
+var tempRootMarkers = []string{".git", ".furrow", ".furrow-pointer.toml"}
+
+// checkTempRoots refuses a temp root that is relative, or that sits in a git
+// work tree or a furrow board. Tests take their temp dirs to be outside both:
+// with TMPDIR inside a work tree, sync's "outside git" tests committed there
+// and pushed to its upstream, and inside a board checkout tests wrote tasks
+// into that board (furrow t-tayf). Bounding git alone does not help, because
+// furrow's own walks climb with os.Stat. t.TempDir() roots at GOTMPDIR when it
+// is set and os.MkdirTemp("") at TMPDIR, so both are checked, each along the
+// path as given and its symlink-resolved form: git climbs the physical path,
+// furrow's walk the lexical one.
+func checkTempRoots() error {
+	roots := [][2]string{{"TMPDIR", os.TempDir()}}
+	if d := os.Getenv("GOTMPDIR"); d != "" {
+		roots = append(roots, [2]string{"GOTMPDIR", d})
+	}
+	for _, r := range roots {
+		name, root := r[0], r[1]
+		if !filepath.IsAbs(root) {
+			return fmt.Errorf("gittest: %s=%s is relative; point it at an absolute directory", name, root)
+		}
+		paths := []string{filepath.Clean(root)}
+		if real, err := filepath.EvalSymlinks(root); err == nil && real != paths[0] {
+			paths = append(paths, real)
+		}
+		for _, p := range paths {
+			if hit, ok := enclosingMarker(p); ok {
+				return fmt.Errorf("gittest: %s=%s sits inside %s; tests assume their temp dirs are outside every git work tree and furrow board, so point %s elsewhere", name, root, hit, name)
+			}
+		}
+	}
+	return nil
+}
+
+// enclosingMarker returns the first tempRootMarkers entry in dir or any of its
+// ancestors.
+func enclosingMarker(dir string) (string, bool) {
+	for {
+		for _, m := range tempRootMarkers {
+			p := filepath.Join(dir, m)
+			if _, err := os.Stat(p); err == nil {
+				return p, true
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
+// Isolate refuses an unsafe temp root (checkTempRoots), then points git at a
+// throwaway global config and neutralizes the system config, so every git
+// subprocess these tests spawn behaves identically regardless of the
+// developer's ~/.gitconfig or /etc/gitconfig. Call it once from TestMain,
+// before any test runs and before anything is written under the temp root: it
+// mutates process env, which is unsafe under t.Parallel. The returned cleanup
+// restores the previous env and removes the temp config; ignore it only if the
+// process is about to exit anyway.
 func Isolate() (cleanup func(), err error) {
+	if err := checkTempRoots(); err != nil {
+		return nil, err
+	}
 	dir, err := os.MkdirTemp("", "furrow-gitconfig-*")
 	if err != nil {
 		return nil, fmt.Errorf("gittest: mkdir temp: %w", err)
@@ -141,8 +204,13 @@ func Main(m *testing.M) {
 // own t.Setenv), and unsets the Claude Code session env (a developer's `go
 // test` usually runs INSIDE a session, whose CLAUDECODE would arm the session
 // write guard against the live registry). app and cli carried the same
-// twenty-five lines each.
+// twenty-five lines each. Isolate runs first, so a refused temp root gets no
+// XDG dir written into it.
 func MainIsolated(m *testing.M) {
+	restore, err := Isolate()
+	if err != nil {
+		panic(err)
+	}
 	dir, err := os.MkdirTemp("", "furrow-xdg-*")
 	if err != nil {
 		panic(err)
@@ -154,10 +222,6 @@ func MainIsolated(m *testing.M) {
 		if err := os.Unsetenv(k); err != nil {
 			panic(err)
 		}
-	}
-	restore, err := Isolate()
-	if err != nil {
-		panic(err)
 	}
 	code := m.Run()
 	restore()
