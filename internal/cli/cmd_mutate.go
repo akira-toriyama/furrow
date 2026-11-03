@@ -396,11 +396,7 @@ func newDoneCmd() *cobra.Command {
 					return ts, err
 				},
 				func(t *core.Task) map[string]any {
-					m := map[string]any{"appended": trimmed}
-					if x := rs.annotate(t); x != nil {
-						m["repeat"] = x["repeat"]
-					}
-					return m
+					return mergeExtra(map[string]any{"appended": trimmed}, rs.annotate(t))
 				}); err != nil {
 				return err
 			}
@@ -980,8 +976,13 @@ func newSetCmd() *cobra.Command {
 			"a relative target outside the destination lane is exit 2, and under\n" +
 			"[labels].required a set that would strip the last label is refused. A\n" +
 			"relative placement that has to respace the lane does so in the same write\n" +
-			"and reports the neighbors in `renumbered`, exactly like reorder. An empty\n" +
-			"--due '' is exit 2, never a silent clear (--clear-due is the clear).\n\n" +
+			"and reports the neighbors in `renumbered`, exactly like reorder. A --repeat\n" +
+			"bind whose rule skips the months (or years) lacking its day, or whose anchor\n" +
+			"is not a date the rule lands on, says so: a stderr note, and the same\n" +
+			"strings in the envelope's `repeat_warnings` (absent when there are none) —\n" +
+			"on the CLOSED task's when the write also closes it, since the rule passes\n" +
+			"to the successor its `repeat` names. An empty --due '' is exit 2, never a\n" +
+			"silent clear (--clear-due is the clear).\n\n" +
 			"Several ids apply the SAME edits to all of them in ONE all-or-nothing\n" +
 			"write (bulk triage): a miss sets NOTHING and exits 1 with every miss in\n" +
 			"details.missing, and --json is ALWAYS an array of envelopes, one per id\n" +
@@ -1231,6 +1232,9 @@ func newSetCmd() *cobra.Command {
 					func() ([]*core.Task, error) {
 						ts, reps, err := a.SetMany(args, o)
 						rs.collect(ts, reps)
+						if err == nil && cmd.Flags().Changed("repeat") {
+							rs.bind(a, ts)
+						}
 						closed = ts
 						return ts, err
 					},
@@ -1249,7 +1253,7 @@ func newSetCmd() *cobra.Command {
 					}, dueEcho); err != nil {
 					return err
 				}
-				noteBoundRules(a, cmd.Flags().Changed("repeat"), closed, rs)
+				rs.noteBound(closed)
 				rs.print(a, closed)
 				return nil
 			}
@@ -1268,6 +1272,9 @@ func newSetCmd() *cobra.Command {
 
 					out := []*core.Task{t}
 					rs.collect(out, []*app.RepeatReport{rep})
+					if cmd.Flags().Changed("repeat") {
+						rs.bind(a, out)
+					}
 					closed = out
 					return out, nil
 				},
@@ -1292,7 +1299,7 @@ func newSetCmd() *cobra.Command {
 			// `set -s done` closes like `done` does, so it owes the same receipt:
 			// without it the successor it just minted is invisible until a later
 			// read, and a machine could not tell it from a task that never repeated.
-			noteBoundRules(a, cmd.Flags().Changed("repeat"), closed, rs)
+			rs.noteBound(closed)
 			rs.print(a, closed)
 			return nil
 		},
@@ -1554,28 +1561,50 @@ func newRepoCmd() *cobra.Command {
 	return cmd
 }
 
-// noteBoundRules says, once per distinct note, what a rule this write just bound
-// will do that was almost certainly not asked for (a skipped month, an anchor
-// off the rule's lattice). Only on an actual bind: re-printing it on every
-// unrelated edit of a repeating task taught the reader to ignore it.
-func noteBoundRules(a *app.App, bound bool, tasks []*core.Task, rs *seriesReports) {
-	if !bound {
-		return
-	}
-	said := map[string]bool{}
+// seriesReports carries the per-task repeat facts a write produced — the
+// reports a close made, and the bind-time notes of a rule it bound — from the
+// mutate closure out to where they render: each task's JSON envelope
+// (annotate), the human summary (print) and the stderr notes (noteBound).
+type seriesReports struct {
+	byID  map[string]*app.RepeatReport
+	warns map[string][]string
+}
+
+func newSeriesReports() *seriesReports {
+	return &seriesReports{byID: map[string]*app.RepeatReport{}, warns: map[string][]string{}}
+}
+
+// bind records what a rule this write just bound will do that was almost
+// certainly not asked for (a skipped month, an anchor off the rule's lattice),
+// keyed by the RETURNED task's id. Call it after collect, and only on an actual
+// bind: re-printing it on every unrelated edit of a repeating task taught the
+// reader to ignore it.
+func (s *seriesReports) bind(a *app.App, tasks []*core.Task) {
 	for _, t := range tasks {
 		subject := t
 		// A write that BINDS a rule and CLOSES in one go hands the rule straight
 		// to the successor, so the returned task carries none — follow it, or the
-		// note is silent exactly when a rule was just bound.
-		if subject.Repeat == "" && rs != nil {
-			if r := rs.byID[t.ID]; r != nil && r.Created != nil {
+		// note is silent exactly when a rule was just bound. The successor has no
+		// envelope of its own in this write's output, so its notes ride the
+		// closed task's, beside the `repeat` receipt that names it.
+		if subject.Repeat == "" {
+			if r := s.byID[t.ID]; r != nil && r.Created != nil {
 				if succ, _, err := a.Get(*r.Created); err == nil {
 					subject = succ
 				}
 			}
 		}
-		for _, w := range a.RepeatWarnings(subject) {
+		if ws := a.RepeatWarnings(subject); len(ws) > 0 {
+			s.warns[t.ID] = ws
+		}
+	}
+}
+
+// noteBound says each bound rule's notes on stderr, once per distinct note.
+func (s *seriesReports) noteBound(tasks []*core.Task) {
+	said := map[string]bool{}
+	for _, t := range tasks {
+		for _, w := range s.warns[t.ID] {
 			if said[w] {
 				continue
 			}
@@ -1584,13 +1613,6 @@ func noteBoundRules(a *app.App, bound bool, tasks []*core.Task, rs *seriesReport
 		}
 	}
 }
-
-// seriesReports carries the per-task repeat reports a close produced, from the
-// mutate closure out to the two places that render them: each task's JSON
-// envelope (annotate) and the human summary (print).
-type seriesReports struct{ byID map[string]*app.RepeatReport }
-
-func newSeriesReports() *seriesReports { return &seriesReports{byID: map[string]*app.RepeatReport{}} }
 
 // collect zips the reports onto the tasks the write returned. app returns them
 // positionally, so a length mismatch means a contract change, not a data
@@ -1607,10 +1629,14 @@ func (s *seriesReports) collect(tasks []*core.Task, reps []*app.RepeatReport) {
 }
 
 func (s *seriesReports) annotate(t *core.Task) map[string]any {
+	var m map[string]any
 	if r := s.byID[t.ID]; r != nil {
-		return map[string]any{"repeat": r}
+		m = mergeExtra(m, map[string]any{"repeat": r})
 	}
-	return nil
+	if ws := s.warns[t.ID]; len(ws) > 0 {
+		m = mergeExtra(m, map[string]any{"repeat_warnings": ws})
+	}
+	return m
 }
 
 // print writes one line per advanced series, after the mutation summary. Each

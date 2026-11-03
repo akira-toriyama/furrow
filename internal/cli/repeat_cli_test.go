@@ -725,3 +725,168 @@ func TestASelectionPreviewTagsTheRowsThatWillMintTasks(t *testing.T) {
 		}
 	}
 }
+
+// The bind-time notes are two-sided like every other advisory: a front-end
+// reads only stdout on exit 0, so a note said on stderr alone never reached
+// it. Each envelope carries its OWN task's notes, verbatim, while stderr still
+// says a note shared by several tasks once.
+func TestSetRepeatJSONCarriesTheBindWarnings(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "月末", "--due", "2026-03-31")
+	onDay := addedID(t, out, code)
+	out, code = run(t, "add", "月半ば", "--due", "2026-03-15")
+	offDay := addedID(t, out, code)
+
+	stdout, se, code := runSplit(t, "set", onDay, "--repeat", "monthly on 31", "--json")
+	if code != 0 {
+		t.Fatalf("set exit %d: %s%s", code, stdout, se)
+	}
+	var one []struct {
+		RepeatWarnings []string `json:"repeat_warnings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &one); err != nil {
+		t.Fatalf("set --json: %v\n%s", err, stdout)
+	}
+	if len(one) != 1 || len(one[0].RepeatWarnings) != 1 || !strings.Contains(one[0].RepeatWarnings[0], "does not exist in every month") {
+		t.Fatalf("set --json did not carry the skip note:\n%s", stdout)
+	}
+	if !strings.Contains(se, one[0].RepeatWarnings[0]) {
+		t.Errorf("the envelope's string is not the one stderr said:\nenvelope: %q\nstderr: %s", one[0].RepeatWarnings[0], se)
+	}
+
+	// The batch arm: the 15th is off `on 31`'s lattice too, so it carries both
+	// notes, and the skip note both tasks share is said on stderr once.
+	stdout, se, code = runSplit(t, "set", onDay, offDay, "--repeat", "monthly on 31", "--json")
+	if code != 0 {
+		t.Fatalf("set exit %d: %s%s", code, stdout, se)
+	}
+	var many []struct {
+		After struct {
+			ID string `json:"id"`
+		} `json:"after"`
+		RepeatWarnings []string `json:"repeat_warnings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &many); err != nil {
+		t.Fatalf("set --json: %v\n%s", err, stdout)
+	}
+	got := map[string]int{}
+	for _, e := range many {
+		got[e.After.ID] = len(e.RepeatWarnings)
+	}
+	if got[onDay] != 1 || got[offDay] != 2 {
+		t.Errorf("per-task warning counts = %v, want %s:1 %s:2\n%s", got, onDay, offDay, stdout)
+	}
+	if n := strings.Count(se, "does not exist in every month"); n != 1 {
+		t.Errorf("the shared skip note was said %d times on stderr, want once:\n%s", n, se)
+	}
+
+	// A clean rule has nothing to say, so the key is absent — not [] or null.
+	stdout, code = run(t, "set", onDay, "--repeat", "monthly on last", "--json")
+	if code != 0 {
+		t.Fatalf("set exit %d: %s", code, stdout)
+	}
+	if strings.Contains(stdout, "repeat_warnings") {
+		t.Errorf("a clean rule carried repeat_warnings:\n%s", stdout)
+	}
+}
+
+// A write that binds a rule and closes in one go hands the rule to the
+// successor, which has no envelope of its own in set's output — so its notes
+// ride the closed task's, beside the receipt that names the successor.
+func TestABindAndCloseCarriesTheWarningsOnTheClosedEnvelope(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "y", "--due", "2026-01-31")
+	id := addedID(t, out, code)
+
+	stdout, se, code := runSplit(t, "set", id, "-s", "done", "--repeat", "every 3 months", "--json")
+	if code != 0 {
+		t.Fatalf("set exit %d: %s%s", code, stdout, se)
+	}
+	var envs []struct {
+		After struct {
+			ID string `json:"id"`
+		} `json:"after"`
+		Repeat struct {
+			Created string `json:"created"`
+		} `json:"repeat"`
+		RepeatWarnings []string `json:"repeat_warnings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &envs); err != nil {
+		t.Fatalf("set --json: %v\n%s", err, stdout)
+	}
+	if len(envs) != 1 || envs[0].After.ID != id || envs[0].Repeat.Created == "" {
+		t.Fatalf("want one envelope for %s naming its successor:\n%s", id, stdout)
+	}
+	if len(envs[0].RepeatWarnings) != 1 || !strings.Contains(envs[0].RepeatWarnings[0], "does not exist in every month") {
+		t.Errorf("the closed task's envelope did not carry the bound rule's note:\n%s", stdout)
+	}
+}
+
+// `add` has no {before,after,changed} envelope — its JSON is the created task —
+// so the notes ride beside the task's own fields, on every add path.
+func TestAddRepeatJSONCarriesTheBindWarnings(t *testing.T) {
+	initStore(t)
+	// 2026-09-15 is a Tuesday; the rule lands on Mondays.
+	stdout, se, code := runSplit(t, "add", "隔週", "--due", "2026-09-15", "--repeat", "every 2 weeks on mon", "--json")
+	if code != 0 {
+		t.Fatalf("add exit %d: %s%s", code, stdout, se)
+	}
+	var created struct {
+		ID             string   `json:"id"`
+		RepeatWarnings []string `json:"repeat_warnings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &created); err != nil {
+		t.Fatalf("add --json: %v\n%s", err, stdout)
+	}
+	if created.ID == "" || len(created.RepeatWarnings) != 1 || !strings.Contains(created.RepeatWarnings[0], "not a date this rule lands on") {
+		t.Fatalf("add --json did not carry the off-lattice note:\n%s", stdout)
+	}
+	if !strings.Contains(se, created.RepeatWarnings[0]) {
+		t.Errorf("the JSON string is not the one stderr said:\njson: %q\nstderr: %s", created.RepeatWarnings[0], se)
+	}
+
+	stdout, code = run(t, "add", "隔週2", "--due", "2026-09-21", "--repeat", "every 2 weeks on mon", "--json")
+	if code != 0 {
+		t.Fatalf("add exit %d: %s", code, stdout)
+	}
+	if strings.Contains(stdout, "repeat_warnings") {
+		t.Errorf("an anchor ON the lattice carried repeat_warnings:\n%s", stdout)
+	}
+
+	// --stdin shares the flags, so every task carries the note while stderr
+	// says it once.
+	stdout, se, code = runSplitIn(t, "a\nb\n", "add", "--stdin", "--due", "2026-09-15", "--repeat", "every 2 weeks on mon", "--json")
+	if code != 0 {
+		t.Fatalf("add --stdin exit %d: %s%s", code, stdout, se)
+	}
+	var rows []struct {
+		RepeatWarnings []string `json:"repeat_warnings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &rows); err != nil {
+		t.Fatalf("add --stdin --json: %v\n%s", err, stdout)
+	}
+	if len(rows) != 2 || len(rows[0].RepeatWarnings) != 1 || len(rows[1].RepeatWarnings) != 1 {
+		t.Errorf("add --stdin --json: want the note on both tasks:\n%s", stdout)
+	}
+	if n := strings.Count(se, "not a date this rule lands on"); n != 1 {
+		t.Errorf("the shared note was said %d times on stderr, want once:\n%s", n, se)
+	}
+
+	// --batch: each line's own rule, so only the off-lattice line carries it.
+	in := `{"key":"off","title":"off","due":"2026-09-15","repeat":"every 2 weeks on mon"}` + "\n" +
+		`{"key":"on","title":"on","due":"2026-09-21","repeat":"every 2 weeks on mon"}` + "\n"
+	stdout, se, code = runSplitIn(t, in, "add", "--batch", "-", "--json")
+	if code != 0 {
+		t.Fatalf("add --batch exit %d: %s%s", code, stdout, se)
+	}
+	var keyed []struct {
+		Key            string    `json:"key"`
+		RepeatWarnings *[]string `json:"repeat_warnings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &keyed); err != nil {
+		t.Fatalf("add --batch --json: %v\n%s", err, stdout)
+	}
+	if len(keyed) != 2 || keyed[0].Key != "off" || keyed[0].RepeatWarnings == nil || len(*keyed[0].RepeatWarnings) != 1 || keyed[1].RepeatWarnings != nil {
+		t.Errorf("add --batch --json: want the note on the off-lattice line only:\n%s", stdout)
+	}
+}

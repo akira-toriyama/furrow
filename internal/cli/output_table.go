@@ -73,15 +73,6 @@ func printRows(a *app.App, tasks []core.Task, glyphs, trail []string) {
 	}
 }
 
-// emitTasks renders a task list per the active output mode (--json | --ndjson |
-// human table). An empty list is a healthy result (exit 0), never a miss — a
-// query that matched nothing still succeeded. exit 1 is reserved for a
-// specifically requested id that does not exist (e.g. `show <id>`).
-func emitTasks(a *app.App, tasks []core.Task) error {
-	emitList(tasks, func() { printTaskTable(a, tasks) })
-	return nil
-}
-
 // actionReason explains, for an agent, WHY a task is in `next`: the lane it sits
 // in (whichever lane qualified it — a configured next-lane, or one included by a
 // one-shot `--lanes` override, so a backlog task surfaced by `next --lanes
