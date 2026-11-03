@@ -64,13 +64,18 @@ if grep -Eq '^[[:space:]]*draft:[[:space:]]*true' .goreleaser.yaml; then
 	note ".goreleaser.yaml sets draft: true — assets 404 during the same-run tap push"
 fi
 
-# (3) release.yml folds glyph notes' soft "nothing release-worthy" exit (1) into
-# an empty-notes release, rather than letting `set -e` abort the already-tagged
-# job. Losing that branch turns a benign no-release verdict into a failed release.
-grep -qF '"$status" -eq 1' .github/workflows/release.yml || note "release.yml lost the soft exit-1 fold for 'glyph notes' (a no-release verdict would abort the tagged job)"
+# (3) release.yml renders its body with glyph's release-notes action and hands
+# GoReleaser that action's file. The action owns the tag-time exits — 1
+# (nothing release-worthy) and 3 (a wedge-escape tag's walk) publish a
+# placeholder body instead of failing the already-tagged job — which a
+# hand-rolled step loses (the one the action replaced failed the job on 3,
+# leaving the tag without assets); a --release-notes naming any other file
+# ships a body glyph never wrote.
+grep -Eq '^[[:space:]]*uses: akira-toriyama/glyph/\.github/actions/release-notes@v[0-9]' .github/workflows/release.yml || note "release.yml no longer renders its body with glyph's release-notes action (the action is what turns glyph's exits 1 and 3 into a placeholder body instead of a failed tagged job)"
+grep -qF -- '--release-notes ${{ steps.notes.outputs.file }}' .github/workflows/release.yml || note "release.yml's GoReleaser no longer reads the release-notes action's file (--release-notes \${{ steps.notes.outputs.file }})"
 
 if [ "$fail" -ne 0 ]; then
 	printf '  release-config invariants drifted — a regression here ships silently (green CI, broken tag).\n' >&2
 	exit 1
 fi
-echo "ok — release-config invariants hold (ldflags path -> real package, draft:false, soft exit-1 fold)"
+echo "ok — release-config invariants hold (ldflags path -> real package, draft:false, body from glyph's release-notes action)"
