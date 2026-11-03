@@ -242,7 +242,7 @@ func TestRemoveTasksLeavesAnotherOwnersAsset(t *testing.T) {
 	if _, err := a.RemoveEpic(box.ID, RemoveOpts{Apply: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.SetBody(owner.ID, "# owner\n"); err != nil {
+	if _, _, err := a.SetBody(owner.ID, "# owner\n"); err != nil {
 		t.Fatal(err)
 	}
 	rep, err := a.RemoveTasks([]string{reader.ID}, RemoveOpts{Apply: true})

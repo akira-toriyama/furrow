@@ -154,7 +154,7 @@ func TestRealMutationsStampUpdated(t *testing.T) {
 		// Prose: the shard is byte-identical afterwards, so these prove the
 		// comparison is not the whole rule.
 		{"note appended", func(a *App, id, _ string) error { _, err := a.AddNote(id, "progress"); return err }},
-		{"body replaced", func(a *App, id, _ string) error { _, err := a.SetBody(id, "# seed\n\nnew"); return err }},
+		{"body replaced", func(a *App, id, _ string) error { _, _, err := a.SetBody(id, "# seed\n\nnew"); return err }},
 		{"closed with a note", func(a *App, id, _ string) error { _, err := a.DoneNote(id, "superseded"); return err }},
 	}
 	for _, c := range cases {

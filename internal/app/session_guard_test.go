@@ -308,7 +308,7 @@ func TestSessionGuardCoversEveryTaskWrite(t *testing.T) {
 		"Move":            one(func() (*core.Task, error) { return a.Move(x.ID, "backlog") }),
 		"DoneNote":        one(func() (*core.Task, error) { return a.DoneNote(x.ID, "bye") }),
 		"AddNote":         one(func() (*core.Task, error) { return a.AddNote(x.ID, "note") }),
-		"SetBody":         one(func() (*core.Task, error) { return a.SetBody(x.ID, "# new") }),
+		"SetBody":         func() error { _, _, err := a.SetBody(x.ID, "# new"); return err },
 		"Reorder":         one(func() (*core.Task, error) { return a.Reorder(x.ID, 5) }),
 		"SetValue":        one(func() (*core.Task, error) { return a.SetValue(x.ID, cloneIntp(ptr(3))) }),
 		"Retitle":         one(func() (*core.Task, error) { return a.Retitle(x.ID, "renamed") }),
@@ -365,7 +365,7 @@ func TestSessionGuardRefusalLeavesEveryFileUntouched(t *testing.T) {
 	if assets, _ := a.Store.ListAssets(); len(assets) != 0 {
 		t.Fatalf("a refused attach must leave no asset: %+v", assets)
 	}
-	_, _, err = a.EpicSetBody(box.ID, "# clobbered")
+	_, _, _, err = a.EpicSetBody(box.ID, "# clobbered")
 	wantSessionBusy(t, err, box.ID)
 	_, _, err = a.EpicNote(box.ID, "leaked")
 	wantSessionBusy(t, err, box.ID)
