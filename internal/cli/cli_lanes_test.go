@@ -480,3 +480,48 @@ func TestCLIApplyDryRunWritesNothing(t *testing.T) {
 		t.Errorf("real apply after previews exit %d", code)
 	}
 }
+
+// A directive apply deliberately did not move is said in every form — its own
+// human line (never "no change" or a bare "annotated", which read exactly like
+// a lane-less footer), a stderr note naming why, and the JSON `kept` reason —
+// at exit 0, in the preview as in the real apply (t-9vtf).
+func TestCLIApplyReportsAKeptDirective(t *testing.T) {
+	initStore(t)
+	spin := addTask(t, "spun off", "-s", "backlog")
+	closed := addTask(t, "closed early", "-s", "in-progress")
+	mustRun(t, "done", closed)
+
+	open := "SetStatus-task: " + spin + " backlog\n"
+	why := "note: " + spin + " stays in backlog: the footer's backlog comes before --open-lane in-progress"
+	for _, step := range []struct {
+		args []string
+		line string
+	}{
+		{[]string{"--dry-run"}, spin + "  would be kept in backlog, would annotate\n"},
+		{nil, spin + "  kept in backlog, annotated\n"},
+		{[]string{"--dry-run"}, spin + "  would be kept in backlog\n"},
+	} {
+		so, se, code := runSplitIn(t, open, append([]string{"apply", "--on", "open", "--ref", "x#1"}, step.args...)...)
+		if code != 0 || so != step.line || !strings.Contains(se, why) {
+			t.Errorf("apply --on open %v: exit %d, stdout %q (want %q), stderr:\n%s", step.args, code, so, step.line, se)
+		}
+	}
+
+	merge := "SetStatus-task: " + closed + " in-progress\n"
+	so, _, code := runSplitIn(t, merge, "--json", "apply", "--on", "merge", "--ref", "x#2")
+	var res struct {
+		Outcomes []struct {
+			Action, To, Kept string
+		} `json:"outcomes"`
+	}
+	if err := json.Unmarshal([]byte(so), &res); err != nil {
+		t.Fatalf("apply --json: %v\n%s", err, so)
+	}
+	if code != 0 || len(res.Outcomes) != 1 || res.Outcomes[0] != (struct{ Action, To, Kept string }{"annotated", "done", app.KeptTaskTerminal}) {
+		t.Errorf("a merge over a done task must report it kept (exit %d):\n%s", code, so)
+	}
+	so, se, code := runSplitIn(t, merge, "apply", "--on", "merge", "--ref", "x#2")
+	if code != 0 || so != closed+"  kept in done\n" || !strings.Contains(se, "note: "+closed+" stays in done: a merge never moves a task out of a terminal lane") {
+		t.Errorf("human re-run: exit %d, stdout %q, stderr:\n%s", code, so, se)
+	}
+}
