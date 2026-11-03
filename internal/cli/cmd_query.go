@@ -203,7 +203,8 @@ func addQueryFlag(cmd *cobra.Command, p *[]string) {
 		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
 			"is:actionable|blocked|stale|open|closed|draft|unfiled|overdue, "+
 			"ordinals+dates with >=,<,.. (updated:>=-2w), graph epic:/anchor:/depends-on:/blocks:/descendant-of:/ancestor-of:, "+
-			"free text over title, checklist, refs and body; ANDs with the other filters; repeated -q ANDs the queries")
+			"free text over title, checklist, refs and body; quote a value as '…' or \"…\" to keep spaces, commas and colons "+
+			"(the other quote char may sit inside; there is no escape); ANDs with the other filters; repeated -q ANDs the queries")
 }
 
 // parseDateBound parses a --since/--until value: a bare YYYY-MM-DD (interpreted
