@@ -8,9 +8,9 @@ import (
 	"github.com/akira-toriyama/furrow/v9/internal/core"
 )
 
-// ApplyMode is when directives are applied: at PR open or PR merge. It changes
-// what status (if any) a directive sets — open never reaches a terminal lane,
-// so a directive targeting `done` only closes the task at merge.
+// ApplyMode is when directives are applied: at PR open or PR merge. A
+// directive's lane is applied only at merge; open at most nudges the task to
+// the open lane (ApplyDirectives has the rule), so `done` closes only at merge.
 type ApplyMode string
 
 const (
@@ -18,7 +18,7 @@ const (
 	OnMerge ApplyMode = "merge"
 )
 
-// DefaultOpenLane is the lane a task is nudged to when a PR referencing it is
+// DefaultOpenLane is the lane a task is nudged to when a PR doing its work is
 // opened. It is overridable (--open-lane) for non-default lane schemes.
 const DefaultOpenLane = "in-progress"
 
@@ -71,7 +71,7 @@ type ApplyOutcome struct {
 	ID     string `json:"id"`
 	Lane   string `json:"lane,omitempty"`  // the directive's merge-target lane
 	Action string `json:"action"`          // moved | annotated | skipped | error
-	To     string `json:"to,omitempty"`    // resulting status if moved
+	To     string `json:"to,omitempty"`    // the task's lane after a lane-naming directive: moved to, or stayed in
 	Note   string `json:"note,omitempty"`  // body line appended (if any)
 	Error  string `json:"error,omitempty"` // message when Action == error
 	Code   int    `json:"code,omitempty"`  // furrow exit code for this directive's error
@@ -95,7 +95,28 @@ type ApplyOutcome struct {
 	// machine cannot tell the last occurrence of a series from a task that never
 	// repeated, since both would carry neither key.
 	WillComplete bool `json:"will_complete,omitempty"`
+	// Kept is why a directive naming a lane deliberately left its task where it
+	// was (one of the Kept* reasons; empty = nothing was held back). Without it a
+	// kept directive read as "annotated", indistinguishable from a lane-less
+	// footer, and the footer's author could not tell their lane was not applied.
+	Kept string `json:"kept,omitempty"`
 }
+
+// Kept reasons — a closed set; ApplyDirectives has the rule each one names.
+// They are expected states, not failures: an outcome carrying one is never an
+// error and sets no exit code.
+const (
+	// KeptTaskTerminal: the task is in a terminal lane and is not reopened —
+	// open does not nudge it, and merge does not move it to a non-terminal
+	// target (a terminal target still applies).
+	KeptTaskTerminal = "task-terminal"
+	// KeptTargetBeforeOpenLane: at open, the merge target precedes the open lane
+	// in [lanes].order — the PR is not the task's work.
+	KeptTargetBeforeOpenLane = "target-before-open-lane"
+	// KeptTargetParked: at open, the merge target is a parked lane (terminal,
+	// not the done lane) — the PR is not the task's work.
+	KeptTargetParked = "target-parked"
+)
 
 // ApplyResult is the full report — the JSON output of `furrow apply`. DryRun
 // marks a preview: the outcomes are what the same run WOULD do, and nothing
@@ -121,13 +142,25 @@ func (r ApplyResult) WorstCode() int {
 }
 
 // ApplyDirectives parses SetStatus-task directives from text and applies them to
-// the store per mode:
+// the store per mode. A directive's lane is its task's MERGE TARGET — where the
+// task should be once the PR lands; no lane = annotate only:
 //
-//   - OnMerge: move the task to the directive's lane (empty lane = annotate only).
-//   - OnOpen:  nudge a non-terminal task to openLane (default in-progress), but
-//     only when the directive carries a lane. The directive's own lane is NOT
-//     applied on open — that is the merge target — so a terminal lane like `done`
-//     is structurally unreachable at open.
+//   - OnMerge moves the task to the target, except that a task in a terminal
+//     lane is not reopened: a non-terminal target leaves it where it is,
+//     annotated and reported Kept (KeptTaskTerminal) — the measured case is a
+//     task closed by hand before its PR merged and reopened by the footer's
+//     `in-progress`. A terminal target still applies, so a `done` footer closes
+//     a task parked in waiting or icebox while the PR was open.
+//   - OnOpen nudges a non-terminal task to openLane (default in-progress) only
+//     when the target says the PR is the task's work: the done lane, or a
+//     non-terminal lane at or after openLane in [lanes].order. Any other target
+//     (a lane before openLane, or a parked lane) is annotated and reported Kept —
+//     the measured case is a spin-off PR whose `backlog` footer started a backlog
+//     task. A terminal task is never nudged. The target itself is never applied
+//     at open, so `done` closes a task only at merge.
+//
+// Every decision reads only the board's config ([lanes].order, .terminal,
+// .done and openLane); no lane name is special-cased.
 //
 // When ref is non-empty each touched task gets a one-line body annotation
 // recording the ref + event, deduped by exact line so re-runs are idempotent.
@@ -140,13 +173,13 @@ func (a *App) ApplyDirectives(text, ref string, mode ApplyMode, openLane string)
 
 // PreviewDirectives is ApplyDirectives without the writes: the same parse and
 // the same per-directive validation (unknown id, unknown lane, unknown
-// --open-lane), with each valid directive's outcome projected from the current
-// store state instead of performed. It exists as a local gate — a PR author
-// validates the footer BEFORE `gh pr create`, where the CI apply is
-// non-blocking and a bad footer is otherwise noticed only after the merge did
-// not move the lane. The projection is exact for everything the validation
-// covers; a write-time refusal inside Move (a store-level invariant) is the one
-// thing a preview cannot see.
+// --open-lane), with each valid directive's outcome — a Kept reason included —
+// projected from the current store state instead of performed. It exists as a
+// local gate — a PR author validates the footer BEFORE `gh pr create`, where
+// the CI apply is non-blocking and a bad footer is otherwise noticed only after
+// the merge did not move the lane. The projection is exact for everything the
+// validation covers; a write-time refusal inside Move (a store-level
+// invariant) is the one thing a preview cannot see.
 func (a *App) PreviewDirectives(text, ref string, mode ApplyMode, openLane string) (ApplyResult, error) {
 	return a.applyDirectives(text, ref, mode, openLane, true)
 }
@@ -194,25 +227,33 @@ func (a *App) applyDirectives(text, ref string, mode ApplyMode, openLane string,
 // are recorded in out, not returned. With dryRun the same decisions are made
 // and recorded, but no store write happens — the outcome is the projection.
 func (a *App) applyOne(out *ApplyOutcome, t *core.Task, d Directive, ref string, mode ApplyMode, openLane string, dryRun bool) error {
-
 	target := ""
-	switch mode {
-	case OnMerge:
-		target = d.Lane // empty => annotate only
-	case OnOpen:
-		if d.Lane != "" && !a.Cfg.IsTerminal(t.Status) {
-			if !a.Cfg.IsLane(openLane) {
-				fail(out, &core.Error{
-					Code:       core.CodeValidation,
-					Kind:       core.KindUnknownLane,
-					Subject:    d.ID,
-					Msg:        fmt.Sprintf("--open-lane %q is not a configured lane (configured: %s)", openLane, strings.Join(a.Cfg.Lanes, ", ")),
-					Candidates: append([]string(nil), a.Cfg.Lanes...),
-				})
-				return nil
-			}
+	switch {
+	case d.Lane == "":
+		// annotate only
+	case mode == OnMerge:
+		target = d.Lane
+		if a.Cfg.IsTerminal(t.Status) && !a.Cfg.IsTerminal(d.Lane) {
+			target, out.Kept = "", KeptTaskTerminal
+		}
+	case a.Cfg.IsTerminal(t.Status):
+		out.Kept = KeptTaskTerminal
+	case !a.Cfg.IsLane(openLane):
+		fail(out, &core.Error{
+			Code:       core.CodeValidation,
+			Kind:       core.KindUnknownLane,
+			Subject:    d.ID,
+			Msg:        fmt.Sprintf("--open-lane %q is not a configured lane (configured: %s)", openLane, strings.Join(a.Cfg.Lanes, ", ")),
+			Candidates: append([]string(nil), a.Cfg.Lanes...),
+		})
+		return nil
+	default:
+		if out.Kept = a.openKeeps(d.Lane, openLane); out.Kept == "" {
 			target = openLane
 		}
+	}
+	if out.Kept != "" {
+		out.To = t.Status
 	}
 
 	switch {
@@ -241,7 +282,13 @@ func (a *App) applyOne(out *ApplyOutcome, t *core.Task, d Directive, ref string,
 	}
 
 	if ref != "" {
-		line := annotationLine(mode, ref, d.Lane)
+		// A kept merge records the lane-less line: "merged → `in-progress`" in the
+		// body of a task that stayed done would claim a move that never happened.
+		applied := d.Lane
+		if out.Kept != "" {
+			applied = ""
+		}
+		line := annotationLine(mode, ref, applied)
 		var changed bool
 		var err error
 		if dryRun {
@@ -260,6 +307,24 @@ func (a *App) applyOne(out *ApplyOutcome, t *core.Task, d Directive, ref string,
 		}
 	}
 	return nil
+}
+
+// openKeeps is OnOpen's reading of a non-terminal task's merge target: the
+// Kept reason when the target says the PR is not the task's work, or "" when
+// the task is to be nudged to openLane. Both lanes are known to be configured.
+func (a *App) openKeeps(target, openLane string) string {
+	if target == a.Cfg.DoneLane {
+		return ""
+	}
+	if a.Cfg.IsTerminal(target) {
+		return KeptTargetParked
+	}
+	t, _ := a.Cfg.LaneRank(target)
+	o, _ := a.Cfg.LaneRank(openLane)
+	if t < o {
+		return KeptTargetBeforeOpenLane
+	}
+	return ""
 }
 
 // fail records a per-directive error onto out, carrying any machine-actionable

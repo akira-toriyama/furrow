@@ -351,7 +351,7 @@ furrow tracker. Add a footer to the PR body pointing at a task's body file:
 SetStatus-task: https://github.com/<owner>/<tracker>/blob/main/.furrow/bodies/<id>.md done
 ```
 
-A PR **open** nudges the task to in-progress and the **merge** applies the named lane (`furrow apply --help` has the rules). The CI apply is non-blocking, so check a footer locally first: `furrow apply --on merge --dry-run --body-file <pr-body>` validates every directive and writes nothing.
+The footer's lane is the task's **merge target**: the **merge** applies it unless that would reopen a terminal task, and a PR **open** nudges the task to in-progress only when that target says the PR is the task's work — a `backlog` footer on a spin-off PR leaves the task where it is (`furrow apply --help` has the rules). The CI apply is non-blocking, so check a footer locally first: `furrow apply --on merge --dry-run --body-file <pr-body>` validates every directive and writes nothing.
 
 The GitHub wiring **ships with furrow** as a reusable workflow,
 [`.github/workflows/sync-task-status.yml`](.github/workflows/sync-task-status.yml).
