@@ -106,8 +106,9 @@ type ApplyOutcome struct {
 // They are expected states, not failures: an outcome carrying one is never an
 // error and sets no exit code.
 const (
-	// KeptTaskTerminal: the task is in a terminal lane, which apply never leaves
-	// (open does not nudge it, merge does not move it).
+	// KeptTaskTerminal: the task is in a terminal lane and is not reopened —
+	// open does not nudge it, and merge does not move it to a non-terminal
+	// target (a terminal target still applies).
 	KeptTaskTerminal = "task-terminal"
 	// KeptTargetBeforeOpenLane: at open, the merge target precedes the open lane
 	// in [lanes].order — the PR is not the task's work.
@@ -144,10 +145,12 @@ func (r ApplyResult) WorstCode() int {
 // the store per mode. A directive's lane is its task's MERGE TARGET — where the
 // task should be once the PR lands; no lane = annotate only:
 //
-//   - OnMerge moves the task to the target. A task already in a terminal lane is
-//     never moved, whatever the target: it is annotated and reported Kept
-//     (KeptTaskTerminal) — the measured case is a task closed by hand before its
-//     PR merged and reopened by the footer's `in-progress`.
+//   - OnMerge moves the task to the target, except that a task in a terminal
+//     lane is not reopened: a non-terminal target leaves it where it is,
+//     annotated and reported Kept (KeptTaskTerminal) — the measured case is a
+//     task closed by hand before its PR merged and reopened by the footer's
+//     `in-progress`. A terminal target still applies, so a `done` footer closes
+//     a task parked in waiting or icebox while the PR was open.
 //   - OnOpen nudges a non-terminal task to openLane (default in-progress) only
 //     when the target says the PR is the task's work: the done lane, or a
 //     non-terminal lane at or after openLane in [lanes].order. Any other target
@@ -230,9 +233,7 @@ func (a *App) applyOne(out *ApplyOutcome, t *core.Task, d Directive, ref string,
 		// annotate only
 	case mode == OnMerge:
 		target = d.Lane
-		// A terminal task already IN the target is the idempotent re-run, not a
-		// keep: it reports "no change" like any task already where it should be.
-		if a.Cfg.IsTerminal(t.Status) && t.Status != d.Lane {
+		if a.Cfg.IsTerminal(t.Status) && !a.Cfg.IsTerminal(d.Lane) {
 			target, out.Kept = "", KeptTaskTerminal
 		}
 	case a.Cfg.IsTerminal(t.Status):

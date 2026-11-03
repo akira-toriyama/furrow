@@ -25,9 +25,10 @@ func newApplyCmd() *cobra.Command {
 			"store. CI/VCS-agnostic: any GitHub specifics stay in the calling workflow.\n\n" +
 			"A directive's lane is the MERGE TARGET: where the task should be once the PR\n" +
 			"lands. Omit it to only annotate the body.\n\n" +
-			"  --on merge  moves the task to the target. A task already in a terminal lane\n" +
-			"              is never moved, whatever the target: closed or parked before\n" +
-			"              the merge, it stays there.\n" +
+			"  --on merge  moves the task to the target, except that a task in a terminal\n" +
+			"              lane is not reopened: a non-terminal target leaves it where it\n" +
+			"              is. A terminal target still applies, so a `done` footer closes\n" +
+			"              a task parked (waiting, icebox) while the PR was open.\n" +
 			"  --on open   nudges the task to --open-lane (default in-progress) only when\n" +
 			"              the target says the PR is the task's work: the done lane, or a\n" +
 			"              non-terminal lane at or after --open-lane in [lanes].order. Any\n" +
@@ -169,9 +170,9 @@ func keptNote(mode app.ApplyMode, o app.ApplyOutcome, openLane string) string {
 	switch o.Kept {
 	case app.KeptTaskTerminal:
 		if mode == app.OnOpen {
-			return fmt.Sprintf("%s stays in %s: opening a PR never nudges a task out of a terminal lane", o.ID, o.To)
+			return fmt.Sprintf("%s stays in %s: opening a PR does not reopen a task in a terminal lane", o.ID, o.To)
 		}
-		return fmt.Sprintf("%s stays in %s: a merge never moves a task out of a terminal lane, so the footer's %s is not applied (`furrow move %s %s` if this PR reopens it)", o.ID, o.To, o.Lane, o.ID, o.Lane)
+		return fmt.Sprintf("%s stays in %s: a merge does not reopen a task in a terminal lane, so the footer's %s is not applied (`furrow move %s %s` if the work really reopens)", o.ID, o.To, o.Lane, o.ID, o.Lane)
 	case app.KeptTargetBeforeOpenLane:
 		return fmt.Sprintf("%s stays in %s: the footer's %s comes before --open-lane %s in [lanes].order, so this PR is not the task's work; the lane applies at merge", o.ID, o.To, o.Lane, openLane)
 	case app.KeptTargetParked:

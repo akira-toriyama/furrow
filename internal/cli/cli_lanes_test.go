@@ -521,7 +521,7 @@ func TestCLIApplyReportsAKeptDirective(t *testing.T) {
 		t.Errorf("a merge over a done task must report it kept (exit %d):\n%s", code, so)
 	}
 	so, se, code := runSplitIn(t, merge, "apply", "--on", "merge", "--ref", "x#2")
-	if code != 0 || so != closed+"  kept in done\n" || !strings.Contains(se, "note: "+closed+" stays in done: a merge never moves a task out of a terminal lane") {
+	if code != 0 || so != closed+"  kept in done\n" || !strings.Contains(se, "note: "+closed+" stays in done: a merge does not reopen a task in a terminal lane") {
 		t.Errorf("human re-run: exit %d, stdout %q, stderr:\n%s", code, so, se)
 	}
 }

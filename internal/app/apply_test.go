@@ -255,8 +255,9 @@ func TestPreviewDirectivesIsIdempotentLikeApply(t *testing.T) {
 
 // TestApplyLaneIsTheMergeTarget pins what a directive's lane means: the task's
 // merge target. Open nudges only for a target that is the task's work (the done
-// lane, or a non-terminal lane at or after the open lane), merge never moves a
-// terminal task, and every deliberate non-move says why in Kept. Each row runs
+// lane, or a non-terminal lane at or after the open lane), merge never reopens
+// a terminal task (a terminal target still applies), and every deliberate
+// non-move says why in Kept. Each row runs
 // the preview first and then the real apply on the same store, so the dry-run
 // is held to the identical decision. The two measured accidents (t-9vtf) are
 // the "backlog footer" and "done task" rows.
@@ -279,7 +280,10 @@ func TestApplyLaneIsTheMergeTarget(t *testing.T) {
 		{"open with an in-progress footer nudges", "backlog", "in-progress", OnOpen, "in-progress", "moved", "", "- 🚧 `x#1` opened"},
 		{"open never nudges a done task", "done", "done", OnOpen, "done", "annotated", KeptTaskTerminal, "- 🚧 `x#1` opened"},
 		{"merge with an in-progress footer keeps a done task", "done", "in-progress", OnMerge, "done", "annotated", KeptTaskTerminal, "- 🔗 `x#1` merged"},
-		{"merge with a done footer keeps an icebox task", "icebox", "done", OnMerge, "icebox", "annotated", KeptTaskTerminal, "- 🔗 `x#1` merged"},
+		{"merge with a backlog footer keeps an icebox task", "icebox", "backlog", OnMerge, "icebox", "annotated", KeptTaskTerminal, "- 🔗 `x#1` merged"},
+		{"merge with a done footer closes an icebox task", "icebox", "done", OnMerge, "done", "moved", "", "- ✅ `x#1` merged → `done`"},
+		{"merge with a done footer closes a waiting task", "waiting", "done", OnMerge, "done", "moved", "", "- ✅ `x#1` merged → `done`"},
+		{"merge with an icebox footer parks a done task", "done", "icebox", OnMerge, "icebox", "moved", "", "- ✅ `x#1` merged → `icebox`"},
 		{"merge with a done footer closes an in-progress task", "in-progress", "done", OnMerge, "done", "moved", "", "- ✅ `x#1` merged → `done`"},
 		{"merge with a backlog footer moves an in-progress task", "in-progress", "backlog", OnMerge, "backlog", "moved", "", "- ✅ `x#1` merged → `backlog`"},
 	}
