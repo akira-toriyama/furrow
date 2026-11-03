@@ -69,6 +69,64 @@ func TestQueryIsUnfiled(t *testing.T) {
 	}
 }
 
+// unlanedFixture is a board whose [lanes] moved under its shards: "waiting" is
+// dropped and "icebox" renamed to "someday", so two tasks keep a status the
+// config no longer names while "ready" stays laned.
+func unlanedFixture(t *testing.T) *App {
+	t.Helper()
+	a := newApp()
+	for title, lane := range map[string]string{"laned": "ready", "dropped": "waiting", "renamed": "icebox"} {
+		if _, err := a.Add(title, AddOpts{Status: lane}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lanes := slices.DeleteFunc(slices.Clone(a.Cfg.Lanes), func(l string) bool { return l == "waiting" })
+	lanes[slices.Index(lanes, "icebox")] = "someday"
+	a.Cfg.Lanes = lanes
+	return a
+}
+
+// `is:unlaned` names the tasks a [lanes] edit orphaned — the one query that can,
+// since status:<old lane> refuses a lane outside the vocabulary.
+func TestQueryIsUnlaned(t *testing.T) {
+	a := unlanedFixture(t)
+	if got := qTitles(t, a, "is:unlaned"); !slices.Equal(got, []string{"dropped", "renamed"}) {
+		t.Errorf("is:unlaned = %v, want [dropped renamed]", got)
+	}
+	if got := qTitles(t, a, "-is:unlaned"); !slices.Equal(got, []string{"laned"}) {
+		t.Errorf("-is:unlaned = %v, want [laned]", got)
+	}
+}
+
+// is:unlaned and lint's unknown-lane are one test: on the same board they name
+// the same ids, or a front-end trusting the query misses what lint reports.
+func TestQueryIsUnlanedMatchesLintUnknownLane(t *testing.T) {
+	a := unlanedFixture(t)
+	tasks, err := a.List(QueryOpts{Query: "is:unlaned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var queried []string
+	for i := range tasks {
+		queried = append(queried, tasks[i].ID)
+	}
+	probs, err := a.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var linted []string
+	for _, p := range probs {
+		if p.Code == "unknown-lane" {
+			linted = append(linted, p.ID)
+		}
+	}
+	slices.Sort(queried)
+	slices.Sort(linted)
+	if len(queried) != 2 || !slices.Equal(queried, linted) {
+		t.Errorf("is:unlaned = %v, lint unknown-lane = %v: want the same two ids", queried, linted)
+	}
+}
+
 // epic:<ref> selects a box's members, the ref resolved exactly as -e resolves
 // it (t-5mcm): an unknown box is exit 2 epic-not-found with the box ids as
 // candidates, never 0 rows — the dangling pointer a SHARD may carry stays

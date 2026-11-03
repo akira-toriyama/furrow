@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -87,7 +88,6 @@ func CheckUniqueIDs(idx *Index) error {
 // of the box vocabulary rather than being smuggled in through another parameter.
 func Validate(idx *Index, laneOrder []string, idPattern *regexp.Regexp) []Problem {
 	var out []Problem
-	known := laneRank(laneOrder)
 	seen := map[string]int{}
 	ids := map[string]bool{}
 	for _, t := range idx.Tasks {
@@ -107,7 +107,7 @@ func Validate(idx *Index, laneOrder []string, idPattern *regexp.Regexp) []Proble
 			out = append(out, Problem{SevError, "duplicate-id", t.ID, fmt.Sprintf("duplicate id: %s", t.ID)})
 		}
 
-		if _, ok := known[t.Status]; !ok {
+		if Unlaned(t.Status, laneOrder) {
 			out = append(out, Problem{SevWarn, "unknown-lane", t.ID, fmt.Sprintf("status %q is not a configured lane", t.Status)})
 		}
 
@@ -135,6 +135,14 @@ func Validate(idx *Index, laneOrder []string, idPattern *regexp.Regexp) []Proble
 	// so two runs over the same index print identically.
 	sortProblems(out)
 	return out
+}
+
+// Unlaned reports whether status names no lane in laneOrder — a shard left
+// behind when [lanes] dropped or renamed its lane. It is lint's unknown-lane
+// test and `-q is:unlaned` calls it too, so the filter and the warning cannot
+// disagree.
+func Unlaned(status string, laneOrder []string) bool {
+	return !slices.Contains(laneOrder, status)
 }
 
 // EstimateProblems warns about any value/effort outside the 1..5 scale. It is a
