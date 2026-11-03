@@ -5,6 +5,9 @@ import "testing"
 // The quoting rule the -q flag help and README state, pinned so the prose and
 // the lexer cannot drift: either quote char wraps a value, the other may sit
 // inside, there is no escape, and a value holding both is unrepresentable.
+//
+// bite-exempt: a contract pin on the lexer as it already is — the change is
+// the stated rule, not the parser.
 func TestQuotingRuleIsTheDocumentedOne(t *testing.T) {
 	cases := []struct {
 		in   string
