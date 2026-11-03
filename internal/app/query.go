@@ -32,7 +32,7 @@ var presenceVocab = []string{
 }
 
 // stateVocab is the is: flag set.
-var stateVocab = []string{"actionable", "blocked", "stale", "open", "closed", "draft", "unfiled", "overdue"}
+var stateVocab = []string{"actionable", "blocked", "stale", "open", "closed", "draft", "unfiled", "unlaned", "overdue"}
 
 // isDateField reports whether f is one of the date qualifiers — the four system
 // timestamps plus `due`, the one date a human sets rather than furrow stamping.
@@ -727,6 +727,11 @@ func (c *queryCompiler) compileTerm(term query.Term) (func(*core.Task) bool, err
 				// No box. The lint-error state, queryable so a backfill sweep is one
 				// read rather than a diff of two lists.
 				return t.Epic == ""
+			case "unlaned":
+				// lint's unknown-lane through the same predicate. status:<lane>
+				// refuses a lane outside the vocabulary, so this is the only term
+				// that can name these tasks.
+				return core.Unlaned(t.Status, a.Cfg.Lanes)
 			case "overdue":
 				// The promised instant has passed — lint's due-overdue as a filter,
 				// through the same predicate, so a query can never disagree with the
