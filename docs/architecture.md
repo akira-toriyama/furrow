@@ -357,8 +357,9 @@ runs, since `Store.Save` writes only changed shards and a path that moved a
 NEIGHBOR (reorder's respace) must persist it. `updated` is the clock `is:stale`,
 `revisit`, `lint`'s reconcile-gap and `ls --since` read, so an idempotent retry
 must not reset it. Boxes obey the same rule (`mutateEpic`); PROSE is the
-exception — `note`, `done --note`, a body replacement stamp unconditionally,
-because the body lives outside the shard where the comparison cannot see it.
+exception — `note`, `done --note`, a body replacement stamp whenever they
+write the body, which lives outside the shard where the comparison cannot see
+it; a replacement equal to the stored body writes nothing.
 
 The invariants the funnel keeps, beyond what each verb's `--help` promises:
 

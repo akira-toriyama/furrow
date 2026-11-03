@@ -462,8 +462,10 @@ func (a *App) mutateInPostAt(idx *core.Index, id string, now time.Time, fn func(
 // and on a shared board each retry was one more commit for everyone to sync.
 //
 // The paths that write PROSE (note, done --note, a body replacement) stamp
-// unconditionally and deliberately: the body is the task's content but lives
-// outside the shard, so its bytes can never show up in this comparison.
+// inside fn, deliberately: the body is the task's content but lives outside
+// the shard, so its bytes can never show up in this comparison. A note always
+// writes; a replacement equal to the stored body writes nothing and so stamps
+// nothing.
 func (a *App) stampIfChanged(t *core.Task, before []byte) error {
 	return a.stampIfChangedAt(t, before, a.Clock.Now())
 }

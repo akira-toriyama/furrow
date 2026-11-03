@@ -134,6 +134,13 @@ func emitMutation(cmd *cobra.Command, a *app.App, verb, id string, mutate func()
 // resulting task it returns extra top-level fields to merge into the --json
 // {before,after,changed} envelope (and may write a human note to stderr).
 func emitMutationWith(cmd *cobra.Command, a *app.App, verb, id string, mutate func() (*core.Task, error), annotate func(after *core.Task) map[string]any) error {
+	return emitMutationVerb(cmd, a, func() string { return verb }, id, mutate, annotate)
+}
+
+// emitMutationVerb is emitMutationWith with the human line's verb read AFTER
+// mutate, for a write that can turn out to be a no-op it must name (`edit
+// --body` of the stored body says "unchanged").
+func emitMutationVerb(cmd *cobra.Command, a *app.App, verb func() string, id string, mutate func() (*core.Task, error), annotate func(after *core.Task) map[string]any) error {
 	expected, guard, gerr := expectUpdatedArg(cmd, id)
 	if gerr != nil {
 		return gerr
@@ -156,7 +163,7 @@ func emitMutationWith(cmd *cobra.Command, a *app.App, verb, id string, mutate fu
 		extra = mergeExtra(extra, staleReadExtra(before.ID, &before.Updated, expected))
 	}
 	extra = mergeExtra(extra, sessionGuardExtra(a))
-	printMutation(verb, before, after, extra)
+	printMutation(verb(), before, after, extra)
 	return nil
 }
 

@@ -619,12 +619,27 @@ func (a *App) EpicPrependNote(ref, text string) (*core.Epic, *core.Epic, error) 
 // operation rather than a second one wearing an epic's name: the bodies/
 // directory is shared and only the shard whose `updated` moves differs. The
 // empty-replacement check runs BEFORE resolution, matching EpicNote's order.
-func (a *App) EpicSetBody(ref, text string) (*core.Epic, *core.Epic, error) {
+//
+// replaced is SetBody's: a body already equal to the normalized text is left
+// alone and the box keeps its clock. That is why this goes through mutateEpic
+// with the stamp set in fn rather than mutateEpicProse, whose stamp is
+// unconditional.
+func (a *App) EpicSetBody(ref, text string) (*core.Epic, *core.Epic, bool, error) {
 	text, err := normalizeBody(ref, text)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	return a.mutateEpicProse(ref, func(e *core.Epic) error { return a.saveBody(e.ID, text) })
+	replaced := false
+	before, after, err := a.mutateEpic(ref, func(e *core.Epic) error {
+		wrote, err := a.replaceBody(e.ID, text)
+		if err != nil || !wrote {
+			return err
+		}
+		replaced = true
+		e.Updated = a.Clock.Now()
+		return nil
+	})
+	return before, after, replaced, err
 }
 
 // RefTargetsEpic reports whether an id-keyed command's ref belongs to the EPIC
@@ -909,10 +924,10 @@ func (a *App) mutateEpic(ref string, fn func(*core.Epic) error) (*core.Epic, *co
 	return a.mutateEpicStamping(ref, false, fn, nil)
 }
 
-// mutateEpicProse is mutateEpic for the paths that write a box's PROSE (a note,
-// a body replacement). The body is the box's content but lives outside the
-// shard, so the shard comparison structurally cannot see it and the stamp must
-// be unconditional — the task side draws exactly the same line (see
+// mutateEpicProse is mutateEpic for the paths that ALWAYS write a box's PROSE
+// (a note). The body is the box's content but lives outside the shard, so the
+// shard comparison structurally cannot see it and the stamp must be
+// unconditional — the task side draws exactly the same line (see
 // App.stampIfChanged).
 func (a *App) mutateEpicProse(ref string, fn func(*core.Epic) error) (*core.Epic, *core.Epic, error) {
 	return a.mutateEpicStamping(ref, true, fn, nil)
