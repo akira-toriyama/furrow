@@ -218,8 +218,16 @@ func TestRepeatWarningsSayTheAnchorIsOffTheLattice(t *testing.T) {
 	// `monthly on 31` anchored on the 15th is both at once: it skips the short
 	// months AND does not land on its own anchor.
 	both := mustAddRepeating(t, a, "両方", "2026-03-15", "monthly on 31", AddOpts{})
-	if ws := a.RepeatWarnings(both); len(ws) != 2 {
+	ws = a.RepeatWarnings(both)
+	if len(ws) != 2 {
 		t.Errorf("RepeatWarnings = %q, want the skip note and the off-lattice note", ws)
+	}
+	// Bare messages: the stderr `note: ` is the CLI's framing, and --json
+	// carries the string as returned.
+	for _, w := range ws {
+		if strings.HasPrefix(w, "note:") {
+			t.Errorf("RepeatWarnings carries the stderr framing: %q", w)
+		}
 	}
 }
 

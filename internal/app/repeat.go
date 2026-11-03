@@ -406,6 +406,9 @@ func (a *App) compileRepeat(subject, spec string) (string, error) {
 // Both can fire on one bind (`monthly on 31` anchored on the 15th), which is
 // why this is a slice: they are independent facts about the same rule, and
 // picking one would leave the other to be discovered by a close.
+//
+// Each string is the bare message: the stderr `note: ` is the CLI's framing,
+// and --json's `repeat_warnings` carries the message alone.
 func (a *App) RepeatWarnings(t *core.Task) []string {
 	if t.Repeat == "" || t.RepeatAnchor == nil {
 		return nil
@@ -421,7 +424,7 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 		out = append(out, skipNote(t.Repeat, anchor, skip, a.loc()))
 	}
 	if first, ok := recur.OffLattice(t.Repeat, anchor, a.loc()); ok {
-		out = append(out, fmt.Sprintf("note: the anchor %s is not a date this rule lands on, so it is one occurrence OUTSIDE the series and `for n times` hands out n MORE after it; the rule's own first date is %s, and anchoring there folds it in",
+		out = append(out, fmt.Sprintf("the anchor %s is not a date this rule lands on, so it is one occurrence OUTSIDE the series and `for n times` hands out n MORE after it; the rule's own first date is %s, and anchoring there folds it in",
 			anchor.Format(core.TimeLayout), first.Format(core.TimeLayout)))
 	}
 	return out
@@ -433,12 +436,12 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 // lands every year is February's last day, which any frequency can name.
 func skipNote(line string, anchor time.Time, skip recur.Skip, loc *time.Location) string {
 	if skip.Period == recur.Years {
-		return fmt.Sprintf("note: February 29 exists only in leap years, so the rule skips the years without one (RFC 5545)%s; anchoring on February 28, or naming February's last day (`BYMONTH=2;BYMONTHDAY=-1`), lands every year", nextOccurrenceClause(line, anchor, loc))
+		return fmt.Sprintf("February 29 exists only in leap years, so the rule skips the years without one (RFC 5545)%s; anchoring on February 28, or naming February's last day (`BYMONTH=2;BYMONTHDAY=-1`), lands every year", nextOccurrenceClause(line, anchor, loc))
 	}
 	// The remedy is `on last`, spelled against whatever rule they typed — naming
 	// a full `monthly on last` prescribed a different FREQUENCY to anyone who
 	// wrote `every 3 months`.
-	return fmt.Sprintf("note: day %d does not exist in every month, so the rule skips those months (RFC 5545); anchoring on the last day instead (`… on last`) always lands", skip.Day)
+	return fmt.Sprintf("day %d does not exist in every month, so the rule skips those months (RFC 5545); anchoring on the last day instead (`… on last`) always lands", skip.Day)
 }
 
 // nextOccurrenceClause names the date the leap-day note is about, because a

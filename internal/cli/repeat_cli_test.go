@@ -750,8 +750,9 @@ func TestSetRepeatJSONCarriesTheBindWarnings(t *testing.T) {
 	if len(one) != 1 || len(one[0].RepeatWarnings) != 1 || !strings.Contains(one[0].RepeatWarnings[0], "does not exist in every month") {
 		t.Fatalf("set --json did not carry the skip note:\n%s", stdout)
 	}
-	if !strings.Contains(se, one[0].RepeatWarnings[0]) {
-		t.Errorf("the envelope's string is not the one stderr said:\nenvelope: %q\nstderr: %s", one[0].RepeatWarnings[0], se)
+	// The envelope carries the bare message; `note: ` is stderr's framing of it.
+	if w := one[0].RepeatWarnings[0]; strings.HasPrefix(w, "note:") || !strings.Contains(se, "note: "+w+"\n") {
+		t.Errorf("want the bare message in the envelope and `note: <it>` on stderr:\nenvelope: %q\nstderr: %s", w, se)
 	}
 
 	// The batch arm: the 15th is off `on 31`'s lattice too, so it carries both
@@ -841,8 +842,23 @@ func TestAddRepeatJSONCarriesTheBindWarnings(t *testing.T) {
 	if created.ID == "" || len(created.RepeatWarnings) != 1 || !strings.Contains(created.RepeatWarnings[0], "not a date this rule lands on") {
 		t.Fatalf("add --json did not carry the off-lattice note:\n%s", stdout)
 	}
-	if !strings.Contains(se, created.RepeatWarnings[0]) {
-		t.Errorf("the JSON string is not the one stderr said:\njson: %q\nstderr: %s", created.RepeatWarnings[0], se)
+	if w := created.RepeatWarnings[0]; strings.HasPrefix(w, "note:") || !strings.Contains(se, "note: "+w+"\n") {
+		t.Errorf("want the bare message in the JSON and `note: <it>` on stderr:\njson: %q\nstderr: %s", w, se)
+	}
+
+	// The leap-day note is the third wording, and bare too.
+	stdout, se, code = runSplit(t, "add", "うるう", "--due", "2028-02-29", "--repeat", "yearly", "--json")
+	if code != 0 {
+		t.Fatalf("add exit %d: %s%s", code, stdout, se)
+	}
+	var leap struct {
+		RepeatWarnings []string `json:"repeat_warnings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &leap); err != nil {
+		t.Fatalf("add --json: %v\n%s", err, stdout)
+	}
+	if len(leap.RepeatWarnings) != 1 || !strings.HasPrefix(leap.RepeatWarnings[0], "February 29 exists only in leap years") || !strings.Contains(se, "note: "+leap.RepeatWarnings[0]+"\n") {
+		t.Errorf("want the bare leap-day message in the JSON and `note: <it>` on stderr:\n%s\nstderr: %s", stdout, se)
 	}
 
 	stdout, code = run(t, "add", "隔週2", "--due", "2026-09-21", "--repeat", "every 2 weeks on mon", "--json")

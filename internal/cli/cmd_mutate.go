@@ -979,7 +979,7 @@ func newSetCmd() *cobra.Command {
 			"and reports the neighbors in `renumbered`, exactly like reorder. A --repeat\n" +
 			"bind whose rule skips the months (or years) lacking its day, or whose anchor\n" +
 			"is not a date the rule lands on, says so: a stderr note, and the same\n" +
-			"strings in the envelope's `repeat_warnings` (absent when there are none) —\n" +
+			"messages in the envelope's `repeat_warnings` (absent when there are none) —\n" +
 			"on the CLOSED task's when the write also closes it, since the rule passes\n" +
 			"to the successor its `repeat` names. An empty --due '' is exit 2, never a\n" +
 			"silent clear (--clear-due is the clear).\n\n" +

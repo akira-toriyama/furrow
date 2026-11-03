@@ -82,7 +82,7 @@ func newAddCmd() *cobra.Command {
 			"is four tasks), and a stderr note names the rule's own first date. A day\n" +
 			"past 28 SKIPS the months that lack it (`monthly on last` always lands) and\n" +
 			"February 29 skips the years that lack one; both say so at bind time, and\n" +
-			"--json carries the same strings in `repeat_warnings` beside the created\n" +
+			"--json carries the same messages in `repeat_warnings` beside the created\n" +
 			"task (absent when there are none). Only a close advances a series — see\n" +
 			"`furrow done --help`.",
 		Example: "  furrow add \"Wire up the config loader\"\n" +
