@@ -81,8 +81,10 @@ func newAddCmd() *cobra.Command {
 			"OUTSIDE the series (`--due <a Friday> --repeat 'weekly on mon for 3 times'`\n" +
 			"is four tasks), and a stderr note names the rule's own first date. A day\n" +
 			"past 28 SKIPS the months that lack it (`monthly on last` always lands) and\n" +
-			"February 29 skips the years that lack one; both say so at bind time. Only\n" +
-			"a close advances a series — see `furrow done --help`.",
+			"February 29 skips the years that lack one; both say so at bind time, and\n" +
+			"--json carries the same messages in `repeat_warnings` beside the created\n" +
+			"task (absent when there are none). Only a close advances a series — see\n" +
+			"`furrow done --help`.",
 		Example: "  furrow add \"Wire up the config loader\"\n" +
 			"  furrow add \"Fix flaky sync test\" -s ready -l bug --value 4 --effort 2\n" +
 			"  furrow add \"Cross-repo epic\" -r akira-toriyama/furrow -r akira-toriyama/cifail\n" +
@@ -180,8 +182,8 @@ func newAddCmd() *cobra.Command {
 			warnClamp("effort", opts.Effort, t.Effort)
 			warnShadowedDraft(a, opts.Draft, len(t.Repos) == 0)
 			noteInheritedEpic(cmd, []core.Task{*t})
-			noteRepeatBinds(a, []core.Task{*t})
-			printOK("added", t)
+			warns := noteRepeatBinds(a, []core.Task{*t})
+			printOK("added", addedTaskView{Task: *t, RepeatWarnings: warns[0]})
 			return nil
 		},
 	}
@@ -241,19 +243,39 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 	drafted := len(created) > 0 && len(created[0].Repos) == 0
 	warnShadowedDraft(a, opts.Draft, drafted)
 	noteInheritedEpic(cmd, created)
-	noteRepeatBinds(a, created)
-	return emitTasks(a, created)
+	warns := noteRepeatBinds(a, created)
+	views := make([]addedTaskView, 0, len(created))
+	for i := range created {
+		views = append(views, addedTaskView{Task: created[i], RepeatWarnings: warns[i]})
+	}
+	emitList(views, func() { printTaskTable(a, created) })
+	return nil
+}
+
+// addedTaskView is a created task plus what only the add knows: the batch key
+// it was declared under (shards never carry it) and the bind-time notes of the
+// rule it bound — the machine twin of noteRepeatBinds's stderr lines, since a
+// front-end reads only stdout on exit 0. Both are omitted when empty, so a
+// plain add emits the task's own shape. core.Task is embedded (the usual rule:
+// it must never grow a MarshalJSON, or both keys would silently vanish).
+type addedTaskView struct {
+	core.Task
+	Key            string   `json:"key,omitempty"`
+	RepeatWarnings []string `json:"repeat_warnings,omitempty"`
 }
 
 // noteRepeatBinds says, once per distinct note, what a rule this add bound will
 // do that the operator almost certainly did not ask for — a day some months
-// lack, an anchor the rule does not land on. Said at BIND time because the
-// alternative is finding out in March, or at the close that hands out one
-// occurrence more than the count.
-func noteRepeatBinds(a *app.App, created []core.Task) {
+// lack, an anchor the rule does not land on — and returns each task's notes,
+// positionally, for its JSON view. Said at BIND time because the alternative is
+// finding out in March, or at the close that hands out one occurrence more than
+// the count.
+func noteRepeatBinds(a *app.App, created []core.Task) [][]string {
 	said := map[string]bool{}
+	warns := make([][]string, len(created))
 	for i := range created {
-		for _, w := range a.RepeatWarnings(&created[i]) {
+		warns[i] = a.RepeatWarnings(&created[i])
+		for _, w := range warns[i] {
 			if said[w] {
 				continue
 			}
@@ -261,6 +283,7 @@ func noteRepeatBinds(a *app.App, created []core.Task) {
 			stderrNote(w)
 		}
 	}
+	return warns
 }
 
 // noteInheritedEpic discloses on stderr that a bare add (no -e) filed the

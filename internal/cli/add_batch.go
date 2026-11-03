@@ -89,15 +89,6 @@ func (c *batchCheck) UnmarshalJSON(data []byte) error {
 // rule: a typo must not silently create a task without the field).
 var batchFields = []string{"key", "title", "status", "priority", "value", "effort", "labels", "repos", "draft", "epic", "deps", "refs", "body", "checklist", "due", "repeat", "anchor"}
 
-// keyedTaskView is a created task with the batch key it was declared under —
-// the ONE place a key is visible after the write, since shards never carry
-// it. core.Task is embedded (the usual rule: it must never grow a
-// MarshalJSON, or key would silently vanish).
-type keyedTaskView struct {
-	core.Task
-	Key string `json:"key,omitempty"`
-}
-
 // addFromBatch reads NDJSON from src ("-" = stdin, else a path), merges each
 // line over the shared flags, and creates every task in one write through
 // app.AddBatch. stdout is the created tasks (each with its key in JSON);
@@ -135,10 +126,10 @@ func addFromBatch(cmd *cobra.Command, a *app.App, src string, shared app.AddOpts
 		}
 	}
 	noteInheritedEpic(cmd, inherited)
-	noteRepeatBinds(a, created)
-	views := make([]keyedTaskView, 0, len(created))
+	warns := noteRepeatBinds(a, created)
+	views := make([]addedTaskView, 0, len(created))
 	for i := range created {
-		views = append(views, keyedTaskView{Task: created[i], Key: keys[i]})
+		views = append(views, addedTaskView{Task: created[i], Key: keys[i], RepeatWarnings: warns[i]})
 	}
 	emitList(views, func() { printTaskTable(a, created) })
 	return nil
