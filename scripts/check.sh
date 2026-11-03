@@ -127,9 +127,9 @@ echo "→ release-pin guard (no version literal in sync-task-status.yml, flake v
 sh scripts/check-version-lockstep.sh
 
 # Release CONFIG/behavior invariants (ldflags -X path resolves to the real
-# version package; GoReleaser publishes non-draft; release.yml keeps the soft
-# exit-1 fold). Pure text — no goreleaser needed, so unlike the artifact dry-run
-# it always runs.
+# version package; GoReleaser publishes non-draft; release.yml's body comes from
+# glyph's release-notes action). Pure text — no goreleaser needed, so unlike the
+# artifact dry-run it always runs.
 echo "→ release-config invariants guard"
 sh scripts/check-release-invariants.sh
 
