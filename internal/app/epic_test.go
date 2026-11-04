@@ -104,7 +104,7 @@ func TestEpicDoneClearsActiveAndFreesTheSlot(t *testing.T) {
 	if _, _, _, err := a.EpicActivate(next, ""); err != nil {
 		t.Errorf("the closed box must have released its repo's slot: %v", err)
 	}
-	// furrow does NOT pick the successor itself — that judgement is the human's.
+	// furrow does NOT open the next box itself — that act is the human's.
 	// Between the close and the human's choice the repo has no active box, which is
 	// what epic-no-active exists to nag about.
 }

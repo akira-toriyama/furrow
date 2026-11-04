@@ -9,7 +9,7 @@ package app
 // reason this type exists rather than a bare count. A plain member's
 // `epic-closed` clears the moment the task closes; a REPEATING member's does
 // not — closing it mints the next occurrence, which inherits `epic` (repeat.go:
-// the successor carries everything the close did not settle) and so re-raises
+// the occurrence carries everything the close did not settle) and so re-raises
 // the warn under the same closed box every cycle. Not a defect to refuse: the
 // remedy is one `furrow set <live-id> -e <open-epic>`, which every later
 // occurrence inherits in turn. Disclosing it at close time is what makes that

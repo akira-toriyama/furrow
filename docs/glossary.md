@@ -19,6 +19,7 @@
 | **standing** | An epic declaration for a permanent box: no lifecycle nags, the review cadence instead (`furrow epic set --help`). |
 | **pinned** | An epic declaration: the box's actionable tasks lead `next`/`brief` regardless of the active scope (`furrow epic set --help`). |
 | **mandate** / **parking lot** | The convention's reserved boxes: a mandate is standing + pinned, a parking lot standing only; furrow stays name-independent (`furrow epic set --help`). |
+| **successor** (box) | A box's declared "open this after me" (`successor` on the epic, `epic set --successor`): the human's schedule, where a **dep** is the wait — a dep sits on the box that waits and may be many, a successor on the box that closes and is one; a chain is a queue. `epic done` proposes it (never activates it) and `brief` names it while nothing is active; `lint` keeps an open declarer honest (`epic-successor-missing` / `epic-successor-closed`). Not the repeat side's next **occurrence** (`furrow epic set --help`). |
 | **waiting** (box) | A box's derived "parked until" state: open work done, a parked member's due still ahead. The epic reads and `brief` print `⏳ waiting until <due> (<task>)`; it silences `epic_all_done` (README's `epic` command note). |
 | **due** | The instant a task is **promised** for (`due`, optional) — a bare date binds the end of that day in the board's calendar. `brief` leads with it and `lint` checks it board-wide; furrow never rings ([`scheduling.md`](scheduling.md), `furrow set --help`). |
 | **snooze** | Re-dating a promise from now (`set --due +1d`); on a repeating task it moves this occurrence only. `--due-shift` moves the dues tasks already carry (`furrow set --help`). |
@@ -27,7 +28,7 @@
 | **follower** | A task whose due follows a box's **anchor** day (`set --anchor <epic>`; `-q anchor:<epic>` lists them). |
 | **index** | The in-memory aggregate folded from the per-task **shards** — there is no `.furrow/index.json`. Query it with `ls`/`show`/`next --json` ([`architecture.md`](architecture.md#the-store)). |
 | **shard** | One task's metadata on disk, `.furrow/tasks/<id>.json`, written only by `core.MarshalTask`; `epics/` and `repos/` hold shards too. One file per task is why concurrent edits merge as a union ([`architecture.md`](architecture.md#the-store)). |
-| **meta** | `.furrow/meta.json` — `{"schema_version": 11}`, the board's layout version: an input to every write, never an output. An older board is read-only, a newer one refused, and only `furrow upgrade` raises it (`furrow --help`). |
+| **meta** | `.furrow/meta.json` — `{"schema_version": 12}`, the board's layout version: an input to every write, never an output. An older board is read-only, a newer one refused, and only `furrow upgrade` raises it (`furrow --help`). |
 | **flag day** | The moment `furrow upgrade` raises a board's **meta** version — a one-way cutover after which no older furrow (pinned CI included) can write the board. Its order and recovery are `furrow --help`'s. |
 | **unknown-key passthrough** | A shard's unknown **top-level** keys are **preserved, not dropped** — and not honoured, so `lint` warns `unknown-shard-key` and `tidy --unknown-keys` prunes them. Contract and limits: `internal/core/passthrough.go`; its place beside the version gate: [`architecture.md`](architecture.md). |
 | **body** | The long-form prose for one task **or epic**: `.furrow/bodies/<id>.md`, plain markdown, hand- and agent-editable. The prose writes advance `updated`; a hand edit does not (`furrow --help`). |
@@ -109,6 +110,7 @@ word the shipped `--help` and README avoid for that concept.
 | blocker, requirement, prerequisite, "depends on" (as a noun) | **dep** | The `deps` field; what `next` waits on. |
 | initiative, project (as a box of work) | **epic** (the entity) | A first-class entity, not a task wearing a type. |
 | sub-project, hierarchy | **epic membership** (the `epic` field) | One level, task → box; epics do not nest. |
+| next box, queue, "then", follow-up epic | **successor** (an epic's `successor` field) | The declared plan for what opens after a box closes; a **dep** is the wait, not the schedule. |
 | deadline, ETA, target date, reminder, due_date | **due** (the `due` field) | When a task is promised for; furrow reports it, never rings. |
 | milestone | **anchor** (an epic's `anchor` field) | A box's reference day its followers' dues count from; nothing is due on it unless a task says so. |
 | closed lane, final lane, done-only | **terminal lane** | Done *and* parked; only done stamps `closed`. |

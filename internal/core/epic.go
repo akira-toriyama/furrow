@@ -145,6 +145,23 @@ type Epic struct {
 	// so a board that anchors no box keeps its exact pre-v11 bytes.
 	Anchor string `json:"anchor,omitempty"`
 
+	// Successor is the box declared to open after THIS one closes (schema
+	// v12): an epics/<id>.json id, or "" for no plan. It is the human's
+	// SCHEDULE where Deps are the WAIT: a dep sits on the box that waits ("B
+	// opens after A closes" is B's edge, and B may have many), a successor
+	// sits on the box that closes ("after A, open B" is A's declaration, and
+	// A has at most one) — a chain A→B→C is a queue. Nothing is ever opened by
+	// it: `epic done` PROPOSES the declared box, resolved at the close (a
+	// closed target is walked past along its own chain; an active, slot-held
+	// or repo-less one is reported as such), and falls back to the computed
+	// previous only for a freed slot no declaration covers. A standing box
+	// never closes, so it carries none (the write path refuses both
+	// directions). lint keeps an OPEN declarer honest afterwards
+	// (epic-successor-missing / epic-successor-closed); a closed declarer keeps
+	// the pointer as history. omitempty, so a board that plans nothing keeps
+	// its exact pre-v12 bytes.
+	Successor string `json:"successor,omitempty"`
+
 	// extras: the unknown-key passthrough's carrier — passthrough.go states
 	// the contract once; Task's comment carries the MarshalJSON rule.
 	extras Extras

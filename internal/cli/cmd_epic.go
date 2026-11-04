@@ -22,9 +22,11 @@ func newEpicCmd() *cobra.Command {
 			"meta, and member tasks. At most ONE epic may be active per repo, and\n" +
 			"`furrow next` scopes to it — that is what keeps a session from picking the\n" +
 			"cheapest task on the whole board every time.\n\n" +
-			"furrow never chooses which box to open: `epic done` clears the active flag\n" +
-			"but picks no successor, and `furrow lint` warns (epic-no-active) until a\n" +
-			"human does. It does SUGGEST — done/deactivate name the previous active box\n" +
+			"furrow never opens a box on its own: `epic done` clears the active flag\n" +
+			"and activates nothing, and `furrow lint` warns (epic-no-active) until a\n" +
+			"human does. It does PROPOSE — `epic done` names the successor the box\n" +
+			"DECLARED (`epic set --successor`, the human's plan written ahead), and for\n" +
+			"what no declaration covers, done/deactivate name the previous active box\n" +
 			"in the same repo (computed from the activation log, `unknown` when no\n" +
 			"record decides it) — but activating it stays your call.",
 		// `furrow epic` alone prints help; an unknown subcommand is exit 2 with
@@ -248,9 +250,11 @@ func newEpicShowCmd() *cobra.Command {
 
 func newEpicSetCmd() *cobra.Command {
 	var (
-		anchor      string
-		clearAnchor bool
-		yes         bool
+		anchor         string
+		clearAnchor    bool
+		successor      string
+		clearSuccessor bool
+		yes            bool
 	)
 	var (
 		title     string
@@ -266,7 +270,7 @@ func newEpicSetCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "set <epic>",
-		Short: "Edit an epic's title, goal, meta, labels, repos, anchor day, or its standing/pinned declarations",
+		Short: "Edit an epic's title, goal, meta, labels, repos, anchor day, successor, or its standing/pinned declarations",
 		Long: "Edit a box's metadata.\n\n" +
 			"--anchor YYYY-MM-DD sets or MOVES the box's calendar day — the one date\n" +
 			"its derived dates count back from (an event, a release, a deadline).\n" +
@@ -291,6 +295,26 @@ func newEpicSetCmd() *cobra.Command {
 			"'anchor:<epic>' -r '' --clear-anchor --yes`). The derivation itself is\n" +
 			"never stored: a due stays one absolute instant, and `show` prints a\n" +
 			"follower's D-N against the box's day.\n\n" +
+			"--successor <epic> declares the box to open AFTER this one closes — the\n" +
+			"plan written ahead, where `epic dep` is the wait: a dep sits on the box\n" +
+			"that waits (B opens after A closes is B's edge, and B may hold many), a\n" +
+			"successor sits on the box that closes (after A, open B is A's\n" +
+			"declaration, one per box), and a chain A→B→C is a queue. It is stored as\n" +
+			"the id (`successor` in the shard and in --json) and resolved like every\n" +
+			"epic reference. Nothing is opened by it: `epic done` PROPOSES the\n" +
+			"declared box, walking past one that already closed along its own chain,\n" +
+			"and says why when it cannot simply be activated (already active, its\n" +
+			"slot held, no repo); `furrow brief` names it while nothing is active.\n" +
+			"Refused (exit 2): the box itself, a closed target (`epic reopen` it or\n" +
+			"name another), a loop through the chain, a target this box already waits\n" +
+			"on, and a standing box in either direction (one never closes, so nothing\n" +
+			"opens after it). Allowed on purpose: an active target (resolved at the\n" +
+			"close), several boxes declaring the same successor (the first to close\n" +
+			"proposes it; a real join is `epic dep B A1 A2`), and a standing target\n" +
+			"(a mandate box can be what opens next). --clear-successor drops the plan.\n" +
+			"`furrow lint` errors epic-successor-missing and warns\n" +
+			"epic-successor-closed on an OPEN declarer; a closed one keeps the pointer\n" +
+			"as history. `epic rm` counts a declaration as a reference.\n\n" +
 			"--standing and --pinned (v7) are the two PERMANENT-\n" +
 			"channel declarations: a standing box is exempt from the lifecycle nags\n" +
 			"(revisit's epic_all_done / epic_dep_done / epic_stuck) and instead\n" +
@@ -307,7 +331,9 @@ func newEpicSetCmd() *cobra.Command {
 			"  furrow set -q 'epic:e-v0zdq has:due' --anchor e-v0zdq --yes  # mark the dues that follow it\n" +
 			"  furrow epic set e-v0zdq --anchor 2026-11-28              # the day moved: preview every follower's old → new due\n" +
 			"  furrow epic set e-v0zdq --anchor 2026-11-28 --yes        # apply, one write\n" +
-			"  furrow epic set e-v0zdq --clear-anchor                   # drop the day (followers keep their pointer, disclosed)",
+			"  furrow epic set e-v0zdq --clear-anchor                   # drop the day (followers keep their pointer, disclosed)\n" +
+			"  furrow epic set e-k3m9p --successor e-a1b2c             # after this box closes, propose that one\n" +
+			"  furrow epic set e-k3m9p --clear-successor               # drop the plan",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := emptyFlagErr(cmd, args[0], "add-label", "rm-label", "add-repo", "rm-repo", "meta", "rm-meta"); err != nil {
@@ -324,6 +350,9 @@ func newEpicSetCmd() *cobra.Command {
 			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchor) == "" {
 				return core.Validationf(args[0], "--anchor was given an empty value; pass a calendar day (2026-11-21), or use --clear-anchor to remove it")
 			}
+			if cmd.Flags().Changed("successor") && strings.TrimSpace(successor) == "" {
+				return core.Validationf(args[0], "--successor was given an empty value; pass the box to open after this one, or use --clear-successor to drop the plan")
+			}
 			if yes && !cmd.Flags().Changed("anchor") {
 				return core.Validationf(args[0], "--yes confirms the follower dues an --anchor move shifts; without --anchor there is nothing to preview")
 			}
@@ -331,10 +360,13 @@ func newEpicSetCmd() *cobra.Command {
 				SetMeta: m, RmMeta: rmMeta,
 				AddLabels: addLabels, RmLabels: rmLabels,
 				AddRepos: addRepos, RmRepos: rmRepos,
-				ClearAnchor: clearAnchor,
+				ClearAnchor: clearAnchor, ClearSuccessor: clearSuccessor,
 			}
 			if cmd.Flags().Changed("anchor") {
 				o.Anchor = &anchor
+			}
+			if cmd.Flags().Changed("successor") {
+				o.Successor = &successor
 			}
 			if cmd.Flags().Changed("title") {
 				o.Title = &title
@@ -361,7 +393,7 @@ func newEpicSetCmd() *cobra.Command {
 					// The other edits on the line ride the same --yes; a preview
 					// that showed only the move hid them (t-r6vt).
 					var pending []string
-					for _, f := range []string{"title", "goal", "standing", "pinned", "add-label", "rm-label", "add-repo", "rm-repo", "meta", "rm-meta"} {
+					for _, f := range []string{"title", "goal", "standing", "pinned", "successor", "clear-successor", "add-label", "rm-label", "add-repo", "rm-repo", "meta", "rm-meta"} {
 						if cmd.Flags().Changed(f) {
 							pending = append(pending, f)
 						}
@@ -399,8 +431,11 @@ func newEpicSetCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&pinned, "pinned", false, "surface this box's actionable tasks in next/brief regardless of the active scope (--pinned=false clears)")
 	cmd.Flags().StringVar(&anchor, "anchor", "", "set or move the box's calendar day (YYYY-MM-DD); a move shifts every follower's due by the day delta, previewed until --yes")
 	cmd.Flags().BoolVar(&clearAnchor, "clear-anchor", false, "drop the box's day (followers keep their pointer and are disclosed)")
+	cmd.Flags().StringVar(&successor, "successor", "", "declare the box to open after this one closes (an epic reference; epic done proposes it, never activates it)")
+	cmd.Flags().BoolVar(&clearSuccessor, "clear-successor", false, "drop the declared successor")
 	addYesFlag(cmd, &yes)
 	cmd.MarkFlagsMutuallyExclusive("anchor", "clear-anchor")
+	cmd.MarkFlagsMutuallyExclusive("successor", "clear-successor")
 	return cmd
 }
 
@@ -457,7 +492,8 @@ func newEpicDeactivateCmd() *cobra.Command {
 		Long: "Step away from a box without closing it. The output carries the\n" +
 			"previous-active SUGGESTION (see `epic done --help` — same mechanism, same\n" +
 			"contract: computed from the activation log, never auto-activated,\n" +
-			"`unknown` when no record decides it).",
+			"`unknown` when no record decides it). A declared successor is not\n" +
+			"consulted: the box has not closed, so its \"after\" has not come.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
@@ -476,10 +512,27 @@ func newEpicDeactivateCmd() *cobra.Command {
 func newEpicDoneCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "done <epic>",
-		Short: "Close an epic (clears active; suggests the previous active, never picks it)",
-		Long: "Close the box and free its repos' slots. furrow does NOT choose a\n" +
-			"successor — that judgement is the human's — so the repo is left with no\n" +
-			"active epic and `furrow lint` warns epic-no-active until someone picks one.\n\n" +
+		Short: "Close an epic (clears active; proposes the declared successor, else the previous active — never activates)",
+		Long: "Close the box and free its repos' slots. furrow does NOT open the next\n" +
+			"box — that act is the human's — so the repo is left with no active epic\n" +
+			"and `furrow lint` warns epic-no-active until someone activates one. It\n" +
+			"PROPOSES, in this order:\n\n" +
+			"The DECLARED successor first (`epic set --successor`, the plan written\n" +
+			"ahead): the output names it (`successor: <id> … — furrow epic activate\n" +
+			"<id>`; a `successor` key in --json, null when the box declared none, else\n" +
+			"{declared, id, title, state, reason, skipped, open_deps, held}). A declared\n" +
+			"box that already closed is walked past along its own chain (`skipped`) to\n" +
+			"the first open one; `reason` is absent when the box can simply be\n" +
+			"activated and otherwise says why not: `active` (no switch to make),\n" +
+			"`slot-held` (another box holds a repo it needs, named in `held`), `no-repo`\n" +
+			"(attach one first), `closed` (the whole chain is closed) or `missing` (the\n" +
+			"id names no box). `open_deps` lists the deps it would still cross,\n" +
+			"computed after this close. Branch on the fields, never on the line.\n\n" +
+			"The PREVIOUS active box speaks for what the declaration does not cover:\n" +
+			"with no declaration at all, exactly as before; with one, only for a freed\n" +
+			"repo slot the proposed box does not span, and never when the box being\n" +
+			"closed was not active (nothing was freed). The `previous` key in --json is\n" +
+			"always computed over every repo, as deactivate's is.\n\n" +
 			"Closing a box ahead of its tail is untidy, not broken, so members still\n" +
 			"open never REFUSE the close — they are DISCLOSED: a stderr note names them\n" +
 			"and --json carries open_members (an array of {id, title, status, repeat};\n" +
@@ -491,7 +544,7 @@ func newEpicDoneCmd() *cobra.Command {
 			"epic, so the same warn comes back under this closed box every cycle. The\n" +
 			"fix is one-shot — re-file the live occurrence (`furrow set <id> -e\n" +
 			"<open-epic>`) and every later occurrence inherits the new box.\n\n" +
-			"It does SUGGEST where to return: among the open boxes sharing a repo of\n" +
+			"The previous suggestion: among the open boxes sharing a repo of\n" +
 			"this one that no other active epic holds, the output names the one with\n" +
 			"the newest activation record (`previous: <id> … — furrow epic activate\n" +
 			"<id>`, its time in local time with the offset; a `previous` key in\n" +
@@ -521,9 +574,72 @@ func newEpicDoneCmd() *cobra.Command {
 			for _, line := range openMembersNotes(after.ID, members) {
 				stderrNote(line)
 			}
-			return emitWithPreviousSuggest(a, before, after, map[string]any{"open_members": members})
+			return emitEpicDoneResult(a, before, after, members)
 		},
 	}
+}
+
+// emitEpicDoneResult is `epic done`'s tail: the mutation envelope with the
+// declared-successor proposal, the previous-active suggestion and the open
+// members, then the human lines — the successor's, and the previous line only
+// for the freed slots the proposal leaves uncovered (every slot when nothing
+// was declared; none when the closed box was not active, since nothing was
+// freed). Both suggestions are display data computed AFTER the close.
+func emitEpicDoneResult(a *app.App, before, after *core.Epic, members []app.EpicOpenMember) error {
+	succ := a.SuccessorSuggest(after.ID)
+	prev, held := a.PreviousActiveSuggest(after.ID)
+	if err := emitEpicMutationResult(a, before, after, map[string]any{
+		"previous": prev, "successor": succ, "open_members": members,
+	}); err != nil {
+		return err
+	}
+	if jsonMode() {
+		return nil
+	}
+	if succ == nil {
+		printPreviousLine(prev, held, after.Repos)
+		return nil
+	}
+	printSuccessorLines(succ, after.ID)
+	if !before.Active {
+		return nil
+	}
+	if uncovered := a.UncoveredRepos(succ, before.Repos); len(uncovered) > 0 {
+		prev, held := a.PreviousActiveAmong(after.ID, uncovered)
+		printPreviousLine(prev, held, uncovered)
+	}
+	return nil
+}
+
+// printSuccessorLines renders the proposal, one line per fact a human acts on:
+// the box and the command, or the reason it cannot simply be activated.
+func printSuccessorLines(s *app.SuccessorSuggest, closedID string) {
+	switch s.Reason {
+	case "":
+		fmt.Fprintf(out, "successor: %s %q — open with `furrow epic activate %s`\n", s.ID, s.Title, s.ID)
+	case app.SuccessorActive:
+		fmt.Fprintf(out, "successor: %s %q is already active — no switch to make\n", s.ID, s.Title)
+	case app.SuccessorSlotHeld:
+		parts := make([]string, 0, len(s.Held))
+		for repo, id := range s.Held {
+			parts = append(parts, repo+" by "+id)
+		}
+		sort.Strings(parts)
+		fmt.Fprintf(out, "successor: %s %q cannot open yet — its slot is held (%s); the declaration stays\n", s.ID, s.Title, strings.Join(parts, ", "))
+	case app.SuccessorNoRepo:
+		fmt.Fprintf(out, "successor: %s %q names no repo — attach one (`furrow epic set %s --add-repo <owner/repo>`), then activate it\n", s.ID, s.Title, s.ID)
+	case app.SuccessorClosed:
+		fmt.Fprintf(out, "successor: %s %q is closed, and its own chain reaches no open box — the plan is spent; see previous\n", s.ID, s.Title)
+	case app.SuccessorMissing:
+		fmt.Fprintf(out, "successor: %s does not exist — the declaration was dangling (lint: epic-successor-missing); see previous\n", s.ID)
+	}
+	if len(s.Skipped) > 0 && s.Reason != app.SuccessorClosed {
+		fmt.Fprintf(out, "           reached by walking past closed %s\n", strings.Join(s.Skipped, ", "))
+	}
+	if len(s.OpenDeps) > 0 && s.Reason == "" {
+		fmt.Fprintf(out, "           it still waits on open epic(s) %s — activate warns and proceeds\n", strings.Join(s.OpenDeps, ", "))
+	}
+	_ = closedID
 }
 
 // openMembersNotes renders `epic done`'s stderr disclosure: one line naming the
@@ -566,15 +682,13 @@ func namedMemberIDs(members []app.EpicOpenMember) string {
 	return strings.Join(ids, ", ") + more
 }
 
-// emitWithPreviousSuggest is done/deactivate's shared tail: the usual epic
-// mutation envelope plus the previous-active suggestion — a `previous` key in
-// JSON (always present on these two verbs; null = no suggestion, so a consumer
-// can tell "computed, no answer" apart from an older binary that lacks the
-// key) and one human line after the mutation line, which alone says WHY there
-// is none (no repo, the repos' focus never left, or no record). The suggestion is display data:
-// it is computed AFTER the mutation succeeded and can never affect it. extra
-// carries the keys only one of the two verbs has (done's open_members — the
-// box is not closed on a deactivate, so nothing is left BEHIND one).
+// emitWithPreviousSuggest is deactivate's tail (done's is emitEpicDoneResult,
+// which adds the declared successor): the usual epic mutation envelope plus
+// the previous-active suggestion — a `previous` key in JSON (always present
+// on both verbs; null = no suggestion, so a consumer can tell "computed, no
+// answer" apart from an older binary that lacks the key) and one human line
+// after the mutation line. The suggestion is display data: it is computed
+// AFTER the mutation succeeded and can never affect it.
 func emitWithPreviousSuggest(a *app.App, before, after *core.Epic, extra map[string]any) error {
 	prev, held := a.PreviousActiveSuggest(after.ID)
 	keys := map[string]any{"previous": prev}
@@ -587,6 +701,14 @@ func emitWithPreviousSuggest(a *app.App, before, after *core.Epic, extra map[str
 	if jsonMode() {
 		return nil
 	}
+	printPreviousLine(prev, held, after.Repos)
+	return nil
+}
+
+// printPreviousLine is the one human line of the previous-active suggestion,
+// which alone says WHY there is none (no repo, the repos' focus never left,
+// or no record). repos are the ones the answer was computed over.
+func printPreviousLine(prev *app.PreviousActive, held map[string]string, repos []string) {
 	switch {
 	case prev != nil:
 		fmt.Fprintf(out, "previous: %s %q (activated %s) — return with `furrow epic activate %s`\n", prev.ID, prev.Title, switchStampHuman(prev.At), prev.ID)
@@ -597,12 +719,11 @@ func emitWithPreviousSuggest(a *app.App, before, after *core.Epic, extra map[str
 		}
 		sort.Strings(parts)
 		fmt.Fprintf(out, "previous: none (still held: %s — nothing to return to)\n", strings.Join(parts, ", "))
-	case len(after.Repos) == 0:
+	case len(repos) == 0:
 		fmt.Fprintln(out, "previous: unknown (this box has no repo, so no box shares one — pick one with `furrow epic ls`)")
 	default:
 		fmt.Fprintln(out, "previous: unknown (no open box in its repos has an activation record — pick one with `furrow epic ls`)")
 	}
-	return nil
 }
 
 func newEpicReopenCmd() *cobra.Command {

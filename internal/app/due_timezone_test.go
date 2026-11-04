@@ -227,7 +227,7 @@ func TestALateCloseOnAGapDayCountsEveryLapsedOccurrence(t *testing.T) {
 // whose promised wall clock the zone skips is clamped onto that day's last
 // instant, and a search comparing in the expander's gap-free frame read that
 // back as still ahead of the close that had just settled it — so the close
-// minted a successor due the same evening, forever.
+// minted an occurrence due the same evening, forever.
 func TestASeriesAdvancesAcrossADayWithASkippedEvening(t *testing.T) {
 	nuuk, err := time.LoadLocation("America/Nuuk")
 	if err != nil {

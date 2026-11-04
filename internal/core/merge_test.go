@@ -440,7 +440,7 @@ func TestMergeShardEpicAndRepoKinds(t *testing.T) {
 	}
 }
 
-// A close of a REPEATING task is never merged: closing mints the successor
+// A close of a REPEATING task is never merged: closing mints the occurrence
 // from the closer's base, so a double close is two series and an edit racing a
 // close is lost on the predecessor. Both must stay a conflict (review of #451).
 func TestMergeShardNeverMergesACloseOfARepeatingTask(t *testing.T) {
@@ -465,7 +465,7 @@ func TestMergeShardNeverMergesACloseOfARepeatingTask(t *testing.T) {
 	snoozed := task(func(tk *Task) { d := t0.Add(48 * time.Hour); tk.Due, tk.Updated = &d, t0.Add(time.Second) })
 
 	// The base never repeated: one side bound a rule, the other closed. Key by
-	// key that is a done task carrying a rule — no successor, a dead series —
+	// key that is a done task carrying a rule — no occurrence, a dead series —
 	// so the rule on EITHER side makes the close a conflict.
 	plain := task(func(tk *Task) { tk.Repeat, tk.RepeatAnchor = "", nil })
 	madeRepeating := task(func(tk *Task) { tk.Updated = t0.Add(time.Second) })

@@ -423,7 +423,7 @@ func Next(line string, anchor, after time.Time, loc *time.Location) (time.Time, 
 	// Compared in the frame, such an occurrence still looked ahead of a close
 	// that had just settled it, so the close handed back the very day it closed —
 	// and a weekly series stood on one date forever, every close minting a
-	// successor due the same evening.
+	// occurrence due the same evening.
 	for cur := naked(after, loc); ; {
 		next := r.After(cur, false)
 		if next.IsZero() {

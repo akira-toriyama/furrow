@@ -51,6 +51,14 @@ type PreviousActive struct {
 //
 // A same-stamp tie breaks to the smaller id, so the answer is deterministic.
 func (a *App) PreviousActiveSuggest(exceptID string) (prev *PreviousActive, held map[string]string) {
+	return a.PreviousActiveAmong(exceptID, nil)
+}
+
+// PreviousActiveAmong is PreviousActiveSuggest over a subset of the left box's
+// repos — the freed slots a declared successor does not cover (v12), so the
+// return suggestion speaks only for what the plan left unanswered. nil =
+// every repo of the box (PreviousActiveSuggest's whole answer).
+func (a *App) PreviousActiveAmong(exceptID string, only []string) (prev *PreviousActive, held map[string]string) {
 	epics, err := a.Store.LoadEpics()
 	if err != nil {
 		return nil, nil
@@ -67,6 +75,9 @@ func (a *App) PreviousActiveSuggest(exceptID string) (prev *PreviousActive, held
 				holder[strings.ToLower(r)] = e.ID
 			}
 		}
+	}
+	if only != nil {
+		leaving = only
 	}
 	var free []string
 	for _, r := range leaving {

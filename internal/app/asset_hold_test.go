@@ -9,7 +9,7 @@ import (
 // The t-7hhb contract: a store loses an asset only when nothing remaining in
 // it holds the file — archive, unarchive, rm, and epic rm all through
 // planAssets. Before, the "<id>-" prefix alone decided, so archiving or
-// removing the owner took a file another live body (a repeat successor's, a
+// removing the owner took a file another live body (a repeat occurrence's, a
 // box's) was showing.
 
 func assetOnDisk(t *testing.T, s assetSide, name string) bool {

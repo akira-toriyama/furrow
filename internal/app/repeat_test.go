@@ -52,7 +52,7 @@ func TestCloseGeneratesTheNextOccurrence(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rep == nil || rep.Created == nil {
-		t.Fatalf("no successor reported: %+v", rep)
+		t.Fatalf("no occurrence reported: %+v", rep)
 	}
 	succ := other(t, a, closed.ID)
 	if succ.ID != *rep.Created {
@@ -71,16 +71,16 @@ func TestCloseGeneratesTheNextOccurrence(t *testing.T) {
 		}
 	})
 
-	t.Run("the successor is promised for the next occurrence", func(t *testing.T) {
+	t.Run("the occurrence is promised for the next occurrence", func(t *testing.T) {
 		want := time.Date(2026, 4, 1, 14, 59, 59, 0, time.UTC) // 1 April 23:59:59 +09:00
 		if succ.Due == nil || !succ.Due.Equal(want) {
-			t.Errorf("successor due = %v, want %s", succ.Due, want)
+			t.Errorf("occurrence due = %v, want %s", succ.Due, want)
 		}
 		if succ.Repeat != "FREQ=MONTHLY" {
-			t.Errorf("successor rule = %q, want the predecessor's verbatim", succ.Repeat)
+			t.Errorf("occurrence rule = %q, want the predecessor's verbatim", succ.Repeat)
 		}
 		if succ.RepeatAnchor == nil || !succ.RepeatAnchor.Equal(time.Date(2026, 3, 1, 14, 59, 59, 0, time.UTC)) {
-			t.Errorf("successor anchor = %v, want the SERIES start (unchanged)", succ.RepeatAnchor)
+			t.Errorf("occurrence anchor = %v, want the SERIES start (unchanged)", succ.RepeatAnchor)
 		}
 		if rep.Skipped != 0 {
 			t.Errorf("skipped = %d, want 0 — closed inside its own cycle", rep.Skipped)
@@ -90,7 +90,7 @@ func TestCloseGeneratesTheNextOccurrence(t *testing.T) {
 	t.Run("it inherits what describes the chore", func(t *testing.T) {
 		if succ.Title != pred.Title ||
 			strings.Join(succ.Labels, ",") != "chore" || strings.Join(succ.Refs, ",") != "docs/x.md:1" {
-			t.Errorf("successor = %+v, want the predecessor's descriptive fields", succ)
+			t.Errorf("occurrence = %+v, want the predecessor's descriptive fields", succ)
 		}
 		if succ.Value == nil || *succ.Value != v || succ.Effort == nil || *succ.Effort != e {
 			t.Errorf("estimates = %v/%v, want %d/%d", succ.Value, succ.Effort, v, e)
@@ -99,11 +99,11 @@ func TestCloseGeneratesTheNextOccurrence(t *testing.T) {
 
 	t.Run("it is born where furrow puts a task it creates", func(t *testing.T) {
 		if succ.Status != a.Cfg.DefaultLane {
-			t.Errorf("successor lane = %q, want the default lane %q — `next` does not read due, so a"+
+			t.Errorf("occurrence lane = %q, want the default lane %q — `next` does not read due, so a"+
 				" ready-born chore would sit in next for the whole cycle", succ.Status, a.Cfg.DefaultLane)
 		}
 		if succ.Closed != nil || succ.Reviewed != nil || len(succ.Deps) != 0 {
-			t.Errorf("successor carries settled state: closed=%v reviewed=%v deps=%v",
+			t.Errorf("occurrence carries settled state: closed=%v reviewed=%v deps=%v",
 				succ.Closed, succ.Reviewed, succ.Deps)
 		}
 	})
@@ -125,10 +125,10 @@ func TestCloseGeneratesTheNextOccurrence(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !strings.HasPrefix(body, "previous: [["+pred.ID+"]]\n") {
-			t.Errorf("successor body does not open with the back-link:\n%s", body)
+			t.Errorf("occurrence body does not open with the back-link:\n%s", body)
 		}
 		if !strings.Contains(body, "水やり") {
-			t.Errorf("successor body lost the predecessor's prose:\n%s", body)
+			t.Errorf("occurrence body lost the predecessor's prose:\n%s", body)
 		}
 	})
 }
@@ -184,7 +184,7 @@ func TestALateCloseSkipsAndSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rep == nil || rep.Created == nil {
-		t.Fatalf("no successor: %+v", rep)
+		t.Fatalf("no occurrence: %+v", rep)
 	}
 	want := time.Date(2026, 6, 1, 14, 59, 59, 0, time.UTC)
 	if rep.Due == nil || !rep.Due.Equal(want) {
@@ -227,7 +227,7 @@ func TestSeriesEndReportsCompletionAndMintsNothing(t *testing.T) {
 		t.Fatalf("report = %+v, want completed", rep)
 	}
 	if rep.Created != nil || rep.Due != nil {
-		t.Errorf("a completed series reported a successor: %+v", rep)
+		t.Errorf("a completed series reported an occurrence: %+v", rep)
 	}
 	tasks, err := a.List(QueryOpts{})
 	if err != nil {
@@ -274,8 +274,8 @@ func TestSetToDoneAlsoAdvancesTheSeries(t *testing.T) {
 }
 
 // done --note appends to the body BEFORE the close. The note belongs to the
-// occurrence that earned it, so the successor must not inherit it.
-func TestTheSuccessorDoesNotInheritThisClosesNote(t *testing.T) {
+// occurrence that earned it, so the occurrence must not inherit it.
+func TestTheOccurrenceDoesNotInheritThisClosesNote(t *testing.T) {
 	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
 	pred := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
 
@@ -312,7 +312,7 @@ func TestBackLinksDoNotStack(t *testing.T) {
 			t.Fatal(err)
 		}
 		if rep == nil || rep.Created == nil {
-			t.Fatalf("cycle %d produced no successor", i+1)
+			t.Fatalf("cycle %d produced no occurrence", i+1)
 		}
 		next, _, gerr := a.Get(*rep.Created)
 		if gerr != nil {
@@ -417,13 +417,13 @@ func TestAnOnTimeOrEarlyCloseAdvancesExactlyOneStep(t *testing.T) {
 				t.Fatal(err)
 			}
 			if rep == nil || rep.Due == nil {
-				t.Fatalf("no successor: %+v", rep)
+				t.Fatalf("no occurrence: %+v", rep)
 			}
 			if !rep.Due.Equal(c.want) {
 				t.Errorf("next due = %s, want %s", rep.Due.Format(time.RFC3339), c.want.Format(time.RFC3339))
 			}
 			if rep.Due.Equal(*task.Due) {
-				t.Error("the successor repeats the occurrence that was just closed")
+				t.Error("the occurrence repeats the occurrence that was just closed")
 			}
 		})
 	}

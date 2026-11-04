@@ -317,7 +317,7 @@ func newDoneCmd() *cobra.Command {
 			"Closing a REPEATING task is what advances its series: the next occurrence\n" +
 			"is written in the same all-or-nothing write and the rule handed over to\n" +
 			"it, so exactly one live task carries a series and re-closing (or reopen\n" +
-			"then close) mints nothing. The successor is born in the default lane with\n" +
+			"then close) mints nothing. The occurrence is born in the default lane with\n" +
 			"the body and checklist copied (boxes unchecked, the body as it stood before\n" +
 			"this close's --note) under a `previous: [[id]]` line, inheriting everything\n" +
 			"but what the close settled (closed, reviewed), what the rule computes\n" +
@@ -509,7 +509,7 @@ func newNoteCmd() *cobra.Command {
 			"its body. Pass `-` as <text> to read the note from stdin (for multi-line or\n" +
 			"long notes).\n\n" +
 			"--prepend places the paragraph FIRST instead: right after the body's `# title`\n" +
-			"line when it has one (a successor's `previous: [[id]]` back-link stays above\n" +
+			"line when it has one (an occurrence's `previous: [[id]]` back-link stays above\n" +
 			"it), else at the very top — for the \"latest decision at the top\" habit on a\n" +
 			"long record, without replacing the whole body through `edit --body`. The\n" +
 			"rest of the body is kept byte-for-byte; `--json` then carries `prepended`\n" +
@@ -981,7 +981,7 @@ func newSetCmd() *cobra.Command {
 			"is not a date the rule lands on, says so: a stderr note, and the same\n" +
 			"messages in the envelope's `repeat_warnings` (absent when there are none) —\n" +
 			"on the CLOSED task's when the write also closes it, since the rule passes\n" +
-			"to the successor its `repeat` names. An empty --due '' is exit 2, never a\n" +
+			"to the occurrence its `repeat` names. An empty --due '' is exit 2, never a\n" +
 			"silent clear (--clear-due is the clear).\n\n" +
 			"Several ids apply the SAME edits to all of them in ONE all-or-nothing\n" +
 			"write (bulk triage): a miss sets NOTHING and exits 1 with every miss in\n" +
@@ -1297,7 +1297,7 @@ func newSetCmd() *cobra.Command {
 				return err
 			}
 			// `set -s done` closes like `done` does, so it owes the same receipt:
-			// without it the successor it just minted is invisible until a later
+			// without it the occurrence it just minted is invisible until a later
 			// read, and a machine could not tell it from a task that never repeated.
 			rs.noteBound(closed)
 			rs.print(a, closed)
@@ -1583,8 +1583,8 @@ func (s *seriesReports) bind(a *app.App, tasks []*core.Task) {
 	for _, t := range tasks {
 		subject := t
 		// A write that BINDS a rule and CLOSES in one go hands the rule straight
-		// to the successor, so the returned task carries none — follow it, or the
-		// note is silent exactly when a rule was just bound. The successor has no
+		// to the occurrence, so the returned task carries none — follow it, or the
+		// note is silent exactly when a rule was just bound. The occurrence has no
 		// envelope of its own in this write's output, so its notes ride the
 		// closed task's, beside the `repeat` receipt that names it.
 		if subject.Repeat == "" {
@@ -1661,7 +1661,7 @@ func (s *seriesReports) print(a *app.App, tasks []*core.Task) {
 }
 
 // seriesLine is the one human line a close's series report renders — shared
-// with `apply`, so the two closes that mint a successor say the same thing.
+// with `apply`, so the two closes that mint an occurrence say the same thing.
 // A spent series still names what lapsed: a late close is exactly what runs a
 // bounded one out.
 func seriesLine(a *app.App, r *app.RepeatReport) string {

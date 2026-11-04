@@ -174,14 +174,14 @@ func MergeShard(kind ShardKind, base, ours, theirs []byte) (merged []byte, confl
 // repeatCloseConflict reports whether ANY of the three shards carries a repeat
 // rule, in which case a `closed` that differs between the sides is a conflict
 // however it differs — never a clock to resolve, never a one-sided change to
-// take. Closing a repeating task MINTS its successor from the state the closer
-// saw: a double close has minted two live successors (two shards with distinct
+// take. Closing a repeating task MINTS its occurrence from the state the closer
+// saw: a double close has minted two live occurrences (two shards with distinct
 // random ids, which git merges without a murmur), and an edit racing a close
-// lands on the closed predecessor while the successor was cut from the base.
+// lands on the closed predecessor while the occurrence was cut from the base.
 // Pre-merge, both stopped the sync for a human; they must still. The base alone
 // is not enough to ask: a side that MADE the task repeating while the other
 // closed it would otherwise merge key by key into a done task carrying a rule
-// — no successor, no conflict, and lint's repeat-on-closed as the only sign that
+// — no occurrence, no conflict, and lint's repeat-on-closed as the only sign that
 // the series died.
 func repeatCloseConflict(shards ...map[string]json.RawMessage) bool {
 	for _, m := range shards {

@@ -427,8 +427,8 @@ func TestShardKindOf(t *testing.T) {
 }
 
 // A double close of a REPEATING task is two series (each close minted its own
-// successor), so it must stay a conflict — review of #451 found the first cut
-// merging it and pushing both successors.
+// occurrence), so it must stay a conflict — review of #451 found the first cut
+// merging it and pushing both occurrences.
 func TestSyncDoubleCloseOfRepeatingTaskStaysAConflict(t *testing.T) {
 	_, cloneA, cloneB := setupClones(t)
 	t1 := time.Date(2026, 10, 5, 4, 47, 41, 0, time.UTC)
@@ -640,7 +640,7 @@ func TestSyncMergesConcurrentReviewsOfATask(t *testing.T) {
 }
 
 // One clone binds a repeat rule to a task the other clone closes in the same
-// window. Field by field that is a done task carrying a rule — no successor
+// window. Field by field that is a done task carrying a rule — no occurrence
 // minted, the series dead with only lint's repeat-on-closed to say so — so it
 // must stop the sync as a `closed` conflict, exactly as a close racing an edit
 // of an already repeating task does.
