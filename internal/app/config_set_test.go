@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // `config set` is strict where the reader is lenient: a value the reader would

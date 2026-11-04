@@ -10,7 +10,7 @@
 
 **Multi-person, honestly.** furrow is single-operator-first today, and that is the polished path. Several people *can* work one board — it is a git repo, so they clone, push, and `furrow sync` (per-task shards make concurrent edits a clean union). An `@mention` and a task **assignee** are planned, not built yet ([honesty note](docs/non-goals.md#built-vs-planned--honesty-note)).
 
-Written in Go (module `github.com/akira-toriyama/furrow/v9`, Go 1.26+). No database, no daemon, no cloud.
+Written in Go (module `github.com/akira-toriyama/furrow/v10`, Go 1.26+). No database, no daemon, no cloud.
 
 > **Status:** **CLI-only** and shipping; the front-ends ridge (a TUI) and vista
 > (a GUI) are separate repos — see [Status](#status), and the
@@ -27,7 +27,7 @@ Written in Go (module `github.com/akira-toriyama/furrow/v9`, Go 1.26+). No datab
 brew install akira-toriyama/tap/furrow
 
 # Go toolchain (from source)
-go install github.com/akira-toriyama/furrow/v9/cmd/furrow@latest
+go install github.com/akira-toriyama/furrow/v10/cmd/furrow@latest
 
 # Nix
 nix run github:akira-toriyama/furrow
@@ -369,7 +369,7 @@ permissions:
   pull-requests: write
 jobs:
   sync:
-    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v9.0.1
+    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v10.0.0
     secrets:
       PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
 ```

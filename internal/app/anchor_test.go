@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // anchorFixture is the reschedule drill in miniature on a JST board: a box

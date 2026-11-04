@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // Comma is OR on EVERY qualifier — the rule README and the glossary state

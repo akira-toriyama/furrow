@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // refusingIndexSave is the followers' store refusing (a duplicate id on disk,

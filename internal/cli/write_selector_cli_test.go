@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // A -q selection on done PREVIEWS until --yes (nothing written, dry_run in

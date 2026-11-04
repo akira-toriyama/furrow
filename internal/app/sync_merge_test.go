@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
-	"github.com/akira-toriyama/furrow/v9/internal/gittest"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v10/internal/gittest"
 )
 
 // The t-v1fg repro, end to end against real git: the task-status bot closes a

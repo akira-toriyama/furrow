@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // The declared successor's read side (schema v12): what `epic done` proposes

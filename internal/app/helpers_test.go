@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/config"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/store/memstore"
+	"github.com/akira-toriyama/furrow/v10/internal/config"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/store/memstore"
 )
 
 // The one way an app test builds its App. Twenty constructors used to spell

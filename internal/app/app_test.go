@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 var idRe = regexp.MustCompile(`^t-[0-9a-z]{5}$`)

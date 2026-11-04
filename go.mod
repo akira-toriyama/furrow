@@ -1,4 +1,4 @@
-module github.com/akira-toriyama/furrow/v9
+module github.com/akira-toriyama/furrow/v10
 
 go 1.26.0
 

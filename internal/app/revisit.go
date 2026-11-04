@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // EpicRevisitItem pairs an epic with the signals it triggered. Epics are

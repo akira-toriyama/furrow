@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // The small --batch defects the fourth drill hit (t-xm83): a line's own

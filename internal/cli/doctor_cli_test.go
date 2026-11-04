@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/testutil"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/testutil"
 )
 
 // initHealthyMachine writes a user config with ONE live board (house layout:

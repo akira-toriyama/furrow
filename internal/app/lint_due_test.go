@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // `furrow lint` is the twin of brief's section: an arrived date must be found by

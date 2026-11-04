@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 	"github.com/spf13/cobra"
 )
 

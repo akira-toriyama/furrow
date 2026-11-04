@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
 )
 
 // TestCLIArchiveMovesAssets pins t-j2e8: `furrow attach`ed media travels with its

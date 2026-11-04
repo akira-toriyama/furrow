@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/testutil"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/testutil"
 )
 
 // assertNotAStore checks the refusal every discovery arm owes a configured path

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/testutil"
+	"github.com/akira-toriyama/furrow/v10/internal/testutil"
 )
 
 // Every fact the human output prints is in the JSON, and the other way
