@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/testutil"
+	"github.com/akira-toriyama/furrow/v10/internal/testutil"
 )
 
 // writeBoardConfig replaces the board's config.toml with body. Clamp-don't-reject

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v10/internal/gitrepo"
 )
 
 // EpicSwitch is one published activation record: the box, its title (resolved

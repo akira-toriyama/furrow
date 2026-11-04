@@ -14,9 +14,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/akira-toriyama/furrow/v9/internal/config"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/store/fsstore"
+	"github.com/akira-toriyama/furrow/v10/internal/config"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/store/fsstore"
 )
 
 // resolution is the outcome of discovery: which .furrow to open, and (only when

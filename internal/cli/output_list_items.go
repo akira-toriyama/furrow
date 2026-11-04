@@ -5,8 +5,8 @@
 package cli
 
 import (
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // listItemView is one row of `ls`'s --json: the whole task (embedded, so it stays

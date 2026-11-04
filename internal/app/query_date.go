@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/query"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/query"
 )
 
 // The date qualifiers (created/updated/closed/reviewed/due) — the -q

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/gitrepo"
 )
 
 // BoardInfo is the machine-readable snapshot `furrow board` prints: where writes

@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // epicView is one epic row/record in --json. core.Epic is embedded for the same

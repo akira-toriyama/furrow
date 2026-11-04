@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // `furrow rm` / `furrow epic rm` — withdrawing a filing.

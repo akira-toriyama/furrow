@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // A --body-file that does not resolve is the operator's input: exit 2

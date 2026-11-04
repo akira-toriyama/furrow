@@ -12,7 +12,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // Store keeps each task as its own map entry, keyed by id — the in-memory twin

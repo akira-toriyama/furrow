@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // TestInterruptedExitCode pins the 128+signal remap: a signal-caused sync

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
 )
 
 // boardAxes is the pair `furrow board` now reports beside `source`.
