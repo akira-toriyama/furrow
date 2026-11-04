@@ -13,7 +13,7 @@ func futureDay() string { return time.Now().AddDate(0, 0, 30).Format("2006-01-02
 
 // `epic done` never refuses a box with open members — it DISCLOSES them: one
 // stderr note naming them, a second calling out the repeating ones (whose
-// epic-closed comes back every cycle because the successor inherits the epic),
+// epic-closed comes back every cycle because the occurrence inherits the epic),
 // and an open_members array beside the envelope. stdout stays the envelope.
 func TestEpicDoneDisclosesOpenMembers(t *testing.T) {
 	initStore(t)

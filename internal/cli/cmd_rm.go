@@ -12,15 +12,16 @@ const rmLongTail = "It is NOT `archive`: archive RETIRES done work into .furrow/
 	"round trip (`unarchive`); rm WITHDRAWS a record that should not have been\n" +
 	"filed — shard, body, and attached assets are deleted, and nothing brings them\n" +
 	"back but the board repo's git history. An asset another body still shows (a\n" +
-	"successor's, a box's) is KEPT, and the report says so — deleting it would\n" +
+	"occurrence's, a box's) is KEPT, and the report says so — deleting it would\n" +
 	"blank that body's picture for good. Everyday parking is still the icebox\n" +
 	"lane; rm is the exception for a filing made before the decision was.\n\n" +
 	"Preview unless --yes (the destructive-op guard archive and tidy share). A\n" +
 	"target something still points at is refused — exit 2, kind `referenced`,\n" +
 	"every reference in details.references — unless --force, which SEVERS them:\n" +
 	"a dep edge is dropped, a live [[id]] link is de-linked to the bare id (the\n" +
-	"prose keeps its words), a member is unfiled, an epic dep is dropped, and a\n" +
-	"follower's anchor is dropped (its due stays the absolute instant it was).\n" +
+	"prose keeps its words), a member is unfiled, an epic dep is dropped, a\n" +
+	"successor declaration naming the box is dropped, and a follower's anchor is\n" +
+	"dropped (its due stays the absolute instant it was).\n" +
 	"Severing never advances `updated` (bookkeeping, not progress). The id is\n" +
 	"never reused.\n" +
 	"Guarded like every write (the session write guard), on the targets and on\n" +
@@ -37,9 +38,9 @@ func newRmCmd() *cobra.Command {
 			"it first). References among the targets themselves never count, so a chain\n" +
 			"removes in one call.\n\n" +
 			"A target carrying a recurrence rule is the series' ONLY live occurrence (a\n" +
-			"close hands the rule to the successor; a removal hands it to nobody), so\n" +
-			"removing it ENDS the series — no successor is minted, and nothing afterwards\n" +
-			"records that the series existed. Preview and apply both say so. It is a\n" +
+			"close hands the rule to the next occurrence; a removal hands it to nobody),\n" +
+			"so removing it ENDS the series — no next occurrence is minted, and nothing\n" +
+			"afterwards records that the series existed. Preview and apply both say so. It is a\n" +
 			"disclosure, not a refusal: refusing is for a target something still points\n" +
 			"at.\n\n" + rmLongTail + "\n\n" +
 			"--json prints one report: {dry_run, force, tasks, references, assets} —\n" +
@@ -143,7 +144,7 @@ func rmVerb(dry bool) string {
 // --yes finds out at all).
 //
 // A live rule is held by exactly ONE task — a close consumes it and hands it to
-// the successor — so rm is the only path outside a spent rule that ends a
+// the occurrence — so rm is the only path outside a spent rule that ends a
 // series, and it leaves nothing behind to say so: the board lints clean and the
 // board repo's git history is the only way back. A WARNING, never a refusal:
 // refusing is reserved for a target another entity still points at (`referenced`),
@@ -163,10 +164,10 @@ func printSeriesEnd(a *app.App, tasks []core.Task, dry bool) {
 			when = ", due " + calendarTime(a, *t.Due)
 		}
 		if dry {
-			fmt.Fprintf(out, "repeat: %s carries a series (%s%s) — removing it ends the series; no successor is minted\n", t.ID, t.Repeat, when)
+			fmt.Fprintf(out, "repeat: %s carries a series (%s%s) — removing it ends the series; no next occurrence is minted\n", t.ID, t.Repeat, when)
 			continue
 		}
-		fmt.Fprintf(out, "repeat: %s carried a series (%s%s) — the series ended; no successor was minted\n", t.ID, t.Repeat, when)
+		fmt.Fprintf(out, "repeat: %s carried a series (%s%s) — the series ended; no next occurrence was minted\n", t.ID, t.Repeat, when)
 	}
 }
 
@@ -193,6 +194,9 @@ func printReferences(r app.References, dry bool) {
 	}
 	for _, f := range r.Followers {
 		fmt.Fprintf(out, "  follower %s of %s (anchor dropped)\n", f.Task, f.Epic)
+	}
+	for _, d := range r.Successors {
+		fmt.Fprintf(out, "  successor %s -> %s (declaration dropped)\n", d.From, d.To)
 	}
 	for _, l := range r.Links {
 		fmt.Fprintf(out, "  link     %s [[%s]]\n", core.BodyPath(l.Body), l.To)

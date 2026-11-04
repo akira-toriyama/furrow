@@ -114,7 +114,7 @@ func (a *App) AddNote(id, text string) (*core.Task, error) {
 
 // PrependNote is AddNote with the paragraph placed FIRST: right after the
 // body's H1 heading (the `# <title>` line add seeds and retitle maintains; a
-// successor's `previous: [[id]]` back-link stays above it), or at the very top
+// occurrence's `previous: [[id]]` back-link stays above it), or at the very top
 // of a body that has no heading. Everything else is AddNote's contract — the
 // body lands before the shard stamps Updated, the note is never deduped, an
 // empty note is exit 2 — so `furrow note --prepend` differs from `furrow note`
@@ -270,7 +270,7 @@ func (a *App) prependBody(id, text string) error {
 
 // prependedBody composes body with text as its first paragraph: after the H1
 // heading when the first real line is one (retitleHeading's rule — a single
-// `#` then a space, with blank lines and a successor's `previous: [[id]]`
+// `#` then a space, with blank lines and an occurrence's `previous: [[id]]`
 // back-link allowed above it), else at the very top. The paragraph is
 // separated from the heading and from what follows by exactly one blank line
 // each, whatever blank lines the body had there; the rest of the body is

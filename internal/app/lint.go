@@ -269,10 +269,10 @@ func (a *App) lintIndex(idx *core.Index, epics []core.Epic) []core.Problem {
 				ps = append(ps, core.Problem{Severity: core.SevError, Code: "done-unclosed", ID: t.ID, Msg: "task is in the done lane but has no closed timestamp (a `furrow done` will backfill it)"})
 			}
 			// A closed task must not carry a live rule: the close CONSUMES it and
-			// hands it to the successor, which is the whole reason re-closing is
+			// hands it to the occurrence, which is the whole reason re-closing is
 			// idempotent. Two things break at once when one survives. planRepeat
 			// fires on the TRANSITION into the done lane, so the next
-			// reopen-then-close mints a SECOND successor and the series forks for
+			// reopen-then-close mints a SECOND occurrence and the series forks for
 			// good. And countRepeating counts open carriers only, so this task stops
 			// answering for repeat-no-timezone — one hand-edit turns an ERROR the
 			// board already had OFF. Every write path refuses the state (Set's
@@ -280,7 +280,7 @@ func (a *App) lintIndex(idx *core.Index, epics []core.Epic) []core.Problem {
 			// only a shard furrow did not write can be here.
 			if t.Repeat != "" {
 				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-on-closed", ID: t.ID,
-					Msg: "is in the done lane but still carries the repeat rule its close should have handed to a successor, so reopening and closing it would mint a second one — drop the rule with `furrow set " + t.ID + " --clear-repeat` if the successor already exists, or reopen this task (`furrow move " + t.ID + " " + a.Cfg.DefaultLane + "`) if it is the live occurrence"})
+					Msg: "is in the done lane but still carries the repeat rule its close should have handed to the next occurrence, so reopening and closing it would mint a second one — drop the rule with `furrow set " + t.ID + " --clear-repeat` if the next occurrence already exists, or reopen this task (`furrow move " + t.ID + " " + a.Cfg.DefaultLane + "`) if it is the live occurrence"})
 			}
 		}
 		// A rule furrow cannot expand ends the series in SILENCE: the close would
@@ -596,7 +596,7 @@ func (a *App) lintBoardRules(idx *core.Index) []core.Problem {
 	// runner — and they disagree on which day an anchor sits in whenever the
 	// operator's zone puts the anchor on a different UTC date (every bare-date
 	// due west of UTC, every early-morning wall clock east of it), so BYDAY /
-	// BYMONTHDAY resolve to the wrong day and the successor lands a day off —
+	// BYMONTHDAY resolve to the wrong day and the occurrence lands a day off —
 	// and since a close settles the whole local DAY of a bare-date series, the
 	// two zones also disagree about which day that is. A fixed due does not
 	// drift (its instant is stored); only a rule expanded from it does, which

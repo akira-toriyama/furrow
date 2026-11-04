@@ -10,7 +10,7 @@ func TestMarshalMetaCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"schema_version\": 11\n}\n"
+	want := "{\n  \"schema_version\": 12\n}\n"
 	if string(b) != want {
 		t.Errorf("MarshalMeta bytes = %q, want %q", b, want)
 	}
@@ -31,19 +31,18 @@ func TestUnmarshalMetaRejectsGarbage(t *testing.T) {
 	}
 }
 
-// SchemaVersion is 11: the anchor pair — an epic's calendar day and the tasks
-// whose dues follow it. A v10 binary that merely PRESERVED the two fields would
-// carry them faithfully and then leave every follower's due behind when the
-// box's day moved through it — `epic set --anchor` reads the pointer, `-q
-// anchor:` selects on it — while reporting the board clean. Both fields are
-// omitempty, so no existing shard rewrites: the gate exists for the BEHAVIOUR,
-// not for the bytes.
+// SchemaVersion is 12: the per-epic `successor` — the box declared to open
+// after this one closes. A v11 binary that merely PRESERVED the field would
+// carry it faithfully and then, on `epic done`, point the session back at the
+// computed previous while the human's declared plan rode along unread — and
+// its lint would call the board clean. The field is omitempty, so no existing
+// shard rewrites: the gate exists for the BEHAVIOUR, not for the bytes.
 //
 // The literal is deliberate (not `!= SchemaVersion`): this test's whole job is to
 // make a bump impossible to do by accident, so it has to fail when the const moves
 // and force the author to confirm the flag day.
-func TestSchemaVersionIsEleven(t *testing.T) {
-	if SchemaVersion != 11 {
-		t.Errorf("SchemaVersion = %d, want 11 (the anchor pair: a box's day and the dues that follow it)", SchemaVersion)
+func TestSchemaVersionIsTwelve(t *testing.T) {
+	if SchemaVersion != 12 {
+		t.Errorf("SchemaVersion = %d, want 12 (the per-epic successor: the box declared to open after this one closes)", SchemaVersion)
 	}
 }

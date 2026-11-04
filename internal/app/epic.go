@@ -41,9 +41,12 @@ type EpicDetail struct {
 	// Deps are the epic's dep edges resolved to id+title+state (EpicRef), so
 	// `epic show` can print what this box waits on without a second read; the
 	// raw id set rides in Epic.Deps.
-	Deps  []EpicRef
-	Tasks []ListItem
-	Body  string
+	Deps []EpicRef
+	// Successor is the declared successor resolved the same way (nil when the
+	// box declares none); the raw id rides in Epic.Successor.
+	Successor *EpicRef
+	Tasks     []ListItem
+	Body      string
 }
 
 // EpicAddOpts are the creation options for `furrow epic add`.
@@ -84,6 +87,14 @@ type EpicSetOpts struct {
 	// pointers in place and disclosed (AnchorPlan.Followers).
 	Anchor      *string
 	ClearAnchor bool
+	// Successor declares the box to open after this one closes (core.Epic
+	// .Successor): any epic reference, stored as the id. The write refuses a
+	// self-reference, a closed target, a cycle through the chain, a target
+	// this box already waits on (`epic dep`), and a standing declarer — the
+	// judgments only the write path can make before a merge lands them.
+	// ClearSuccessor drops the plan and is exclusive with Successor.
+	Successor      *string
+	ClearSuccessor bool
 }
 
 // requested is the one table EpicSet's no-op refusal reads, in flag order —
@@ -103,6 +114,8 @@ func (o EpicSetOpts) requested() []optFlag {
 		{"--pinned", o.Pinned != nil},
 		{"--anchor", o.Anchor != nil},
 		{"--clear-anchor", o.ClearAnchor},
+		{"--successor", o.Successor != nil},
+		{"--clear-successor", o.ClearSuccessor},
 	}
 }
 
@@ -287,6 +300,11 @@ func (a *App) epicDetailIn(idx *core.Index, epics []core.Epic, id string, withBo
 	for _, d := range e.Deps {
 		deps = append(deps, resolveEpicRef(byID, d))
 	}
+	var successor *EpicRef
+	if e.Successor != "" {
+		r := resolveEpicRef(byID, e.Successor)
+		successor = &r
+	}
 	tasks, err := a.matchIn(idx, QueryOpts{Epic: id})
 	if err != nil {
 		return nil, err
@@ -300,13 +318,14 @@ func (a *App) epicDetailIn(idx *core.Index, epics []core.Epic, id string, withBo
 	}
 	st := a.epicMemberStats(idx, doneIDs, a.Clock.Now())[id]
 	return &EpicDetail{
-		Epic:     *e,
-		Progress: st.progress(),
-		Stuck:    st.stuck(),
-		Waiting:  st.waiting(),
-		Deps:     deps,
-		Tasks:    a.listItemsIn(idx, tasks, doneIDs),
-		Body:     body,
+		Epic:      *e,
+		Progress:  st.progress(),
+		Stuck:     st.stuck(),
+		Waiting:   st.waiting(),
+		Deps:      deps,
+		Successor: successor,
+		Tasks:     a.listItemsIn(idx, tasks, doneIDs),
+		Body:      body,
 	}, nil
 }
 
@@ -326,6 +345,9 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 	}
 	if o.Anchor != nil && o.ClearAnchor {
 		return nil, nil, nil, core.Validationf(ref, "--anchor and --clear-anchor say two different things about the box's day; pass one")
+	}
+	if o.Successor != nil && o.ClearSuccessor {
+		return nil, nil, nil, core.Validationf(ref, "--successor and --clear-successor say two different things about what opens after this box; pass one")
 	}
 	for _, l := range []struct {
 		flag string
@@ -355,6 +377,18 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 			return nil, nil, nil, err
 		}
 	}
+	// A successor is judged against the whole epic set (resolution, the chain
+	// walk, the dep graph), which the single-shard mutate below never loads.
+	var epics []core.Epic
+	successor := ""
+	if o.Successor != nil {
+		if epics, err = a.Store.LoadEpics(); err != nil {
+			return nil, nil, nil, err
+		}
+		if successor, err = a.resolveEpicIn(*o.Successor, epics); err != nil {
+			return nil, nil, nil, err
+		}
+	}
 	// The followers' index is written BEFORE the box (mutateEpicStamping's
 	// beforeSave): a refused index save then leaves the box's day where it
 	// was, so the same command re-run moves them. A box save failing after
@@ -377,6 +411,22 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 		}
 		if o.Pinned != nil {
 			e.Pinned = *o.Pinned
+		}
+		if o.ClearSuccessor {
+			e.Successor = ""
+		}
+		if o.Successor != nil {
+			if err := checkSuccessor(e, successor, epics); err != nil {
+				return err
+			}
+			e.Successor = successor
+		}
+		// Judged AFTER both flags landed, so `--standing --clear-successor`
+		// is one coherent write and `--standing --successor` one refusal — and
+		// only when one of them was passed: a shard a merge left in this state
+		// is lint's (epic-successor-standing), not every later edit's.
+		if (o.Standing != nil || o.Successor != nil) && e.Standing && e.Successor != "" {
+			return core.Validationf(e.ID, "epic %s is standing — a standing box never closes, so nothing can be declared to open after it; clear the declaration (`--clear-successor`) or the flag (`--standing=false`)", e.ID)
 		}
 		if len(o.SetMeta) > 0 && e.Meta == nil {
 			e.Meta = map[string]string{}
@@ -444,6 +494,30 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 		return nil, nil, nil, err
 	}
 	return before, after, plan, nil
+}
+
+// checkSuccessor is the write-time judgment on declaring `successor` after e,
+// against the loaded epic set: the cases a merge could still land (lint's
+// epic-successor-* rules) and the ones only this moment can refuse — a loop
+// through the chain, and a declaration that contradicts the box's own wait.
+func checkSuccessor(e *core.Epic, successor string, epics []core.Epic) error {
+	if successor == e.ID {
+		return core.Validationf(e.ID, "a box cannot be its own successor")
+	}
+	target := core.EpicsByID(epics)[successor]
+	if target == nil {
+		return core.NotFound(successor)
+	}
+	if !target.IsOpen() {
+		return core.Validationf(e.ID, "epic %s is closed — a closed box cannot be opened after this one; reopen it first (`furrow epic reopen %s`) or name another", successor, successor)
+	}
+	if core.EpicSuccessorReaches(epics, successor, e.ID) {
+		return core.Validationf(e.ID, "declaring %s as the successor would close a loop: its own chain already leads back to %s", successor, e.ID)
+	}
+	if core.EpicDependsOn(epics, e.ID, successor) {
+		return core.Validationf(e.ID, "epic %s waits on %s (`furrow epic dep %s --list`) — a box cannot open after one that opens after it; drop the dep or name another successor", e.ID, successor, e.ID)
+	}
+	return nil
 }
 
 // EpicActivate opens a box for work. This is where the per-repo single-active
@@ -530,28 +604,15 @@ func (a *App) EpicActivate(ref, reason string) (before, after *core.Epic, openDe
 // checkRepoSlots refuses an activation that would give a repo two active boxes,
 // naming the repo AND the incumbent so the fix is one command away.
 func (a *App) checkRepoSlots(target *core.Epic, epics []core.Epic) error {
-	// Keyed by the folded name: repos compare case-insensitively everywhere
-	// else (anyRepoMatch), and `O/R` beside `o/r` used to hold two slots.
-	held := map[string]string{} // repo (folded) -> the epic already holding its slot
-	for i := range epics {
-		e := &epics[i]
-		if e.ID == target.ID || !e.Active || !e.IsOpen() {
-			continue
-		}
-		for _, r := range e.Repos {
-			held[strings.ToLower(r)] = e.ID
-		}
+	held := heldSlots(target, epics)
+	if len(held) == 0 {
+		return nil
 	}
 	var clashes []string
 	details := map[string]any{}
-	for _, r := range target.Repos {
-		if other, ok := held[strings.ToLower(r)]; ok {
-			clashes = append(clashes, fmt.Sprintf("%s (held by %s)", r, other))
-			details[r] = other
-		}
-	}
-	if len(clashes) == 0 {
-		return nil
+	for r, other := range held {
+		clashes = append(clashes, fmt.Sprintf("%s (held by %s)", r, other))
+		details[r] = other
 	}
 	sort.Strings(clashes)
 	return &core.Error{
@@ -561,6 +622,32 @@ func (a *App) checkRepoSlots(target *core.Epic, epics []core.Epic) error {
 		Msg:     fmt.Sprintf("another epic is already active for %s — deactivate it first (`furrow epic deactivate <id>`)", strings.Join(clashes, ", ")),
 		Details: map[string]any{"held": details},
 	}
+}
+
+// heldSlots maps each of target's repos (as target spells it) to the OTHER
+// open, active box holding that repo's slot — empty when target could be
+// activated now. Keyed by the folded name: repos compare case-insensitively
+// everywhere else (anyRepoMatch), and `O/R` beside `o/r` used to hold two
+// slots. The one slot judgment, read by the activate refusal and by the
+// successor proposal (slot-held).
+func heldSlots(target *core.Epic, epics []core.Epic) map[string]string {
+	holder := map[string]string{} // repo (folded) -> the epic already holding its slot
+	for i := range epics {
+		e := &epics[i]
+		if e.ID == target.ID || !e.Active || !e.IsOpen() {
+			continue
+		}
+		for _, r := range e.Repos {
+			holder[strings.ToLower(r)] = e.ID
+		}
+	}
+	held := map[string]string{}
+	for _, r := range target.Repos {
+		if other, ok := holder[strings.ToLower(r)]; ok {
+			held[r] = other
+		}
+	}
+	return held
 }
 
 // recordSwitch appends the activation to the epic's body. It is deliberately in
@@ -741,9 +828,11 @@ func (a *App) EpicDeactivate(ref string) (*core.Epic, *core.Epic, error) {
 // kept its flag would hold its repos' slots forever and nothing could be opened
 // after it.
 //
-// It deliberately does NOT pick the next box. Choosing what to work on is the one
-// judgement here that is genuinely the human's; furrow does the bookkeeping and
-// then `furrow lint`'s epic-no-active nags until a person decides.
+// It deliberately does NOT open the next box. Choosing what to work on is the
+// one judgement here that is genuinely the human's; furrow does the bookkeeping,
+// PROPOSES (SuccessorSuggest for the declared plan, PreviousActiveSuggest for
+// the computed return), and then `furrow lint`'s epic-no-active nags until a
+// person decides.
 func (a *App) EpicDone(ref string) (*core.Epic, *core.Epic, error) {
 	return a.mutateEpic(ref, func(e *core.Epic) error {
 		if !e.IsOpen() {

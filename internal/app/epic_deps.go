@@ -76,6 +76,11 @@ func (a *App) EpicAddDeps(ref string, depRefs []string) (*core.Epic, *core.Epic,
 		if core.EpicDependsOn(epics, dep, id) {
 			return nil, nil, core.Validationf(id, "adding dep %q would create a cycle (%s already waits on %s)", dep, dep, id)
 		}
+		// The successor side of the same contradiction checkSuccessor refuses:
+		// a box cannot wait on the box declared to open after it.
+		if core.EpicSuccessorReaches(epics, id, dep) {
+			return nil, nil, core.Validationf(id, "epic %s is declared to open after %s (`furrow epic show %s`) — a box cannot wait on its own successor; clear the declaration (`furrow epic set %s --clear-successor`) or name another dep", dep, id, id, id)
+		}
 		if !slices.Contains(target.Deps, dep) {
 			// Mutating the loaded slice is what makes the NEXT iteration's cycle
 			// check see this batch's earlier edges.

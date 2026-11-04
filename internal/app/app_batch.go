@@ -17,7 +17,7 @@ import (
 // resolved, so a failed batch touches neither lanes nor prose.
 func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*RepeatReport, error) {
 	reports := map[string]*RepeatReport{}
-	var successors []*pendingSuccessor
+	var occurrences []*pendingOccurrence
 	reservedIDs := map[string]bool{}
 	if !a.Cfg.IsLane(lane) {
 		return nil, nil, a.unknownLaneErr("", lane)
@@ -46,7 +46,7 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 	// all happen before anything does.
 	for _, id := range order {
 		t, _ := idx.Find(id)
-		// The successor copies the body as it stood, and a completion note
+		// The occurrence copies the body as it stood, and a completion note
 		// belongs to the occurrence that earned it — so this reads before the
 		// loop below appends one.
 		rep, succ, rerr := a.planRepeat(idx, t, t.Status, lane, now, reservedIDs)
@@ -54,15 +54,15 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 			return nil, nil, rerr
 		}
 		reports[id] = rep
-		successors = append(successors, succ)
+		occurrences = append(occurrences, succ)
 	}
-	// Every body this close writes — the generated successors' and the note on
+	// Every body this close writes — the generated occurrences' and the note on
 	// each closed task — is composed first and lands in ONE store write: a note
 	// is not idempotent, so a per-id loop that failed on the third body left the
 	// first two annotated, closed nothing, and duplicated them on the retry
 	// (t-5n2x). The prose is the only step left that can fail; after it, the
 	// index write is all-or-nothing on its own.
-	bodies := successorBodies(successors)
+	bodies := occurrenceBodies(occurrences)
 	if note != "" {
 		for _, id := range order {
 			next, err := a.appendedBody(id, note)
@@ -104,7 +104,7 @@ func (a *App) moveMany(ids []string, lane, note string) ([]*core.Task, []*Repeat
 	// After the loop: every *core.Task above is dead, so inserting cannot
 	// invalidate a pointer still in use (core.Index holds tasks by value). The
 	// files are already written; this half cannot fail.
-	a.insertSuccessors(idx, successors)
+	a.insertOccurrences(idx, occurrences)
 	if err := a.saveIndex(idx); err != nil {
 		return nil, nil, err
 	}
@@ -281,19 +281,19 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, *Rep
 	}
 	var (
 		renumbered []core.PriorityChange
-		successor  *pendingSuccessor
+		occurrence *pendingOccurrence
 		report     *RepeatReport
 	)
 	now := a.Clock.Now()
 	// applySet does the whole edit against the task mutateInPost hands it (the
-	// repo guard's both sides and the stamp are the skeleton's); the successor
+	// repo guard's both sides and the stamp are the skeleton's); the occurrence
 	// a `-s done` mints goes in through the post hook — inserting moves the
 	// index's backing array, so it must wait until every task pointer is dead.
 	saved, err := a.mutateInPostAt(idx, id, now, func(*core.Task) error {
-		renumbered, successor, report, err = a.applySet(idx, id, o, due, anchor, epic, now, nil)
+		renumbered, occurrence, report, err = a.applySet(idx, id, o, due, anchor, epic, now, nil)
 		return err
 	}, func(idx *core.Index) error {
-		return a.flushSuccessors(idx, []*pendingSuccessor{successor})
+		return a.flushOccurrences(idx, []*pendingOccurrence{occurrence})
 	})
 	if err != nil {
 		return nil, nil, nil, err
@@ -470,7 +470,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 		}
 	}
 	now := a.Clock.Now() // the batch's one instant: the lane stamps and the updated stamps
-	var successors []*pendingSuccessor
+	var occurrences []*pendingOccurrence
 	reports := map[string]*RepeatReport{}
 	reservedIDs := map[string]bool{}
 	for _, id := range order {
@@ -480,7 +480,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 		if serr != nil {
 			return nil, nil, serr
 		}
-		successors = append(successors, succ)
+		occurrences = append(occurrences, succ)
 		reports[id] = rep
 		if err := a.guardRepos(id, unionRepos(reposBefore, t.Repos), ""); err != nil {
 			return nil, nil, err
@@ -488,7 +488,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 	}
 	// Held to the end: inserting moves core.Index's backing array, and the loop
 	// above is holding task pointers into it.
-	if err := a.flushSuccessors(idx, successors); err != nil {
+	if err := a.flushOccurrences(idx, occurrences); err != nil {
 		return nil, nil, err
 	}
 	if err := a.saveIndex(idx); err != nil {
@@ -506,8 +506,8 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 // caller (resolveAnchor, resolveEpicOpt) so a batch cannot fan out into N epic
 // reads; now is the write's one instant (the lane's closed stamp and the
 // caller's updated stamp carry it alike).
-func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, anchor string, epic *string, now time.Time, reserved map[string]bool) ([]core.PriorityChange, *pendingSuccessor, *RepeatReport, error) {
-	var successor *pendingSuccessor
+func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, anchor string, epic *string, now time.Time, reserved map[string]bool) ([]core.PriorityChange, *pendingOccurrence, *RepeatReport, error) {
+	var occurrence *pendingOccurrence
 	var report *RepeatReport
 	relRef, relBefore := o.Before, true
 	if relRef == "" {
@@ -668,10 +668,10 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 	}
 	t.Labels = nextLabels
 	t.Repos = nextRepos
-	// The close runs LAST, so the successor is copied from the task as THIS
+	// The close runs LAST, so the occurrence is copied from the task as THIS
 	// write leaves it: `set -s done --clear-repeat` ends the series instead of
 	// handing it on, `set -s done --repeat <rule>` carries the NEW rule forward
-	// instead of binding it onto the task it just closed, and a successor born
+	// instead of binding it onto the task it just closed, and an occurrence born
 	// beside `--add-label`/`-e` inherits the edited values rather than a
 	// pre-edit snapshot (which could leave it violating `epic-required`).
 	if o.Status != nil {
@@ -682,21 +682,21 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 		if r != nil {
 			consumeRepeat(t)
 		}
-		report, successor = r, succ
+		report, occurrence = r, succ
 	}
 	// The end-state invariant, checked where the end state is known: a task that
 	// is closed cannot carry a live rule. `set -s done --repeat X` is fine — the
-	// close above consumed it and handed X to the successor — but `set
+	// close above consumed it and handed X to the occurrence — but `set
 	// <closed-id> --repeat X` would arm a rule on a task nothing will ever close
 	// again, the state `add -s done --repeat` already refuses, and it forks a
-	// series in two when the predecessor's own successor is still running.
+	// series in two when the predecessor's own occurrence is still running.
 	if t.Repeat != "" && t.Status == a.Cfg.DoneLane {
 		return renumbered, nil, nil, core.Validationf(id, "task %s is closed, so a repeat rule on it could never fire — reopen it first (`furrow move %s %s`), or drop the rule", id, id, a.Cfg.DefaultLane)
 	}
 	if err := a.stampIfChanged(t, before); err != nil {
 		return renumbered, nil, nil, err
 	}
-	return renumbered, successor, report, nil
+	return renumbered, occurrence, report, nil
 }
 
 // resolveAnchor binds a set's `--anchor` reference to the epic id it names,

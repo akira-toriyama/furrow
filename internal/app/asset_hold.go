@@ -22,8 +22,8 @@ import (
 //     rest, disclosed in its report.
 //
 // Ownership never decides a deletion on its own, and no reaper is needed: the
-// hot copy a predecessor's successor still points at is reaped by the move or
-// removal of that LAST holder, because the successor's body lists it in play.
+// hot copy a predecessor's occurrence still points at is reaped by the move or
+// removal of that LAST holder, because the occurrence's body lists it in play.
 // A store that has the file twice (hot and archive/) costs git one tree entry,
 // not a second blob — identical bytes are one object.
 

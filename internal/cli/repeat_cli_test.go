@@ -83,7 +83,7 @@ func TestDoneJSONCarriesTheRepeatKey(t *testing.T) {
 	}
 	e := envs[0]
 	if e.Repeat == nil || e.Repeat.Created == nil || e.Repeat.Due == nil {
-		t.Fatalf("envelope has no successor: %+v", e.Repeat)
+		t.Fatalf("envelope has no occurrence: %+v", e.Repeat)
 	}
 	if e.Repeat.Completed {
 		t.Error("a live series reported completed")
@@ -98,7 +98,7 @@ func TestDoneJSONCarriesTheRepeatKey(t *testing.T) {
 		t.Fatalf("show exit %d: %s", code, out)
 	}
 	if !strings.Contains(out, "FREQ=MONTHLY") {
-		t.Errorf("the successor does not carry the rule:\n%s", out)
+		t.Errorf("the occurrence does not carry the rule:\n%s", out)
 	}
 }
 
@@ -124,7 +124,7 @@ func TestAddWarnsAboutASkippingDayOfMonth(t *testing.T) {
 }
 
 // February 29 is the same defect with a four-year feedback loop: the operator
-// spells the rule `yearly`, the successor is minted silently, and the next
+// spells the rule `yearly`, the occurrence is minted silently, and the next
 // occurrence is 2032. So it is said at bind time too — with the date, and never
 // with the monthly remedy, which is a rule of another frequency.
 func TestAddWarnsAboutALeapDayRule(t *testing.T) {
@@ -279,9 +279,9 @@ func TestChangedNamesTheRepeatFields(t *testing.T) {
 }
 
 // A write that BINDS a rule and CLOSES in one go hands the rule straight to the
-// successor, so the returned task carries none — the note has to follow it, or
+// occurrence, so the returned task carries none — the note has to follow it, or
 // it is silent exactly when a rule was just bound.
-func TestTheBindNoteFollowsTheRuleToTheSuccessor(t *testing.T) {
+func TestTheBindNoteFollowsTheRuleToTheOccurrence(t *testing.T) {
 	initStore(t)
 	out, code := run(t, "add", "y", "--due", "2026-01-31")
 	id := addedID(t, out, code)
@@ -493,7 +493,7 @@ func TestRepeatTagFollowsTheLiveOccurrence(t *testing.T) {
 		}
 	}
 	if tagged != 1 {
-		t.Errorf("%d rows carry the tag, want exactly the live successor:\n%s", tagged, out)
+		t.Errorf("%d rows carry the tag, want exactly the live occurrence:\n%s", tagged, out)
 	}
 }
 
@@ -519,7 +519,7 @@ func TestABatchCloseNamesTheOccurrenceEachReceiptBelongsTo(t *testing.T) {
 		}
 	}
 
-	// The successors carry the last slot of each series, so closing both in one
+	// The occurrences carry the last slot of each series, so closing both in one
 	// batch is the case where the two lines say the same words.
 	last := liveRepeatIDs(t)
 	if len(last) != 2 {
@@ -617,7 +617,7 @@ func TestBindingAnOffLatticeAnchorSaysSo(t *testing.T) {
 }
 
 // The LAST occurrence of a bounded series carries its rule like every other
-// one, so a preview that tested the field alone promised a successor the apply
+// one, so a preview that tested the field alone promised an occurrence the apply
 // then did not create — the preview stating the opposite of the write.
 func TestApplyDryRunSaysWhenTheCloseWouldEndTheSeries(t *testing.T) {
 	freezeClock(t)
@@ -671,7 +671,7 @@ func TestApplyDryRunSaysWhenTheCloseWouldEndTheSeries(t *testing.T) {
 	}
 }
 
-// repeatCreated is the successor id out of a `done --json` envelope.
+// repeatCreated is the occurrence id out of a `done --json` envelope.
 func repeatCreated(t *testing.T, out string) string {
 	t.Helper()
 	var envs []struct {
@@ -683,7 +683,7 @@ func repeatCreated(t *testing.T, out string) string {
 		t.Fatalf("done --json: %v\n%s", err, out)
 	}
 	if len(envs) != 1 || envs[0].Repeat.Created == "" {
-		t.Fatalf("no successor in the done envelope:\n%s", out)
+		t.Fatalf("no occurrence in the done envelope:\n%s", out)
 	}
 	return envs[0].Repeat.Created
 }
@@ -792,8 +792,8 @@ func TestSetRepeatJSONCarriesTheBindWarnings(t *testing.T) {
 }
 
 // A write that binds a rule and closes in one go hands the rule to the
-// successor, which has no envelope of its own in set's output — so its notes
-// ride the closed task's, beside the receipt that names the successor.
+// occurrence, which has no envelope of its own in set's output — so its notes
+// ride the closed task's, beside the receipt that names the occurrence.
 func TestABindAndCloseCarriesTheWarningsOnTheClosedEnvelope(t *testing.T) {
 	initStore(t)
 	out, code := run(t, "add", "y", "--due", "2026-01-31")
@@ -816,7 +816,7 @@ func TestABindAndCloseCarriesTheWarningsOnTheClosedEnvelope(t *testing.T) {
 		t.Fatalf("set --json: %v\n%s", err, stdout)
 	}
 	if len(envs) != 1 || envs[0].After.ID != id || envs[0].Repeat.Created == "" {
-		t.Fatalf("want one envelope for %s naming its successor:\n%s", id, stdout)
+		t.Fatalf("want one envelope for %s naming its occurrence:\n%s", id, stdout)
 	}
 	if len(envs[0].RepeatWarnings) != 1 || !strings.Contains(envs[0].RepeatWarnings[0], "does not exist in every month") {
 		t.Errorf("the closed task's envelope did not carry the bound rule's note:\n%s", stdout)

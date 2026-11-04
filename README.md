@@ -130,7 +130,7 @@ furrow uses a **hybrid** layout: one machine-written JSON shard per task for str
 .furrow/
 ├── .gitattributes       # bodies/*.md merge=union
 ├── config.toml          # human config (furrow only READS this, except `furrow config set`'s surgical edit)
-├── meta.json            # board-wide layout version {"schema_version": 11} — written ONLY by furrow, raised ONLY by `furrow upgrade`
+├── meta.json            # board-wide layout version {"schema_version": 12} — written ONLY by furrow, raised ONLY by `furrow upgrade`
 ├── tasks/
 │   ├── t-k3m9p.json     # one metadata shard per task — written ONLY by the single core.MarshalTask path
 │   └── t-p4q2r.json
@@ -263,10 +263,10 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `epic add <title>` | Create an epic (never active — open it with `epic activate`) | `--anchor`, `--body`, `--body-file`, `--goal`, `-l/--label`, `--meta`, `-r/--repo` |
 | `epic ls` (alias `list`) | List epics (open only by default), active first | `--all`, `-l/--label`, `-n/--limit`, `-r/--repo` |
 | `epic show <epic>` | Show one epic: goal, meta, progress, member tasks, and its body | `--no-body` |
-| `epic set <epic>` | Edit an epic's title, goal, meta, labels, repos, anchor day, or its standing/pinned declarations | `--add-label`, `--add-repo`, `--anchor`, `--clear-anchor`, `--goal`, `--meta`, `--pinned`, `--rm-label`, `--rm-meta`, `--rm-repo`, `--standing`, `--title`, `--yes` |
+| `epic set <epic>` | Edit an epic's title, goal, meta, labels, repos, anchor day, successor, or its standing/pinned declarations | `--add-label`, `--add-repo`, `--anchor`, `--clear-anchor`, `--clear-successor`, `--goal`, `--meta`, `--pinned`, `--rm-label`, `--rm-meta`, `--rm-repo`, `--standing`, `--successor`, `--title`, `--yes` |
 | `epic activate <epic>` | Make this the active epic for its repos (at most one each) | `--reason` |
 | `epic deactivate <epic>` | Clear the active flag without closing the epic (suggests where to return) | — |
-| `epic done <epic>` | Close an epic (clears active; suggests the previous active, never picks it) | — |
+| `epic done <epic>` | Close an epic (clears active; proposes the declared successor, else the previous active — never activates) | — |
 | `epic reopen <epic>` | Reopen a closed epic (clears closed; never re-activates) | — |
 | `epic dep <epic> [<dep-epic>...]` | Add/remove an epic's deps (open after those close), or list them both ways with --list | `--list`, `--rm` |
 | `epic rm <epic>` | Delete an epic outright — withdraw a box, never close one (preview unless --yes) | `--force`, `--yes` |
@@ -321,7 +321,7 @@ The generated table is the machine-guaranteed surface; these are the behavior co
 - **`set`** — the routine triage edits (lane, priority, value, effort, labels, repos, epic, due, repeat, anchor) in **one** all-or-nothing write over one id, several, or a `-q` selection that previews until `--yes`: `--due` is the snooze, `--due-shift` the reschedule of the dues tasks already carry, `--anchor <epic>` makes a due follow a box's day; `furrow set --help`.
 - **`check`** — zero-based indexes, the number `show` prints beside each row; marking done is an idempotent set, not a toggle (`--off` unchecks), beside `--add`/`--rm`/`--reword`; `furrow check --help`.
 - **`dep`** — variadic, acyclic, idempotent and all-or-nothing (`dep add` / `dep rm` are accepted spellings). `--list` reads the neighborhood **both ways** — `depends_on` and `blocks`, each row with its own `blocked_by` — so one read answers "what moves if I close this". Contract: `furrow dep --help`.
-- **`epic`** — the box's subcommands, each with its own `--help` as its contract (`furrow epic --help` lists them). At most one active box per repo, and `epic done` never picks a successor; `epic show` prints the **waiting** state, and moving a box's day with `epic set --anchor` is the **reschedule** — every open follower's due shifts with it, previewed until `--yes` (no stored offset, no cascade: [docs/non-goals.md](docs/non-goals.md)). A task joins a box with `add -e` / `set -e` (`-e ''` unfiles); `epic add` only creates one.
+- **`epic`** — the box's subcommands, each with its own `--help` as its contract (`furrow epic --help` lists them). At most one active box per repo, and `epic done` never activates the next box: it **proposes** the **successor** the box declared (`epic set --successor <epic>`, the plan written ahead — one per box, a chain is a queue, walked past a closed box, refused on a standing one) and, for a freed slot no declaration covers, the previous active box; `furrow brief` names a closed box's proposed successor while nothing is active. `epic show` prints the **waiting** state, and moving a box's day with `epic set --anchor` is the **reschedule** — every open follower's due shifts with it, previewed until `--yes` (no stored offset, no cascade: [docs/non-goals.md](docs/non-goals.md)). A task joins a box with `add -e` / `set -e` (`-e ''` unfiles); `epic add` only creates one.
 - **`repo`** — each value is a full `owner/repo` or a short name resolving to exactly one known repo (else exit 2 with `candidates`); a task with no repos is a draft. Contract: `furrow repo --help`.
 - **`review`** — stamps a task's or a box's `reviewed` (apart from `updated`) or a repo's review clock; `--by agent` logs a repo sweep without advancing the human clock. Contract: `furrow review --help`.
 - **`apply`** — parses `SetStatus-task: <body-link> [<lane>]` directives from PR/commit text, the CI hook behind [auto status updates](#ci-auto-update-a-tracker-from-prs); validation is non-blocking, and `--dry-run` is the local footer check before `gh pr create`. Contract: `furrow apply --help`.
@@ -612,7 +612,7 @@ Every shard and `meta.json` is written by its kind's one marshaller, with a fixe
 ## Status
 
 - **Working:** furrow is **CLI-only** and everything in this README ships, at
-  board layout v11 (what each layout added: `core.SchemaVersion` in
+  board layout v12 (what each layout added: `core.SchemaVersion` in
   `internal/core/task.go`). `sh scripts/check.sh` is the full local
   verification.
 - **Released:** with GoReleaser, to the Homebrew tap and the nix flake — see

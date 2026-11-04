@@ -25,7 +25,7 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 		return nil, nil, err
 	}
 	var rep *RepeatReport
-	var succ *pendingSuccessor
+	var succ *pendingOccurrence
 	now := a.Clock.Now()
 	saved, err := a.mutateInPostAt(idx, id, now, func(t *core.Task) error {
 		r, s, rerr := a.planRepeat(idx, t, t.Status, lane, now, nil)
@@ -39,7 +39,7 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 		a.applyLane(idx, t, lane, now)
 		return nil
 	}, func(ix *core.Index) error {
-		return a.flushSuccessors(ix, []*pendingSuccessor{succ})
+		return a.flushOccurrences(ix, []*pendingOccurrence{succ})
 	})
 	if err != nil {
 		return nil, nil, err
@@ -244,8 +244,8 @@ func (a *App) Retitle(id, title string) (*core.Task, error) {
 // matching add. A non-empty body whose first non-blank line is not an H1 is
 // returned unchanged: the title then lives only in the shard, with nothing to
 // keep in sync. The one line allowed ABOVE the heading is a generated
-// occurrence's `previous: [[id]]` back-link (successorBody puts it on line 1),
-// otherwise every successor of a repeating task would keep its stale heading
+// occurrence's `previous: [[id]]` back-link (occurrenceBody puts it on line 1),
+// otherwise every occurrence of a repeating task would keep its stale heading
 // through a retitle. Operates on LF-delimited markdown (furrow's on-disk form).
 func retitleHeading(body, title string) (string, bool) {
 	want := "# " + title
@@ -255,7 +255,7 @@ func retitleHeading(body, title string) (string, bool) {
 	lines := strings.Split(body, "\n")
 	for i, ln := range lines {
 		if strings.TrimSpace(ln) == "" || bodyLinkLine.MatchString(ln) {
-			continue // skip leading blank lines and a successor's back-link before the heading
+			continue // skip leading blank lines and an occurrence's back-link before the heading
 		}
 		if !strings.HasPrefix(ln, "# ") {
 			return body, false // first real line isn't an H1 — leave the body alone
