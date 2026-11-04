@@ -157,7 +157,7 @@ type Epic struct {
 	// previous only for a freed slot no declaration covers. A standing box
 	// never closes, so it carries none (the write path refuses both
 	// directions). lint keeps an OPEN declarer honest afterwards
-	// (epic-successor-missing / epic-successor-closed); a closed declarer keeps
+	// (epic-successor-missing / -closed / -dep / -standing); a closed declarer keeps
 	// the pointer as history. omitempty, so a board that plans nothing keeps
 	// its exact pre-v12 bytes.
 	Successor string `json:"successor,omitempty"`

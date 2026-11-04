@@ -40,6 +40,13 @@ func EpicSuccessorReaches(epics []Epic, from, to string) bool {
 //     the plan as written is stale, and prose that named a box which closed
 //     first is exactly what this field replaced — so the declarer is nudged to
 //     re-point or clear it while it can still be judged.
+//   - epic-successor-dep     (error) an OPEN box that waits (epic dep, through
+//     any chain) on the box it declares to open after it — the contradiction
+//     both write paths refuse (`epic set --successor`, `epic dep`), landed by
+//     a merge of two consistent halves.
+//   - epic-successor-standing (warn) an OPEN standing box carrying a
+//     declaration: it never closes, so the plan never fires, and `epic set`
+//     refuses either flag on it until one is cleared.
 //
 // Only OPEN declarers are judged: a closed box's pointer is history, and a
 // target that closes after its declarer did is the ordinary order of events.
@@ -58,9 +65,18 @@ func epicSuccessorProblems(epics []Epic) []Problem {
 		case !ok:
 			out = append(out, Problem{SevError, "epic-successor-missing", e.ID, fmt.Sprintf(
 				"declared successor %q does not exist — re-point it (`furrow epic set %s --successor <epic>`) or clear it (`--clear-successor`)", e.Successor, e.ID)})
+			continue
 		case !s.IsOpen():
 			out = append(out, Problem{SevWarn, "epic-successor-closed", e.ID, fmt.Sprintf(
 				"declared successor %s is already closed — `epic done %s` would walk past it; re-point it (`furrow epic set %s --successor <epic>`) or clear it (`--clear-successor`)", e.Successor, e.ID, e.ID)})
+		}
+		if EpicDependsOn(epics, e.ID, e.Successor) {
+			out = append(out, Problem{SevError, "epic-successor-dep", e.ID, fmt.Sprintf(
+				"waits on %s and declares it as the successor — a box cannot open after one that opens after it; drop the dep (`furrow epic dep %s %s --rm`) or the declaration (`furrow epic set %s --clear-successor`)", e.Successor, e.ID, e.Successor, e.ID)})
+		}
+		if e.Standing {
+			out = append(out, Problem{SevWarn, "epic-successor-standing", e.ID, fmt.Sprintf(
+				"is standing (never closes) but declares successor %s — the plan never fires; clear it (`furrow epic set %s --clear-successor`) or the flag (`--standing=false`)", e.Successor, e.ID)})
 		}
 	}
 	return out

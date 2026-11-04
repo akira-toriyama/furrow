@@ -280,7 +280,7 @@ func (a *App) lintIndex(idx *core.Index, epics []core.Epic) []core.Problem {
 			// only a shard furrow did not write can be here.
 			if t.Repeat != "" {
 				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-on-closed", ID: t.ID,
-					Msg: "is in the done lane but still carries the repeat rule its close should have handed to an occurrence, so reopening and closing it would mint a second one — drop the rule with `furrow set " + t.ID + " --clear-repeat` if the occurrence already exists, or reopen this task (`furrow move " + t.ID + " " + a.Cfg.DefaultLane + "`) if it is the live occurrence"})
+					Msg: "is in the done lane but still carries the repeat rule its close should have handed to the next occurrence, so reopening and closing it would mint a second one — drop the rule with `furrow set " + t.ID + " --clear-repeat` if the next occurrence already exists, or reopen this task (`furrow move " + t.ID + " " + a.Cfg.DefaultLane + "`) if it is the live occurrence"})
 			}
 		}
 		// A rule furrow cannot expand ends the series in SILENCE: the close would

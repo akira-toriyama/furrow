@@ -422,8 +422,10 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 			e.Successor = successor
 		}
 		// Judged AFTER both flags landed, so `--standing --clear-successor`
-		// is one coherent write and `--standing --successor` one refusal.
-		if e.Standing && e.Successor != "" {
+		// is one coherent write and `--standing --successor` one refusal — and
+		// only when one of them was passed: a shard a merge left in this state
+		// is lint's (epic-successor-standing), not every later edit's.
+		if (o.Standing != nil || o.Successor != nil) && e.Standing && e.Successor != "" {
 			return core.Validationf(e.ID, "epic %s is standing — a standing box never closes, so nothing can be declared to open after it; clear the declaration (`--clear-successor`) or the flag (`--standing=false`)", e.ID)
 		}
 		if len(o.SetMeta) > 0 && e.Meta == nil {

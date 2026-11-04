@@ -38,9 +38,9 @@ func newRmCmd() *cobra.Command {
 			"it first). References among the targets themselves never count, so a chain\n" +
 			"removes in one call.\n\n" +
 			"A target carrying a recurrence rule is the series' ONLY live occurrence (a\n" +
-			"close hands the rule to the occurrence; a removal hands it to nobody), so\n" +
-			"removing it ENDS the series — no occurrence is minted, and nothing afterwards\n" +
-			"records that the series existed. Preview and apply both say so. It is a\n" +
+			"close hands the rule to the next occurrence; a removal hands it to nobody),\n" +
+			"so removing it ENDS the series — no next occurrence is minted, and nothing\n" +
+			"afterwards records that the series existed. Preview and apply both say so. It is a\n" +
 			"disclosure, not a refusal: refusing is for a target something still points\n" +
 			"at.\n\n" + rmLongTail + "\n\n" +
 			"--json prints one report: {dry_run, force, tasks, references, assets} —\n" +
@@ -164,10 +164,10 @@ func printSeriesEnd(a *app.App, tasks []core.Task, dry bool) {
 			when = ", due " + calendarTime(a, *t.Due)
 		}
 		if dry {
-			fmt.Fprintf(out, "repeat: %s carries a series (%s%s) — removing it ends the series; no occurrence is minted\n", t.ID, t.Repeat, when)
+			fmt.Fprintf(out, "repeat: %s carries a series (%s%s) — removing it ends the series; no next occurrence is minted\n", t.ID, t.Repeat, when)
 			continue
 		}
-		fmt.Fprintf(out, "repeat: %s carried a series (%s%s) — the series ended; no occurrence was minted\n", t.ID, t.Repeat, when)
+		fmt.Fprintf(out, "repeat: %s carried a series (%s%s) — the series ended; no next occurrence was minted\n", t.ID, t.Repeat, when)
 	}
 }
 

@@ -307,14 +307,18 @@ func newEpicSetCmd() *cobra.Command {
 			"slot held, no repo); `furrow brief` names it while nothing is active.\n" +
 			"Refused (exit 2): the box itself, a closed target (`epic reopen` it or\n" +
 			"name another), a loop through the chain, a target this box already waits\n" +
-			"on, and a standing box in either direction (one never closes, so nothing\n" +
-			"opens after it). Allowed on purpose: an active target (resolved at the\n" +
+			"on (and `epic dep` refuses the reverse: waiting on the declared successor),\n" +
+			"and a declaration on a standing box — or --standing on a box that holds\n" +
+			"one — since a box that never closes has no \"after\". Allowed on purpose:\n" +
+			"an active target (resolved at the\n" +
 			"close), several boxes declaring the same successor (the first to close\n" +
 			"proposes it; a real join is `epic dep B A1 A2`), and a standing target\n" +
 			"(a mandate box can be what opens next). --clear-successor drops the plan.\n" +
-			"`furrow lint` errors epic-successor-missing and warns\n" +
-			"epic-successor-closed on an OPEN declarer; a closed one keeps the pointer\n" +
-			"as history. `epic rm` counts a declaration as a reference.\n\n" +
+			"`furrow lint` backstops what a merge lands on an OPEN declarer:\n" +
+			"epic-successor-missing and epic-successor-dep (errors),\n" +
+			"epic-successor-closed and epic-successor-standing (warns); a closed\n" +
+			"declarer keeps the pointer as history. `epic rm` counts a declaration as\n" +
+			"a reference.\n\n" +
 			"--standing and --pinned (v7) are the two PERMANENT-\n" +
 			"channel declarations: a standing box is exempt from the lifecycle nags\n" +
 			"(revisit's epic_all_done / epic_dep_done / epic_stuck) and instead\n" +
@@ -600,11 +604,13 @@ func emitEpicDoneResult(a *app.App, before, after *core.Epic, members []app.Epic
 		printPreviousLine(prev, held, after.Repos)
 		return nil
 	}
-	printSuccessorLines(succ, after.ID)
+	printSuccessorLines(succ)
 	if !before.Active {
 		return nil
 	}
-	if uncovered := a.UncoveredRepos(succ, before.Repos); len(uncovered) > 0 {
+	// A spent or unusable plan leaves every freed slot to the previous line —
+	// printed even for a repo-less box, whose answer is the "unknown" reason.
+	if uncovered := a.UncoveredRepos(succ, before.Repos); len(uncovered) > 0 || !succ.Proposed() {
 		prev, held := a.PreviousActiveAmong(after.ID, uncovered)
 		printPreviousLine(prev, held, uncovered)
 	}
@@ -613,7 +619,7 @@ func emitEpicDoneResult(a *app.App, before, after *core.Epic, members []app.Epic
 
 // printSuccessorLines renders the proposal, one line per fact a human acts on:
 // the box and the command, or the reason it cannot simply be activated.
-func printSuccessorLines(s *app.SuccessorSuggest, closedID string) {
+func printSuccessorLines(s *app.SuccessorSuggest) {
 	switch s.Reason {
 	case "":
 		fmt.Fprintf(out, "successor: %s %q — open with `furrow epic activate %s`\n", s.ID, s.Title, s.ID)
@@ -629,9 +635,9 @@ func printSuccessorLines(s *app.SuccessorSuggest, closedID string) {
 	case app.SuccessorNoRepo:
 		fmt.Fprintf(out, "successor: %s %q names no repo — attach one (`furrow epic set %s --add-repo <owner/repo>`), then activate it\n", s.ID, s.Title, s.ID)
 	case app.SuccessorClosed:
-		fmt.Fprintf(out, "successor: %s %q is closed, and its own chain reaches no open box — the plan is spent; see previous\n", s.ID, s.Title)
+		fmt.Fprintf(out, "successor: %s %q is closed, and its own chain reaches no open box — the plan is spent\n", s.ID, s.Title)
 	case app.SuccessorMissing:
-		fmt.Fprintf(out, "successor: %s does not exist — the declaration was dangling (lint: epic-successor-missing); see previous\n", s.ID)
+		fmt.Fprintf(out, "successor: %s does not exist — the declaration was dangling (lint: epic-successor-missing)\n", s.ID)
 	}
 	if len(s.Skipped) > 0 && s.Reason != app.SuccessorClosed {
 		fmt.Fprintf(out, "           reached by walking past closed %s\n", strings.Join(s.Skipped, ", "))
@@ -639,7 +645,6 @@ func printSuccessorLines(s *app.SuccessorSuggest, closedID string) {
 	if len(s.OpenDeps) > 0 && s.Reason == "" {
 		fmt.Fprintf(out, "           it still waits on open epic(s) %s — activate warns and proceeds\n", strings.Join(s.OpenDeps, ", "))
 	}
-	_ = closedID
 }
 
 // openMembersNotes renders `epic done`'s stderr disclosure: one line naming the

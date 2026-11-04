@@ -163,7 +163,7 @@ type NextUp struct {
 }
 
 // nextUpIn picks, among the closed boxes in the repo scope ("" = board-wide)
-// whose declaration resolves to a plain proposal, the most recently closed
+// whose declaration resolves to a plain proposal serving that scope, the most recently closed
 // one's successor — the latest decision wins, a same-instant tie to the
 // smaller declarer id. nil when no plan is open to take.
 func nextUpIn(epics []core.Epic, repo string) *NextUp {
@@ -175,6 +175,12 @@ func nextUpIn(epics []core.Epic, repo string) *NextUp {
 		}
 		s := successorSuggestIn(epics, e.ID)
 		if s == nil || s.Reason != "" {
+			continue
+		}
+		// The proposal must serve THIS scope: a declarer spanning two repos
+		// whose successor serves only one of them left the other repo's brief
+		// naming a box that activating would not make its focus.
+		if repo != "" && !anyRepoMatch(core.EpicsByID(epics)[s.ID].Repos, []string{repo}) {
 			continue
 		}
 		at := *e.Closed

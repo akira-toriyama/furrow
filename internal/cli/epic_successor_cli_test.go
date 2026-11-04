@@ -104,6 +104,8 @@ func TestEpicDoneFallsBackToPreviousWhenThePlanIsSpent(t *testing.T) {
 	mustRun(t, "epic", "activate", older)
 	mustRun(t, "epic", "deactivate", older)
 	mustRun(t, "epic", "set", ea, "--successor", eb)
+	ec := addEpic(t, "c", "-r", "me/r1")
+	mustRun(t, "epic", "set", ec, "--successor", eb)
 	mustRun(t, "epic", "done", eb)
 
 	mustRun(t, "epic", "activate", ea)
@@ -118,6 +120,13 @@ func TestEpicDoneFallsBackToPreviousWhenThePlanIsSpent(t *testing.T) {
 	env := parseDone(t, mustRun(t, "--json", "epic", "done", older))
 	if env.Successor != nil {
 		t.Errorf("a box that declared nothing carries successor: null, got %+v", env.Successor)
+	}
+
+	// An INACTIVE declarer frees no slot: the spent plan is reported and no
+	// previous line follows (nor any text pointing at one).
+	got = mustRun(t, "epic", "done", ec)
+	if !strings.Contains(got, "is closed") || strings.Contains(got, "previous") {
+		t.Errorf("an inactive declarer with a spent plan prints the successor line alone:\n%s", got)
 	}
 }
 

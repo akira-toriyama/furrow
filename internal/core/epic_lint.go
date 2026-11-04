@@ -22,8 +22,9 @@ import (
 //   - epic-id-pattern / epic-duplicate-id (error) the id-shape backstops
 //   - epic-dep-missing / epic-dep-cycle (error), epic-dep-open (warn) — the
 //     epic dep graph rules (epic_deps.go)
-//   - epic-successor-missing (error), epic-successor-closed (warn) — an open
-//     box's declared successor (epic_successor.go)
+//   - epic-successor-missing / epic-successor-dep (error),
+//     epic-successor-closed / epic-successor-standing (warn) — an open box's
+//     declared successor (epic_successor.go)
 //
 // terminal is the configured terminal-lane set: a done or parked task predating
 // the box it would have belonged to is not a defect, so those are exempt from

@@ -70,6 +70,22 @@ func TestEpicSuccessorProblems(t *testing.T) {
 			}
 		}
 	})
+	t.Run("waiting on the declared successor is an error", func(t *testing.T) {
+		a := successorTestEpic("e-a", "e-b")
+		a.Deps = []string{"e-mid"}
+		ps := EpicProblems(idx, []Epic{a, depTestEpic("e-mid", "e-b"), depTestEpic("e-b")}, terminal, nil)
+		if !hasProblem(ps, "epic-successor-dep", "e-a") {
+			t.Errorf("want epic-successor-dep for e-a (it waits on e-b through e-mid), got %v", ps)
+		}
+	})
+	t.Run("a standing declarer warns", func(t *testing.T) {
+		a := successorTestEpic("e-a", "e-b")
+		a.Standing = true
+		ps := EpicProblems(idx, []Epic{a, depTestEpic("e-b")}, terminal, nil)
+		if !hasProblem(ps, "epic-successor-standing", "e-a") {
+			t.Errorf("want epic-successor-standing for e-a, got %v", ps)
+		}
+	})
 	t.Run("an open chain is clean", func(t *testing.T) {
 		ps := EpicProblems(idx, []Epic{successorTestEpic("e-a", "e-b"), successorTestEpic("e-b", "")}, terminal, nil)
 		for _, p := range ps {

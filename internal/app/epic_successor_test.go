@@ -50,6 +50,11 @@ func TestEpicSetSuccessorDeclaresAndRefuses(t *testing.T) {
 		t.Errorf("stored successor = %q, want %s", e.Successor, eb)
 	}
 
+	// ...and the reverse order is refused by `epic dep`: ea declares eb, so
+	// ea cannot wait on eb.
+	if _, _, err := a.EpicAddDeps(ea, []string{eb}); err == nil || !strings.Contains(err.Error(), "own successor") {
+		t.Errorf("epic dep on the declared successor must be refused: %v", err)
+	}
 	wantSetRefused(t, a, ea, EpicSetOpts{Successor: ptr(ea)}, "its own successor")
 	wantSetRefused(t, a, ea, EpicSetOpts{Successor: ptr(ec)}, "is closed")
 	wantSetRefused(t, a, eb, EpicSetOpts{Successor: ptr(ea)}, "close a loop")
@@ -74,6 +79,24 @@ func TestEpicSetSuccessorDeclaresAndRefuses(t *testing.T) {
 	// ...but a standing TARGET is a legitimate "open the mandate box next".
 	mustSetSuccessor(t, a, ed, mandate)
 
+	// A shard a merge left standing+declared is lint's, not every edit's: a
+	// title rename must still land.
+	e, _, _ := a.Store.LoadEpic(ea)
+	e.Standing = true
+	if err := a.saveEpic(e); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := a.EpicSet(ea, EpicSetOpts{Title: ptr("renamed")}); err != nil {
+		t.Errorf("an edit touching neither flag must not be refused on a merged state: %v", err)
+	}
+	if ps := problemsWithCode(mustLint(t, a), "epic-successor-standing"); len(ps) != 1 || ps[0].ID != ea {
+		t.Errorf("lint must name the standing declarer, got %v", ps)
+	}
+	e, _, _ = a.Store.LoadEpic(ea)
+	e.Standing = false
+	if err := a.saveEpic(e); err != nil {
+		t.Fatal(err)
+	}
 	// One coherent write: clear the plan and declare standing together.
 	if _, after, _, err := a.EpicSet(ea, EpicSetOpts{Standing: ptr(true), ClearSuccessor: true}); err != nil || after.Successor != "" || !after.Standing {
 		t.Errorf("--standing --clear-successor must land as one write: %v %+v", err, after)
@@ -228,6 +251,22 @@ func TestBriefNextUpNamesTheDeclaredSuccessor(t *testing.T) {
 	mustActivate(t, a, eb)
 	if b, _ := a.Brief(QueryOpts{}, 5, 0); b.NextUp != nil {
 		t.Errorf("a box is active: next_up must be nil, got %+v", b.NextUp)
+	}
+
+	// A proposal only serves the repos the successor spans: a cross-repo
+	// declarer's other repo gets no next_up from it.
+	ec := mustEpic(t, a, "c", EpicAddOpts{Repos: []string{"o/r", "o/other"}})
+	ed := mustEpic(t, a, "d", EpicAddOpts{Repos: []string{"o/other"}})
+	mustSetSuccessor(t, a, ec, ed)
+	mustEpicDone(t, a, ec)
+	if b, _ := a.Brief(QueryOpts{Repo: "o/other"}, 5, 0); b.NextUp == nil || b.NextUp.ID != ed {
+		t.Errorf("next_up in o/other = %+v, want %s", b.NextUp, ed)
+	}
+	if _, _, err := a.EpicDeactivate(eb); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := a.Brief(QueryOpts{Repo: "o/r"}, 5, 0); b.NextUp != nil && b.NextUp.ID == ed {
+		t.Errorf("next_up in o/r must not name a box that does not serve o/r: %+v", b.NextUp)
 	}
 }
 
