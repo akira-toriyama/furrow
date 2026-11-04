@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/store/fsstore"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/store/fsstore"
 )
 
 // The two behaviors pinned here are the ones the double actually got wrong: a

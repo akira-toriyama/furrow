@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 func vocabLines(t *testing.T, args ...string) []string {

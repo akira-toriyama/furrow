@@ -3,7 +3,7 @@ package app
 import (
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // BriefData is the one-shot session-orient read (`furrow brief`): what to pick

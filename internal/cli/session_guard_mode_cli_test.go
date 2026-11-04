@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/testutil"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/testutil"
 )
 
 // t-hyr0, whole stack: the user config's [session].guard decides what a

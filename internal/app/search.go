@@ -3,7 +3,7 @@ package app
 import (
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // snippetRadius is the runes of body context Search keeps on each side of a

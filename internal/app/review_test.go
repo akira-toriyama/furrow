@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/config"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/config"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // TestReviewTaskStampsReviewedNotUpdated is the load-bearing invariant: a review

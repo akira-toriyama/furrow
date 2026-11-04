@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // The shard's RFC3339 stamp holds years 1..9999 in UTC: a board-zone day at

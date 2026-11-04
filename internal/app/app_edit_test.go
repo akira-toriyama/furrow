@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/config"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/config"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // TestSetCombinedEdit pins t-kx76 (e): `set` applies lane+value+effort+labels in

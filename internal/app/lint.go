@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/recur"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/recur"
 )
 
 // countRepeating is the number of live occurrences on the board — open tasks

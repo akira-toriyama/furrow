@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // A negative count is a typo, not "all": -n and --older-than refuse it

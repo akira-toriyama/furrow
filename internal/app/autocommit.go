@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/gitrepo"
 )
 
 // AutoCommitResult reports what a post-mutation autocommit did, for the CLI to

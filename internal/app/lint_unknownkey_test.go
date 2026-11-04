@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // All THREE machine-written file kinds park unknown top-level keys now — and all

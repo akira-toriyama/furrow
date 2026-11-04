@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/config"
+	"github.com/akira-toriyama/furrow/v10/internal/config"
 )
 
 // zonedClock reports its instant in its own zone, as a Clock other than

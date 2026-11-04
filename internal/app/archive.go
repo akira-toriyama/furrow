@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // Archivable returns the ids of done-lane tasks closed strictly before cutoff —

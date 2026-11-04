@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/gittest"
+	"github.com/akira-toriyama/furrow/v10/internal/gittest"
 )
 
 // A git hook exports GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE to its children,

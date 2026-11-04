@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // The ref binders of -q read a SNAPSHOT (the hot board, or the archive under

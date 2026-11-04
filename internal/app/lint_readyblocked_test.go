@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // A task in an actionable ([next].lanes) lane whose dep is still open is a

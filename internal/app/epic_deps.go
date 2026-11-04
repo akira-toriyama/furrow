@@ -4,7 +4,7 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // The epic dep graph's app layer (v7): the write funnel for `furrow epic dep`

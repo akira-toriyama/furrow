@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // printTaskTable renders tasks as an aligned text table (human output). It is

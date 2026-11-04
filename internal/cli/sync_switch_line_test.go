@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
 )
 
 // epicSwitchLine shows the UTC activation stamp in local time with its offset,
