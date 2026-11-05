@@ -56,6 +56,15 @@ func TestGitEnvDropsTheHooksRepositoryVariables(t *testing.T) {
 	}
 }
 
+// gitLocalEnvVars is frozen twice: here, for furrow's own git subprocesses
+// (gitEnv), and as gittest.GitLocalEnvVars, which the test harness strips from
+// the whole test process. The copies must not drift apart.
+func TestGitLocalEnvVarsMatchTheHarness(t *testing.T) {
+	if !reflect.DeepEqual(gitLocalEnvVars, gittest.GitLocalEnvVars) {
+		t.Errorf("gitrepo.gitLocalEnvVars = %v\ngittest.GitLocalEnvVars = %v", gitLocalEnvVars, gittest.GitLocalEnvVars)
+	}
+}
+
 // `color.ui = always` colours even a piped diff; the escape codes in front of
 // every `+++` and `+` left AddedLines with nothing, and the activation-switch
 // disclosure went quiet — the noprefix defect (t-3t68) in another coat.
