@@ -1,12 +1,14 @@
 // Package gittest isolates real-git tests from the developer's ambient git
-// configuration, and refuses to run them from a temp root that sits in a git
-// work tree or a furrow board. The load-bearing case is the git subprocess
-// that App.Sync spawns: internal/gitrepo.runGit hands git os.Environ minus
-// only the locale keys and git's repository-locating variables (gitEnv), so a
-// developer's global commit.gpgsign / core.hooksPath / init.templateDir — or
-// a non-"main" init.defaultBranch — would otherwise leak into the tests and
-// flake them. Isolation therefore happens at the PROCESS-env level, from a
-// package's TestMain (before any test runs), not per command.
+// configuration, refuses to run them from a temp root that sits in a git work
+// tree or a furrow board, and drops the variables that would point git or
+// furrow at a repository the tests did not name. The load-bearing case is the
+// git subprocess that App.Sync spawns: internal/gitrepo.runGit hands git
+// os.Environ minus only the locale keys and git's repository-locating
+// variables (gitEnv), so a developer's global commit.gpgsign / core.hooksPath
+// / init.templateDir — or a non-"main" init.defaultBranch — would otherwise
+// leak into the tests and flake them. Isolation therefore happens at the
+// PROCESS-env level, from a package's TestMain (before any test runs), not per
+// command.
 //
 // This is a TEST-ONLY helper: it is imported solely by _test.go files and never
 // ends up in a production build.
@@ -14,9 +16,11 @@ package gittest
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v10/internal/claudecode"
@@ -52,6 +56,26 @@ const isolatedConfig = `[init]
 // and app.nearestGitDir, app.DirName and app.PointerName for furrow's board
 // walk. gittest cannot import app, so they are spelled out here.
 var tempRootMarkers = []string{".git", ".furrow", ".furrow-pointer.toml"}
+
+// furrowEnv are app.EnvDir and app.EnvBoard: discover returns FURROW_DIR before
+// it looks at the directory a test named, so a developer's exported board took
+// the "outside git" tests' sync commit and push (t-tayf review). gittest cannot
+// import app, so they are spelled out here.
+var furrowEnv = []string{"FURROW_DIR", "FURROW_BOARD"}
+
+// GitLocalEnvVars is `git rev-parse --local-env-vars`, the variables that tell
+// git WHICH repository and index to operate on — what a hook exports to its
+// children. gitrepo.gitEnv strips them from furrow's own git subprocesses; the
+// tests' setup git calls (RunGit, the exec.Command helpers) inherit os.Environ
+// as is, so `go test` under another repository's hook rewrote that repository
+// (GIT_DIR made it bare, GIT_INDEX_FILE replaced its index). Frozen for the
+// reason gitrepo's copy is, and gitrepo's test pins the two lists together.
+var GitLocalEnvVars = []string{
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+	"GIT_OBJECT_DIRECTORY", "GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE",
+	"GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE", "GIT_PREFIX", "GIT_SHALLOW_FILE",
+	"GIT_COMMON_DIR",
+}
 
 // checkTempRoots refuses a temp root that is relative, or that sits in a git
 // work tree or a furrow board. Tests take their temp dirs to be outside both:
@@ -103,14 +127,16 @@ func enclosingMarker(dir string) (string, bool) {
 	}
 }
 
-// Isolate refuses an unsafe temp root (checkTempRoots), then points git at a
-// throwaway global config and neutralizes the system config, so every git
-// subprocess these tests spawn behaves identically regardless of the
-// developer's ~/.gitconfig or /etc/gitconfig. Call it once from TestMain,
-// before any test runs and before anything is written under the temp root: it
-// mutates process env, which is unsafe under t.Parallel. The returned cleanup
-// restores the previous env and removes the temp config; ignore it only if the
-// process is about to exit anyway.
+// Isolate refuses an unsafe temp root (checkTempRoots), drops the ambient
+// variables that point furrow or git at a repository the tests did not name
+// (furrowEnv, GitLocalEnvVars), then points git at a throwaway global config
+// and neutralizes the system config, so every git subprocess these tests spawn
+// behaves identically regardless of the developer's ~/.gitconfig or
+// /etc/gitconfig. Call it once from TestMain, before any test runs and before
+// anything is written under the temp root: it mutates process env, which is
+// unsafe under t.Parallel. The returned cleanup restores the previous env and
+// removes the temp config; ignore it only if the process is about to exit
+// anyway.
 func Isolate() (cleanup func(), err error) {
 	if err := checkTempRoots(); err != nil {
 		return nil, err
@@ -132,24 +158,44 @@ func Isolate() (cleanup func(), err error) {
 		"GIT_CONFIG_SYSTEM":   os.DevNull,
 		"GIT_CONFIG_NOSYSTEM": "1",
 	})
+	unset := unsetEnv(slices.Concat(furrowEnv, GitLocalEnvVars))
 	return func() {
+		unset()
 		restore()
 		_ = os.RemoveAll(dir)
 	}, nil
 }
 
 // setEnv sets each key to its value and returns a func that restores the prior
-// state — the previous value where one existed, an unset where it did not.
+// state.
 func setEnv(kv map[string]string) (restore func()) {
+	restore = snapshotEnv(slices.Collect(maps.Keys(kv)))
+	for k, v := range kv {
+		_ = os.Setenv(k, v)
+	}
+	return restore
+}
+
+// unsetEnv unsets each key and returns a func that restores the prior state.
+func unsetEnv(keys []string) (restore func()) {
+	restore = snapshotEnv(keys)
+	for _, k := range keys {
+		_ = os.Unsetenv(k)
+	}
+	return restore
+}
+
+// snapshotEnv records each key's state and returns a func that restores it —
+// the recorded value where one existed, an unset where it did not.
+func snapshotEnv(keys []string) (restore func()) {
 	type prev struct {
 		val string
 		set bool
 	}
-	saved := make(map[string]prev, len(kv))
-	for k, v := range kv {
+	saved := make(map[string]prev, len(keys))
+	for _, k := range keys {
 		old, ok := os.LookupEnv(k)
 		saved[k] = prev{old, ok}
-		_ = os.Setenv(k, v)
 	}
 	return func() {
 		for k, p := range saved {
