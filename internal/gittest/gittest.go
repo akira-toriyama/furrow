@@ -129,7 +129,8 @@ func enclosingMarker(dir string) (string, bool) {
 
 // Isolate refuses an unsafe temp root (checkTempRoots), drops the ambient
 // variables that point furrow or git at a repository the tests did not name
-// (furrowEnv, GitLocalEnvVars), then points git at a throwaway global config
+// (furrowEnv, GitLocalEnvVars) or plant the developer's hooks in every repo a
+// test inits (GIT_TEMPLATE_DIR), then points git at a throwaway global config
 // and neutralizes the system config, so every git subprocess these tests spawn
 // behaves identically regardless of the developer's ~/.gitconfig or
 // /etc/gitconfig. Call it once from TestMain, before any test runs and before
@@ -158,7 +159,10 @@ func Isolate() (cleanup func(), err error) {
 		"GIT_CONFIG_SYSTEM":   os.DevNull,
 		"GIT_CONFIG_NOSYSTEM": "1",
 	})
-	unset := unsetEnv(slices.Concat(furrowEnv, GitLocalEnvVars))
+	// GIT_TEMPLATE_DIR is the env twin of init.templateDir, which the throwaway
+	// global config already neutralizes: left set, every `git init` in a test
+	// copied the developer's template hooks into the test repo and ran them.
+	unset := unsetEnv(slices.Concat(furrowEnv, GitLocalEnvVars, []string{"GIT_TEMPLATE_DIR"}))
 	return func() {
 		unset()
 		restore()

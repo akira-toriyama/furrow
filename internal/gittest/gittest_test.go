@@ -105,17 +105,18 @@ func TestIsolateRefusesAnUnsafeTempRoot(t *testing.T) {
 	})
 }
 
-// Isolate must drop the ambient variables that point furrow or git at a
-// repository the test did not name, and its cleanup must put them back:
-// FURROW_DIR and FURROW_BOARD send app.Open to the developer's board before it
-// looks at the directory a test named (sync then committed and pushed there,
-// t-tayf review), and a hook's GIT_DIR / GIT_INDEX_FILE make the tests' own
-// setup git calls rewrite the hook's repository. The git keys are read from
-// git itself, so the pin is on what the installed git honours, not on the
+// Isolate must drop the ambient variables that reach into repositories the
+// test did not name, and its cleanup must put them back: FURROW_DIR sends
+// app.Open to the developer's board before it looks at the directory a test
+// named (sync then committed and pushed there, t-tayf review), FURROW_BOARD
+// once the walk finds none; a hook's GIT_DIR / GIT_INDEX_FILE make the tests'
+// own setup git calls rewrite the hook's repository; GIT_TEMPLATE_DIR copies
+// the developer's hooks into every repo a test inits. The git keys are read
+// from git itself, so the pin is on what the installed git honours, not on the
 // frozen list alone.
 func TestIsolateDropsTheAmbientRepositoryEnv(t *testing.T) {
 	git := GitOrSkip(t)
-	keys := append([]string{"FURROW_DIR", "FURROW_BOARD"}, strings.Fields(RunGit(t, git, t.TempDir(), "rev-parse", "--local-env-vars"))...)
+	keys := append([]string{"FURROW_DIR", "FURROW_BOARD", "GIT_TEMPLATE_DIR"}, strings.Fields(RunGit(t, git, t.TempDir(), "rev-parse", "--local-env-vars"))...)
 	for _, k := range keys {
 		t.Setenv(k, "ambient-"+k)
 	}
