@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // Check sets a checklist item's done state by zero-based index. An out-of-range

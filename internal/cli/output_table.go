@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // printTaskTable renders tasks as an aligned text table (human output). It is
@@ -71,15 +71,6 @@ func printRows(a *app.App, tasks []core.Task, glyphs, trail []string) {
 		}
 		fmt.Fprintf(out, "%s%-*s  %-*s  %5d  %s\n", lead(g), wID, t.ID, wStatus, t.Status, t.Priority, title)
 	}
-}
-
-// emitTasks renders a task list per the active output mode (--json | --ndjson |
-// human table). An empty list is a healthy result (exit 0), never a miss — a
-// query that matched nothing still succeeded. exit 1 is reserved for a
-// specifically requested id that does not exist (e.g. `show <id>`).
-func emitTasks(a *app.App, tasks []core.Task) error {
-	emitList(tasks, func() { printTaskTable(a, tasks) })
-	return nil
 }
 
 // actionReason explains, for an agent, WHY a task is in `next`: the lane it sits

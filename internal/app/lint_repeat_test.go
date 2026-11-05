@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/config"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/config"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // A series is expanded in the zone of whichever machine closes it when the
 // board declares no [due].timezone — two calendars on a shared board, one of
 // them a UTC CI runner. lint is the only place that can say so before the
-// first successor lands a day off. It fires on every mode (the mode changes
+// first occurrence lands a day off. It fires on every mode (the mode changes
 // wording only — a standalone board used to be exempt) and reads the
 // DECLARATION, not the process zone (a pinned machine zone used to mute it);
 // a board with no repeating task has nothing that drifts.
@@ -70,7 +70,7 @@ func TestLintErrorsARepeatingSeriesWithNoBoardZone(t *testing.T) {
 		}
 		ps, _ := a.Lint()
 		if got := problemsWithCode(ps, "repeat-no-timezone"); len(got) != 1 || !strings.HasPrefix(got[0].Msg, "1 repeating") {
-			t.Errorf("after a close the successor is the one live occurrence; got %+v", got)
+			t.Errorf("after a close the occurrence is the one live occurrence; got %+v", got)
 		}
 	})
 }
@@ -94,9 +94,9 @@ func handEditRepeat(t *testing.T, a *App, id, rule string, anchor *time.Time) {
 	}
 }
 
-// A close CONSUMES the rule and hands it to the successor, so a closed task
+// A close CONSUMES the rule and hands it to the occurrence, so a closed task
 // carrying one has forked the series: the next reopen-then-close mints a second
-// successor, and countRepeating (open carriers only) stops reporting it for
+// occurrence, and countRepeating (open carriers only) stops reporting it for
 // repeat-no-timezone. Only a hand-edited shard can be in that state.
 func TestLintErrorsAClosedTaskStillCarryingARepeatRule(t *testing.T) {
 	setup := func(t *testing.T, mode string, loc *time.Location) (*App, *core.Task) {
@@ -144,14 +144,14 @@ func TestLintErrorsAClosedTaskStillCarryingARepeatRule(t *testing.T) {
 				t.Errorf("message must name the fix %q: %s", want, got[0].Msg)
 			}
 		}
-		// The successor is untouched: it is the one legitimate live occurrence.
+		// The occurrence is untouched: it is the one legitimate live occurrence.
 		if n := len(problemsWithCode(ps, "repeat-invalid")); n != 0 {
 			t.Errorf("a well-formed rule is not repeat-invalid; got %d", n)
 		}
 	})
 
 	t.Run("it reddens the board the same hand-edit silenced", func(t *testing.T) {
-		// No successor: the rule is planted back on the ONLY occurrence after it
+		// No occurrence: the rule is planted back on the ONLY occurrence after it
 		// was closed, so the board has zero open carriers and repeat-no-timezone —
 		// which counts open carriers — goes quiet on a board that should be red.
 		a, task := setup(t, config.ModeShared, nil)

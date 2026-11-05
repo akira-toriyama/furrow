@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +44,7 @@ func newArchiveCmd() *cobra.Command {
 			"done lane); with no id it sweeps every done task closed more than --older-than\n" +
 			"days ago. Without --yes it only previews what would move (the destructive-op\n" +
 			"guard from the CLI contract). A task's attached assets go with it; one that\n" +
-			"another hot body still shows (a repeat successor's, a box's) also STAYS in\n" +
+			"another hot body still shows (a repeat occurrence's, a box's) also STAYS in\n" +
 			"the hot store, and the output says so (`assets {copied, deleted, kept}` in\n" +
 			"--json).\n\n" +
 			"A done task that a task STAYING in the hot store still depends on is not\n" +

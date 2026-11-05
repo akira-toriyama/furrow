@@ -12,7 +12,7 @@ import (
 // so a generated body has to be new (untracked), which always commits. If it
 // ever became a modification instead, a plain sync would publish a task whose
 // prose exists on exactly one machine.
-func TestSyncPublishesAGeneratedSuccessorWithItsBody(t *testing.T) {
+func TestSyncPublishesAGeneratedOccurrenceWithItsBody(t *testing.T) {
 	_, cloneA, cloneB := setupClones(t)
 
 	a := openBoard(t, cloneA)
@@ -25,7 +25,7 @@ func TestSyncPublishesAGeneratedSuccessorWithItsBody(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Close on A: the successor is born here, body and all.
+	// Close on A: the occurrence is born here, body and all.
 	closer := openBoard(t, cloneA)
 	closer.Loc = jst
 	closed, rep, err := closer.moveOne(task.ID, closer.Cfg.DoneLane)
@@ -33,7 +33,7 @@ func TestSyncPublishesAGeneratedSuccessorWithItsBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rep == nil || rep.Created == nil {
-		t.Fatalf("no successor: %+v", rep)
+		t.Fatalf("no occurrence: %+v", rep)
 	}
 	pub, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{})
 	if err != nil {
@@ -46,7 +46,7 @@ func TestSyncPublishesAGeneratedSuccessorWithItsBody(t *testing.T) {
 		t.Errorf("sync reported complete=false: %+v", pub)
 	}
 
-	// B pulls: it must see the successor AND be able to read its prose.
+	// B pulls: it must see the occurrence AND be able to read its prose.
 	b := openBoard(t, cloneB)
 	if _, err := b.Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
@@ -54,14 +54,14 @@ func TestSyncPublishesAGeneratedSuccessorWithItsBody(t *testing.T) {
 	got := openBoard(t, cloneB)
 	succ, _, err := got.Get(*rep.Created)
 	if err != nil {
-		t.Fatalf("the successor never reached the other clone: %v", err)
+		t.Fatalf("the occurrence never reached the other clone: %v", err)
 	}
 	if succ.Repeat == "" || succ.RepeatAnchor == nil {
-		t.Errorf("the successor arrived without its rule: %q / %v", succ.Repeat, succ.RepeatAnchor)
+		t.Errorf("the occurrence arrived without its rule: %q / %v", succ.Repeat, succ.RepeatAnchor)
 	}
 	body, err := got.Store.LoadBody(succ.ID)
 	if err != nil {
-		t.Fatalf("the successor's body never reached the other clone: %v", err)
+		t.Fatalf("the occurrence's body never reached the other clone: %v", err)
 	}
 	if !strings.Contains(body, "[["+closed.ID+"]]") {
 		t.Errorf("the published body lost its back-link:\n%s", body)

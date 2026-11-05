@@ -54,8 +54,10 @@ name: sync-task-status
 #                        Contents: Read & write ONLY, auto-expiring.
 # Until the PAT exists the workflow is DORMANT: it skips cleanly (green).
 #
-# A PR open (incl. draft) or body edit nudges the task to in-progress; a merge
-# applies the directive's lane. Validation is NON-blocking all the way: an
+# The directive's lane is the task's merge target: a merge applies it unless
+# that would reopen a terminal task, and a PR open (incl. draft) or body edit
+# nudges the task to in-progress only when that target says the PR is the
+# task's work (`furrow apply --help`). Validation is NON-blocking all the way: an
 # invalid directive comments on the PR and annotates the run with a warning,
 # but the job stays GREEN — a red job read as "CI failure" contradicted the
 # non-blocking contract (t-rb4c). Valid directives are always applied; fixing
@@ -84,7 +86,7 @@ on:
         type: string
         default: main
       open-lane:
-        description: Lane a task is nudged to when a PR opens.
+        description: Lane a task is nudged to when a PR doing its work opens (furrow apply --help).
         type: string
         default: in-progress
       furrow-version:

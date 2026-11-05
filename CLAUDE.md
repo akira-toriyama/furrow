@@ -37,7 +37,7 @@ default, declared by omission), while a board on one machine with no remote sets
 one JSON shard per task, `.furrow/tasks/<id>.json` (likewise `epics/` and
 `repos/`; deterministic,
 machine-written), with the board-wide layout version in `.furrow/meta.json`
-(`{"schema_version": 11}`); long-form prose lives in
+(`{"schema_version": 12}`); long-form prose lives in
 `.furrow/bodies/<id>.md` (hand/agent-editable); human config is
 `.furrow/config.toml`. A cobra CLI drives it. Go,
 cross-platform, brew/nix packaged.

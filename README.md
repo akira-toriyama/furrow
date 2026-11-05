@@ -10,7 +10,7 @@
 
 **Multi-person, honestly.** furrow is single-operator-first today, and that is the polished path. Several people *can* work one board — it is a git repo, so they clone, push, and `furrow sync` (per-task shards make concurrent edits a clean union). An `@mention` and a task **assignee** are planned, not built yet ([honesty note](docs/non-goals.md#built-vs-planned--honesty-note)).
 
-Written in Go (module `github.com/akira-toriyama/furrow/v9`, Go 1.26+). No database, no daemon, no cloud.
+Written in Go (module `github.com/akira-toriyama/furrow/v10`, Go 1.26+). No database, no daemon, no cloud.
 
 > **Status:** **CLI-only** and shipping; the front-ends ridge (a TUI) and vista
 > (a GUI) are separate repos — see [Status](#status), and the
@@ -27,7 +27,7 @@ Written in Go (module `github.com/akira-toriyama/furrow/v9`, Go 1.26+). No datab
 brew install akira-toriyama/tap/furrow
 
 # Go toolchain (from source)
-go install github.com/akira-toriyama/furrow/v9/cmd/furrow@latest
+go install github.com/akira-toriyama/furrow/v10/cmd/furrow@latest
 
 # Nix
 nix run github:akira-toriyama/furrow
@@ -116,8 +116,9 @@ furrow ls -q 'roi:>2 "typed query"'                         # ROI>2 with a text 
 - **dates** (`created`, `updated`, `closed`, `reviewed`, `due`): absolute `YYYY-MM-DD` or RFC3339, plus signed **relative offsets** from now (`updated:>=-2w`; units `m/h/d/w`, `m` = minutes; an offset needs a comparison or range). Ranges are inclusive with `*` open ends; a `null` stamp satisfies no comparison (existence is `has:`/`no:`'s job). A bare day on the machine stamps is a **UTC** day, on **`due`** the **board's calendar day** (`[due].timezone`) — the one date a human types, so `-q due:2026-08-04` finds what `--due 2026-08-04` wrote.
 - **graph** (refs, never silent): `epic:X` selects a box's members, X resolving exactly as `-e` does — an exact id, else a unique id prefix, else a unique case-folded title substring — so a miss or an ambiguity is exit 2 with `candidates` rather than 0 rows, and a quoted value (`epic:'会場'`) is exact only — the id, else a pointer, else the whole title, and a pointer that is also a whole title is the same ambiguity — as `title:'…'` is; `anchor:X` selects the tasks whose due FOLLOWS box X's day, X resolved the same way. `depends-on:X` and `blocks:X` are the two directions of the dep edge (the tasks waiting on X, and the tasks X waits on); `descendant-of:X` and `ancestor-of:X` are their **transitive** twins over the deps DAG (start ids excluded from their own closure, cycles terminate). A task ref is an exact id the snapshot being read holds as a task or carries as a dep; anything else is exit 2 with the misses in `details.missing`. Epics do not nest — box membership is `epic:`. The archive boundary is `furrow ls --help`'s, under `--archived`; dangling pointers, ambiguity and the miss hints are the binders' doc comments in `internal/app/query.go` (`resolveEpicRef`, `resolveTaskRefs`, `edgeRefs`).
 - **presence**: `has:FIELD` / `no:FIELD` over `label`, `repo` (`no:repo` = a draft), `epic` (`no:epic` = unfiled, the `epic-required` lint state), `value`, `effort`, `deps`, `refs`, `checklist`, `closed`, `reviewed`, `due`, `repeat` (`has:repeat` = the live occurrence of a series — the rule sits on exactly one task at a time), `anchor` (`has:anchor` = a due that follows a box's day; `has:due no:anchor` = the dates the other side or the calendar fixed), `body` (non-whitespace content — note `add` seeds every body with a heading).
-- **computed flags** (furrow's own, no GitHub equivalent): `is:actionable` (a next lane with every dep done — a strict SUPERSET of what `furrow next` hands you, since next also scopes to the active epic), `is:blocked`, `is:stale` (no update within `[revisit].stale_days` — revisit's own definition, a pure age test that does not imply open), `is:unfiled` (no epic), `is:overdue` (a promised instant that has passed — `lint`'s `due-overdue` as a filter, minus every lane exemption, the done lane included: `-q` returns what you asked for, and which lanes stay QUIET is a lint/brief policy, not a fact about the date), `is:open`/`is:closed`/`is:draft`.
+- **computed flags** (furrow's own, no GitHub equivalent): `is:actionable` (a next lane with every dep done — a strict SUPERSET of what `furrow next` hands you, since next also scopes to the active epic), `is:blocked`, `is:stale` (no update within `[revisit].stale_days` — revisit's own definition, a pure age test that does not imply open), `is:unfiled` (no epic), `is:unlaned` (a status outside `[lanes].order`, left by a dropped or renamed lane — `lint`'s `unknown-lane` as a filter, through the same test; `status:` refuses such a lane, so this is how to name them), `is:overdue` (a promised instant that has passed — `lint`'s `due-overdue` as a filter, minus every lane exemption, the done lane included: `-q` returns what you asked for, and which lanes stay QUIET is a lint/brief policy, not a fact about the date), `is:open`/`is:closed`/`is:draft`.
 - **free text**: a bare word or `"quoted phrase"` is a case-insensitive substring over the task's text — **title, each checklist item, each ref, body** — `furrow search`'s walk, so `ls -q foo` finds what `search foo` finds (free text never takes a pattern; that is `search --regex`). On `title:` a quoted value means whole-field equality; `body:` stays a substring match.
+- **quoting**: wrap a value in `'…'` or `"…"` to keep spaces, commas, colons and `..` inside it (`title:'a, b: c'`); the other quote char may sit inside (`title:"it's"`), and a space outside quotes always starts the next term. There is no escape — a value holding BOTH quote chars cannot be written, and a lone quote is exit 2 (`query-parse`, never a silent empty result). Spelled out so a front-end composes `-q` from a stated rule rather than a measured one.
 
 ---
 
@@ -129,7 +130,7 @@ furrow uses a **hybrid** layout: one machine-written JSON shard per task for str
 .furrow/
 ├── .gitattributes       # bodies/*.md merge=union
 ├── config.toml          # human config (furrow only READS this, except `furrow config set`'s surgical edit)
-├── meta.json            # board-wide layout version {"schema_version": 11} — written ONLY by furrow, raised ONLY by `furrow upgrade`
+├── meta.json            # board-wide layout version {"schema_version": 12} — written ONLY by furrow, raised ONLY by `furrow upgrade`
 ├── tasks/
 │   ├── t-k3m9p.json     # one metadata shard per task — written ONLY by the single core.MarshalTask path
 │   └── t-p4q2r.json
@@ -262,10 +263,10 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `epic add <title>` | Create an epic (never active — open it with `epic activate`) | `--anchor`, `--body`, `--body-file`, `--goal`, `-l/--label`, `--meta`, `-r/--repo` |
 | `epic ls` (alias `list`) | List epics (open only by default), active first | `--all`, `-l/--label`, `-n/--limit`, `-r/--repo` |
 | `epic show <epic>` | Show one epic: goal, meta, progress, member tasks, and its body | `--no-body` |
-| `epic set <epic>` | Edit an epic's title, goal, meta, labels, repos, anchor day, or its standing/pinned declarations | `--add-label`, `--add-repo`, `--anchor`, `--clear-anchor`, `--goal`, `--meta`, `--pinned`, `--rm-label`, `--rm-meta`, `--rm-repo`, `--standing`, `--title`, `--yes` |
+| `epic set <epic>` | Edit an epic's title, goal, meta, labels, repos, anchor day, successor, or its standing/pinned declarations | `--add-label`, `--add-repo`, `--anchor`, `--clear-anchor`, `--clear-successor`, `--goal`, `--meta`, `--pinned`, `--rm-label`, `--rm-meta`, `--rm-repo`, `--standing`, `--successor`, `--title`, `--yes` |
 | `epic activate <epic>` | Make this the active epic for its repos (at most one each) | `--reason` |
 | `epic deactivate <epic>` | Clear the active flag without closing the epic (suggests where to return) | — |
-| `epic done <epic>` | Close an epic (clears active; suggests the previous active, never picks it) | — |
+| `epic done <epic>` | Close an epic (clears active; proposes the declared successor, else the previous active — never activates) | — |
 | `epic reopen <epic>` | Reopen a closed epic (clears closed; never re-activates) | — |
 | `epic dep <epic> [<dep-epic>...]` | Add/remove an epic's deps (open after those close), or list them both ways with --list | `--list`, `--rm` |
 | `epic rm <epic>` | Delete an epic outright — withdraw a box, never close one (preview unless --yes) | `--force`, `--yes` |
@@ -292,13 +293,13 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 
 On the read commands, `-r/--repo` is the scope control: a full `owner/repo` or a short name resolving to exactly one (ambiguity is exit 2 with `candidates`); an explicit `-r` overrides the board scope, `-r ''` shows the whole board. `-l/--label` is a pure tag filter that ANDs with the scope. Within `-s` or `-l` a comma is OR and repeats union; the flags AND across fields. An unknown `-s` lane **exits 2 with the configured lanes in `candidates`** (a closed vocabulary), an unknown `-l` tag matches nothing — unless it uniquely names a repo and no `-r` was typed, which is exit 2 pointing at `-r` (the did-you-mean guard, on every filtering read). **A read never narrows or truncates silently**: a scope that hides drafts or boxes prints one stderr hint, and a `-n` cap that bites prints `note: showing N of M (-n)`; the JSON stays a bare array. `furrow board` shows the lanes and the active scope without provoking an error.
 
-Global flags: `--json` and `--ndjson` are honored **wherever furrow emits JSON** — `--ndjson` is the same payload, compact, one value per line. A command whose `Use` says `<id>...` (`show`, `done`, `move`, `set`, `unarchive`) is **always an array**; a one-id mutation emits `{before, after, changed}` (a lane respace adds `renumbered`); the report-shaped commands (`rm`, `archive`, `tidy`, `upgrade`, `apply`, `migrate`) emit one object. **A write that changes nothing leaves `updated` alone** — an idempotent retry resets no staleness clock and writes no shard; the prose writes (`note`, `done --note`, a body replacement, `attach`, `apply`'s annotation) always advance it. `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
+Global flags: `--json` and `--ndjson` are honored **wherever furrow emits JSON** — `--ndjson` is the same payload, compact, one value per line. A command whose `Use` says `<id>...` (`show`, `done`, `move`, `set`, `unarchive`) is **always an array**; a one-id mutation emits `{before, after, changed}` (a lane respace adds `renumbered`); the report-shaped commands (`rm`, `archive`, `tidy`, `upgrade`, `apply`, `migrate`) emit one object. **A write that changes nothing leaves `updated` alone** — an idempotent retry resets no staleness clock and writes no shard; the prose writes (`note`, `done --note`, a body replacement, `attach`, `apply`'s annotation) advance it whenever they write — a replacement equal to the stored body, or an annotation already present, writes nothing. `edit` prefers `$FURROW_EDITOR`, then `$VISUAL`, then `$EDITOR`, falling back to `vi`.
 
 ### Command notes
 
 The generated table is the machine-guaranteed surface; these are the behavior contracts that don't fit a one-liner. (Commands whose whole story fits their table row — `init`, `retitle`, `label`, `ref`, `schema`, `version`, `vocab` — have no entry, and `attach`, `sync`, `upgrade`, and `config` have their own sections: [attachments](#attaching-files), [multi-machine sync](#multi-machine-furrow-sync), [the layout gate](#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it), [the central board](#central-board).)
 
-- **`add`** — `--stdin` (one title per line) and `--batch` (NDJSON with per-task fields and batch-local keys, so an epic's dependency graph is one file) create every task in one write, and **`--repeat`** makes a task recur from its required `--due`: a short spelling — `daily`, `every <n> days`, `weekly`, `weekly on <days>`, `every <n> weeks on <days>`, `monthly`, `monthly on <day-of-month>`, `monthly on last`, `monthly on <nth> <weekday>`, `monthly on last <weekday>`, `every <n> months on <day-of-month>`, `yearly`, `every <n> years` — or a raw RRULE line, and only a close advances the series. The contract is `furrow add --help`.
+- **`add`** — `--stdin` (one title per line) and `--batch` (NDJSON with per-task fields and batch-local keys, so an epic's dependency graph is one file) create every task in one write, and **`--repeat`** makes a task recur from its required `--due`: a short spelling — `daily`, `every <n> days`, `weekly`, `weekly on <days>`, `every <n> weeks on <days>`, `monthly`, `monthly on <day-of-month>`, `monthly on last`, `monthly on <nth> <weekday>`, `monthly on last <weekday>`, `every <n> months on <day-of-month>`, `yearly`, `every <n> years` — or a raw RRULE line, and only a close advances the series. A rule that skips months or sits off its own dates says so at bind time, on stderr and in `repeat_warnings` on `add`'s and `set`'s `--json`. The contract is `furrow add --help`.
 - **`ls`** — canonical `lane -> priority -> id` order unless `--sort`; every flat row carries a state glyph (★ actionable, ✓ done, ~ parked, · open but not available), and `--tree` groups the same rows by epic without ever showing fewer tasks: `furrow ls --help`.
 - **`show`** — any number of ids (tasks or epics) in one read, `--json` **always an array**; a partial miss still prints what was found, and the error names the rest in `details.missing`. The human output names what `deps` and `epic` point at, while `--json` keeps the ids plus `actionable`/`blocked_by`, so `show --no-body --json` is key-for-key an `ls` row: `furrow show --help`.
 - **`next`** — actionable = lane in `[next].lanes` **and** every dep done; on a board with epics it is scoped to the pinned boxes, then the active box, then the unfiled pile (with nothing active, only the pinned band remains), and what the scope leaves out is counted on stderr: `furrow next --help`.
@@ -309,7 +310,7 @@ The generated table is the machine-guaranteed surface; these are the behavior co
 - **`board`** — the introspection snapshot (store, discovery source, mode/layout, scope, lanes, schema state) that **never fails on a version mismatch — it reports one**; `furrow board --help`.
 - **`boards`** — every user-level `[[board]]`, **without resolving against cwd** (exit 0, possibly empty — the diagnosis for a machine whose scopes were never configured); `furrow boards --help`.
 - **`doctor`** — the machine-wide board-setup **health check**, read-only and network-free, with a stable `code` per finding; exit 1 (`doctor-unhealthy`) means problems, so `furrow doctor --json | jq -e '.healthy'` is a pre-flight; `furrow doctor --help`.
-- **`edit`** — opens a task's or an epic's `bodies/<id>.md` in the editor (no TTY: prints the path); `--body`/`--body-file` **replace the whole body and advance `updated`** in one write, and `note` is how to *append*; `furrow edit --help`.
+- **`edit`** — opens a task's or an epic's `bodies/<id>.md` in the editor (no TTY: prints the path); `--body`/`--body-file` **replace the whole body and advance `updated`** in one write (a body equal to the stored one writes nothing and reads `unchanged`), and `note` is how to *append*; `furrow edit --help`.
 - **`note`** — appends (or `--prepend`s) a paragraph **and** advances `updated` in one write, on a task or an epic — **membership routes the id, never its prefix**; `furrow note --help`.
 - **`done`** — **this is what advances a recurring task**: the next occurrence is written in the same all-or-nothing write, so exactly one live task carries a series; `--note` folds the closing word into every closed body; `furrow done --help`.
 - **`--expect-updated <rfc3339>`** (every writer whose `--help` lists it, one entity at a time) — the **stale-read guard**: when someone else wrote since your read, the mutation still goes through but says so (`stale_read {expected, actual}` plus a stderr note) — a warning, not an optimistic-lock refusal; `expectUpdatedFlag` in `internal/cli/cmd_mutate.go`.
@@ -320,7 +321,7 @@ The generated table is the machine-guaranteed surface; these are the behavior co
 - **`set`** — the routine triage edits (lane, priority, value, effort, labels, repos, epic, due, repeat, anchor) in **one** all-or-nothing write over one id, several, or a `-q` selection that previews until `--yes`: `--due` is the snooze, `--due-shift` the reschedule of the dues tasks already carry, `--anchor <epic>` makes a due follow a box's day; `furrow set --help`.
 - **`check`** — zero-based indexes, the number `show` prints beside each row; marking done is an idempotent set, not a toggle (`--off` unchecks), beside `--add`/`--rm`/`--reword`; `furrow check --help`.
 - **`dep`** — variadic, acyclic, idempotent and all-or-nothing (`dep add` / `dep rm` are accepted spellings). `--list` reads the neighborhood **both ways** — `depends_on` and `blocks`, each row with its own `blocked_by` — so one read answers "what moves if I close this". Contract: `furrow dep --help`.
-- **`epic`** — the box's subcommands, each with its own `--help` as its contract (`furrow epic --help` lists them). At most one active box per repo, and `epic done` never picks a successor; `epic show` prints the **waiting** state, and moving a box's day with `epic set --anchor` is the **reschedule** — every open follower's due shifts with it, previewed until `--yes` (no stored offset, no cascade: [docs/non-goals.md](docs/non-goals.md)). A task joins a box with `add -e` / `set -e` (`-e ''` unfiles); `epic add` only creates one.
+- **`epic`** — the box's subcommands, each with its own `--help` as its contract (`furrow epic --help` lists them). At most one active box per repo, and `epic done` never activates the next box: it **proposes** the **successor** the box declared (`epic set --successor <epic>`, the plan written ahead — one per box, a chain is a queue, walked past a closed box, refused on a standing one) and, for a freed slot no declaration covers, the previous active box; `furrow brief` names a closed box's proposed successor while nothing is active. `epic show` prints the **waiting** state, and moving a box's day with `epic set --anchor` is the **reschedule** — every open follower's due shifts with it, previewed until `--yes` (no stored offset, no cascade: [docs/non-goals.md](docs/non-goals.md)). A task joins a box with `add -e` / `set -e` (`-e ''` unfiles); `epic add` only creates one.
 - **`repo`** — each value is a full `owner/repo` or a short name resolving to exactly one known repo (else exit 2 with `candidates`); a task with no repos is a draft. Contract: `furrow repo --help`.
 - **`review`** — stamps a task's or a box's `reviewed` (apart from `updated`) or a repo's review clock; `--by agent` logs a repo sweep without advancing the human clock. Contract: `furrow review --help`.
 - **`apply`** — parses `SetStatus-task: <body-link> [<lane>]` directives from PR/commit text, the CI hook behind [auto status updates](#ci-auto-update-a-tracker-from-prs); validation is non-blocking, and `--dry-run` is the local footer check before `gh pr create`. Contract: `furrow apply --help`.
@@ -350,7 +351,7 @@ furrow tracker. Add a footer to the PR body pointing at a task's body file:
 SetStatus-task: https://github.com/<owner>/<tracker>/blob/main/.furrow/bodies/<id>.md done
 ```
 
-A PR **open** nudges the task to in-progress and the **merge** applies the named lane (`furrow apply --help` has the rules). The CI apply is non-blocking, so check a footer locally first: `furrow apply --on merge --dry-run --body-file <pr-body>` validates every directive and writes nothing.
+The footer's lane is the task's **merge target**: the **merge** applies it unless that would reopen a terminal task, and a PR **open** nudges the task to in-progress only when that target says the PR is the task's work — a `backlog` footer on a spin-off PR leaves the task where it is (`furrow apply --help` has the rules). The CI apply is non-blocking, so check a footer locally first: `furrow apply --on merge --dry-run --body-file <pr-body>` validates every directive and writes nothing.
 
 The GitHub wiring **ships with furrow** as a reusable workflow,
 [`.github/workflows/sync-task-status.yml`](.github/workflows/sync-task-status.yml).
@@ -368,7 +369,7 @@ permissions:
   pull-requests: write
 jobs:
   sync:
-    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v9.0.1
+    uses: akira-toriyama/furrow/.github/workflows/sync-task-status.yml@v10.0.0
     secrets:
       PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
 ```
@@ -611,7 +612,7 @@ Every shard and `meta.json` is written by its kind's one marshaller, with a fixe
 ## Status
 
 - **Working:** furrow is **CLI-only** and everything in this README ships, at
-  board layout v11 (what each layout added: `core.SchemaVersion` in
+  board layout v12 (what each layout added: `core.SchemaVersion` in
   `internal/core/task.go`). `sh scripts/check.sh` is the full local
   verification.
 - **Released:** with GoReleaser, to the Homebrew tap and the nix flake — see

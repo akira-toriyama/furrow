@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // epicView is one epic row/record in --json. core.Epic is embedded for the same
@@ -69,7 +69,7 @@ func emitEpicList(a *app.App, items []app.EpicItem) error {
 			if v.Waiting != nil {
 				line += "  " + waitingUntil(a, v.Waiting)
 			}
-			line = withTags(line, anchorTag(&v.Epic))
+			line = withTags(line, anchorTag(&v.Epic), successorTag(&v.Epic))
 			if v.Goal != "" {
 				line += "\n    goal: " + v.Goal
 			}
@@ -90,9 +90,13 @@ type epicDetailView struct {
 	// title and state (open / done / missing) — beside the raw id set the
 	// embedded Epic carries as `deps`. Always present ([] when none), so a
 	// reader never falls back to the ids and a second read.
-	ResolvedDeps []epicRefView  `json:"deps_resolved"`
-	Tasks        []listItemView `json:"tasks"`
-	BodyText     string         `json:"body_text"`
+	ResolvedDeps []epicRefView `json:"deps_resolved"`
+	// ResolvedSuccessor is the `successor:` line's fact — the declared box
+	// with its title and state — beside the raw id the embedded Epic carries
+	// as `successor`; null when none is declared.
+	ResolvedSuccessor *epicRefView   `json:"successor_resolved"`
+	Tasks             []listItemView `json:"tasks"`
+	BodyText          string         `json:"body_text"`
 }
 
 // epicMetaView is epicDetailView minus the prose — `show <epic-id> --no-body`.
@@ -101,11 +105,12 @@ type epicDetailView struct {
 // whether the key exists, never the content.
 type epicMetaView struct {
 	core.Epic
-	Progress     app.Progress   `json:"progress"`
-	Stuck        bool           `json:"stuck"`
-	Waiting      *app.EpicWait  `json:"waiting,omitempty"`
-	ResolvedDeps []epicRefView  `json:"deps_resolved"`
-	Tasks        []listItemView `json:"tasks"`
+	Progress          app.Progress   `json:"progress"`
+	Stuck             bool           `json:"stuck"`
+	Waiting           *app.EpicWait  `json:"waiting,omitempty"`
+	ResolvedDeps      []epicRefView  `json:"deps_resolved"`
+	ResolvedSuccessor *epicRefView   `json:"successor_resolved"`
+	Tasks             []listItemView `json:"tasks"`
 }
 
 func emitEpicDetail(a *app.App, d *app.EpicDetail, noBody bool) error {
@@ -140,11 +145,23 @@ func toEpicDetailView(d *app.EpicDetail) epicDetailView {
 		}
 		v.ResolvedDeps = append(v.ResolvedDeps, epicRefView{ID: r.ID, Title: r.Title, State: state})
 	}
+	if d.Successor != nil {
+		v.ResolvedSuccessor = &epicRefView{ID: d.Successor.ID, Title: d.Successor.Title, State: epicRefState(d.Successor)}
+	}
 	v.Tasks = make([]listItemView, 0, len(d.Tasks))
 	for _, it := range d.Tasks {
 		v.Tasks = append(v.Tasks, toListItemView(it))
 	}
 	return v
+}
+
+// epicRefState names a resolved edge's state for a reader: a dangling id
+// (lint's epic-dep-missing / epic-successor-missing) reads "missing", not "".
+func epicRefState(r *app.EpicRef) string {
+	if r.State == "" {
+		return "missing"
+	}
+	return r.State
 }
 
 // printEpicDetail is the human half, likewise shared with `show`.
@@ -193,6 +210,9 @@ func printEpicDetail(a *app.App, d *app.EpicDetail) {
 			parts = append(parts, fmt.Sprintf("%s (%s)", r.ID, state))
 		}
 		fmt.Fprintf(out, "deps:     %s\n", strings.Join(parts, ", "))
+	}
+	if d.Successor != nil {
+		fmt.Fprintf(out, "successor: %s (%s)\n", d.Successor.ID, epicRefState(d.Successor))
 	}
 	for _, k := range slices.Sorted(maps.Keys(d.Epic.Meta)) {
 		fmt.Fprintf(out, "meta:     %s = %s\n", k, d.Epic.Meta[k])
@@ -305,6 +325,9 @@ func changedEpicFields(before, after *core.Epic) []string {
 	if before.Anchor != after.Anchor {
 		ch = append(ch, "anchor")
 	}
+	if before.Successor != after.Successor {
+		ch = append(ch, "successor")
+	}
 	return ch
 }
 
@@ -316,6 +339,15 @@ func anchorTag(e *core.Epic) string {
 		return ""
 	}
 	return "anchor " + e.Anchor
+}
+
+// successorTag marks a box row with the plan it carries — what `epic done`
+// will propose — beside the day, so a session reads the queue off `epic ls`.
+func successorTag(e *core.Epic) string {
+	if e.Successor == "" {
+		return ""
+	}
+	return "→ then " + e.Successor
 }
 
 // anchorMoveRow is one follower's line in a move's preview and report: the

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
-	"github.com/akira-toriyama/furrow/v9/internal/gittest"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v10/internal/gittest"
 )
 
 // A sync on a detached HEAD used to commit first and fail in the pull, with

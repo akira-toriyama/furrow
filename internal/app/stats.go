@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // StatCount is one (key, count) row of a distribution — a lane, a repo, or a

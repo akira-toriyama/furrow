@@ -1,13 +1,14 @@
-// Prose: bodies are written FIRST and stamp `updated` unconditionally (the shard
-// cannot see a body), and every write goes through saveBody/saveBodies so it
-// rides the per-checkout body journal.
+// Prose: bodies are written FIRST and every body write stamps `updated` (the
+// shard cannot see a body), and every write goes through saveBody/saveBodies so
+// it rides the per-checkout body journal. A replacement byte-identical to the
+// stored body is not a write: it stamps nothing and journals nothing.
 
 package app
 
 import (
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // EditPath ensures the body file of the entity ref names exists (creating an
@@ -113,7 +114,7 @@ func (a *App) AddNote(id, text string) (*core.Task, error) {
 
 // PrependNote is AddNote with the paragraph placed FIRST: right after the
 // body's H1 heading (the `# <title>` line add seeds and retitle maintains; a
-// successor's `previous: [[id]]` back-link stays above it), or at the very top
+// occurrence's `previous: [[id]]` back-link stays above it), or at the very top
 // of a body that has no heading. Everything else is AddNote's contract — the
 // body lands before the shard stamps Updated, the note is never deduped, an
 // empty note is exit 2 — so `furrow note --prepend` differs from `furrow note`
@@ -161,25 +162,54 @@ func normalizeNote(id, text string) (string, error) {
 // failure costs a timestamp, never content, and a re-run replaces again and
 // fixes Updated.
 //
+// replaced is false when the normalized text equals the stored body byte for
+// byte: then nothing is written, journaled or stamped (t-3zyn) — a front-end
+// that writes back an unchanged $EDITOR buffer must not reset the staleness
+// clock. The comparison is on stored bytes, not on both sides normalized: a
+// hand-edited body that differs only in trailing newlines is rewritten,
+// because that rewrite is a real diff.
+//
 // An empty/whitespace-only body is a validation error (exit 2) — a caller
 // piping an unset variable or a closed stream means a bug, and a body is
 // never cleared by accident. NotFound (exit 1) when id names no task.
-func (a *App) SetBody(id, text string) (*core.Task, error) {
+func (a *App) SetBody(id, text string) (*core.Task, bool, error) {
 	text, err := normalizeBody(id, text)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	idx, err := a.load()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return a.mutateInErr(idx, id, func(t *core.Task) error { // AddNote's order and stamp
-		if err := a.saveBody(id, text); err != nil {
+	replaced := false
+	t, err := a.mutateInErr(idx, id, func(t *core.Task) error { // AddNote's order and stamp
+		wrote, err := a.replaceBody(id, text)
+		if err != nil || !wrote {
 			return err
 		}
+		replaced = true
 		t.Updated = a.Clock.Now()
 		return nil
 	})
+	return t, replaced, err
+}
+
+// replaceBody writes text as id's body unless the stored body already is text,
+// reporting whether it wrote. Call it inside the mutate closure: the session
+// guard must refuse before the body is compared. Shared by SetBody and
+// EpicSetBody so the two cannot diverge on what counts as unchanged.
+func (a *App) replaceBody(id, text string) (bool, error) {
+	cur, err := a.Store.LoadBody(id)
+	if err != nil {
+		return false, err
+	}
+	if cur == text {
+		return false, nil
+	}
+	if err := a.saveBody(id, text); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // normalizeBody normalizes a REPLACEMENT body: trailing newlines collapse to
@@ -240,7 +270,7 @@ func (a *App) prependBody(id, text string) error {
 
 // prependedBody composes body with text as its first paragraph: after the H1
 // heading when the first real line is one (retitleHeading's rule — a single
-// `#` then a space, with blank lines and a successor's `previous: [[id]]`
+// `#` then a space, with blank lines and an occurrence's `previous: [[id]]`
 // back-link allowed above it), else at the very top. The paragraph is
 // separated from the heading and from what follows by exactly one blank line
 // each, whatever blank lines the body had there; the rest of the body is

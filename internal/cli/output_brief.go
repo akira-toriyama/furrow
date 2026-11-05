@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // epicRevisitCounts is the revisit summary's five epic-level keys, labeled as
@@ -45,6 +45,10 @@ type briefView struct {
 	// so next is deliberately empty).
 	Active        []epicView `json:"active"`
 	EpicsDeclared bool       `json:"epics_declared"`
+	// NextUp is the plan a closed box left when nothing is active — the
+	// declared successor that can simply be activated now; omitted when a box
+	// is active or no declaration resolves (app.BriefData.NextUp).
+	NextUp *app.NextUp `json:"next_up,omitempty"`
 	// pinned is the open pinned box(es) not already in active — the always-
 	// visible channels whose tasks lead next (omitted when none, so the
 	// pre-v7 shape is unchanged on a board that uses no pins). Only channels
@@ -140,6 +144,7 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 			Repo:          scope,
 			Active:        make([]epicView, 0, len(b.Active)),
 			EpicsDeclared: b.EpicsDeclared,
+			NextUp:        b.NextUp,
 			Next:          make([]taskView, 0, len(b.Next)),
 			NextTotal:     b.NextTotal,
 			BlockedTotal:  b.BlockedTotal,
@@ -209,7 +214,12 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 	// The focus header, only on a participating board: which box `next` is
 	// scoped to — or the fact that none is, which is WHY next is empty.
 	if b.EpicsDeclared {
-		if len(b.Active) == 0 {
+		switch {
+		case len(b.Active) > 0:
+		case b.NextUp != nil:
+			fmt.Fprintf(out, "epic: (none active — %s %q was declared to follow %s, closed %s: `furrow epic activate %s`)\n",
+				b.NextUp.ID, b.NextUp.Title, b.NextUp.After, calendarTime(a, b.NextUp.AfterClosed), b.NextUp.ID)
+		default:
 			fmt.Fprintln(out, "epic: (none active — next is empty until `furrow epic activate <id>`; pick with `furrow epic ls`)")
 		}
 		for _, it := range b.Active {
@@ -220,7 +230,7 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 			if it.Waiting != nil {
 				line += "  " + waitingUntil(a, it.Waiting)
 			}
-			fmt.Fprintln(out, withTags(line, anchorTag(&it.Epic)))
+			fmt.Fprintln(out, withTags(line, anchorTag(&it.Epic), successorTag(&it.Epic)))
 		}
 		// The pinned channels ride under the focus line: their tasks lead next,
 		// so the header must say which boxes injected them.

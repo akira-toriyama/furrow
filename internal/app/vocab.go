@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/config"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/recur"
+	"github.com/akira-toriyama/furrow/v10/internal/config"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/recur"
 )
 
 // Vocabularies returns furrow's closed vocabularies by name — the machine

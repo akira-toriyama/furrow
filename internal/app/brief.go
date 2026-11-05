@@ -3,7 +3,7 @@ package app
 import (
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // BriefData is the one-shot session-orient read (`furrow brief`): what to pick
@@ -22,6 +22,14 @@ type BriefData struct {
 	// `furrow epic activate`.
 	Active        []EpicItem
 	EpicsDeclared bool
+	// NextUp is the plan a closed box left for the scope when nothing is
+	// active (nextUpIn, v12): the declared successor that can simply be
+	// activated. nil when a box is active (the plan was taken, or the human
+	// chose otherwise) or when no declaration resolves to an open, inactive
+	// box with a free slot. The one line that lets a fresh session read "next
+	// is B" off the board after A closed, since `epic done`'s proposal is
+	// printed once and the closed box leaves the default `epic ls`.
+	NextUp *NextUp
 	// Pinned is the open pinned epic(s) NOT already listed in Active — the
 	// always-visible channels whose tasks lead Next regardless of the active
 	// scope (v7). Board-wide like NextScope's pinned band (pinning is not
@@ -181,6 +189,10 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 			active = append(active, it)
 		}
 	}
+	var nextUp *NextUp
+	if len(active) == 0 {
+		nextUp = nextUpIn(all, repoScope)
+	}
 	// The pinned channels, board-wide (no repo filter): a pinned box outside
 	// this repo can still lead Next when its tasks match the scope.
 	var pinned []EpicItem
@@ -215,6 +227,7 @@ func (a *App) Brief(o QueryOpts, nextLimit, staleDays int) (*BriefData, error) {
 		OutsideNext:   outside,
 		Active:        active,
 		EpicsDeclared: len(all) > 0,
+		NextUp:        nextUp,
 		Pinned:        pinned,
 		PinnedQuiet:   quiet,
 		Due:           due,

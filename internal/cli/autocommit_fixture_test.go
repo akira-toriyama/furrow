@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/gittest"
-	"github.com/akira-toriyama/furrow/v9/internal/testutil"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/gittest"
+	"github.com/akira-toriyama/furrow/v10/internal/testutil"
 )
 
 // autoCommitFixture is a user-config [[board]] with autocommit on: the board

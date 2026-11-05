@@ -3,13 +3,13 @@ package app
 import (
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // The t-7hhb contract: a store loses an asset only when nothing remaining in
 // it holds the file — archive, unarchive, rm, and epic rm all through
 // planAssets. Before, the "<id>-" prefix alone decided, so archiving or
-// removing the owner took a file another live body (a repeat successor's, a
+// removing the owner took a file another live body (a repeat occurrence's, a
 // box's) was showing.
 
 func assetOnDisk(t *testing.T, s assetSide, name string) bool {
@@ -242,7 +242,7 @@ func TestRemoveTasksLeavesAnotherOwnersAsset(t *testing.T) {
 	if _, err := a.RemoveEpic(box.ID, RemoveOpts{Apply: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.SetBody(owner.ID, "# owner\n"); err != nil {
+	if _, _, err := a.SetBody(owner.ID, "# owner\n"); err != nil {
 		t.Fatal(err)
 	}
 	rep, err := a.RemoveTasks([]string{reader.ID}, RemoveOpts{Apply: true})

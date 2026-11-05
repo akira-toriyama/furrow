@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // `check <id> 5 --add x` appended and dropped the 5 in silence; an index

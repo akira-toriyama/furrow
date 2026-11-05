@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 	"github.com/spf13/cobra"
 )
 
@@ -81,8 +81,10 @@ func newAddCmd() *cobra.Command {
 			"OUTSIDE the series (`--due <a Friday> --repeat 'weekly on mon for 3 times'`\n" +
 			"is four tasks), and a stderr note names the rule's own first date. A day\n" +
 			"past 28 SKIPS the months that lack it (`monthly on last` always lands) and\n" +
-			"February 29 skips the years that lack one; both say so at bind time. Only\n" +
-			"a close advances a series — see `furrow done --help`.",
+			"February 29 skips the years that lack one; both say so at bind time, and\n" +
+			"--json carries the same messages in `repeat_warnings` beside the created\n" +
+			"task (absent when there are none). Only a close advances a series — see\n" +
+			"`furrow done --help`.",
 		Example: "  furrow add \"Wire up the config loader\"\n" +
 			"  furrow add \"Fix flaky sync test\" -s ready -l bug --value 4 --effort 2\n" +
 			"  furrow add \"Cross-repo epic\" -r akira-toriyama/furrow -r akira-toriyama/cifail\n" +
@@ -180,8 +182,8 @@ func newAddCmd() *cobra.Command {
 			warnClamp("effort", opts.Effort, t.Effort)
 			warnShadowedDraft(a, opts.Draft, len(t.Repos) == 0)
 			noteInheritedEpic(cmd, []core.Task{*t})
-			noteRepeatBinds(a, []core.Task{*t})
-			printOK("added", t)
+			warns := noteRepeatBinds(a, []core.Task{*t})
+			printOK("added", addedTaskView{Task: *t, RepeatWarnings: warns[0]})
 			return nil
 		},
 	}
@@ -241,19 +243,39 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 	drafted := len(created) > 0 && len(created[0].Repos) == 0
 	warnShadowedDraft(a, opts.Draft, drafted)
 	noteInheritedEpic(cmd, created)
-	noteRepeatBinds(a, created)
-	return emitTasks(a, created)
+	warns := noteRepeatBinds(a, created)
+	views := make([]addedTaskView, 0, len(created))
+	for i := range created {
+		views = append(views, addedTaskView{Task: created[i], RepeatWarnings: warns[i]})
+	}
+	emitList(views, func() { printTaskTable(a, created) })
+	return nil
+}
+
+// addedTaskView is a created task plus what only the add knows: the batch key
+// it was declared under (shards never carry it) and the bind-time notes of the
+// rule it bound — the machine twin of noteRepeatBinds's stderr lines, since a
+// front-end reads only stdout on exit 0. Both are omitted when empty, so a
+// plain add emits the task's own shape. core.Task is embedded (the usual rule:
+// it must never grow a MarshalJSON, or both keys would silently vanish).
+type addedTaskView struct {
+	core.Task
+	Key            string   `json:"key,omitempty"`
+	RepeatWarnings []string `json:"repeat_warnings,omitempty"`
 }
 
 // noteRepeatBinds says, once per distinct note, what a rule this add bound will
 // do that the operator almost certainly did not ask for — a day some months
-// lack, an anchor the rule does not land on. Said at BIND time because the
-// alternative is finding out in March, or at the close that hands out one
-// occurrence more than the count.
-func noteRepeatBinds(a *app.App, created []core.Task) {
+// lack, an anchor the rule does not land on — and returns each task's notes,
+// positionally, for its JSON view. Said at BIND time because the alternative is
+// finding out in March, or at the close that hands out one occurrence more than
+// the count.
+func noteRepeatBinds(a *app.App, created []core.Task) [][]string {
 	said := map[string]bool{}
+	warns := make([][]string, len(created))
 	for i := range created {
-		for _, w := range a.RepeatWarnings(&created[i]) {
+		warns[i] = a.RepeatWarnings(&created[i])
+		for _, w := range warns[i] {
 			if said[w] {
 				continue
 			}
@@ -261,6 +283,7 @@ func noteRepeatBinds(a *app.App, created []core.Task) {
 			stderrNote(w)
 		}
 	}
+	return warns
 }
 
 // noteInheritedEpic discloses on stderr that a bare add (no -e) filed the
@@ -313,10 +336,15 @@ func newEditCmd() *cobra.Command {
 			"--body-file <path> to read it from a file. --body is never a path: a\n" +
 			"one-line value naming an existing file is exit 2 with both spellings in\n" +
 			"candidates, not a body that says only the path. An\n" +
-			"empty replacement is exit 2, never a silent clear. Unlike a direct file\n" +
-			"edit, which leaves `updated` stale, --body keeps the staleness signals\n" +
-			"(revisit, lint's reconcile-gap) honest — prefer `furrow note <id>` when\n" +
-			"you mean to APPEND a progress paragraph rather than rewrite.\n\n" +
+			"empty replacement is exit 2, never a silent clear. A replacement equal to\n" +
+			"the stored body (after trailing newlines collapse to one) writes nothing\n" +
+			"and leaves `updated` alone — writing back an unchanged editor buffer\n" +
+			"resets no staleness clock; the line reads `unchanged <id>`, and --json\n" +
+			"omits `replaced_bytes` (when present, the bytes written). Unlike a\n" +
+			"direct file edit, which leaves `updated` stale, --body keeps the\n" +
+			"staleness signals (revisit, lint's reconcile-gap) honest — prefer\n" +
+			"`furrow note <id>` when you mean to APPEND a progress paragraph rather\n" +
+			"than rewrite.\n\n" +
 			"<id> may name a TASK or an EPIC — both entities' prose lives in the one\n" +
 			"bodies/ directory, so this is the same file either way; store membership\n" +
 			"routes it, never the id's prefix.",
@@ -371,7 +399,7 @@ func newEditCmd() *cobra.Command {
 			return nil
 		},
 	}
-	body.register(cmd, "replace the WHOLE body with this markdown itself, never a path, and advance updated ('-' reads stdin); empty is exit 2")
+	body.register(cmd, "replace the WHOLE body with this markdown itself, never a path, and advance updated unless it equals the stored body ('-' reads stdin); empty is exit 2")
 	addExpectUpdatedFlag(cmd)
 	return cmd
 }
@@ -380,7 +408,10 @@ func newEditCmd() *cobra.Command {
 // route task/epic by store membership (note's contract), replace, and report.
 // `changed` tracks metadata only, so the envelope surfaces the effect as
 // `replaced_bytes` — the byte count written, not the text echoed back: unlike
-// a note, a body is unbounded and the caller just supplied it.
+// a note, a body is unbounded and the caller just supplied it. A replacement
+// equal to the stored body writes nothing, so the key is OMITTED (as
+// `clamped`/`renumbered`/`stale_read` are when their event did not happen),
+// never 0, and the human verb reads "unchanged".
 func editSetBody(cmd *cobra.Command, a *app.App, ref string, body *bodyFlags) error {
 	text, err := body.text(cmd, true)
 	if err != nil {
@@ -388,7 +419,19 @@ func editSetBody(cmd *cobra.Command, a *app.App, ref string, body *bodyFlags) er
 	}
 	// The count must match the file: the write appends the trailing newline
 	// the normalizer guarantees (a test pins this against the disk).
-	extra := map[string]any{"replaced_bytes": len(strings.TrimRight(text, "\n")) + 1}
+	written := len(strings.TrimRight(text, "\n")) + 1
+	effect := func(replaced bool) map[string]any {
+		if !replaced {
+			return nil
+		}
+		return map[string]any{"replaced_bytes": written}
+	}
+	verb := func(replaced bool) string {
+		if !replaced {
+			return "unchanged"
+		}
+		return "edited"
+	}
 	epic, err := a.RefTargetsEpic(ref)
 	if err != nil {
 		return err
@@ -398,19 +441,25 @@ func editSetBody(cmd *cobra.Command, a *app.App, ref string, body *bodyFlags) er
 		if gerr != nil {
 			return gerr
 		}
-		before, after, serr := a.EpicSetBody(ref, text)
+		before, after, replaced, serr := a.EpicSetBody(ref, text)
 		if serr != nil {
 			return serr
 		}
+		extra := effect(replaced)
 		if guard && before != nil {
 			extra = mergeExtra(extra, staleReadExtra(before.ID, &before.Updated, expected))
 		}
-		printEpicMutation(a, "edited", before, after, extra)
+		printEpicMutation(a, verb(replaced), before, after, extra)
 		return nil
 	}
-	return emitMutationWith(cmd, a, "edited", ref,
-		func() (*core.Task, error) { return a.SetBody(ref, text) },
-		func(after *core.Task) map[string]any { return extra })
+	replaced := false
+	return emitMutationVerb(cmd, a, func() string { return verb(replaced) }, ref,
+		func() (*core.Task, error) {
+			t, r, err := a.SetBody(ref, text)
+			replaced = r
+			return t, err
+		},
+		func(after *core.Task) map[string]any { return effect(replaced) })
 }
 
 func firstNonEmpty(ss ...string) string {

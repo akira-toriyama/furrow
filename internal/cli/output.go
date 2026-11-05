@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 	"golang.org/x/term"
 )
 
@@ -115,10 +115,10 @@ func jsonMode() bool { return flagJSON || flagNDJSON }
 
 // emitObject writes a single value as the active machine format: indented under
 // --json, compact one-line under --ndjson. It is the single-object twin of
-// emitTasks — for commands whose machine payload is one object (a mutation's
+// emitList — for commands whose machine payload is one object (a mutation's
 // {before,after,changed}, an attach/init/edit result, the apply report, the
 // version block). Callers gate on jsonMode() first; a list-shaped command uses
-// emitTasks / a per-line loop instead.
+// emitList / a per-line loop instead.
 func emitObject(v any) {
 	if flagNDJSON {
 		printNDJSONValue(v)

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/recur"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/recur"
 )
 
 // RepeatReport is what a close says about the series it advanced.
@@ -19,14 +19,14 @@ import (
 // Skipped is reported either way, since a late close is what runs a bounded
 // series out.
 type RepeatReport struct {
-	Created   *string    `json:"created"` // the successor's id; null when the series ended
-	Due       *time.Time `json:"due"`     // the successor's promised instant; null when the series ended
+	Created   *string    `json:"created"` // the occurrence's id; null when the series ended
+	Due       *time.Time `json:"due"`     // the occurrence's promised instant; null when the series ended
 	Skipped   int        `json:"skipped"` // occurrences that lapsed between the one this close settled and the close
 	Completed bool       `json:"completed"`
 }
 
 // bodyLinkLine matches a body's leading `[[t-xxxx]]` back-link and nothing else,
-// so a successor replaces the previous occurrence's link instead of stacking one
+// so an occurrence replaces the previous occurrence's link instead of stacking one
 // more on top of it every cycle.
 var bodyLinkLine = regexp.MustCompile(`^previous: \[\[[^\]\s]+\]\]\s*$`)
 
@@ -35,34 +35,34 @@ var bodyLinkLine = regexp.MustCompile(`^previous: \[\[[^\]\s]+\]\]\s*$`)
 // for every other write, which is almost all of them.
 //
 // It must be called BEFORE the note of this close is appended to the body (the
-// successor copies the body as it stood, and a completion note belongs to the
+// occurrence copies the body as it stood, and a completion note belongs to the
 // occurrence that earned it) and before applyLane stamps Closed.
 //
 // The rule is CONSUMED: the predecessor loses Repeat and RepeatAnchor whatever
-// the outcome, and the successor — if there is one — carries them. That is what
+// the outcome, and the occurrence — if there is one — carries them. That is what
 // makes closing idempotent. furrow's no-op detection compares a task's own
 // shard bytes, so it structurally cannot see that a close already minted a
-// successor in another file; a predecessor that kept its rule would mint a
+// occurrence in another file; a predecessor that kept its rule would mint a
 // second one on every reopen-then-close. With the rule held by exactly one task
 // at a time, a re-close has nothing to act on.
 // It writes NOTHING — not the index, not a body file. core.Index holds tasks BY
-// VALUE, so appending the successor can move the backing array and invalidate
+// VALUE, so appending the occurrence can move the backing array and invalidate
 // every *core.Task the caller is holding, including the one being closed; and a
 // body written here would outlive a later refusal, leaving a file on disk for a
 // task that never existed, which only a human could find and remove. The
-// successor and its prose therefore come back PENDING, for the caller to flush
+// occurrence and its prose therefore come back PENDING, for the caller to flush
 // once the whole write is known to succeed.
-func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now time.Time, reserved map[string]bool) (*RepeatReport, *pendingSuccessor, error) {
+func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now time.Time, reserved map[string]bool) (*RepeatReport, *pendingOccurrence, error) {
 	// A TRANSITION into the done lane, not the mere fact of ending there. A task
 	// that is ALREADY closed cannot be closed again, and `set <closed-id> -s done
 	// --repeat X` would otherwise arm a rule and immediately spend it — minting a
-	// fresh successor on every invocation, from a task nothing is working on.
+	// fresh occurrence on every invocation, from a task nothing is working on.
 	if lane != a.Cfg.DoneLane || was == a.Cfg.DoneLane || t.Repeat == "" {
 		return nil, nil, nil
 	}
 	if a.Cfg.DefaultLane == a.Cfg.DoneLane {
 		// bindRepeat refuses this at bind time, but the board's config can change
-		// afterwards — and a successor born in the done lane is closed at birth
+		// afterwards — and an occurrence born in the done lane is closed at birth
 		// holding a live rule, which kills the series in silence.
 		return nil, nil, core.Validationf(t.ID, "this board's default lane (%q) is its done lane, so the next occurrence would be closed at birth — fix [lanes].default, or drop the rule with `furrow set %s --clear-repeat`", a.Cfg.DefaultLane, t.ID)
 	}
@@ -101,8 +101,8 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	}
 
 	// `reserved` carries the ids the SAME batch already handed out. uniqueID only
-	// consults the index, and a pre-pass plans every successor before any of them
-	// is inserted — so without this, two successors in one batch could draw the
+	// consults the index, and a pre-pass plans every occurrence before any of them
+	// is inserted — so without this, two occurrences in one batch could draw the
 	// same id, which both stores then refuse to save.
 	id, err := a.uniqueIDExcluding(idx, reserved)
 	if err != nil {
@@ -120,11 +120,11 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	// Everything carries over except what the close settles (closed, reviewed),
 	// what the rule computes (due), what belonged to THIS occurrence's run
 	// (deps — a satisfied edge is not a promise about the next cycle), and its
-	// POSITION: priority is relative to a lane, and the successor is born in a
-	// different one, so insertSuccessors appends it there exactly as `add` would
+	// POSITION: priority is relative to a lane, and the occurrence is born in a
+	// different one, so insertOccurrences appends it there exactly as `add` would
 	// — a copied number tied an existing task in the default lane and sorted
 	// ahead of it.
-	successor := core.Task{
+	occurrence := core.Task{
 		ID: id, Title: t.Title, Status: a.Cfg.DefaultLane,
 		Value: cloneIntp(t.Value), Effort: cloneIntp(t.Effort),
 		Labels:    append([]string(nil), t.Labels...),
@@ -142,7 +142,7 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	// forever. `archive` leaves behind any asset a live body still references
 	// instead, so one copy serves the whole series.
 	return &RepeatReport{Created: &id, Due: &due, Skipped: skipped},
-		&pendingSuccessor{task: successor, body: successorBody(body, t.ID)}, nil
+		&pendingOccurrence{task: occurrence, body: occurrenceBody(body, t.ID)}, nil
 }
 
 // repeatWindow is what a close settles and what it jumped: the instant the
@@ -165,12 +165,12 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 // that. A snooze (`set --due +1d`, the remedy `due-overdue` itself prints)
 // lands the due off-lattice at 17:20, and "the first occurrence after
 // 17:20" was that day's own 23:59:59 point. And a chore closed one
-// afternoon late got a successor due that same night, which the next
+// afternoon late got an occurrence due that same night, which the next
 // afternoon's close was late for again — every close late, forever, with a
 // due-overdue ERROR on the board's gate each day. Settling the day heals
 // the chain after one late close. Its cost is deliberate and documented: a
 // close just past midnight settles the NEW day, so closing yesterday's
-// daily at 00:10 consumes today's (re-date the successor with `set <id>
+// daily at 00:10 consumes today's (re-date the occurrence with `set <id>
 // --due <today>` when that is not what was meant).
 //
 // A timed series (`--due …T21:00`) promises INSTANTS and is settled as
@@ -221,7 +221,7 @@ func (a *App) repeatWindow(t *core.Task, now time.Time) (after, lo, hi time.Time
 //
 // The presence of a rule is not the question, though it reads like one: a
 // bounded rule's LAST occurrence carries `repeat` exactly like every other, so
-// a preview that tested the field announced a successor the apply then did not
+// a preview that tested the field announced an occurrence the apply then did not
 // create. Expanding is free — recur.Next is pure, and the close runs the same
 // call over the same window.
 func (a *App) repeatPreview(t *core.Task, now time.Time) (creates, completes bool) {
@@ -236,40 +236,40 @@ func (a *App) repeatPreview(t *core.Task, now time.Time) (creates, completes boo
 	return ok, !ok
 }
 
-// pendingSuccessor is a generated occurrence that has not been committed yet:
+// pendingOccurrence is a generated occurrence that has not been committed yet:
 // the task to insert and the prose to write, both held until the caller knows
 // the whole write succeeds.
-type pendingSuccessor struct {
+type pendingOccurrence struct {
 	task core.Task
 	body string
 }
 
-// flushSuccessors inserts the generated occurrences and writes their bodies. It
+// flushOccurrences inserts the generated occurrences and writes their bodies. It
 // must run after the LAST thing that can refuse and immediately before the index
 // is saved: every *core.Task pointer the caller held is dead by then (the insert
 // can move the index's backing array), and nothing is left on disk if an earlier
 // step refused.
-func (a *App) flushSuccessors(idx *core.Index, pending []*pendingSuccessor) error {
-	if err := a.writeSuccessorFiles(pending); err != nil {
+func (a *App) flushOccurrences(idx *core.Index, pending []*pendingOccurrence) error {
+	if err := a.writeOccurrenceFiles(pending); err != nil {
 		return err
 	}
-	a.insertSuccessors(idx, pending)
+	a.insertOccurrences(idx, pending)
 	return nil
 }
 
-// writeSuccessorFiles puts the generated prose on disk, all of it in one store
+// writeOccurrenceFiles puts the generated prose on disk, all of it in one store
 // write. It is the only half that can FAIL; a caller that also appends a
 // closing note composes the note into the same batch instead (moveMany,
 // DoneNote), since a note is not idempotent and a failure after one had landed
 // would leave it on the body and duplicate it on every retry.
-func (a *App) writeSuccessorFiles(pending []*pendingSuccessor) error {
-	return a.saveBodies(successorBodies(pending))
+func (a *App) writeOccurrenceFiles(pending []*pendingOccurrence) error {
+	return a.saveBodies(occurrenceBodies(pending))
 }
 
-// successorBodies is the id -> body map of the generated occurrences, the
+// occurrenceBodies is the id -> body map of the generated occurrences, the
 // shape a batch prose write takes; nil entries (a task that does not repeat)
 // contribute nothing.
-func successorBodies(pending []*pendingSuccessor) map[string]string {
+func occurrenceBodies(pending []*pendingOccurrence) map[string]string {
 	bodies := map[string]string{}
 	for _, p := range pending {
 		if p != nil {
@@ -279,15 +279,15 @@ func successorBodies(pending []*pendingSuccessor) map[string]string {
 	return bodies
 }
 
-// insertSuccessors adds the generated occurrences to the index. In-memory and
+// insertOccurrences adds the generated occurrences to the index. In-memory and
 // infallible by construction, so it can run at the last possible moment — after
 // every *core.Task pointer the caller held is dead, since inserting can move
 // core.Index's backing array.
 //
 // The priority is assigned HERE, one insert at a time, not in planRepeat: a
-// batch plans every successor before any is inserted, so a number computed
+// batch plans every occurrence before any is inserted, so a number computed
 // there would be the same for all of them — the tie this exists to avoid.
-func (a *App) insertSuccessors(idx *core.Index, pending []*pendingSuccessor) {
+func (a *App) insertOccurrences(idx *core.Index, pending []*pendingOccurrence) {
 	for _, p := range pending {
 		if p != nil {
 			p.task.Priority = idx.NextPriority(p.task.Status, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
@@ -304,7 +304,7 @@ func consumeRepeat(t *core.Task) {
 	t.RepeatAnchor = nil
 }
 
-// successorBody is the predecessor's prose with a back-link on top. A leading
+// occurrenceBody is the predecessor's prose with a back-link on top. A leading
 // link from the PREVIOUS occurrence is replaced rather than pushed down, so a
 // body that has recurred a hundred times still opens with exactly one link.
 //
@@ -312,7 +312,7 @@ func consumeRepeat(t *core.Task) {
 // replaced. A bare leading `[[t-…]]` is something an operator may well have
 // written — a pointer to the task this one came out of — and overwriting it
 // destroyed their link while leaving the prose that referred to it.
-func successorBody(body, prevID string) string {
+func occurrenceBody(body, prevID string) string {
 	link := "previous: [[" + prevID + "]]"
 	head, rest, _ := strings.Cut(body, "\n")
 	if bodyLinkLine.MatchString(head) {
@@ -375,7 +375,7 @@ func (a *App) compileRepeat(subject, spec string) (string, error) {
 		return "", core.Validationf(subject, "--repeat needs a rule (e.g. `monthly on 15`, `every 2 weeks on mon,thu`); use --clear-repeat to remove one")
 	}
 	if a.Cfg.DefaultLane == a.Cfg.DoneLane {
-		// The successor is born in the default lane. If that IS the done lane it
+		// The occurrence is born in the default lane. If that IS the done lane it
 		// would be closed at birth holding a live rule — the state `add -s done
 		// --repeat` refuses — and nothing would ever fire it.
 		return "", core.Validationf(subject, "this board's default lane (%q) is its done lane, so a generated occurrence would be closed at birth — recurrence needs a board whose [lanes].default is open", a.Cfg.DefaultLane)
@@ -406,6 +406,9 @@ func (a *App) compileRepeat(subject, spec string) (string, error) {
 // Both can fire on one bind (`monthly on 31` anchored on the 15th), which is
 // why this is a slice: they are independent facts about the same rule, and
 // picking one would leave the other to be discovered by a close.
+//
+// Each string is the bare message: the stderr `note: ` is the CLI's framing,
+// and --json's `repeat_warnings` carries the message alone.
 func (a *App) RepeatWarnings(t *core.Task) []string {
 	if t.Repeat == "" || t.RepeatAnchor == nil {
 		return nil
@@ -421,7 +424,7 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 		out = append(out, skipNote(t.Repeat, anchor, skip, a.loc()))
 	}
 	if first, ok := recur.OffLattice(t.Repeat, anchor, a.loc()); ok {
-		out = append(out, fmt.Sprintf("note: the anchor %s is not a date this rule lands on, so it is one occurrence OUTSIDE the series and `for n times` hands out n MORE after it; the rule's own first date is %s, and anchoring there folds it in",
+		out = append(out, fmt.Sprintf("the anchor %s is not a date this rule lands on, so it is one occurrence OUTSIDE the series and `for n times` hands out n MORE after it; the rule's own first date is %s, and anchoring there folds it in",
 			anchor.Format(core.TimeLayout), first.Format(core.TimeLayout)))
 	}
 	return out
@@ -433,12 +436,12 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 // lands every year is February's last day, which any frequency can name.
 func skipNote(line string, anchor time.Time, skip recur.Skip, loc *time.Location) string {
 	if skip.Period == recur.Years {
-		return fmt.Sprintf("note: February 29 exists only in leap years, so the rule skips the years without one (RFC 5545)%s; anchoring on February 28, or naming February's last day (`BYMONTH=2;BYMONTHDAY=-1`), lands every year", nextOccurrenceClause(line, anchor, loc))
+		return fmt.Sprintf("February 29 exists only in leap years, so the rule skips the years without one (RFC 5545)%s; anchoring on February 28, or naming February's last day (`BYMONTH=2;BYMONTHDAY=-1`), lands every year", nextOccurrenceClause(line, anchor, loc))
 	}
 	// The remedy is `on last`, spelled against whatever rule they typed — naming
 	// a full `monthly on last` prescribed a different FREQUENCY to anyone who
 	// wrote `every 3 months`.
-	return fmt.Sprintf("note: day %d does not exist in every month, so the rule skips those months (RFC 5545); anchoring on the last day instead (`… on last`) always lands", skip.Day)
+	return fmt.Sprintf("day %d does not exist in every month, so the rule skips those months (RFC 5545); anchoring on the last day instead (`… on last`) always lands", skip.Day)
 }
 
 // nextOccurrenceClause names the date the leap-day note is about, because a

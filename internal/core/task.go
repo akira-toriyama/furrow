@@ -29,6 +29,13 @@ import (
 // read-breaking layout change, and update docs/schema/ + goldens in the same
 // change. The history below is the only copy (the published meta schema's
 // description points here), so extend it on every bump.
+// v12 = the per-epic `successor` (omitempty): the box declared to open after
+// this one closes. `epic done` proposes it in place of the computed previous,
+// lint's epic-successor-* rules read it, and `epic rm` counts it as a
+// reference — so a binary that merely PRESERVED it would close a box and
+// point the session back at the previous focus while the human's declared
+// plan rode along unread. A board that plans nothing keeps its exact pre-v12
+// bytes and no shard rewrites on upgrade.
 // v11 = the anchor pair: an epic's `anchor` (the calendar day its
 // followers' dues are derived from) and a task's `anchor` (the epic whose day
 // its due follows). `epic set --anchor` moves every follower's due by the day
@@ -69,7 +76,7 @@ import (
 // write the loss back. v3 = shards whose tasks carry the required first-class
 // repos set (the repos pivot). v2 = per-task shards (tasks/<id>.json) +
 // meta.json (v1 was the monolithic index.json).
-const SchemaVersion = 11
+const SchemaVersion = 12
 
 // Index is the in-memory aggregate of every task: the store folds the per-task
 // shards (tasks/<id>.json) into one of these on Load, and splits it back into
@@ -250,10 +257,10 @@ type Task struct {
 	// what was typed.
 	//
 	// The rule lives on exactly ONE task at a time: closing a repeating task moves
-	// it, with RepeatAnchor, to the successor the close generates. That invariant
+	// it, with RepeatAnchor, to the occurrence the close generates. That invariant
 	// is what makes re-closing idempotent — a shard-byte comparison cannot see a
 	// side effect in another file, so a predecessor that kept its rule would mint
-	// a second successor on every reopen-then-close.
+	// a second occurrence on every reopen-then-close.
 	//
 	// Empty = not repeating, which is every task on every board that never asks
 	// for one. It lives at the END of the struct per the shard-shape rule.
@@ -261,7 +268,7 @@ type Task struct {
 
 	// RepeatAnchor is the series start: the FIRST occurrence's due, the DTSTART
 	// the rule is expanded from. Immutable for the life of the series — the
-	// successor inherits it unchanged.
+	// occurrence inherits it unchanged.
 	//
 	// It is a separate field rather than a reuse of Due because the two answer
 	// different questions, and conflating them breaks both: COUNT would restart

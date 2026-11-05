@@ -33,7 +33,8 @@ func sampleEpic() *Epic {
 			r := time.Date(2026, 7, 29, 6, 30, 0, 789_000_000, time.UTC) // sub-second: must truncate
 			return &r
 		}(),
-		Anchor: "2026-08-10", // the v11 anchor day
+		Anchor:    "2026-08-10", // the v11 anchor day
+		Successor: "e-nx01",     // the v12 declared successor
 	}
 }
 

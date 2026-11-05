@@ -10,18 +10,18 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
-// printOK prints a short confirmation line for a mutation (human mode) or the
-// task as one JSON value (--json indented / --ndjson compact one-line).
-func printOK(verb string, t *core.Task) {
+// printOK prints a short confirmation line for a created task (human mode) or
+// its view as one JSON value (--json indented / --ndjson compact one-line).
+func printOK(verb string, v addedTaskView) {
 	if jsonMode() {
-		emitObject(t)
+		emitObject(v)
 		return
 	}
-	fmt.Fprintf(out, "%s %s  %s\n", verb, t.ID, t.Title)
+	fmt.Fprintf(out, "%s %s  %s\n", verb, v.ID, v.Title)
 }
 
 // printMutation reports a single-task edit. In machine mode it emits

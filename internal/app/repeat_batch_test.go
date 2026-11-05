@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // `set -s done` runs the repeat edits of the SAME write first, so the operator's
@@ -24,7 +24,7 @@ func TestSetDoneHonorsTheRepeatEditInTheSameWrite(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(tasks) != 1 {
-			t.Errorf("%d tasks, want 1 — --clear-repeat still minted a successor", len(tasks))
+			t.Errorf("%d tasks, want 1 — --clear-repeat still minted an occurrence", len(tasks))
 		}
 	})
 
@@ -41,11 +41,11 @@ func TestSetDoneHonorsTheRepeatEditInTheSameWrite(t *testing.T) {
 		}
 		succ := other(t, a, closed.ID)
 		if succ.Repeat != "FREQ=WEEKLY" {
-			t.Errorf("successor rule = %q, want the rule this write asked for", succ.Repeat)
+			t.Errorf("occurrence rule = %q, want the rule this write asked for", succ.Repeat)
 		}
 	})
 
-	t.Run("a successor born beside other edits inherits the edited values", func(t *testing.T) {
+	t.Run("an occurrence born beside other edits inherits the edited values", func(t *testing.T) {
 		a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
 		task := mustAddRepeating(t, a, "水やり", "2026-03-01", "monthly", AddOpts{})
 		closed, _, _, err := a.Set(task.ID, SetOpts{Status: &done, AddLabels: []string{"chore"}})
@@ -54,13 +54,13 @@ func TestSetDoneHonorsTheRepeatEditInTheSameWrite(t *testing.T) {
 		}
 		succ := other(t, a, closed.ID)
 		if len(succ.Labels) != 1 || succ.Labels[0] != "chore" {
-			t.Errorf("successor labels = %v, want the label this write added", succ.Labels)
+			t.Errorf("occurrence labels = %v, want the label this write added", succ.Labels)
 		}
 	})
 }
 
 // A refusal partway through a batch must leave NOTHING behind — neither the
-// note on the bodies it already reached, nor a body file for a successor that
+// note on the bodies it already reached, nor a body file for an occurrence that
 // was never inserted.
 func TestARefusedBatchLeavesNothingBehind(t *testing.T) {
 	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
@@ -121,8 +121,8 @@ func TestAddRefusesARuleOnATaskClosedAtBirth(t *testing.T) {
 	}
 }
 
-// The batch plans every successor BEFORE any is inserted, so the index cannot
-// answer for the batch's own ids. Two successors drawing the same id would be
+// The batch plans every occurrence BEFORE any is inserted, so the index cannot
+// answer for the batch's own ids. Two occurrences drawing the same id would be
 // refused by both stores at save time — a hard failure on a routine close.
 func TestABatchOfClosesReservesItsOwnIDs(t *testing.T) {
 	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
@@ -140,10 +140,10 @@ func TestABatchOfClosesReservesItsOwnIDs(t *testing.T) {
 	seen := map[string]bool{}
 	for i, r := range reps {
 		if r == nil || r.Created == nil {
-			t.Fatalf("task %d produced no successor", i)
+			t.Fatalf("task %d produced no occurrence", i)
 		}
 		if seen[*r.Created] {
-			t.Errorf("two successors share the id %s", *r.Created)
+			t.Errorf("two occurrences share the id %s", *r.Created)
 		}
 		seen[*r.Created] = true
 	}
@@ -152,7 +152,7 @@ func TestABatchOfClosesReservesItsOwnIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(tasks) != 10 {
-		t.Errorf("%d tasks, want 10 (5 closed + 5 successors)", len(tasks))
+		t.Errorf("%d tasks, want 10 (5 closed + 5 occurrences)", len(tasks))
 	}
 }
 
@@ -350,11 +350,11 @@ func TestRecurrenceRefusesABoardThatBearsClosedTasks(t *testing.T) {
 	}
 }
 
-// A successor is born in a DIFFERENT lane from the occurrence it follows, and
+// An occurrence is born in a DIFFERENT lane from the occurrence it follows, and
 // priority is relative to a lane — so copying the predecessor's number tied an
 // existing task in the default lane and sorted ahead of it. It is appended
 // exactly as `add` appends, and a batch of closes appends each in turn.
-func TestASuccessorIsAppendedToTheDefaultLane(t *testing.T) {
+func TestAOccurrenceIsAppendedToTheDefaultLane(t *testing.T) {
 	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
 	for _, title := range []string{"P1", "P2"} {
 		if _, err := a.Add(title, AddOpts{}); err != nil {
@@ -376,11 +376,11 @@ func TestASuccessorIsAppendedToTheDefaultLane(t *testing.T) {
 	}
 	wantPrio := a.Cfg.PriorityDefault + 2*a.Cfg.PriorityStep // after P1 and P2
 	if succ.Status != a.Cfg.DefaultLane || succ.Priority != wantPrio {
-		t.Errorf("successor = %s/%d, want appended to %s at %d (not the predecessor's %d)",
+		t.Errorf("occurrence = %s/%d, want appended to %s at %d (not the predecessor's %d)",
 			succ.Status, succ.Priority, a.Cfg.DefaultLane, wantPrio, closed.Priority)
 	}
 
-	t.Run("a batch appends each successor in turn", func(t *testing.T) {
+	t.Run("a batch appends each occurrence in turn", func(t *testing.T) {
 		x := mustAddRepeating(t, a, "x", "2026-03-01", "daily", AddOpts{Status: "ready"})
 		y := mustAddRepeating(t, a, "y", "2026-03-01", "daily", AddOpts{Status: "ready"})
 		_, reps, err := a.moveMany([]string{x.ID, y.ID}, a.Cfg.DoneLane, "")
@@ -390,10 +390,10 @@ func TestASuccessorIsAppendedToTheDefaultLane(t *testing.T) {
 		sx, _, _ := a.Get(*reps[0].Created)
 		sy, _, _ := a.Get(*reps[1].Created)
 		if sx.Priority == sy.Priority {
-			t.Fatalf("both successors got priority %d — the batch tied them", sx.Priority)
+			t.Fatalf("both occurrences got priority %d — the batch tied them", sx.Priority)
 		}
 		if sx.Priority != wantPrio+a.Cfg.PriorityStep || sy.Priority != wantPrio+2*a.Cfg.PriorityStep {
-			t.Errorf("successors = %d/%d, want %d/%d (appended in close order)",
+			t.Errorf("occurrences = %d/%d, want %d/%d (appended in close order)",
 				sx.Priority, sy.Priority, wantPrio+a.Cfg.PriorityStep, wantPrio+2*a.Cfg.PriorityStep)
 		}
 	})

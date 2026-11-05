@@ -2,7 +2,7 @@
 
 furrow is a clonable, git-native, plain-text task tracker — an alternative to
 GitHub Projects/Issues — written in Go (module
-`github.com/akira-toriyama/furrow/v9`, Go 1.26+). One board can live outside the
+`github.com/akira-toriyama/furrow/v10`, Go 1.26+). One board can live outside the
 repos it backs and be reached by configuration (a central board — each task
 carries its repos as first-class `owner/repo` identifiers, so one board can back
 many) or sit repo-local in a single repo's `.furrow/`. This document describes
@@ -275,7 +275,7 @@ A `.furrow/` store directory contains:
   bodies/<id>.md       prose, one file per task OR epic (hand/agent editable;
                          ids are prefix-disjoint, so one directory is unambiguous)
   bodies/assets/       <id>-<sanitized-name>, written ONLY via Store.SaveAsset / SaveAssetRaw
-  meta.json            {"schema_version": 11} — MarshalMeta; stamped only on a
+  meta.json            {"schema_version": 12} — MarshalMeta; stamped only on a
                          fresh store (`init`) or by `furrow upgrade`; an ordinary
                          Save READS it (the write gate) and leaves it alone
   repos/<owner>__<repo>.json   one review shard per repo — MarshalRepo
@@ -357,8 +357,9 @@ runs, since `Store.Save` writes only changed shards and a path that moved a
 NEIGHBOR (reorder's respace) must persist it. `updated` is the clock `is:stale`,
 `revisit`, `lint`'s reconcile-gap and `ls --since` read, so an idempotent retry
 must not reset it. Boxes obey the same rule (`mutateEpic`); PROSE is the
-exception — `note`, `done --note`, a body replacement stamp unconditionally,
-because the body lives outside the shard where the comparison cannot see it.
+exception — `note`, `done --note`, a body replacement stamp whenever they
+write the body, which lives outside the shard where the comparison cannot see
+it; a replacement equal to the stored body writes nothing.
 
 The invariants the funnel keeps, beyond what each verb's `--help` promises:
 

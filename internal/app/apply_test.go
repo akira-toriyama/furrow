@@ -252,3 +252,95 @@ func TestPreviewDirectivesIsIdempotentLikeApply(t *testing.T) {
 		t.Errorf("re-preview should be a no-op projection, got %+v", o)
 	}
 }
+
+// TestApplyLaneIsTheMergeTarget pins what a directive's lane means: the task's
+// merge target. Open nudges only for a target that is the task's work (the done
+// lane, or a non-terminal lane at or after the open lane), merge never reopens
+// a terminal task (a terminal target still applies), and every deliberate
+// non-move says why in Kept. Each row runs
+// the preview first and then the real apply on the same store, so the dry-run
+// is held to the identical decision. The two measured accidents (t-9vtf) are
+// the "backlog footer" and "done task" rows.
+func TestApplyLaneIsTheMergeTarget(t *testing.T) {
+	cases := []struct {
+		name     string
+		from     string // the task's lane when the event fires
+		lane     string // the footer's lane
+		mode     ApplyMode
+		want     string // the task's lane afterwards
+		action   string
+		kept     string
+		annotate string // the body line the event records
+	}{
+		{"open with a backlog footer keeps a backlog task", "backlog", "backlog", OnOpen, "backlog", "annotated", KeptTargetBeforeOpenLane, "- 🚧 `x#1` opened"},
+		{"open with an inbox footer keeps a ready task", "ready", "inbox", OnOpen, "ready", "annotated", KeptTargetBeforeOpenLane, "- 🚧 `x#1` opened"},
+		{"open with an icebox footer keeps a ready task", "ready", "icebox", OnOpen, "ready", "annotated", KeptTargetParked, "- 🚧 `x#1` opened"},
+		{"open with a waiting footer keeps a backlog task", "backlog", "waiting", OnOpen, "backlog", "annotated", KeptTargetParked, "- 🚧 `x#1` opened"},
+		{"open with a done footer nudges", "ready", "done", OnOpen, "in-progress", "moved", "", "- 🚧 `x#1` opened"},
+		{"open with an in-progress footer nudges", "backlog", "in-progress", OnOpen, "in-progress", "moved", "", "- 🚧 `x#1` opened"},
+		{"open never nudges a done task", "done", "done", OnOpen, "done", "annotated", KeptTaskTerminal, "- 🚧 `x#1` opened"},
+		{"merge with an in-progress footer keeps a done task", "done", "in-progress", OnMerge, "done", "annotated", KeptTaskTerminal, "- 🔗 `x#1` merged"},
+		{"merge with a backlog footer keeps an icebox task", "icebox", "backlog", OnMerge, "icebox", "annotated", KeptTaskTerminal, "- 🔗 `x#1` merged"},
+		{"merge with a done footer closes an icebox task", "icebox", "done", OnMerge, "done", "moved", "", "- ✅ `x#1` merged → `done`"},
+		{"merge with a done footer closes a waiting task", "waiting", "done", OnMerge, "done", "moved", "", "- ✅ `x#1` merged → `done`"},
+		{"merge with an icebox footer parks a done task", "done", "icebox", OnMerge, "icebox", "moved", "", "- ✅ `x#1` merged → `icebox`"},
+		{"merge with a done footer closes an in-progress task", "in-progress", "done", OnMerge, "done", "moved", "", "- ✅ `x#1` merged → `done`"},
+		{"merge with a backlog footer moves an in-progress task", "in-progress", "backlog", OnMerge, "backlog", "moved", "", "- ✅ `x#1` merged → `backlog`"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := newSeededApp()
+			tk, err := a.Add("task", AddOpts{Status: c.from})
+			if c.from == "done" {
+				_, err = a.Done(tk.ID)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := "SetStatus-task: " + bodyLink(tk.ID) + " " + c.lane
+
+			before, beforeBody, _ := a.Get(tk.ID)
+			preview, err := a.PreviewDirectives(text, "x#1", c.mode, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after, afterBody, _ := a.Get(tk.ID); !reflect.DeepEqual(before, after) || beforeBody != afterBody {
+				t.Fatalf("the preview wrote to the store")
+			}
+			res, err := a.ApplyDirectives(text, "x#1", c.mode, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.DryRun = true; !reflect.DeepEqual(preview, res) {
+				t.Errorf("the preview projected a different decision:\npreview %+v\nreal    %+v", preview.Outcomes, res.Outcomes)
+			}
+
+			o := res.Outcomes[0]
+			if o.Action != c.action || o.Kept != c.kept || o.To != c.want || o.Code != 0 {
+				t.Errorf("outcome = %+v; want action %q, kept %q, to %q, code 0", o, c.action, c.kept, c.want)
+			}
+			if res.WorstCode() != 0 {
+				t.Errorf("a kept directive is not a failure: WorstCode = %d", res.WorstCode())
+			}
+			got, body, _ := a.Get(tk.ID)
+			if got.Status != c.want {
+				t.Errorf("status = %q, want %q", got.Status, c.want)
+			}
+			if c.want == "done" && got.Closed == nil {
+				t.Errorf("a task left in done must keep its closed stamp: %+v", got)
+			}
+			if !strings.Contains(body, c.annotate) {
+				t.Errorf("body should record %q, got %q", c.annotate, body)
+			}
+
+			// The re-run of the same event writes nothing and still says why.
+			again, err := a.ApplyDirectives(text, "x#1", c.mode, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if o := again.Outcomes[0]; o.Action != "skipped" || o.Kept != c.kept || o.Note != "" {
+				t.Errorf("re-run outcome = %+v; want skipped, kept %q, no note", o, c.kept)
+			}
+		})
+	}
+}

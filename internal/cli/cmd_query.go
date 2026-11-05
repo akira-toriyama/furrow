@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 	"github.com/spf13/cobra"
 )
 
@@ -201,9 +201,10 @@ func newLsCmd() *cobra.Command {
 func addQueryFlag(cmd *cobra.Command, p *[]string) {
 	cmd.Flags().StringArrayVarP(p, "query", "q", nil,
 		"typed query (GH-Projects style): field:value, comma=OR, -=NOT, has:/no:, "+
-			"is:actionable|blocked|stale|open|closed|draft|unfiled|overdue, "+
+			"is:actionable|blocked|stale|open|closed|draft|unfiled|unlaned|overdue, "+
 			"ordinals+dates with >=,<,.. (updated:>=-2w), graph epic:/anchor:/depends-on:/blocks:/descendant-of:/ancestor-of:, "+
-			"free text over title, checklist, refs and body; ANDs with the other filters; repeated -q ANDs the queries")
+			"free text over title, checklist, refs and body; quote a value as '…' or \"…\" to keep spaces, commas and colons "+
+			"(the other quote char may sit inside; there is no escape); ANDs with the other filters; repeated -q ANDs the queries")
 }
 
 // parseDateBound parses a --since/--until value: a bare YYYY-MM-DD (interpreted

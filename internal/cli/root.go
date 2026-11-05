@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/version"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -211,8 +211,10 @@ func newRootCmd() *cobra.Command {
 			"accepted spellings of the add and the --rm); labels, repos and refs are\n" +
 			"`label|repo|ref <id> --add/--rm`. The prose writes — `note`, `edit --body`\n" +
 			"/ `--body-file`, `done --note`, `attach`, `apply`'s annotation — append to or\n" +
-			"replace the body AND advance `updated`; a hand edit of bodies/<id>.md does\n" +
-			"neither, which is what lint's reconcile-gap reads.\n\n" +
+			"replace the body AND advance `updated` whenever they write (a replacement\n" +
+			"equal to the stored body, or an annotation already present, writes\n" +
+			"nothing); a hand edit of bodies/<id>.md never advances it, which is what\n" +
+			"lint's reconcile-gap reads.\n\n" +
 			"Exit codes: 0 ok (an empty query result is still 0) · 1 a specifically requested\n" +
 			"id was not found (e.g. show <id>) or `furrow doctor` found problems (kind\n" +
 			"doctor-unhealthy) · 2 bad usage / validation (fix the args, do\n" +
@@ -228,7 +230,7 @@ func newRootCmd() *cobra.Command {
 			"emits {before, after, changed}, and the report-shaped commands (rm, archive,\n" +
 			"tidy, upgrade, apply, migrate) emit ONE object whatever they took. A mutation\n" +
 			"that changes nothing leaves `updated` alone — an idempotent retry writes no\n" +
-			"shard — while the prose writes above always advance it.\n\n" +
+			"shard — and the prose writes above advance it exactly when they write.\n\n" +
 			"Destructive operations preview unless --yes — the one list: archive, rm,\n" +
 			"epic rm, tidy, upgrade, migrate, a day move on `epic set --anchor` (it\n" +
 			"re-dates every follower), and a -q/-l/-r selection on done/move/set. rm\n" +

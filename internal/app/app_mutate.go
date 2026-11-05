@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // moveOne moves one task and returns the series report a close produces when
@@ -25,7 +25,7 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 		return nil, nil, err
 	}
 	var rep *RepeatReport
-	var succ *pendingSuccessor
+	var succ *pendingOccurrence
 	now := a.Clock.Now()
 	saved, err := a.mutateInPostAt(idx, id, now, func(t *core.Task) error {
 		r, s, rerr := a.planRepeat(idx, t, t.Status, lane, now, nil)
@@ -39,7 +39,7 @@ func (a *App) moveOne(id, lane string) (*core.Task, *RepeatReport, error) {
 		a.applyLane(idx, t, lane, now)
 		return nil
 	}, func(ix *core.Index) error {
-		return a.flushSuccessors(ix, []*pendingSuccessor{succ})
+		return a.flushOccurrences(ix, []*pendingOccurrence{succ})
 	})
 	if err != nil {
 		return nil, nil, err
@@ -244,8 +244,8 @@ func (a *App) Retitle(id, title string) (*core.Task, error) {
 // matching add. A non-empty body whose first non-blank line is not an H1 is
 // returned unchanged: the title then lives only in the shard, with nothing to
 // keep in sync. The one line allowed ABOVE the heading is a generated
-// occurrence's `previous: [[id]]` back-link (successorBody puts it on line 1),
-// otherwise every successor of a repeating task would keep its stale heading
+// occurrence's `previous: [[id]]` back-link (occurrenceBody puts it on line 1),
+// otherwise every occurrence of a repeating task would keep its stale heading
 // through a retitle. Operates on LF-delimited markdown (furrow's on-disk form).
 func retitleHeading(body, title string) (string, bool) {
 	want := "# " + title
@@ -255,7 +255,7 @@ func retitleHeading(body, title string) (string, bool) {
 	lines := strings.Split(body, "\n")
 	for i, ln := range lines {
 		if strings.TrimSpace(ln) == "" || bodyLinkLine.MatchString(ln) {
-			continue // skip leading blank lines and a successor's back-link before the heading
+			continue // skip leading blank lines and an occurrence's back-link before the heading
 		}
 		if !strings.HasPrefix(ln, "# ") {
 			return body, false // first real line isn't an H1 — leave the body alone
@@ -462,8 +462,10 @@ func (a *App) mutateInPostAt(idx *core.Index, id string, now time.Time, fn func(
 // and on a shared board each retry was one more commit for everyone to sync.
 //
 // The paths that write PROSE (note, done --note, a body replacement) stamp
-// unconditionally and deliberately: the body is the task's content but lives
-// outside the shard, so its bytes can never show up in this comparison.
+// inside fn, deliberately: the body is the task's content but lives outside
+// the shard, so its bytes can never show up in this comparison. A note always
+// writes; a replacement equal to the stored body writes nothing and so stamps
+// nothing.
 func (a *App) stampIfChanged(t *core.Task, before []byte) error {
 	return a.stampIfChangedAt(t, before, a.Clock.Now())
 }

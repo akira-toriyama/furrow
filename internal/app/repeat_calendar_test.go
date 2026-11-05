@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // A bare-date series promises DAYS, so a close settles the whole local day of
@@ -88,7 +88,7 @@ func TestACloseSettlesTheWholeDayOfABareDateSeries(t *testing.T) {
 }
 
 // The regression no single-close test can see: under the instant rule, one
-// afternoon-late close of a bare-date daily minted a successor due that same
+// afternoon-late close of a bare-date daily minted an occurrence due that same
 // night, which the next afternoon's close was late for again — late forever,
 // with a due-overdue error each day. Settling the day heals the chain after
 // the one late close.
@@ -133,14 +133,14 @@ func TestAChainOfAfternoonClosesIsOnTimeAfterOneLateDay(t *testing.T) {
 	_ = task
 }
 
-// TestSuccessorInheritsTheEpicEvenWhenItIsClosed pins the membership half of the
+// TestOccurrenceInheritsTheEpicEvenWhenItIsClosed pins the membership half of the
 // inheritance, the half v10 shipped with no coverage at all, and the loop it
-// creates. The successor stays in the box whatever state the box is in —
+// creates. The occurrence stays in the box whatever state the box is in —
 // dropping it for a CLOSED one would trade lint's epic-closed WARN for an
 // epic-required ERROR — so `epic done`'s disclosure (EpicOpenMembers) is what
 // makes the loop visible, and re-filing ONCE is what ends it: every later
 // occurrence inherits the new box.
-func TestSuccessorInheritsTheEpicEvenWhenItIsClosed(t *testing.T) {
+func TestOccurrenceInheritsTheEpicEvenWhenItIsClosed(t *testing.T) {
 	a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
 	eid := mustEpic(t, a, "box", EpicAddOpts{})
 	pred := mustAddRepeating(t, a, "水やり", "2026-03-01", "daily", AddOpts{Epic: eid})
@@ -153,17 +153,17 @@ func TestSuccessorInheritsTheEpicEvenWhenItIsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rep == nil || rep.Created == nil {
-		t.Fatalf("no successor reported: %+v", rep)
+		t.Fatalf("no occurrence reported: %+v", rep)
 	}
 	succ := other(t, a, closed.ID)
 	if succ.Epic != eid {
-		t.Fatalf("successor epic = %q, want %q — the box's state is not a filing decision", succ.Epic, eid)
+		t.Fatalf("occurrence epic = %q, want %q — the box's state is not a filing decision", succ.Epic, eid)
 	}
 	// The warn does not accumulate, it MOVES: the closed occurrence is terminal
 	// and drops out, the fresh one takes its place under the same closed box.
 	left := a.EpicOpenMembers(eid)
 	if len(left) != 1 || left[0].ID != succ.ID || left[0].Repeat == "" {
-		t.Fatalf("open members after the close = %+v, want only the live successor %s carrying the rule", left, succ.ID)
+		t.Fatalf("open members after the close = %+v, want only the live occurrence %s carrying the rule", left, succ.ID)
 	}
 
 	// Re-filing once carries the whole series, which is why the disclosure spells
@@ -177,7 +177,7 @@ func TestSuccessorInheritsTheEpicEvenWhenItIsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rep2 == nil || rep2.Created == nil {
-		t.Fatalf("no successor after the second close: %+v", rep2)
+		t.Fatalf("no occurrence after the second close: %+v", rep2)
 	}
 	next, _, err := a.Get(*rep2.Created)
 	if err != nil {
@@ -218,8 +218,16 @@ func TestRepeatWarningsSayTheAnchorIsOffTheLattice(t *testing.T) {
 	// `monthly on 31` anchored on the 15th is both at once: it skips the short
 	// months AND does not land on its own anchor.
 	both := mustAddRepeating(t, a, "両方", "2026-03-15", "monthly on 31", AddOpts{})
-	if ws := a.RepeatWarnings(both); len(ws) != 2 {
+	ws = a.RepeatWarnings(both)
+	if len(ws) != 2 {
 		t.Errorf("RepeatWarnings = %q, want the skip note and the off-lattice note", ws)
+	}
+	// Bare messages: the stderr `note: ` is the CLI's framing, and --json
+	// carries the string as returned.
+	for _, w := range ws {
+		if strings.HasPrefix(w, "note:") {
+			t.Errorf("RepeatWarnings carries the stderr framing: %q", w)
+		}
 	}
 }
 
@@ -256,7 +264,7 @@ func TestAnOffLatticeAnchorSpendsOneOccurrenceMoreThanTheCount(t *testing.T) {
 			t.Fatalf("close %d ended the series early: %+v", i+1, rep)
 		}
 		if got := rep.Due.In(jst).Format("2006-01-02"); got != want[i] {
-			t.Errorf("successor %d due %s, want %s", i+1, got, want[i])
+			t.Errorf("occurrence %d due %s, want %s", i+1, got, want[i])
 		}
 		next, _, gerr := a.Get(*rep.Created)
 		if gerr != nil {
@@ -282,10 +290,10 @@ func santiago(t *testing.T) *time.Location {
 	return loc
 }
 
-// A `weekly on sun` chore was promised for a SATURDAY: the successor's day came
+// A `weekly on sun` chore was promised for a SATURDAY: the occurrence's day came
 // off a grid that had shifted at the transition, and a weekday rule produces no
 // duplicate to notice it by — the board simply said the wrong day.
-func TestSuccessorKeepsItsWeekdayAcrossADayWithNoLocalMidnight(t *testing.T) {
+func TestOccurrenceKeepsItsWeekdayAcrossADayWithNoLocalMidnight(t *testing.T) {
 	loc := santiago(t)
 	// 2027-09-05 is the Sunday Santiago has no midnight on; this close is on
 	// time, on the Sunday before it.
@@ -297,11 +305,11 @@ func TestSuccessorKeepsItsWeekdayAcrossADayWithNoLocalMidnight(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rep == nil || rep.Due == nil {
-		t.Fatalf("no successor reported: %+v", rep)
+		t.Fatalf("no occurrence reported: %+v", rep)
 	}
 	got := rep.Due.In(loc)
 	if got.Format("2006-01-02 15:04:05") != "2027-09-05 23:59:59" {
-		t.Errorf("successor due = %s (%s), want 2027-09-05 23:59:59 (Sunday)", got.Format(time.RFC3339), got.Weekday())
+		t.Errorf("occurrence due = %s (%s), want 2027-09-05 23:59:59 (Sunday)", got.Format(time.RFC3339), got.Weekday())
 	}
 }
 
@@ -321,13 +329,13 @@ func TestLateCloseCountsTheDayWithNoLocalMidnight(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rep == nil || rep.Due == nil {
-		t.Fatalf("no successor reported: %+v", rep)
+		t.Fatalf("no occurrence reported: %+v", rep)
 	}
 	if rep.Skipped != 4 {
 		t.Errorf("skipped = %d, want 4 (5..8 September, the 5th included)", rep.Skipped)
 	}
 	if got := rep.Due.In(loc).Format("2006-01-02 15:04:05"); got != "2027-09-10 23:59:59" {
-		t.Errorf("successor due = %s, want 2027-09-10 23:59:59", got)
+		t.Errorf("occurrence due = %s, want 2027-09-10 23:59:59", got)
 	}
 }
 

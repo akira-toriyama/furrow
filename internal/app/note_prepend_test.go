@@ -6,7 +6,7 @@ import (
 )
 
 // prependedBody is the one placement rule behind `note --prepend`: after the
-// H1 heading when the first real line is one (blank lines and a successor's
+// H1 heading when the first real line is one (blank lines and an occurrence's
 // back-link may sit above it), else at the very top; exactly one blank line on
 // each side of the new paragraph; the rest of the body byte-for-byte.
 func TestPrependedBodyPlacement(t *testing.T) {

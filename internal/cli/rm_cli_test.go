@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/app"
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // rm previews by default, deletes shard + body with --yes, and its --json is
@@ -165,7 +165,7 @@ func TestRmRepeatingSaysSeriesEnds(t *testing.T) {
 		"repeat: " + id + " carries a series",
 		"FREQ=DAILY",
 		"due 2030-0",
-		"removing it ends the series; no successor is minted",
+		"removing it ends the series; no next occurrence is minted",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("preview does not say %q:\n%s", want, out)
@@ -179,7 +179,7 @@ func TestRmRepeatingSaysSeriesEnds(t *testing.T) {
 	for _, want := range []string{
 		"repeat: " + id + " carried a series",
 		"FREQ=DAILY",
-		"the series ended; no successor was minted",
+		"the series ended; no next occurrence was minted",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("apply does not say %q:\n%s", want, out)

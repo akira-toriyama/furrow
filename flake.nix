@@ -27,7 +27,7 @@
         # holds the pushed tag to it at release time and check-readme-parity.sh
         # holds README's pin to it, so `nix run/install` never reports a stale
         # version (audit F9).
-        version = "9.0.1";
+        version = "10.0.0";
         # The nix store src has no .git, so version.Resolve's VCS-stamp fallback
         # finds nothing; stamp Commit explicitly from the flake's own revision
         # (dirtyRev when the tree is uncommitted) so `furrow version` isn't blank.
@@ -41,8 +41,8 @@
           vendorHash = "sha256-q1MluBvjwUU0wPihVlBH/axg0jZqnXgU+kqfVIpL3RY=";
           ldflags = [
             "-s" "-w"
-            "-X github.com/akira-toriyama/furrow/v9/internal/version.Version=${version}"
-            "-X github.com/akira-toriyama/furrow/v9/internal/version.Commit=${rev}"
+            "-X github.com/akira-toriyama/furrow/v10/internal/version.Version=${version}"
+            "-X github.com/akira-toriyama/furrow/v10/internal/version.Commit=${rev}"
           ];
           subPackages = [ "cmd/furrow" ];
           meta = with pkgs.lib; {

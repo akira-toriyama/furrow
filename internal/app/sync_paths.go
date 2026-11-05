@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
-	"github.com/akira-toriyama/furrow/v9/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/gitrepo"
 )
 
 // partitionSync splits the dirty .furrow paths into what the auto-commit should

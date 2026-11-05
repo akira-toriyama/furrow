@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // `furrow rm` / `furrow epic rm` — withdrawing a filing.
@@ -75,15 +75,18 @@ type References struct {
 	// `anchor` names it) — a second pointer from task to box, severed like
 	// membership: the pointer is dropped, the due stays where it is.
 	Followers []MemberRef `json:"followers"`
+	// Successors are the boxes declaring a target epic as what opens after
+	// them (their `successor` field, v12) — From the declarer, To the target.
+	Successors []DepEdge `json:"successors"`
 }
 
 func newReferences() References {
-	return References{Deps: []DepEdge{}, Links: []LinkRef{}, Members: []MemberRef{}, EpicDeps: []DepEdge{}, Followers: []MemberRef{}}
+	return References{Deps: []DepEdge{}, Links: []LinkRef{}, Members: []MemberRef{}, EpicDeps: []DepEdge{}, Followers: []MemberRef{}, Successors: []DepEdge{}}
 }
 
 // Empty reports whether nothing references the targets.
 func (r References) Empty() bool {
-	return len(r.Deps)+len(r.Links)+len(r.Members)+len(r.EpicDeps)+len(r.Followers) == 0
+	return len(r.Deps)+len(r.Links)+len(r.Members)+len(r.EpicDeps)+len(r.Followers)+len(r.Successors) == 0
 }
 
 // Summary is the one-line human rendering the refusal message carries.
@@ -119,6 +122,9 @@ func (r References) Summary() string {
 			ids = append(ids, m.Task)
 		}
 		parts = append(parts, fmt.Sprintf("%d follower(s) of its anchor: %s", n, strings.Join(ids, ", ")))
+	}
+	if n := len(r.Successors); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d successor declaration(s) from %s", n, strings.Join(uniqueFrom(r.Successors), ", ")))
 	}
 	return strings.Join(parts, "; ")
 }
@@ -264,8 +270,9 @@ func (a *App) RemoveTasks(ids []string, o RemoveOpts) (*RemoveTasksReport, error
 // holds — resolving ref like every
 // epic command (exact id, unique prefix, unique title substring). Its
 // references are its members (the `epic` field of each), the followers of its
-// day (the `anchor` field of each), the boxes whose deps name it, and the live
-// [[e-id]] links in any body but its own.
+// day (the `anchor` field of each), the boxes whose deps name it, the boxes
+// declaring it as their successor, and the live [[e-id]] links in any body but
+// its own.
 func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 	id, err := a.ResolveEpic(ref)
 	if err != nil {
@@ -302,6 +309,9 @@ func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 		}
 		if slices.Contains(epics[i].Deps, id) {
 			refs.EpicDeps = append(refs.EpicDeps, DepEdge{From: epics[i].ID, To: id})
+		}
+		if epics[i].Successor == id {
+			refs.Successors = append(refs.Successors, DepEdge{From: epics[i].ID, To: id})
 		}
 	}
 	linkRe := core.LinkPattern(a.Cfg.EpicIDPrefix)
@@ -345,11 +355,15 @@ func (a *App) RemoveEpic(ref string, o RemoveOpts) (*RemoveEpicReport, error) {
 		return nil, err
 	}
 	for i := range epics {
-		if epics[i].ID == id || !slices.Contains(epics[i].Deps, id) {
+		e := &epics[i]
+		if e.ID == id || (!slices.Contains(e.Deps, id) && e.Successor != id) {
 			continue
 		}
-		epics[i].Deps = without(epics[i].Deps, targetSet)
-		if err := a.saveEpic(&epics[i]); err != nil {
+		e.Deps = without(e.Deps, targetSet)
+		if e.Successor == id {
+			e.Successor = ""
+		}
+		if err := a.saveEpic(e); err != nil {
 			return nil, err
 		}
 	}
@@ -456,6 +470,11 @@ func (a *App) guardReferenceOwners(idx *core.Index, epics []core.Epic, refs Refe
 		}
 	}
 	for _, d := range refs.EpicDeps {
+		if err := guardOwner(d.From); err != nil {
+			return err
+		}
+	}
+	for _, d := range refs.Successors {
 		if err := guardOwner(d.From); err != nil {
 			return err
 		}

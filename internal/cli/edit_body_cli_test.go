@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akira-toriyama/furrow/v9/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // parseEnvelope decodes a single {before,after,changed,...} mutation envelope.
@@ -142,5 +142,44 @@ func TestEditBodyStaleReadGuard(t *testing.T) {
 	env := parseEnvelope(t, out)
 	if _, ok := env["stale_read"]; !ok {
 		t.Errorf("a mismatched --expect-updated must surface stale_read:\n%s", out)
+	}
+}
+
+// TestEditBodyUnchangedIsANoOp covers t-3zyn: writing back the stored body (an
+// unchanged $EDITOR buffer, here with the extra trailing newline an editor
+// adds) writes nothing. The envelope reports it the way a no-op `label` /
+// `repo --add` does — changed [] and `updated` unmoved — and omits
+// replaced_bytes, which counts bytes actually written; the human line names it.
+func TestEditBodyUnchangedIsANoOp(t *testing.T) {
+	initStore(t)
+	tid := addTask(t, "same task")
+	ageTaskDays(t, tid, 3)
+	eid := addEpic(t, "same box")
+	for _, id := range []string{tid, eid} {
+		seeded := readBody(t, id)
+		out, code := runIn(t, seeded+"\n\n", "--json", "edit", id, "--body", "-")
+		if code != 0 {
+			t.Fatalf("%s: edit --body exit = %d:\n%s", id, code, out)
+		}
+		env := parseEnvelope(t, out)
+		if rb, ok := env["replaced_bytes"]; ok {
+			t.Errorf("%s: an unchanged body wrote nothing, yet replaced_bytes = %v:\n%s", id, rb, out)
+		}
+		if ch, ok := env["changed"].([]any); !ok || len(ch) != 0 {
+			t.Errorf("%s: changed = %v, want []", id, env["changed"])
+		}
+		before, _ := env["before"].(map[string]any)
+		after, _ := env["after"].(map[string]any)
+		if before == nil || after == nil || before["updated"] != after["updated"] {
+			t.Errorf("%s: updated must not move on an unchanged body:\n%s", id, out)
+		}
+		if got := readBody(t, id); got != seeded {
+			t.Errorf("%s: body = %q, want the stored %q", id, got, seeded)
+		}
+
+		human, code := runIn(t, seeded, "edit", id, "--body", "-")
+		if code != 0 || !strings.HasPrefix(human, "unchanged "+id+" ") {
+			t.Errorf("%s: human line = %q (exit %d), want it to start %q", id, human, code, "unchanged "+id)
+		}
 	}
 }
