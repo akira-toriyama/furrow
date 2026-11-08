@@ -16,8 +16,8 @@ const (
 	RevisitNoRepo      = "no_repo"      // repos is empty — the task is a draft awaiting a repo
 	// The EPIC signals are about a box, not a task: they need the member
 	// index, so RevisitReasons (pure, per-task) does not compute them — the app
-	// layer does. They live here so the `furrow revisit --json` reason vocabulary
-	// has one home.
+	// layer does (App.RevisitEpics, read as `furrow revisit --boxes`). They live
+	// here so the `furrow revisit --json` reason vocabulary has one home.
 	RevisitEpicAllDone = "epic_all_done" // an open epic whose members are ALL done — consider closing it
 	RevisitEpicStuck   = "epic_stuck"    // an open epic with open members but not one actionable (standing boxes exempt — that is an inbox's resting state)
 	// RevisitEpicStale is the ACTIVE-epic-untouched signal. It is measured in DAYS

@@ -52,6 +52,20 @@ func TestRevisitLineRendering(t *testing.T) {
 	if got := revisitLine(app.RevisitSummary{Stale: []string{"t-3"}}, "board"); !strings.Contains(got, "(board)") {
 		t.Errorf("board tag missing: %q", got)
 	}
+	// Box signals get their own line pointing at the read that lists boxes —
+	// never the task read, which would come back empty (t-3f5t).
+	got = revisitLine(app.RevisitSummary{DepDone: []string{"t-1"}, EpicStuck: []string{"e-1", "e-2"}, EpicAllDone: []string{"e-3"}}, "furrow")
+	want = "revisit: 1 dep_done, 0 stale (furrow) — furrow revisit\nboxes: 1 epic_all_done, 2 epic_stuck (furrow) — furrow revisit --boxes"
+	if got != want {
+		t.Errorf("revisitLine with boxes = %q, want %q", got, want)
+	}
+	// Only box signals: no task line at all (a `0 dep_done, 0 stale` nudge
+	// would point at an empty read).
+	got = revisitLine(app.RevisitSummary{EpicReviewDue: []string{"e-9"}}, "board")
+	want = "boxes: 1 epic_review_due (board) — furrow revisit --boxes"
+	if got != want {
+		t.Errorf("box-only revisitLine = %q, want %q", got, want)
+	}
 }
 
 // TestRevisitScopeLabelAndSyncScope is a direct unit test for the two scope

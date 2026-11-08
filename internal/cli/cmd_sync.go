@@ -43,29 +43,47 @@ func revisitScopeLabel(a *app.App) string {
 	return repo
 }
 
-// revisitLine is the one human line appended after the sync summary. Empty
-// summary -> "" (the caller prints nothing, so a clean board stays quiet). When
-// a repo's human review has gone stale it appends an unreviewed nudge (the
-// oldest few, so the line stays short).
+// revisitLine is the human nudge appended after the sync summary: one line per
+// entity, each ending with the read that LISTS what it counted — the task
+// signals point at `furrow revisit`, the box signals at `furrow revisit
+// --boxes`, a lapsed review clock at `furrow review`. A line prints only when
+// its own counts are non-zero (a nudge whose read would come back empty teaches
+// the reader to skip it: the box counts once rode the task line and pointed
+// at a read that never listed a box, t-3f5t). Empty summary -> "" (the caller
+// prints nothing, so a clean board stays quiet).
 func revisitLine(sum app.RevisitSummary, scope string) string {
 	if sum.Empty() {
 		return ""
 	}
-	line := fmt.Sprintf("revisit: %d dep_done, %d stale", len(sum.DepDone), len(sum.Stale))
-	// Epic counts ride the same line, but only when non-zero — so a board with no
-	// boxes prints a short nudge. EVERY epic key the summary counts must appear
-	// here: Empty() gates this line, so a key counted but not rendered would
-	// print a nudge that names nothing (measured with epic_review_due pre-fix).
+	var lines []string
+	if len(sum.DepDone) > 0 || len(sum.Stale) > 0 {
+		lines = append(lines, fmt.Sprintf("revisit: %d dep_done, %d stale (%s) — furrow revisit", len(sum.DepDone), len(sum.Stale), scope))
+	}
+	if b := boxCountsLine(sum); b != "" {
+		lines = append(lines, fmt.Sprintf("%s (%s) — furrow revisit --boxes", b, scope))
+	}
+	if len(sum.Unreviewed) > 0 {
+		lines = append(lines, unreviewedLine(sum.Unreviewed))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// boxCountsLine is the `boxes: N epic_stuck, M epic_all_done` counts, in the
+// summary's key order and only the non-zero keys; "" when no box signal fired.
+// EVERY epic key the summary counts must be in epicRevisitCounts: Empty() gates
+// the nudges, so a key counted but not rendered would print a nudge that names
+// nothing (measured with epic_review_due pre-fix).
+func boxCountsLine(sum app.RevisitSummary) string {
+	var parts []string
 	for _, c := range epicRevisitCounts(sum) {
 		if len(c.ids) > 0 {
-			line += fmt.Sprintf(", %d %s", len(c.ids), c.label)
+			parts = append(parts, fmt.Sprintf("%d %s", len(c.ids), c.label))
 		}
 	}
-	line += fmt.Sprintf(" (%s) — furrow revisit", scope)
-	if len(sum.Unreviewed) > 0 {
-		line += "\n" + unreviewedLine(sum.Unreviewed)
+	if len(parts) == 0 {
+		return ""
 	}
-	return line
+	return "boxes: " + strings.Join(parts, ", ")
 }
 
 // unreviewedLine renders the per-repo staleness nudge: "⚠ N repo(s) unreviewed:
@@ -198,7 +216,9 @@ func newSyncCmd() *cobra.Command {
 			"— and prints as one \"incoming:\" line, so the CI that closed your in-progress\n" +
 			"task surfaces in the sync that pulled it, not on a later re-read. After a successful sync it also reports a\n" +
 			"revisit summary (repo-scoped counts of tasks with a done dependency or gone\n" +
-			"stale, plus any repos whose human review is older than [review].stale_after_days\n" +
+			"stale — `furrow revisit` lists them; of boxes with a signal, on a `boxes:`\n" +
+			"line — `furrow revisit --boxes` lists them; plus any repos whose human\n" +
+			"review is older than [review].stale_after_days\n" +
 			"— a human runs `furrow review <repo>`, an agent sweep uses --by agent) so\n" +
 			"freshly-pulled staleness surfaces in the loop;\n" +
 			"the JSON gains a \"revisit\" key when non-empty. Two more ride-alongs share\n" +

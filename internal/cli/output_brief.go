@@ -13,11 +13,11 @@ import (
 )
 
 // epicRevisitCounts is the revisit summary's five epic-level keys, labeled as
-// the JSON spells them, in one order for every renderer. EVERY epic key the
-// summary counts must appear here: Empty() gates the nudges that print these,
-// so a key counted but not rendered prints a nudge that names nothing
-// (measured with epic_review_due pre-fix). Two renderers carried the list,
-// one without that warning (t-3tq4).
+// the JSON spells them, in one order for every renderer (boxCountsLine is the
+// one line built from it). EVERY epic key the summary counts must appear here:
+// Empty() gates the nudges that print these, so a key counted but not rendered
+// prints a nudge that names nothing (measured with epic_review_due pre-fix).
+// Two renderers carried the list, one without that warning (t-3tq4).
 func epicRevisitCounts(sum app.RevisitSummary) []struct {
 	label string
 	ids   []string
@@ -276,16 +276,17 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 		row := withTags(fmt.Sprintf("  · %s  %-12s %s", it.Task.ID, it.Task.Status, it.Task.Title), repeatTag(&it.Task))
 		fmt.Fprintf(out, "%s  ← %s\n", row, strings.Join(it.BlockedBy, ", "))
 	}
+	// The same split as sync's nudge (revisitLine): the task counts on the
+	// `revisit:` line, the box counts on their own `boxes:` line — each the
+	// count of what the read of that name lists.
 	fmt.Fprintf(out, "revisit: %d dep_done, %d stale", len(b.Revisit.DepDone), len(b.Revisit.Stale))
-	for _, c := range epicRevisitCounts(b.Revisit) {
-		if n := len(c.ids); n > 0 {
-			fmt.Fprintf(out, ", %d %s", n, c.label)
-		}
-	}
 	if n := len(b.Revisit.Unreviewed); n > 0 {
 		fmt.Fprintf(out, ", %d unreviewed", n)
 	}
 	fmt.Fprintln(out)
+	if l := boxCountsLine(b.Revisit); l != "" {
+		fmt.Fprintln(out, l)
+	}
 	fmt.Fprintf(out, "drafts: %d\n", b.Drafts)
 	if b.Lint.Errors > 0 {
 		fmt.Fprintln(out, lintLine(b.Lint))

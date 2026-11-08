@@ -141,8 +141,8 @@ point the script at `furrow brief --json | jq -c '.revisit | .unreviewed // [], 
 the digest, then `furrow review <repo>` after the review to reset the clock.
 
 The box signals and the repo clock ride on the summary `sync` and `brief`
-return, not on the per-task `furrow revisit` (README → *Command notes*,
-`revisit`). A STANDING box's review runs on the same clock: `furrow review
+return; `furrow revisit --boxes` lists the flagged boxes (README → *Command
+notes*, `revisit`). A STANDING box's review runs on the same clock: `furrow review
 <epic-ref>` stamps it, and `epic_review_due` fires when that review lapses —
 fold the boxes into the same weekly ritual as the repos.
 
