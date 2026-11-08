@@ -170,9 +170,13 @@ func (a *App) EpicDepList(ref string) (EpicDepListResult, error) {
 
 // findEpic is the one exact-id lookup over a loaded epic set — nil when no box
 // carries id. Every caller that holds the set as a slice and needs ONE box goes
-// through here (a map build is for callers that look up many).
+// through here (a map build is for callers that look up many). On a duplicate
+// id (lint's epic-duplicate-id; two shards, one id) the LATER shard wins, the
+// same copy core.EpicsByID hands out, so `epic show` and `epic activate` never
+// act on different copies. The eight loops this replaced split four-and-four
+// between first and last (t-bt89's refutation pass caught the split).
 func findEpic(epics []core.Epic, id string) *core.Epic {
-	for i := range epics {
+	for i := len(epics) - 1; i >= 0; i-- {
 		if epics[i].ID == id {
 			return &epics[i]
 		}
