@@ -79,6 +79,7 @@ func statusPorcelain(t *testing.T, git, dir string) string {
 // A mutating command on an opted-in board produces exactly one commit carrying
 // the shard AND the new (untracked) body, and leaves the board clean.
 func TestAutoCommitAddOneCommit(t *testing.T) {
+	t.Parallel()
 	git, dir := setupACBoard(t)
 	before := headCount(t, git, dir)
 
@@ -118,6 +119,7 @@ func TestAutoCommitAddOneCommit(t *testing.T) {
 // A board that did NOT opt in never commits: the mutation lands on disk and is
 // left uncommitted (byte-identical to furrow's pre-autocommit behavior).
 func TestAutoCommitDisabledNeverCommits(t *testing.T) {
+	t.Parallel()
 	git, dir := setupACBoard(t)
 	before := headCount(t, git, dir)
 
@@ -140,6 +142,7 @@ func TestAutoCommitDisabledNeverCommits(t *testing.T) {
 // A `note` on an existing (tracked) task commits its OWN body prose —
 // the whole point of the feature on a standalone board.
 func TestAutoCommitNoteCommitsOwnBody(t *testing.T) {
+	t.Parallel()
 	git, dir := setupACBoard(t)
 
 	a := openAC(t, dir)
@@ -168,6 +171,7 @@ func TestAutoCommitNoteCommitsOwnBody(t *testing.T) {
 // A co-located operator's untouched tracked-dirty body is NEVER swept in: this
 // session's shard commit leaves the other session's WIP prose pending.
 func TestAutoCommitLeavesOtherSessionBody(t *testing.T) {
+	t.Parallel()
 	git, dir := setupACBoard(t)
 
 	a := openAC(t, dir)
@@ -211,6 +215,7 @@ func TestAutoCommitLeavesOtherSessionBody(t *testing.T) {
 // side and additions on the other; the whole move must land in ONE commit so the
 // backup is never a half-move.
 func TestAutoCommitArchiveSingleCommit(t *testing.T) {
+	t.Parallel()
 	git, dir := setupACBoard(t)
 
 	a := openAC(t, dir)
@@ -258,6 +263,7 @@ func TestAutoCommitArchiveSingleCommit(t *testing.T) {
 // leaves the mutation on disk (a non-zero exit would make an agent retry and
 // double-apply).
 func TestAutoCommitNonGitWarnsNoError(t *testing.T) {
+	t.Parallel()
 	gittest.GitOrSkip(t)
 	dir := t.TempDir() // no `git init`
 	if _, err := Init(dir); err != nil {
@@ -281,6 +287,7 @@ func TestAutoCommitNonGitWarnsNoError(t *testing.T) {
 // (the standalone recipe's classic slip — forgetting `git init` in the board's
 // own dir), autocommit refuses rather than dropping board commits into that repo.
 func TestAutoCommitOwnershipGuardSkipsEnclosingRepo(t *testing.T) {
+	t.Parallel()
 	git := gittest.GitOrSkip(t)
 	dir := t.TempDir()
 	gittest.RunGit(t, git, dir, "init", "-q", "-b", "main") // enclosing repo at dir
@@ -311,6 +318,7 @@ func TestAutoCommitOwnershipGuardSkipsEnclosingRepo(t *testing.T) {
 // A clean tree (e.g. a `set` that changed no bytes) is a silent no-op: no
 // commit, no warning.
 func TestAutoCommitCleanTreeSilent(t *testing.T) {
+	t.Parallel()
 	git, dir := setupACBoard(t)
 	before := headCount(t, git, dir)
 
@@ -330,6 +338,7 @@ func TestAutoCommitCleanTreeSilent(t *testing.T) {
 // A body carrying conflict markers is refused (best-effort: warn + skip that one
 // body, still commit the rest) — a published commit cannot be un-published.
 func TestAutoCommitSkipsConflictMarkerBody(t *testing.T) {
+	t.Parallel()
 	git, dir := setupACBoard(t)
 
 	a := openAC(t, dir)

@@ -28,6 +28,7 @@ import (
 // test is not about. That is how the test flaked on macOS CI (t-gsf3): it
 // passed only while every stamp shared one second.
 func TestSyncUnionMergesConcurrentBodyAppends(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 
 	a := openBoard(t, cloneA)

@@ -22,6 +22,7 @@ func findIncoming(changes []IncomingChange, id string) *IncomingChange {
 // setupClones harness): the report reads the pre-pull..post-pull tree diff,
 // which no memstore can fake.
 func TestSyncReportsIncomingChanges(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 
 	a := openBoard(t, cloneA)
@@ -124,6 +125,7 @@ func TestClassifyIncomingEdit(t *testing.T) {
 // copy, and reporting it as archived pointed the reader at an unarchive with
 // nothing to restore (t-k0g9).
 func TestSyncIncomingTellsArchivedFromRemoved(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 	a := openBoard(t, cloneA)
 	kept, err := a.Add("to archive", AddOpts{})

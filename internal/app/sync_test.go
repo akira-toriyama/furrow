@@ -18,6 +18,18 @@ import (
 
 // These are the real-git two-clone e2e tests for `furrow sync`: what sync
 // promises is git's own behavior, so nothing here stubs git.
+//
+// The real-git tests of the sync, autocommit and board-git families call
+// t.Parallel: each owns its clones under t.TempDir and the process env is
+// pinned once by TestMain, so they share nothing — and serial they were 44s
+// of the package's 55s. Within those families, a test that mutates
+// process-wide state stays serial: t.Setenv (also via testutil.UserConfig),
+// a time.Local or defaultConcurrentWait swap. The serial phase completes —
+// Cleanup included — before any parallel test resumes, so the parallel tests
+// see the pinned env; marking one of those tests parallel would panic
+// (Setenv) or race silently (the global swaps). The package's other real-git
+// tests (gitorigin, global_*, store_marker: tens of milliseconds each) are
+// simply not marked — nothing to gain.
 
 // setupClones builds origin (bare) + clone A (board initialized and pushed) +
 // clone B (cloned after, so it already has the board).
@@ -59,6 +71,7 @@ func openBoard(t *testing.T, dir string) *App {
 // The happy path: adds on both machines converge through sync with no
 // conflict — the payoff of per-task shards.
 func TestSyncTwoClonesConverge(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 
 	a := openBoard(t, cloneA)
@@ -105,6 +118,7 @@ func TestSyncTwoClonesConverge(t *testing.T) {
 // sha still HEAD"). Pinned because a field observation (t-08gb) blamed exactly
 // this path for a committed=false misreport.
 func TestSyncCommittedTrueWhenPullRewritesTheCommit(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 
 	// A pushes first, so B's sync will find the remote ahead of its base.
@@ -133,6 +147,7 @@ func TestSyncCommittedTrueWhenPullRewritesTheCommit(t *testing.T) {
 // rebase conflict, aborts automatically (no conflict markers on the board, the
 // local sync commit survives), and reports sync-conflict + the paths.
 func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB := setupClones(t)
 
 	// A seeds one shared task and pushes it.
@@ -201,6 +216,7 @@ func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
 // Pre-flight: outside a git repo, sync is a validation error (exit 2) and the
 // progress object still comes back (all false).
 func TestSyncOutsideGitIsValidation(t *testing.T) {
+	t.Parallel()
 	gittest.GitOrSkip(t)
 	dir := t.TempDir()
 	if _, err := Init(dir); err != nil {
@@ -221,6 +237,7 @@ func TestSyncOutsideGitIsValidation(t *testing.T) {
 
 // Pre-flight: a repo already mid-merge is refused before sync touches anything.
 func TestSyncRefusesMidMerge(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 
 	// Manufacture an unresolved merge in clone A on a plain file.
@@ -280,6 +297,7 @@ func startStuckRebase(t *testing.T, git, dir string) {
 // so sync retries it out; if it never clears, the residual failure is retryable
 // (exit 3, id sync-busy) — NOT a validation error (exit 2 = do not retry).
 func TestSyncRebaseBusyIsRetryableNotValidation(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	startStuckRebase(t, git, cloneA)
 
@@ -306,6 +324,7 @@ func TestSyncRebaseBusyIsRetryableNotValidation(t *testing.T) {
 // while machine-written shards and brand-new bodies still flow, and -b names the
 // explicit opt-in. This is the fix for the shared-board WIP-sweep accident.
 func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 
 	a := openBoard(t, cloneA)
@@ -386,6 +405,7 @@ func TestSyncScopesBodiesToPreventForeignSweep(t *testing.T) {
 // board repo has closed its v1-acceptance window. Either is a latent exit-3 for
 // every sync once a commit-msg hook lands on a board repo.
 func TestSyncDefaultMessageGrammar(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	if _, err := a.Add("x", AddOpts{}); err != nil {
@@ -402,6 +422,7 @@ func TestSyncDefaultMessageGrammar(t *testing.T) {
 
 // --message overrides the default auto-commit message.
 func TestSyncMessageOverride(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	if _, err := a.Add("x", AddOpts{}); err != nil {
@@ -422,6 +443,7 @@ func TestSyncMessageOverride(t *testing.T) {
 // "git fetch: (no output)" from a killed subprocess. The progress object still
 // reports how far the sync got.
 func TestSyncInterruptedByCancelledContext(t *testing.T) {
+	t.Parallel()
 	_, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	if _, err := a.Add("work", AddOpts{}); err != nil {
@@ -449,6 +471,7 @@ func TestSyncInterruptedByCancelledContext(t *testing.T) {
 // The allowlist leaves them in the working tree and disclosures ride in
 // foreign_files + the summary line (t-4dgc pinned all three shapes).
 func TestSyncSkipsForeignFilesInStore(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	t1, err := a.Add("task one", AddOpts{})
@@ -542,6 +565,7 @@ func startConflictedCherryPick(t *testing.T, git, dir string) {
 }
 
 func TestSyncRefusesMidCherryPickAndStagesNothing(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	startConflictedCherryPick(t, git, cloneA)
 	// A board mutation the sync would want to commit (new, untracked files —
@@ -606,6 +630,7 @@ func TestSyncRefusesMidCherryPickAndStagesNothing(t *testing.T) {
 // The unattended path has the same pre-flight: a mutation during someone's
 // cherry-pick must not stage the board into it — autocommit warns and skips.
 func TestAutoCommitSkipsMidOperation(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	startConflictedCherryPick(t, git, cloneA)
 
@@ -634,6 +659,7 @@ func TestAutoCommitSkipsMidOperation(t *testing.T) {
 // exactly what a plain sync left unpublished). A co-located operator's hand
 // edit must still stay pending in the same sync.
 func TestSyncPublishesJournaledBodiesButNotHandEdits(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB := setupClones(t)
 
 	a := openBoard(t, cloneA)
@@ -704,6 +730,7 @@ func TestSyncPublishesJournaledBodiesButNotHandEdits(t *testing.T) {
 // must fall out of the journal instead of being re-committed forever; a clean
 // tree clears the journal outright.
 func TestSyncJournalDrainsOnCleanTree(t *testing.T) {
+	t.Parallel()
 	_, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	t1, err := a.Add("one", AddOpts{})
@@ -738,6 +765,7 @@ func TestSyncJournalDrainsOnCleanTree(t *testing.T) {
 // to --oneline — and -m does not suppress it: the writer nobody remembers
 // launching is exactly the one that must stamp itself.
 func TestSyncCommitCarriesAttributionTrailer(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	if _, err := a.Add("x", AddOpts{}); err != nil {
@@ -802,6 +830,7 @@ func TestMachineSyncPathSkipsStagingFiles(t *testing.T) {
 // rebuild that empties the store) killed every later sync with "pathspec did
 // not match any files" — the rebuild of furrow-test hit it on 2026-09-24.
 func TestSyncCommitsDeletedShards(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	task, err := a.Add("removed, deletion left unstaged", AddOpts{})

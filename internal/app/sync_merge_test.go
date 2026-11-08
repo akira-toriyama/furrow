@@ -67,6 +67,7 @@ func shardBytes(t *testing.T, dir, id string) []byte {
 // is not the resolver's to merge: sync reports sync-conflict with that path,
 // and the aborted rebase leaves the local edit in place.
 func TestSyncReportsANonShardConflictWithItsPath(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 	appendConfig := func(dir, line string) {
 		t.Helper()
@@ -103,6 +104,7 @@ func TestSyncReportsANonShardConflictWithItsPath(t *testing.T) {
 }
 
 func TestSyncMergesShardsWrittenInDifferentFields(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 
 	// The bot closes the task on A and pushes; the session ticks the checklist
@@ -182,6 +184,7 @@ func TestSyncMergesShardsWrittenInDifferentFields(t *testing.T) {
 // Several unpushed local commits touching the same shard stop the rebase once
 // per commit; the resolver finishes every stop and reports the shard once.
 func TestSyncMergesAcrossSeveralLocalCommits(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 
 	if _, err := boardAt(t, cloneA, t1).Done(id); err != nil {
@@ -230,6 +233,7 @@ func TestSyncMergesAcrossSeveralLocalCommits(t *testing.T) {
 // equals the upstream, so the replayed commit is empty and must be skipped,
 // not refused by `rebase --continue`.
 func TestSyncSkipsLocalCommitTheUpstreamAlreadyCarries(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 	three := 3
 	if _, err := boardAt(t, cloneA, t2).SetValue(id, &three); err != nil {
@@ -265,6 +269,7 @@ func TestSyncSkipsLocalCommitTheUpstreamAlreadyCarries(t *testing.T) {
 // Both sides closed the task (the PR footer's apply and a session's `done`):
 // the merge keeps the first close and the sync goes through.
 func TestSyncMergesDoubleClose(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 	if _, err := boardAt(t, cloneA, t1).Done(id); err != nil {
 		t.Fatal(err)
@@ -299,6 +304,7 @@ func TestSyncMergesDoubleClose(t *testing.T) {
 // aborts, restores the board, and now names the field in details.fields; a
 // mergeable shard in the same stop is NOT half-applied.
 func TestSyncConflictNamesTheDisagreeingFields(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 	other, err := boardAt(t, cloneA, t1).Add("other", AddOpts{})
 	if err != nil {
@@ -430,6 +436,7 @@ func TestShardKindOf(t *testing.T) {
 // occurrence), so it must stay a conflict — review of #451 found the first cut
 // merging it and pushing both occurrences.
 func TestSyncDoubleCloseOfRepeatingTaskStaysAConflict(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 	t1 := time.Date(2026, 10, 5, 4, 47, 41, 0, time.UTC)
 	a := boardAt(t, cloneA, t1)
@@ -471,6 +478,7 @@ func TestSyncDoubleCloseOfRepeatingTaskStaysAConflict(t *testing.T) {
 // very first pick): the report is git's own failure, not "conflicts", the
 // board is restored, and conflict stays false.
 func TestSyncFirstStopWithoutConflictReportsTheGitFailure(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 	three := 3
 	if _, err := boardAt(t, cloneA, t1).SetValue(id, &three); err != nil {
@@ -514,6 +522,7 @@ func TestSyncFirstStopWithoutConflictReportsTheGitFailure(t *testing.T) {
 // An operator's commit.cleanup=verbatim must not leak git's conflict template
 // into the continued commit's message.
 func TestSyncContinueStripsTheCommitTemplate(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 	gittest.RunGit(t, git, cloneB, "config", "commit.cleanup", "verbatim")
 	if _, err := boardAt(t, cloneA, t1).Done(id); err != nil {
@@ -542,6 +551,7 @@ func TestSyncContinueStripsTheCommitTemplate(t *testing.T) {
 // A cancelled context must not make a half-rebased board look finished: the
 // resolver names the cancellation so sync aborts the rebase.
 func TestResolveShardConflictsNamesACancelledContext(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 	if _, err := boardAt(t, cloneA, t1).Done(id); err != nil {
 		t.Fatal(err)
@@ -583,6 +593,7 @@ func TestResolveShardConflictsNamesACancelledContext(t *testing.T) {
 // merge must carry both: refusing it left both clones unable to sync, since
 // `review` can only press "now" and neither could take the other's value.
 func TestSyncMergesBothSidesFirstReviewOfARepo(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 	t1 := time.Date(2026, 10, 5, 4, 47, 41, 0, time.UTC)
 	if _, err := boardAt(t, cloneA, t1).ReviewRepo("me/z", false); err != nil {
@@ -613,6 +624,7 @@ func TestSyncMergesBothSidesFirstReviewOfARepo(t *testing.T) {
 // Both clones review the same task: a review changes no content, so two of
 // them are one review — the later — and never a conflict.
 func TestSyncMergesConcurrentReviewsOfATask(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 	if _, err := boardAt(t, cloneA, t1).ReviewTask(id); err != nil {
 		t.Fatal(err)
@@ -645,6 +657,7 @@ func TestSyncMergesConcurrentReviewsOfATask(t *testing.T) {
 // must stop the sync as a `closed` conflict, exactly as a close racing an edit
 // of an already repeating task does.
 func TestSyncMakingATaskRepeatVersusClosingItIsAConflict(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB, id, t1, t2 := mergeClones(t)
 	due, daily := "2026-10-06", "daily"
 	if _, _, _, err := boardAt(t, cloneA, t1).Set(id, SetOpts{Due: &due, Repeat: &daily}); err != nil {

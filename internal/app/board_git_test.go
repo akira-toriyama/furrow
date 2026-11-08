@@ -14,6 +14,7 @@ import (
 // into the closed state vocabulary instead of an error. Each row here is one of
 // those outcomes, driven through real git.
 func TestBoardGitStates(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 
 	g := openBoard(t, cloneA).Board().Git
@@ -70,6 +71,7 @@ func TestBoardGitNotARepo(t *testing.T) {
 // classifies — so without the explicit gate this reported `unavailable`, i.e.
 // "the probe broke", for a board that is merely new.
 func TestBoardGitFreshRepoIsNoUpstreamNotUnavailable(t *testing.T) {
+	t.Parallel()
 	git := gittest.GitOrSkip(t)
 	dir := t.TempDir()
 	if _, err := Init(dir); err != nil {
@@ -93,6 +95,7 @@ func TestBoardGitFreshRepoIsNoUpstreamNotUnavailable(t *testing.T) {
 // file is not the board's business, and on a repo-local board every ordinary
 // source edit would otherwise report the BOARD as dirty.
 func TestBoardGitDirtyIsScopedToTheStore(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	if err := os.WriteFile(filepath.Join(cloneA, "notes.md"), []byte("private\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -109,6 +112,7 @@ func TestBoardGitDirtyIsScopedToTheStore(t *testing.T) {
 // `<repo>/sub/.furrow` (or a FURROW_DIR of any name) matched nothing under the
 // constant and reported Dirty:false forever (t-3t68).
 func TestBoardGitDirtySeesANestedStore(t *testing.T) {
+	t.Parallel()
 	git := gittest.GitOrSkip(t)
 	dir := t.TempDir()
 	gittest.RunGit(t, git, dir, "init", "-q", "-b", "main")

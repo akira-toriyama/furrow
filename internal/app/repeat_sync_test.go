@@ -13,6 +13,7 @@ import (
 // ever became a modification instead, a plain sync would publish a task whose
 // prose exists on exactly one machine.
 func TestSyncPublishesAGeneratedOccurrenceWithItsBody(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 
 	a := openBoard(t, cloneA)

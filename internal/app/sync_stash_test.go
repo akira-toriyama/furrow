@@ -35,6 +35,7 @@ func seedTrackedFile(t *testing.T, git, cloneA, cloneB, name, content string) {
 // (Note the failure is NOT on the abort path, where the tree is restored to
 // exactly the state the stash was taken from and the re-apply cannot conflict.)
 func TestSyncReportsStrandedAutostashOnCleanRebase(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB := setupClones(t)
 	seedTrackedFile(t, git, cloneA, cloneB, "notes.md", "base\n")
 
@@ -97,6 +98,7 @@ func TestSyncReportsStrandedAutostashOnCleanRebase(t *testing.T) {
 // the index now fails — with git's own opaque wording, which mentions neither the
 // stash nor the fix. The next sync must not just relay that.
 func TestSyncPreflightExplainsUnmergedIndex(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB := setupClones(t)
 	seedTrackedFile(t, git, cloneA, cloneB, "notes.md", "base\n")
 
@@ -139,6 +141,7 @@ func TestSyncPreflightExplainsUnmergedIndex(t *testing.T) {
 // reported on every sync — it sits there silently until someone pops it — but it
 // does not fail a sync that did nothing wrong.
 func TestSyncReportsPreExistingAutostashWithoutFailing(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB := setupClones(t)
 	seedTrackedFile(t, git, cloneA, cloneB, "notes.md", "base\n")
 
@@ -170,6 +173,7 @@ func TestSyncReportsPreExistingAutostashWithoutFailing(t *testing.T) {
 // An operator's own `git stash` is theirs — sync must not nag about it. Only the
 // entries git stored on furrow's behalf (subject "autostash") are furrow's to report.
 func TestSyncIgnoresOperatorsOwnStash(t *testing.T) {
+	t.Parallel()
 	git, cloneA, cloneB := setupClones(t)
 	seedTrackedFile(t, git, cloneA, cloneB, "notes.md", "base\n")
 
@@ -196,6 +200,7 @@ func TestSyncIgnoresOperatorsOwnStash(t *testing.T) {
 // (git's failed re-apply writes the merge into the working tree), and the next sync
 // used to publish it — a commit cannot be un-published.
 func TestSyncRefusesToCommitBodyWithConflictMarkers(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	task, err := a.Add("a task whose body got half-merged", AddOpts{})
@@ -235,6 +240,7 @@ func TestSyncRefusesToCommitBodyWithConflictMarkers(t *testing.T) {
 // The same guard on the OTHER path a body reaches a commit: a brand-new (untracked)
 // body is auto-committed without any opt-in, so it must be checked too.
 func TestSyncRefusesToCommitNewBodyWithConflictMarkers(t *testing.T) {
+	t.Parallel()
 	_, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	task, err := a.Add("never synced", AddOpts{})
