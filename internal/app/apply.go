@@ -22,11 +22,11 @@ const (
 // opened. It is overridable (--open-lane) for non-default lane schemes.
 const DefaultOpenLane = "in-progress"
 
-// Directive is one `SetStatus-task:` line parsed from PR/commit text. Link is
+// directive is one `SetStatus-task:` line parsed from PR/commit text. Link is
 // the first token verbatim (a body-file URL or a bare id); ID is the task id
 // pulled out of it; Lane is the optional merge-target lane (empty = annotate
 // only, the GTD "just referenced" case).
-type Directive struct {
+type directive struct {
 	Link string
 	ID   string
 	Lane string
@@ -45,14 +45,14 @@ var (
 // parseDirectives extracts every SetStatus-task directive from arbitrary text
 // (a PR body, a commit message). The id is taken from a /bodies/<id>.md link,
 // else the first token verbatim (a bare id). Lines with no payload are skipped.
-func parseDirectives(text string) []Directive {
-	var out []Directive
+func parseDirectives(text string) []directive {
+	var out []directive
 	for _, m := range directiveRe.FindAllStringSubmatch(text, -1) {
 		fields := strings.Fields(m[1])
 		if len(fields) == 0 {
 			continue
 		}
-		d := Directive{Link: fields[0], Raw: strings.TrimSpace(m[0])}
+		d := directive{Link: fields[0], Raw: strings.TrimSpace(m[0])}
 		if len(fields) >= 2 {
 			d.Lane = fields[1]
 		}
@@ -226,7 +226,7 @@ func (a *App) applyDirectives(text, ref string, mode ApplyMode, openLane string,
 // an IO failure (which aborts the whole run); per-directive validation problems
 // are recorded in out, not returned. With dryRun the same decisions are made
 // and recorded, but no store write happens — the outcome is the projection.
-func (a *App) applyOne(out *ApplyOutcome, t *core.Task, d Directive, ref string, mode ApplyMode, openLane string, dryRun bool) error {
+func (a *App) applyOne(out *ApplyOutcome, t *core.Task, d directive, ref string, mode ApplyMode, openLane string, dryRun bool) error {
 	target := ""
 	switch {
 	case d.Lane == "":
