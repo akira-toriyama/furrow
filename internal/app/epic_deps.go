@@ -214,8 +214,8 @@ func anchorRefFor(epics []core.Epic, id string) *AnchorRef {
 }
 
 // epicRefFor resolves a MEMBERSHIP id (a task's Epic) against the loaded epic
-// set — resolveEpicRef's slice-input twin, for the one caller that holds epics
-// as a slice and needs exactly one lookup. A membership naming no box yields
+// set (findEpic, then epicRefOf) for the one caller that holds epics as a
+// slice and needs exactly one lookup. A membership naming no box yields
 // nil rather than a blank-titled ref: `show` falls back to printing the bare id,
 // and lint's epic-missing owns calling that a defect.
 func epicRefFor(epics []core.Epic, id string) *EpicRef {

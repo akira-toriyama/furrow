@@ -396,84 +396,14 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 	// applied best-effort so a re-run does not shift them twice.
 	followersSaved := false
 	before, after, err := a.mutateEpicStamping(ref, false, func(e *core.Epic) error {
-		if o.Title != nil {
-			t := core.NormalizeTitle(*o.Title)
-			if strings.TrimSpace(t) == "" {
-				return core.Validationf(e.ID, "epic title must not be empty")
-			}
-			e.Title = t
+		if err := applyEpicFields(e, o, epicFieldRefs{successor: successor, epics: epics, universe: universe, addRepos: addRepos}); err != nil {
+			return err
 		}
-		if o.Goal != nil {
-			e.Goal = strings.TrimSpace(*o.Goal)
-		}
-		if o.Standing != nil {
-			e.Standing = *o.Standing
-		}
-		if o.Pinned != nil {
-			e.Pinned = *o.Pinned
-		}
-		if o.ClearSuccessor {
-			e.Successor = ""
-		}
-		if o.Successor != nil {
-			if err := checkSuccessor(e, successor, epics); err != nil {
-				return err
-			}
-			e.Successor = successor
-		}
-		// Judged AFTER both flags landed, so `--standing --clear-successor`
-		// is one coherent write and `--standing --successor` one refusal — and
-		// only when one of them was passed: a shard a merge left in this state
-		// is lint's (epic-successor-standing), not every later edit's.
-		if (o.Standing != nil || o.Successor != nil) && e.Standing && e.Successor != "" {
-			return core.Validationf(e.ID, "epic %s is standing — a standing box never closes, so nothing can be declared to open after it; clear the declaration (`--clear-successor`) or the flag (`--standing=false`)", e.ID)
-		}
-		if len(o.SetMeta) > 0 && e.Meta == nil {
-			e.Meta = map[string]string{}
-		}
-		for k, v := range o.SetMeta {
-			if strings.TrimSpace(k) == "" {
-				return core.Validationf(e.ID, "--meta key must not be empty")
-			}
-			e.Meta[k] = v
-		}
-		for _, k := range o.RmMeta {
-			delete(e.Meta, k)
-		}
-		// A removal resolves like an addition (the task side's Rerepo resolves
-		// both; this one took --rm-repo raw, so `--rm-repo widget` shed nothing
-		// and `--rm-repo nope` said nothing, exit 0 — t-8sgn), against the
-		// board's universe PLUS the box's own repos: the repo being shed may be
-		// one no task carries — a cross-repo box's extra, or the wrong scope
-		// fallback CLAUDE.md sends here to shed — and the board universe alone
-		// would call its short name unknown.
-		rmRepos, err := resolveRepoArgs(o.RmRepos, e.ID, sortedUnion(universe, e.Repos))
+		p, err := a.applyEpicAnchor(idx, e, o)
 		if err != nil {
 			return err
 		}
-		// labelDelta is the task-side set editor; reusing it keeps add/remove
-		// semantics (and their edge cases) identical across the two entities.
-		e.Labels = labelDelta(e.Labels, o.AddLabels, o.RmLabels)
-		e.Repos = labelDelta(e.Repos, addRepos, rmRepos)
-		switch {
-		case o.ClearAnchor:
-			plan = newAnchorPlan(e.ID)
-			plan.From = e.Anchor
-			plan.Followers = a.anchorFollowers(idx, e.ID)
-			e.Anchor = ""
-		case o.Anchor != nil:
-			p, err := a.planAnchorIn(idx, e, *o.Anchor)
-			if err != nil {
-				return err
-			}
-			// The followers are writes too, judged by the session guard before
-			// the box lands — a refusal here saves nothing.
-			if err := a.guardRepos(e.ID, followerRepos(idx, p), ""); err != nil {
-				return err
-			}
-			plan = p
-			e.Anchor = p.To
-		}
+		plan = p
 		return nil
 	}, func() error {
 		if plan == nil || len(plan.Moves) == 0 {
@@ -494,6 +424,110 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 		return nil, nil, nil, err
 	}
 	return before, after, plan, nil
+}
+
+// epicFieldRefs is what EpicSet resolved before the mutate — against the whole
+// epic set and the board's repo universe, which the single-shard mutate never
+// loads — for applyEpicFields to apply.
+type epicFieldRefs struct {
+	successor string      // the resolved --successor ("" when not passed)
+	epics     []core.Epic // the loaded set, only when --successor was passed
+	universe  []string    // the repo universe, only when a repo flag was passed
+	addRepos  []string    // the resolved --add-repo
+}
+
+// applyEpicFields is the field half of EpicSet's mutate: title, goal, standing,
+// pinned, successor, meta, labels and repos, judged on the box alone (plus the
+// refs the caller resolved). The anchor is applyEpicAnchor's — it writes the
+// followers' index too.
+func applyEpicFields(e *core.Epic, o EpicSetOpts, refs epicFieldRefs) error {
+	if o.Title != nil {
+		t := core.NormalizeTitle(*o.Title)
+		if strings.TrimSpace(t) == "" {
+			return core.Validationf(e.ID, "epic title must not be empty")
+		}
+		e.Title = t
+	}
+	if o.Goal != nil {
+		e.Goal = strings.TrimSpace(*o.Goal)
+	}
+	if o.Standing != nil {
+		e.Standing = *o.Standing
+	}
+	if o.Pinned != nil {
+		e.Pinned = *o.Pinned
+	}
+	if o.ClearSuccessor {
+		e.Successor = ""
+	}
+	if o.Successor != nil {
+		if err := checkSuccessor(e, refs.successor, refs.epics); err != nil {
+			return err
+		}
+		e.Successor = refs.successor
+	}
+	// Judged AFTER both flags landed, so `--standing --clear-successor`
+	// is one coherent write and `--standing --successor` one refusal — and
+	// only when one of them was passed: a shard a merge left in this state
+	// is lint's (epic-successor-standing), not every later edit's.
+	if (o.Standing != nil || o.Successor != nil) && e.Standing && e.Successor != "" {
+		return core.Validationf(e.ID, "epic %s is standing — a standing box never closes, so nothing can be declared to open after it; clear the declaration (`--clear-successor`) or the flag (`--standing=false`)", e.ID)
+	}
+	if len(o.SetMeta) > 0 && e.Meta == nil {
+		e.Meta = map[string]string{}
+	}
+	for k, v := range o.SetMeta {
+		if strings.TrimSpace(k) == "" {
+			return core.Validationf(e.ID, "--meta key must not be empty")
+		}
+		e.Meta[k] = v
+	}
+	for _, k := range o.RmMeta {
+		delete(e.Meta, k)
+	}
+	// A removal resolves like an addition (the task side's Rerepo resolves
+	// both; this one took --rm-repo raw, so `--rm-repo widget` shed nothing
+	// and `--rm-repo nope` said nothing, exit 0 — t-8sgn), against the
+	// board's universe PLUS the box's own repos: the repo being shed may be
+	// one no task carries — a cross-repo box's extra, or the wrong scope
+	// fallback CLAUDE.md sends here to shed — and the board universe alone
+	// would call its short name unknown.
+	rmRepos, err := resolveRepoArgs(o.RmRepos, e.ID, sortedUnion(refs.universe, e.Repos))
+	if err != nil {
+		return err
+	}
+	// labelDelta is the task-side set editor; reusing it keeps add/remove
+	// semantics (and their edge cases) identical across the two entities.
+	e.Labels = labelDelta(e.Labels, o.AddLabels, o.RmLabels)
+	e.Repos = labelDelta(e.Repos, refs.addRepos, rmRepos)
+	return nil
+}
+
+// applyEpicAnchor is the anchor half of EpicSet's mutate: sets or clears the
+// box's day on e and returns the plan the followers' index write will apply
+// (nil when the write touches neither flag). idx is loaded only then.
+func (a *App) applyEpicAnchor(idx *core.Index, e *core.Epic, o EpicSetOpts) (*AnchorPlan, error) {
+	switch {
+	case o.ClearAnchor:
+		plan := newAnchorPlan(e.ID)
+		plan.From = e.Anchor
+		plan.Followers = a.anchorFollowers(idx, e.ID)
+		e.Anchor = ""
+		return plan, nil
+	case o.Anchor != nil:
+		p, err := a.planAnchorIn(idx, e, *o.Anchor)
+		if err != nil {
+			return nil, err
+		}
+		// The followers are writes too, judged by the session guard before
+		// the box lands — a refusal here saves nothing.
+		if err := a.guardRepos(e.ID, followerRepos(idx, p), ""); err != nil {
+			return nil, err
+		}
+		e.Anchor = p.To
+		return p, nil
+	}
+	return nil, nil
 }
 
 // checkSuccessor is the write-time judgment on declaring `successor` after e,

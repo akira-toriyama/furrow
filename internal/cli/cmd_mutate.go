@@ -1320,7 +1320,7 @@ func newSetCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&clearRepeat, "clear-repeat", false, "stop this task recurring (drops the rule and its anchor)")
 	cmd.Flags().StringVar(&anchorRef, "anchor", "", "make the due follow this epic's day (id, unique prefix, or unique title substring; the box must carry one): when the day moves, so does the due; needs a due, refused beside --repeat")
 	cmd.Flags().BoolVar(&clearAnchor, "clear-anchor", false, "stop the due following a box's day (the due stays)")
-	// Without this the rebind is silently discarded: applySet's switch puts
+	// Without this the rebind is silently discarded: applySetSeries's switch puts
 	// --clear-repeat first, so `--repeat X --clear-repeat` looked like it took.
 	cmd.MarkFlagsMutuallyExclusive("repeat", "clear-repeat")
 	cmd.MarkFlagsMutuallyExclusive("anchor", "clear-anchor")
