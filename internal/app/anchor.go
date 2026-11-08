@@ -64,12 +64,7 @@ func (a *App) PlanAnchor(ref, date string) (*AnchorPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	var e *core.Epic
-	for i := range epics {
-		if epics[i].ID == id {
-			e = &epics[i]
-		}
-	}
+	e := findEpic(epics, id)
 	if e == nil {
 		return nil, core.NotFound(id)
 	}
@@ -233,31 +228,21 @@ func (a *App) resolveAnchorRef(ref string, epics []core.Epic) (string, error) {
 		}
 		return "", err
 	}
-	for i := range epics {
-		if epics[i].ID != id {
-			continue
-		}
-		if epics[i].Anchor == "" {
-			return "", core.Validationf("", "epic %s has no anchor yet — give the box its day first: `furrow epic set %s --anchor <%s>`", id, id, core.AnchorSpelling)
-		}
-		return id, nil
+	e := findEpic(epics, id)
+	if e == nil {
+		return "", core.NotFound(id)
 	}
-	return "", core.NotFound(id)
+	if e.Anchor == "" {
+		return "", core.Validationf("", "epic %s has no anchor yet — give the box its day first: `furrow epic set %s --anchor <%s>`", id, id, core.AnchorSpelling)
+	}
+	return id, nil
 }
 
 // undatedAnchorErr is `--anchor` on a task that carries no due: a pointer
 // with nothing to move. Refused all-or-nothing like a batch miss, every
 // undated id in details.undated; subject is the task when there is exactly one.
 func undatedAnchorErr(undated []string, total int) *core.Error {
-	subject := ""
-	if total == 1 {
-		subject = undated[0]
-	}
-	return &core.Error{
-		Code: core.CodeValidation, Kind: core.KindValidation, Subject: subject,
-		Msg:     fmt.Sprintf("%d of %d task(s) carry no due to follow the anchor with — nothing was set; narrow the selection to dated tasks (-q has:due) or promise one in the same write (--due <date>)", len(undated), total),
-		Details: map[string]any{"undated": undated},
-	}
+	return refusedBatchErr(undated, total, "undated", "carry no due to follow the anchor with — nothing was set; narrow the selection to dated tasks (-q has:due) or promise one in the same write (--due <date>)")
 }
 
 // anchoredRepeatErr is `--repeat` on a task that FOLLOWS a box's day: the
@@ -265,28 +250,12 @@ func undatedAnchorErr(undated []string, total int) *core.Error {
 // (--clear-anchor), not the rule the caller just asked for. Ids in
 // details.anchored.
 func anchoredRepeatErr(anchored []string, total int) *core.Error {
-	subject := ""
-	if total == 1 {
-		subject = anchored[0]
-	}
-	return &core.Error{
-		Code: core.CodeValidation, Kind: core.KindValidation, Subject: subject,
-		Msg:     fmt.Sprintf("%d of %d task(s) follow a box's day (anchor), and a series follows its own repeat_anchor, not a box's — nothing was set; narrow the selection (-q no:anchor) or drop the pointer in the same write (--clear-anchor)", len(anchored), total),
-		Details: map[string]any{"anchored": anchored},
-	}
+	return refusedBatchErr(anchored, total, "anchored", "follow a box's day (anchor), and a series follows its own repeat_anchor, not a box's — nothing was set; narrow the selection (-q no:anchor) or drop the pointer in the same write (--clear-anchor)")
 }
 
 // repeatingAnchorErr is `--anchor` on a task that repeats: a series follows
 // its own repeat_anchor, and a box's day moving would shift this occurrence
 // alone. Same all-or-nothing shape, ids in details.repeating.
 func repeatingAnchorErr(repeating []string, total int) *core.Error {
-	subject := ""
-	if total == 1 {
-		subject = repeating[0]
-	}
-	return &core.Error{
-		Code: core.CodeValidation, Kind: core.KindValidation, Subject: subject,
-		Msg:     fmt.Sprintf("%d of %d task(s) repeat, and a series follows its own repeat_anchor, not a box's day — nothing was set; narrow the selection (-q no:repeat) or drop the rule in the same write (--clear-repeat)", len(repeating), total),
-		Details: map[string]any{"repeating": repeating},
-	}
+	return refusedBatchErr(repeating, total, "repeating", "repeat, and a series follows its own repeat_anchor, not a box's day — nothing was set; narrow the selection (-q no:repeat) or drop the rule in the same write (--clear-repeat)")
 }

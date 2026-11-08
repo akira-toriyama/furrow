@@ -57,12 +57,7 @@ func (a *App) EpicAddDeps(ref string, depRefs []string) (*core.Epic, *core.Epic,
 	if err != nil {
 		return nil, nil, err
 	}
-	var target *core.Epic
-	for i := range epics {
-		if epics[i].ID == id {
-			target = &epics[i]
-		}
-	}
+	target := findEpic(epics, id)
 	// resolveEpicIn only returns ids that exist, so target is never nil.
 	added := []string{}
 	for _, dr := range depRefs {
@@ -112,12 +107,7 @@ func (a *App) EpicRemoveDeps(ref string, depRefs []string) (*core.Epic, *core.Ep
 	if err != nil {
 		return nil, nil, err
 	}
-	var target *core.Epic
-	for i := range epics {
-		if epics[i].ID == id {
-			target = &epics[i]
-		}
-	}
+	target := findEpic(epics, id)
 	rm := make(map[string]bool, len(depRefs))
 	for _, dr := range depRefs {
 		dep := dr
@@ -163,7 +153,7 @@ func (a *App) EpicDepList(ref string) (EpicDepListResult, error) {
 	target := byID[id]
 	res := EpicDepListResult{ID: target.ID, Title: target.Title, DependsOn: []EpicRef{}, Blocks: []EpicRef{}}
 	for _, d := range target.Deps {
-		res.DependsOn = append(res.DependsOn, resolveEpicRef(byID, d))
+		res.DependsOn = append(res.DependsOn, epicRefOf(d, byID[d]))
 	}
 	var blockIDs []string
 	for i := range epics {
@@ -173,17 +163,32 @@ func (a *App) EpicDepList(ref string) (EpicDepListResult, error) {
 	}
 	sort.Strings(blockIDs)
 	for _, b := range blockIDs {
-		res.Blocks = append(res.Blocks, resolveEpicRef(byID, b))
+		res.Blocks = append(res.Blocks, epicRefOf(b, byID[b]))
 	}
 	return res, nil
 }
 
-// resolveEpicRef looks up id in the epic set, returning its id+title+state. A
-// dangling id yields the id alone, so the edge is still reported (faithful to
-// the shard) and lint's epic-dep-missing is the place that flags it.
-func resolveEpicRef(byID map[string]*core.Epic, id string) EpicRef {
-	e, ok := byID[id]
-	if !ok {
+// findEpic is the one exact-id lookup over a loaded epic set — nil when no box
+// carries id. Every caller that holds the set as a slice and needs ONE box goes
+// through here (a map build is for callers that look up many). On a duplicate
+// id (lint's epic-duplicate-id; two shards, one id) the LATER shard wins, the
+// same copy core.EpicsByID hands out, so `epic show` and `epic activate` never
+// act on different copies. The eight loops this replaced split four-and-four
+// between first and last (t-bt89's refutation pass caught the split).
+func findEpic(epics []core.Epic, id string) *core.Epic {
+	for i := len(epics) - 1; i >= 0; i-- {
+		if epics[i].ID == id {
+			return &epics[i]
+		}
+	}
+	return nil
+}
+
+// epicRefOf renders e as an edge endpoint (id+title+state). e is nil for a
+// dangling id, which yields the id alone, so the edge is still reported
+// (faithful to the shard) and lint's epic-dep-missing is the place that flags it.
+func epicRefOf(id string, e *core.Epic) EpicRef {
+	if e == nil {
 		return EpicRef{ID: id}
 	}
 	state := "open"
@@ -205,28 +210,25 @@ type AnchorRef struct {
 // epicRefFor's twin for the second pointer a task can carry. Nil when the id
 // names no box, so the renderer falls back to the bare id.
 func anchorRefFor(epics []core.Epic, id string) *AnchorRef {
-	for i := range epics {
-		if epics[i].ID == id {
-			r := resolveEpicRef(map[string]*core.Epic{id: &epics[i]}, id)
-			return &AnchorRef{EpicRef: r, Date: epics[i].Anchor}
-		}
+	e := findEpic(epics, id)
+	if e == nil {
+		return nil
 	}
-	return nil
+	return &AnchorRef{EpicRef: epicRefOf(id, e), Date: e.Anchor}
 }
 
 // epicRefFor resolves a MEMBERSHIP id (a task's Epic) against the loaded epic
-// set — resolveEpicRef's slice-input twin, for the one caller that holds epics
-// as a slice and needs exactly one lookup. A membership naming no box yields
+// set (findEpic, then epicRefOf) for the one caller that holds epics as a
+// slice and needs exactly one lookup. A membership naming no box yields
 // nil rather than a blank-titled ref: `show` falls back to printing the bare id,
 // and lint's epic-missing owns calling that a defect.
 func epicRefFor(epics []core.Epic, id string) *EpicRef {
-	for i := range epics {
-		if epics[i].ID == id {
-			r := resolveEpicRef(map[string]*core.Epic{id: &epics[i]}, id)
-			return &r
-		}
+	e := findEpic(epics, id)
+	if e == nil {
+		return nil
 	}
-	return nil
+	r := epicRefOf(id, e)
+	return &r
 }
 
 // openEpicDeps returns the deps of e that exist and are still OPEN — the
@@ -237,11 +239,8 @@ func epicRefFor(epics []core.Epic, id string) *EpicRef {
 func openEpicDeps(e *core.Epic, epics []core.Epic) []string {
 	var out []string
 	for _, d := range e.Deps {
-		for i := range epics {
-			if epics[i].ID == d && epics[i].IsOpen() {
-				out = append(out, d)
-				break
-			}
+		if dep := findEpic(epics, d); dep != nil && dep.IsOpen() {
+			out = append(out, d)
 		}
 	}
 	sort.Strings(out)

@@ -235,97 +235,14 @@ func (a *App) lintIndex(idx *core.Index, epics []core.Epic) []core.Problem {
 	// One pass over the task shards: collect the done set and flag per-shard
 	// findings on the way.
 	doneIDs := map[string]bool{}
-	for _, t := range idx.Tasks {
-		if p, ok := unknownKeyProblem(t.ID, "task shard "+core.TaskPath(t.ID), t.ExtraKeys()); ok {
-			ps = append(ps, p)
-		}
-		// A title with an interior control character (newline/tab/…) injects
-		// structure into the body's "# " heading and splits table rows. Add and
-		// retitle now normalize it, but a bulk import or a hand-edited shard can
-		// still slip one in — flag it (a `furrow retitle` normalizes it away).
-		if core.TitleHasControl(t.Title) {
-			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "control-char", ID: t.ID, Msg: "title contains a control character (newline/tab/etc.); `furrow retitle` will normalize it"})
-		}
-		// A blank entry in a set-valued field. Every mutating flag now refuses one
-		// (requireNonBlank), so a new one cannot be created — but an older binary
-		// wrote them freely (`set --add-label ""`, and any CSV trailing comma), and
-		// a blank sorts FIRST, so it leads every rendered label list. This is the
-		// backstop for what is already on disk; `furrow label <id> --rm ""`
-		// cannot clear it (that is now exit 2), so the message names the fix.
-		for _, f := range []struct {
-			field string
-			vals  []string
-		}{{"labels", t.Labels}, {"refs", t.Refs}, {"repos", t.Repos}, {"deps", t.Deps}} {
-			if hasBlank(f.vals) {
-				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "blank-entry", ID: t.ID, Msg: "an empty string in " + f.field + " (written before blanks were refused); remove it from the shard by hand"})
-			}
-		}
+	for i := range idx.Tasks {
+		t := &idx.Tasks[i]
 		if t.Status == a.Cfg.DoneLane {
 			doneIDs[t.ID] = true
-			// A done task with no closed timestamp is a zombie: `archive` skips it
-			// forever and its close date is lost. New ones can't be created (Add
-			// stamps, Move backfills); this catches pre-fix or hand-edited leaks.
-			if t.Closed == nil {
-				ps = append(ps, core.Problem{Severity: core.SevError, Code: "done-unclosed", ID: t.ID, Msg: "task is in the done lane but has no closed timestamp (a `furrow done` will backfill it)"})
-			}
-			// A closed task must not carry a live rule: the close CONSUMES it and
-			// hands it to the occurrence, which is the whole reason re-closing is
-			// idempotent. Two things break at once when one survives. planRepeat
-			// fires on the TRANSITION into the done lane, so the next
-			// reopen-then-close mints a SECOND occurrence and the series forks for
-			// good. And countRepeating counts open carriers only, so this task stops
-			// answering for repeat-no-timezone — one hand-edit turns an ERROR the
-			// board already had OFF. Every write path refuses the state (Set's
-			// end-state invariant, `add -s done --repeat`, planRepeat's consume), so
-			// only a shard furrow did not write can be here.
-			if t.Repeat != "" {
-				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-on-closed", ID: t.ID,
-					Msg: "is in the done lane but still carries the repeat rule its close should have handed to the next occurrence, so reopening and closing it would mint a second one — drop the rule with `furrow set " + t.ID + " --clear-repeat` if the next occurrence already exists, or reopen this task (`furrow move " + t.ID + " " + a.Cfg.DefaultLane + "`) if it is the live occurrence"})
-			}
 		}
-		// A rule furrow cannot expand ends the series in SILENCE: the close would
-		// refuse (no anchor) or hand out nothing, with the shard still claiming
-		// the task recurs. Only a hand-edit or a newer furrow's spelling can
-		// produce one, which is exactly why nothing else would catch it.
-		if t.Repeat != "" {
-			if t.Due == nil {
-				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
-					Msg: "carries a repeat rule with no due, so a close has no occurrence to advance from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
-			} else if t.RepeatAnchor == nil {
-				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
-					Msg: "carries a repeat rule with no repeat_anchor, so the series has no start to expand from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
-			} else if err := recur.Valid(t.Repeat, *t.RepeatAnchor, a.loc()); err != nil {
-				ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
-					Msg: err.Error() + " — closing this task would advance nothing; rebind with `furrow set " + t.ID + " --repeat <rule>` or drop it with `--clear-repeat`"})
-			}
-		} else if t.RepeatAnchor != nil {
-			// The published shard schema says the anchor is "Present iff repeat is",
-			// and an external reader (ridge) is entitled to believe it. Inside furrow
-			// the stray anchor is INERT — every reader short-circuits on an empty
-			// rule and bindRepeat re-derives the anchor from the due — so this is a
-			// broken promise, not a broken series: warn, not error.
-			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "repeat-orphan-anchor", ID: t.ID,
-				Msg: "carries a repeat_anchor with no repeat rule, which the shard schema says cannot happen (the anchor is present iff the rule is) — furrow ignores it and a rebind overwrites it, so clear it with `furrow set " + t.ID + " --clear-repeat`"})
-		}
+		ps = append(ps, a.lintTaskShard(t)...)
 	}
-	// A label that NAMES a repo (a full owner/repo, or a short name the board's
-	// repo universe resolves) is the repos-pivot leak resurfacing: a repo is a
-	// first-class field, not a tag. The read-side -l did-you-mean guard
-	// deliberately never second-guesses a label that EXISTS — so the moment one
-	// such label lands on one task, that guard goes quiet for the whole board
-	// (13 leaked instances rode that silence, 2026-07-26). This warn is where
-	// the "no repo-named labels" invariant actually lives; `add`/`set` stay
-	// permissive because a colliding tag can be legitimate and a hard refusal
-	// on the write path would ban it outright.
-	universe := repoUniverse(idx, a.BoardRepos)
-	for _, t := range idx.Tasks {
-		for _, l := range t.Labels {
-			if len(core.RepoMatches(l, universe)) > 0 {
-				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "repo-as-label", ID: t.ID,
-					Msg: fmt.Sprintf("label %q names a repo — repos are first-class, not tags (`furrow repo %s --add %s` then `furrow label %s --rm %s`)", l, t.ID, l, t.ID, l)})
-			}
-		}
-	}
+	ps = append(ps, a.lintRepoLabels(idx)...)
 	// Reconcile gaps (warn): a non-terminal task whose done dependency closed
 	// after the task was last touched. This is the structural backstop for
 	// reconcile-on-close — the always-on (hook/CI) twin of the `dep_done` revisit
@@ -358,6 +275,108 @@ func (a *App) lintIndex(idx *core.Index, epics []core.Epic) []core.Problem {
 	ps = append(ps, core.DueInversionProblems(idx, a.loc(), a.dueSkipLanes())...)
 	ps = append(ps, a.lintBoardRules(idx)...)
 	ps = append(ps, a.lintHygieneProblems(idx)...)
+	return ps
+}
+
+// lintTaskShard is the per-shard half of lintIndex: every finding judged from
+// one task's fields alone (unknown keys, a control character in the title, a
+// blank set entry, the done-lane and repeat-rule invariants). No cross-task
+// rule belongs here — those read the index and sit in lintIndex.
+func (a *App) lintTaskShard(t *core.Task) []core.Problem {
+	var ps []core.Problem
+	if p, ok := unknownKeyProblem(t.ID, "task shard "+core.TaskPath(t.ID), t.ExtraKeys()); ok {
+		ps = append(ps, p)
+	}
+	// A title with an interior control character (newline/tab/…) injects
+	// structure into the body's "# " heading and splits table rows. Add and
+	// retitle now normalize it, but a bulk import or a hand-edited shard can
+	// still slip one in — flag it (a `furrow retitle` normalizes it away).
+	if core.TitleHasControl(t.Title) {
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "control-char", ID: t.ID, Msg: "title contains a control character (newline/tab/etc.); `furrow retitle` will normalize it"})
+	}
+	// A blank entry in a set-valued field. Every mutating flag now refuses one
+	// (requireNonBlank), so a new one cannot be created — but an older binary
+	// wrote them freely (`set --add-label ""`, and any CSV trailing comma), and
+	// a blank sorts FIRST, so it leads every rendered label list. This is the
+	// backstop for what is already on disk; `furrow label <id> --rm ""`
+	// cannot clear it (that is now exit 2), so the message names the fix.
+	for _, f := range []struct {
+		field string
+		vals  []string
+	}{{"labels", t.Labels}, {"refs", t.Refs}, {"repos", t.Repos}, {"deps", t.Deps}} {
+		if hasBlank(f.vals) {
+			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "blank-entry", ID: t.ID, Msg: "an empty string in " + f.field + " (written before blanks were refused); remove it from the shard by hand"})
+		}
+	}
+	if t.Status == a.Cfg.DoneLane {
+		// A done task with no closed timestamp is a zombie: `archive` skips it
+		// forever and its close date is lost. New ones can't be created (Add
+		// stamps, Move backfills); this catches pre-fix or hand-edited leaks.
+		if t.Closed == nil {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "done-unclosed", ID: t.ID, Msg: "task is in the done lane but has no closed timestamp (a `furrow done` will backfill it)"})
+		}
+		// A closed task must not carry a live rule: the close CONSUMES it and
+		// hands it to the occurrence, which is the whole reason re-closing is
+		// idempotent. Two things break at once when one survives. planRepeat
+		// fires on the TRANSITION into the done lane, so the next
+		// reopen-then-close mints a SECOND occurrence and the series forks for
+		// good. And countRepeating counts open carriers only, so this task stops
+		// answering for repeat-no-timezone — one hand-edit turns an ERROR the
+		// board already had OFF. Every write path refuses the state (Set's
+		// end-state invariant, `add -s done --repeat`, planRepeat's consume), so
+		// only a shard furrow did not write can be here.
+		if t.Repeat != "" {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-on-closed", ID: t.ID,
+				Msg: "is in the done lane but still carries the repeat rule its close should have handed to the next occurrence, so reopening and closing it would mint a second one — drop the rule with `furrow set " + t.ID + " --clear-repeat` if the next occurrence already exists, or reopen this task (`furrow move " + t.ID + " " + a.Cfg.DefaultLane + "`) if it is the live occurrence"})
+		}
+	}
+	// A rule furrow cannot expand ends the series in SILENCE: the close would
+	// refuse (no anchor) or hand out nothing, with the shard still claiming
+	// the task recurs. Only a hand-edit or a newer furrow's spelling can
+	// produce one, which is exactly why nothing else would catch it.
+	if t.Repeat != "" {
+		if t.Due == nil {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
+				Msg: "carries a repeat rule with no due, so a close has no occurrence to advance from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
+		} else if t.RepeatAnchor == nil {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
+				Msg: "carries a repeat rule with no repeat_anchor, so the series has no start to expand from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
+		} else if err := recur.Valid(t.Repeat, *t.RepeatAnchor, a.loc()); err != nil {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
+				Msg: err.Error() + " — closing this task would advance nothing; rebind with `furrow set " + t.ID + " --repeat <rule>` or drop it with `--clear-repeat`"})
+		}
+	} else if t.RepeatAnchor != nil {
+		// The published shard schema says the anchor is "Present iff repeat is",
+		// and an external reader (ridge) is entitled to believe it. Inside furrow
+		// the stray anchor is INERT — every reader short-circuits on an empty
+		// rule and bindRepeat re-derives the anchor from the due — so this is a
+		// broken promise, not a broken series: warn, not error.
+		ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "repeat-orphan-anchor", ID: t.ID,
+			Msg: "carries a repeat_anchor with no repeat rule, which the shard schema says cannot happen (the anchor is present iff the rule is) — furrow ignores it and a rebind overwrites it, so clear it with `furrow set " + t.ID + " --clear-repeat`"})
+	}
+	return ps
+}
+
+// lintRepoLabels is repo-as-label (warn): a label that NAMES a repo (a full
+// owner/repo, or a short name the board's repo universe resolves) is the
+// repos-pivot leak resurfacing: a repo is a first-class field, not a tag. The
+// read-side -l did-you-mean guard deliberately never second-guesses a label
+// that EXISTS — so the moment one such label lands on one task, that guard
+// goes quiet for the whole board (13 leaked instances rode that silence,
+// 2026-07-26). This warn is where the "no repo-named labels" invariant
+// actually lives; `add`/`set` stay permissive because a colliding tag can be
+// legitimate and a hard refusal on the write path would ban it outright.
+func (a *App) lintRepoLabels(idx *core.Index) []core.Problem {
+	var ps []core.Problem
+	universe := repoUniverse(idx, a.BoardRepos)
+	for _, t := range idx.Tasks {
+		for _, l := range t.Labels {
+			if len(core.RepoMatches(l, universe)) > 0 {
+				ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "repo-as-label", ID: t.ID,
+					Msg: fmt.Sprintf("label %q names a repo — repos are first-class, not tags (`furrow repo %s --add %s` then `furrow label %s --rm %s`)", l, t.ID, l, t.ID, l)})
+			}
+		}
+	}
 	return ps
 }
 
@@ -572,7 +591,7 @@ func (a *App) lintBodyContent(hasTask, hasEpic map[string]bool, bodyIDs []string
 	// to the owning task id when the asset's "<id>-" prefix still names a live task
 	// (else the asset basename, so a leftover from a deleted task stays identifiable).
 	for _, as := range assets {
-		owner := assetOwner(as.Name, hasTask)
+		owner := assetOwnerIn(as.Name, hasTask)
 		if owner == "" {
 			owner = as.Name
 		}
@@ -845,19 +864,6 @@ func (a *App) lintArchive() ([]core.Problem, error) {
 			Msg: fmt.Sprintf("is in archive/ but in lane %q — an archive and a reopen crossed in a sync; `furrow unarchive %s` brings it back to the board, or `furrow unarchive %s` then `furrow done %s` if it is finished", t.Status, t.ID, t.ID, t.ID)})
 	}
 	return ps, nil
-}
-
-// assetOwner returns the task id that owns asset name — the id in taskIDs for
-// which name is "<id>-…" — or "" when none matches (a leftover asset whose task
-// is gone). Frozen ids can never be one another's "<id>-" prefix, so at most one
-// id matches; lint uses this to file an orphan/oversized finding under its task.
-func assetOwner(name string, taskIDs map[string]bool) string {
-	for id := range taskIDs {
-		if strings.HasPrefix(name, id+"-") {
-			return id
-		}
-	}
-	return ""
 }
 
 // unknownKeyProblem is the one wording for the three machine-written file kinds

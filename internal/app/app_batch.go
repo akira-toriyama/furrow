@@ -507,12 +507,6 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 // reads; now is the write's one instant (the lane's closed stamp and the
 // caller's updated stamp carry it alike).
 func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, anchor string, epic *string, now time.Time, reserved map[string]bool) ([]core.PriorityChange, *pendingOccurrence, *RepeatReport, error) {
-	var occurrence *pendingOccurrence
-	var report *RepeatReport
-	relRef, relBefore := o.Before, true
-	if relRef == "" {
-		relRef, relBefore = o.After, false
-	}
 	t, _ := idx.Find(id)
 	before, err := core.MarshalTask(t)
 	if err != nil {
@@ -522,21 +516,8 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 	// mutation, so a bad target aborts with nothing half-applied (the plan
 	// itself re-checks after the lane move, when id and ref must already
 	// agree).
-	if relRef != "" {
-		if relRef == id {
-			return nil, nil, nil, core.Validationf(id, "--before/--after must name a different task")
-		}
-		rt, ri := idx.Find(relRef)
-		if ri < 0 {
-			return nil, nil, nil, a.notFoundTask(relRef)
-		}
-		dest := t.Status
-		if o.Status != nil {
-			dest = *o.Status
-		}
-		if rt.Status != dest {
-			return nil, nil, nil, core.Validationf(id, "relative target %s is in lane %q, not the destination lane %q — relative order only exists within one lane", relRef, rt.Status, dest)
-		}
+	if err := a.checkRelativeTarget(idx, t, o); err != nil {
+		return nil, nil, nil, err
 	}
 	nextLabels := t.Labels
 	if len(o.AddLabels) > 0 || len(o.RmLabels) > 0 {
@@ -569,25 +550,9 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 		// drop means. Only the series advance waits until the end.
 		a.applyLane(idx, t, *o.Status, now)
 	}
-	var renumbered []core.PriorityChange
-	switch {
-	case o.Priority != nil:
-		t.Priority = *o.Priority
-		a.noteSharedPriority(idx, t)
-	case relRef != "":
-		target, changes, err := idx.PlanRelativePriority(id, relRef, relBefore, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if err := a.guardRespace(idx, changes); err != nil {
-			return nil, nil, nil, err
-		}
-		t.Priority = target
-		for _, c := range changes {
-			ct, _ := idx.Find(c.ID)
-			ct.Priority = c.To
-		}
-		renumbered = changes
+	renumbered, err := a.applySetPosition(idx, t, o)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	switch {
 	case o.ClearValue:
@@ -601,65 +566,11 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 	case o.Effort != nil:
 		t.Effort = cloneIntp(o.Effort)
 	}
-	switch {
-	case o.ClearDue:
-		// A due that is gone has nothing left to follow: the pointer goes with
-		// it rather than lingering as an anchor-undated warn.
-		t.Due = nil
-		t.Anchor = ""
-	case due != nil:
-		// The instant the CALLER resolved (resolveDue), not a fresh parse: a bulk
-		// set must stamp every task with the same promise, and `--due +1d` snoozes
-		// from now rather than from a stamp that may already be days in the past.
-		d := *due
-		t.Due = &d
-	case o.DueShift != nil:
-		// Per task, from ITS stamp — the one place the two due flags part ways.
-		if t.Due == nil {
-			return nil, nil, nil, undatedShiftErr([]string{id}, 1)
-		}
-		shifted, err := ShiftDue(*t.Due, *o.DueShift, a.loc())
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		t.Due = &shifted
+	if err := a.applySetDue(t, o, due); err != nil {
+		return nil, nil, nil, err
 	}
-	switch {
-	case o.ClearRepeat:
-		t.Repeat = ""
-		t.RepeatAnchor = nil
-	case o.Repeat != nil:
-		if err := a.bindRepeat(t.ID, t, *o.Repeat); err != nil {
-			return nil, nil, nil, err
-		}
-	}
-	// A repeating task's anchor is its due: dropping the date would leave the
-	// rule with nothing to expand from, so furrow refuses rather than silently
-	// ending the series or inventing a start.
-	if t.Repeat != "" && t.Due == nil {
-		return nil, nil, nil, core.Validationf(id, "task %s repeats, so it must keep a due date — drop the rule first with `furrow set %s --clear-repeat`", id, id)
-	}
-	switch {
-	case o.ClearAnchor:
-		t.Anchor = ""
-	case anchor != "":
-		t.Anchor = anchor
-	}
-	// The follower invariants, checked on the END state so every ordering of
-	// the flags in one write is judged the same: a pointer needs a due to move
-	// and cannot sit beside a rule (a series follows its own repeat_anchor).
-	// The batch path names every offender up front (SetMany); this is the
-	// single-id refusal and the batch's per-task backstop.
-	if t.Anchor != "" && t.Due == nil {
-		return nil, nil, nil, undatedAnchorErr([]string{id}, 1)
-	}
-	if t.Anchor != "" && t.Repeat != "" {
-		if o.Repeat != nil && o.Anchor == nil {
-			// This write bound the rule onto an existing follower: the pointer
-			// is the thing to drop, not the rule just asked for.
-			return nil, nil, nil, anchoredRepeatErr([]string{id}, 1)
-		}
-		return nil, nil, nil, repeatingAnchorErr([]string{id}, 1)
+	if err := a.applySetSeries(t, o, anchor); err != nil {
+		return nil, nil, nil, err
 	}
 	if epic != nil {
 		// Resolved ONCE by the caller (resolveEpicOpt) — a batch used to read
@@ -674,6 +585,8 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 	// instead of binding it onto the task it just closed, and an occurrence born
 	// beside `--add-label`/`-e` inherits the edited values rather than a
 	// pre-edit snapshot (which could leave it violating `epic-required`).
+	var occurrence *pendingOccurrence
+	var report *RepeatReport
 	if o.Status != nil {
 		r, succ, rerr := a.planRepeat(idx, t, laneBefore, *o.Status, a.Clock.Now(), reserved)
 		if rerr != nil {
@@ -697,6 +610,141 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 		return renumbered, nil, nil, err
 	}
 	return renumbered, occurrence, report, nil
+}
+
+// relativeRef is the one `--before`/`--after` a set names: the ref and which
+// side of it ("" when the write positions nothing).
+func relativeRef(o SetOpts) (ref string, before bool) {
+	if o.Before != "" {
+		return o.Before, true
+	}
+	return o.After, false
+}
+
+// checkRelativeTarget is applySet's pre-flight on `--before/--after`: the
+// ref must be another task, present, and in the DESTINATION lane.
+func (a *App) checkRelativeTarget(idx *core.Index, t *core.Task, o SetOpts) error {
+	relRef, _ := relativeRef(o)
+	if relRef == "" {
+		return nil
+	}
+	if relRef == t.ID {
+		return core.Validationf(t.ID, "--before/--after must name a different task")
+	}
+	rt, ri := idx.Find(relRef)
+	if ri < 0 {
+		return a.notFoundTask(relRef)
+	}
+	dest := t.Status
+	if o.Status != nil {
+		dest = *o.Status
+	}
+	if rt.Status != dest {
+		return core.Validationf(t.ID, "relative target %s is in lane %q, not the destination lane %q — relative order only exists within one lane", relRef, rt.Status, dest)
+	}
+	return nil
+}
+
+// applySetPosition is the priority half of applySet: an explicit `-p`, or a
+// relative placement planned against the lane t now sits in, with the respace
+// it caused (nil when the write positions nothing) — guarded like every write
+// to the neighbours it moves.
+func (a *App) applySetPosition(idx *core.Index, t *core.Task, o SetOpts) ([]core.PriorityChange, error) {
+	relRef, relBefore := relativeRef(o)
+	switch {
+	case o.Priority != nil:
+		t.Priority = *o.Priority
+		a.noteSharedPriority(idx, t)
+	case relRef != "":
+		target, changes, err := idx.PlanRelativePriority(t.ID, relRef, relBefore, a.Cfg.PriorityDefault, a.Cfg.PriorityStep)
+		if err != nil {
+			return nil, err
+		}
+		if err := a.guardRespace(idx, changes); err != nil {
+			return nil, err
+		}
+		t.Priority = target
+		for _, c := range changes {
+			ct, _ := idx.Find(c.ID)
+			ct.Priority = c.To
+		}
+		return changes, nil
+	}
+	return nil, nil
+}
+
+// applySetDue is the due half of applySet: clear, the caller's one resolved
+// instant, or a per-task shift from the task's own stamp.
+func (a *App) applySetDue(t *core.Task, o SetOpts, due *time.Time) error {
+	switch {
+	case o.ClearDue:
+		// A due that is gone has nothing left to follow: the pointer goes with
+		// it rather than lingering as an anchor-undated warn.
+		t.Due = nil
+		t.Anchor = ""
+	case due != nil:
+		// The instant the CALLER resolved (resolveDue), not a fresh parse: a bulk
+		// set must stamp every task with the same promise, and `--due +1d` snoozes
+		// from now rather than from a stamp that may already be days in the past.
+		d := *due
+		t.Due = &d
+	case o.DueShift != nil:
+		// Per task, from ITS stamp — the one place the two due flags part ways.
+		if t.Due == nil {
+			return undatedShiftErr([]string{t.ID}, 1)
+		}
+		shifted, err := ShiftDue(*t.Due, *o.DueShift, a.loc())
+		if err != nil {
+			return err
+		}
+		t.Due = &shifted
+	}
+	return nil
+}
+
+// applySetSeries is the repeat-and-anchor half of applySet: the rule and the
+// pointer land, then the END state is judged, so every ordering of the flags
+// in one write is refused or accepted the same way.
+func (a *App) applySetSeries(t *core.Task, o SetOpts, anchor string) error {
+	id := t.ID
+	switch {
+	case o.ClearRepeat:
+		t.Repeat = ""
+		t.RepeatAnchor = nil
+	case o.Repeat != nil:
+		if err := a.bindRepeat(id, t, *o.Repeat); err != nil {
+			return err
+		}
+	}
+	// A repeating task's anchor is its due: dropping the date would leave the
+	// rule with nothing to expand from, so furrow refuses rather than silently
+	// ending the series or inventing a start.
+	if t.Repeat != "" && t.Due == nil {
+		return core.Validationf(id, "task %s repeats, so it must keep a due date — drop the rule first with `furrow set %s --clear-repeat`", id, id)
+	}
+	switch {
+	case o.ClearAnchor:
+		t.Anchor = ""
+	case anchor != "":
+		t.Anchor = anchor
+	}
+	// The follower invariants, checked on the END state so every ordering of
+	// the flags in one write is judged the same: a pointer needs a due to move
+	// and cannot sit beside a rule (a series follows its own repeat_anchor).
+	// The batch path names every offender up front (SetMany); this is the
+	// single-id refusal and the batch's per-task backstop.
+	if t.Anchor != "" && t.Due == nil {
+		return undatedAnchorErr([]string{id}, 1)
+	}
+	if t.Anchor != "" && t.Repeat != "" {
+		if o.Repeat != nil && o.Anchor == nil {
+			// This write bound the rule onto an existing follower: the pointer
+			// is the thing to drop, not the rule just asked for.
+			return anchoredRepeatErr([]string{id}, 1)
+		}
+		return repeatingAnchorErr([]string{id}, 1)
+	}
+	return nil
 }
 
 // resolveAnchor binds a set's `--anchor` reference to the epic id it names,
@@ -760,14 +808,22 @@ func (a *App) resolveBatch(idx *core.Index, ids []string, verb string) ([]string
 // flag's name. Refused all-or-nothing like a batch miss, with every undated id
 // in details.undated; subject is the task when there is exactly one.
 func undatedShiftErr(undated []string, total int) *core.Error {
+	return refusedBatchErr(undated, total, "undated", "carry no due to shift — nothing was set; narrow the selection to dated tasks (-q has:due) or promise one first (--due <date>)")
+}
+
+// refusedBatchErr is the shape every all-or-nothing state refusal takes
+// (undatedShiftErr, undatedAnchorErr, repeatingAnchorErr, anchoredRepeatErr):
+// "N of M task(s) <what>", the offending ids under details.<key>, and the task
+// as subject when the batch is exactly one.
+func refusedBatchErr(ids []string, total int, key, what string) *core.Error {
 	subject := ""
 	if total == 1 {
-		subject = undated[0]
+		subject = ids[0]
 	}
 	return &core.Error{
 		Code: core.CodeValidation, Kind: core.KindValidation, Subject: subject,
-		Msg:     fmt.Sprintf("%d of %d task(s) carry no due to shift — nothing was set; narrow the selection to dated tasks (-q has:due) or promise one first (--due <date>)", len(undated), total),
-		Details: map[string]any{"undated": undated},
+		Msg:     fmt.Sprintf("%d of %d task(s) %s", len(ids), total, what),
+		Details: map[string]any{key: ids},
 	}
 }
 

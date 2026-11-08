@@ -899,61 +899,8 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 			return false
 		}), nil
 
-	case "depends-on":
-		// t waits on any named id (the named task blocks t) — the Deps edge
-		// read from the dependent's side, Index.Dependents' membership test.
-		// The ref must resolve (resolveTaskRefs); as the edge's TARGET it need
-		// not be a task of this snapshot.
-		refs, err := c.resolveTaskRefs(term)
-		if err != nil {
-			return nil, err
-		}
-		vals := refIDs(refs)
-		return neg(func(t *core.Task) bool { return containsAny(t.Deps, vals) }), nil
-
-	case "blocks":
-		// t blocks any named id — the same edge read from the other side:
-		// t ∈ X.Deps. Each named X is resolved once at compile and must be a
-		// task of this snapshot, since its own deps are read (edgeRefs).
-		ids, err := c.edgeRefs(term)
-		if err != nil {
-			return nil, err
-		}
-		blocked := map[string]bool{}
-		for _, id := range ids {
-			if x := c.findTask(id); x != nil {
-				for _, d := range x.Deps {
-					blocked[d] = true
-				}
-			}
-		}
-		return neg(func(t *core.Task) bool { return blocked[t.ID] }), nil
-
-	case "descendant-of":
-		// depends-on's transitive twin: t (transitively) waits on any named id —
-		// X's descendants are everything DOWNSTREAM of it in the deps DAG. The
-		// closure is computed once at compile (O(edges)); the root must resolve
-		// and, being only pointed AT, need not be a task of this snapshot
-		// (resolveTaskRefs); the named task itself is not its own descendant,
-		// mirroring how depends-on:X never matches X.
-		refs, err := c.resolveTaskRefs(term)
-		if err != nil {
-			return nil, err
-		}
-		set := c.reach(refIDs(refs), false)
-		return neg(func(t *core.Task) bool { return set[t.ID] }), nil
-
-	case "ancestor-of":
-		// blocks' transitive twin: t is anything any named id (transitively)
-		// waits on — X's ancestors are UPSTREAM, the work that must land first.
-		// The root's own deps are the first hop, so it must be a task of this
-		// snapshot (edgeRefs).
-		ids, err := c.edgeRefs(term)
-		if err != nil {
-			return nil, err
-		}
-		set := c.reach(ids, true)
-		return neg(func(t *core.Task) bool { return set[t.ID] }), nil
+	case "depends-on", "blocks", "descendant-of", "ancestor-of":
+		return c.compileGraphQualifier(term, neg)
 
 	case "title":
 		vals := term.Values
@@ -978,6 +925,67 @@ func (c *queryCompiler) compileQualifier(term query.Term, neg func(func(*core.Ta
 	// Unreachable: the vocabulary gate above already rejected an unknown field.
 	// Kept as a compile-time-exhaustive backstop in case the two lists drift.
 	return nil, unknownQueryErr(core.KindQueryUnknownField, "unknown qualifier "+strconv.Quote(f), qualifierVocab)
+}
+
+// compileGraphQualifier binds the four deps-edge qualifiers: depends-on and
+// blocks read one edge from either side, descendant-of and ancestor-of are
+// their transitive twins over the deps DAG.
+func (c *queryCompiler) compileGraphQualifier(term query.Term, neg func(func(*core.Task) bool) func(*core.Task) bool) (func(*core.Task) bool, error) {
+	switch term.Field {
+	case "depends-on":
+		// t waits on any named id (the named task blocks t) — the Deps edge
+		// read from the dependent's side, Index.Dependents' membership test.
+		// The ref must resolve (resolveTaskRefs); as the edge's TARGET it need
+		// not be a task of this snapshot.
+		refs, err := c.resolveTaskRefs(term)
+		if err != nil {
+			return nil, err
+		}
+		vals := refIDs(refs)
+		return neg(func(t *core.Task) bool { return containsAny(t.Deps, vals) }), nil
+	case "blocks":
+		// t blocks any named id — the same edge read from the other side:
+		// t ∈ X.Deps. Each named X is resolved once at compile and must be a
+		// task of this snapshot, since its own deps are read (edgeRefs).
+		ids, err := c.edgeRefs(term)
+		if err != nil {
+			return nil, err
+		}
+		blocked := map[string]bool{}
+		for _, id := range ids {
+			if x := c.findTask(id); x != nil {
+				for _, d := range x.Deps {
+					blocked[d] = true
+				}
+			}
+		}
+		return neg(func(t *core.Task) bool { return blocked[t.ID] }), nil
+	case "descendant-of":
+		// depends-on's transitive twin: t (transitively) waits on any named id —
+		// X's descendants are everything DOWNSTREAM of it in the deps DAG. The
+		// closure is computed once at compile (O(edges)); the root must resolve
+		// and, being only pointed AT, need not be a task of this snapshot
+		// (resolveTaskRefs); the named task itself is not its own descendant,
+		// mirroring how depends-on:X never matches X.
+		refs, err := c.resolveTaskRefs(term)
+		if err != nil {
+			return nil, err
+		}
+		set := c.reach(refIDs(refs), false)
+		return neg(func(t *core.Task) bool { return set[t.ID] }), nil
+	case "ancestor-of":
+		// blocks' transitive twin: t is anything any named id (transitively)
+		// waits on — X's ancestors are UPSTREAM, the work that must land first.
+		// The root's own deps are the first hop, so it must be a task of this
+		// snapshot (edgeRefs).
+		ids, err := c.edgeRefs(term)
+		if err != nil {
+			return nil, err
+		}
+		set := c.reach(ids, true)
+		return neg(func(t *core.Task) bool { return set[t.ID] }), nil
+	}
+	return nil, unknownQueryErr(core.KindQueryUnknownField, "unknown qualifier "+strconv.Quote(term.Field), qualifierVocab)
 }
 
 // compileNumeric binds an ordinal field (value/effort/priority/roi) with an

@@ -74,8 +74,9 @@ type TreeNode struct {
 // Tree groups the tasks matching o by epic. rootID (optional) picks a single
 // epic's group instead of every group.
 //
-// Groups are ordered: the active epic first, then the remaining open epics by id,
-// then closed epics, then the unfiled group. That is the order the reader's
+// Groups are ordered as `epic ls` orders its rows (epicRank): the active epic
+// first, then pinned open epics, then the remaining open epics by id, then
+// closed epics, then the unfiled group. That is the order the reader's
 // attention should go in, and it is total (no ties), so two runs print alike.
 //
 // o.Limit caps the number of GROUPS, never the tasks — a limit that truncated
@@ -159,20 +160,17 @@ func (a *App) treeNodes(idx *core.Index, tasks []core.Task, doneIDs map[string]b
 	return out
 }
 
-// sortEpicGroups puts the active epic first, then open epics by id, then closed
-// ones. Stable and total, so the print order never depends on map iteration.
+// sortEpicGroups orders `ls --tree`'s groups as `epic ls` orders its rows
+// (epicRank: active, pinned, open, closed), the unfiled group last. Stable and
+// total, so the print order never depends on map iteration. The tree used to
+// carry its own rank with no pinned tier, so a pinned box sat among the plain
+// open ones here and above them in `epic ls`; one rank, two views (t-bt89).
 func sortEpicGroups(gs []TreeGroup) {
 	rank := func(g TreeGroup) int {
-		switch {
-		case g.Epic == nil:
-			return 3 // unfiled always last
-		case g.Active && g.Epic.IsOpen():
-			return 0
-		case g.Epic.IsOpen():
-			return 1
-		default:
-			return 2
+		if g.Epic == nil {
+			return 4 // unfiled always last
 		}
+		return epicRank(*g.Epic)
 	}
 	sort.SliceStable(gs, func(i, j int) bool {
 		if ri, rj := rank(gs[i]), rank(gs[j]); ri != rj {

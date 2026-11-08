@@ -339,6 +339,12 @@ func cloneIntp(p *int) *int {
 // this membership pass never has to distinguish "unknown" from "no match".
 // Re-splitting per task is negligible at furrow's board scale.
 func matchAnyLane(filter, lane string) bool {
+	return matchAnyToken(filter, func(tok string) bool { return lane == tok })
+}
+
+// matchAnyToken is the comma-OR filter walk matchAnyLane and matchAnyLabel
+// share: no non-empty token = no constraint, else any token hit passes.
+func matchAnyToken(filter string, hit func(tok string) bool) bool {
 	matched := false
 	any := false
 	for _, tok := range strings.Split(filter, ",") {
@@ -346,7 +352,7 @@ func matchAnyLane(filter, lane string) bool {
 			continue
 		}
 		any = true
-		if lane == tok {
+		if hit(tok) {
 			matched = true
 		}
 	}
@@ -392,16 +398,5 @@ func (a *App) validateLaneFilter(filter string) error {
 // matchAnyLabel is matchAnyLane for tags: comma = OR, and a task passes when it
 // carries at least one of the tokens. Empty/whitespace filter = no constraint.
 func matchAnyLabel(filter string, labels []string) bool {
-	matched := false
-	any := false
-	for _, tok := range strings.Split(filter, ",") {
-		if tok = strings.TrimSpace(tok); tok == "" {
-			continue
-		}
-		any = true
-		if slices.Contains(labels, tok) {
-			matched = true
-		}
-	}
-	return !any || matched
+	return matchAnyToken(filter, func(tok string) bool { return slices.Contains(labels, tok) })
 }

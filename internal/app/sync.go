@@ -194,21 +194,84 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 	if err != nil {
 		return p, err // non-git board = validation (exit 2), from the adapter
 	}
+	s := &syncRun{a: a, ctx: ctx, r: r, p: p,
+		// sleep is the cancellable backoff the retry loops share: it waits out
+		// a transient concurrent-writer condition but returns early if ctx is
+		// cancelled, so a Ctrl-C during a backoff doesn't have to ride out the
+		// budget.
+		sleep: func(d time.Duration) error { return a.ctxSleep(ctx, d) }}
+	if err := s.preflight(); err != nil {
+		return p, err
+	}
+	if s.spec, err = r.RelPath(a.Dir); err != nil {
+		return p, err
+	}
+	if err := s.autocommit(opts); err != nil {
+		return p, err
+	}
+
+	// baseHead anchors the incoming report: HEAD after the auto-commit, before
+	// any pull. The report is computed in a defer over the FINAL HEAD — the
+	// push-race retry can pull a second batch, and it must count — on success
+	// and failure alike; an aborted rebase restores HEAD, so a conflicted sync
+	// honestly reports nothing incoming.
+	baseHead := r.Head(ctx)
+	defer func() {
+		if p.Pulled {
+			p.Incoming = a.incomingChanges(ctx, r, s.spec, baseHead)
+		}
+	}()
+
+	if err := s.pull(); err != nil {
+		return p, err
+	}
+
+	// Between pull and push, @{upstream}..HEAD is exactly what this sync will
+	// publish — the one moment the switch records can be read off the commits.
+	p.Switches = a.publishedSwitches(ctx, r, s.spec)
+
+	if err := pushWithRetry(func() error { return r.Push(ctx) }, s.pull); err != nil {
+		return p, err
+	}
+	p.Pushed = true
+	return p, nil
+}
+
+// syncRun is one Sync's state, shared by its stages (preflight, autocommit,
+// pull) so each can be read on its own: the opened repo, the board's path
+// spec inside it, the progress being built, and the cancellable backoff the
+// retry loops share. It exists for ONE call; nothing outlives Sync's return.
+type syncRun struct {
+	a     *App
+	ctx   context.Context
+	r     *gitrepo.Repo
+	spec  string
+	p     *SyncProgress
+	sleep func(time.Duration) error
+	// stranded records that THIS run's pull left the autostash in the stash
+	// rather than back in the working tree (see strandedStash). It is reset per
+	// pull() because sync can pull twice (the non-fast-forward retry).
+	stranded bool
+}
+
+// preflight refuses the repository states a sync cannot or must not run in,
+// BEFORE anything is committed: an operation in progress (a concurrent
+// writer's rebase is waited out first), unmerged paths, a detached HEAD, a
+// branch with no upstream. Each is its own kind with the way out in the
+// message; a commit made first and failed in the pull used to leave
+// committed=true and git's own words.
+func (s *syncRun) preflight() error {
+	ctx, r := s.ctx, s.r
 	// A rebase in progress is usually a concurrent writer (the board's bot / a
 	// second operator) momentarily holding `pull --rebase`; wait it out with a
 	// bounded backoff so agents don't fail spuriously in that sub-second window.
-	// sleep is the cancellable backoff the retry loops below share: it waits out
-	// a transient concurrent-writer condition but returns early if ctx is
-	// cancelled, so a Ctrl-C during a backoff doesn't have to ride out the budget.
-	sleep := func(d time.Duration) error { return a.ctxSleep(ctx, d) }
-
-	if op, cleared := waitForRebaseToClear(func() (string, bool) { return r.MidOperation(ctx) }, sleep, defaultConcurrentWait); !cleared {
+	if op, cleared := waitForRebaseToClear(func() (string, bool) { return r.MidOperation(ctx) }, s.sleep, defaultConcurrentWait); !cleared {
 		if op == "rebase" {
 			// Still rebasing after the budget: transient in the common case, so
 			// classify as retryable (exit 3, not the do-not-retry exit 2) and say
 			// how to recover if it's actually a stuck rebase.
 			top := r.Toplevel()
-			return p, &core.Error{
+			return &core.Error{
 				Code:      core.CodeInternal,
 				Kind:      core.KindSyncBusy,
 				Retryable: true,
@@ -221,7 +284,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 		// Any other in-progress op (a merge/cherry-pick/revert/bisect the
 		// operator started) is theirs to resolve — name the exact way out, so
 		// the error is a recipe rather than a shrug.
-		return p, &core.Error{
+		return &core.Error{
 			Code: core.CodeValidation,
 			Kind: core.KindSyncOpInProgress,
 			Msg:  fmt.Sprintf("a git %s is in progress in %s — %s, then re-run furrow sync", op, r.Toplevel(), opRemedy(op)),
@@ -235,19 +298,19 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 	// the tool that relays that: say what state this is, name the stash still
 	// holding the other half, and refuse (exit 2 — the fix is an edit, not a re-run).
 	if unmerged := r.ConflictedPaths(ctx); len(unmerged) > 0 {
-		p.PendingStash = autostashEntries(ctx, r)
+		s.p.PendingStash = autostashEntries(ctx, r)
 		msg := fmt.Sprintf("the working tree has unmerged paths (%s) — git will not rebase over them, so sync cannot run. "+
 			"Resolve the conflict markers and `git add` them (or `git checkout -- <path>` to discard), then re-run furrow sync",
 			strings.Join(unmerged, ", "))
-		if len(p.PendingStash) > 0 {
+		if len(s.p.PendingStash) > 0 {
 			msg += fmt.Sprintf(". This is what a stash git could not re-apply leaves behind — the other half of those "+
-				"changes is still in the stash: %s", stashSummary(p.PendingStash))
+				"changes is still in the stash: %s", stashSummary(s.p.PendingStash))
 		}
-		return p, &core.Error{
+		return &core.Error{
 			Code:    core.CodeValidation,
 			Kind:    core.KindSyncUnmerged,
 			Msg:     msg,
-			Details: map[string]any{"paths": unmerged, "pending_stash": p.PendingStash},
+			Details: map[string]any{"paths": unmerged, "pending_stash": s.p.PendingStash},
 		}
 	}
 
@@ -258,10 +321,10 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 	// first and fail in the pull, with committed=true and git's own words.
 	branch, detached, err := r.Branch(ctx)
 	if err != nil {
-		return p, err
+		return err
 	}
 	if detached {
-		return p, &core.Error{
+		return &core.Error{
 			Code: core.CodeValidation,
 			Kind: core.KindSyncDetachedHead,
 			Msg: fmt.Sprintf("HEAD is detached in %s — a sync commit made here would be left behind the moment a branch "+
@@ -270,10 +333,10 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 	}
 	tracked, err := r.HasUpstream(ctx)
 	if err != nil {
-		return p, err
+		return err
 	}
 	if !tracked {
-		return p, &core.Error{
+		return &core.Error{
 			Code: core.CodeValidation,
 			Kind: core.KindSyncNoUpstream,
 			Msg: fmt.Sprintf("branch %s in %s tracks no upstream — nothing to pull from or push to, so nothing was committed. "+
@@ -281,23 +344,27 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 				"track a remote branch (`git -C %s push -u origin %s`), then re-run furrow sync", branch, r.Toplevel(), r.Toplevel(), branch),
 		}
 	}
+	return nil
+}
 
-	spec, err := r.RelPath(a.Dir)
+// autocommit is the local half of a sync: partition the dirty paths under the
+// board (partitionSync), refuse a -b id that names no task or a body carrying
+// conflict markers, commit what rides, and rewrite the touched-bodies journal
+// to what is still pending. Sets Committed, CommittedBodies, PendingBodies and
+// ForeignFiles; a refusal here has changed nothing at all.
+func (s *syncRun) autocommit(opts SyncOpts) error {
+	a, ctx, r, p := s.a, s.ctx, s.r, s.p
+	changes, err := r.DirtyChanges(ctx, s.spec)
 	if err != nil {
-		return p, err
-	}
-
-	changes, err := r.DirtyChanges(ctx, spec)
-	if err != nil {
-		return p, err
+		return err
 	}
 	// A -b id that names no task on the board is refused before anything is
 	// committed (it was silently ignored: the operator read "pushed" and the
 	// body they meant stayed pending). The candidates are the bodies -b CAN
 	// name — the ones this sync would otherwise leave pending.
 	if len(opts.Bodies) > 0 {
-		if err := a.guardBodyIDs(spec, changes, opts.Bodies); err != nil {
-			return p, err
+		if err := a.guardBodyIDs(s.spec, changes, opts.Bodies); err != nil {
+			return err
 		}
 	}
 	// The touched-bodies journal is the cross-process half of bodiesTouched:
@@ -310,231 +377,217 @@ func (a *App) Sync(ctx context.Context, opts SyncOpts) (p *SyncProgress, err err
 	if len(journal) > 0 {
 		opts.Bodies = append(append([]string(nil), opts.Bodies...), journal...)
 	}
-	if len(changes) == 0 && len(journal) > 0 {
-		writeBodyJournal(ctx, r, nil) // clean tree: every journaled body is already published
-	}
-	if len(changes) > 0 {
-		commitPaths, committedBodies, pendingBodies, foreign := partitionSync(spec, changes, opts)
-		p.PendingBodies = pendingBodies // reported even when there is nothing else to commit
-		p.ForeignFiles = foreign
-		if len(commitPaths) > 0 {
-			// Never publish a half-merged body (see guardBodyMarkers). This runs
-			// BEFORE the commit, so a refused sync has changed nothing at all.
-			if marked, err := a.guardBodyMarkers(committedBodies); err != nil {
-				// The refused bodies are left exactly where a pending body is
-				// left — uncommitted — so they are reported as pending too.
-				p.PendingBodies = appendUnique(p.PendingBodies, marked...)
-				sort.Strings(p.PendingBodies)
-				return p, err
-			}
-			message := opts.Message
-			if message == "" {
-				message = DefaultSyncMessage
-			}
-			// The attribution trailer rides EVERY sync commit, -m included:
-			// self-identification is only worth anything when the writer that
-			// nobody remembers launching also stamps it (see syncTrailer).
-			message += "\n\n" + syncTrailer(ctx, r.Toplevel())
-			commit := func() error { return r.Commit(ctx, message, commitPaths...) }
-			switch err := retryTransient(commit, sleep, defaultConcurrentWait, r.Toplevel()); {
-			case errors.Is(err, gitrepo.ErrNothingToCommit):
-				// A co-writer in this checkout committed these paths between
-				// the status read and the commit: published, not by us.
-				p.Committed = false
-			case err != nil:
-				return p, err
-			default:
-				p.Committed = true
-				p.CommittedBodies = committedBodies
-			}
-			// Consume what this sync just committed (autocommit's twin), so a
-			// later JournalTouchedBodies in the same process journals only
-			// what is still unpublished.
-			for _, id := range committedBodies {
-				delete(a.bodiesTouched, id)
-			}
-		}
+	if len(changes) == 0 {
 		if len(journal) > 0 {
-			// Keep only what is STILL pending (dirty and uncommitted): a
-			// journaled id that was just committed — or was already clean —
-			// leaves the journal.
-			pending := make(map[string]bool, len(pendingBodies))
-			for _, id := range pendingBodies {
-				pending[id] = true
-			}
-			var keep []string
-			for _, id := range journal {
-				if pending[id] {
-					keep = append(keep, id)
-				}
-			}
-			writeBodyJournal(ctx, r, keep)
+			writeBodyJournal(ctx, r, nil) // clean tree: every journaled body is already published
 		}
+		return nil
 	}
-
-	// baseHead anchors the incoming report: HEAD after the auto-commit, before
-	// any pull. The report is computed in a defer over the FINAL HEAD — the
-	// push-race retry can pull a second batch, and it must count — on success
-	// and failure alike; an aborted rebase restores HEAD, so a conflicted sync
-	// honestly reports nothing incoming.
-	baseHead := r.Head(ctx)
-	defer func() {
-		if p.Pulled {
-			p.Incoming = a.incomingChanges(ctx, r, spec, baseHead)
-		}
-	}()
-
-	// stranded records that THIS sync's pull left the autostash in the stash rather
-	// than back in the working tree (see strandedStash). It is reset per pull()
-	// because sync can pull twice (the non-fast-forward retry).
-	stranded := false
-
-	// pullOnce is a single pull --rebase attempt. A conflict is resolved
-	// definitively here (flag, abort, sync-conflict); a transient race bubbles up
-	// as ErrTransientRace for pull (below) to retry; success sets Pulled.
-	// Either way the stash is probed afterwards — git's autostash re-apply can fail
-	// silently on BOTH paths, and on the success path it is the only tell there is.
-	pullOnce := func() error {
-		before := autostashCommits(ctx, r)
-		if err := r.PullRebase(ctx); err != nil {
-			if r.RebaseInProgress(ctx) {
-				// A stop on shards both sides wrote in different fields is not a
-				// conflict to hand anyone: merge them and finish the rebase, which
-				// lands on the same success path (autostash re-applied by git at
-				// the end, so the stash probe below still holds). Only a board this
-				// binary may write gets the resolver — a merge is re-encoded with
-				// THIS binary's marshaller, and a stale board (schema-upgrade-required)
-				// is read-only for every other writer too.
-				var merged []string
-				var unresolved []shardConflict
-				var merr error
-				if a.Writable() == nil {
-					merged, unresolved, merr = a.resolveShardConflicts(ctx, r, spec, err)
-				}
-				if merr == nil && len(unresolved) == 0 && ctx.Err() == nil && !r.RebaseInProgress(ctx) {
-					p.MergedShards = appendUnique(p.MergedShards, merged...)
-					p.PendingStash, stranded = strandedStash(ctx, r, before)
-					p.Pulled = true
-					return nil
-				}
-				if merr != nil {
-					// The rebase stopped for a reason other than a conflict (a hook
-					// refused a pick, or ctx was cancelled mid-resolve): abort, and
-					// report the stop itself — it is not "conflicts", so p.Conflict
-					// stays false and the kind is git's own failure.
-					paths := r.ConflictedPaths(ctx)
-					if aerr := r.AbortRebase(ctx); aerr != nil {
-						return gitAbortFailed(merr, aerr, paths, r.Toplevel())
-					}
-					p.PendingStash, stranded = strandedStash(ctx, r, before)
-					return merr
-				}
-				// Flag the conflict BEFORE attempting the abort: even if the
-				// abort itself fails (the one state the contract promises never
-				// to leave behind), the progress object and the error must both
-				// say "conflict" and carry the paths.
-				p.Conflict = true
-				paths := conflictPaths(unresolved)
-				if len(paths) == 0 {
-					paths = r.ConflictedPaths(ctx)
-				}
-				aerr := r.AbortRebase(ctx)
-				// The abort is what re-applies the autostash on this path, so probe
-				// after it — and only after it (a failed abort never got that far).
-				details := map[string]any{"paths": paths}
-				if fields := conflictFields(unresolved); fields != nil {
-					details["fields"] = fields
-				}
-				if aerr == nil {
-					p.PendingStash, stranded = strandedStash(ctx, r, before)
-					if len(p.PendingStash) > 0 {
-						details["pending_stash"] = p.PendingStash
-					}
-				}
-				if aerr != nil {
-					return &core.Error{
-						Code: core.CodeInternal,
-						Kind: core.KindSyncConflict,
-						Msg: fmt.Sprintf("pull --rebase hit conflicts AND the automatic abort failed (%v) — "+
-							"run 'git rebase --abort' in %s by hand, then re-run furrow sync", aerr, r.Toplevel()),
-						Details: details,
-					}
-				}
-				// Only claim the board was restored when it WAS. With the autostash
-				// stranded, the most dangerous moment is the one where the old wording
-				// was the most reassuring — the working tree is missing the very edits
-				// the operator was in the middle of writing.
-				msg := "pull --rebase hit conflicts; the rebase was aborted and the board restored " +
-					"(your local sync commit is intact). Resolve the paths by hand (pull, fix, commit), then re-run furrow sync"
-				if fields := conflictFields(unresolved); fields != nil {
-					msg = "pull --rebase hit conflicts that no field-wise merge resolves (" + describeConflictFields(fields) +
-						"); the rebase was aborted and the board restored (your local sync commit is intact). " +
-						"Decide those fields: to take the other side's value, set it with a furrow command on this checkout " +
-						"(`git -C <board> show @{u}:<path>` shows it) and re-run furrow sync — the merge then keeps your other " +
-						"fields; to keep yours, the other side has to take it. Shards that differ in other fields merge on their own"
-				}
-				if stranded {
-					msg = fmt.Sprintf("pull --rebase hit conflicts; the rebase was aborted (your local sync commit is "+
-						"intact), but git could NOT put your stashed working-tree changes back — they are in the stash, "+
-						"NOT in your working tree: %s. Recover them with 'git -C %s stash pop', resolve the conflicted "+
-						"paths by hand (pull, fix, commit), then re-run furrow sync",
-						stashSummary(p.PendingStash), r.Toplevel())
-				}
-				return &core.Error{
-					Code:    core.CodeInternal,
-					Kind:    core.KindSyncConflict,
-					Msg:     msg,
-					Details: details,
-				}
-			}
+	commitPaths, committedBodies, pendingBodies, foreign := partitionSync(s.spec, changes, opts)
+	p.PendingBodies = pendingBodies // reported even when there is nothing else to commit
+	p.ForeignFiles = foreign
+	if len(commitPaths) > 0 {
+		// Never publish a half-merged body (see guardBodyMarkers). This runs
+		// BEFORE the commit, so a refused sync has changed nothing at all.
+		if marked, err := a.guardBodyMarkers(committedBodies); err != nil {
+			// The refused bodies are left exactly where a pending body is
+			// left — uncommitted — so they are reported as pending too.
+			p.PendingBodies = appendUnique(p.PendingBodies, marked...)
+			sort.Strings(p.PendingBodies)
 			return err
 		}
-		// The rebase succeeded — and this is the path where a failed autostash
-		// re-apply is INVISIBLE (git exits 0 and only warns on stderr), so the probe
-		// here is not belt-and-braces: it is the only detector.
-		p.PendingStash, stranded = strandedStash(ctx, r, before)
+		message := opts.Message
+		if message == "" {
+			message = DefaultSyncMessage
+		}
+		// The attribution trailer rides EVERY sync commit, -m included:
+		// self-identification is only worth anything when the writer that
+		// nobody remembers launching also stamps it (see syncTrailer).
+		message += "\n\n" + syncTrailer(ctx, r.Toplevel())
+		commit := func() error { return r.Commit(ctx, message, commitPaths...) }
+		switch err := retryTransient(commit, s.sleep, defaultConcurrentWait, r.Toplevel()); {
+		case errors.Is(err, gitrepo.ErrNothingToCommit):
+			// A co-writer in this checkout committed these paths between
+			// the status read and the commit: published, not by us.
+			p.Committed = false
+		case err != nil:
+			return err
+		default:
+			p.Committed = true
+			p.CommittedBodies = committedBodies
+		}
+		// Consume what this sync just committed (autocommit's twin), so a
+		// later JournalTouchedBodies in the same process journals only
+		// what is still unpublished.
+		for _, id := range committedBodies {
+			delete(a.bodiesTouched, id)
+		}
+	}
+	if len(journal) > 0 {
+		// Keep only what is STILL pending (dirty and uncommitted): a
+		// journaled id that was just committed — or was already clean —
+		// leaves the journal.
+		pending := make(map[string]bool, len(pendingBodies))
+		for _, id := range pendingBodies {
+			pending[id] = true
+		}
+		var keep []string
+		for _, id := range journal {
+			if pending[id] {
+				keep = append(keep, id)
+			}
+		}
+		writeBodyJournal(ctx, r, keep)
+	}
+	return nil
+}
+
+// pull rides out a concurrent writer's fetch/ref-lock race (transient in a
+// shared checkout), reclassifying a persistent one as retryable sync-busy. A
+// pull that rebased cleanly but stranded the autostash stops the sync here:
+// pushing on would leave the operator's edits in a stash they were never told
+// about, and the working tree may hold the failed apply's conflict markers —
+// running more git in it is how the markers get committed.
+func (s *syncRun) pull() error {
+	s.stranded = false
+	if err := retryTransient(s.pullOnce, s.sleep, defaultConcurrentWait, s.r.Toplevel()); err != nil {
+		return err
+	}
+	if s.stranded {
+		return &core.Error{
+			Code: core.CodeInternal,
+			Kind: core.KindSyncStashStranded,
+			Msg: fmt.Sprintf("the pull rebased cleanly, but git could NOT put your stashed working-tree "+
+				"changes back — they are in the stash, NOT in your working tree: %s. Recover them with "+
+				"'git -C %s stash pop' (resolve any conflict it reports, then re-run furrow sync). The board's "+
+				"own commit is safe; nothing was pushed",
+				stashSummary(s.p.PendingStash), s.r.Toplevel()),
+			Details: map[string]any{"pending_stash": s.p.PendingStash},
+		}
+	}
+	return nil
+}
+
+// pullOnce is a single pull --rebase attempt. A stop inside the rebase is
+// settled definitively by resolveRebaseStop (merged and finished, or aborted
+// with sync-conflict); a transient race bubbles up as ErrTransientRace for
+// pull to retry; success sets Pulled. Either way the stash is probed
+// afterwards — git's autostash re-apply can fail silently on BOTH paths, and
+// on the success path it is the only tell there is.
+func (s *syncRun) pullOnce() error {
+	ctx, r := s.ctx, s.r
+	before := autostashCommits(ctx, r)
+	if err := r.PullRebase(ctx); err != nil {
+		if r.RebaseInProgress(ctx) {
+			return s.resolveRebaseStop(before, err)
+		}
+		return err
+	}
+	// The rebase succeeded — and this is the path where a failed autostash
+	// re-apply is INVISIBLE (git exits 0 and only warns on stderr), so the probe
+	// here is not belt-and-braces: it is the only detector.
+	s.p.PendingStash, s.stranded = strandedStash(ctx, r, before)
+	s.p.Pulled = true
+	return nil
+}
+
+// resolveRebaseStop settles a `pull --rebase` that stopped mid-way (stop is
+// git's error). Shards both sides wrote in DIFFERENT fields are merged and
+// the rebase finished — the same success path as a clean pull. Anything else
+// aborts the rebase (the board is never left with conflict markers) and
+// returns sync-conflict with the paths — and the fields, when a shard was
+// refused for them — in Details; a stop that is not a conflict (a hook
+// refused a pick, ctx cancelled mid-resolve) aborts and reports the stop
+// itself. before is the stash set the pull started from (strandedStash).
+func (s *syncRun) resolveRebaseStop(before map[string]bool, stop error) error {
+	a, ctx, r, p := s.a, s.ctx, s.r, s.p
+	// A stop on shards both sides wrote in different fields is not a
+	// conflict to hand anyone: merge them and finish the rebase, which
+	// lands on the same success path (autostash re-applied by git at
+	// the end, so the stash probe below still holds). Only a board this
+	// binary may write gets the resolver — a merge is re-encoded with
+	// THIS binary's marshaller, and a stale board (schema-upgrade-required)
+	// is read-only for every other writer too.
+	var merged []string
+	var unresolved []shardConflict
+	var merr error
+	if a.Writable() == nil {
+		merged, unresolved, merr = a.resolveShardConflicts(ctx, r, s.spec, stop)
+	}
+	if merr == nil && len(unresolved) == 0 && ctx.Err() == nil && !r.RebaseInProgress(ctx) {
+		p.MergedShards = appendUnique(p.MergedShards, merged...)
+		p.PendingStash, s.stranded = strandedStash(ctx, r, before)
 		p.Pulled = true
 		return nil
 	}
-	// pull rides out a concurrent writer's fetch/ref-lock race (transient in a
-	// shared checkout), reclassifying a persistent one as retryable sync-busy. A
-	// pull that rebased cleanly but stranded the autostash stops the sync here:
-	// pushing on would leave the operator's edits in a stash they were never told
-	// about, and the working tree may hold the failed apply's conflict markers —
-	// running more git in it is how the markers get committed.
-	pull := func() error {
-		stranded = false
-		if err := retryTransient(pullOnce, sleep, defaultConcurrentWait, r.Toplevel()); err != nil {
-			return err
+	if merr != nil {
+		// The rebase stopped for a reason other than a conflict (a hook
+		// refused a pick, or ctx was cancelled mid-resolve): abort, and
+		// report the stop itself — it is not "conflicts", so p.Conflict
+		// stays false and the kind is git's own failure.
+		paths := r.ConflictedPaths(ctx)
+		if aerr := r.AbortRebase(ctx); aerr != nil {
+			return gitAbortFailed(merr, aerr, paths, r.Toplevel())
 		}
-		if stranded {
-			return &core.Error{
-				Code: core.CodeInternal,
-				Kind: core.KindSyncStashStranded,
-				Msg: fmt.Sprintf("the pull rebased cleanly, but git could NOT put your stashed working-tree "+
-					"changes back — they are in the stash, NOT in your working tree: %s. Recover them with "+
-					"'git -C %s stash pop' (resolve any conflict it reports, then re-run furrow sync). The board's "+
-					"own commit is safe; nothing was pushed",
-					stashSummary(p.PendingStash), r.Toplevel()),
-				Details: map[string]any{"pending_stash": p.PendingStash},
-			}
+		p.PendingStash, s.stranded = strandedStash(ctx, r, before)
+		return merr
+	}
+	// Flag the conflict BEFORE attempting the abort: even if the
+	// abort itself fails (the one state the contract promises never
+	// to leave behind), the progress object and the error must both
+	// say "conflict" and carry the paths.
+	p.Conflict = true
+	paths := conflictPaths(unresolved)
+	if len(paths) == 0 {
+		paths = r.ConflictedPaths(ctx)
+	}
+	aerr := r.AbortRebase(ctx)
+	// The abort is what re-applies the autostash on this path, so probe
+	// after it — and only after it (a failed abort never got that far).
+	details := map[string]any{"paths": paths}
+	fields := conflictFields(unresolved)
+	if fields != nil {
+		details["fields"] = fields
+	}
+	if aerr != nil {
+		return &core.Error{
+			Code: core.CodeInternal,
+			Kind: core.KindSyncConflict,
+			Msg: fmt.Sprintf("pull --rebase hit conflicts AND the automatic abort failed (%v) — "+
+				"run 'git rebase --abort' in %s by hand, then re-run furrow sync", aerr, r.Toplevel()),
+			Details: details,
 		}
-		return nil
 	}
-
-	if err := pull(); err != nil {
-		return p, err
+	p.PendingStash, s.stranded = strandedStash(ctx, r, before)
+	if len(p.PendingStash) > 0 {
+		details["pending_stash"] = p.PendingStash
 	}
-
-	// Between pull and push, @{upstream}..HEAD is exactly what this sync will
-	// publish — the one moment the switch records can be read off the commits.
-	p.Switches = a.publishedSwitches(ctx, r, spec)
-
-	if err := pushWithRetry(func() error { return r.Push(ctx) }, pull); err != nil {
-		return p, err
+	// Only claim the board was restored when it WAS. With the autostash
+	// stranded, the most dangerous moment is the one where the old wording
+	// was the most reassuring — the working tree is missing the very edits
+	// the operator was in the middle of writing.
+	msg := "pull --rebase hit conflicts; the rebase was aborted and the board restored " +
+		"(your local sync commit is intact). Resolve the paths by hand (pull, fix, commit), then re-run furrow sync"
+	if fields != nil {
+		msg = "pull --rebase hit conflicts that no field-wise merge resolves (" + describeConflictFields(fields) +
+			"); the rebase was aborted and the board restored (your local sync commit is intact). " +
+			"Decide those fields: to take the other side's value, set it with a furrow command on this checkout " +
+			"(`git -C <board> show @{u}:<path>` shows it) and re-run furrow sync — the merge then keeps your other " +
+			"fields; to keep yours, the other side has to take it. Shards that differ in other fields merge on their own"
 	}
-	p.Pushed = true
-	return p, nil
+	if s.stranded {
+		msg = fmt.Sprintf("pull --rebase hit conflicts; the rebase was aborted (your local sync commit is "+
+			"intact), but git could NOT put your stashed working-tree changes back — they are in the stash, "+
+			"NOT in your working tree: %s. Recover them with 'git -C %s stash pop', resolve the conflicted "+
+			"paths by hand (pull, fix, commit), then re-run furrow sync",
+			stashSummary(p.PendingStash), r.Toplevel())
+	}
+	return &core.Error{
+		Code:    core.CodeInternal,
+		Kind:    core.KindSyncConflict,
+		Msg:     msg,
+		Details: details,
+	}
 }
 
 // guardBodyIDs refuses a -b id that names no task on the hot board. Validation

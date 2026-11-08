@@ -45,9 +45,10 @@ func newLsCmd() *cobra.Command {
 			"carries `due <when>` (or `overdue …`) in its title cell, and a repeating\n" +
 			"row a bare `repeats` beside it — every human view that renders a task as a\n" +
 			"task carries that tag, since closing such a row writes another task.\n\n" +
-			"--tree groups the rows by epic instead of a flat table: the active epic\n" +
-			"first, then open epics by id, then closed ones, then the unfiled group —\n" +
-			"or a single box's group when an <epic> argument is given. Every filter\n" +
+			"--tree groups the rows by epic instead of a flat table, in `epic ls`'s\n" +
+			"order: the active epic first, then pinned open epics, then open epics by\n" +
+			"id, then closed ones, then the unfiled group — or a single box's group\n" +
+			"when an <epic> argument is given. Every filter\n" +
 			"still applies, and the grouping is built over what matched, so --tree\n" +
 			"never shows fewer tasks than the same flags without it. With --tree, -n\n" +
 			"caps the number of GROUPS (never the tasks: truncating mid-group would\n" +

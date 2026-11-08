@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/akira-toriyama/furrow/v10/internal/gitrepo"
+	"github.com/akira-toriyama/furrow/v10/internal/store/fsstore"
 )
 
 // The touched-bodies journal makes "furrow itself wrote this body" durable
@@ -72,7 +73,7 @@ func writeBodyJournal(ctx context.Context, r *gitrepo.Repo, ids []string) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return
 	}
-	_ = os.WriteFile(p, []byte(strings.Join(sorted, "\n")+"\n"), 0o644)
+	_ = fsstore.WriteFileAtomic(p, []byte(strings.Join(sorted, "\n")+"\n"))
 }
 
 // JournalTouchedBodies persists the ids of bodies THIS process wrote (and that

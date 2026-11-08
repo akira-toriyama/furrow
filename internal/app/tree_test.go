@@ -24,22 +24,35 @@ func findGroup(gs []TreeGroup, id string) *TreeGroup {
 	return nil
 }
 
-// The tree groups tasks by epic and orders the groups: active box first, then the
-// other open boxes by id, then closed ones, then the unfiled tasks. That order is
-// the reader's attention order, and it must be total — a tie would make two runs
-// print differently.
+// The tree groups tasks by epic and orders the groups as `epic ls` orders its
+// rows: active box first, then pinned open boxes, then the other open boxes by
+// id, then closed ones, then the unfiled tasks. That order is the reader's
+// attention order, and it must be total — a tie would make two runs print
+// differently. The pinned tier is asserted because the tree once carried a rank
+// of its own without it, so a pinned box sat among the plain open ones here and
+// above them in `epic ls` (t-bt89); the two ids are drawn so that id order
+// alone would put the pinned box LAST among the open ones.
 func TestTreeGroupsAndOrder(t *testing.T) {
 	a := newApp()
 	active := mustEpic(t, a, "active box", EpicAddOpts{Repos: []string{"o/r"}})
 	other := mustEpic(t, a, "other box", EpicAddOpts{})
+	pinned := mustEpic(t, a, "pinned box", EpicAddOpts{})
 	closed := mustEpic(t, a, "closed box", EpicAddOpts{})
+	if pinned < other {
+		other, pinned = pinned, other
+	}
 	mustActivate(t, a, active)
+	on := true
+	if _, _, _, err := a.EpicSet(pinned, EpicSetOpts{Pinned: &on}); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := a.EpicDone(closed); err != nil {
 		t.Fatal(err)
 	}
 
 	mustAdd(t, a, "in active", AddOpts{Epic: active})
 	mustAdd(t, a, "in other", AddOpts{Epic: other})
+	mustAdd(t, a, "in pinned", AddOpts{Epic: pinned})
 	mustAdd(t, a, "in closed", AddOpts{Epic: closed})
 	mustAdd(t, a, "unfiled", AddOpts{NoEpic: true}) // meant unfiled; inheritance would file it under the active box
 
@@ -48,13 +61,13 @@ func TestTreeGroupsAndOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := idsOf(groups)
-	want := []string{active, other, closed, "(none)"}
+	want := []string{active, pinned, other, closed, "(none)"}
 	if len(got) != len(want) {
 		t.Fatalf("groups = %v, want %v", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Errorf("group %d = %s, want %s (active, open, closed, unfiled)", i, got[i], want[i])
+			t.Errorf("group %d = %s, want %s (active, pinned, open, closed, unfiled)", i, got[i], want[i])
 		}
 	}
 	if g := findGroup(groups, active); g == nil || !g.Active {

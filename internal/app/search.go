@@ -113,14 +113,9 @@ func (a *App) searchSource(o QueryOpts) (*core.Index, func(string) (string, erro
 		idx, err := a.load()
 		return idx, a.Store.LoadBody, err
 	}
-	arc, err := a.archiveStore()
+	arc, idx, err := a.archiveLoad()
 	if err != nil {
 		return nil, nil, err
 	}
-	idx, err := arc.Load()
-	if err != nil {
-		return nil, nil, err
-	}
-	core.Canonicalize(idx, a.Cfg.Lanes)
 	return idx, arc.LoadBody, nil
 }
