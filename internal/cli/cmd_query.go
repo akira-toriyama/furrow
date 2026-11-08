@@ -668,7 +668,9 @@ func newRevisitCmd() *cobra.Command {
 			if cmd.Flags().Changed("stale-days") {
 				days = staleDays
 			}
-			if boxes && (len(queryStr) > 0 || len(f.label) > 0 || f.epicValue() != "") {
+			// Presence, not value: `-e ''` is as meaningless on a box row as
+			// `-e e-x`, so the flag being given at all is the refusal.
+			if boxes && (cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("epic")) {
 				return core.Validationf("", "cannot combine --boxes with -q/-l/-e (those filter tasks; a box row is an epic)")
 			}
 			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repoValue(), f.epicValue())

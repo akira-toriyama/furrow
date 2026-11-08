@@ -44,13 +44,14 @@ func revisitScopeLabel(a *app.App) string {
 }
 
 // revisitLine is the human nudge appended after the sync summary: one line per
-// entity, each ending with the read that LISTS what it counted — the task
-// signals point at `furrow revisit`, the box signals at `furrow revisit
-// --boxes`, a lapsed review clock at `furrow review`. A line prints only when
-// its own counts are non-zero (a nudge whose read would come back empty teaches
-// the reader to skip it: the box counts once rode the task line and pointed
-// at a read that never listed a box, t-3f5t). Empty summary -> "" (the caller
-// prints nothing, so a clean board stays quiet).
+// entity, each ending with the command that answers it — the task signals
+// point at the read `furrow revisit`, the box signals at the read `furrow
+// revisit --boxes`, a lapsed review clock at the write `furrow review` that
+// resets it. A line prints only when its own counts are non-zero (a nudge
+// whose read would come back empty teaches the reader to skip it: the box
+// counts once rode the task line and pointed at a read that never listed a
+// box, t-3f5t). Empty summary -> "" (the caller prints nothing, so a clean
+// board stays quiet).
 func revisitLine(sum app.RevisitSummary, scope string) string {
 	if sum.Empty() {
 		return ""
@@ -68,7 +69,7 @@ func revisitLine(sum app.RevisitSummary, scope string) string {
 	return strings.Join(lines, "\n")
 }
 
-// boxCountsLine is the `boxes: N epic_stuck, M epic_all_done` counts, in the
+// boxCountsLine is the `boxes: N epic_all_done, M epic_stuck` counts, in the
 // summary's key order and only the non-zero keys; "" when no box signal fired.
 // EVERY epic key the summary counts must be in epicRevisitCounts: Empty() gates
 // the nudges, so a key counted but not rendered would print a nudge that names

@@ -99,6 +99,10 @@ func emitRevisitBoxes(items []app.EpicRevisitItem) error {
 		views = append(views, epicRevisitView{Epic: it.Epic, Revisit: it.Reasons})
 	}
 	emitList(views, func() {
+		if len(views) == 0 {
+			fmt.Fprintln(out, "(no boxes)")
+			return
+		}
 		for _, v := range views {
 			mark := " "
 			if v.Active {

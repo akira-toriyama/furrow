@@ -76,6 +76,10 @@ func TestCLIRevisitBoxesEmptyExit0(t *testing.T) {
 	if code != 0 || strings.TrimSpace(out) != "[]" {
 		t.Errorf("empty revisit --boxes --json = %q (exit %d), want [] exit 0", out, code)
 	}
+	hout, hcode := run(t, "revisit", "--boxes")
+	if hcode != 0 || strings.TrimSpace(hout) != "(no boxes)" {
+		t.Errorf("empty human revisit --boxes = %q (exit %d), want (no boxes) exit 0", hout, hcode)
+	}
 }
 
 // The task-shaped filters have no meaning on a box row, so combining them
@@ -86,6 +90,7 @@ func TestCLIRevisitBoxesRefusesTaskFilters(t *testing.T) {
 		{"revisit", "--boxes", "-q", "label:cli"},
 		{"revisit", "--boxes", "-l", "cli"},
 		{"revisit", "--boxes", "-e", "e-none"},
+		{"revisit", "--boxes", "-e", ""}, // presence refuses, not the value
 	} {
 		fe, _ := runErr(t, append([]string{"--json"}, args...)...)
 		if fe == nil || fe.Code != core.CodeValidation || fe.Kind != core.KindValidation || !strings.Contains(fe.Msg, "--boxes") {
