@@ -19,15 +19,17 @@ import (
 // These are the real-git two-clone e2e tests for `furrow sync`: what sync
 // promises is git's own behavior, so nothing here stubs git.
 //
-// The real-git tests of this package (the sync, autocommit and board-git
-// families) call t.Parallel: each owns its clones under t.TempDir and the
-// process env is pinned once by TestMain, so they share nothing — and serial
-// they were 44s of the package's 55s. The exception that is NOT marked
-// parallel is a test that mutates process-wide state: t.Setenv (also via
-// testutil.UserConfig), a time.Local or defaultConcurrentWait swap. Those run
-// in the serial phase, which Go completes — Cleanup included — before any
-// parallel test resumes; marking one parallel would panic (Setenv) or race
-// silently (the global swaps).
+// The real-git tests of the sync, autocommit and board-git families call
+// t.Parallel: each owns its clones under t.TempDir and the process env is
+// pinned once by TestMain, so they share nothing — and serial they were 44s
+// of the package's 55s. Within those families, a test that mutates
+// process-wide state stays serial: t.Setenv (also via testutil.UserConfig),
+// a time.Local or defaultConcurrentWait swap. The serial phase completes —
+// Cleanup included — before any parallel test resumes, so the parallel tests
+// see the pinned env; marking one of those tests parallel would panic
+// (Setenv) or race silently (the global swaps). The package's other real-git
+// tests (gitorigin, global_*, store_marker: tens of milliseconds each) are
+// simply not marked — nothing to gain.
 
 // setupClones builds origin (bare) + clone A (board initialized and pushed) +
 // clone B (cloned after, so it already has the board).
