@@ -384,7 +384,7 @@ func (a *App) lintRepoLabels(idx *core.Index) []core.Problem {
 // [lint].ignore_codes drops. Lint and NewLintErrors both go through it, so a
 // write note can never call an error what `furrow lint` does not.
 func (a *App) applyLintPolicy(ps []core.Problem) []core.Problem {
-	ps = core.ApplySeverity(ps, a.LintSeverityOverrides())
+	ps = core.ApplySeverity(ps, a.lintSeverityOverrides())
 	return core.FilterProblems(ps, core.ProblemFilter{IgnoreCodes: a.Cfg.LintIgnoreCodes})
 }
 
@@ -642,7 +642,7 @@ func (a *App) lintBoardRules(idx *core.Index) []core.Problem {
 	// Visualization only; the pressure valve (archive) already exists.
 	if a.Cfg.LintArchiveDone > 0 {
 		cutoff := a.Clock.Now().AddDate(0, 0, -a.Cfg.ArchiveOlderThanDays)
-		if n := len(Archivable(idx, a.Cfg.DoneLane, cutoff)); n >= a.Cfg.LintArchiveDone {
+		if n := len(archivable(idx, a.Cfg.DoneLane, cutoff)); n >= a.Cfg.LintArchiveDone {
 			ps = append(ps, core.Problem{Severity: core.SevWarn, Code: "archive-backlog", ID: "archive", Msg: fmt.Sprintf("%d done task(s) closed over %dd ago are ready to archive (>= [lint].archive_done=%d) — run `furrow archive --yes`", n, a.Cfg.ArchiveOlderThanDays, a.Cfg.LintArchiveDone)})
 		}
 	}
@@ -697,16 +697,16 @@ func (a *App) lintConfigProblems() []core.Problem {
 	return ps
 }
 
-// lintHygieneProblems collects the board-hygiene findings that came out of
-// operating boards by hand (projects t-chad): states no invariant forbids but
-// that a periodic tidy pass kept re-finding. All warns — hygiene is advisory —
-// and the two config-driven ones ship OFF, because their thresholds and words
-// are board conventions, not furrow's (the provenance_markers stance).
 // updatedSkewTolerance is how far ahead of this machine's clock an `updated`
 // may sit before updated-in-future fires: two writers' clocks drift by
 // seconds, not hours.
 const updatedSkewTolerance = time.Hour
 
+// lintHygieneProblems collects the board-hygiene findings that came out of
+// operating boards by hand (projects t-chad): states no invariant forbids but
+// that a periodic tidy pass kept re-finding. All warns — hygiene is advisory —
+// and the two config-driven ones ship OFF, because their thresholds and words
+// are board conventions, not furrow's (the provenance_markers stance).
 func (a *App) lintHygieneProblems(idx *core.Index) []core.Problem {
 	var ps []core.Problem
 
@@ -798,14 +798,13 @@ func (a *App) lintHygieneProblems(idx *core.Index) []core.Problem {
 	return ps
 }
 
-// LintSeverityOverrides returns the [lint.severity] entries that name a REAL
+// lintSeverityOverrides returns the [lint.severity] entries that name a REAL
 // lint code — the validated map core.ApplySeverity consumes. Levels were
 // already validated by the config loader (an invalid one clamped away with a
 // warning), so this only drops the dead codes that lintConfigProblems warns
-// about. Exported for the one consumer outside Lint(): the CLI applies it to
-// the alias-shadow findings it appends after Lint() returns (the command set is
-// the CLI's, so those problems cannot be born inside the app layer).
-func (a *App) LintSeverityOverrides() map[string]string {
+// about. Lint applies it to its own findings and to the caller's `extra` rows
+// (the CLI's alias-shadow ones) alike, so one map levels every list.
+func (a *App) lintSeverityOverrides() map[string]string {
 	if len(a.Cfg.LintSeverity) == 0 {
 		return nil
 	}

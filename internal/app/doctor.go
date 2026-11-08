@@ -55,9 +55,9 @@ var doctorCodes = map[string]bool{
 	"session-registry-unreadable": true,
 }
 
-// DoctorCodeList returns the known doctor finding codes, sorted — the machine
+// doctorCodeList returns the known doctor finding codes, sorted — the machine
 // source behind `furrow vocab doctor-codes`.
-func DoctorCodeList() []string {
+func doctorCodeList() []string {
 	out := make([]string, 0, len(doctorCodes))
 	for c := range doctorCodes {
 		out = append(out, c)

@@ -42,10 +42,10 @@ var (
 	idFromLink = regexp.MustCompile(`/bodies/([A-Za-z0-9_-]+)\.md`)
 )
 
-// ParseDirectives extracts every SetStatus-task directive from arbitrary text
+// parseDirectives extracts every SetStatus-task directive from arbitrary text
 // (a PR body, a commit message). The id is taken from a /bodies/<id>.md link,
 // else the first token verbatim (a bare id). Lines with no payload are skipped.
-func ParseDirectives(text string) []Directive {
+func parseDirectives(text string) []Directive {
 	var out []Directive
 	for _, m := range directiveRe.FindAllStringSubmatch(text, -1) {
 		fields := strings.Fields(m[1])
@@ -200,7 +200,7 @@ func (a *App) applyDirectives(text, ref string, mode ApplyMode, openLane string,
 	if err != nil {
 		return res, err
 	}
-	for _, d := range ParseDirectives(text) {
+	for _, d := range parseDirectives(text) {
 		out := ApplyOutcome{ID: d.ID, Lane: d.Lane, Action: "skipped"}
 
 		t, i := idx.Find(d.ID)
@@ -294,7 +294,7 @@ func (a *App) applyOne(out *ApplyOutcome, t *core.Task, d Directive, ref string,
 		if dryRun {
 			changed, err = a.wouldAppendBody(d.ID, line)
 		} else {
-			changed, err = a.AppendBody(d.ID, line)
+			changed, err = a.appendBodyOnce(d.ID, line)
 		}
 		if err != nil {
 			return err
@@ -353,8 +353,8 @@ func annotationLine(mode ApplyMode, ref, lane string) string {
 	}
 }
 
-// wouldAppendBody is AppendBody's read-only half: whether the line is absent
-// from the body, i.e. whether a real AppendBody would change it.
+// wouldAppendBody is appendBodyOnce's read-only half: whether the line is absent
+// from the body, i.e. whether a real appendBodyOnce would change it.
 func (a *App) wouldAppendBody(id, line string) (bool, error) {
 	body, err := a.Store.LoadBody(id)
 	if err != nil {
@@ -363,10 +363,10 @@ func (a *App) wouldAppendBody(id, line string) (bool, error) {
 	return !strings.Contains(body, line), nil
 }
 
-// AppendBody appends line (plus a newline) to a task's body, unless an identical
+// appendBodyOnce appends line (plus a newline) to a task's body, unless an identical
 // line is already present — so re-running `apply` for the same PR event is
 // idempotent. Returns whether the body changed. The id must exist.
-func (a *App) AppendBody(id, line string) (bool, error) {
+func (a *App) appendBodyOnce(id, line string) (bool, error) {
 	idx, err := a.load()
 	if err != nil {
 		return false, err
@@ -374,7 +374,7 @@ func (a *App) AppendBody(id, line string) (bool, error) {
 	return a.appendBodyLine(idx, id, line)
 }
 
-// appendBodyLine is AppendBody on a snapshot the caller already holds. A line
+// appendBodyLine is appendBodyOnce on a snapshot the caller already holds. A line
 // that lands is prose and stamps `updated` (AddNote's rule); a line already
 // present changes nothing and leaves the clock alone, which is what keeps a
 // re-run of the same PR event or attach a true no-op.

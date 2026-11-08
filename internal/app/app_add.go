@@ -36,7 +36,6 @@ func seedChecklist(items []core.ChecklistItem) []core.ChecklistItem {
 	return append([]core.ChecklistItem(nil), items...)
 }
 
-// checklistTexts is the blank check's view of a seed: the texts alone.
 func checklistTexts(items []core.ChecklistItem) []string {
 	out := make([]string, 0, len(items))
 	for _, it := range items {
@@ -94,7 +93,7 @@ type AddOpts struct {
 	// escape hatch for "note this on the board, attach it later".
 	Draft bool
 	// Due is the raw `--due` spelling (a date, a date+time, or a signed offset),
-	// bound to an instant by ParseDue at creation. A REFERENCE like Epic, not a
+	// bound to an instant by parseDueAt at creation. A REFERENCE like Epic, not a
 	// stored value: resolution lives here so every front-end reads "+1d" the same
 	// way, against the app's clock. "" leaves the task dateless.
 	Due string

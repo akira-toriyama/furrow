@@ -135,15 +135,15 @@ func TestDueProblemsWithNoSkippedLanes(t *testing.T) {
 	}
 }
 
-// FormatDue renders in loc and matches what `furrow show` prints, so the date in
+// formatDue renders in loc and matches what `furrow show` prints, so the date in
 // a lint message and the date in the detail view are the same string.
 func TestFormatDue(t *testing.T) {
 	d := time.Date(2026, 8, 4, 10, 30, 0, 0, jst).UTC()
-	if got, want := FormatDue(due(d), jst), "2026-08-04 10:30 +09:00"; got != want {
-		t.Errorf("FormatDue = %q, want %q", got, want)
+	if got, want := formatDue(due(d), jst), "2026-08-04 10:30 +09:00"; got != want {
+		t.Errorf("formatDue = %q, want %q", got, want)
 	}
-	if got := FormatDue(&Task{ID: "t-none1"}, jst); got != "" {
-		t.Errorf("FormatDue with no date = %q, want empty", got)
+	if got := formatDue(&Task{ID: "t-none1"}, jst); got != "" {
+		t.Errorf("formatDue with no date = %q, want empty", got)
 	}
 }
 

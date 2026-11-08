@@ -62,8 +62,8 @@ func (s *Store) BodyFile(id string) string {
 	return s.bodyPath(id)
 }
 
-// Load folds every tasks/<id>.json shard into one in-memory Index (with the
-// schema version from meta.json). A missing tasks/ is not an error — a fresh
+// Load folds every tasks/<id>.json shard into one in-memory Index (meta.json is
+// LoadMeta's, not read here). A missing tasks/ is not an error — a fresh
 // .furrow returns an empty, well-formed Index so `furrow add` works day one.
 // Shards are read in filename order (== id order), which is deterministic; the
 // app canonicalizes into display order (lane->priority->id) afterward. The fold

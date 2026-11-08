@@ -63,7 +63,7 @@ func TestWaitingBoxSilencesAllDoneAndSurfacesUntil(t *testing.T) {
 	if row.Waiting == nil || row.Waiting.Task != watch {
 		t.Fatalf("epic ls must name the EARLIEST parked due's carrier, got %+v", row.Waiting)
 	}
-	// A bare day binds the end of that day in the app's zone (ParseDue).
+	// A bare day binds the end of that day in the app's zone (parseDueAt).
 	if want := time.Date(2026, 10, 1, 23, 59, 59, 0, a.loc()); !row.Waiting.Until.Equal(want) {
 		t.Errorf("until = %s, want %s", row.Waiting.Until, want)
 	}

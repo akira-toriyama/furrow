@@ -1,8 +1,9 @@
 // Package gitrepo is the git subprocess adapter behind furrow's git-touching
 // flows: command assembly and error classification for the handful of git
 // operations they need, and nothing else.
-// It is deliberately a THIN wrapper — no daemon, no state, no porcelain parsing
-// beyond what the failure contract requires (see docs/non-goals.md).
+// It is deliberately a THIN wrapper — no daemon, no state, and no decisions:
+// the porcelain it does parse (status -z, diff hunks, stash list, log) comes
+// back as plain values for app to judge (see docs/non-goals.md).
 //
 // Layering: this package shells out to git (its own kind of side effect), so it
 // lives beside the store adapters and is driven only through internal/app —
@@ -34,7 +35,7 @@ var ErrNonFastForward = errors.New("push rejected: non-fast-forward")
 // fetch, or an add/commit refused while another process holds .git/index.lock.
 // The condition self-resolves within a second, so app.Sync retries whatever
 // carries it; only a race that outlives the whole budget is reported, as a
-// likely-stale lock. It was once fetch-only (ErrTransientRace), which
+// likely-stale lock. It was once fetch-only (ErrTransientFetchRace), which
 // left the auto-commit stage returning a raw, non-retryable git-failed for
 // the very index.lock the stale-lock guidance names (t-cdx9).
 var ErrTransientRace = errors.New("git: transient concurrent-writer lock/ref race")

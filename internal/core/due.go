@@ -18,7 +18,7 @@ import (
 //     exactly the ones parked outside it.
 //   - It is an INSTANT, not a day. "after 10:30" was the case that asked for the
 //     field. A date-only input is bound to the END of its day by the write path
-//     (app.ParseDue), so a task promised for the 4th is not overdue at 00:01 on
+//     (app.parseDueAt), so a task promised for the 4th is not overdue at 00:01 on
 //     the 4th.
 
 // TimeLayout is how furrow renders a stored (UTC) timestamp for a human: local
@@ -64,10 +64,10 @@ func DueStateOf(t *Task, now time.Time, loc *time.Location) string {
 	return DueLater
 }
 
-// FormatDue renders a due stamp in loc, the same way `furrow show` prints a
+// formatDue renders a due stamp in loc, the same way `furrow show` prints a
 // timestamp. Empty for a task with no date, so a caller can append it
 // unconditionally.
-func FormatDue(t *Task, loc *time.Location) string {
+func formatDue(t *Task, loc *time.Location) string {
 	if t.Due == nil {
 		return ""
 	}
@@ -112,16 +112,16 @@ func DueProblems(idx *Index, now time.Time, loc *time.Location, skipLanes, termi
 		case DueOverdue:
 			msg := fmt.Sprintf(
 				"due %s has passed — do it, close it (`furrow done %s`), or push the date (`furrow set %s --due +1d`) / drop it (`--clear-due`)",
-				FormatDue(t, loc), t.ID, t.ID)
+				formatDue(t, loc), t.ID, t.ID)
 			if terminal[t.Status] {
 				msg = fmt.Sprintf(
 					"due %s has passed while the task is parked in %q, where the date is a reminder rather than work to do — chase or escalate, close it (`furrow done %s`), or push the date (`furrow set %s --due +1d`) / drop it (`--clear-due`)",
-					FormatDue(t, loc), t.Status, t.ID, t.ID)
+					formatDue(t, loc), t.Status, t.ID, t.ID)
 			}
 			out = append(out, Problem{SevError, "due-overdue", t.ID, msg})
 		case DueToday:
 			out = append(out, Problem{SevWarn, "due-today", t.ID, fmt.Sprintf(
-				"due today, %s", FormatDue(t, loc))})
+				"due today, %s", formatDue(t, loc))})
 		}
 	}
 	sortProblems(out)
@@ -140,7 +140,7 @@ func DueProblems(idx *Index, now time.Time, loc *time.Location, skipLanes, termi
 // akira-toriyama/furrow-test carried one such edge (t-fejrz → t-ehf4f) until a
 // rebuild found it by hand; this is the check that would have said so.
 func DueInversionProblems(idx *Index, loc *time.Location, skipLanes map[string]bool) []Problem {
-	byID := idx.TasksByID()
+	byID := idx.tasksByID()
 	var out []Problem
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
@@ -153,7 +153,7 @@ func DueInversionProblems(idx *Index, loc *time.Location, skipLanes map[string]b
 			if !ok || d.Due == nil || skipLanes[d.Status] || !d.Due.After(*t.Due) {
 				continue
 			}
-			later = append(later, fmt.Sprintf("%s (due %s)", d.ID, FormatDue(d, loc)))
+			later = append(later, fmt.Sprintf("%s (due %s)", d.ID, formatDue(d, loc)))
 			laterIDs = append(laterIDs, d.ID)
 		}
 		if len(later) == 0 {
@@ -163,7 +163,7 @@ func DueInversionProblems(idx *Index, loc *time.Location, skipLanes map[string]b
 		// the reader had to fill from the sentence before it.
 		out = append(out, Problem{SevWarn, "due-inversion", t.ID, fmt.Sprintf(
 			"due %s, but it waits on %s, promised later — a task cannot close before the dep it waits on: re-date one side (`furrow set %s --due <date>`) or drop the edge (`furrow dep %s %s --rm`)",
-			FormatDue(t, loc), strings.Join(later, ", "), t.ID, t.ID, strings.Join(laterIDs, " "))})
+			formatDue(t, loc), strings.Join(later, ", "), t.ID, t.ID, strings.Join(laterIDs, " "))})
 	}
 	sortProblems(out)
 	return out

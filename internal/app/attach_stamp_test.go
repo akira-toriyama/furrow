@@ -27,7 +27,7 @@ func TestAttachAndBodyAppendStampUpdatedOnceAndIdempotently(t *testing.T) {
 		t.Fatalf("attach left updated at %s", after.Updated)
 	}
 	clk.t = clk.t.Add(48 * time.Hour)
-	changed, err := a.AppendBody(tk.ID, "- merged in #1")
+	changed, err := a.appendBodyOnce(tk.ID, "- merged in #1")
 	if err != nil || !changed {
 		t.Fatalf("first append: changed=%v err=%v", changed, err)
 	}
@@ -36,7 +36,7 @@ func TestAttachAndBodyAppendStampUpdatedOnceAndIdempotently(t *testing.T) {
 		t.Fatalf("an appended line left updated at %s", stamped.Updated)
 	}
 	clk.t = clk.t.Add(48 * time.Hour)
-	changed, err = a.AppendBody(tk.ID, "- merged in #1")
+	changed, err = a.appendBodyOnce(tk.ID, "- merged in #1")
 	if err != nil || changed {
 		t.Fatalf("second append of the same line: changed=%v err=%v", changed, err)
 	}

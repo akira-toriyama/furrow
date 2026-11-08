@@ -12,8 +12,9 @@ import (
 )
 
 // dueLayouts are the absolute spellings `--due` accepts, tried in order after
-// the relative offset. RFC3339 first (an exact instant, offset included — what
-// `furrow show` prints back), then the zoneless wall-clock forms, which are read
+// the relative offset. RFC3339 first (an exact instant, offset included — the
+// form `--json` carries; `show`'s human stamp, core.TimeLayout, is NOT accepted),
+// then the zoneless wall-clock forms, which are read
 // in the OPERATOR's zone: a date typed by a human means their wall clock, and
 // the stored stamp is UTC either way.
 var dueLayouts = []struct {
@@ -28,7 +29,7 @@ var dueLayouts = []struct {
 }
 
 // dueDateLayout is the date-only spelling, handled apart from the list above
-// because it does NOT mean midnight — see ParseDue.
+// because it does NOT mean midnight — see parseDueAt.
 const dueDateLayout = "2006-01-02"
 
 // loc is the zone furrow reads a wall-clock date in and draws the "today"
@@ -44,7 +45,7 @@ func (a *App) loc() *time.Location {
 }
 
 // dayStart is the first instant of a calendar day in loc — the lower bound of
-// "that whole day", and the twin of the 23:59:59 upper bound ParseDue binds.
+// "that whole day", and the twin of the 23:59:59 upper bound parseDueAt binds.
 //
 // It is NOT time.Date(y, mo, d, 0, 0, 0, 0, loc). Where a zone SKIPS its own
 // midnight — America/Santiago, America/Havana, Atlantic/Azores, Asia/Beirut and
@@ -77,7 +78,7 @@ func dayStart(y int, mo time.Month, d int, loc *time.Location) time.Time {
 // log.
 func (a *App) Calendar() *time.Location { return a.loc() }
 
-// ParseDue binds a `--due` spelling to an instant. now anchors the relative
+// parseDueAt binds a `--due` spelling to an instant. now anchors the relative
 // offsets; loc is the zone a zoneless spelling is read in. Four shapes:
 //
 //	2026-08-04                — the END of that day (23:59:59, in loc)
@@ -103,12 +104,12 @@ func (a *App) Calendar() *time.Location { return a.loc() }
 // canonicalize on save and a memstore-backed caller would read back the
 // zone-carrying stamp it had just written. It does now, so the boundary is one
 // place again.
-// ParseDue binds a --due spelling to an instant and refuses one the shard
+// parseDueAt binds a --due spelling to an instant and refuses one the shard
 // cannot hold: the RFC3339 stamp holds years 1..9999 IN UTC, and a
 // board-zone day near the edge (America/New_York's 9999-12-31 ends in UTC's
 // year 10000) used to surface from the marshaller as an internal error
 // (t-jty7). The caller's input is validation, exit 2.
-func ParseDue(s string, now time.Time, loc *time.Location) (time.Time, error) {
+func parseDueAt(s string, now time.Time, loc *time.Location) (time.Time, error) {
 	t, err := parseDueInstant(s, now, loc)
 	if err != nil {
 		return t, err
@@ -197,18 +198,18 @@ func calendarComplaint(s string) string {
 	return ""
 }
 
-// parseDue is ParseDue bound to this app's clock and zone — the form every
+// parseDue is parseDueAt bound to this app's clock and zone — the form every
 // write path uses, so a spelling can never mean one thing on `add` and another
 // on `set`.
 func (a *App) parseDue(s string) (time.Time, error) {
-	return ParseDue(s, a.Clock.Now(), a.loc())
+	return parseDueAt(s, a.Clock.Now(), a.loc())
 }
 
 // dueShift is a parsed `--due-shift`: a calendar day count (the d/w units,
 // applied in the board's calendar) or an exact duration (m/h). Exactly one is
 // non-zero — the unit decides which, and the two are not interchangeable: a day
 // is 23 or 25 hours long twice a year, and a due shifted "+1d" across that has
-// to keep its wall clock, not its hour count (the same reason ParseDue builds a
+// to keep its wall clock, not its hour count (the same reason parseDueAt builds a
 // bare date as a wall-clock 23:59:59 rather than midnight + 24h - 1s).
 type dueShift struct {
 	days int
@@ -274,10 +275,10 @@ func (sh dueShift) apply(due time.Time, loc *time.Location) time.Time {
 	return got
 }
 
-// CheckDueShift vets a `--due-shift` spelling without a due to apply it to —
+// checkDueShift vets a `--due-shift` spelling without a due to apply it to —
 // what a selection preview needs, so it never shows a write the apply would
 // refuse for its spelling.
-func CheckDueShift(s string) error {
+func checkDueShift(s string) error {
 	_, err := parseDueShift(s)
 	return err
 }
@@ -448,7 +449,7 @@ func (a *App) dueIn(idx *core.Index, o QueryOpts) DueSummary {
 
 // sortByDue orders one due band: earliest instant first, so the longest-overdue
 // task leads. canon is what makes the comparator a TOTAL order, and it is the
-// whole reason this is a named function rather than a closure: ParseDue pins a
+// whole reason this is a named function rather than a closure: parseDueAt pins a
 // bare-day due to that day's 23:59:59, so every task promised for the same day
 // carries a byte-identical instant and compares EQUAL on the primary key. Their
 // order used to be decided by nothing but sort.SliceStable's stability re-

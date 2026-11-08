@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Isolate refuses a temp root inside a git work tree or a furrow board, and a
+// isolate refuses a temp root inside a git work tree or a furrow board, and a
 // relative one: tests take their temp dirs to be outside both, and with TMPDIR
 // inside a work tree sync's "outside git" tests committed there and pushed to
 // its upstream (furrow t-tayf). The root is caught as the marker's own
@@ -66,10 +66,10 @@ func TestIsolateRefusesAnUnsafeTempRoot(t *testing.T) {
 				t.Setenv("GOTMPDIR", t.TempDir())
 			}
 			t.Setenv(tc.env, root)
-			restore, err := Isolate()
+			restore, err := isolate()
 			if err == nil {
 				restore()
-				t.Fatalf("Isolate accepted %s=%s, which sits inside %s", tc.env, root, outer)
+				t.Fatalf("isolate accepted %s=%s, which sits inside %s", tc.env, root, outer)
 			}
 			if !strings.Contains(err.Error(), tc.marker) {
 				t.Errorf("the refusal %q does not name the %s it found", err, tc.marker)
@@ -84,9 +84,9 @@ func TestIsolateRefusesAnUnsafeTempRoot(t *testing.T) {
 		}
 		t.Setenv("GOTMPDIR", "")
 		t.Setenv("TMPDIR", "tmp")
-		if restore, err := Isolate(); err == nil {
+		if restore, err := isolate(); err == nil {
 			restore()
-			t.Fatal("Isolate accepted the relative TMPDIR=tmp")
+			t.Fatal("isolate accepted the relative TMPDIR=tmp")
 		}
 	})
 
@@ -97,15 +97,15 @@ func TestIsolateRefusesAnUnsafeTempRoot(t *testing.T) {
 		}
 		t.Setenv("GOTMPDIR", "")
 		t.Setenv("TMPDIR", root)
-		restore, err := Isolate()
+		restore, err := isolate()
 		if err != nil {
-			t.Fatalf("Isolate refused a root outside every repo and board: %v", err)
+			t.Fatalf("isolate refused a root outside every repo and board: %v", err)
 		}
 		restore()
 	})
 }
 
-// Isolate must drop the ambient variables that reach into repositories the
+// isolate must drop the ambient variables that reach into repositories the
 // test did not name, and its cleanup must put them back: FURROW_DIR sends
 // app.Open to the developer's board before it looks at the directory a test
 // named (sync then committed and pushed there, t-tayf review), FURROW_BOARD
@@ -120,30 +120,30 @@ func TestIsolateDropsTheAmbientRepositoryEnv(t *testing.T) {
 	for _, k := range keys {
 		t.Setenv(k, "ambient-"+k)
 	}
-	restore, err := Isolate()
+	restore, err := isolate()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, k := range keys {
 		if v, ok := os.LookupEnv(k); ok {
-			t.Errorf("%s=%q survived Isolate", k, v)
+			t.Errorf("%s=%q survived isolate", k, v)
 		}
 	}
 	restore()
 	for _, k := range keys {
 		if v := os.Getenv(k); v != "ambient-"+k {
-			t.Errorf("%s=%q after Isolate's cleanup, want the ambient value back", k, v)
+			t.Errorf("%s=%q after isolate's cleanup, want the ambient value back", k, v)
 		}
 	}
 }
 
-// Isolate must switch git's background maintenance off: with the default
+// isolate must switch git's background maintenance off: with the default
 // config every commit/push/fetch spawns a detached `git maintenance run
 // --auto` that can still be writing under .git/ when t.TempDir's RemoveAll
 // runs (ubuntu CI's "directory not empty" flake, t-6jep). Read the two keys
 // back through git itself so the pin is on what git sees, not on the file.
 func TestIsolateDisablesBackgroundMaintenance(t *testing.T) {
-	restore, err := Isolate()
+	restore, err := isolate()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestIsolateDisablesBackgroundMaintenance(t *testing.T) {
 	git := GitOrSkip(t)
 	for key, want := range map[string]string{"gc.auto": "0", "maintenance.auto": "false"} {
 		if got := strings.TrimSpace(RunGit(t, git, t.TempDir(), "config", "--global", "--get", key)); got != want {
-			t.Errorf("%s = %q under Isolate, want %q", key, got, want)
+			t.Errorf("%s = %q under isolate, want %q", key, got, want)
 		}
 	}
 }

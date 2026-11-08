@@ -16,7 +16,7 @@ import (
 // These are real-git tests for post-mutation autocommit (AutoCommitFlush). They
 // build a STANDALONE board — a git repo whose direct child is the .furrow — the
 // layout the feature targets, then drive the public App API and assert what
-// actually landed in git. gittest.Isolate (TestMain) neutralizes the developer's
+// actually landed in git. gittest.isolate (TestMain) neutralizes the developer's
 // git config, so commits never flake on a missing identity or a stray gpgsign.
 
 // setupACBoard builds a standalone board: `git init` at dir, `Init` its .furrow,

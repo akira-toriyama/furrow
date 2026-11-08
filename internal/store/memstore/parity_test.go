@@ -91,7 +91,7 @@ func TestSaveCanonicalizesLikeFsstore(t *testing.T) {
 					t.Errorf("%s: created not UTC whole-second: %s", where, tk.Created)
 				}
 				// due matters twice over: it is the one stamp an operator authors in
-				// wall clock, and app.ParseDue relies on this instead of normalizing
+				// wall clock, and app.parseDueAt relies on this instead of normalizing
 				// at the parse boundary a second time.
 				if tk.Due == nil || !tk.Due.Equal(wantCreated) || tk.Due.Location() != time.UTC {
 					t.Errorf("%s: due not UTC whole-second: %v", where, tk.Due)

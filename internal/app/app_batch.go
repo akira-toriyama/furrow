@@ -167,7 +167,7 @@ type SetOpts struct {
 	// unfiles it (the deliberate escape, still a lint error while the task is
 	// open); nil leaves membership untouched.
 	Epic *string
-	// Due is the raw `--due` spelling (see ParseDue) — a non-nil pointer sets or
+	// Due is the raw `--due` spelling (see parseDueAt) — a non-nil pointer sets or
 	// re-dates the promise, which is also the snooze (`--due +1d`). nil leaves it
 	// untouched; ClearDue removes it and wins, exactly like ClearValue over Value.
 	Due      *string
@@ -285,7 +285,7 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, *Rep
 		report     *RepeatReport
 	)
 	now := a.Clock.Now()
-	// applySet does the whole edit against the task mutateInPost hands it (the
+	// applySet does the whole edit against the task mutateInPostAt hands it (the
 	// repo guard's both sides and the stamp are the skeleton's); the occurrence
 	// a `-s done` mints goes in through the post hook — inserting moves the
 	// index's backing array, so it must wait until every task pointer is dead.
@@ -326,7 +326,7 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 			return core.Validationf(id, "--due-shift moves the due the task already carries; it cannot ride with --due or --clear-due, which replace it")
 		}
 		// Same reason as --due above: the spelling is refused before any write.
-		if err := CheckDueShift(*o.DueShift); err != nil {
+		if err := checkDueShift(*o.DueShift); err != nil {
 			return err
 		}
 	}

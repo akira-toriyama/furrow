@@ -838,7 +838,7 @@ func canonicalPath(p string) string {
 	return p
 }
 
-// GitAttributesTemplate is the .furrow/.gitattributes furrow init scaffolds.
+// gitAttributesTemplate is the .furrow/.gitattributes furrow init scaffolds.
 // Bodies are append-mostly prose: the task-status bot appends marker lines
 // while a session appends notes, and two EOF-adjacent appends conflict on
 // every pull --rebase (t-44h4). git's built-in union merge driver keeps both
@@ -846,7 +846,7 @@ func canonicalPath(p string) string {
 // human. Shards stay OUT: union on JSON would corrupt it. Their resolver is
 // sync's own (resolveShardConflicts) — field-wise, so only two writers setting
 // the SAME field differently is left as a conflict.
-const GitAttributesTemplate = `# machine-written by furrow init — see 'multi-machine sync' in the README.
+const gitAttributesTemplate = `# machine-written by furrow init — see 'multi-machine sync' in the README.
 # Bodies are append-mostly prose; let git fold concurrent appends together
 # (the task-status marker × local note race) instead of conflicting.
 bodies/*.md merge=union
@@ -862,7 +862,7 @@ archive/bodies/*.md merge=union
 func gitAttributes(path string) ([]byte, error) {
 	old, err := os.ReadFile(path) // #nosec G304 -- the .gitattributes of the store init was told to create
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-		return []byte(GitAttributesTemplate), nil // nothing there yet; MkdirAll reports a bad target itself
+		return []byte(gitAttributesTemplate), nil // nothing there yet; MkdirAll reports a bad target itself
 	}
 	if err != nil {
 		return nil, core.Validationf("", "cannot read %s: %v — init merges its union-merge rules into it; make it a readable file first", path, err)
@@ -876,7 +876,7 @@ func gitAttributes(path string) ([]byte, error) {
 		have[strings.TrimSpace(l)] = true
 	}
 	merged := string(old)
-	for _, l := range strings.Split(GitAttributesTemplate, "\n") {
+	for _, l := range strings.Split(gitAttributesTemplate, "\n") {
 		if l == "" || strings.HasPrefix(l, "#") || have[l] {
 			continue
 		}

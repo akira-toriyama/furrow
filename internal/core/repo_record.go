@@ -27,7 +27,7 @@ type RepoRecord struct {
 	// extras: the unknown-key passthrough's carrier — passthrough.go states
 	// the contract once. Read it back with ExtraKeys(); `furrow lint` warns
 	// unknown-shard-key on it.
-	extras Extras
+	extras extras
 }
 
 // RepoRecordPath returns the canonical relative shard path for a repo record:

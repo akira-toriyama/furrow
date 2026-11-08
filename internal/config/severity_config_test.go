@@ -85,7 +85,7 @@ func TestResolveKeyNestedDynamic(t *testing.T) {
 	}
 	var vocab []string
 	for _, k := range keys {
-		vocab = append(vocab, k.Dotted())
+		vocab = append(vocab, k.dotted())
 	}
 	joined := strings.Join(vocab, " ")
 	if !strings.Contains(joined, "lint.severity.<name>") {

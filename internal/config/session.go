@@ -31,8 +31,8 @@ const (
 	SessionGuardOff SessionGuard = "off"
 )
 
-// SessionGuardValues is the closed vocabulary, in the order the docs list it.
-func SessionGuardValues() []string {
+// sessionGuardValues is the closed vocabulary, in the order the docs list it.
+func sessionGuardValues() []string {
 	return []string{string(SessionGuardRefuse), string(SessionGuardWarn), string(SessionGuardOff)}
 }
 
@@ -40,7 +40,7 @@ func SessionGuardValues() []string {
 type GlobalSession struct {
 	Guard SessionGuard
 	// BusySeconds is how long a mid-turn occupant keeps counting as WORKING
-	// after its last transcript write (see DefaultSessionBusySeconds). Always
+	// after its last transcript write (see defaultSessionBusySeconds). Always
 	// positive after the clamp: warn-only is Guard, not a zero here.
 	BusySeconds int
 }
@@ -48,7 +48,7 @@ type GlobalSession struct {
 // DefaultGlobalSession is the [session] section of a user config that has
 // none: the guard refuses, with the stock window.
 func DefaultGlobalSession() GlobalSession {
-	return GlobalSession{Guard: SessionGuardRefuse, BusySeconds: DefaultSessionBusySeconds}
+	return GlobalSession{Guard: SessionGuardRefuse, BusySeconds: defaultSessionBusySeconds}
 }
 
 type rawSession struct {
@@ -68,12 +68,12 @@ func clampSession(r rawSession, path string) (GlobalSession, []string) {
 		case SessionGuardRefuse, SessionGuardWarn, SessionGuardOff:
 			s.Guard = g
 		default:
-			warn = append(warn, fmt.Sprintf("%s: session.guard %q is not one of %s; using %q", path, r.Guard, strings.Join(SessionGuardValues(), "|"), SessionGuardRefuse))
+			warn = append(warn, fmt.Sprintf("%s: session.guard %q is not one of %s; using %q", path, r.Guard, strings.Join(sessionGuardValues(), "|"), SessionGuardRefuse))
 		}
 	}
 	if r.BusySeconds != nil {
 		if *r.BusySeconds < 1 {
-			warn = append(warn, fmt.Sprintf("%s: session.busy_seconds %d is not a positive count; using %d (warn-only is session.guard = %q, not a zero window)", path, *r.BusySeconds, DefaultSessionBusySeconds, SessionGuardWarn))
+			warn = append(warn, fmt.Sprintf("%s: session.busy_seconds %d is not a positive count; using %d (warn-only is session.guard = %q, not a zero window)", path, *r.BusySeconds, defaultSessionBusySeconds, SessionGuardWarn))
 		} else {
 			s.BusySeconds = *r.BusySeconds
 		}

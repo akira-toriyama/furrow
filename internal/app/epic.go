@@ -915,13 +915,13 @@ type EpicScope struct {
 	Pinned map[string]bool
 }
 
-// Admits reports whether Next may hand out a task filed under epic ("" =
+// admits reports whether Next may hand out a task filed under epic ("" =
 // unfiled): anything when the scope is not engaged; else a pinned box's task,
 // an active box's, or an unfiled one — the last only while some box is active,
 // since a participating board with nothing active is deliberately empty apart
 // from the pinned band. Brief's due band asks the same question of each row,
 // so a row it marks outside next is exactly one next leaves out.
-func (s EpicScope) Admits(epic string) bool {
+func (s EpicScope) admits(epic string) bool {
 	if !s.Engaged || s.Pinned[epic] {
 		return true
 	}

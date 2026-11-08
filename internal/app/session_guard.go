@@ -36,8 +36,9 @@ import (
 // autonomous loop is never stopped by the session that came to watch it.
 //
 // Not guarded, deliberately: reads; board maintenance (`archive`, `tidy`,
-// `upgrade`, `review`'s clock stamps, `sync`); and anything outside Claude
-// Code (no CLAUDECODE env — a human shell, CI).
+// `upgrade`, `review`'s clock stamps, `sync`) — though `unarchive` IS guarded,
+// since it puts tasks back on the hot board (t-kw28); and anything outside
+// Claude Code (no CLAUDECODE env — a human shell, CI).
 //
 // The user config's per-machine `[session]` section (config.GlobalSession)
 // sets the mode: `refuse` is the rule above; `warn` demotes every refusal to

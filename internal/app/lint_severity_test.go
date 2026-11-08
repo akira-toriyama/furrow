@@ -68,7 +68,7 @@ func TestLintSeverityPromotesAWarn(t *testing.T) {
 
 // A severity entry naming no real code overrides nothing, and this warn is its
 // only signal — the ignore_codes contract carried over. The dead entry must
-// also be absent from LintSeverityOverrides, so ApplySeverity never consumes it.
+// also be absent from lintSeverityOverrides, so ApplySeverity never consumes it.
 func TestLintSeverityUnknownCodeWarns(t *testing.T) {
 	a := newDueApp(time.Date(2026, 8, 4, 3, 0, 0, 0, time.UTC))
 	a.Cfg.LintSeverity = map[string]string{"due-overdu": "warn"}
@@ -86,7 +86,7 @@ func TestLintSeverityUnknownCodeWarns(t *testing.T) {
 	if !hit {
 		t.Errorf("no config-clamp warn names the dead lint.severity entry; got %+v", ps)
 	}
-	if ov := a.LintSeverityOverrides(); len(ov) != 0 {
-		t.Errorf("LintSeverityOverrides = %v, want the dead code dropped", ov)
+	if ov := a.lintSeverityOverrides(); len(ov) != 0 {
+		t.Errorf("lintSeverityOverrides = %v, want the dead code dropped", ov)
 	}
 }

@@ -15,8 +15,8 @@ import "time"
 // never leave a half-written shard).
 type Store interface {
 	// Load folds every task shard into one Index. A fresh store returns an
-	// empty, well-formed Index (SchemaVersion set, Tasks == []) rather than an
-	// error, so `furrow add` works in a fresh repo.
+	// empty, well-formed Index (Tasks == [], nothing Seen) rather than an error,
+	// so `furrow add` works in a fresh repo; the layout version is LoadMeta's.
 	Load() (*Index, error)
 	// Save writes each task as its own shard (via core.MarshalTask) and deletes
 	// the shards this index loaded and no longer holds — all atomically and

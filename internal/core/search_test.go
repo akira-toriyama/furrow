@@ -90,7 +90,7 @@ func TestSnippet(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		if got := Snippet(c.text, c.term, c.radius); got != c.want {
+		if got := snippet(c.text, c.term, c.radius); got != c.want {
 			t.Errorf("%s: Snippet(%q, %q, %d) = %q, want %q", c.name, c.text, c.term, c.radius, got, c.want)
 		}
 	}
@@ -146,11 +146,11 @@ func TestNeedleSnippetRegex(t *testing.T) {
 	if got := n.Snippet("no match here", 6); got != "" {
 		t.Errorf("a miss must yield \"\", got %q", got)
 	}
-	// Context is counted in collapsed text, as the substring Snippet counts it,
+	// Context is counted in collapsed text, as the substring snippet counts it,
 	// so a whitespace run neither eats the radius nor earns an ellipsis.
 	body := "alpha\n\n\n\n\n\nfoo\n\n\n\n\n\nomega"
 	foo, _ := RegexNeedle(`fo+`)
-	if got, want := foo.Snippet(body, 4), Snippet(body, "foo", 4); got != want {
+	if got, want := foo.Snippet(body, 4), snippet(body, "foo", 4); got != want {
 		t.Errorf("regex Snippet = %q, want the substring shape %q", got, want)
 	}
 	if got := foo.Snippet("\n\n\n\nfoo bar", 2); got != "foo b…" {
@@ -161,14 +161,14 @@ func TestNeedleSnippetRegex(t *testing.T) {
 	if got := []rune(greedy.Snippet("start "+strings.Repeat("x", 500), 10)); len(got) > 2*10+10+1 {
 		t.Errorf("a long match must stay bounded, got %d runes", len(got))
 	}
-	// Radius 0 shows the match itself, as the substring Snippet does.
-	if got, want := foo.Snippet("a foo b", 0), Snippet("a foo b", "foo", 0); got != want {
+	// Radius 0 shows the match itself, as the substring snippet does.
+	if got, want := foo.Snippet("a foo b", 0), snippet("a foo b", "foo", 0); got != want {
 		t.Errorf("radius 0: regex Snippet = %q, want %q", got, want)
 	}
-	// The substring needle keeps the package Snippet's output exactly.
+	// The substring needle keeps the package-level snippet's output exactly.
 	s := SubstringNeedle("fox")
-	if got, want := s.Snippet("the quick brown fox jumps over", 4), Snippet("the quick brown fox jumps over", "fox", 4); got != want {
-		t.Errorf("substring Needle.Snippet = %q, want Snippet's %q", got, want)
+	if got, want := s.Snippet("the quick brown fox jumps over", 4), snippet("the quick brown fox jumps over", "fox", 4); got != want {
+		t.Errorf("substring Needle.Snippet = %q, want snippet's %q", got, want)
 	}
 }
 

@@ -47,9 +47,9 @@ type Key struct {
 	Dynamic bool
 }
 
-// Dotted is the spelling `config set` takes: section.name, or the bare name
+// dotted is the spelling `config set` takes: section.name, or the bare name
 // for a top-level key. A dynamic section renders as section.<name>.
-func (k Key) Dotted() string {
+func (k Key) dotted() string {
 	if k.Section == "" {
 		return k.Name
 	}
@@ -143,7 +143,7 @@ func ResolveKey(keys []Key, dotted string) (Key, string, bool) {
 			}
 			continue
 		}
-		if k.Dotted() == dotted {
+		if k.dotted() == dotted {
 			return k, k.Name, true
 		}
 	}
@@ -154,7 +154,7 @@ func ResolveKey(keys []Key, dotted string) (Key, string, bool) {
 func KeyVocabulary(keys []Key) []string {
 	out := make([]string, 0, len(keys))
 	for _, k := range keys {
-		out = append(out, k.Dotted())
+		out = append(out, k.dotted())
 	}
 	return out
 }
