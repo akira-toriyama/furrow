@@ -20,6 +20,26 @@ func (a *App) archiveStore() (*fsstore.Store, error) {
 	return fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.EpicIDPrefix, a.Cfg.IDWidth), nil
 }
 
+// archiveLoad is the ONE path that reads the archive index: open the sibling
+// store, load it and canonicalize it like the hot index (core.Canonicalize),
+// so every archived read — ls/show/search --archived, the retired-id probes,
+// Archive and Unarchive themselves — renders and resolves from the same normal
+// form. Three of the six load sites used to canonicalize on their own and the
+// other three not at all (t-bt89). A missing archive dir loads as an empty
+// index (fsstore.Load), so a never-archived board is a clean empty result.
+func (a *App) archiveLoad() (*fsstore.Store, *core.Index, error) {
+	arc, err := a.archiveStore()
+	if err != nil {
+		return nil, nil, err
+	}
+	idx, err := arc.Load()
+	if err != nil {
+		return nil, nil, err
+	}
+	core.Canonicalize(idx, a.Cfg.Lanes)
+	return arc, idx, nil
+}
+
 // listIndex picks List's source index: the archive store when o.Archived, else
 // the hot index. Both are canonicalized the same way so display order matches.
 // A missing archive dir loads as an empty index (fsstore.Load), so `ls
@@ -28,16 +48,8 @@ func (a *App) listIndex(o QueryOpts) (*core.Index, error) {
 	if !o.Archived {
 		return a.load()
 	}
-	arc, err := a.archiveStore()
-	if err != nil {
-		return nil, err
-	}
-	idx, err := arc.Load()
-	if err != nil {
-		return nil, err
-	}
-	core.Canonicalize(idx, a.Cfg.Lanes)
-	return idx, nil
+	_, idx, err := a.archiveLoad()
+	return idx, err
 }
 
 // GetBatchArchived is GetBatch against the archive store — the read side of
@@ -57,11 +69,7 @@ func (a *App) listIndex(o QueryOpts) (*core.Index, error) {
 // snapshot read, and it matches `dep --list`, which will not resolve an
 // archived id either (exit 1, not found).
 func (a *App) GetBatchArchived(ids []string, withBody bool) ([]ShowItem, []string, error) {
-	arc, err := a.archiveStore()
-	if err != nil {
-		return nil, nil, err
-	}
-	idx, err := arc.Load()
+	arc, idx, err := a.archiveLoad()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -130,19 +138,14 @@ func (a *App) archiveIndex() *core.Index {
 	if a.Dir == "" {
 		return nil
 	}
-	arc, err := a.archiveStore()
-	if err != nil {
-		return nil
-	}
-	idx, err := arc.Load()
+	_, idx, err := a.archiveLoad()
 	if err != nil {
 		return nil
 	}
 	return idx
 }
 
-// archiveSnapshot loads the archive store's index (canonicalized like the hot
-// one) and body loader for a union read — nil, nil, nil when the store is not
+// archiveSnapshot loads the archive store's index and body loader for a union read — nil, nil, nil when the store is not
 // file-backed (no archive); a missing archive dir loads empty. Unlike
 // archiveIndex it reports a read failure, since a union read that silently
 // lost its archive half would narrow.
@@ -150,15 +153,10 @@ func (a *App) archiveSnapshot() (*core.Index, func(string) (string, error), erro
 	if a.Dir == "" {
 		return nil, nil, nil
 	}
-	arc, err := a.archiveStore()
+	arc, idx, err := a.archiveLoad()
 	if err != nil {
 		return nil, nil, err
 	}
-	idx, err := arc.Load()
-	if err != nil {
-		return nil, nil, err
-	}
-	core.Canonicalize(idx, a.Cfg.Lanes)
 	return idx, arc.LoadBody, nil
 }
 

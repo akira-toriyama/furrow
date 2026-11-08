@@ -280,11 +280,7 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 	if err := a.Store.Writable(); err != nil {
 		return nil, err
 	}
-	arc, err := a.archiveStore()
-	if err != nil {
-		return nil, err
-	}
-	arcIdx, err := arc.Load()
+	arc, arcIdx, err := a.archiveLoad()
 	if err != nil {
 		return nil, err
 	}
@@ -360,11 +356,7 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	if err := a.Store.Writable(); err != nil {
 		return nil, err
 	}
-	arc, err := a.archiveStore()
-	if err != nil {
-		return nil, err
-	}
-	arcIdx, err := arc.Load()
+	arc, arcIdx, err := a.archiveLoad()
 	if err != nil {
 		return nil, err
 	}

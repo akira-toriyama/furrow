@@ -572,7 +572,7 @@ func (a *App) lintBodyContent(hasTask, hasEpic map[string]bool, bodyIDs []string
 	// to the owning task id when the asset's "<id>-" prefix still names a live task
 	// (else the asset basename, so a leftover from a deleted task stays identifiable).
 	for _, as := range assets {
-		owner := assetOwner(as.Name, hasTask)
+		owner := assetOwnerIn(as.Name, hasTask)
 		if owner == "" {
 			owner = as.Name
 		}
@@ -845,19 +845,6 @@ func (a *App) lintArchive() ([]core.Problem, error) {
 			Msg: fmt.Sprintf("is in archive/ but in lane %q — an archive and a reopen crossed in a sync; `furrow unarchive %s` brings it back to the board, or `furrow unarchive %s` then `furrow done %s` if it is finished", t.Status, t.ID, t.ID, t.ID)})
 	}
 	return ps, nil
-}
-
-// assetOwner returns the task id that owns asset name — the id in taskIDs for
-// which name is "<id>-…" — or "" when none matches (a leftover asset whose task
-// is gone). Frozen ids can never be one another's "<id>-" prefix, so at most one
-// id matches; lint uses this to file an orphan/oversized finding under its task.
-func assetOwner(name string, taskIDs map[string]bool) string {
-	for id := range taskIDs {
-		if strings.HasPrefix(name, id+"-") {
-			return id
-		}
-	}
-	return ""
 }
 
 // unknownKeyProblem is the one wording for the three machine-written file kinds

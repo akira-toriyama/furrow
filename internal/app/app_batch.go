@@ -760,14 +760,22 @@ func (a *App) resolveBatch(idx *core.Index, ids []string, verb string) ([]string
 // flag's name. Refused all-or-nothing like a batch miss, with every undated id
 // in details.undated; subject is the task when there is exactly one.
 func undatedShiftErr(undated []string, total int) *core.Error {
+	return refusedBatchErr(undated, total, "undated", "carry no due to shift — nothing was set; narrow the selection to dated tasks (-q has:due) or promise one first (--due <date>)")
+}
+
+// refusedBatchErr is the shape every all-or-nothing state refusal takes
+// (undatedShiftErr, undatedAnchorErr, repeatingAnchorErr, anchoredRepeatErr):
+// "N of M task(s) <what>", the offending ids under details.<key>, and the task
+// as subject when the batch is exactly one.
+func refusedBatchErr(ids []string, total int, key, what string) *core.Error {
 	subject := ""
 	if total == 1 {
-		subject = undated[0]
+		subject = ids[0]
 	}
 	return &core.Error{
 		Code: core.CodeValidation, Kind: core.KindValidation, Subject: subject,
-		Msg:     fmt.Sprintf("%d of %d task(s) carry no due to shift — nothing was set; narrow the selection to dated tasks (-q has:due) or promise one first (--due <date>)", len(undated), total),
-		Details: map[string]any{"undated": undated},
+		Msg:     fmt.Sprintf("%d of %d task(s) %s", len(ids), total, what),
+		Details: map[string]any{key: ids},
 	}
 }
 

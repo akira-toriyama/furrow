@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/store/fsstore"
 )
 
 // EnvStateHome is the XDG base for furrow's per-user, per-machine state —
@@ -176,9 +177,10 @@ func readWarnLedger(path string) *warnLedger {
 	return l
 }
 
-// writeWarnLedger lands the ledger atomically (temp + rename in its dir), so
-// two furrow processes racing leave one whole file — the loser's entries
-// repeat one warning at worst, never corrupt the file.
+// writeWarnLedger lands the ledger atomically (fsstore.WriteFileAtomic: staged
+// beside, fsynced, renamed over), so two furrow processes racing leave one
+// whole file — the loser's entries repeat one warning at worst, never corrupt
+// the file.
 func writeWarnLedger(path string, l *warnLedger) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -187,23 +189,5 @@ func writeWarnLedger(path string, l *warnLedger) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".session-warn-*.tmp")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(name)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(name)
-		return err
-	}
-	if err := os.Rename(name, path); err != nil {
-		_ = os.Remove(name)
-		return err
-	}
-	return nil
+	return fsstore.WriteFileAtomic(path, append(data, '\n'))
 }

@@ -298,11 +298,11 @@ func (a *App) epicDetailIn(idx *core.Index, epics []core.Epic, id string, withBo
 	e := byID[id]
 	deps := []EpicRef{}
 	for _, d := range e.Deps {
-		deps = append(deps, resolveEpicRef(byID, d))
+		deps = append(deps, epicRefOf(d, byID[d]))
 	}
 	var successor *EpicRef
 	if e.Successor != "" {
-		r := resolveEpicRef(byID, e.Successor)
+		r := epicRefOf(e.Successor, byID[e.Successor])
 		successor = &r
 	}
 	tasks, err := a.matchIn(idx, QueryOpts{Epic: id})
@@ -558,12 +558,7 @@ func (a *App) EpicActivate(ref, reason string) (before, after *core.Epic, openDe
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	var target *core.Epic
-	for i := range epics {
-		if epics[i].ID == id {
-			target = &epics[i]
-		}
-	}
+	target := findEpic(epics, id)
 	if target == nil {
 		return nil, nil, nil, core.NotFound(id)
 	}
