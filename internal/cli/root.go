@@ -120,12 +120,7 @@ func classifyFailure(err error) *core.Error {
 	if a := autoCommitApp; a != nil {
 		autoCommitApp = nil
 		a.TakeSessionWarn()
-		for _, n := range a.TakeSessionNotes() {
-			fmt.Fprintln(errOut, "note:", n)
-		}
-		for _, n := range a.TakeNotes() {
-			fmt.Fprintln(errOut, "note:", n)
-		}
+		printNotes(a)
 		// A command can fail after one of its writes landed (an `apply` whose
 		// second directive names an unknown id); that write's error still
 		// deserves the note the success path would print.

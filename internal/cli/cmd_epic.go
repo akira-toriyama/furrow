@@ -85,8 +85,8 @@ func newEpicAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchor) == "" {
-				return core.Validationf("", "--anchor was given an empty value; pass a calendar day (2026-11-21), or drop the flag to create the box without one")
+			if err := emptyFlagRemedyErr(cmd, "", flagRemedy{"anchor", "pass a calendar day (2026-11-21), or drop the flag to create the box without one"}); err != nil {
+				return err
 			}
 			bodyText, err := body.text(cmd, true)
 			if err != nil {
@@ -351,11 +351,11 @@ func newEpicSetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchor) == "" {
-				return core.Validationf(args[0], "--anchor was given an empty value; pass a calendar day (2026-11-21), or use --clear-anchor to remove it")
-			}
-			if cmd.Flags().Changed("successor") && strings.TrimSpace(successor) == "" {
-				return core.Validationf(args[0], "--successor was given an empty value; pass the box to open after this one, or use --clear-successor to drop the plan")
+			if err := emptyFlagRemedyErr(cmd, args[0],
+				flagRemedy{"anchor", "pass a calendar day (2026-11-21), or use --clear-anchor to remove it"},
+				flagRemedy{"successor", "pass the box to open after this one, or use --clear-successor to drop the plan"},
+			); err != nil {
+				return err
 			}
 			if yes && !cmd.Flags().Changed("anchor") {
 				return core.Validationf(args[0], "--yes confirms the follower dues an --anchor move shifts; without --anchor there is nothing to preview")

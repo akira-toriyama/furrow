@@ -155,7 +155,7 @@ func TestCapDisclosure_EpicLs(t *testing.T) {
 
 // epic ls obeys the board scope like every task read (it was the one read
 // whose population ignored it — same cwd, and brief's epic header disagreed),
-// discloses what the scope hid, and -r ” escapes to the whole board.
+// discloses what the scope hid, and -r "" escapes to the whole board.
 func TestEpicLs_BoardScopeAppliesAndDiscloses(t *testing.T) {
 	_, _ = pointerRepoLayout(t)
 	mustRun(t, "epic", "add", "demo box", "-r", "me/demo")

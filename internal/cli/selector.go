@@ -16,7 +16,7 @@ import (
 // into partial applies, breaking the batch mutators' all-or-nothing contract).
 // The predicate is the read side's own (scopedQuery + app.List): no new
 // grammar, and `furrow ls <same flags>` previews exactly what a write would
-// touch, board scope included (-r ” escapes it, as everywhere).
+// touch, board scope included (-r "" escapes it, as everywhere).
 //
 // The contract, shared by all three commands:
 //   - a selection and an id list are DIFFERENT ways of naming the targets, so
@@ -55,10 +55,21 @@ func addYesFlag(cmd *cobra.Command, p *bool) {
 }
 
 // active reports whether the caller selected by filter — any of -q/-l/-r was
-// passed (an explicitly-empty value still counts: `-q ”` deliberately matches
+// passed (an explicitly-empty value still counts: `-q ""` deliberately matches
 // the whole scope, and the preview guard is what makes that survivable).
 func (s *writeSelector) active(cmd *cobra.Command) bool {
 	return cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo")
+}
+
+// args is the positional rule the id-list selector commands share: a
+// selection (or a --yes, whose clash with ids guard words itself) takes any
+// argv, an id list needs at least one id. `move` binds its own, since its first
+// positional is the lane.
+func (s *writeSelector) args(cmd *cobra.Command, args []string) error {
+	if s.active(cmd) || cmd.Flags().Changed("yes") {
+		return cobra.ArbitraryArgs(cmd, args) // the id/selector clash gets its own message in guard
+	}
+	return cobra.MinimumNArgs(1)(cmd, args)
 }
 
 // guard enforces the parts of the contract every command shares, before any

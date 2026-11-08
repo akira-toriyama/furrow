@@ -140,55 +140,122 @@ type briefBlockedView struct {
 // bodies (prose is --json's payload for agents; a human runs `show`).
 func printBrief(a *app.App, b *app.BriefData, scope string) {
 	if jsonMode() {
-		v := briefView{
-			Repo:          scope,
-			Active:        make([]epicView, 0, len(b.Active)),
-			EpicsDeclared: b.EpicsDeclared,
-			NextUp:        b.NextUp,
-			Next:          make([]taskView, 0, len(b.Next)),
-			NextTotal:     b.NextTotal,
-			BlockedTotal:  b.BlockedTotal,
-			Due:           toBriefDueView(b.Due, b.OutsideNext),
-			Blocked:       make([]briefBlockedView, 0, len(b.Blocked)),
-			Revisit:       b.Revisit,
-			Drafts:        b.Drafts,
-			Lint:          lintPtr(b.Lint),
-		}
-		for _, it := range b.Active {
-			v.Active = append(v.Active, toEpicView(it))
-		}
-		for _, it := range b.Pinned {
-			v.Pinned = append(v.Pinned, toEpicView(it))
-		}
-		v.PinnedQuiet = b.PinnedQuiet
-		// sync hides an empty summary behind omitempty; brief always shows it,
-		// so the two non-omitempty id arrays must come out [] never null (an
-		// agent indexes them unconditionally — the house nil-slice rule).
-		if v.Revisit.DepDone == nil {
-			v.Revisit.DepDone = []string{}
-		}
-		if v.Revisit.Stale == nil {
-			v.Revisit.Stale = []string{}
-		}
-		for _, it := range b.Next {
-			v.Next = append(v.Next, taskView{Task: it.Task, BodyText: it.Body})
-		}
-		for _, h := range b.NextHidden {
-			v.NextHidden = append(v.NextHidden, hiddenLaneView{Lane: h.Lane, Count: len(h.IDs), IDs: h.IDs})
-		}
-		for _, it := range b.Blocked {
-			blockedBy := it.BlockedBy
-			if blockedBy == nil {
-				blockedBy = []string{}
-			}
-			v.Blocked = append(v.Blocked, briefBlockedView{Task: it.Task, BlockedBy: blockedBy})
-		}
-		emitObject(v)
+		emitObject(briefJSON(b, scope))
 		return
 	}
 	if scope != "" {
 		fmt.Fprintf(out, "repo: %s\n", scope)
 	}
+	// Lanes pad to the longest the board declares, so every band's status
+	// column lines up and none overflows a guessed width.
+	wLane := maxLen(a.Cfg.Lanes)
+	printBriefDue(a, b, wLane)
+	printBriefEpics(a, b)
+	// The header names what the cap dropped, by lane: "3/5" alone reads as
+	// "three of the same", while "1 in-progress" below the fold is the one
+	// row a session must not overlook.
+	fmt.Fprintf(out, "next (%d/%d%s):\n", len(b.Next), b.NextTotal, hiddenByLane(b.NextHidden))
+	if len(b.Next) == 0 {
+		fmt.Fprintln(out, "  (none)")
+	}
+	// The band carries no date (the due band above is where those land) but it
+	// does carry the repeat tag: a rule has no band of its own, and this is the
+	// row a session actually closes.
+	for _, it := range b.Next {
+		row := fmt.Sprintf("  ★ %s  %-*s %s", it.Task.ID, wLane, it.Task.Status, it.Task.Title)
+		fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
+	}
+	// What the cap dropped, one row per lane under the picks: the ids stay
+	// off the header (a board with sixty actionable tasks would push it past
+	// five hundred bytes) and are never truncated (a "+N more" tail would
+	// send the reader straight back to `next` for the one id it hides).
+	for _, h := range b.NextHidden {
+		fmt.Fprintf(out, "  … %s: %s\n", h.Lane, strings.Join(h.IDs, ", "))
+	}
+	// The band names its own lanes and the all-open-lanes count beside them: a
+	// bare "blocked (0)" once read as "nothing is stuck" on a board where most
+	// open work was waiting on a dep outside these lanes.
+	fmt.Fprintf(out, "blocked (%d in %s / %d in all open lanes):\n",
+		len(b.Blocked), strings.Join(a.Cfg.NextLanes, "+"), b.BlockedTotal)
+	if len(b.Blocked) == 0 {
+		fmt.Fprintln(out, "  (none)")
+	}
+	for _, it := range b.Blocked {
+		// The tag sits before the ← edge, as it does on a tree node: the arrow
+		// terminates the row.
+		row := withTags(fmt.Sprintf("  · %s  %-*s %s", it.Task.ID, wLane, it.Task.Status, it.Task.Title), repeatTag(&it.Task))
+		fmt.Fprintf(out, "%s  ← %s\n", row, strings.Join(it.BlockedBy, ", "))
+	}
+	// The same split as sync's nudge (revisitLine): the task counts (plus the
+	// repo review clock) on the `revisit:` line, the box counts on their own
+	// `boxes:` line — what `furrow revisit --boxes` lists. brief's lines carry
+	// no command pointer; sync's do.
+	fmt.Fprintf(out, "revisit: %d dep_done, %d stale", len(b.Revisit.DepDone), len(b.Revisit.Stale))
+	if n := len(b.Revisit.Unreviewed); n > 0 {
+		fmt.Fprintf(out, ", %d unreviewed", n)
+	}
+	fmt.Fprintln(out)
+	if l := boxCountsLine(b.Revisit); l != "" {
+		fmt.Fprintln(out, l)
+	}
+	fmt.Fprintf(out, "drafts: %d\n", b.Drafts)
+	if b.Lint.Errors > 0 {
+		fmt.Fprintln(out, lintLine(b.Lint))
+	}
+}
+
+// briefJSON is brief's machine value — the same sections as the human
+// dashboard, with the nil-slice rule applied where the human arm prints
+// nothing.
+func briefJSON(b *app.BriefData, scope string) briefView {
+	v := briefView{
+		Repo:          scope,
+		Active:        make([]epicView, 0, len(b.Active)),
+		EpicsDeclared: b.EpicsDeclared,
+		NextUp:        b.NextUp,
+		Next:          make([]taskView, 0, len(b.Next)),
+		NextTotal:     b.NextTotal,
+		BlockedTotal:  b.BlockedTotal,
+		Due:           toBriefDueView(b.Due, b.OutsideNext),
+		Blocked:       make([]briefBlockedView, 0, len(b.Blocked)),
+		Revisit:       b.Revisit,
+		Drafts:        b.Drafts,
+		Lint:          lintPtr(b.Lint),
+	}
+	for _, it := range b.Active {
+		v.Active = append(v.Active, toEpicView(it))
+	}
+	for _, it := range b.Pinned {
+		v.Pinned = append(v.Pinned, toEpicView(it))
+	}
+	v.PinnedQuiet = b.PinnedQuiet
+	// sync hides an empty summary behind omitempty; brief always shows it,
+	// so the two non-omitempty id arrays must come out [] never null (an
+	// agent indexes them unconditionally — the house nil-slice rule).
+	if v.Revisit.DepDone == nil {
+		v.Revisit.DepDone = []string{}
+	}
+	if v.Revisit.Stale == nil {
+		v.Revisit.Stale = []string{}
+	}
+	for _, it := range b.Next {
+		v.Next = append(v.Next, taskView{Task: it.Task, BodyText: it.Body})
+	}
+	for _, h := range b.NextHidden {
+		v.NextHidden = append(v.NextHidden, hiddenLaneView{Lane: h.Lane, Count: len(h.IDs), IDs: h.IDs})
+	}
+	for _, it := range b.Blocked {
+		blockedBy := it.BlockedBy
+		if blockedBy == nil {
+			blockedBy = []string{}
+		}
+		v.Blocked = append(v.Blocked, briefBlockedView{Task: it.Task, BlockedBy: blockedBy})
+	}
+	return v
+}
+
+// printBriefDue is the due band: the one section that expires, so it leads.
+func printBriefDue(a *app.App, b *app.BriefData, wLane int) {
 	// What has come DUE leads the dashboard: it is the only section that expires.
 	// Printed only when there is something to say — an empty band every session
 	// would train the eye to skip the place the dates land.
@@ -203,14 +270,19 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 		}
 		fmt.Fprintf(out, "due (%d%s):\n", b.Due.Total(), scopeNote)
 		for _, it := range b.Due.Overdue {
-			row := fmt.Sprintf("  ! %s  %-12s %s  (overdue %s)", it.Task.ID, it.Task.Status, it.Task.Title, calendarTime(a, *it.Task.Due))
+			row := fmt.Sprintf("  ! %s  %-*s %s  (overdue %s)", it.Task.ID, wLane, it.Task.Status, it.Task.Title, calendarTime(a, *it.Task.Due))
 			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task), outsideNextTag(b, it.Task.ID)))
 		}
 		for _, it := range b.Due.Today {
-			row := fmt.Sprintf("  · %s  %-12s %s  (today %s)", it.Task.ID, it.Task.Status, it.Task.Title, calendarTime(a, *it.Task.Due))
+			row := fmt.Sprintf("  · %s  %-*s %s  (today %s)", it.Task.ID, wLane, it.Task.Status, it.Task.Title, calendarTime(a, *it.Task.Due))
 			fmt.Fprintln(out, withTags(row, repeatTag(&it.Task), outsideNextTag(b, it.Task.ID)))
 		}
 	}
+}
+
+// printBriefEpics is the focus header: which box `next` is scoped to, or the
+// fact that none is, plus the pinned channels riding under it.
+func printBriefEpics(a *app.App, b *app.BriefData) {
 	// The focus header, only on a participating board: which box `next` is
 	// scoped to — or the fact that none is, which is WHY next is empty.
 	if b.EpicsDeclared {
@@ -240,57 +312,6 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 		if b.PinnedQuiet > 0 {
 			fmt.Fprintf(out, "epic: 📌 +%d quiet pinned (no open members)\n", b.PinnedQuiet)
 		}
-	}
-	// The header names what the cap dropped, by lane: "3/5" alone reads as
-	// "three of the same", while "1 in-progress" below the fold is the one
-	// row a session must not overlook.
-	fmt.Fprintf(out, "next (%d/%d%s):\n", len(b.Next), b.NextTotal, hiddenByLane(b.NextHidden))
-	if len(b.Next) == 0 {
-		fmt.Fprintln(out, "  (none)")
-	}
-	// The band carries no date (the due band above is where those land) but it
-	// does carry the repeat tag: a rule has no band of its own, and this is the
-	// row a session actually closes.
-	for _, it := range b.Next {
-		row := fmt.Sprintf("  ★ %s  %-12s %s", it.Task.ID, it.Task.Status, it.Task.Title)
-		fmt.Fprintln(out, withTags(row, repeatTag(&it.Task)))
-	}
-	// What the cap dropped, one row per lane under the picks: the ids stay
-	// off the header (a board with sixty actionable tasks would push it past
-	// five hundred bytes) and are never truncated (a "+N more" tail would
-	// send the reader straight back to `next` for the one id it hides).
-	for _, h := range b.NextHidden {
-		fmt.Fprintf(out, "  … %s: %s\n", h.Lane, strings.Join(h.IDs, ", "))
-	}
-	// The band names its own lanes and the all-open-lanes count beside them: a
-	// bare "blocked (0)" once read as "nothing is stuck" on a board where most
-	// open work was waiting on a dep outside these lanes.
-	fmt.Fprintf(out, "blocked (%d in %s / %d in all open lanes):\n",
-		len(b.Blocked), strings.Join(a.Cfg.NextLanes, "+"), b.BlockedTotal)
-	if len(b.Blocked) == 0 {
-		fmt.Fprintln(out, "  (none)")
-	}
-	for _, it := range b.Blocked {
-		// The tag sits before the ← edge, as it does on a tree node: the arrow
-		// terminates the row.
-		row := withTags(fmt.Sprintf("  · %s  %-12s %s", it.Task.ID, it.Task.Status, it.Task.Title), repeatTag(&it.Task))
-		fmt.Fprintf(out, "%s  ← %s\n", row, strings.Join(it.BlockedBy, ", "))
-	}
-	// The same split as sync's nudge (revisitLine): the task counts (plus the
-	// repo review clock) on the `revisit:` line, the box counts on their own
-	// `boxes:` line — what `furrow revisit --boxes` lists. brief's lines carry
-	// no command pointer; sync's do.
-	fmt.Fprintf(out, "revisit: %d dep_done, %d stale", len(b.Revisit.DepDone), len(b.Revisit.Stale))
-	if n := len(b.Revisit.Unreviewed); n > 0 {
-		fmt.Fprintf(out, ", %d unreviewed", n)
-	}
-	fmt.Fprintln(out)
-	if l := boxCountsLine(b.Revisit); l != "" {
-		fmt.Fprintln(out, l)
-	}
-	fmt.Fprintf(out, "drafts: %d\n", b.Drafts)
-	if b.Lint.Errors > 0 {
-		fmt.Fprintln(out, lintLine(b.Lint))
 	}
 }
 

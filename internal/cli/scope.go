@@ -69,7 +69,7 @@ func labelDidYouMean(cmd *cobra.Command, a *app.App, o app.QueryOpts, n int) err
 	return a.DidYouMeanRepo(o.Label)
 }
 
-// hintEpicScope explains `furrow next`'s active-epic scope on stderr, in the two
+// hintEpicScope explains `furrow next`'s active-epic scope on stderr, in the three
 // states where the data alone misleads:
 //
 //   - scope engaged, nothing active: the empty result is deliberate ("no box
@@ -152,7 +152,7 @@ func hiddenByFocus(a *app.App, o app.QueryOpts) int {
 // the filter came from an explicit -r or from the board's auto scope. count
 // re-runs the same query with the repo filters swapped for drafts-only;
 // stdout stays pure data. remedy names the command-appropriate escape hatch
-// (`furrow ls --drafts` where the flag exists, `-r ”` where it does not), so
+// (`furrow ls --drafts` where the flag exists, `-r ""` where it does not), so
 // the hint never advertises a flag the command would reject.
 func hintHiddenDrafts(o app.QueryOpts, count func(app.QueryOpts) ([]core.Task, error), remedy string) {
 	if o.Drafts || (o.Repo == "" && o.ScopeRepo == "") {
@@ -219,11 +219,9 @@ func warnReadOnly(a *app.App) {
 		return
 	}
 	versions := ""
-	if fe != nil {
-		if d, ok := fe.Details.(map[string]any); ok {
-			if b, ok := d["board_schema"]; ok {
-				versions = fmt.Sprintf(" (board layout v%v, binary v%v)", b, d["binary_schema"])
-			}
+	if d, ok := fe.Details.(map[string]any); ok {
+		if b, ok := d["board_schema"]; ok {
+			versions = fmt.Sprintf(" (board layout v%v, binary v%v)", b, d["binary_schema"])
 		}
 	}
 	fmt.Fprintf(errOut, "note: this board is READ-ONLY for this binary%s — reads answer, writes will fail; `furrow board` explains. Fix: run a furrow at the board's layer (a released binary or an older checkout), or `furrow upgrade` to raise the board (a flag day — see its --help)\n", versions)

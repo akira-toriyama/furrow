@@ -484,13 +484,7 @@ func newNextCmd() *cobra.Command {
 			// dropped). Next validates the tokens against the configured lanes, so a
 			// typo is exit 2 + candidates (never a silent empty result).
 			if cmd.Flags().Changed("lanes") {
-				for _, v := range lanes {
-					for _, tok := range strings.Split(v, ",") {
-						if tok = strings.TrimSpace(tok); tok != "" {
-							o.Lanes = append(o.Lanes, tok)
-						}
-					}
-				}
+				o.Lanes = append(o.Lanes, splitCSV(lanes)...)
 			}
 			tasks, err := a.Next(o)
 			if err != nil {
@@ -524,6 +518,22 @@ func newNextCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&lanes, "lanes", nil, "override [next].lanes for THIS call (OR; comma-separated or repeated; unknown lane = exit 2 + candidates); config untouched")
 	addQueryFlag(cmd, &queryStr)
 	return cmd
+}
+
+// addStaleDaysFlag registers --stale-days, the per-call override of
+// [revisit].stale_days that brief and revisit share — one registrar, so the
+// two usages and the fallback rule (staleDaysOr) cannot drift apart.
+func addStaleDaysFlag(cmd *cobra.Command, p *int) {
+	cmd.Flags().IntVar(p, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
+}
+
+// staleDaysOr is the window --stale-days asked for, else the board's
+// [revisit].stale_days. Presence decides, not value: an explicit 0 disables.
+func staleDaysOr(cmd *cobra.Command, a *app.App, flag int) int {
+	if cmd.Flags().Changed("stale-days") {
+		return flag
+	}
+	return a.Cfg.RevisitStaleDays
 }
 
 func newBriefCmd() *cobra.Command {
@@ -589,10 +599,7 @@ func newBriefCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			days := a.Cfg.RevisitStaleDays
-			if cmd.Flags().Changed("stale-days") {
-				days = staleDays
-			}
+			days := staleDaysOr(cmd, a, staleDays)
 			b, err := a.Brief(o, f.limit, days)
 			if err != nil {
 				return err
@@ -616,7 +623,7 @@ func newBriefCmd() *cobra.Command {
 		// brief's -n MEANS something different: it caps the body-attached next
 		// PICKS, and next_total stays uncapped — not a row limit.
 		wantUsage("limit", "how many next picks to include, bodies attached (0 = all; next_total is never capped)"))
-	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
+	addStaleDaysFlag(cmd, &staleDays)
 	return cmd
 }
 
@@ -665,10 +672,7 @@ func newRevisitCmd() *cobra.Command {
 				return err
 			}
 			warnReadOnly(a)
-			days := a.Cfg.RevisitStaleDays
-			if cmd.Flags().Changed("stale-days") {
-				days = staleDays
-			}
+			days := staleDaysOr(cmd, a, staleDays)
 			// Presence, not value: `-e ''` is as meaningless on a box row as
 			// `-e e-x`, so the flag being given at all is the refusal.
 			if boxes && (cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("epic")) {
@@ -710,7 +714,7 @@ func newRevisitCmd() *cobra.Command {
 		},
 	}
 	addFilterFlags(cmd, &f, want("label"), want("repo"), want("limit"), want("epic"))
-	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
+	addStaleDaysFlag(cmd, &staleDays)
 	cmd.Flags().BoolVar(&boxes, "boxes", false, "list the epics with a signal instead of tasks (the epic_* codes sync and brief count)")
 	addQueryFlag(cmd, &queryStr)
 	return cmd

@@ -108,6 +108,25 @@ func newBoardsCmd() *cobra.Command {
 
 // printBoardsHuman renders the configured-board listing: the config path, then
 // one small block per board (details live in --json).
+// boardStateLine is the one-line state a configured board gets in `boards` and
+// `doctor` alike: the schema state, or what stands in for it when the store is
+// not there at all. One definition, so the two listings cannot word the same
+// board differently.
+func boardStateLine(b app.BoardEntry) string {
+	state := b.SchemaState
+	switch {
+	case !b.Exists && b.OnDisk:
+		state = "not a furrow store"
+	case !b.Exists:
+		state = "missing (not on disk)"
+	}
+	repo := b.Repo
+	if repo == "" {
+		repo = "(none)"
+	}
+	return fmt.Sprintf("  repo: %s  state: %s  writable: %t", repo, state, b.Writable)
+}
+
 func printBoardsHuman(l *app.BoardsList) {
 	fmt.Fprintf(out, "config: %s\n", l.Config)
 	if len(l.Boards) == 0 {
@@ -115,19 +134,8 @@ func printBoardsHuman(l *app.BoardsList) {
 		return
 	}
 	for _, b := range l.Boards {
-		state := b.SchemaState
-		switch {
-		case !b.Exists && b.OnDisk:
-			state = "not a furrow store"
-		case !b.Exists:
-			state = "missing (not on disk)"
-		}
-		repo := b.Repo
-		if repo == "" {
-			repo = "(none)"
-		}
 		fmt.Fprintf(out, "\n%s\n", b.Store)
-		fmt.Fprintf(out, "  repo: %s  state: %s  writable: %t\n", repo, state, b.Writable)
+		fmt.Fprintln(out, boardStateLine(b))
 		if b.Label != "" {
 			fmt.Fprintf(out, "  add tag: %s\n", b.Label)
 		}

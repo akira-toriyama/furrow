@@ -64,7 +64,7 @@ func TestEditBodyLiteral(t *testing.T) {
 }
 
 // TestEditBodyEmptyIsExit2: an empty replacement (empty stdin, or an
-// interpolated-empty --body ”) is refused — a body is never cleared silently —
+// interpolated-empty --body "") is refused — a body is never cleared silently —
 // and the existing body survives.
 func TestEditBodyEmptyIsExit2(t *testing.T) {
 	initStore(t)

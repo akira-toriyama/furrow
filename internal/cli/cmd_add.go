@@ -116,14 +116,12 @@ func newAddCmd() *cobra.Command {
 			// caller interpolating an unset variable (`--due "$WHEN"`) means a bug,
 			// and silently creating a DATELESS task would drop the promise where
 			// nothing — not brief, not lint — could ever report it again.
-			if cmd.Flags().Changed("due") && strings.TrimSpace(due) == "" {
-				return core.Validationf("", "--due was given an empty value; pass a date, or drop the flag to create the task without one")
-			}
-			if cmd.Flags().Changed("repeat") && strings.TrimSpace(repeatSpec) == "" {
-				return core.Validationf("", "--repeat was given an empty value; pass a rule, or drop the flag to create the task without one")
-			}
-			if cmd.Flags().Changed("anchor") && strings.TrimSpace(anchorRef) == "" {
-				return core.Validationf("", "--anchor was given an empty value; pass the epic whose day the due follows, or drop the flag")
+			if err := emptyFlagRemedyErr(cmd, "",
+				flagRemedy{"due", "pass a date, or drop the flag to create the task without one"},
+				flagRemedy{"repeat", "pass a rule, or drop the flag to create the task without one"},
+				flagRemedy{"anchor", "pass the epic whose day the due follows, or drop the flag"},
+			); err != nil {
+				return err
 			}
 			// Every argument-shape refusal comes BEFORE the body is resolved:
 			// resolving may read stdin to EOF, and a call that was never going to
@@ -271,24 +269,17 @@ type addedTaskView struct {
 // finding out in March, or at the close that hands out one occurrence more than
 // the count.
 func noteRepeatBinds(a *app.App, created []core.Task) [][]string {
-	said := map[string]bool{}
 	warns := make([][]string, len(created))
 	for i := range created {
 		warns[i] = a.RepeatWarnings(&created[i])
-		for _, w := range warns[i] {
-			if said[w] {
-				continue
-			}
-			said[w] = true
-			stderrNote(w)
-		}
 	}
+	noteOnce(warns...)
 	return warns
 }
 
 // noteInheritedEpic discloses on stderr that a bare add (no -e) filed the
 // created task(s) under the scope's single active epic — the inheritance must
-// never be silent, and the escape (`-e ”` now, `set <id> -e ”` after) rides
+// never be silent, and the escape (`-e ""` now, `set <id> -e ""` after) rides
 // in the same line. One note per command, whatever the arity.
 func noteInheritedEpic(cmd *cobra.Command, created []core.Task) {
 	if cmd.Flags().Changed("epic") {

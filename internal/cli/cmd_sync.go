@@ -394,7 +394,7 @@ func incomingLine(changes []app.IncomingChange) string {
 }
 
 // mergedLine renders the shards the pull merged field-wise as one line:
-// "merged: 1 shard(s) both sides wrote in different fields (.furrow/tasks/t-x.json)".
+// "merged: 1 shard(s) both sides had written (.furrow/tasks/t-x.json)".
 // At most three paths are named (capNames), the count is exact and the full
 // list is the JSON `merged_shards` key. Nothing merged -> "" (quiet).
 func mergedLine(paths []string) string {

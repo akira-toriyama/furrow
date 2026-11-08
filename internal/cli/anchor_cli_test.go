@@ -164,7 +164,7 @@ func TestEpicClearAnchorDisclosesFollowers(t *testing.T) {
 		t.Fatalf("anchor-unset is a warn, exit %d:\n%s", code, lint)
 	}
 	for _, id := range []string{follower, cross} {
-		if !strings.Contains(lint, "anchor-unset      "+id) {
+		if !strings.Contains(lint, "anchor-unset  "+id) {
 			t.Errorf("lint does not name %s:\n%s", id, lint)
 		}
 	}

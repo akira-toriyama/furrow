@@ -32,20 +32,33 @@ func printTaskTable(a *app.App, tasks []core.Task) {
 // string ends the row plainly. It is a trailer, not a column: the title cell
 // is unbounded, so nothing after it can align, and a header would name a
 // column that is not there.
+// maxLen is the width a column needs to hold every one of its cells: tables
+// pad to their content, never to a guessed constant (lint's `%-16s` had nine
+// of fifty-eight codes spilling over it, doctor's `%-22s` two).
+func maxLen(cells []string) int {
+	w := 0
+	for _, c := range cells {
+		w = max(w, len(c))
+	}
+	return w
+}
+
+// cells projects one string column out of a slice of rows, for maxLen.
+func cells[T any](rows []T, get func(T) string) []string {
+	out := make([]string, len(rows))
+	for i := range rows {
+		out[i] = get(rows[i])
+	}
+	return out
+}
+
 func printRows(a *app.App, tasks []core.Task, glyphs, trail []string) {
 	if len(tasks) == 0 {
 		fmt.Fprintln(out, "(no tasks)")
 		return
 	}
-	wID, wStatus := len("ID"), len("STATUS")
-	for _, t := range tasks {
-		if len(t.ID) > wID {
-			wID = len(t.ID)
-		}
-		if len(t.Status) > wStatus {
-			wStatus = len(t.Status)
-		}
-	}
+	wID := max(len("ID"), maxLen(cells(tasks, func(t core.Task) string { return t.ID })))
+	wStatus := max(len("STATUS"), maxLen(cells(tasks, func(t core.Task) string { return t.Status })))
 	lead := func(g string) string {
 		if glyphs == nil {
 			return ""
@@ -149,7 +162,7 @@ func signalTrailer(rs []core.RevisitReason) string {
 // emitRevisit renders `revisit` results. In --json / --ndjson it attaches the
 // reasons to each task so an agent sees exactly what to fix; the human table is
 // the shared one with each row ending `← code: detail` — the same reasons, so
-// the table alone says WHY a row is here. Unlike `next`, an empty result is the
+// the table alone says WHY a row is here. Like `next`'s, an empty result is the
 // healthy "nothing to revisit" state and exits 0 — an agent pipeline must not
 // treat it as an error.
 func emitRevisit(a *app.App, items []app.RevisitItem) error {

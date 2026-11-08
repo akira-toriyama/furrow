@@ -165,8 +165,9 @@ func applyMigrate(cmd *cobra.Command, a *app.App, res migrate.Result, labels []s
 		return nil
 	}
 	fmt.Fprintf(out, "imported %d task(s)\n", len(created))
+	wLane := maxLen(cells(created, func(t core.Task) string { return t.Status }))
 	for _, t := range created {
-		fmt.Fprintf(out, "  %s  %-12s  %s\n", t.ID, t.Status, t.Title)
+		fmt.Fprintf(out, "  %s  %-*s  %s\n", t.ID, wLane, t.Status, t.Title)
 	}
 	for _, w := range warnings {
 		stderrWarn(w)

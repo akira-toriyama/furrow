@@ -8,7 +8,7 @@ import (
 
 // t-mzek, whole stack: on a board whose scope has exactly ONE active epic, a
 // bare `furrow add` files the capture under it (disclosed on stderr, stdout
-// stays the created task), `-e ”` stays unfiled on purpose, and --stdin
+// stays the created task), `-e ""` stays unfiled on purpose, and --stdin
 // follows the same rule with ONE note for the batch.
 // runSplitStdin is runSplit with a stdin feed — needed because --stdin reads
 // titles from the command's input stream.
