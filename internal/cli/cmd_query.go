@@ -624,10 +624,11 @@ func newRevisitCmd() *cobra.Command {
 		f         filterFlags
 		staleDays int
 		queryStr  []string
+		boxes     bool
 	)
 	cmd := &cobra.Command{
 		Use:   "revisit",
-		Short: "List open tasks needing re-evaluation (agent re-weighing signal)",
+		Short: "List open tasks (or, with --boxes, epics) needing re-evaluation (agent re-weighing signal)",
 		Long: "List the open tasks worth a fresh judgment, the read-only counterpart to\n" +
 			"`next`. A task surfaces when it is a draft (no repo), an estimate is unset\n" +
 			"(value/effort), it has gone stale (no update within [revisit].stale_days),\n" +
@@ -639,6 +640,13 @@ func newRevisitCmd() *cobra.Command {
 			"Drafts surface regardless of the board scope. An empty result is healthy\n" +
 			"and exits 0. Use --repo to restrict to a repo and --stale-days to override\n" +
 			"the staleness window (0 disables it).\n\n" +
+			"--boxes lists the EPICS with a signal instead — the five box codes\n" +
+			"(epic_all_done, epic_stuck, epic_stale, epic_dep_done, epic_review_due)\n" +
+			"that `sync` and `brief` count — one row per box ending the same\n" +
+			"`← code: detail`, and in --json/--ndjson the epic record plus the same\n" +
+			"`revisit` array (an array of boxes, never mixed with task rows: the two\n" +
+			"are different entities). It honors -r, -n and --stale-days (epic_stale)\n" +
+			"and refuses the task-shaped filters -q/-l/-e (exit 2).\n\n" +
 			"-q ANDs a typed query onto the surfaced set — the same language as `ls -q`\n" +
 			"— narrowing WHICH flagged tasks come back (`revisit -q 'label:cli'`); a\n" +
 			"task still needs at least one revisit signal to appear. Within -q,\n" +
@@ -646,6 +654,7 @@ func newRevisitCmd() *cobra.Command {
 			"flag and the query cannot disagree.",
 		Example: "  furrow revisit                 # everything worth a fresh look\n" +
 			"  furrow revisit --json -n5\n" +
+			"  furrow revisit --boxes         # the epics with a signal (stuck, all done, …)\n" +
 			"  furrow revisit -q 'label:cli'  # only the flagged tasks tagged cli\n" +
 			"  furrow revisit --stale-days 7  # tighter staleness window",
 		Args: cobra.NoArgs,
@@ -659,12 +668,29 @@ func newRevisitCmd() *cobra.Command {
 			if cmd.Flags().Changed("stale-days") {
 				days = staleDays
 			}
+			// Presence, not value: `-e ''` is as meaningless on a box row as
+			// `-e e-x`, so the flag being given at all is the refusal.
+			if boxes && (cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("epic")) {
+				return core.Validationf("", "cannot combine --boxes with -q/-l/-e (those filter tasks; a box row is an epic)")
+			}
 			o, err := scopedQuery(cmd, a, joinOrFilter(f.label), f.repoValue(), f.epicValue())
 			if err != nil {
 				return err
 			}
 			o.Limit = f.limit
 			o.Query = joinQuery(queryStr)
+			if boxes {
+				all, err := a.RevisitEpics(o, days)
+				if err != nil {
+					return err
+				}
+				shown := all
+				if o.Limit > 0 && len(all) > o.Limit {
+					shown = all[:o.Limit]
+				}
+				hintCapped(len(shown), o.Limit, "", func() (int, error) { return len(all), nil })
+				return emitRevisitBoxes(shown)
+			}
 			items, err := a.Revisit(o, days)
 			if err != nil {
 				return err
@@ -684,6 +710,7 @@ func newRevisitCmd() *cobra.Command {
 	}
 	addFilterFlags(cmd, &f, want("label"), want("repo"), want("limit"), want("epic"))
 	cmd.Flags().IntVar(&staleDays, "stale-days", 0, "days without update before stale (default: config [revisit].stale_days; 0 disables)")
+	cmd.Flags().BoolVar(&boxes, "boxes", false, "list the epics with a signal instead of tasks (the epic_* codes sync and brief count)")
 	addQueryFlag(cmd, &queryStr)
 	return cmd
 }

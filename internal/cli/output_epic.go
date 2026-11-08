@@ -79,6 +79,45 @@ func emitEpicList(a *app.App, items []app.EpicItem) error {
 	return nil
 }
 
+// epicRevisitView is one `revisit --boxes` row in --json: the epic record plus
+// the signals it triggered — the box twin of revisitView (task + `revisit`),
+// and like it the lean shape: no progress/stuck beside the stored keys, the
+// reasons' details already say what the row is here for.
+type epicRevisitView struct {
+	core.Epic
+	Revisit []core.RevisitReason `json:"revisit"`
+}
+
+// emitRevisitBoxes renders `revisit --boxes`: --json an array of boxes (empty
+// -> [], never null; never mixed with task rows — the two are different
+// entities), --ndjson one box per line, the human form one `epic ls`-style row
+// per box ending `← code: detail` so the row alone says why. Empty is the
+// healthy "no box needs a look" state (exit 0), as for the task read.
+func emitRevisitBoxes(items []app.EpicRevisitItem) error {
+	views := make([]epicRevisitView, 0, len(items))
+	for _, it := range items {
+		views = append(views, epicRevisitView{Epic: it.Epic, Revisit: it.Reasons})
+	}
+	emitList(views, func() {
+		if len(views) == 0 {
+			fmt.Fprintln(out, "(no boxes)")
+			return
+		}
+		for _, v := range views {
+			mark := " "
+			if v.Active {
+				mark = "▶"
+			}
+			line := fmt.Sprintf("%s %s  %s", mark, v.ID, v.Title)
+			if v.Standing {
+				line += "  [standing]"
+			}
+			fmt.Fprintf(out, "%s  ← %s\n", line, signalTrailer(v.Revisit))
+		}
+	})
+	return nil
+}
+
 // epicDetailView is `epic show --json`: the box plus its members, in the same
 // row shape `ls --json` uses so a consumer parses one task type, not two.
 type epicDetailView struct {

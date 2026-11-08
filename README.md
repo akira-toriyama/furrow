@@ -242,7 +242,7 @@ The table is **generated from the binary**: the cobra tree's `Use`/`Short`/alias
 | `show <id>...` | Show tasks or epics with metadata and markdown body (batch-friendly) | `--archived`, `--backlinks`, `--no-body` |
 | `next` | Show actionable tasks (in the next-lanes, all deps done, in the active epic) | `--all-epics`, `-e/--epic`, `-l/--label`, `--lanes`, `-n/--limit`, `-q/--query`, `-r/--repo` |
 | `brief` | One-shot session-orient read: due band, active/pinned epics, next picks with bodies, blocked, revisit, drafts | `-l/--label`, `-n/--limit`, `-r/--repo`, `--stale-days` |
-| `revisit` | List open tasks needing re-evaluation (agent re-weighing signal) | `-e/--epic`, `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `--stale-days` |
+| `revisit` | List open tasks (or, with --boxes, epics) needing re-evaluation (agent re-weighing signal) | `--boxes`, `-e/--epic`, `-l/--label`, `-n/--limit`, `-q/--query`, `-r/--repo`, `--stale-days` |
 | `search <term>` | Full-text search over every task's title, checklist, refs and body | `--archived`, `-e/--epic`, `-l/--label`, `-n/--limit`, `-q/--query`, `--regex`, `-r/--repo`, `-s/--status` |
 | `stats` | Summarize the board: counts by lane, repo, and label | `-e/--epic`, `-l/--label`, `-q/--query`, `-r/--repo`, `--since`, `-s/--status`, `--until` |
 | `board` | Print the active board: store path, mode/layout, scope, lane vocabulary, and schema state | — |
@@ -304,7 +304,7 @@ The generated table is the machine-guaranteed surface; these are the behavior co
 - **`show`** — any number of ids (tasks or epics) in one read, `--json` **always an array**; a partial miss still prints what was found, and the error names the rest in `details.missing`. The human output names what `deps` and `epic` point at, while `--json` keeps the ids plus `actionable`/`blocked_by`, so `show --no-body --json` is key-for-key an `ls` row: `furrow show --help`.
 - **`next`** — actionable = lane in `[next].lanes` **and** every dep done; on a board with epics it is scoped to the pinned boxes, then the active box, then the unfiled pile (with nothing active, only the pinned band remains), and what the scope leaves out is counted on stderr: `furrow next --help`.
 - **`brief`** — the session-orient read, `furrow sync && furrow brief`: **`due` leads and no automatic scope narrows it**, then the epic header, `next`'s top picks (with bodies in `--json`), `blocked`, the `revisit` summary, drafts, and `sync`'s lint ride-along. Read-only and git-free: `furrow brief --help`.
-- **`revisit`** — read-only; every row ends `← code: detail` and `--json` carries the same as a `revisit` array of `{code, detail}`, so an agent knows what to fix (the task and box codes: `App.Revisit` in `internal/app/revisit.go`); the box signals ride `sync`/`brief`'s summary, not this read. The contract is `furrow revisit --help`.
+- **`revisit`** — read-only; every row ends `← code: detail` and `--json` carries the same as a `revisit` array of `{code, detail}`, so an agent knows what to fix (the task and box codes: `App.Revisit` in `internal/app/revisit.go`); `--boxes` lists the epics with a signal instead — the ones `sync`/`brief` count on their `boxes:` line — as an array of boxes carrying the same `revisit` array, never mixed into the task rows. The contract is `furrow revisit --help`.
 - **`search`** — a case-insensitive substring, or with `--regex` an RE2 pattern, over each task's title, checklist items, refs, then body, under `ls`'s scope and `-q`; each hit names its `matched_field` and a `snippet`: `furrow search --help`.
 - **`stats`** — the board's shape (`total`, the board-wide `drafts`, `by_lane`, `by_repo`, `by_label`; `-r ''` for the whole board), and with `--since`/`--until` a `window` of the ids created and closed inside the bounds, archive included — the machine side of a session's `created ≤ closed − 1` budget check; `furrow stats --help`.
 - **`board`** — the introspection snapshot (store, discovery source, mode/layout, scope, lanes, schema state) that **never fails on a version mismatch — it reports one**; `furrow board --help`.
@@ -509,7 +509,8 @@ Every failure is an error envelope: branch on its `kind`, and re-run only when
   `details.fields` name what needs a decision.
 
 A **successful** sync also prints the repo-scoped `revisit` summary — `dep_done`
-and `stale` task ids, the box signals of [`revisit`](#command-notes), and the
+and `stale` task ids (`furrow revisit` lists them), the box signals on a
+`boxes:` line (`furrow revisit --boxes` lists them, see [`revisit`](#command-notes)), and the
 repos whose review clock lapsed (`unreviewed`); `--json` gains a `revisit` key,
 each list omitted when empty and the whole key when clean — plus a lint error
 count by code and the `epic activate` records it published: ride-alongs that

@@ -121,7 +121,8 @@ func (a *App) epicReasons(e *core.Epic, st epicStats, epics []core.Epic, now tim
 }
 
 // RevisitEpics lists the boxes with at least one signal, in EpicList's order
-// (active first). Read-only.
+// (active first) — the read behind `furrow revisit --boxes`, and the source of
+// RevisitSummary's epic keys. Read-only.
 func (a *App) RevisitEpics(o QueryOpts, staleDays int) ([]EpicRevisitItem, error) {
 	idx, err := a.load()
 	if err != nil {
