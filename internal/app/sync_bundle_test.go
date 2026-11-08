@@ -19,6 +19,7 @@ import (
 // writes — behind. The pre-flight refuses before the commit, so the write
 // stays in the working tree for the branch to pick up.
 func TestSyncRefusesADetachedHeadBeforeCommitting(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	gittest.RunGit(t, git, cloneA, "checkout", "-q", "--detach")
 	a := openBoard(t, cloneA)
@@ -42,6 +43,7 @@ func TestSyncRefusesADetachedHeadBeforeCommitting(t *testing.T) {
 // refuses before committing (exit 2, its own kind) instead of committing and
 // relaying git's "no upstream configured" as git-failed exit 3.
 func TestSyncRefusesABranchWithoutUpstreamBeforeCommitting(t *testing.T) {
+	t.Parallel()
 	git := gittest.GitOrSkip(t)
 	dir := t.TempDir()
 	gittest.RunGit(t, git, dir, "init", "-q", "-b", "main")
@@ -74,6 +76,7 @@ func TestSyncRefusesABranchWithoutUpstreamBeforeCommitting(t *testing.T) {
 // has a pathspec of "." and git prints its paths bare, so the "<spec>/" prefix
 // rule called every shard foreign and sync committed nothing.
 func TestSyncCommitsAStoreThatIsTheGitToplevel(t *testing.T) {
+	t.Parallel()
 	git := gittest.GitOrSkip(t)
 	origin := t.TempDir()
 	gittest.RunGit(t, git, origin, "init", "-q", "--bare", "-b", "main")
@@ -130,6 +133,7 @@ func TestPartitionSyncAndShardKindOfAcceptAToplevelStore(t *testing.T) {
 // the operator meant stayed pending. It is refused before anything is
 // committed, naming the bodies -b can name.
 func TestSyncRefusesABodyIDThatNamesNoTask(t *testing.T) {
+	t.Parallel()
 	git, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	x, err := a.Add("x", AddOpts{})
@@ -163,6 +167,7 @@ func TestSyncRefusesABodyIDThatNamesNoTask(t *testing.T) {
 // body is, so it is reported in pending_bodies — and a refused sync is never
 // complete.
 func TestSyncReportsAMarkedBodyAsPendingAndIncomplete(t *testing.T) {
+	t.Parallel()
 	_, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	x, err := a.Add("x", AddOpts{})
@@ -188,6 +193,7 @@ func TestSyncReportsAMarkedBodyAsPendingAndIncomplete(t *testing.T) {
 // An unarchive is a shard that reappears under tasks/ while its archive/ copy
 // goes: "created" sent the reader after a task they had already closed.
 func TestSyncIncomingNamesAnUnarchive(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 	a := openBoard(t, cloneA)
 	x, err := a.Add("x", AddOpts{})

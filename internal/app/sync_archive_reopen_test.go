@@ -15,6 +15,7 @@ import (
 // reopen onto the archive copy — cleanly: an open task in archive/ that no
 // read showed and lint did not flag (t-pmz8).
 func TestSyncArchiveVersusReopenIsAConflictNotASilentArchivedReopen(t *testing.T) {
+	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
 	a := openBoard(t, cloneA)
 	x, err := a.Add("x", AddOpts{})
