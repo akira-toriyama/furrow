@@ -201,7 +201,7 @@ func TestCLIMigrateQuietWithoutBoxes(t *testing.T) {
 
 // TestCLIMigrateInheritsActiveEpic carries `add`'s inheritance to the batch: a
 // bare import during a declared focus files under it, disclosed on stderr, and
-// `-e ”` opts out on purpose (which is then an unfiled import, and warned
+// `-e ""` opts out on purpose (which is then an unfiled import, and warned
 // about as one — the warning states the OUTCOME, not a mistake).
 func TestCLIMigrateInheritsActiveEpic(t *testing.T) {
 	initStore(t)

@@ -155,8 +155,7 @@ type epicMetaView struct {
 func emitEpicDetail(a *app.App, d *app.EpicDetail, noBody bool) error {
 	if jsonMode() {
 		if noBody {
-			v := toEpicDetailView(d)
-			emitObject(epicMetaView{Epic: v.Epic, Progress: v.Progress, Stuck: v.Stuck, Waiting: v.Waiting, ResolvedDeps: v.ResolvedDeps, Tasks: v.Tasks})
+			emitObject(toEpicDetailView(d).meta())
 			return nil
 		}
 		emitObject(toEpicDetailView(d))
@@ -174,6 +173,15 @@ func emitEpicDetail(a *app.App, d *app.EpicDetail, noBody bool) error {
 // toEpicDetailView is the epic detail's JSON value, split out so `furrow show
 // <epic-id>` emits the SAME object `epic show` does — one shape per entity, no
 // second box view to keep in step.
+// meta is the detail view without its body — what --no-body emits, for `epic
+// show` and `show <epic>` alike: every resolved fact the full view carries,
+// minus the prose. One projection, so the two commands cannot drop different
+// keys (they did: `show` lost deps_resolved, both lost successor_resolved).
+func (v epicDetailView) meta() epicMetaView {
+	return epicMetaView{Epic: v.Epic, Progress: v.Progress, Stuck: v.Stuck, Waiting: v.Waiting,
+		ResolvedDeps: v.ResolvedDeps, ResolvedSuccessor: v.ResolvedSuccessor, Tasks: v.Tasks}
+}
+
 func toEpicDetailView(d *app.EpicDetail) epicDetailView {
 	v := epicDetailView{Epic: d.Epic, Progress: d.Progress, Stuck: d.Stuck, Waiting: d.Waiting, BodyText: d.Body}
 	v.ResolvedDeps = make([]epicRefView, 0, len(d.Deps))

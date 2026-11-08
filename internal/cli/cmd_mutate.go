@@ -82,15 +82,23 @@ func staleReadExtra(id string, actual *time.Time, expected time.Time) map[string
 // one per write. Under --json/--ndjson the line is one JSON object on stderr
 // (`{"session_warn": {message, clashes}}`) rather than prose, so a caller
 // that already parses stderr for the error envelope parses this the same way.
-func sessionGuardExtra(a *app.App) map[string]any {
-	clashes := a.TakeSessionWarn()
-	fresh := a.UnheardClashes(clashes)
+// printNotes drains the app's queued stderr notes — the session guard's
+// stand-downs and the write-time notes — in that order, one `note:` line each.
+// Shared by the success path (the envelope annotate) and classifyFailure, so a
+// note queued before a later failure is printed exactly once either way.
+func printNotes(a *app.App) {
 	for _, n := range a.TakeSessionNotes() {
 		fmt.Fprintln(errOut, "note:", n)
 	}
 	for _, n := range a.TakeNotes() {
 		fmt.Fprintln(errOut, "note:", n)
 	}
+}
+
+func sessionGuardExtra(a *app.App) map[string]any {
+	clashes := a.TakeSessionWarn()
+	fresh := a.UnheardClashes(clashes)
+	printNotes(a)
 	if len(clashes) == 0 {
 		return nil
 	}
@@ -174,8 +182,7 @@ func emitMutationVerb(cmd *cobra.Command, a *app.App, verb func() string, id str
 // length must not fork the shape — the always-array rule), --ndjson one
 // envelope per line, human mode one verb line per task. Befores come from one
 // batch read; a miss there is harmless because the mutate closure is the
-// authority and fails the whole batch before anything is printed.
-// emitMutationManyWith renders a batch mutation, with an optional per-task
+// authority and fails the whole batch before anything is printed. The optional
 // annotate: given a resulting task it returns extra top-level fields merged
 // into THAT task's envelope — the batch twin of emitMutationWith's annotate (done --note
 // surfaces `appended` on each, a single-id set its `clamped`/`renumbered`).
@@ -338,12 +345,7 @@ func newDoneCmd() *cobra.Command {
 			"  furrow done t-k3m9p t-x7q2m t-9d4nk   # triage sweep, one write\n" +
 			"  furrow done -q 'label:spike status:waiting'        # preview the selection\n" +
 			"  furrow done -q 'label:spike status:waiting' --yes  # close it, one write",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") || cmd.Flags().Changed("yes") {
-				return cobra.ArbitraryArgs(cmd, args) // the id/selector clash gets its own message in guard
-			}
-			return cobra.MinimumNArgs(1)(cmd, args)
-		},
+		Args: sel.args,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()
 			if err != nil {
@@ -367,37 +369,28 @@ func newDoneCmd() *cobra.Command {
 				}
 				args = taskIDs(tasks)
 			}
-			if !cmd.Flags().Changed("note") {
-				rs, after := newSeriesReports(), []*core.Task(nil)
-				if err := emitMutationManyWith(cmd, a, "done", args, func() ([]*core.Task, error) {
-					ts, reps, err := a.DoneMany(args, nil)
-					rs.collect(ts, reps)
-					after = ts
-					return ts, err
-				}, rs.annotate); err != nil {
-					return err
-				}
-				rs.print(a, after)
-				return nil
-			}
-			text, terr := readTextArg(cmd, note)
-			if terr != nil {
-				return terr
-			}
-			// `changed` tracks metadata only, so surface the note's effect the
-			// way the note command does.
-			trimmed := strings.TrimRight(text, "\n")
 			rs, after := newSeriesReports(), []*core.Task(nil)
-			if err := emitMutationManyWith(cmd, a, "done", args,
-				func() ([]*core.Task, error) {
-					ts, reps, err := a.DoneMany(args, &text)
-					rs.collect(ts, reps)
-					after = ts
-					return ts, err
-				},
-				func(t *core.Task) map[string]any {
+			var notePtr *string
+			annotate := rs.annotate
+			if cmd.Flags().Changed("note") {
+				text, terr := readTextArg(cmd, note)
+				if terr != nil {
+					return terr
+				}
+				notePtr = &text
+				// `changed` tracks metadata only, so surface the note's effect the
+				// way the note command does.
+				trimmed := strings.TrimRight(text, "\n")
+				annotate = func(t *core.Task) map[string]any {
 					return mergeExtra(map[string]any{"appended": trimmed}, rs.annotate(t))
-				}); err != nil {
+				}
+			}
+			if err := emitMutationManyWith(cmd, a, "done", args, func() ([]*core.Task, error) {
+				ts, reps, err := a.DoneMany(args, notePtr)
+				rs.collect(ts, reps)
+				after = ts
+				return ts, err
+			}, annotate); err != nil {
 				return err
 			}
 			rs.print(a, after)
@@ -443,7 +436,7 @@ func newMoveCmd() *cobra.Command {
 			"  furrow move -q 'status:inbox no:value' icebox        # preview\n" +
 			"  furrow move -q 'status:inbox no:value' icebox --yes  # one write",
 		Args: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") || cmd.Flags().Changed("yes") {
+			if sel.active(cmd) || cmd.Flags().Changed("yes") {
 				return cobra.MinimumNArgs(1)(cmd, args) // <lane> only; extra ids get guard's message
 			}
 			return cobra.MinimumNArgs(2)(cmd, args)
@@ -902,448 +895,6 @@ func newDepCmd() *cobra.Command {
 	return cmd
 }
 
-// newSetCmd combines the routine triage edits into one write, so triaging a task
-// no longer means running move + reorder + value + effort + label + epic as
-// separate commands.
-func newSetCmd() *cobra.Command {
-	var (
-		status      string
-		value       int
-		effort      int
-		clearValue  bool
-		clearEffort bool
-		addLabels   []string
-		rmLabels    []string
-		addRepos    []string
-		rmRepos     []string
-		epicRef     string
-		priority    int
-		before      string
-		after       string
-		due         string
-		clearDue    bool
-		dueShift    string
-		repeatSpec  string
-		clearRepeat bool
-		anchorRef   string
-		clearAnchor bool
-		sel         writeSelector
-	)
-	cmd := &cobra.Command{
-		Use:   "set [<id>...]",
-		Short: "Apply several triage edits at once (lane, priority, value, effort, labels, repos, epic, due, repeat, anchor)",
-		Long: "Combine the routine triage edits into a single write: move a lane (-s),\n" +
-			"position the task (--priority, or --before/--after a task in the destination\n" +
-			"lane — so a cross-lane drop is lane + position in ONE write), set or clear\n" +
-			"the 1..5 value/effort estimates, add/remove labels, attach/detach repos\n" +
-			"(--add-repo/--rm-repo — the same strict resolution `furrow repo --add` uses, so a short name must\n" +
-			"match exactly one known repo; removing the last repo leaves a first-class\n" +
-			"DRAFT), and file the task under\n" +
-			"an epic (-e), and set or clear the due date (--due/--clear-due, where\n" +
-			"--due +1d is the snooze, measured from now, and a bare date or datetime is\n" +
-			"read in the board's [due].timezone — an RFC3339 instant carries its own\n" +
-			"zone, and `ls --json` prints stored dues as UTC instants; on a repeating\n" +
-			"task it moves THIS occurrence only — the series anchor never moves — and\n" +
-			"--clear-due there is exit 2; --due-shift +7d instead moves the due each\n" +
-			"task ALREADY carries by that offset — the reschedule, when the date the\n" +
-			"promises were derived from moved: every selected due keeps its distance\n" +
-			"to its neighbours, where one shared --due would flatten them onto a\n" +
-			"single instant. Units m/h/d/w: days and weeks are calendar days in the\n" +
-			"board's zone, so the wall clock survives a DST boundary (a clock the\n" +
-			"target day skips lands the gap's width later, never earlier); minutes\n" +
-			"and hours are exact. A task with no due is refused, every undated id\n" +
-			"named in details.undated and nothing written, and it never rides with\n" +
-			"--due/--clear-due; on a repeating task it, too, moves this occurrence\n" +
-			"only), and bind or drop a recurrence rule (--repeat,\n" +
-			"anchored to the due of the same write — so `--due <date> --repeat <rule>`\n" +
-			"in ONE write is how a series is re-anchored, --due alone never is, and\n" +
-			"--repeat alone re-anchors the rule to the due the task already carries;\n" +
-			"--clear-repeat), and mark the due as FOLLOWING a box's day (--anchor <epic>:\n" +
-			"the box must already carry one, `furrow epic set --anchor YYYY-MM-DD`; when\n" +
-			"that day moves, this due moves with it by the same calendar-day delta —\n" +
-			"the reschedule, one command instead of a --due-shift per guess. The\n" +
-			"pointer needs a due (a task with none is refused, every undated id in\n" +
-			"details.undated, nothing written — promise one in the same write with\n" +
-			"--due) and never sits beside a repeat rule (a series follows its own\n" +
-			"repeat_anchor; details.repeating); --clear-due drops it with the due;\n" +
-			"--clear-anchor drops it alone, the due stays. `show` prints the due as\n" +
-			"D-N against the box's day; `-q anchor:<epic>` / `has:anchor` select the\n" +
-			"followers, `has:due no:anchor` the dates the other side or the calendar\n" +
-			"fixed) — instead of running move + reorder + value +\n" +
-			"effort + label as separate commands. At least one change is required; an unknown lane is\n" +
-			"exit 2 with the configured lanes in candidates (like move/add) and an\n" +
-			"unresolvable -e epic exits 2 with the known boxes,\n" +
-			"a relative target outside the destination lane is exit 2, and under\n" +
-			"[labels].required a set that would strip the last label is refused. A\n" +
-			"relative placement that has to respace the lane does so in the same write\n" +
-			"and reports the neighbors in `renumbered`, exactly like reorder. A --repeat\n" +
-			"bind whose rule skips the months (or years) lacking its day, or whose anchor\n" +
-			"is not a date the rule lands on, says so: a stderr note, and the same\n" +
-			"messages in the envelope's `repeat_warnings` (absent when there are none) —\n" +
-			"on the CLOSED task's when the write also closes it, since the rule passes\n" +
-			"to the occurrence its `repeat` names. An empty --due '' is exit 2, never a\n" +
-			"silent clear (--clear-due is the clear).\n\n" +
-			"Several ids apply the SAME edits to all of them in ONE all-or-nothing\n" +
-			"write (bulk triage): a miss sets NOTHING and exits 1 with every miss in\n" +
-			"details.missing, and --json is ALWAYS an array of envelopes, one per id\n" +
-			"(a single id is a one-element array). The position flags\n" +
-			"(--priority/--before/--after) apply to ONE task and are exit 2 for two or\n" +
-			"more ids.\n\n" +
-			"Instead of enumerating ids, SELECT the targets with the read side's own\n" +
-			"filters — -q/-l/-r, ANDed under the board scope exactly as in ls. The\n" +
-			"selection previews until --yes ({dry_run: true, tasks} in JSON — plus the\n" +
-			"rows the apply would refuse under `refused`, and with --due-shift each\n" +
-			"landing under `moves` {id, from, to}; a flag the apply would refuse on its\n" +
-			"own, like a box or rule that does not resolve, is exit 2 before any\n" +
-			"preview), applies\n" +
-			"as the same single all-or-nothing write, matches-nothing is exit 0 with a\n" +
-			"stderr note, and it refuses to combine with ids, --expect-updated, or the\n" +
-			"position flags (a position places ONE task) — the full contract is\n" +
-			"spelled out in `furrow done --help`. With --due-shift the human preview\n" +
-			"prints each row's current due and the one it would get (→); a row with\n" +
-			"no due is marked refused, the count line then says 0 will be written\n" +
-			"and JSON adds `refused`, since --yes would exit 2. An explicit id list\n" +
-			"gets that preview through `-q 'id:<a>,<b>'` — under the board scope,\n" +
-			"so add -r '' to see every id the id form would write; there is no\n" +
-			"dry-run flag on the id form. A `set` that wrote a due echoes it on the\n" +
-			"human line, in the board's calendar.",
-		Example: "  furrow set t-k3m9p -s ready --value 4 --effort 2 --add-label bug\n" +
-			"  furrow set t-k3m9p -s ready --before t-x1y2z\n" +
-			"  furrow set t-k3m9p -e e-v0zdq\n" +
-			"  furrow set t-k3m9p t-x1y2z t-9f2qr -s backlog --add-label triaged\n" +
-			"  furrow set t-a1b2c t-b2c3d t-c3d4e --add-repo owner/app   # bulk attach, one write\n" +
-			"  furrow set t-k3m9p --due 2026-08-04     # promise it for that whole day\n" +
-			"  furrow set t-k3m9p --due +1d            # snooze a day from now\n" +
-			"  furrow set t-k3m9p --due-shift +7d      # a week later than it is now promised for\n" +
-			"  furrow set -q 'id:t-k3m9p,t-x1y2z' -r '' --due-shift -1d   # ids, previewed via -q id: (-r '' = whole board)\n" +
-			"  furrow set t-k3m9p --due 2026-11-07 --anchor e-v0zdq   # promised for D-14 of the box's day, and follows it\n" +
-			"  furrow set -q 'epic:e-v0zdq has:due no:repeat' --anchor e-v0zdq   # preview: mark the dues that follow the box's day\n" +
-			"  furrow ls -q 'has:due no:anchor'        # the dates the other side (or the calendar) fixed\n" +
-			"  furrow set t-k3m9p --clear-value --rm-label wip\n" +
-			"  furrow set -q 'status:inbox label:bug' -e e-v0zdq        # preview\n" +
-			"  furrow set -q 'status:inbox label:bug' -e e-v0zdq --yes  # one write",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("query") || cmd.Flags().Changed("label") || cmd.Flags().Changed("repo") || cmd.Flags().Changed("yes") {
-				return cobra.ArbitraryArgs(cmd, args) // the id/selector clash gets its own message in guard
-			}
-			return cobra.MinimumNArgs(1)(cmd, args)
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := openApp()
-			if err != nil {
-				return err
-			}
-			o := app.SetOpts{
-				Before:      before,
-				After:       after,
-				AddLabels:   addLabels,
-				RmLabels:    rmLabels,
-				AddRepos:    addRepos,
-				RmRepos:     rmRepos,
-				ClearValue:  clearValue,
-				ClearEffort: clearEffort,
-				ClearDue:    clearDue,
-				ClearRepeat: clearRepeat,
-			}
-			if cmd.Flags().Changed("repeat") {
-				o.Repeat = &repeatSpec
-				// The note needs the anchor the rule will be bound to, which is
-				// the task's due — so it is emitted after the write, off the
-				// stored fields, rather than guessed at here.
-			}
-			if cmd.Flags().Changed("status") {
-				o.Status = &status
-			}
-			if cmd.Flags().Changed("priority") {
-				p := priority
-				o.Priority = &p
-			}
-			if cmd.Flags().Changed("value") {
-				v := value
-				o.Value = &v
-			}
-			if cmd.Flags().Changed("effort") {
-				e := effort
-				o.Effort = &e
-			}
-			if cmd.Flags().Changed("epic") {
-				o.Epic = &epicRef
-			}
-			if cmd.Flags().Changed("due") {
-				o.Due = &due
-			}
-			if cmd.Flags().Changed("due-shift") {
-				o.DueShift = &dueShift
-			}
-			if cmd.Flags().Changed("anchor") {
-				o.Anchor = &anchorRef
-			}
-			o.ClearAnchor = clearAnchor
-			// subject names the task in a flag-validation error; a -q/-l/-r
-			// selection has no single task to blame, so it stays "".
-			subject := ""
-			if len(args) > 0 {
-				subject = args[0]
-			}
-			// An empty --due is exit 2, never a silent clear: a caller building
-			// `--due "$WHEN"` with an unset $WHEN has a bug, and --clear-due already
-			// spells the clear. Checked before the generic guard so the message can
-			// name the flag that DOES mean "remove it".
-			if f := cmd.Flags().Lookup("due"); f != nil && f.Changed && strings.TrimSpace(due) == "" {
-				return core.Validationf(subject, "--due was given an empty value; pass a date, or use --clear-due to remove it")
-			}
-			if f := cmd.Flags().Lookup("due-shift"); f != nil && f.Changed && strings.TrimSpace(dueShift) == "" {
-				return core.Validationf(subject, "--due-shift was given an empty value; pass a signed offset like +7d")
-			}
-			if f := cmd.Flags().Lookup("anchor"); f != nil && f.Changed && strings.TrimSpace(anchorRef) == "" {
-				return core.Validationf(subject, "--anchor was given an empty value; pass the epic whose day the due follows, or use --clear-anchor to remove it")
-			}
-			if err := emptyFlagErr(cmd, subject, "before", "after", "add-label", "rm-label", "add-repo", "rm-repo", "status"); err != nil {
-				return err
-			}
-			if err := sel.guard(cmd, args); err != nil {
-				return err
-			}
-			if sel.active(cmd) {
-				if cmd.Flags().Changed("priority") || cmd.Flags().Changed("before") || cmd.Flags().Changed("after") {
-					return core.Validationf("", "the position flags place ONE task; they cannot ride a -q/-l/-r selection")
-				}
-				// Vet what CAN be vetted before resolving, so the preview never
-				// shows a write the apply would refuse: an edit must exist (the
-				// app's own at-least-one-change rule), and a -s lane must be real.
-				hasEdit := o.Status != nil || o.Value != nil || o.Effort != nil || o.Epic != nil || o.Due != nil ||
-					o.DueShift != nil || o.Anchor != nil || o.ClearAnchor ||
-					o.ClearValue || o.ClearEffort || o.ClearDue || o.ClearRepeat || o.Repeat != nil ||
-					len(o.AddLabels) > 0 || len(o.RmLabels) > 0 ||
-					len(o.AddRepos) > 0 || len(o.RmRepos) > 0
-				if !hasEdit {
-					return core.Validationf("", "a selection needs at least one edit flag (-s, --value, --add-label, -e, --due, …) to apply")
-				}
-				// Everything the apply judges WITHOUT the index — the lane, the
-				// epic and anchor refs, the due/shift/repeat spellings, the flag
-				// combinations — is judged here, so the preview never shows a
-				// write that --yes would refuse for its flags alone (a `-e
-				// nosuchbox` used to preview "would set N" at exit 0).
-				if err := a.VetSet(o); err != nil {
-					return err
-				}
-				// The per-row refusals, one tail per flag that has them; several
-				// flags compose, each row carrying every tag and refused by any.
-				var tails []*previewTail
-				if o.DueShift != nil {
-					tails = append(tails, &previewTail{
-						tag:     func(t *core.Task) string { return shiftPreviewTag(a, t, *o.DueShift) },
-						refused: func(t *core.Task) bool { return !strings.HasPrefix(shiftPreviewTag(a, t, *o.DueShift), "→") },
-						move:    func(t *core.Task) (string, string, bool) { return shiftPreviewMove(a, t, *o.DueShift) },
-						key:     "refused",
-						why:     "cannot be shifted",
-						remedy:  "narrow the selection to the rows that can be shifted (-q has:due) — --yes would exit 2",
-					})
-				}
-				if o.Anchor != nil {
-					// The pointer's two invariants, so the preview marks the rows
-					// --yes would refuse (undated unless --due rides along,
-					// repeating unless --clear-repeat does) instead of promising
-					// them; the epic itself was resolved by VetSet.
-					tails = append(tails, &previewTail{
-						tag:     func(t *core.Task) string { return anchorPreviewTag(t, o) },
-						refused: func(t *core.Task) bool { return anchorPreviewTag(t, o) != "" },
-						key:     "refused",
-						why:     "cannot follow an anchor",
-						remedy:  "narrow the selection to the rows that can follow (-q 'has:due no:repeat') — --yes would exit 2",
-					})
-				}
-				if o.Repeat != nil {
-					// The rule's two invariants from the row's side: it counts from
-					// a due, and it cannot sit on a follower.
-					tails = append(tails, &previewTail{
-						tag:     func(t *core.Task) string { return repeatPreviewTag(t, o) },
-						refused: func(t *core.Task) bool { return repeatPreviewTag(t, o) != "" },
-						key:     "refused",
-						why:     "cannot take the rule",
-						remedy:  "narrow the selection to the rows that can repeat (-q 'has:due no:anchor') — --yes would exit 2",
-					})
-				}
-				if o.ClearDue {
-					// A rule counts from the due, so a repeating row keeps it (the
-					// apply refuses unless the same write drops the rule); the
-					// table test found this one — the preview promised the write.
-					tails = append(tails, &previewTail{
-						tag:     func(t *core.Task) string { return clearDuePreviewTag(t, o) },
-						refused: func(t *core.Task) bool { return clearDuePreviewTag(t, o) != "" },
-						key:     "refused",
-						why:     "cannot lose the due",
-						remedy:  "narrow the selection to the rows that do not repeat (-q no:repeat) or drop the rule in the same write (--clear-repeat) — --yes would exit 2",
-					})
-				}
-				tail := composeTails(tails...)
-				tasks, err := sel.resolve(cmd, a)
-				if err != nil {
-					return err
-				}
-				if !sel.yes {
-					emitSelectPreview(a, "set", tasks, tail)
-					return nil
-				}
-				if len(tasks) == 0 {
-					emitEmptySelection()
-					return nil
-				}
-				args = taskIDs(tasks)
-			}
-			// The clamped disclosure is per ENVELOPE, whatever the arity: the
-			// batch arm used to route through the annotation-free
-			// emitMutationMany, so `set <id> <id> --value 9` wrote 5 twice with
-			// no stderr note and no clamped key — breaking the README's "an
-			// explicit arg is never silently rounded". The note prints once
-			// (the clamp is the same for every id); the envelopes each carry it.
-			warnedClamp := false
-			clampExtra := func(after *core.Task) map[string]any {
-				if !warnedClamp {
-					warnClamp("value", o.Value, after.Value)
-					warnClamp("effort", o.Effort, after.Effort)
-					warnedClamp = true
-				}
-				clamped := map[string]any{}
-				if e := clampEntry(o.Value, after.Value); e != nil {
-					clamped["value"] = e
-				}
-				if e := clampEntry(o.Effort, after.Effort); e != nil {
-					clamped["effort"] = e
-				}
-				if len(clamped) == 0 {
-					return nil
-				}
-				return map[string]any{"clamped": clamped}
-			}
-			// The due a write bound is echoed on the human line: the one field
-			// whose stored value the caller could not have typed (a snooze is
-			// from now, a shift from a stamp they may not have read).
-			var dueEcho func(*core.Task) string
-			if o.Due != nil || o.DueShift != nil {
-				dueEcho = func(t *core.Task) string { return dueTag(a, t) }
-			}
-			if len(args) > 1 {
-				// A close is a close whatever the arity: the batch arm owes the
-				// same series receipt the single-id one gives, on stdout and in
-				// every envelope.
-				rs, closed := newSeriesReports(), []*core.Task(nil)
-				if err := emitMutationManyTagged(cmd, a, "set", args,
-					func() ([]*core.Task, error) {
-						ts, reps, err := a.SetMany(args, o)
-						rs.collect(ts, reps)
-						if err == nil && cmd.Flags().Changed("repeat") {
-							rs.bind(a, ts)
-						}
-						closed = ts
-						return ts, err
-					},
-					func(after *core.Task) map[string]any {
-						extra := map[string]any{}
-						for k, v := range clampExtra(after) {
-							extra[k] = v
-						}
-						for k, v := range rs.annotate(after) {
-							extra[k] = v
-						}
-						if len(extra) == 0 {
-							return nil
-						}
-						return extra
-					}, dueEcho); err != nil {
-					return err
-				}
-				rs.noteBound(closed)
-				rs.print(a, closed)
-				return nil
-			}
-			// One id still emits a one-element ARRAY (the always-array rule —
-			// `set <id>...` has array cardinality by signature); only the
-			// single-task renumbered extra needs this separate path.
-			var renumbered []core.PriorityChange
-			rs, closed := newSeriesReports(), []*core.Task(nil)
-			if err := emitMutationManyTagged(cmd, a, "set", args,
-				func() ([]*core.Task, error) {
-					t, ch, rep, err := a.Set(args[0], o)
-					renumbered = ch
-					if err != nil {
-						return nil, err
-					}
-
-					out := []*core.Task{t}
-					rs.collect(out, []*app.RepeatReport{rep})
-					if cmd.Flags().Changed("repeat") {
-						rs.bind(a, out)
-					}
-					closed = out
-					return out, nil
-				},
-				func(after *core.Task) map[string]any {
-					extra := map[string]any{}
-					for k, v := range clampExtra(after) {
-						extra[k] = v
-					}
-					for k, v := range respaceExtra(renumbered, after.Status) {
-						extra[k] = v
-					}
-					for k, v := range rs.annotate(after) {
-						extra[k] = v
-					}
-					if len(extra) == 0 {
-						return nil
-					}
-					return extra
-				}, dueEcho); err != nil {
-				return err
-			}
-			// `set -s done` closes like `done` does, so it owes the same receipt:
-			// without it the occurrence it just minted is invisible until a later
-			// read, and a machine could not tell it from a task that never repeated.
-			rs.noteBound(closed)
-			rs.print(a, closed)
-			return nil
-		},
-	}
-	cmd.Flags().StringVarP(&status, "status", "s", "", "move to this lane")
-	cmd.Flags().StringVarP(&epicRef, "epic", "e", "", "re-file under this epic (id, unique id prefix, or unique title substring; \"\" unfiles)")
-	cmd.Flags().IntVarP(&priority, "priority", "p", 0, "set the sparse priority directly (a value already held in the lane is disclosed in a note)")
-	cmd.Flags().StringVar(&before, "before", "", "place immediately before this task (in the destination lane)")
-	cmd.Flags().StringVar(&after, "after", "", "place immediately after this task (in the destination lane)")
-	cmd.Flags().IntVar(&value, "value", 0, "set the 1..5 value estimate")
-	cmd.Flags().IntVar(&effort, "effort", 0, "set the 1..5 effort estimate")
-	cmd.Flags().BoolVar(&clearValue, "clear-value", false, "clear the value estimate")
-	cmd.Flags().BoolVar(&clearEffort, "clear-effort", false, "clear the effort estimate")
-	cmd.Flags().StringVar(&due, "due", "", "set the due date: 2026-08-04 (that whole day), 2026-08-04T10:30, an RFC3339 instant, or an offset like +1d (the snooze)")
-	cmd.Flags().BoolVar(&clearDue, "clear-due", false, "clear the due date")
-	cmd.Flags().StringVar(&dueShift, "due-shift", "", "move the due each task already carries by a signed offset: +7d, -1w, +2h (m/h/d/w; days and weeks are calendar days in the board's zone, hours and minutes exact); refused on a task with no due")
-	cmd.Flags().StringVar(&repeatSpec, "repeat", "", "recur when closed: daily | every 2 weeks on mon,thu | monthly on last fri | ... (the task must carry a due; a raw RRULE line also works, minus a DTSTART)")
-	cmd.Flags().BoolVar(&clearRepeat, "clear-repeat", false, "stop this task recurring (drops the rule and its anchor)")
-	cmd.Flags().StringVar(&anchorRef, "anchor", "", "make the due follow this epic's day (id, unique prefix, or unique title substring; the box must carry one): when the day moves, so does the due; needs a due, refused beside --repeat")
-	cmd.Flags().BoolVar(&clearAnchor, "clear-anchor", false, "stop the due following a box's day (the due stays)")
-	// Without this the rebind is silently discarded: applySetSeries's switch puts
-	// --clear-repeat first, so `--repeat X --clear-repeat` looked like it took.
-	cmd.MarkFlagsMutuallyExclusive("repeat", "clear-repeat")
-	cmd.MarkFlagsMutuallyExclusive("anchor", "clear-anchor")
-	cmd.MarkFlagsMutuallyExclusive("anchor", "clear-due")
-	cmd.MarkFlagsMutuallyExclusive("anchor", "repeat")
-	// StringSlice, not StringArray: these edit the SAME field `label --add` does
-	// (cmd_mutate.go's newLabelCmd), and comma is how every label surface splits —
-	// `-l a,b` is OR on reads. As StringArray, `set --add-label "a,b"` stored the
-	// single label "a,b", which NO read filter can match (`-l "a,b"` means a OR b),
-	// so the write produced data unreachable by the tool that wrote it.
-	cmd.Flags().StringSliceVar(&addLabels, "add-label", nil, "add a label (repeatable; comma-separated)")
-	cmd.Flags().StringSliceVar(&rmLabels, "rm-label", nil, "remove a label (repeatable; comma-separated)")
-	cmd.Flags().StringSliceVar(&addRepos, "add-repo", nil, "attach a repo (owner/repo or a unique short name; repeatable; comma-separated)")
-	cmd.Flags().StringSliceVar(&rmRepos, "rm-repo", nil, "detach a repo (same forms; removing the last one leaves a draft; repeatable; comma-separated)")
-	cmd.MarkFlagsMutuallyExclusive("value", "clear-value")
-	cmd.MarkFlagsMutuallyExclusive("effort", "clear-effort")
-	cmd.MarkFlagsMutuallyExclusive("due", "clear-due", "due-shift")
-	cmd.MarkFlagsMutuallyExclusive("priority", "before", "after")
-	addSelectorFlags(cmd, &sel)
-	addExpectUpdatedFlag(cmd)
-	return cmd
-}
-
 // shiftPreviewTag is the preview row's answer to "where does --due-shift land
 // this one": the due it would carry after the write, in the board's calendar
 // like dueTag beside it, so the row reads as one before → after pair. A row
@@ -1421,20 +972,38 @@ func repeatPreviewTag(t *core.Task, o app.SetOpts) string {
 // from being wrong. (A NON-empty blank like `--add " "` is caught deeper, in
 // the app's requireNonBlank, which is where the whole rule lives.)
 func emptyFlagErr(cmd *cobra.Command, id string, names ...string) error {
+	remedies := make([]flagRemedy, 0, len(names))
 	for _, name := range names {
-		f := cmd.Flags().Lookup(name)
+		remedies = append(remedies, flagRemedy{name, "pass a real one or drop the flag"})
+	}
+	return emptyFlagRemedyErr(cmd, id, remedies...)
+}
+
+// flagRemedy pairs a flag with what an empty value should have been instead —
+// the half of the refusal that differs per flag (`--clear-due` is the clear,
+// `+7d` is an offset), where emptyFlagErr's generic remedy would misdirect.
+type flagRemedy struct {
+	name, remedy string
+}
+
+// emptyFlagRemedyErr is emptyFlagErr with a remedy per flag, checked in the
+// order given so the first offending flag is the one named. Empty is "passed
+// with nothing in it": no members for a slice flag, only whitespace otherwise.
+func emptyFlagRemedyErr(cmd *cobra.Command, id string, remedies ...flagRemedy) error {
+	for _, r := range remedies {
+		f := cmd.Flags().Lookup(r.name)
 		if f == nil || !f.Changed {
 			continue
 		}
+		empty := false
 		switch v := f.Value.(type) {
 		case interface{ GetSlice() []string }:
-			if len(v.GetSlice()) == 0 {
-				return core.Validationf(id, "--%s was given an empty value; pass a real one or drop the flag", name)
-			}
+			empty = len(v.GetSlice()) == 0
 		default:
-			if strings.TrimSpace(f.Value.String()) == "" {
-				return core.Validationf(id, "--%s was given an empty value; pass a real one or drop the flag", name)
-			}
+			empty = strings.TrimSpace(f.Value.String()) == ""
+		}
+		if empty {
+			return core.Validationf(id, "--%s was given an empty value; %s", r.name, r.remedy)
 		}
 	}
 	return nil
@@ -1602,16 +1171,11 @@ func (s *seriesReports) bind(a *app.App, tasks []*core.Task) {
 
 // noteBound says each bound rule's notes on stderr, once per distinct note.
 func (s *seriesReports) noteBound(tasks []*core.Task) {
-	said := map[string]bool{}
+	lists := make([][]string, 0, len(tasks))
 	for _, t := range tasks {
-		for _, w := range s.warns[t.ID] {
-			if said[w] {
-				continue
-			}
-			said[w] = true
-			stderrNote(w)
-		}
+		lists = append(lists, s.warns[t.ID])
 	}
+	noteOnce(lists...)
 }
 
 // collect zips the reports onto the tasks the write returned. app returns them

@@ -36,7 +36,7 @@ func TestEpicShowJSONCarriesResolvedDeps(t *testing.T) {
 	gate := addEpic(t, "gate", "-r", "o/r")
 	box := addEpic(t, "box", "-r", "o/r")
 	mustRun(t, "epic", "dep", box, gate)
-	for _, args := range [][]string{{"--json", "epic", "show", box}, {"--json", "epic", "show", box, "--no-body"}} {
+	for _, args := range [][]string{{"--json", "epic", "show", box}, {"--json", "epic", "show", box, "--no-body"}, {"--json", "show", box}, {"--json", "show", box, "--no-body"}} {
 		out := mustRun(t, args...)
 		var v struct {
 			Deps         []string `json:"deps"`
@@ -46,7 +46,16 @@ func TestEpicShowJSONCarriesResolvedDeps(t *testing.T) {
 				State string `json:"state"`
 			} `json:"deps_resolved"`
 		}
-		if err := json.Unmarshal([]byte(out), &v); err != nil {
+		// `show` is array-shaped (its Use says <id>...), `epic show` an object.
+		payload := []byte(out)
+		if strings.HasPrefix(strings.TrimSpace(out), "[") {
+			var arr []json.RawMessage
+			if err := json.Unmarshal(payload, &arr); err != nil || len(arr) != 1 {
+				t.Fatalf("%v: %v\n%s", args, err, out)
+			}
+			payload = arr[0]
+		}
+		if err := json.Unmarshal(payload, &v); err != nil {
 			t.Fatalf("%v: %v\n%s", args, err, out)
 		}
 		if len(v.Deps) != 1 || len(v.DepsResolved) != 1 || v.DepsResolved[0].ID != gate || v.DepsResolved[0].Title != "gate" || v.DepsResolved[0].State != "open" {

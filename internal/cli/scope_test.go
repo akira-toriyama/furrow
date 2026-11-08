@@ -262,7 +262,7 @@ func TestSweepRepos_AutoFilterFalseSweepsWholeBoard(t *testing.T) {
 	}
 }
 
-// An explicit -r ” is how a read asks for the whole board; the sweep keeps that
+// An explicit -r "" is how a read asks for the whole board; the sweep keeps that
 // meaning, so folding every repo's aged done stays possible — but it must now be
 // TYPED. The widest blast radius costs the most keystrokes, not the fewest.
 func TestSweepRepos_ExplicitEmptyRepoSweepsWholeBoard(t *testing.T) {

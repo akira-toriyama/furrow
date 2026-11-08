@@ -110,19 +110,8 @@ func printDoctorHuman(r *app.DoctorReport) {
 		fmt.Fprintf(out, "FURROW_BOARD: %s\n", r.EnvBoard)
 	}
 	for _, b := range r.Boards {
-		state := b.SchemaState
-		switch {
-		case !b.Exists && b.OnDisk:
-			state = "not a furrow store"
-		case !b.Exists:
-			state = "missing (not on disk)"
-		}
-		repo := b.Repo
-		if repo == "" {
-			repo = "(none)"
-		}
 		fmt.Fprintf(out, "\n%s\n", b.Store)
-		fmt.Fprintf(out, "  repo: %s  state: %s  writable: %t\n", repo, state, b.Writable)
+		fmt.Fprintln(out, boardStateLine(b.BoardEntry))
 		fmt.Fprintf(out, "  scopes: %s\n", strings.Join(b.Scopes, ", "))
 		fmt.Fprintf(out, "  git: %s\n", gitLine(b.Git))
 	}
@@ -150,8 +139,9 @@ func printDoctorHuman(r *app.DoctorReport) {
 	// The id column names WHAT the finding is about — for a board-level code
 	// the store path — so two boards' rows are never read as one board's
 	// (lint's row shape, t-b3dq).
+	wCode := maxLen(cells(r.Problems, func(p core.Problem) string { return p.Code }))
 	for _, p := range r.Problems {
-		fmt.Fprintf(out, "%-5s  %-22s  %s  %s\n", p.Severity, p.Code, p.ID, p.Msg)
+		fmt.Fprintf(out, "%-5s  %-*s  %s  %s\n", p.Severity, wCode, p.Code, p.ID, p.Msg)
 	}
 	if r.Healthy {
 		fmt.Fprintln(out, "ok — notes only, no problems")

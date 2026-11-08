@@ -112,8 +112,10 @@ func newLintCmd() *cobra.Command {
 				if len(ps) == 0 {
 					fmt.Fprintln(out, "ok — no problems")
 				}
+				wCode := maxLen(cells(ps, func(p core.Problem) string { return p.Code }))
+				wID := maxLen(cells(ps, func(p core.Problem) string { return p.ID }))
 				for _, p := range ps {
-					fmt.Fprintf(out, "%-5s  %-16s  %-8s  %s\n", p.Severity, p.Code, p.ID, p.Msg)
+					fmt.Fprintf(out, "%-5s  %-*s  %-*s  %s\n", p.Severity, wCode, p.Code, wID, p.ID, p.Msg)
 				}
 			})
 			if hasErrors {

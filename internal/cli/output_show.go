@@ -128,8 +128,7 @@ func emitShow(a *app.App, entries []app.ShowEntry, mentions [][]core.Task, noBod
 				// --no-body OMITS the key, as it does for a task (showView drops
 				// to the bare core.Task) — not an empty string, which a consumer
 				// cannot tell from a box whose body really is empty.
-				v := toEpicDetailView(e)
-				return epicMetaView{Epic: v.Epic, Progress: v.Progress, Stuck: v.Stuck, Waiting: v.Waiting, Tasks: v.Tasks}
+				return toEpicDetailView(e).meta()
 			}
 			return toEpicDetailView(e)
 		}

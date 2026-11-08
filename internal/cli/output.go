@@ -63,6 +63,22 @@ func printNDJSONValue(v any) {
 // carries one of the prefixes is printed as it is; TestStderrLinesCarryAPrefix
 // scans this package for a print that bypasses them.
 func stderrNote(s string) { fmt.Fprintln(errOut, stderrPrefixed("note: ", s)) }
+
+// noteOnce says each distinct note once, however many tasks carry it: the
+// same skipped-month warning on twenty occurrences is one line, in first-seen
+// order. The per-task lists stay intact for the JSON views.
+func noteOnce(lists ...[]string) {
+	said := map[string]bool{}
+	for _, l := range lists {
+		for _, w := range l {
+			if said[w] {
+				continue
+			}
+			said[w] = true
+			stderrNote(w)
+		}
+	}
+}
 func stderrWarn(s string) { fmt.Fprintln(errOut, stderrPrefixed("warning: ", s)) }
 
 func stderrPrefixed(prefix, s string) string {

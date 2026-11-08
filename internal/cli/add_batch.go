@@ -20,7 +20,7 @@ import (
 // batchLine is one NDJSON object of `add --batch`. Pointers and nil slices
 // tell "absent" from "present and empty": an absent scalar falls back to the
 // shared flag, an explicit `"epic": ""` means unfiled on purpose (add's
-// `-e ”`), and a list field unions with the flag's values.
+// `-e ""`), and a list field unions with the flag's values.
 type batchLine struct {
 	Key       string       `json:"key"`
 	Title     string       `json:"title"`

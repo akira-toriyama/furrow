@@ -59,7 +59,7 @@ func singleFlag(cmd *cobra.Command, name, short string, vals []string, qualifier
 }
 
 // joinQuery ANDs repeated -q values: the grammar ANDs terms by juxtaposition,
-// so the queries are joined with a space. A lone `-q ”` stays the deliberate
+// so the queries are joined with a space. A lone `-q ""` stays the deliberate
 // match-everything query. (A second -q used to replace the first in silence,
 // which widened a write selector's target set.)
 func joinQuery(qs []string) string {
