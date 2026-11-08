@@ -18,55 +18,55 @@ import (
 // Editing the template changes a user's config; editing these changes the
 // fallback when a key is absent or invalid.
 var (
-	DefaultLanes    = []string{"inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"}
-	DefaultLane     = "inbox" // lane assigned by `furrow add`
-	DefaultDoneLane = "done"  // lane `furrow done` moves a task into
-	// DefaultTerminal lanes are excluded from `furrow next`. "waiting" is the GTD
+	defaultLanes    = []string{"inbox", "backlog", "ready", "in-progress", "waiting", "done", "icebox"}
+	defaultLane     = "inbox" // lane assigned by `furrow add`
+	defaultDoneLane = "done"  // lane `furrow done` moves a task into
+	// defaultTerminal lanes are excluded from `furrow next`. "waiting" is the GTD
 	// Waiting-For lane (delegated / blocked on someone else): parked like icebox,
 	// not finished — so it never stamps `closed` and is never archived.
-	DefaultTerminal = []string{"done", "icebox", "waiting"}
+	defaultTerminal = []string{"done", "icebox", "waiting"}
 
-	// DefaultDueIgnoreLanes are the lanes where a due date raises no due-today /
+	// defaultDueIgnoreLanes are the lanes where a due date raises no due-today /
 	// due-overdue finding, ON TOP of the done lane (which is skipped structurally
 	// — a closed task's promise is settled). Only the parked-forever lane by
 	// default: `waiting` is terminal too, but a waiting task is the archetype of
 	// one whose whole remaining step is "look at this on that day", so skipping the
 	// terminal class as a whole would silence the very case due dates exist for.
-	DefaultDueIgnoreLanes = []string{"icebox"}
+	defaultDueIgnoreLanes = []string{"icebox"}
 
-	// DefaultNextLanes is the "actionable now" set `furrow next` considers (in
+	// defaultNextLanes is the "actionable now" set `furrow next` considers (in
 	// addition to the deps-satisfied check). Intake/planning lanes are excluded
 	// so next stays focused on what's ready to work. Falls back to all
 	// non-terminal lanes for a custom lane scheme that has neither of these.
-	DefaultNextLanes = []string{"ready", "in-progress"}
+	defaultNextLanes = []string{"ready", "in-progress"}
 
-	DefaultPriorityStep    = 10
-	DefaultPriorityDefault = 100
+	defaultPriorityStep    = 10
+	defaultPriorityDefault = 100
 
-	DefaultIDPrefix = "t-"
-	DefaultIDWidth  = 5 // number of random suffix chars in a new id (e.g. t-k3m9p)
-	// DefaultEpicIDPrefix is the [ids].epic_prefix: epics get their OWN prefix so
+	defaultIDPrefix = "t-"
+	defaultIDWidth  = 5 // number of random suffix chars in a new id (e.g. t-k3m9p)
+	// defaultEpicIDPrefix is the [ids].epic_prefix: epics get their OWN prefix so
 	// an id names its entity kind on sight (e-k3m9 is a box, t-k3m9p is work).
 	// That is what lets epics share the task bodies/ directory — and therefore
 	// `furrow edit`, `furrow sync -b`, the bodies/*.md union-merge rule, and the
 	// orphan-body lint — instead of duplicating all four for a second dir.
-	DefaultEpicIDPrefix = "e-"
+	defaultEpicIDPrefix = "e-"
 
-	DefaultArchiveOlderThanDays = 30
+	defaultArchiveOlderThanDays = 30
 
-	// DefaultRevisitStaleDays is how long a task may go without an update before
+	// defaultRevisitStaleDays is how long a task may go without an update before
 	// `furrow revisit` flags it stale. A config stale_days of 0 disables the
 	// stale signal (the other revisit signals still fire).
-	DefaultRevisitStaleDays = 30
+	defaultRevisitStaleDays = 30
 
-	// DefaultReviewStaleAfterDays is how long a repo may go without a human
+	// defaultReviewStaleAfterDays is how long a repo may go without a human
 	// review before `furrow sync` nudges "N days unreviewed" (the per-repo
 	// staleness clock a `furrow review <repo>` resets). A config
 	// stale_after_days of 0 disables the nudge. The GTD weekly-review cadence
 	// motivates the 14-day default (two missed weeks).
-	DefaultReviewStaleAfterDays = 14
+	defaultReviewStaleAfterDays = 14
 
-	// DefaultSessionBusySeconds is the user-level [session].busy_seconds: how
+	// defaultSessionBusySeconds is the user-level [session].busy_seconds: how
 	// long another AI agent session on this machine, whose turn is NOT known
 	// to have ended, keeps counting as WORKING in the repo it sits in after
 	// its last transcript write — which makes a later session's write into
@@ -77,7 +77,7 @@ var (
 	// refusal to a warning instead of refusing forever. A session whose
 	// transcript cannot be read is measured from its start instead, under the
 	// same ceiling. The section itself is session.go (GlobalSession).
-	DefaultSessionBusySeconds = 300
+	defaultSessionBusySeconds = 300
 )
 
 // Config is the effective, validated configuration the rest of furrow reads.
@@ -191,7 +191,7 @@ type Config struct {
 	// `furrow upgrade` drops the shared-board flag-day / pinned-CI checklist and
 	// the `furrow sync` publish line that misdirect a standalone operator. (The
 	// write-block error itself is CI-agnostic for every board; it just points at
-	// `furrow upgrade`.) Absent = DefaultMode. Declared in config.toml (not
+	// `furrow upgrade`.) Absent = defaultMode. Declared in config.toml (not
 	// meta.json), so it needs no schema bump. Orthogonal to the LAYOUT axis
 	// (central / repo-local), which is not configured at all — it is derived from
 	// how discovery reached the board.
@@ -215,32 +215,32 @@ type Config struct {
 // absent. It is what `furrow init` writes as a template, too.
 func Default() *Config {
 	c := &Config{
-		Lanes:                append([]string(nil), DefaultLanes...),
-		DefaultLane:          DefaultLane,
-		DoneLane:             DefaultDoneLane,
-		Terminal:             setOf(DefaultTerminal),
-		PriorityStep:         DefaultPriorityStep,
-		PriorityDefault:      DefaultPriorityDefault,
-		IDPrefix:             DefaultIDPrefix,
-		EpicIDPrefix:         DefaultEpicIDPrefix,
-		IDWidth:              DefaultIDWidth,
-		ArchiveOlderThanDays: DefaultArchiveOlderThanDays,
-		RevisitStaleDays:     DefaultRevisitStaleDays,
-		ReviewStaleAfterDays: DefaultReviewStaleAfterDays,
-		DueIgnoreLanes:       setOf(DefaultDueIgnoreLanes),
-		Mode:                 DefaultMode,
+		Lanes:                append([]string(nil), defaultLanes...),
+		DefaultLane:          defaultLane,
+		DoneLane:             defaultDoneLane,
+		Terminal:             setOf(defaultTerminal),
+		PriorityStep:         defaultPriorityStep,
+		PriorityDefault:      defaultPriorityDefault,
+		IDPrefix:             defaultIDPrefix,
+		EpicIDPrefix:         defaultEpicIDPrefix,
+		IDWidth:              defaultIDWidth,
+		ArchiveOlderThanDays: defaultArchiveOlderThanDays,
+		RevisitStaleDays:     defaultRevisitStaleDays,
+		ReviewStaleAfterDays: defaultReviewStaleAfterDays,
+		DueIgnoreLanes:       setOf(defaultDueIgnoreLanes),
+		Mode:                 defaultMode,
 	}
-	c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)
+	c.NextLanes = fallbackNextLanes(c.Lanes, c.Terminal)
 	c.compile()
 	return c
 }
 
-// defaultNextLanes falls back to every non-terminal lane when the board's lane
-// scheme names none of DefaultNextLanes: a custom scheme must not leave `next`
+// fallbackNextLanes falls back to every non-terminal lane when the board's lane
+// scheme names none of defaultNextLanes: a custom scheme must not leave `next`
 // permanently empty.
-func defaultNextLanes(lanes []string, terminal map[string]bool) []string {
+func fallbackNextLanes(lanes []string, terminal map[string]bool) []string {
 	var out []string
-	for _, l := range DefaultNextLanes {
+	for _, l := range defaultNextLanes {
 		if slices.Contains(lanes, l) {
 			out = append(out, l)
 		}
@@ -314,10 +314,10 @@ const (
 	ModeStandalone = "standalone" // one machine, its own git, no remote
 )
 
-// DefaultMode is what a board declares by omission. Shared is the default
+// defaultMode is what a board declares by omission. Shared is the default
 // because it is the setup every fleet-facing guarantee assumes (sync, the
 // flag day, the SetStatus-task footer, due-overdue shipping as an error).
-const DefaultMode = ModeShared
+const defaultMode = ModeShared
 
 // Modes returns the mode vocabulary in declaration order — the machine source
 // behind `furrow vocab modes` and the candidates list a rejected value shows.

@@ -116,7 +116,7 @@ type Meta struct {
 	// extras: the unknown-key passthrough's carrier — see passthrough.go for
 	// the contract (what is parked, why it is unexported, why no carrier may
 	// grow a MarshalJSON).
-	extras Extras
+	extras extras
 }
 
 // CheckSchemaVersion is the READ half of the version gate: it rejects a board
@@ -305,7 +305,7 @@ type Task struct {
 	// contract once). *** Task must NEVER grow a MarshalJSON method *** — the
 	// cli's --json views embed Task, and a promoted MarshalJSON would drop
 	// every sibling field with no compile error. Read it back with ExtraKeys().
-	extras Extras
+	extras extras
 }
 
 // ChecklistItem mirrors a GitHub "Sub-issues progress" line: a piece of work

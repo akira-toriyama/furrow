@@ -63,11 +63,12 @@ type App struct {
 	Warnings []string // config clamp warnings
 
 	// Loc is the OPERATOR's zone: the one furrow reads a wall-clock `--due`
-	// spelling in and draws the "today" boundary at. nil means time.Local, which
-	// is what every real invocation uses (it is also the zone the CLI already
-	// renders timestamps in). It is a field, not a call to time.Local, because the
-	// Clock is UTC by contract (core.SystemClock) and a test that pinned only the
-	// clock would silently assert UTC days.
+	// spelling in and draws the "today" boundary at. Open sets it to the board's
+	// [due].timezone (config.DueTimezone); nil — a board that declares none —
+	// means time.Local (loc()), the zone the CLI already renders timestamps in.
+	// It is a field, not a call to time.Local, because the Clock is UTC by
+	// contract (core.SystemClock) and a test that pinned only the clock would
+	// silently assert UTC days.
 	Loc *time.Location
 
 	// DefaultLabel is a central board's LITERAL `label` tag ("" = none): `add`
@@ -188,10 +189,12 @@ func (a *App) ctxSleep(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Open discovers the store (FURROW_DIR, else the nearest ancestor of startDir
-// holding a .furrow, else a .furrow-pointer.toml redirecting to a central board),
-// loads config, and builds an fsstore. Outside any of these it is a validation
-// error pointing at `furrow init`.
+// Open discovers the store (FURROW_DIR; else the nearest ancestor of startDir
+// holding a .furrow or a .furrow-pointer.toml redirecting to a central board;
+// else the user-level [[board]] whose scope encloses startDir), loads config,
+// and builds an fsstore. Outside all of these it is a validation error whose
+// remedy depends on the machine (discoveryUnresolvedErr): `furrow init` only
+// where no board is configured.
 func Open(startDir string) (*App, error) {
 	res, err := discover(startDir)
 	if err != nil {

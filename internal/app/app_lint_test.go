@@ -40,7 +40,7 @@ func TestLintArchiveBacklogNudge(t *testing.T) {
 	a.Cfg.LintArchiveDone = 2
 	// Under the fixed clock a task done "now" is closed now; a negative window
 	// pushes the cutoff into the future so those done tasks count as archivable
-	// (the age mechanics themselves are covered by Archivable's own tests).
+	// (the age mechanics themselves are covered by archivable's own tests).
 	a.Cfg.ArchiveOlderThanDays = -1
 
 	hasNudge := func() bool {

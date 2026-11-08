@@ -21,14 +21,14 @@ func ContainsFold(text, term string) bool {
 	return strings.Contains(strings.ToLower(text), strings.ToLower(term))
 }
 
-// Snippet returns a one-line excerpt of text around the first case-insensitive
+// snippet returns a one-line excerpt of text around the first case-insensitive
 // occurrence of term. Whitespace (including newlines) is collapsed to single
 // spaces so a multi-line body yields a single readable line; at most radius
 // runes of context are kept on each side, boundary whitespace is trimmed, and
 // an ellipsis (…) marks each truncated end. The original casing is preserved in
 // the excerpt. It returns "" when term does not occur in text — callers gate on
 // ContainsFold first, so "" is only the defensive path.
-func Snippet(text, term string, radius int) string {
+func snippet(text, term string, radius int) string {
 	collapsed := strings.Join(strings.Fields(text), " ")
 	if term == "" {
 		return collapsed
@@ -119,7 +119,7 @@ func (n Needle) In(text string) bool {
 }
 
 // Snippet is the one-line excerpt around the needle's first occurrence in text,
-// shaped as the package Snippet shapes a substring hit: context is counted in
+// shaped as the package-level snippet shapes a substring hit: context is counted in
 // the whitespace-collapsed text, so a regex hit and a substring hit on the same
 // body read alike. A regex match is located on the RAW text (a line anchor
 // needs the newlines), mapped into the collapsed runes, and a match longer than
@@ -128,7 +128,7 @@ func (n Needle) In(text string) bool {
 // the needle does not occur.
 func (n Needle) Snippet(text string, radius int) string {
 	if n.re == nil {
-		return Snippet(text, n.term, radius)
+		return snippet(text, n.term, radius)
 	}
 	loc := n.re.FindStringIndex(text)
 	if loc == nil {

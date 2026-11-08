@@ -192,7 +192,7 @@ func (a *App) repeatWindow(t *core.Task, now time.Time) (after, lo, hi time.Time
 		if now.After(*t.Due) {
 			settledDay = now.In(loc)
 		}
-		// The wall-clock construction ParseDue binds with — never next-midnight
+		// The wall-clock construction parseDueAt binds with — never next-midnight
 		// minus a nanosecond or due+24h-1s, both of which misbehave on the days
 		// a zone skips or repeats an hour.
 		after = time.Date(settledDay.Year(), settledDay.Month(), settledDay.Day(), 23, 59, 59, 0, loc)
@@ -259,8 +259,8 @@ func (a *App) flushOccurrences(idx *core.Index, pending []*pendingOccurrence) er
 
 // writeOccurrenceFiles puts the generated prose on disk, all of it in one store
 // write. It is the only half that can FAIL; a caller that also appends a
-// closing note composes the note into the same batch instead (moveMany,
-// DoneNote), since a note is not idempotent and a failure after one had landed
+// closing note composes the note into the same batch instead (moveMany's note
+// argument), since a note is not idempotent and a failure after one had landed
 // would leave it on the body and duplicate it on every retry.
 func (a *App) writeOccurrenceFiles(pending []*pendingOccurrence) error {
 	return a.saveBodies(occurrenceBodies(pending))
@@ -381,7 +381,7 @@ func (a *App) compileRepeat(subject, spec string) (string, error) {
 		return "", core.Validationf(subject, "this board's default lane (%q) is its done lane, so a generated occurrence would be closed at birth — recurrence needs a board whose [lanes].default is open", a.Cfg.DefaultLane)
 	}
 	line, err := recur.Compile(spec, func(text string) (time.Time, error) {
-		return ParseDue(text, a.Clock.Now(), a.loc())
+		return parseDueAt(text, a.Clock.Now(), a.loc())
 	})
 	if err != nil {
 		return "", core.Validationf(subject, "%v", err)

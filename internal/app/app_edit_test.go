@@ -333,7 +333,7 @@ func TestRetitle(t *testing.T) {
 	tk, _ := a.Add("old title", AddOpts{}) // body seeded "# old title\n"
 
 	// The shard title updates and the body's heading is kept in step; a stray
-	// title is trimmed to match SetTitle.
+	// title is trimmed (core.NormalizeTitle).
 	got, err := a.Retitle(tk.ID, "  new title  ")
 	if err != nil {
 		t.Fatal(err)
@@ -363,7 +363,7 @@ func TestRetitle(t *testing.T) {
 		t.Errorf("headingless body should be untouched, got %q", body)
 	}
 
-	// An empty title is a validation error (delegated to SetTitle).
+	// An empty title is a validation error.
 	if _, err := a.Retitle(tk.ID, "   "); err == nil {
 		t.Error("empty title should be a validation error")
 	}

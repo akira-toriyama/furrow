@@ -314,7 +314,7 @@ func TestSyncConflictNamesTheDisagreeingFields(t *testing.T) {
 	// A: retitle `shared`, close `other`. B: retitle `shared` differently, tick
 	// `other`'s... value. `shared` is a real conflict; `other` would merge.
 	a := boardAt(t, cloneA, t1)
-	if _, err := a.SetTitle(id, "A wins"); err != nil {
+	if _, err := a.mutate(id, func(tk *core.Task) { tk.Title = "A wins" }); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.Done(other.ID); err != nil {
@@ -324,7 +324,7 @@ func TestSyncConflictNamesTheDisagreeingFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := boardAt(t, cloneB, t2)
-	if _, err := b.SetTitle(id, "B wins"); err != nil {
+	if _, err := b.mutate(id, func(tk *core.Task) { tk.Title = "B wins" }); err != nil {
 		t.Fatal(err)
 	}
 	two := 2
@@ -373,7 +373,7 @@ func TestSyncConflictNamesTheDisagreeingFields(t *testing.T) {
 	// without the tip-aware settling that pick conflicted forever and every
 	// retry grew the unpushed stack (t-kge6). Now the dispute is settled from
 	// the tip, the pick merges, and the rest of B's edits ride along.
-	if _, err := boardAt(t, cloneB, t2.Add(time.Minute)).SetTitle(id, "A wins"); err != nil {
+	if _, err := boardAt(t, cloneB, t2.Add(time.Minute)).mutate(id, func(tk *core.Task) { tk.Title = "A wins" }); err != nil {
 		t.Fatal(err)
 	}
 	p, err = openBoard(t, cloneB).Sync(context.Background(), SyncOpts{})

@@ -164,14 +164,14 @@ type Epic struct {
 
 	// extras: the unknown-key passthrough's carrier — passthrough.go states
 	// the contract once; Task's comment carries the MarshalJSON rule.
-	extras Extras
+	extras extras
 }
 
 // EpicPath returns the canonical relative shard path for an epic: epics/<id>.json.
 // The store owns this path; callers never assemble it.
 func EpicPath(id string) string { return "epics/" + id + ".json" }
 
-// EpicsByID maps each id to its epic, the epic twin of Index.TasksByID: the
+// EpicsByID maps each id to its epic, the epic twin of Index.tasksByID: the
 // pointers are into epics, and on a duplicate id the later epic wins.
 func EpicsByID(epics []Epic) map[string]*Epic {
 	byID := make(map[string]*Epic, len(epics))

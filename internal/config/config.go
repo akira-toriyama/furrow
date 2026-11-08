@@ -86,7 +86,7 @@ type raw struct {
 	// board have a remote and co-writers? A string enum, not a bool, so BOTH
 	// poles have a name — the nameless half of the old `standalone` switch is
 	// what let five spellings of "shared board" into the docs. An unrecognized
-	// value clamps to DefaultMode with a warning, like every other read.
+	// value clamps to defaultMode with a warning, like every other read.
 	//
 	// A POINTER so "absent" is distinguishable from `mode = ""`: with a plain
 	// string the two are the same zero value, and an explicit empty string would
@@ -290,19 +290,19 @@ func fromRaw(r raw) (*Config, []string, error) {
 	if len(r.Lanes.Order) > 0 {
 		c.Lanes = dedupeNonEmpty(r.Lanes.Order)
 		if len(c.Lanes) == 0 {
-			c.Lanes = append([]string(nil), DefaultLanes...)
+			c.Lanes = append([]string(nil), defaultLanes...)
 			warn = append(warn, "lanes.order was empty after cleaning; using defaults")
 		}
 	}
 
 	// The default lane must always exist in the lane order.
-	defaultFallback := DefaultLane
+	defaultFallback := defaultLane
 	if !slices.Contains(c.Lanes, defaultFallback) {
 		defaultFallback = c.Lanes[0]
 	}
 	c.DefaultLane = clampLane(r.Lanes.Default, defaultFallback, c.Lanes, "lanes.default", &warn)
 	// done lane: prefer config, else "done" if present, else the last lane.
-	doneFallback := DefaultDoneLane
+	doneFallback := defaultDoneLane
 	if !slices.Contains(c.Lanes, doneFallback) {
 		doneFallback = c.Lanes[len(c.Lanes)-1]
 	}
@@ -320,7 +320,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 		c.Terminal = setOf(keep)
 	} else {
 		var keep []string
-		for _, l := range DefaultTerminal {
+		for _, l := range defaultTerminal {
 			if slices.Contains(c.Lanes, l) {
 				keep = append(keep, l)
 			}
@@ -344,7 +344,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 		c.DueIgnoreLanes = setOf(keep)
 	} else {
 		var keep []string
-		for _, l := range DefaultDueIgnoreLanes {
+		for _, l := range defaultDueIgnoreLanes {
 			if slices.Contains(c.Lanes, l) {
 				keep = append(keep, l)
 			}
@@ -388,16 +388,16 @@ func fromRaw(r raw) (*Config, []string, error) {
 			}
 		}
 		if len(keep) == 0 {
-			keep = defaultNextLanes(c.Lanes, c.Terminal)
+			keep = fallbackNextLanes(c.Lanes, c.Terminal)
 			warn = append(warn, "next.lanes was empty after cleaning; using the default actionable lanes")
 		}
 		c.NextLanes = keep
 	} else {
-		c.NextLanes = defaultNextLanes(c.Lanes, c.Terminal)
+		c.NextLanes = fallbackNextLanes(c.Lanes, c.Terminal)
 	}
 
-	c.PriorityStep = clampPositive(r.Priority.Step, DefaultPriorityStep, "priority.step", &warn)
-	c.PriorityDefault = clampPositive(r.Priority.Default, DefaultPriorityDefault, "priority.default", &warn)
+	c.PriorityStep = clampPositive(r.Priority.Step, defaultPriorityStep, "priority.step", &warn)
+	c.PriorityDefault = clampPositive(r.Priority.Default, defaultPriorityDefault, "priority.default", &warn)
 
 	// An id prefix is a filename stem: shards and bodies are written at
 	// tasks/<prefix><suffix>.json, so a prefix carrying a path separator or
@@ -405,8 +405,8 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// wrote .furrow/<suffix>.json, which no read listed — t-9e0x). Clamp to
 	// the default with a warning, like every other config value; the strict
 	// writer (`config set`) then refuses it outright.
-	c.IDPrefix = clampIDPrefix(r.IDs.Prefix, DefaultIDPrefix, "ids.prefix", &warn)
-	c.EpicIDPrefix = clampIDPrefix(r.IDs.EpicPrefix, DefaultEpicIDPrefix, "ids.epic_prefix", &warn)
+	c.IDPrefix = clampIDPrefix(r.IDs.Prefix, defaultIDPrefix, "ids.prefix", &warn)
+	c.EpicIDPrefix = clampIDPrefix(r.IDs.EpicPrefix, defaultEpicIDPrefix, "ids.epic_prefix", &warn)
 	// The two prefixes must differ, or ids stop naming their entity kind: epics
 	// share the task bodies/ directory, so a collision would make bodies/<id>.md
 	// ambiguous and the orphan-body lint unable to say which store owns a file.
@@ -414,18 +414,18 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// that actually differs (the default epic prefix, unless that is the one
 	// the tasks took).
 	if c.EpicIDPrefix == c.IDPrefix {
-		fallback := DefaultEpicIDPrefix
+		fallback := defaultEpicIDPrefix
 		if fallback == c.IDPrefix {
-			fallback = DefaultIDPrefix
+			fallback = defaultIDPrefix
 		}
 		warn = append(warn, fmt.Sprintf("ids.epic_prefix %q equals ids.prefix; using %q", c.EpicIDPrefix, fallback))
 		c.EpicIDPrefix = fallback
 	}
-	c.IDWidth = clampPositive(r.IDs.Width, DefaultIDWidth, "ids.width", &warn)
+	c.IDWidth = clampPositive(r.IDs.Width, defaultIDWidth, "ids.width", &warn)
 
 	if r.Archive.OlderThanDays != nil {
 		if *r.Archive.OlderThanDays < 0 {
-			warn = append(warn, fmt.Sprintf("archive.older_than_days %d < 0; using %d", *r.Archive.OlderThanDays, DefaultArchiveOlderThanDays))
+			warn = append(warn, fmt.Sprintf("archive.older_than_days %d < 0; using %d", *r.Archive.OlderThanDays, defaultArchiveOlderThanDays))
 		} else {
 			c.ArchiveOlderThanDays = *r.Archive.OlderThanDays
 		}
@@ -439,7 +439,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// disables the stale signal); only a negative value clamps to the default.
 	if r.Revisit.StaleDays != nil {
 		if *r.Revisit.StaleDays < 0 {
-			warn = append(warn, fmt.Sprintf("revisit.stale_days %d < 0; using %d", *r.Revisit.StaleDays, DefaultRevisitStaleDays))
+			warn = append(warn, fmt.Sprintf("revisit.stale_days %d < 0; using %d", *r.Revisit.StaleDays, defaultRevisitStaleDays))
 		} else {
 			c.RevisitStaleDays = *r.Revisit.StaleDays
 		}
@@ -450,7 +450,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 	// clamps to the default.
 	if r.Review.StaleAfterDays != nil {
 		if *r.Review.StaleAfterDays < 0 {
-			warn = append(warn, fmt.Sprintf("review.stale_after_days %d < 0; using %d", *r.Review.StaleAfterDays, DefaultReviewStaleAfterDays))
+			warn = append(warn, fmt.Sprintf("review.stale_after_days %d < 0; using %d", *r.Review.StaleAfterDays, defaultReviewStaleAfterDays))
 		} else {
 			c.ReviewStaleAfterDays = *r.Review.StaleAfterDays
 		}
@@ -559,7 +559,7 @@ func fromRaw(r raw) (*Config, []string, error) {
 		c.Alias[name] = cmd
 	}
 
-	// mode: absent -> DefaultMode (shared). An unrecognized value is clamped to
+	// mode: absent -> defaultMode (shared). An unrecognized value is clamped to
 	// the default with a warning — the same clamp-don't-reject read policy every
 	// other key follows, and what makes `furrow config set mode <junk>` an exit 2
 	// (the writer refuses any value the reader would clamp away).

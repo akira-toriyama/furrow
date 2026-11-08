@@ -20,7 +20,7 @@ func TestParseDirectives(t *testing.T) {
 		"SetStatus-task:\n" + // no payload -> skipped
 		"this is not a directive\n"
 
-	ds := ParseDirectives(text)
+	ds := parseDirectives(text)
 	if len(ds) != 3 {
 		t.Fatalf("expected 3 directives, got %d: %+v", len(ds), ds)
 	}

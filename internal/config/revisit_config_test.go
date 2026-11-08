@@ -11,8 +11,8 @@ func TestRevisitStaleDaysDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if c.RevisitStaleDays != DefaultRevisitStaleDays {
-		t.Errorf("default stale_days = %d, want %d", c.RevisitStaleDays, DefaultRevisitStaleDays)
+	if c.RevisitStaleDays != defaultRevisitStaleDays {
+		t.Errorf("default stale_days = %d, want %d", c.RevisitStaleDays, defaultRevisitStaleDays)
 	}
 }
 
@@ -25,7 +25,7 @@ func TestRevisitStaleDaysOverrideAndClamp(t *testing.T) {
 	}{
 		{"explicit value", "[revisit]\nstale_days = 14\n", 14, ""},
 		{"zero disables (accepted, no warn)", "[revisit]\nstale_days = 0\n", 0, ""},
-		{"negative clamps to default + warn", "[revisit]\nstale_days = -5\n", DefaultRevisitStaleDays, "revisit.stale_days"},
+		{"negative clamps to default + warn", "[revisit]\nstale_days = -5\n", defaultRevisitStaleDays, "revisit.stale_days"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

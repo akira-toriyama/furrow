@@ -308,8 +308,8 @@ func parseFreq(h, typed string) (rrule.Frequency, int, error) {
 	if err != nil || n < 1 {
 		return 0, 0, fmt.Errorf("the interval in %q must be a positive whole number", typed)
 	}
-	if n > MaxInterval {
-		return 0, 0, fmt.Errorf("the interval in %q must be at most %d", typed, MaxInterval)
+	if n > maxInterval {
+		return 0, 0, fmt.Errorf("the interval in %q must be at most %d", typed, maxInterval)
 	}
 	switch strings.TrimSuffix(m[2], "s") {
 	case "day":
@@ -512,8 +512,8 @@ func Valid(line string, anchor time.Time, loc *time.Location) error {
 	if err := refuseDtstart(opt); err != nil {
 		return fmt.Errorf("stored recurrence rule %q: %v", line, err)
 	}
-	if opt.Interval > MaxInterval {
-		return fmt.Errorf("stored recurrence rule %q: the interval must be at most %d", line, MaxInterval)
+	if opt.Interval > maxInterval {
+		return fmt.Errorf("stored recurrence rule %q: the interval must be at most %d", line, maxInterval)
 	}
 	// A COUNT=0 term is invisible on the parsed option (the zero means "no
 	// COUNT"); Compile reads it off the text, and so must the stored-line check.
@@ -526,13 +526,13 @@ func Valid(line string, anchor time.Time, loc *time.Location) error {
 	return nil
 }
 
-// MaxInterval is the ceiling on a rule's INTERVAL, in the short spelling and a
+// maxInterval is the ceiling on a rule's INTERVAL, in the short spelling and a
 // raw line alike. RFC 5545 names none, but the expansion is integer date
 // arithmetic: past the int32 range every occurrence lands nowhere and the
 // refusal that came back was "no occurrence after the first one" — true, and
 // nothing to do with the cause (t-qps2). Ten thousand days is over 27 years,
 // wider than any series worth a board.
-const MaxInterval = 10000
+const maxInterval = 10000
 
 func parseStored(line string) (*rrule.ROption, error) {
 	opt, err := rrule.StrToROption(line)

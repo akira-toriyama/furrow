@@ -321,7 +321,7 @@ func TestSessionGuardCoversEveryTaskWrite(t *testing.T) {
 		"DoneMany":        func() error { _, _, err := a.DoneMany([]string{x.ID}, nil); return err },
 		"DoneManyNote":    func() error { _, err := a.DoneManyNote([]string{x.ID}, "bye"); return err },
 		"SetMany":         func() error { _, _, err := a.SetMany([]string{x.ID}, SetOpts{AddLabels: []string{"l"}}); return err },
-		"AppendBody":      func() error { _, err := a.AppendBody(x.ID, "applied"); return err },
+		"appendBodyOnce":  func() error { _, err := a.appendBodyOnce(x.ID, "applied"); return err },
 		"Attach":          func() error { _, err := a.Attach(x.ID, "shot.png", []byte("png")); return err },
 		"EditPath":        func() error { _, err := a.EditPath(x.ID); return err },
 	}

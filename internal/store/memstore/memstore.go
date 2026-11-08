@@ -109,7 +109,7 @@ func (s *Store) Load() (*core.Index, error) {
 	idx := &core.Index{}
 	tasks := make([]core.Task, 0, len(ids))
 	for _, id := range ids {
-		tasks = append(tasks, cloneTask(s.tasks[id]))
+		tasks = append(tasks, core.CloneTask(s.tasks[id]))
 		// The bytes fsstore's Load would have read: the entry is already
 		// canonical (Save round-trips it through the marshaller), so marshalling
 		// the clone changes nothing observable and gives Save the same "did this
@@ -124,13 +124,7 @@ func (s *Store) Load() (*core.Index, error) {
 	return idx, nil
 }
 
-// cloneTask deep-copies a task's slice and pointer fields (the struct copy
-// covers the scalars). Nil-ness is preserved — a clone that turned [] into nil
-// would change what tests observe. The unexported extras carrier is shared by
-// the struct copy, which is fine: nothing outside core can reach into it.
-func cloneTask(t core.Task) core.Task { return core.CloneTask(t) }
-
-// cloneEpic is cloneTask's box twin (slices + the Meta map).
+// cloneEpic is core.CloneTask's box twin (slices + the Meta map).
 func cloneEpic(e core.Epic) core.Epic {
 	e.Labels = cloneStrings(e.Labels)
 	e.Repos = cloneStrings(e.Repos)
@@ -238,7 +232,7 @@ func (s *Store) LoadRepo(repo string) (*core.RepoRecord, bool, error) {
 	return &rec, true, nil
 }
 
-// cloneRepo is cloneTask's review-record twin: the struct copy covers Repo, so
+// cloneRepo is core.CloneTask's review-record twin: the struct copy covers Repo, so
 // only the two clocks need deep-copying. Every read path returns one — a caller
 // that advances a returned *time.Time must not reach the stored record, which is
 // exactly what fsstore's parse-fresh-bytes read gives for free.

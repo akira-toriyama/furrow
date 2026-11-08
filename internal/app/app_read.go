@@ -649,7 +649,7 @@ func (a *App) nextIn(idx *core.Index, scope EpicScope, o QueryOpts) ([]core.Task
 		if !o.match(t) {
 			continue
 		}
-		if !scope.Admits(t.Epic) {
+		if !scope.admits(t.Epic) {
 			continue
 		}
 		// "Ready" = in a next lane AND every dep done — the same rule

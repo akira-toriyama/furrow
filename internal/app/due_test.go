@@ -43,12 +43,12 @@ func TestParseDue(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := ParseDue(c.in, now, jst)
+			got, err := parseDueAt(c.in, now, jst)
 			if err != nil {
-				t.Fatalf("ParseDue(%q): %v", c.in, err)
+				t.Fatalf("parseDueAt(%q): %v", c.in, err)
 			}
 			if !got.Equal(c.want) {
-				t.Errorf("ParseDue(%q) = %s, want %s", c.in, got.In(jst), c.want.In(jst))
+				t.Errorf("parseDueAt(%q) = %s, want %s", c.in, got.In(jst), c.want.In(jst))
 			}
 		})
 	}
@@ -68,13 +68,13 @@ func TestParseDueRejects(t *testing.T) {
 		"+99999999999999999999d", // overflows a Duration; must not wrap negative
 		"08/04/2026",             // not a supported spelling
 	} {
-		_, err := ParseDue(in, now, jst)
+		_, err := parseDueAt(in, now, jst)
 		if err == nil {
-			t.Errorf("ParseDue(%q) should have failed", in)
+			t.Errorf("parseDueAt(%q) should have failed", in)
 			continue
 		}
 		if ce := core.AsError(err); ce == nil || ce.Code != core.CodeValidation {
-			t.Errorf("ParseDue(%q) error = %v, want a validation error", in, err)
+			t.Errorf("parseDueAt(%q) error = %v, want a validation error", in, err)
 		}
 	}
 }
@@ -269,13 +269,13 @@ func TestParseDueEndOfDayAcrossDST(t *testing.T) {
 	}
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	for _, day := range []string{"2026-03-08", "2026-11-01", "2026-06-15"} {
-		got, err := ParseDue(day, now, la)
+		got, err := parseDueAt(day, now, la)
 		if err != nil {
-			t.Fatalf("ParseDue(%q): %v", day, err)
+			t.Fatalf("parseDueAt(%q): %v", day, err)
 		}
 		local := got.In(la)
 		if local.Format("2006-01-02 15:04:05") != day+" 23:59:59" {
-			t.Errorf("ParseDue(%q) = %s, want %s 23:59:59 local", day, local, day)
+			t.Errorf("parseDueAt(%q) = %s, want %s 23:59:59 local", day, local, day)
 		}
 	}
 }
@@ -297,9 +297,9 @@ func TestParseDueMidnightGapZones(t *testing.T) {
 		if err != nil {
 			t.Skipf("no tzdata for %s", c.zone)
 		}
-		got, err := ParseDue(c.day, now, loc)
+		got, err := parseDueAt(c.day, now, loc)
 		if err != nil {
-			t.Fatalf("ParseDue(%q) in %s: %v", c.day, c.zone, err)
+			t.Fatalf("parseDueAt(%q) in %s: %v", c.day, c.zone, err)
 		}
 		if day := got.In(loc).Format("2006-01-02"); day != c.day {
 			t.Errorf("%s --due %s landed on %s (%s) — a day early", c.zone, c.day, day, got.In(loc))
@@ -438,7 +438,7 @@ func TestQueryDueBareDayIsTheOperatorsDay(t *testing.T) {
 	}
 }
 
-// The due band's rows tie constantly: ParseDue pins a bare-day due to that day's
+// The due band's rows tie constantly: parseDueAt pins a bare-day due to that day's
 // 23:59:59, so every task promised for the same day carries a byte-identical
 // instant. Feeding sortByDue the REVERSE of the canonical order is what makes
 // this an assertion about the TIEBREAK rather than about sort.SliceStable — a
@@ -527,12 +527,12 @@ func TestParseDueSaysWhy(t *testing.T) {
 		{"2026-02-29T10:30", "2026 has no February 29"},
 		{"08/04/2026", "is not a date"},
 	} {
-		_, err := ParseDue(tc.in, now, jst)
+		_, err := parseDueAt(tc.in, now, jst)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("ParseDue(%q) = %v, want a refusal saying %q", tc.in, err, tc.want)
+			t.Errorf("parseDueAt(%q) = %v, want a refusal saying %q", tc.in, err, tc.want)
 		}
 	}
-	if _, err := ParseDue("2028-02-29", now, jst); err != nil {
+	if _, err := parseDueAt("2028-02-29", now, jst); err != nil {
 		t.Errorf("a leap day in a leap year is a date: %v", err)
 	}
 }

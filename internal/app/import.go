@@ -317,7 +317,7 @@ func (a *App) validateAddSpec(b *addBatch, i int, s *AddSpec, prefixed bool) err
 	// resolved here: the bulk path must not be the one door a raw spelling —
 	// or a malformed one — reaches a shard through.
 	if s.Due != "" {
-		d, err := ParseDue(s.Due, b.now, a.loc())
+		d, err := parseDueAt(s.Due, b.now, a.loc())
 		if err != nil {
 			return specf(err)
 		}

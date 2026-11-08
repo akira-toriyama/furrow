@@ -89,8 +89,8 @@ func (r References) Empty() bool {
 	return len(r.Deps)+len(r.Links)+len(r.Members)+len(r.EpicDeps)+len(r.Followers)+len(r.Successors) == 0
 }
 
-// Summary is the one-line human rendering the refusal message carries.
-func (r References) Summary() string {
+// summary is the one-line human rendering the refusal message carries.
+func (r References) summary() string {
 	var parts []string
 	if n := len(r.Deps); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d dep edge(s) from %s", n, strings.Join(uniqueFrom(r.Deps), ", ")))
@@ -496,12 +496,11 @@ func referencedErr(subject string, refs References) *core.Error {
 		Kind:    core.KindReferenced,
 		Subject: subject,
 		Msg: fmt.Sprintf("still referenced — %s; drop the references first, or pass --force to sever them "+
-			"(dep edges dropped, [[links]] de-linked to the bare id, members unfiled, followers unpointed — their dues stay)", refs.Summary()),
+			"(dep edges dropped, [[links]] de-linked to the bare id, members unfiled, followers unpointed — their dues stay)", refs.summary()),
 		Details: map[string]any{"references": refs},
 	}
 }
 
-// without returns set minus the ids in drop, preserving order.
 func without(set []string, drop map[string]bool) []string {
 	out := make([]string, 0, len(set))
 	for _, s := range set {

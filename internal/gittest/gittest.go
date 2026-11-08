@@ -127,7 +127,7 @@ func enclosingMarker(dir string) (string, bool) {
 	}
 }
 
-// Isolate refuses an unsafe temp root (checkTempRoots), drops the ambient
+// isolate refuses an unsafe temp root (checkTempRoots), drops the ambient
 // variables that point furrow or git at a repository the tests did not name
 // (furrowEnv, GitLocalEnvVars) or plant the developer's hooks in every repo a
 // test inits (GIT_TEMPLATE_DIR), then points git at a throwaway global config
@@ -138,7 +138,7 @@ func enclosingMarker(dir string) (string, bool) {
 // unsafe under t.Parallel. The returned cleanup restores the previous env and
 // removes the temp config; ignore it only if the process is about to exit
 // anyway.
-func Isolate() (cleanup func(), err error) {
+func isolate() (cleanup func(), err error) {
 	if err := checkTempRoots(); err != nil {
 		return nil, err
 	}
@@ -239,7 +239,7 @@ func RunGit(t *testing.T, git, dir string, args ...string) string {
 // Main is the TestMain every real-git package shares: isolate, run, restore,
 // exit. Two packages carried the same twenty lines (t-y6ya).
 func Main(m *testing.M) {
-	restore, err := Isolate()
+	restore, err := isolate()
 	if err != nil {
 		panic(err)
 	}
@@ -254,10 +254,10 @@ func Main(m *testing.M) {
 // own t.Setenv), and unsets the Claude Code session env (a developer's `go
 // test` usually runs INSIDE a session, whose CLAUDECODE would arm the session
 // write guard against the live registry). app and cli carried the same
-// twenty-five lines each. Isolate runs first, so a refused temp root gets no
+// twenty-five lines each. isolate runs first, so a refused temp root gets no
 // XDG dir written into it.
 func MainIsolated(m *testing.M) {
-	restore, err := Isolate()
+	restore, err := isolate()
 	if err != nil {
 		panic(err)
 	}

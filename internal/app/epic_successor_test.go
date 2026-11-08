@@ -282,8 +282,8 @@ func TestRemoveEpicCountsSuccessorDeclarations(t *testing.T) {
 	if len(refs.Successors) != 1 || refs.Successors[0] != (DepEdge{From: ea, To: eb}) {
 		t.Errorf("successors = %+v, want the declaration from %s", refs.Successors, ea)
 	}
-	if !strings.Contains(refs.Summary(), "successor declaration") {
-		t.Errorf("summary = %q, want it to name the declaration", refs.Summary())
+	if !strings.Contains(refs.summary(), "successor declaration") {
+		t.Errorf("summary = %q, want it to name the declaration", refs.summary())
 	}
 	if _, err := a.RemoveEpic(eb, RemoveOpts{Apply: true, Force: true}); err != nil {
 		t.Fatal(err)

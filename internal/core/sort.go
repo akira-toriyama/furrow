@@ -25,7 +25,7 @@ func IsSortField(field string) bool {
 // lint calls clean (`duplicate-id` is an error), and that is the point. Canonicalize sorts the index with
 // it, so any OTHER sort over those tasks can tiebreak with it and reproduce the
 // index order it would otherwise inherit through a stable sort's back door.
-// That back door is a real trap: App.Due sorts by the due instant, and ParseDue
+// That back door is a real trap: App.Due sorts by the due instant, and parseDueAt
 // normalizes a bare-day due to that day's 23:59:59, so same-day tasks carry a
 // byte-identical time.Time and nothing but sort.SliceStable's stability decided
 // their order. Swapping that one call for an unstable sort scrambled `furrow

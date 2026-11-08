@@ -24,7 +24,7 @@ func Vocabularies() map[string][]string {
 		"config-keys":          config.TopLevelKeys(),
 		"modes":                config.Modes(),
 		"layouts":              Layouts(),
-		"doctor-codes":         DoctorCodeList(),
+		"doctor-codes":         doctorCodeList(),
 		"error-kinds":          core.ErrorKindList(),
 		"lint-codes":           core.LintCodeList(),
 		"revisit-codes":        core.RevisitCodeList(),

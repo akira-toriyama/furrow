@@ -149,13 +149,13 @@ func TestSyncConflictAbortsAndReportsPaths(t *testing.T) {
 	}
 
 	// Both sides now retitle the same task, divergently.
-	if _, err := openBoard(t, cloneA).SetTitle(shared.ID, "A wins"); err != nil {
+	if _, err := openBoard(t, cloneA).mutate(shared.ID, func(tk *core.Task) { tk.Title = "A wins" }); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openBoard(t, cloneB).SetTitle(shared.ID, "B wins"); err != nil {
+	if _, err := openBoard(t, cloneB).mutate(shared.ID, func(tk *core.Task) { tk.Title = "B wins" }); err != nil {
 		t.Fatal(err)
 	}
 

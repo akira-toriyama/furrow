@@ -9,7 +9,7 @@ import (
 	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
-// Archivable returns the ids of done-lane tasks closed strictly before cutoff —
+// archivable returns the ids of done-lane tasks closed strictly before cutoff —
 // the pure selection rule behind Archive, split out so it is testable without a
 // filesystem. Only tasks with a Closed timestamp qualify: Add and Move guarantee
 // a done task has one, and the Closed==nil guard below skips any hand-edited
@@ -20,7 +20,7 @@ import (
 // (already-resolved) owner/repo identifiers — the age guard and the repo scope
 // AND together, and multiple repos are a union (a task in ANY of them counts).
 // An empty repos leaves the selection age-only across the whole board.
-func Archivable(idx *core.Index, doneLane string, cutoff time.Time, repos ...string) []string {
+func archivable(idx *core.Index, doneLane string, cutoff time.Time, repos ...string) []string {
 	var ids []string
 	for _, t := range idx.Tasks {
 		if t.Status != doneLane || t.Closed == nil || !t.Closed.Before(cutoff) {
@@ -62,7 +62,7 @@ func (a *App) Archive(olderThanDays int, dryRun bool, repos ...string) (*Archive
 		return nil, err
 	}
 	cutoff := a.Clock.Now().AddDate(0, 0, -olderThanDays)
-	ids := Archivable(idx, a.Cfg.DoneLane, cutoff, repos...)
+	ids := archivable(idx, a.Cfg.DoneLane, cutoff, repos...)
 
 	// To a fixed point: a held task stays, so whatever IT depends on is held too.
 	leaving := make(map[string]bool, len(ids))
@@ -172,7 +172,7 @@ func (a *App) ArchiveIDs(ids []string, dryRun bool) (*ArchiveReport, error) {
 			Kind:    core.KindReferenced,
 			Subject: refs.Deps[0].To,
 			Msg: fmt.Sprintf("still depended on — %s; archiving would strand the edge (lint dep-missing, the dependent out of next), so nothing was archived: "+
-				"archive the dependents in the same call once they are done, or drop the edge (`furrow dep <dependent> <id> --rm`)", refs.Summary()),
+				"archive the dependents in the same call once they are done, or drop the edge (`furrow dep <dependent> <id> --rm`)", refs.summary()),
 			Details: map[string]any{"references": refs},
 		}
 	}
@@ -320,7 +320,6 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 	return rep, nil
 }
 
-// idSet is the id set of a task slice.
 func idSet(tasks []core.Task) map[string]bool {
 	set := make(map[string]bool, len(tasks))
 	for i := range tasks {
@@ -407,7 +406,7 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 			Kind:    core.KindReferenced,
 			Subject: refs.Deps[0].From,
 			Msg: fmt.Sprintf("still depends on an archived task — %s; restoring would strand the edge (lint dep-missing), so nothing was restored: "+
-				"unarchive them together (`furrow unarchive %s`), or drop the edge first", refs.Summary(), strings.Join(append(ids, refs.archivedDeps()...), " ")),
+				"unarchive them together (`furrow unarchive %s`), or drop the edge first", refs.summary(), strings.Join(append(ids, refs.archivedDeps()...), " ")),
 			Details: map[string]any{"references": refs},
 		}
 	}

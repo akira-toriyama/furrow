@@ -13,8 +13,8 @@ import (
 
 func v6IDFor(taskID string) string { return "e-" + taskID[len("t-"):] }
 
-func rawExtras(kv map[string]string) Extras {
-	e := Extras{}
+func rawExtras(kv map[string]string) extras {
+	e := extras{}
 	for k, v := range kv {
 		e[k] = json.RawMessage(v)
 	}

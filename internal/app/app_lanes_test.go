@@ -335,9 +335,9 @@ func TestArchivableSelection(t *testing.T) {
 		{ID: "t-4", Status: "icebox"}, // terminal but no Closed -> not archivable
 	}}
 	cutoff := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
-	ids := Archivable(idx, "done", cutoff)
+	ids := archivable(idx, "done", cutoff)
 	if len(ids) != 1 || ids[0] != "t-1" {
-		t.Errorf("Archivable = %v, want [t-1]", ids)
+		t.Errorf("archivable = %v, want [t-1]", ids)
 	}
 }
 
@@ -354,17 +354,17 @@ func TestArchivableRepoFilter(t *testing.T) {
 	cutoff := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
 
 	// No repo filter: age-only, every aged done task (including the repo-less draft).
-	if got := Archivable(idx, "done", cutoff); !slices.Equal(got, []string{"t-a", "t-b", "t-ab", "t-draft"}) {
-		t.Errorf("Archivable(no repo) = %v, want [t-a t-b t-ab t-draft]", got)
+	if got := archivable(idx, "done", cutoff); !slices.Equal(got, []string{"t-a", "t-b", "t-ab", "t-draft"}) {
+		t.Errorf("archivable(no repo) = %v, want [t-a t-b t-ab t-draft]", got)
 	}
 	// -r owner/a: only aged done carrying owner/a — the multi-repo task counts,
 	// the repo-less draft does not.
-	if got := Archivable(idx, "done", cutoff, "owner/a"); !slices.Equal(got, []string{"t-a", "t-ab"}) {
-		t.Errorf("Archivable(owner/a) = %v, want [t-a t-ab]", got)
+	if got := archivable(idx, "done", cutoff, "owner/a"); !slices.Equal(got, []string{"t-a", "t-ab"}) {
+		t.Errorf("archivable(owner/a) = %v, want [t-a t-ab]", got)
 	}
 	// Multiple repos are a union (OR): a task in ANY listed repo qualifies.
-	if got := Archivable(idx, "done", cutoff, "owner/a", "owner/b"); !slices.Equal(got, []string{"t-a", "t-b", "t-ab"}) {
-		t.Errorf("Archivable(owner/a,owner/b) = %v, want [t-a t-b t-ab]", got)
+	if got := archivable(idx, "done", cutoff, "owner/a", "owner/b"); !slices.Equal(got, []string{"t-a", "t-b", "t-ab"}) {
+		t.Errorf("archivable(owner/a,owner/b) = %v, want [t-a t-b t-ab]", got)
 	}
 }
 

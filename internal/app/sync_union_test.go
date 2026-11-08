@@ -18,7 +18,7 @@ import (
 // both sides together instead of aborting — the whole point is that an
 // append-mostly prose file has no meaningful textual conflict.
 //
-// The bot side MUST go through AppendBody, the helper `apply` really uses: it
+// The bot side MUST go through appendBodyOnce, the helper `apply` really uses: it
 // leaves the shard alone, so only the body diverges on both sides. AddNote on
 // both sides stamps `updated` on each clone with its own wall clock, and the
 // moment the two stamps fall in different seconds (a slow runner crossing a
@@ -44,7 +44,7 @@ func TestSyncUnionMergesConcurrentBodyAppends(t *testing.T) {
 
 	// A appends the bot's marker line and pushes; B appends a closing note,
 	// then syncs into the collision.
-	if changed, err := openBoard(t, cloneA).AppendBody(shared.ID, "- 🔗 `furrow#153` merged"); err != nil || !changed {
+	if changed, err := openBoard(t, cloneA).appendBodyOnce(shared.ID, "- 🔗 `furrow#153` merged"); err != nil || !changed {
 		t.Fatalf("bot append: changed=%v err=%v", changed, err)
 	}
 	if _, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: []string{shared.ID}}); err != nil {

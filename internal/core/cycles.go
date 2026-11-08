@@ -24,7 +24,8 @@ import (
 // Only edges between existing ids are followed — an unknown dep contributes no
 // edge (Validate reports it separately), so a dangling dep never fabricates a
 // cycle. The walk is deterministic: nodes and each node's deps are visited in
-// sorted order, and the output is sorted by message.
+// sorted order, and the report leaves in sortProblems' order (severity, id,
+// message).
 func CycleProblems(idx *Index) []Problem {
 	return cycleProblems(idx, "dep-cycle", "dependency cycle", "mutually blocking",
 		func(t *Task) []string { return t.Deps })
@@ -34,7 +35,7 @@ func CycleProblems(idx *Index) []Problem {
 // region's smallest id — the id CycleProblems files the region's finding under,
 // so a reader of that finding can recover everyone it is about.
 func CycleRegions(idx *Index) map[string][]string {
-	byID := idx.TasksByID()
+	byID := idx.tasksByID()
 	order, adj := buildIDGraph(byID, func(t *Task) []string { return t.Deps })
 	out := map[string][]string{}
 	for _, scc := range stronglyConnected(order, adj) {
@@ -54,7 +55,7 @@ func CycleRegions(idx *Index) map[string][]string {
 // v7 the epic dep graph is the third — the epic dep lint enters at
 // cycleProblemsGraph, the id level, instead of growing a second walk.
 func cycleProblems(idx *Index, code, label, knot string, edges func(*Task) []string) []Problem {
-	byID := idx.TasksByID()
+	byID := idx.tasksByID()
 	order, adj := buildIDGraph(byID, edges)
 	return cycleProblemsGraph(order, adj, code, label, knot)
 }

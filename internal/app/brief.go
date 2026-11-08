@@ -289,7 +289,7 @@ func hiddenByLane(dropped []core.Task, lanes []string) []HiddenLane {
 // scope is named first — activating a box would not bring that task in — as
 // `repo <owner/repo,…>`, or `draft` for a task with no repo; then the epic
 // scope, as `box <id>`, or `unfiled` when no box is active. It asks next's own
-// predicates (QueryOpts.match with the lane filter dropped, EpicScope.Admits),
+// predicates (QueryOpts.match with the lane filter dropped, EpicScope.admits),
 // so the answer cannot drift from what next lists.
 func outsideNext(o QueryOpts, scope EpicScope, t *core.Task) string {
 	o.Status = ""
@@ -299,7 +299,7 @@ func outsideNext(o QueryOpts, scope EpicScope, t *core.Task) string {
 		}
 		return "repo " + strings.Join(t.Repos, ",")
 	}
-	if !scope.Admits(t.Epic) {
+	if !scope.admits(t.Epic) {
 		if t.Epic == "" {
 			return "unfiled"
 		}

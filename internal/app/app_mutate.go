@@ -180,19 +180,6 @@ func (a *App) SetEffort(id string, v *int) (*core.Task, error) {
 	return a.mutate(id, func(t *core.Task) { t.Effort = cloneIntp(v) })
 }
 
-// SetTitle renames a task's one-line summary. It touches only the shard; use
-// Retitle from the CLI so the body's heading is kept in step.
-func (a *App) SetTitle(id, title string) (*core.Task, error) {
-	title = core.NormalizeTitle(title)
-	if title == "" {
-		return nil, core.Validationf(id, "title must not be empty")
-	}
-	if why := core.TitleTooLong(title); why != "" {
-		return nil, core.Validationf(id, "%s", why)
-	}
-	return a.mutate(id, func(t *core.Task) { t.Title = title })
-}
-
 // Retitle renames a task and keeps the two homes of a title in step: the shard's
 // title field (the source of truth) and the body's leading `# ` heading. Before
 // this, a title lived in both places with no command to change it, so a rename

@@ -335,7 +335,7 @@ unknown_key = 42           # unknown -> ignored + warn, no error
 	if c.IsTerminal("ghost") || !c.IsTerminal("b") {
 		t.Errorf("terminal should drop ghost, keep b: %+v", c.Terminal)
 	}
-	if c.PriorityStep != DefaultPriorityStep || c.IDWidth != DefaultIDWidth {
+	if c.PriorityStep != defaultPriorityStep || c.IDWidth != defaultIDWidth {
 		t.Errorf("invalid numerics should clamp: step=%d width=%d", c.PriorityStep, c.IDWidth)
 	}
 	if len(warn) < 4 {
@@ -363,7 +363,7 @@ theme = "auto"
 	if err != nil {
 		t.Fatalf("unknown keys must not error: %v", err)
 	}
-	if len(c.Lanes) != len(DefaultLanes) {
+	if len(c.Lanes) != len(defaultLanes) {
 		t.Errorf("lanes should be the defaults (the [lanse] typo is ignored), got %v", c.Lanes)
 	}
 	if c.IDPrefix != "t-" {
@@ -469,8 +469,8 @@ func TestIDPrefixesAreClampedToFilenameStems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.IDPrefix != DefaultIDPrefix {
-		t.Errorf("prefix ../ clamped to %q, want %q", c.IDPrefix, DefaultIDPrefix)
+	if c.IDPrefix != defaultIDPrefix {
+		t.Errorf("prefix ../ clamped to %q, want %q", c.IDPrefix, defaultIDPrefix)
 	}
 	if !strings.Contains(strings.Join(warns, "\n"), "ids.prefix") {
 		t.Errorf("no warning for the clamped prefix: %v", warns)
@@ -494,7 +494,7 @@ func TestSalvageBlanksTheWholeValueSpan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(c.Lanes, ",") != strings.Join(DefaultLanes, ",") {
+	if strings.Join(c.Lanes, ",") != strings.Join(defaultLanes, ",") {
 		t.Errorf("lanes = %v; want the defaults, as the warning says", c.Lanes)
 	}
 	if len(warn) != 1 || !strings.HasPrefix(warn[0], "config.toml:2: key \"lanes.order\" has the wrong type") {

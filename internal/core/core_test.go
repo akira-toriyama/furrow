@@ -317,7 +317,7 @@ func TestPriorityPeers(t *testing.T) {
 func TestRandomIDSuffix(t *testing.T) {
 	// Each byte is masked to its low 5 bits and indexes the 32-char alphabet.
 	in := []byte{0, 1, 2, 31, 32, 33} // 32&31=0, 33&31=1
-	suf, err := RandomIDSuffix(len(in), bytes.NewReader(in))
+	suf, err := randomIDSuffix(len(in), bytes.NewReader(in))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestRandomIDSuffix(t *testing.T) {
 	for i := range long {
 		long[i] = byte(i * 7)
 	}
-	s2, err := RandomIDSuffix(64, bytes.NewReader(long))
+	s2, err := randomIDSuffix(64, bytes.NewReader(long))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +341,7 @@ func TestRandomIDSuffix(t *testing.T) {
 		}
 	}
 	// a short read is an error, not a silent partial id.
-	if _, err := RandomIDSuffix(4, bytes.NewReader([]byte{1, 2})); err == nil {
+	if _, err := randomIDSuffix(4, bytes.NewReader([]byte{1, 2})); err == nil {
 		t.Error("expected an error on short read")
 	}
 }
