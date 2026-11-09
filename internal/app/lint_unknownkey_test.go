@@ -76,3 +76,33 @@ func TestLintWarnsUnknownKeysInEveryShardKind(t *testing.T) {
 		t.Errorf("want exactly 3 unknown-shard-key findings (one per file kind), got %d: %v", len(got), got)
 	}
 }
+
+// archive/ parks unknown keys like the hot store, and upgrade reports what it
+// kept there — so lint names them too, each file under archive/ and the
+// archive's meta.json blamed on `archive` (schema-outdated's id for that
+// store). A lint blind to archive/ kept the key out of sight between flag
+// days, with nothing pointing at the prune that removes it (t-c6nn).
+func TestLintWarnsUnknownKeysInArchiveStore(t *testing.T) {
+	a := newFSApp(t)
+	taskID, epicID := archiveWithParkedKeys(t, a)
+
+	got := byID(problemsWithCode(mustLint(t, a), "unknown-shard-key"))
+	for id, want := range map[string]string{
+		taskID:      "task shard archive/tasks/" + taskID + ".json carries 1 key(s) this furrow does not know (parent)",
+		epicID:      "epic shard archive/epics/" + epicID + ".json carries 1 key(s) this furrow does not know (sprint)",
+		"owner/app": "repo review shard archive/repos/owner__app.json carries 1 key(s) this furrow does not know (cadence_days)",
+		"archive":   "archive/meta.json carries 1 key(s) this furrow does not know (min_reader)",
+	} {
+		p, ok := got[id]
+		if !ok {
+			t.Errorf("no unknown-shard-key for %q — an archived record's parked key is reported by nothing", id)
+			continue
+		}
+		if !strings.HasPrefix(p.Msg, want) || !strings.Contains(p.Msg, "furrow tidy --unknown-keys") {
+			t.Errorf("the %q warning = %q, want it to open %q and point at `furrow tidy --unknown-keys`", id, p.Msg, want)
+		}
+	}
+	if len(got) != 4 {
+		t.Errorf("want exactly 4 unknown-shard-key findings (one per record kind in archive/), got %d: %v", len(got), got)
+	}
+}

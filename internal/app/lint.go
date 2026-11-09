@@ -843,32 +843,63 @@ func (a *App) archivedIDs() ([]string, error) {
 	return append(ids, eids...), nil
 }
 
-// lintArchive judges the archive store's tasks on the one invariant that
-// store carries: everything in it is done. An open task there is a sync that
-// crossed an archive with a reopen (git's rename detection used to pair the
-// archive's delete+add with the other side's edit and apply the reopen onto
-// the ARCHIVE copy — t-pmz8), and no read shows it until it is brought back.
+// lintArchive judges the archive store on the one invariant it carries —
+// everything in it is done — and on its parked keys. An open task there is a
+// sync that crossed an archive with a reopen (git's rename detection used to
+// pair the archive's delete+add with the other side's edit and apply the
+// reopen onto the ARCHIVE copy — t-pmz8), and no read shows it until it is
+// brought back. The keys get the hot store's unknown-shard-key, file named
+// under archive/: upgrade sweeps this store and reports what it kept here, so
+// a lint blind to it left the one tool that prunes them unpointed (t-c6nn).
 func (a *App) lintArchive() ([]core.Problem, error) {
-	arcIdx, _, err := a.archiveSnapshot()
-	if err != nil || arcIdx == nil {
+	if a.Dir == "" {
+		return nil, nil
+	}
+	arc, arcIdx, err := a.archiveLoad()
+	if err != nil {
 		return nil, err
 	}
 	var ps []core.Problem
+	parked := func(id, what string, keys []string) {
+		if p, ok := unknownKeyProblem(id, what, keys); ok {
+			ps = append(ps, p)
+		}
+	}
 	for i := range arcIdx.Tasks {
 		t := &arcIdx.Tasks[i]
+		parked(t.ID, "task shard archive/"+core.TaskPath(t.ID), t.ExtraKeys())
 		if t.Status == a.Cfg.DoneLane {
 			continue
 		}
 		ps = append(ps, core.Problem{Severity: core.SevError, Code: "archived-not-done", ID: t.ID,
 			Msg: fmt.Sprintf("is in archive/ but in lane %q — an archive and a reopen crossed in a sync; `furrow unarchive %s` brings it back to the board, or `furrow unarchive %s` then `furrow done %s` if it is finished", t.Status, t.ID, t.ID, t.ID)})
 	}
+	epics, err := arc.LoadEpics()
+	if err != nil {
+		return nil, err
+	}
+	for i := range epics {
+		parked(epics[i].ID, "epic shard archive/"+core.EpicPath(epics[i].ID), epics[i].ExtraKeys())
+	}
+	repos, err := arc.ListRepos()
+	if err != nil {
+		return nil, err
+	}
+	for i := range repos {
+		parked(repos[i].Repo, "repo review shard archive/"+core.RepoRecordPath(repos[i].Repo), repos[i].ExtraKeys())
+	}
+	meta, err := arc.LoadMeta()
+	if err != nil {
+		return nil, err
+	}
+	parked("archive", "archive/meta.json", meta.ExtraKeys())
 	return ps, nil
 }
 
-// unknownKeyProblem is the one wording for the three machine-written file kinds
-// (task shard, repo review shard, meta.json), which all park unknown top-level
-// keys now (core/passthrough.go). ok=false when the record carried none — the
-// normal case — so callers stay a two-line `if`.
+// unknownKeyProblem is the one wording for the four machine-written file kinds
+// (task, epic and repo review shards, meta.json) in either store, which all
+// park unknown top-level keys now (core/passthrough.go). ok=false when the
+// record carried none — the normal case — so callers stay a two-line `if`.
 //
 // furrow PRESERVES a key it does not know rather than silently destroying it on
 // the next write. But preserving is not understanding, and silence is not safety,

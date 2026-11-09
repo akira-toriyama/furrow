@@ -171,7 +171,8 @@ rules behind reproduced corruptions: "known?" is `strings.EqualFold`
 (`encodeCanonicalWithExtras`). **The gate stops a bumped layout from being
 misread; the passthrough stops an unbumped one from being destroyed.**
 Preserved is not honoured, so `lint` warns `unknown-shard-key` over all four
-written file kinds, and "bump on a shape change" still stands
+written file kinds — in `archive/` as in the board, the same set
+`tidy --unknown-keys` prunes — and "bump on a shape change" still stands
 (`TestShardFieldsGolden`, below). Limits: top-level only
 (`$defs.checklistItem` stays `additionalProperties: false`); not retroactive
 (a shared board is safe only once EVERY writer, pinned CI callers included, has
