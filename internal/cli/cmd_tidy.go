@@ -27,13 +27,15 @@ func newTidyCmd() *cobra.Command {
 			"                  edges gate nothing (`next` treats them met) — but a board\n" +
 			"                  may keep them as history on purpose (epic slices wired as\n" +
 			"                  deps), so this is per-run opt-in, never config or default.\n" +
-			"  --unknown-keys  the unknown keys the passthrough parks (task/epic/repo\n" +
-			"                  shards and meta.json) — what `furrow upgrade` \"kept for a\n" +
-			"                  human\" and lint's unknown-shard-key keeps naming. This IS\n" +
-			"                  that human's tool: the only alternative was hand-editing a\n" +
-			"                  machine-written shard, which the store contract forbids.\n" +
-			"                  Accepting it accepts that a key a NEWER furrow wrote is\n" +
-			"                  dropped with the junk — the preview names every key first.\n\n" +
+			"  --unknown-keys  the unknown keys the passthrough parks in task/epic/repo\n" +
+			"                  shards and meta.json, the board's and archive/'s alike (a\n" +
+			"                  row's file names its store) — what `furrow upgrade` \"kept\n" +
+			"                  for a human\" and lint's unknown-shard-key keep naming.\n" +
+			"                  This IS that human's tool: the only alternative was\n" +
+			"                  hand-editing a machine-written shard, which the store\n" +
+			"                  contract forbids. Accepting it accepts that a key a NEWER\n" +
+			"                  furrow wrote is dropped with the junk — the preview names\n" +
+			"                  every key first.\n\n" +
 			"With no selector it previews BOTH classes; --yes requires naming what to\n" +
 			"apply. The apply never advances `updated` (a prune is bookkeeping, not\n" +
 			"progress — respace's rule), rewrites only the shards whose bytes change, and\n" +
