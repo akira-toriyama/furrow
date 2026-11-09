@@ -2,13 +2,14 @@
 # check.sh — the full local verification, runnable by you or by Claude Code with
 # no TTY. It mirrors the Go core of CI (build/vet/race-test/module hygiene/
 # golangci-lint/govulncheck of source AND binary) plus every repo-specific guard,
-# says when the local Go or golangci-lint is not the one CI runs, and runs the
-# workflow/TOML linters (actionlint, taplo, zizmor) and the commit lint (glyph,
-# over origin/main..HEAD) when they are on PATH. A green run here is NOT a
-# green CI: go-bite (does each new test fail against the pre-PR source?), the
-# PR-title half of commit-lint and repo-policy have no local pass, and a linter
-# that is not installed is skipped with a note, not failed — read the "skipped"
-# lines. Use GOTOOLCHAIN=local on a Go 1.26+ host.
+# lints at exactly the golangci-lint version CI pins (installed on first use),
+# says when the local Go is not the one CI runs, and runs the workflow/TOML
+# linters (actionlint, taplo, zizmor) and the commit lint (glyph, over
+# origin/main..HEAD) when they are on PATH. A green run here is NOT a green CI:
+# go-bite (does each new test fail against the pre-PR source?), the PR-title
+# half of commit-lint and repo-policy have no local pass, and a linter that is
+# not installed is skipped with a note, not failed — read the "skipped" lines.
+# Use GOTOOLCHAIN=local on a Go 1.26+ host.
 set -eu
 cd "$(dirname "$0")/.."
 export GOTOOLCHAIN=local
@@ -37,9 +38,8 @@ go mod verify
 
 # CI runs `go-version: stable` (build.yml), the CURRENT Go release, while a
 # host may sit on an older one; the lint broke twice on exactly that skew
-# (build.yml's golangci note), so say when the two differ — like the
-# golangci-lint pin check below, pure text plus one 3-second lookup of what
-# stable is today, skipped quietly offline.
+# (build.yml's golangci note), so say when the two differ: pure text plus one
+# 3-second lookup of what stable is today, skipped quietly offline.
 ci_go="$(sed -n 's/^[[:space:]]*go-version:[[:space:]]*\([^[:space:]#]*\).*/\1/p' .github/workflows/build.yml | head -1)"
 local_go="$(go env GOVERSION)"
 if [ "$ci_go" = "stable" ]; then
@@ -66,22 +66,45 @@ go vet ./...
 echo "→ go test -race (all packages)"
 go test -race ./...
 
-if command -v golangci-lint >/dev/null 2>&1; then
-  # CI pins the linter version in build.yml (the reusable's default once broke
-  # every PR against the current Go); a local binary on another version can
-  # pass here and fail there or vice versa, so say so — pure text extraction,
-  # like check-version-lockstep.sh.
-  ci_lint="$(sed -n 's/^[[:space:]]*golangci-lint-version:[[:space:]]*v\([0-9][^[:space:]]*\).*/\1/p' .github/workflows/build.yml | head -1)"
-  local_lint="$(golangci-lint version 2>/dev/null | sed -n 's/.*version \([0-9][^ ]*\).*/\1/p' | head -1)"
-  if [ -n "$ci_lint" ] && [ "$ci_lint" != "$local_lint" ]; then
-    echo "→ golangci-lint (WARNING: local v${local_lint:-?} but CI pins v$ci_lint in build.yml — verdicts can differ)"
-  else
-    echo "→ golangci-lint (v${local_lint:-?}, matches the CI pin)"
-  fi
-  golangci-lint run ./...
-else
-  echo "→ golangci-lint (skipped — not installed; CI runs it)"
+# golangci-lint runs at exactly the version build.yml pins, installed into a
+# directory of its own. Not the PATH binary: that one tracks the fleet go-ci.yml
+# default every other repo's CI runs, so it cannot also match this repo's pin,
+# and a binary off the pin can give other verdicts (v2.12.x replays a deleted
+# worktree's findings without their //nolint — t-fnzr). It must also be built
+# by the Go that runs here, since it typechecks the stdlib with the go/types it
+# was built with: a build from before a Go upgrade fails on the new stdlib. So
+# it is reinstalled whenever its version line does not name both, which also
+# catches a file that no longer runs, and its result cache goes with it. An
+# install that cannot reach the proxy retries from the module cache; one that
+# still fails stops here, since CI cannot install a pin with no release either.
+ci_lint="$(sed -nE "s/^[[:space:]]*golangci-lint-version:[[:space:]]+(v([0-9]+\.[0-9]+\.[0-9]+)|\"v([0-9]+\.[0-9]+\.[0-9]+)\"|'v([0-9]+\.[0-9]+\.[0-9]+)')([[:space:]]+#.*)?[[:space:]]*\$/\2\3\4/p" .github/workflows/build.yml | head -1)"
+if [ -z "$ci_lint" ]; then
+  echo "✖ no exact golangci-lint-version vX.Y.Z pin in .github/workflows/build.yml — check.sh reads only a plain or quoted vX.Y.Z on the key's own line, and lints at that pin" >&2
+  exit 1
 fi
+lint_dir="${XDG_CACHE_HOME:-$HOME/.cache}/furrow-check/golangci-lint-v$ci_lint"
+go_ver="$(go env GOVERSION)"
+# A build made under a GOEXPERIMENT reports its Go as go1.N.M-X:<experiment>.
+lint_ok() {
+  "$lint_dir/golangci-lint" version 2>/dev/null |
+    grep -qF -e "version $ci_lint built with $go_ver " -e "version $ci_lint built with $go_ver-X:"
+}
+if ! lint_ok; then
+  echo "→ golangci-lint v$ci_lint: installing the CI pin with $go_ver into $lint_dir"
+  # go install skips a target whose build ID still reads as current, which a
+  # truncated binary can, so the old file goes first.
+  rm -rf "$lint_dir/golangci-lint" "$lint_dir/cache"
+  lint_pkg="github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$ci_lint"
+  GOBIN="$lint_dir" go install "$lint_pkg" ||
+    GOBIN="$lint_dir" GOPROXY="file://$(go env GOMODCACHE)/cache/download" go install "$lint_pkg" ||
+    true
+  if ! lint_ok; then
+    echo "✖ could not install golangci-lint v$ci_lint with $go_ver (the go error is above): a pin with no release fails CI too, and offline the module cache needs a copy" >&2
+    exit 1
+  fi
+fi
+echo "→ golangci-lint (v$ci_lint, the CI pin)"
+GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-$lint_dir/cache}" "$lint_dir/golangci-lint" run ./...
 
 
 # The release pipeline only ever runs on a tag, so a defect in .goreleaser.yaml /
