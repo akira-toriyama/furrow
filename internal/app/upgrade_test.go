@@ -138,12 +138,11 @@ func TestUpgradeAlsoRaisesArchiveStore(t *testing.T) {
 	}
 }
 
-// `archive` is the one flow that writes TWO stores, and it commits the
-// destination before destroying the source. On a read-only board that ordering
-// leaked: the sibling .furrow/archive/ is born fresh, so it passed the store's
-// fresh-stamp exemption and got written (stamped with the BINARY's layout, one
-// ahead of the board that owns it) — and only THEN did the hot store's gate
-// refuse. The task ended up in both stores, and a v4 archive sat under a v3
+// `archive` writes TWO stores, and it commits the destination before
+// destroying the source. On a read-only board that ordering leaked: the
+// sibling .furrow/archive/ is born fresh, so it passed the store's fresh-stamp
+// exemption and got written (stamped with the BINARY's layout, one ahead of
+// the board that owns it) — and only THEN did the hot store's gate refuse. The task ended up in both stores, and a v4 archive sat under a v3
 // board. A refusal has to be total, so the whole operation is gated up front.
 func TestArchiveOnAnOutdatedBoardWritesNothing(t *testing.T) {
 	dir := t.TempDir()
