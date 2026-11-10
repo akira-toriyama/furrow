@@ -54,7 +54,9 @@ func newArchiveCmd() *cobra.Command {
 			"or go with it. Naming such a task by id is refused (exit 2, kind\n" +
 			"`referenced`, the edges in details.references.deps) and nothing moves:\n" +
 			"name the dependents in the same call once they are done, or drop the edge\n" +
-			"with `furrow dep <dependent> <id> --rm`.\n\n" +
+			"with `furrow dep <dependent> <id> --rm`. Either store refusing its write —\n" +
+			"an older layout (kind schema-upgrade-required) or a duplicate id\n" +
+			"(validation) — refuses the whole call before anything moves.\n\n" +
 			"The age sweep INHERITS THE BOARD SCOPE, like every read: with no -r it folds\n" +
 			"only the aged done of the repo your ls/next/search are already scoped to. An\n" +
 			"explicit -r (repeatable) swaps that scope; -r '' sweeps the whole board, and\n" +

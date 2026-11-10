@@ -271,17 +271,11 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 	if a.Dir == "" {
 		return nil, core.Internalf("", "archive requires a file-backed store")
 	}
-	// Gate the HOT board before touching anything: this flow writes two stores and
-	// it commits the destination first. Without this, a read-only board still got
-	// an archive/ born under it: that sibling store is fresh, so it passed the
-	// store's fresh-stamp exemption and was stamped with the BINARY's layout — one
-	// ahead of the board that owns it — and the task was copied in before the hot
-	// store's own gate refused. A refusal has to be total.
-	if err := a.Store.Writable(); err != nil {
-		return nil, err
-	}
 	arc, arcIdx, err := a.archiveLoad()
 	if err != nil {
+		return nil, err
+	}
+	if err := raiseMoveRefusals(a.Store, idx, arc, arcIdx); err != nil {
 		return nil, err
 	}
 	for _, t := range moved {
@@ -320,6 +314,33 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 	return rep, nil
 }
 
+// raiseMoveRefusals raises, before a move between the hot store and archive/
+// writes anything, every refusal its two Saves would raise: each store's
+// write gate and each index's duplicate-id check. Both directions commit the
+// destination first, so a refusal Save raised itself came after bodies,
+// assets, or a whole index had landed, leaving the task in both stores behind
+// an error that said nothing was written: a read-only board still got an
+// archive/ born under it (the fresh sibling passes the store's fresh-stamp
+// exemption, stamped with the BINARY's layout), and an archive/ on an older
+// layout refused only after the restored task was on the hot board (t-paax).
+// A refusal has to be total.
+//
+// The indexes are checked as loaded, not as they will be saved: a duplicate
+// whose first copy is the one leaving would pass Save, and the move would
+// then delete the body the remaining copy still names.
+func raiseMoveRefusals(hot core.Store, hotIdx *core.Index, arc core.Store, arcIdx *core.Index) error {
+	if err := hot.Writable(); err != nil {
+		return err
+	}
+	if err := arc.Writable(); err != nil {
+		return err
+	}
+	if err := core.CheckUniqueIDs(hotIdx); err != nil {
+		return err
+	}
+	return core.CheckUniqueIDs(arcIdx)
+}
+
 func idSet(tasks []core.Task) map[string]bool {
 	set := make(map[string]bool, len(tasks))
 	for i := range tasks {
@@ -352,11 +373,11 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := a.Store.Writable(); err != nil {
-		return nil, err
-	}
 	arc, arcIdx, err := a.archiveLoad()
 	if err != nil {
+		return nil, err
+	}
+	if err := raiseMoveRefusals(a.Store, idx, arc, arcIdx); err != nil {
 		return nil, err
 	}
 	var moved []core.Task

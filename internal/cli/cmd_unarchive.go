@@ -24,9 +24,12 @@ func newUnarchiveCmd() *cobra.Command {
 			"referenced, the edges in details.references.deps) — restore them together\n" +
 			"or drop the edge first, since a restored dependent of an archived id reads\n" +
 			"as blocked and lint raises dep-missing. Guarded like every task write\n" +
-			"(session-busy). --json is ALWAYS an array of {before,after,changed} envelopes,\n" +
-			"one per id (before is null — the task was not on the hot board — and each\n" +
-			"envelope carries `unarchived: true`); --ndjson streams one per line.\n\n" +
+			"(session-busy). Either store refusing its write — an older layout (kind\n" +
+			"schema-upgrade-required) or a duplicate id (validation) — refuses the\n" +
+			"whole call before anything moves. --json is ALWAYS an array of\n" +
+			"{before,after,changed} envelopes, one per id (before is null — the task\n" +
+			"was not on the hot board — and each envelope carries `unarchived: true`);\n" +
+			"--ndjson streams one per line.\n\n" +
 			"A restored task comes back EXACTLY as it was archived: done lane, closed\n" +
 			"stamp, every field preserved (its body and attached assets travel back\n" +
 			"too; archive/ keeps a copy of any asset an archived body still shows,\n" +
