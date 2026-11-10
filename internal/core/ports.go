@@ -62,9 +62,9 @@ type Store interface {
 	// Writable reports whether this binary may write the board: nil = yes, else
 	// the refusal every mutation would raise (schema-upgrade-required /
 	// schema-too-new). It has no side effects, so callers that only want to
-	// REPORT the state (`furrow board`, `furrow lint`, and the archive flow,
-	// which must gate the hot board before it writes a sibling store) ask this
-	// instead of re-deriving the rule — a second copy of the rule is how the two
+	// REPORT the state (`furrow board`, `furrow lint`, and a move between the
+	// hot store and archive/, which must gate both before it writes either) ask
+	// this instead of re-deriving the rule — a second copy of the rule is how the two
 	// halves drift apart.
 	Writable() error
 	// SetBoardVersion raises the board to a layout version. It is the ONE
