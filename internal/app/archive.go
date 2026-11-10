@@ -47,7 +47,8 @@ func containsAny(have, want []string) bool {
 // (its own tasks/ shards + meta.json + bodies/, a sibling sharded store),
 // keeping the hot store light. With dryRun it only reports what it would move.
 // Returns the affected tasks. A selected id that archive/ already holds is
-// archiveMove's to judge: the same task converges, any other refuses the sweep.
+// archiveMove's to judge: it finishes an interrupted move or refuses the
+// whole sweep.
 //
 // Requires a file-backed store (a.Dir set) — the archive is a sibling .furrow
 // directory; an in-memory app cannot archive to disk.
@@ -137,8 +138,8 @@ func depHolds(idx *core.Index, leaving map[string]bool) map[string][]string {
 // edges in details.references.deps) — the sweep holds such a task back, but a
 // named id that silently stayed would be a write that did not do what it was
 // asked. There is no force: the result would be a board in lint error.
-// An id archive/ already holds converges when it is the same task and refuses
-// the call when it is another (archiveMove). Duplicate ids collapse.
+// An id archive/ already holds finishes an interrupted move or refuses the
+// call (archiveMove). Duplicate ids collapse.
 // dryRun reports without moving. Uses the same destination-before-source move as
 // Archive.
 func (a *App) ArchiveIDs(ids []string, dryRun bool) (*ArchiveReport, error) {
@@ -257,13 +258,14 @@ type UnarchiveReport struct {
 // task (core.SameTask). The re-run then writes the hot copy over archive/'s,
 // shard as well as body: the hot copy is the one an edit made after the
 // interruption reached, and keeping archive/'s shard beside the hot body used
-// to mix the two. The body goes with it only while it still holds archive/'s
-// prose (pickFinishedBody): a blank one — a shard brought back by hand, or
-// kept when resolving a sync conflict, then perhaps given edit's empty
-// placeholder — leaves archive/ its own, and one that lacks archive/'s lines
-// refuses the call (refuseBodyLoss), as does an asset the two sides hold
-// under one name with other bytes (refuseAssetClash). Under any other task
-// the id is refused before the first write (refuseIDClash).
+// to mix the two. The body goes with it only while it still holds every line
+// of archive/'s (pickFinishedBody): a blank one — a shard brought back by
+// hand, or kept when resolving a sync conflict, then perhaps given edit's
+// empty placeholder — leaves archive/ its own, and one that lacks archive/'s
+// lines refuses the call (refuseBodyLoss). Under any other task the id is
+// refused before the first write (refuseIDClash). Any move, finished or
+// fresh, also refuses an asset the two sides hold under one name with other
+// bytes (refuseAssetClash).
 func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*ArchiveReport, error) {
 	rep := &ArchiveReport{Tasks: moved, Assets: newAssetTransfer(), Held: []HeldTask{}}
 	if rep.Tasks == nil {
@@ -432,11 +434,12 @@ func refuseIDClash(moving []core.Task, dest *core.Index, where, verb string) err
 // board and archive/ both hold (core.SameTask): board is the board's body (""
 // when the file is missing), archived archive/'s. The board's copy is the one
 // an edit after the interruption reached, so it wins while it still holds
-// archive/'s prose (holdsProse). A blank one yields archive/'s: a shard can
-// come back without its body, and edit's empty placeholder is no newer copy.
-// ok=false when the board's body lacks archive/'s lines — a note, an attach
-// link or retitle's seeded heading written onto a body-less copy — since
-// keeping either body would drop lines only a hand merge can place.
+// every line of archive/'s (holdsProse). A blank one yields archive/'s: a
+// shard can come back without its body, and edit's empty placeholder is no
+// newer copy. ok=false when the board's body lacks one of archive/'s lines —
+// a note, an attach link or retitle's seeded heading written onto a
+// body-less copy — since keeping either body would drop lines only a hand
+// merge can place.
 func pickFinishedBody(board, archived string) (useBoard, ok bool) {
 	if strings.TrimSpace(board) == "" {
 		return false, true
@@ -444,38 +447,40 @@ func pickFinishedBody(board, archived string) (useBoard, ok bool) {
 	return true, holdsProse(board, archived)
 }
 
-// holdsProse reports whether every non-blank line of archived below its title
-// heading appears in board in the same order, trailing whitespace aside, so
-// board is archived plus edits: a note or an attach link adds lines, and
-// retitle rewrites only the heading. The heading is retitleHeading's — the
-// first real line when it is an H1, blank lines and an occurrence's back-link
-// allowed above it.
+// holdsProse reports whether board keeps every line of archived: each
+// non-blank line, trailing whitespace aside, appears in board at least as
+// often, wherever it sits — a note or an attach link adds lines, and a
+// reorder only moves them. The one line exempt is archived's title heading,
+// retitleHeading's (the first real line when it is an H1, blank lines and an
+// occurrence's back-link allowed above it): retitle rewrites it, and the
+// shard carries the title. An occurrence's `previous: [[id]]` back-link
+// counts, being its only tie to its series.
 func holdsProse(board, archived string) bool {
-	have := strings.Split(board, "\n")
+	have := map[string]int{}
+	for _, ln := range strings.Split(board, "\n") {
+		if ln = strings.TrimRight(ln, " \t\r"); strings.TrimSpace(ln) != "" {
+			have[ln]++
+		}
+	}
 	want := strings.Split(archived, "\n")
-	start := 0
+	heading := -1
 	for i, ln := range want {
 		if strings.TrimSpace(ln) == "" || bodyLinkLine.MatchString(ln) {
 			continue
 		}
 		if strings.HasPrefix(ln, "# ") {
-			start = i + 1
+			heading = i
 		}
 		break
 	}
-	j := 0
-	for _, ln := range want[start:] {
-		ln = strings.TrimRight(ln, " \t\r")
-		if strings.TrimSpace(ln) == "" {
+	for i, ln := range want {
+		if ln = strings.TrimRight(ln, " \t\r"); i == heading || strings.TrimSpace(ln) == "" {
 			continue
 		}
-		for j < len(have) && strings.TrimRight(have[j], " \t\r") != ln {
-			j++
-		}
-		if j == len(have) {
+		if have[ln] == 0 {
 			return false
 		}
-		j++
+		have[ln]--
 	}
 	return true
 }
@@ -489,7 +494,7 @@ func refuseBodyLoss(ids []string, verb string) error {
 		which = "bodies of " + strings.Join(ids, ", ") + " lack lines archive/'s copies have"
 	}
 	return core.Validationf(ids[0],
-		"the board's %s below the title — finishing the move would drop them, so nothing was %s; copy them from archive/bodies/<id>.md into the board's (`furrow edit <id>`), or delete them there if they were dropped on purpose, then re-run",
+		"the board's %s, its title aside — finishing the move would drop them, so nothing was %s; copy them from archive/bodies/<id>.md into the board's (`furrow edit <id>`), or delete them there if they were dropped on purpose, then re-run",
 		which, verb)
 }
 
@@ -530,14 +535,14 @@ func idSet(tasks []core.Task) map[string]bool {
 // the one the session guard judges; the dep check skips it, since the call
 // adds no edge to the board; and only archive/'s copy goes. The hot body is
 // rewritten from archive/'s while it is blank or still holds archive/'s bytes,
-// the ones the interrupted run wrote, and a hot body that lacks archive/'s
-// prose refuses the call (pickFinishedBody, refuseBodyLoss), as does an asset
-// the two sides hold under one name with other bytes (refuseAssetClash).
-// Under any other task the id is refused before the first write
-// (refuseIDClash). The asset half is the same rule as the outbound move, read
-// from archive/'s side: every asset a restored task owns or its body shows
-// comes back, and archive/ keeps its copy of any that an archived body still
-// points at (asset_hold.go).
+// the ones the interrupted run wrote, and a hot body that lacks one of
+// archive/'s lines refuses the call (pickFinishedBody, refuseBodyLoss). Under
+// any other task the id is refused before the first write (refuseIDClash).
+// Any restore also refuses an asset the two sides hold under one name with
+// other bytes (refuseAssetClash). The asset half is the same rule as the
+// outbound move, read from archive/'s side: every asset a restored task owns
+// or its body shows comes back, and archive/ keeps its copy of any that an
+// archived body still points at (asset_hold.go).
 func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	idx, err := a.load()
 	if err != nil {

@@ -466,10 +466,11 @@ func TestUnarchiveFinishingAMoveJudgesNoEdge(t *testing.T) {
 	}
 }
 
-// The mint's archive/ read is a stat, never a parse, so a board whose
-// archive/ lint and the moves refuse to read can still add — and still skips
-// a retired id where one can be seen. An archive/ that is not a directory
-// holds no shard.
+// The mint's archive/ read is a stat, never a parse, so a corrupt shard or a
+// newer layout there, which lint and the moves refuse, cannot stop an add,
+// and a retired id is still skipped. An archive/ that is not a directory
+// holds no shard. Only a stat the OS refuses fails the add: a guard that
+// cannot look must not guess.
 func TestMintProbeSurvivesABrokenArchive(t *testing.T) {
 	const fresh = "t-fresh"
 	for _, c := range []struct {
@@ -667,8 +668,8 @@ func TestFinishedMoveKeepsArchivesProse(t *testing.T) {
 				}
 				if c.want == "" {
 					fe := core.AsError(err)
-					if fe == nil || fe.Kind != core.KindValidation || !strings.Contains(fe.Msg, "lacks lines") {
-						t.Fatalf("%s = %v; want the validation refusal naming the lines the board's body lacks", verb, err)
+					if fe == nil || fe.Kind != core.KindValidation || fe.Subject != id || !strings.Contains(fe.Msg, "lacks lines") {
+						t.Fatalf("%s = %v; want the validation refusal for %s naming the lines the board's body lacks", verb, err, id)
 					}
 					if !maps.Equal(before, boardBytes(t, a.Dir)) {
 						t.Errorf("the refused %s changed the board", verb)
@@ -741,8 +742,8 @@ func TestMoveRefusesAnAssetClash(t *testing.T) {
 				_, err = a.Unarchive([]string{tk.ID})
 			}
 			fe := core.AsError(err)
-			if fe == nil || fe.Kind != core.KindValidation || !strings.Contains(fe.Msg, core.AssetPath(att.Name)) {
-				t.Fatalf("%s = %v; want the validation refusal naming %s", verb, err, core.AssetPath(att.Name))
+			if fe == nil || fe.Kind != core.KindValidation || fe.Subject != att.Name || !strings.Contains(fe.Msg, core.AssetPath(att.Name)) {
+				t.Fatalf("%s = %v; want the validation refusal about %s naming %s", verb, err, att.Name, core.AssetPath(att.Name))
 			}
 			if !maps.Equal(before, boardBytes(t, a.Dir)) {
 				t.Errorf("the refused %s changed the board", verb)
@@ -799,5 +800,47 @@ func TestUnarchiveFinishingAMoveGuardsTheHotCopy(t *testing.T) {
 				t.Fatalf("the board's copy touches no busy repo: %v", err)
 			}
 		})
+	}
+}
+
+// The body rule a finished move applies: the board's body wins while it keeps
+// every line of archive/'s, its title heading aside, as often as archive/'s
+// has it, wherever it sits; a blank board body yields archive/'s. An
+// occurrence's back-link is its only tie to its series and counts.
+func TestFinishedBodyRule(t *testing.T) {
+	const prose = "# prosy\n\nline one\nline two\n"
+	const occurrence = "previous: [[t-aaaaa]]\n\n# weekly review\n"
+	for _, c := range []struct {
+		name, board, archived string
+		holds                 bool
+	}{
+		{"the same prose", prose, prose, true},
+		{"CRLF and trailing spaces", "# prosy\r\n\r\nline one  \r\nline two\t\r\n", prose, true},
+		{"a reorder", "# prosy\n\nline two\nline one\n", prose, true},
+		{"a note and an attach link added", "# prosy\n\n- a later note\n\nline one\nline two\n![shot](assets/t-x-shot.png)\n", prose, true},
+		{"a retitle", "# renamed\n\nline one\nline two\n", prose, true},
+		{"a retitled occurrence keeps its back-link", "previous: [[t-aaaaa]]\n\n# renamed\n", occurrence, true},
+		{"a note on a body-less occurrence drops its back-link", "a later note\n", occurrence, false},
+		{"a repeated line held once", "# prosy\n\n- same\n", "# prosy\n\n- same\n- same\n", false},
+		{"a dropped line", "# prosy\n\nline one\n", prose, false},
+		{"no heading, so every line counts", "line two\n", "line one\nline two\n", false},
+		{"a heading-only archive/ body", "anything at all\n", "# prosy\n", true},
+	} {
+		if got := holdsProse(c.board, c.archived); got != c.holds {
+			t.Errorf("%s: holdsProse = %v, want %v", c.name, got, c.holds)
+		}
+	}
+	for _, c := range []struct {
+		name, board  string
+		useBoard, ok bool
+	}{
+		{"a missing or empty board body", "", false, true},
+		{"a whitespace-only board body", " \n\t\n", false, true},
+		{"a board body lacking archive/'s lines", "a later note\n", true, false},
+		{"a board body holding them", "# renamed\n\nline one\nline two\n", true, true},
+	} {
+		if useBoard, ok := pickFinishedBody(c.board, prose); useBoard != c.useBoard || ok != c.ok {
+			t.Errorf("%s: pickFinishedBody = (%v, %v), want (%v, %v)", c.name, useBoard, ok, c.useBoard, c.ok)
+		}
 	}
 }

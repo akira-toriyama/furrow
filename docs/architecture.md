@@ -322,8 +322,10 @@ mint the same id, and the mint skips an id retired to `archive/` too
 duplicate (`core.CheckUniqueIDs`, whose doc says why reads stay open); archive
 and unarchive refuse an id the board and `archive/` hold as two different
 tasks, and finish the move when it is one task an interruption left in both
-(`core.SameTask`). Ids are **frozen** (never reused or renumbered); legacy
-numeric ids coexist. The clash handling is `fsstore.NextID`'s doc comment.
+(`core.SameTask`), refusing instead where that would drop a line of
+`archive/`'s body or an asset. Ids are **frozen** (never reused or
+renumbered); legacy numeric ids coexist. The clash handling is
+`fsstore.NextID`'s doc comment.
 
 ### memstore
 
