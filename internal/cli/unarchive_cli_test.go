@@ -76,9 +76,10 @@ func TestUnarchiveGuards(t *testing.T) {
 }
 
 // An unarchive that finishes an interrupted move — the same task already on
-// the hot board — keeps the hot copy as it stands, so its envelope is not the
-// fresh-restore shape the help leads with: before is that copy and nothing
-// changed. archive/'s copy is gone, and lint sees the id in one store.
+// the hot board, retitled there since — keeps the hot copy as it stands, so
+// its envelope is not the fresh-restore shape the help leads with: before is
+// that copy and nothing changed. archive/'s copy is gone, and lint sees the id
+// in one store.
 func TestUnarchiveFinishingAnInterruptedMoveChangesNothing(t *testing.T) {
 	initStore(t)
 	id := archiveOne(t, "half moved")
@@ -96,6 +97,11 @@ func TestUnarchiveFinishingAnInterruptedMoveChangesNothing(t *testing.T) {
 		}
 	}
 
+	const retitled = "retitled after the interruption"
+	if out, code := run(t, "retitle", id, retitled); code != 0 {
+		t.Fatalf("retitle: exit %d\n%s", code, out)
+	}
+
 	out, code := run(t, "unarchive", id, "--json")
 	if code != 0 {
 		t.Fatalf("unarchive: exit %d\n%s", code, out)
@@ -108,8 +114,8 @@ func TestUnarchiveFinishingAnInterruptedMoveChangesNothing(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &envs); err != nil || len(envs) != 1 {
 		t.Fatalf("envelopes = %s (err %v), want a one-element array", out, err)
 	}
-	if e := envs[0]; e.Before == nil || e.After == nil || e.Before.Title != e.After.Title || len(e.Changed) != 0 {
-		t.Errorf("envelope = %+v; want before and after both the hot copy, nothing changed", e)
+	if e := envs[0]; e.Before == nil || e.After == nil || e.Before.Title != retitled || e.After.Title != retitled || len(e.Changed) != 0 {
+		t.Errorf("envelope = %+v; want before and after both the retitled hot copy, nothing changed", e)
 	}
 	if _, code := run(t, "show", id, "--archived"); code == 0 {
 		t.Errorf("archive/ still holds %s", id)

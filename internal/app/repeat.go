@@ -104,7 +104,7 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	// (uniqueIDExcluding) consults only stored ids — the index and archive/ — and
 	// a pre-pass plans every occurrence before any of them is inserted, so
 	// without this, two occurrences in one batch could draw the same id, which
-	// both stores then refuse to save.
+	// Save then refuses (core.CheckUniqueIDs).
 	id, err := a.uniqueIDExcluding(idx, reserved)
 	if err != nil {
 		return nil, nil, err

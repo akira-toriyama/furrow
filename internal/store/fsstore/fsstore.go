@@ -7,10 +7,12 @@ package fsstore
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
@@ -638,16 +640,18 @@ func (s *Store) BodyExists(id string) bool {
 }
 
 // HasTaskShard reports whether tasks/<id>.json is on disk: a filename probe
-// with no parse and no read gate, so a corrupt shard or a newer layout
-// elsewhere in the store cannot fail it. It answers the mint's "is this id
-// retired to archive/?" (App.uniqueIDExcluding); a misnamed shard is invisible
-// to it, and lint's shard-misnamed and duplicate-id cover that case.
+// with no parse and no read gate, so a corrupt shard, a newer layout, or a
+// store path that is not a directory cannot fail it. Only a stat the OS
+// refuses does (a permission): the probe guards an id, and a guard that cannot
+// look must not guess. It answers the mint's "is this id retired to
+// archive/?" (App.uniqueIDExcluding); a misnamed shard is invisible to it, and
+// lint's shard-misnamed and duplicate-id cover that case.
 func (s *Store) HasTaskShard(id string) (bool, error) {
 	_, err := os.Stat(s.taskPath(id))
 	switch {
 	case err == nil:
 		return true, nil
-	case os.IsNotExist(err):
+	case os.IsNotExist(err), errors.Is(err, syscall.ENOTDIR): // no directory, so no shard under it
 		return false, nil
 	default:
 		return false, core.Internalf(id, "stat task shard: %v", err)

@@ -257,8 +257,10 @@ type UnarchiveReport struct {
 // task (core.SameTask). The re-run then writes the hot copy over archive/'s,
 // shard as well as body: the hot copy is the one an edit made after the
 // interruption reached, and keeping archive/'s shard beside the hot body used
-// to mix the two. Under any other task the id is refused before the first
-// write (refuseIDClash).
+// to mix the two. A missing hot body file — a shard brought back by hand, or
+// kept when resolving a sync conflict — is no newer copy of the prose, so
+// archive/ keeps its own body then. Under any other task the id is refused
+// before the first write (refuseIDClash).
 func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*ArchiveReport, error) {
 	rep := &ArchiveReport{Tasks: moved, Assets: newAssetTransfer(), Held: []HeldTask{}}
 	if rep.Tasks == nil {
@@ -295,15 +297,18 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 		return nil, err
 	}
 	for _, t := range moved {
-		body, err := a.Store.LoadBody(t.ID)
-		if err != nil {
-			return nil, err
+		held, _ := arcIdx.Find(t.ID) // non-nil only for the same task (refuseIDClash)
+		if held == nil || a.Store.BodyExists(t.ID) {
+			body, err := a.Store.LoadBody(t.ID)
+			if err != nil {
+				return nil, err
+			}
+			if err := arc.SaveBody(t.ID, body); err != nil {
+				return nil, err
+			}
 		}
-		if err := arc.SaveBody(t.ID, body); err != nil {
-			return nil, err
-		}
-		if held, _ := arcIdx.Find(t.ID); held != nil {
-			*held = t // the same task (refuseIDClash): the hot copy finishes the interrupted move
+		if held != nil {
+			*held = t // the hot copy finishes the interrupted move
 		} else {
 			arcIdx.Add(t)
 		}
@@ -416,15 +421,25 @@ func idSet(tasks []core.Task) map[string]bool {
 // stores swapped: the DESTINATION (hot) is persisted first — bodies, assets,
 // index — and only then is the archive side updated and its copies deleted, so
 // an interrupted run never leaves a hot index entry whose body is still
-// trapped in the archive. It can leave the task in BOTH indexes (lint's
-// duplicate-id), which the re-run finishes: an id in both is that state only
-// when it is the same task (core.SameTask), and then the hot copy stays as it
-// stands — an edit made there since the interruption is the task's newest
-// state — and only archive/'s copy goes. Under any other task the id is
-// refused before the first write (refuseIDClash). The asset half
-// is the same rule as the outbound move, read from archive/'s side: every
-// asset a restored task owns or its body shows comes back, and archive/ keeps
-// its copy of any that an archived body still points at (asset_hold.go).
+// trapped in the archive. It leaves one of three states: hot bodies and
+// assets that no hot shard names (stopped before the hot index was saved —
+// lint's orphan-body warns on the bodies, and the re-run overwrites them);
+// the task in BOTH indexes (stopped between the two saves — lint's
+// duplicate-id, finished by the re-run); or archive/ bodies and assets that no
+// archive/ shard names (stopped after archive/'s save — no lint sees them, and
+// no re-run clears them, the id being archived no longer).
+//
+// An id in both indexes is that middle state only when it is the same task
+// (core.SameTask). The re-run keeps the hot copy as it stands — an edit made
+// there since the interruption is the task's newest state — so that copy is
+// the one the session guard and the dep check judge, and only archive/'s copy
+// goes. The hot body is written from archive/'s only while it is missing or
+// still holds archive/'s bytes, the ones the interrupted run wrote. Under any
+// other task the id is refused before the first write (refuseIDClash). The
+// asset half is the same rule as the outbound move, read from archive/'s
+// side: every asset a restored task owns or its body shows comes back, and
+// archive/ keeps its copy of any that an archived body still points at
+// (asset_hold.go).
 func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	idx, err := a.load()
 	if err != nil {
@@ -466,6 +481,16 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	if err := refuseIDClash(moved, idx, "on the hot board", "restored"); err != nil {
 		return nil, err
 	}
+	onBoard := map[string]bool{} // ids whose interrupted move this call finishes
+	var restoring []core.Task
+	for i := range moved {
+		if live, _ := idx.Find(moved[i].ID); live != nil {
+			moved[i] = *live
+			onBoard[live.ID] = true
+			continue
+		}
+		restoring = append(restoring, moved[i])
+	}
 	leaving := idSet(moved)
 	// Guarded like every task write: a restore puts tasks back on the hot
 	// board of the repos they carry, so a session holding one of those repos
@@ -480,8 +505,9 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	// The mirror of ArchiveIDs' depHolds: a restored task whose dependency
 	// stays archived would read as blocked on an id the hot index lacks (lint
 	// dep-missing, the board's pre-push lint refusing the push). Restore them
-	// together, or drop the edge first.
-	if refs := archivedDepsOf(moved, arcIdx, idx, leaving); len(refs.Deps) > 0 {
+	// together, or drop the edge first. A finished move adds no edge to the
+	// board: its hot copy is already there.
+	if refs := archivedDepsOf(restoring, arcIdx, idx, leaving); len(refs.Deps) > 0 {
 		return nil, &core.Error{
 			Code:    core.CodeValidation,
 			Kind:    core.KindReferenced,
@@ -499,20 +525,18 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	for i := range moved {
-		t := &moved[i]
+	for _, t := range moved {
 		body, err := arc.LoadBody(t.ID)
 		if err != nil {
 			return nil, err
 		}
-		live, _ := idx.Find(t.ID)
 		// Through saveBody, so the restored body rides the journal: a retry of an
 		// interrupted unarchive finds the hot body already TRACKED, and a plain
-		// sync would otherwise leave it pending (t-gqe6). On that retry the body
-		// is rewritten only while it still holds archive/'s bytes, the ones the
-		// interrupted run wrote: an edit made since is newer, and a hand edit is
-		// not furrow's to publish.
-		write := live == nil
+		// sync would otherwise leave it pending (t-gqe6). A finished move writes
+		// the body only while it is missing or still holds archive/'s bytes, the
+		// ones the interrupted run wrote: an edit made since is newer, and a hand
+		// edit is not furrow's to publish.
+		write := !onBoard[t.ID] || !a.Store.BodyExists(t.ID)
 		if !write {
 			hot, err := a.Store.LoadBody(t.ID)
 			if err != nil {
@@ -525,10 +549,8 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 				return nil, err
 			}
 		}
-		if live != nil {
-			*t = *live // the same task (refuseIDClash): the hot copy stays, and the report says so
-		} else {
-			idx.Add(*t)
+		if !onBoard[t.ID] {
+			idx.Add(t)
 		}
 		arcIdx.Remove(t.ID)
 	}

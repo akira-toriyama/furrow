@@ -2,10 +2,12 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +52,20 @@ func plant(t *testing.T, s plantable, task core.Task, body string) {
 		t.Fatal(err)
 	}
 	if err := s.SaveBody(task.ID, body); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// plantShard writes task's shard into s with no body — a shard brought back
+// by hand, or kept when resolving a sync conflict, without its prose.
+func plantShard(t *testing.T, s plantable, task core.Task) {
+	t.Helper()
+	idx, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx.Add(task)
+	if err := s.Save(idx); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -280,6 +296,9 @@ func TestUnarchiveRetryKeepsTheHotCopy(t *testing.T) {
 // The pure remnant — the hot body still holds the bytes the interrupted run
 // wrote — is rewritten through saveBody as before, so the restored body rides
 // the journal and a plain sync publishes it (t-gqe6).
+//
+// bite-exempt: it pins what the base already did, so the converge path that
+// now skips some rewrites keeps journaling this one.
 func TestUnarchiveRetryJournalsTheRemnantBody(t *testing.T) {
 	b := newMoveBoard(t)
 	arc, err := b.a.archiveStore()
@@ -330,5 +349,218 @@ func TestLintFlagsAnIDInBothStores(t *testing.T) {
 				t.Fatalf("duplicate-id = %+v; want one error for %s saying %q", dup, b.archived, c.want)
 			}
 		})
+	}
+}
+
+// A shard can come back to the board without its body — restored by hand, or
+// kept when resolving the sync conflict an archive crossing a reopen raises.
+// That missing file is no newer copy of the prose. archive used to write it
+// over archive/'s body as an empty file, the remedy lint names for the state.
+func TestArchiveRetryKeepsArchivesBodyWhenTheHotOneIsMissing(t *testing.T) {
+	b := newMoveBoard(t)
+	arc, err := b.a.archiveStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prose, err := arc.LoadBody(b.archived)
+	if err != nil || prose == "" {
+		t.Fatalf("archive/ body = %q (%v); the fixture needs prose", prose, err)
+	}
+	plantShard(t, b.a.Store, findIn(t, arc, b.archived))
+
+	if _, err := b.a.ArchiveIDs([]string{b.archived}, false); err != nil {
+		t.Fatalf("the re-run must finish the move: %v", err)
+	}
+	if body, err := arc.LoadBody(b.archived); err != nil || body != prose {
+		t.Errorf("archive/ body = %q (%v); want its own prose %q kept", body, err, prose)
+	}
+	hot, err := b.a.Store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hot.Has(b.archived) {
+		t.Error("the hot shard must be gone once the move is finished")
+	}
+}
+
+// The unarchive twin: a finished move used to read the missing hot body as an
+// edit, keep it missing and delete archive/'s, the last copy of the prose.
+//
+// bite-exempt: the base restored this body too; it pins that the converge path
+// added since still does.
+func TestUnarchiveRetryRestoresAMissingHotBody(t *testing.T) {
+	b := newMoveBoard(t)
+	arc, err := b.a.archiveStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prose, err := arc.LoadBody(b.archived)
+	if err != nil || prose == "" {
+		t.Fatalf("archive/ body = %q (%v); the fixture needs prose", prose, err)
+	}
+	plantShard(t, b.a.Store, findIn(t, arc, b.archived))
+	b.a.bodiesTouched = nil
+
+	if _, err := b.a.Unarchive([]string{b.archived}); err != nil {
+		t.Fatalf("the re-run must finish the move: %v", err)
+	}
+	if body, err := b.a.Store.LoadBody(b.archived); err != nil || body != prose {
+		t.Errorf("hot body = %q (%v); want archive/'s prose %q restored", body, err, prose)
+	}
+	if !b.a.bodiesTouched[b.archived] {
+		t.Error("the restored body is not journaled for a plain sync to publish")
+	}
+	if arc.BodyExists(b.archived) {
+		t.Error("archive/'s copy must go once the hot board holds the body")
+	}
+}
+
+// A finished move adds no edge to the board: its hot copy is already there.
+// The dep check used to judge archive/'s copy, so once the edge was dropped
+// on the board, the remedy lint names was refused over an edge only archive/
+// still had, which no command can drop. Nor is an edge the hot copy still
+// has the call's to refuse: it strands nothing that is not stranded already.
+func TestUnarchiveFinishingAMoveJudgesNoEdge(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		deps func(z string) []string // the hot copy's deps
+	}{
+		{"edge dropped on the board", func(string) []string { return []string{} }},
+		{"edge still on the board", func(z string) []string { return []string{z} }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a := newFSApp(t)
+			z, err := a.Add("dependency", AddOpts{Status: "done"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			dep, err := a.Add("dependent", AddOpts{Status: "done", Deps: []string{z.ID}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := a.ArchiveIDs([]string{dep.ID, z.ID}, false); err != nil {
+				t.Fatal(err)
+			}
+			arc, err := a.archiveStore()
+			if err != nil {
+				t.Fatal(err)
+			}
+			live := findIn(t, arc, dep.ID) // the interrupted unarchive's hot copy
+			live.Deps = c.deps(z.ID)
+			body, err := arc.LoadBody(dep.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plant(t, a.Store, live, body)
+
+			if _, err := a.Unarchive([]string{dep.ID}); err != nil {
+				t.Fatalf("finishing the move strands no edge: %v", err)
+			}
+			if got := findIn(t, a.Store, dep.ID); !slices.Equal(got.Deps, live.Deps) {
+				t.Errorf("deps = %v; want the hot copy's %v", got.Deps, live.Deps)
+			}
+		})
+	}
+}
+
+// The mint's archive/ read is a stat, never a parse, so a board whose
+// archive/ lint and the moves refuse to read can still add — and still skips
+// a retired id where one can be seen. An archive/ that is not a directory
+// holds no shard.
+func TestMintProbeSurvivesABrokenArchive(t *testing.T) {
+	const fresh = "t-fresh"
+	for _, c := range []struct {
+		name  string
+		spoil func(t *testing.T, a *App)
+	}{
+		{"newer layout", func(t *testing.T, a *App) {
+			meta := fmt.Sprintf("{\n  \"schema_version\": %d\n}\n", core.SchemaVersion+1)
+			if err := os.WriteFile(filepath.Join(a.Dir, "archive", "meta.json"), []byte(meta), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"corrupt shard", func(t *testing.T, a *App) {
+			if err := os.WriteFile(filepath.Join(a.Dir, "archive", core.TaskPath("t-bad00")), []byte("{not json"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a := newFSApp(t)
+			tk, err := a.Add("retired", AddOpts{Status: "done"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := a.ArchiveIDs([]string{tk.ID}, false); err != nil {
+				t.Fatal(err)
+			}
+			c.spoil(t, a)
+			a.Store = &scriptedIDs{Store: a.Store, ids: []string{tk.ID, fresh}}
+			got, err := a.Add("new", AddOpts{})
+			if err != nil {
+				t.Fatalf("add on a board with a %s in archive/: %v", c.name, err)
+			}
+			if got.ID != fresh {
+				t.Errorf("minted %s; want %s, since %s is retired to archive/", got.ID, fresh, tk.ID)
+			}
+		})
+	}
+	t.Run("archive/ is a file", func(t *testing.T) {
+		a := newFSApp(t)
+		if err := os.WriteFile(filepath.Join(a.Dir, "archive"), []byte("not a store"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		a.Store = &scriptedIDs{Store: a.Store, ids: []string{fresh}}
+		if got, err := a.Add("new", AddOpts{}); err != nil || got.ID != fresh {
+			t.Fatalf("add = %v, %v; want %s", got, err, fresh)
+		}
+	})
+}
+
+// lint reports the cross-store duplicate once per id, however many copies
+// archive/ holds; archive/'s own duplicate is its separate finding.
+func TestLintReportsAnIDInBothStoresOnce(t *testing.T) {
+	b := newMoveBoard(t)
+	arc, err := b.a.archiveStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyShard(t, filepath.Join(b.a.Dir, "archive"), b.archived, "t-zzzzz")
+	plant(t, b.a.Store, findIn(t, arc, b.archived), "# thing\n")
+
+	var across int
+	for _, p := range problemsWithCode(mustLint(t, b.a), "duplicate-id") {
+		if p.ID == b.archived && strings.Contains(p.Msg, "across the hot board") {
+			across++
+		}
+	}
+	if across != 1 {
+		t.Errorf("cross-store duplicate-id rows for %s = %d; want 1", b.archived, across)
+	}
+}
+
+// archived-not-done tells the operator to unarchive the open task, which the
+// move refuses while the board holds a different task under the id; its
+// advice puts the repair first then.
+func TestArchivedNotDoneAdvisesTheRepairFirst(t *testing.T) {
+	b := newMoveBoard(t)
+	arc, err := b.a.archiveStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	arcIdx, err := arc.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	open, _ := arcIdx.Find(b.archived)
+	open.Status, open.Closed = "backlog", nil
+	if err := arc.Save(arcIdx); err != nil {
+		t.Fatal(err)
+	}
+	plant(t, b.a.Store, impostor(*open), "# another task\n")
+
+	nd := problemsWithCode(mustLint(t, b.a), "archived-not-done")
+	if len(nd) != 1 || nd[0].ID != b.archived || !strings.Contains(nd[0].Msg, "repair the duplicate-id first") {
+		t.Fatalf("archived-not-done = %+v; want one finding for %s that puts the repair first", nd, b.archived)
 	}
 }

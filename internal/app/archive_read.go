@@ -21,10 +21,12 @@ func (a *App) archiveStore() (*fsstore.Store, error) {
 }
 
 // isRetiredID reports whether archive/ holds a task shard named id — the
-// mint's one archive read, a stat per draw rather than a parse, so a board
-// whose archive/ is corrupt or on a newer layout can still add (lint and the
-// moves report that store; an add never needed to read it). An in-memory app
-// has no archive, so nothing is retired there.
+// mint's one archive read, a stat per draw rather than a parse, so a corrupt
+// shard, a newer layout, or an archive/ that is not a directory cannot stop an
+// add (lint and the moves report that store; an add never needed to read it).
+// An archive/ the process may not read still fails the add
+// (fsstore.HasTaskShard). An in-memory app has no archive, so nothing is
+// retired there.
 func (a *App) isRetiredID(id string) (bool, error) {
 	if a.Dir == "" {
 		return false, nil

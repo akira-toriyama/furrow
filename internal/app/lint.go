@@ -894,8 +894,11 @@ func (a *App) lintArchive(idx *core.Index) ([]core.Problem, error) {
 		if t.Status == a.Cfg.DoneLane {
 			continue
 		}
-		ps = append(ps, core.Problem{Severity: core.SevError, Code: "archived-not-done", ID: t.ID,
-			Msg: fmt.Sprintf("is in archive/ but in lane %q — an archive and a reopen crossed in a sync; `furrow unarchive %s` brings it back to the board, or `furrow unarchive %s` then `furrow done %s` if it is finished", t.Status, t.ID, t.ID, t.ID)})
+		msg := fmt.Sprintf("is in archive/ but in lane %q — an archive and a reopen crossed in a sync; `furrow unarchive %s` brings it back to the board, or `furrow unarchive %s` then `furrow done %s` if it is finished", t.Status, t.ID, t.ID, t.ID)
+		if h := hot[t.ID]; h != nil && !core.SameTask(h, t) { // unarchive refuses it until then (refuseIDClash)
+			msg = fmt.Sprintf("is in archive/ but in lane %q, and the board holds a different task under the id — repair the duplicate-id first; `furrow unarchive %s` then brings it back", t.Status, t.ID)
+		}
+		ps = append(ps, core.Problem{Severity: core.SevError, Code: "archived-not-done", ID: t.ID, Msg: msg})
 	}
 	stems, err := arc.ListTaskIDs()
 	if err != nil {
