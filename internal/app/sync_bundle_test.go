@@ -163,6 +163,56 @@ func TestSyncRefusesABodyIDThatNamesNoTask(t *testing.T) {
 	}
 }
 
+// An epic keeps its prose in bodies/ beside the tasks' and is hand-edited the
+// same way, so -b names it the same way. Refusing its id left --all-bodies,
+// which sweeps a co-located operator's WIP, as the only way to publish it
+// (t-8k4t). The scoping still holds: the task body nobody named stays pending,
+// and an epic id that names nothing is refused like a task id.
+func TestSyncBodyNamesAnEpic(t *testing.T) {
+	t.Parallel()
+	_, cloneA, cloneB := setupClones(t)
+	a := openBoard(t, cloneA)
+	e, err := a.EpicAdd("box", EpicAddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, err := a.Add("x", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	const edited = "# box\n\nedited by hand\n"
+	for _, id := range []string{e.ID, x.ID} {
+		if err := os.WriteFile(filepath.Join(cloneA, DirName, "bodies", id+".md"), []byte(edited), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: []string{e.ID, "e-nope"}})
+	if fe := core.AsError(err); fe == nil || fe.Kind != core.KindValidation || fe.Subject != "e-nope" {
+		t.Fatalf("-b %s e-nope = %+v; want a validation refusal naming e-nope", e.ID, err)
+	}
+	if p.Committed || p.Pushed {
+		t.Errorf("progress = %+v; want nothing committed", p)
+	}
+
+	p, err = openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: []string{e.ID}})
+	if err != nil {
+		t.Fatalf("-b %s = %v (progress %+v); want the epic body published", e.ID, err, p)
+	}
+	if !slices.Equal(p.CommittedBodies, []string{e.ID}) || !slices.Equal(p.PendingBodies, []string{x.ID}) || !p.Pushed {
+		t.Errorf("progress = %+v; want %s's body committed and pushed, %s's left pending", p, e.ID, x.ID)
+	}
+	if _, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(filepath.Join(cloneB, DirName, "bodies", e.ID+".md")); err != nil || string(got) != edited {
+		t.Errorf("the other clone reads %q (%v); want the edited epic body", got, err)
+	}
+}
+
 // A body refused for conflict markers is left uncommitted exactly as a pending
 // body is, so it is reported in pending_bodies — and a refused sync is never
 // complete.

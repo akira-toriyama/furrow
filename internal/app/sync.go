@@ -25,8 +25,8 @@ import (
 const DefaultSyncMessage = ":card_file_box:(board)= sync via furrow"
 
 // SyncOpts controls one Sync. Message overrides the auto-commit subject. Bodies
-// names task ids whose hand-edited bodies/<id>.md this sync should commit — on a
-// shared board a merely-modified body is otherwise left for its own author
+// names the task or epic ids whose hand-edited bodies/<id>.md this sync should
+// commit — on a shared board a merely-modified body is otherwise left for its own author
 // (reported in PendingBodies) rather than swept in under the wrong hands.
 // AllBodies commits every dirty body (the pre-scoping sweep), for a checkout you
 // know is yours alone.
@@ -53,7 +53,7 @@ type SyncProgress struct {
 	// stale lock, a refused body) is never complete however empty its pending
 	// lists are. Computed from the final state (see Sync's defer).
 	Complete bool `json:"complete"`
-	// CommittedBodies lists task ids whose bodies/<id>.md this sync committed
+	// CommittedBodies lists the task and epic ids whose bodies/<id>.md this sync committed
 	// (new/seeded bodies, or ones named via -b/--all-bodies). PendingBodies lists
 	// modified bodies deliberately LEFT uncommitted on a shared board — rerun with
 	// -b <id> (or --all-bodies) to push them. Both are omitted when empty.
@@ -590,18 +590,31 @@ func (s *syncRun) resolveRebaseStop(before map[string]bool, stop error) error {
 	}
 }
 
-// guardBodyIDs refuses a -b id that names no task on the hot board. Validation
-// (exit 2): the flag is wrong, not the board. Candidates are the ids whose
-// bodies are dirty and would be left pending without a -b — the ones the
-// operator could have meant.
+// guardBodyIDs refuses a -b id that names neither a task on the hot board nor
+// an epic. Both keep their prose in bodies/<id>.md, and refusing an epic's id
+// left --all-bodies, which sweeps a co-located operator's WIP, as the only way
+// to publish a hand-edited epic body (t-8k4t). Validation (exit 2): the flag
+// is wrong, not the board. Candidates are the ids whose bodies are dirty and
+// would be left pending without a -b — the ones the operator could have meant.
 func (a *App) guardBodyIDs(spec string, changes []gitrepo.Change, ids []string) error {
 	idx, err := a.load()
 	if err != nil {
 		return err
 	}
+	var epics map[string]*core.Epic
 	var unknown []string
 	for _, id := range ids {
-		if _, i := idx.Find(id); i < 0 {
+		if _, i := idx.Find(id); i >= 0 {
+			continue
+		}
+		if epics == nil { // only an id no task answers pays for the epic read
+			loaded, err := a.Store.LoadEpics()
+			if err != nil {
+				return err
+			}
+			epics = core.EpicsByID(loaded)
+		}
+		if epics[id] == nil {
 			unknown = append(unknown, id)
 		}
 	}
@@ -613,7 +626,7 @@ func (a *App) guardBodyIDs(spec string, changes []gitrepo.Change, ids []string) 
 		Code:       core.CodeValidation,
 		Kind:       core.KindValidation,
 		Subject:    unknown[0],
-		Msg:        fmt.Sprintf("-b names no task on this board: %s — nothing was committed", strings.Join(unknown, ", ")),
+		Msg:        fmt.Sprintf("-b names no task or epic on this board: %s — nothing was committed", strings.Join(unknown, ", ")),
 		Candidates: pending,
 	}
 }

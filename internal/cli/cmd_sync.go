@@ -138,7 +138,7 @@ func newSyncCmd() *cobra.Command {
 			"     tasks/ epics/ repos/ *.json shards, meta.json, config.toml, the\n" +
 			"     board's .gitattributes / .gitignore, attach's bodies/assets/, and the\n" +
 			"     same under archive/, archived bodies included) are always committed;\n" +
-			"     a hand-edited bodies/<id>.md\n" +
+			"     a hand-edited bodies/<id>.md (a task's or an epic's)\n" +
 			"     is committed only when it is new or named with -b/--body — a merely\n" +
 			"     modified body is left for its author (listed in pending_bodies) so a\n" +
 			"     co-located checkout never commits another operator's WIP — except a\n" +
@@ -191,8 +191,8 @@ func newSyncCmd() *cobra.Command {
 			"                                from or push to (a standalone board is backed\n" +
 			"                                up by autocommit, not sync) — `git push -u`\n" +
 			"  body-conflict-marker (exit 2) a body to commit still carries conflict markers\n" +
-			"  validation (exit 2)           -b names no task on the board; candidates\n" +
-			"                                lists the bodies -b can name\n\n" +
+			"  validation (exit 2)           -b names no task or epic on the board;\n" +
+			"                                candidates lists the bodies -b can name\n\n" +
 			"Your OWN dirty files are autostashed for the rebase. If git cannot put them\n" +
 			"back (its re-apply conflicts with what was pulled), it keeps them in the stash,\n" +
 			"warns only on stderr, and exits 0 — so sync probes the stash itself and fails\n" +
@@ -232,6 +232,7 @@ func newSyncCmd() *cobra.Command {
 		Example: "  furrow sync                   # commit shards + new bodies, pull --rebase, push\n" +
 			"  furrow sync -m \"triage inbox\"\n" +
 			"  furrow sync -b t-k3m9p        # also commit that task's edited body\n" +
+			"  furrow sync -b e-x7q2p        # an epic's edited body, the same way\n" +
 			"  furrow sync --all-bodies      # commit every dirty body (solo checkout)",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -325,7 +326,7 @@ func newSyncCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVarP(&message, "message", "m", "", "auto-commit message (default \""+app.DefaultSyncMessage+"\"; a Furrow-sync attribution trailer is always appended)")
-	c.Flags().StringSliceVarP(&bodies, "body", "b", nil, "also commit these task ids' hand-edited bodies/<id>.md (repeatable)")
+	c.Flags().StringSliceVarP(&bodies, "body", "b", nil, "also commit the hand-edited bodies/<id>.md of these task or epic ids (repeatable)")
 	c.Flags().BoolVar(&allBodies, "all-bodies", false, "commit every dirty body (the pre-scoping sweep; only on a checkout that is yours alone)")
 	return c
 }
