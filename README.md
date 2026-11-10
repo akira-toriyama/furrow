@@ -491,7 +491,7 @@ Every failure is an error envelope: branch on its `kind`, and re-run only when
   `no-git-repo`, `sync-op-in-progress` (the message names the exact way out),
   `sync-detached-head`, `sync-no-upstream` (`git push -u` once),
   `sync-unmerged`, `body-conflict-marker`, and `validation` for a `-b` naming
-  no task.
+  no task or epic.
 - **A stranded autostash fails the sync.** When git's re-apply of your other
   dirty files conflicts, it keeps them in the stash and still exits 0; sync
   probes for that and fails with `sync-stash-stranded` (exit 3, nothing
