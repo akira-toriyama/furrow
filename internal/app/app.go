@@ -148,12 +148,13 @@ type App struct {
 	// change, an explicit priority that landed on a tie). Drained by TakeNotes.
 	notes []string
 
-	// bodiesTouched is the set of task ids whose bodies/<id>.md THIS process
-	// created, modified, or deleted (see saveBody/deleteBody). AutoCommitFlush
-	// passes it as SyncOpts.Bodies so autocommit commits the command's OWN body
-	// edits (e.g. `furrow note`'s prose) even when the file is already tracked,
-	// while partitionSync still leaves a co-located operator's untouched
-	// tracked-dirty body alone. nil until the first body write.
+	// bodiesTouched is the set of ids (tasks' and epics') whose bodies/<id>.md
+	// THIS process created, modified, or deleted (see saveBody/deleteBody).
+	// AutoCommitFlush passes it as SyncOpts.Bodies so autocommit commits the
+	// command's OWN body edits (e.g. `furrow note`'s prose) even when the file
+	// is already tracked, while partitionSync still leaves a co-located
+	// operator's untouched tracked-dirty body alone. nil until the first body
+	// write.
 	bodiesTouched map[string]bool
 
 	// preWrite is the task index as it stood on disk before this process's

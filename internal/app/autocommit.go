@@ -20,7 +20,7 @@ import (
 type AutoCommitResult struct {
 	Attempted       bool     // the board opted into autocommit and the flush ran
 	Committed       bool     // a commit was created
-	CommittedBodies []string // task ids whose bodies rode in the commit
+	CommittedBodies []string // ids whose bodies/<id>.md rode in the commit
 	PendingBodies   []string // tracked-dirty bodies deliberately left (another operator's WIP)
 	Warnings        []string // best-effort skips/failures, one line each, for stderr
 }
@@ -144,9 +144,10 @@ func (a *App) AutoCommitFlush(ctx context.Context, cmd string, args []string) *A
 	return res
 }
 
-// touchedBodyIDs is the sorted set of task ids whose bodies THIS process wrote or
-// deleted (see saveBody/deleteBody) — passed as SyncOpts.Bodies so partitionSync
-// commits the command's own body edits even when the file is already tracked.
+// touchedBodyIDs is the sorted set of ids (tasks' and epics') whose bodies THIS
+// process wrote or deleted (see saveBody/deleteBody) — passed as
+// SyncOpts.Bodies so partitionSync commits the command's own body edits even
+// when the file is already tracked.
 func (a *App) touchedBodyIDs() []string {
 	if len(a.bodiesTouched) == 0 {
 		return nil

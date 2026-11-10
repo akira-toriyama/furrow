@@ -164,13 +164,66 @@ func TestSyncRefusesABodyIDThatNamesNoTask(t *testing.T) {
 }
 
 // An epic keeps its prose in bodies/ beside the tasks' and is hand-edited the
-// same way, so -b names it the same way. Refusing its id left --all-bodies,
+// same way, so -b names it the same way: refusing its id left --all-bodies,
 // which sweeps a co-located operator's WIP, as the only way to publish it
-// (t-8k4t). The scoping still holds: the task body nobody named stays pending,
-// and an epic id that names nothing is refused like a task id.
+// (t-8k4t). The epic is closed, as the retired repo's box whose record first
+// hit this was. A dirty body no task or epic owns (lint's orphan-body) is
+// among the candidates, so -b names it too. The task body nobody named stays
+// pending.
 func TestSyncBodyNamesAnEpic(t *testing.T) {
 	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
+	a := openBoard(t, cloneA)
+	e, err := a.EpicAdd("box", EpicAddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.EpicDone(e.ID); err != nil {
+		t.Fatal(err)
+	}
+	x, err := a.Add("x", AddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodies := filepath.Join(cloneA, DirName, "bodies")
+	if err := os.WriteFile(filepath.Join(bodies, "notes.md"), []byte("# notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	const edited = "# edited by hand\n"
+	for _, id := range []string{e.ID, x.ID, "notes"} {
+		if err := os.WriteFile(filepath.Join(bodies, id+".md"), []byte(edited), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: []string{e.ID, "notes"}})
+	if err != nil {
+		t.Fatalf("-b %s notes = %v (progress %+v); want both bodies published", e.ID, err, p)
+	}
+	if !slices.Equal(p.CommittedBodies, []string{e.ID, "notes"}) || !slices.Equal(p.PendingBodies, []string{x.ID}) || !p.Pushed {
+		t.Errorf("progress = %+v; want %s and notes committed and pushed, %s left pending", p, e.ID, x.ID)
+	}
+	if _, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{e.ID, "notes"} {
+		if got, err := os.ReadFile(filepath.Join(cloneB, DirName, "bodies", id+".md")); err != nil || string(got) != edited {
+			t.Errorf("the other clone reads %s as %q (%v); want the edit", id, got, err)
+		}
+	}
+}
+
+// The guard refuses only an id that names nothing -b can commit. An id it
+// accepts (a clean task's, a clean epic's, a dirty body's) must not end the
+// check before a later typo, and an epic is named by its exact id: a title or
+// an id prefix accepted here would commit nothing and leave the body the
+// operator meant pending, the silent ignore the guard exists to stop.
+func TestSyncBodyRefusesOnlyAnIDThatNamesNothing(t *testing.T) {
+	t.Parallel()
+	_, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
 	e, err := a.EpicAdd("box", EpicAddOpts{})
 	if err != nil {
@@ -180,36 +233,28 @@ func TestSyncBodyNamesAnEpic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	notes := filepath.Join(cloneA, DirName, "bodies", "notes.md")
+	if err := os.WriteFile(notes, []byte("# notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	const edited = "# box\n\nedited by hand\n"
-	for _, id := range []string{e.ID, x.ID} {
-		if err := os.WriteFile(filepath.Join(cloneA, DirName, "bodies", id+".md"), []byte(edited), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.WriteFile(notes, []byte("# notes\n\nedited by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
-	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: []string{e.ID, "e-nope"}})
-	if fe := core.AsError(err); fe == nil || fe.Kind != core.KindValidation || fe.Subject != "e-nope" {
-		t.Fatalf("-b %s e-nope = %+v; want a validation refusal naming e-nope", e.ID, err)
+	prefix := e.ID[:len(e.ID)-1]
+	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: []string{x.ID, e.ID, "notes", "box", prefix}})
+	fe := core.AsError(err)
+	if fe == nil || fe.Kind != core.KindValidation || fe.Subject != "box" || !strings.Contains(fe.Msg, prefix) {
+		t.Fatalf("-b %s %s notes box %s = %+v; want a validation refusal naming box and %s", x.ID, e.ID, prefix, err, prefix)
+	}
+	if !slices.Equal(fe.Candidates, []string{"notes"}) {
+		t.Errorf("candidates = %v; want the one dirty body, notes", fe.Candidates)
 	}
 	if p.Committed || p.Pushed {
 		t.Errorf("progress = %+v; want nothing committed", p)
-	}
-
-	p, err = openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: []string{e.ID}})
-	if err != nil {
-		t.Fatalf("-b %s = %v (progress %+v); want the epic body published", e.ID, err, p)
-	}
-	if !slices.Equal(p.CommittedBodies, []string{e.ID}) || !slices.Equal(p.PendingBodies, []string{x.ID}) || !p.Pushed {
-		t.Errorf("progress = %+v; want %s's body committed and pushed, %s's left pending", p, e.ID, x.ID)
-	}
-	if _, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{}); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := os.ReadFile(filepath.Join(cloneB, DirName, "bodies", e.ID+".md")); err != nil || string(got) != edited {
-		t.Errorf("the other clone reads %q (%v); want the edited epic body", got, err)
 	}
 }
 
