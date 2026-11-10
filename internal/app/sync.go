@@ -25,11 +25,11 @@ import (
 const DefaultSyncMessage = ":card_file_box:(board)= sync via furrow"
 
 // SyncOpts controls one Sync. Message overrides the auto-commit subject. Bodies
-// names the ids (a task's, an epic's, any dirty body's) whose hand-edited
-// bodies/<id>.md this sync should commit — on a shared board a merely-modified body is otherwise left for its own author
-// (reported in PendingBodies) rather than swept in under the wrong hands.
-// AllBodies commits every dirty body (the pre-scoping sweep), for a checkout you
-// know is yours alone.
+// names the ids (a task's, an epic's, any body file's) whose hand-edited
+// bodies/<id>.md this sync should commit — on a shared board a merely-modified
+// body is otherwise left for its own author (reported in PendingBodies) rather
+// than swept in under the wrong hands. AllBodies commits every dirty body (the
+// pre-scoping sweep), for a checkout you know is yours alone.
 type SyncOpts struct {
 	Message   string
 	Bodies    []string
@@ -348,19 +348,20 @@ func (s *syncRun) preflight() error {
 }
 
 // autocommit is the local half of a sync: partition the dirty paths under the
-// board (partitionSync), refuse a -b id that names nothing it can commit or a
-// body carrying conflict markers, commit what rides, and rewrite the touched-bodies journal
-// to what is still pending. Sets Committed, CommittedBodies, PendingBodies and
-// ForeignFiles; a refusal here has changed nothing at all.
+// board (partitionSync), refuse a -b id that names no task or body file or a
+// body carrying conflict markers, commit what rides, and rewrite the
+// touched-bodies journal to what is still pending. Sets Committed,
+// CommittedBodies, PendingBodies and ForeignFiles; a refusal here has changed
+// nothing at all.
 func (s *syncRun) autocommit(opts SyncOpts) error {
 	a, ctx, r, p := s.a, s.ctx, s.r, s.p
 	changes, err := r.DirtyChanges(ctx, s.spec)
 	if err != nil {
 		return err
 	}
-	// A -b id that names nothing this sync can commit is refused before
-	// anything is committed (it was silently ignored: the operator read
-	// "pushed" and the body they meant stayed pending). The candidates are the bodies -b CAN
+	// A -b id that names no task or body file is refused before anything is
+	// committed (it was silently ignored: the operator read "pushed" and the
+	// body they meant stayed pending). The candidates are the bodies -b CAN
 	// name — the ones this sync would otherwise leave pending.
 	if len(opts.Bodies) > 0 {
 		if err := a.guardBodyIDs(s.spec, changes, opts.Bodies); err != nil {
@@ -590,56 +591,53 @@ func (s *syncRun) resolveRebaseStop(before map[string]bool, stop error) error {
 	}
 }
 
-// guardBodyIDs refuses a -b id that names nothing this sync can commit: no
-// task on the hot board, no epic, no dirty body. Tasks and epics both keep
-// their prose in bodies/<id>.md, and refusing an epic's id left --all-bodies,
-// which sweeps a co-located operator's WIP, as the only way to publish a
-// hand-edited epic body (t-8k4t). A dirty body no record owns (lint's
-// orphan-body) is a candidate, so it is accepted for the same reason. An epic
-// is matched by its exact id, never resolved by prefix or title: the body to
-// commit is the file named by the id. Validation (exit 2): the flag is wrong,
-// not the board. Candidates are the ids whose bodies are dirty and would be
-// left pending without a -b — the ones the operator could have meant.
+// guardBodyIDs refuses a -b id that names neither a task on the hot board nor
+// a file in bodies/: partitionSync matches -b against bodies/<id>.md by name,
+// so such an id would commit nothing and leave the meant body pending, the
+// silent ignore this guard exists to stop. A body file is matched by its exact
+// stem, never resolved by prefix, title or case, and whether it is dirty does
+// not matter: the retry of a sync that committed the body and then failed to
+// push runs with the same -b. An epic is named through its body file, as is a
+// body no record owns (lint's orphan-body), which the refusal and the
+// pending-bodies note list as candidates. Refusing an epic's id left
+// --all-bodies, which sweeps a co-located operator's WIP, as the only way to
+// publish a hand-edited epic body (t-8k4t). Validation (exit 2): the flag is
+// wrong, not the board. Candidates are the ids whose bodies are dirty and
+// would be left pending without a -b — the ones the operator could have meant.
 func (a *App) guardBodyIDs(spec string, changes []gitrepo.Change, ids []string) error {
-	_, riding, pending, _ := partitionSync(spec, changes, SyncOpts{})
-	dirty := make(map[string]bool, len(riding)+len(pending))
-	for _, set := range [][]string{riding, pending} {
-		for _, id := range set {
-			dirty[id] = true
-		}
-	}
 	idx, err := a.load()
 	if err != nil {
 		return err
 	}
-	var epics map[string]*core.Epic
+	var bodies map[string]bool
 	var unknown []string
 	for _, id := range ids {
-		if dirty[id] {
-			continue
-		}
 		if _, i := idx.Find(id); i >= 0 {
 			continue
 		}
-		if epics == nil { // only an id no task answers pays for the epic read
-			loaded, err := a.Store.LoadEpics()
+		if bodies == nil { // only an id no task answers pays for the bodies/ listing
+			stems, err := a.Store.ListBodyIDs()
 			if err != nil {
 				return err
 			}
-			epics = core.EpicsByID(loaded)
+			bodies = make(map[string]bool, len(stems))
+			for _, stem := range stems {
+				bodies[stem] = true
+			}
 		}
-		if epics[id] == nil {
+		if !bodies[id] {
 			unknown = append(unknown, id)
 		}
 	}
 	if len(unknown) == 0 {
 		return nil
 	}
+	_, _, pending, _ := partitionSync(spec, changes, SyncOpts{})
 	return &core.Error{
 		Code:       core.CodeValidation,
 		Kind:       core.KindValidation,
 		Subject:    unknown[0],
-		Msg:        fmt.Sprintf("-b names no task, epic or dirty body on this board: %s — nothing was committed", strings.Join(unknown, ", ")),
+		Msg:        fmt.Sprintf("-b names no task or body file on this board: %s — nothing was committed", strings.Join(unknown, ", ")),
 		Candidates: pending,
 	}
 }

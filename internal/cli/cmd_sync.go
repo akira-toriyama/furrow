@@ -191,9 +191,8 @@ func newSyncCmd() *cobra.Command {
 			"                                from or push to (a standalone board is backed\n" +
 			"                                up by autocommit, not sync) — `git push -u`\n" +
 			"  body-conflict-marker (exit 2) a body to commit still carries conflict markers\n" +
-			"  validation (exit 2)           -b names no task, epic or dirty body on\n" +
-			"                                the board; candidates lists the bodies -b\n" +
-			"                                can name\n\n" +
+			"  validation (exit 2)           -b names no task or body file on the board;\n" +
+			"                                candidates lists the bodies -b can name\n\n" +
 			"Your OWN dirty files are autostashed for the rebase. If git cannot put them\n" +
 			"back (its re-apply conflicts with what was pulled), it keeps them in the stash,\n" +
 			"warns only on stderr, and exits 0 — so sync probes the stash itself and fails\n" +
@@ -327,7 +326,7 @@ func newSyncCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVarP(&message, "message", "m", "", "auto-commit message (default \""+app.DefaultSyncMessage+"\"; a Furrow-sync attribution trailer is always appended)")
-	c.Flags().StringSliceVarP(&bodies, "body", "b", nil, "also commit the hand-edited bodies/<id>.md of these task or epic ids (repeatable)")
+	c.Flags().StringSliceVarP(&bodies, "body", "b", nil, "also commit these ids' hand-edited bodies/<id>.md — a task's, an epic's, or any other body file (repeatable)")
 	c.Flags().BoolVar(&allBodies, "all-bodies", false, "commit every dirty body (the pre-scoping sweep; only on a checkout that is yours alone)")
 	return c
 }
