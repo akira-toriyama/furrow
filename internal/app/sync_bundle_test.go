@@ -131,7 +131,7 @@ func TestPartitionSyncAndShardKindOfAcceptAToplevelStore(t *testing.T) {
 
 // A -b id that names no task was silently ignored: the sync pushed, the body
 // the operator meant stayed pending. It is refused before anything is
-// committed, naming the bodies -b can name.
+// committed, naming the modified bodies as candidates.
 func TestSyncRefusesABodyIDThatNamesNoTask(t *testing.T) {
 	t.Parallel()
 	git, cloneA, _ := setupClones(t)
@@ -208,13 +208,14 @@ func TestSyncBodyNamesAnEpic(t *testing.T) {
 	}
 }
 
-// The guard takes a task or epic id exactly. An id it accepts must not end the
-// check before a later typo, and a title, an id prefix or another case is
-// refused: partitionSync matches -b against bodies/<id>.md by name, so a
-// resolved ref would commit nothing and leave the meant body pending, the
-// silent ignore the guard exists to stop. A body no record owns is refused
-// too. The candidates are the dirty bodies a sync would leave behind, so a
-// new body, committed anyway, is not one.
+// The guard takes a task or epic id exactly, whatever the state of its body
+// file, missing included. An id it accepts must not end the check before a
+// later typo, and a title, an id prefix or another case is refused:
+// partitionSync matches -b against bodies/<id>.md by name, so a resolved ref
+// would commit nothing and leave the meant body pending, the silent ignore the
+// guard exists to stop. A body no record owns is refused too, new or modified,
+// though a modified one is among the candidates: those are the modified
+// bodies, so a new one is not.
 func TestSyncBodyRefusesAnIDThatNamesNoTaskOrEpic(t *testing.T) {
 	t.Parallel()
 	_, cloneA, _ := setupClones(t)
@@ -231,25 +232,31 @@ func TestSyncBodyRefusesAnIDThatNamesNoTaskOrEpic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	bodies := filepath.Join(cloneA, DirName, "bodies")
+	if err := os.WriteFile(filepath.Join(bodies, "notes.md"), []byte("# notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	bodies := filepath.Join(cloneA, DirName, "bodies")
-	for name, body := range map[string]string{x.ID + ".md": "# x\n\nedited by hand\n", "draft.md": "# draft\n"} {
+	for name, body := range map[string]string{x.ID + ".md": "# x\n\nedited by hand\n", "notes.md": "# notes\n\nedited by hand\n", "draft.md": "# draft\n"} {
 		if err := os.WriteFile(filepath.Join(bodies, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
+	if err := os.Remove(filepath.Join(bodies, y.ID+".md")); err != nil {
+		t.Fatal(err)
+	}
 
-	refused := []string{"box", e.ID[:len(e.ID)-1], strings.ToUpper(e.ID), y.ID[:len(y.ID)-1], strings.ToUpper(y.ID), "draft"}
+	refused := []string{"box", e.ID[:len(e.ID)-1], strings.ToUpper(e.ID), y.ID[:len(y.ID)-1], strings.ToUpper(y.ID), "notes", "draft"}
 	ids := append([]string{y.ID, e.ID}, refused...)
 	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: ids})
 	fe := core.AsError(err)
 	if fe == nil || fe.Kind != core.KindValidation || fe.Subject != "box" || !strings.Contains(fe.Msg, strings.Join(refused, ", ")+" — ") {
 		t.Fatalf("-b %v = %+v; want a validation refusal naming exactly %v", ids, err, refused)
 	}
-	if !slices.Equal(fe.Candidates, []string{x.ID}) {
-		t.Errorf("candidates = %v; want the one body left pending, %s", fe.Candidates, x.ID)
+	if !slices.Equal(fe.Candidates, []string{"notes", x.ID}) {
+		t.Errorf("candidates = %v; want the modified bodies, notes and %s", fe.Candidates, x.ID)
 	}
 	if p.Committed || p.Pushed {
 		t.Errorf("progress = %+v; want nothing committed", p)
@@ -306,6 +313,40 @@ func TestSyncBodyRetryAfterALostPushNamesTheSameBodies(t *testing.T) {
 	}
 	if p, err = openBoard(t, cloneA).Sync(context.Background(), opts); err != nil || !p.Pushed {
 		t.Fatalf("the same sync re-run = %v (progress %+v); want the commit pushed", err, p)
+	}
+}
+
+// A failed epic read is reported as itself. Swallowed, it turned a correct
+// epic id into the -b refusal ("names no task or epic"), with that same id
+// among the candidates.
+func TestSyncBodyReportsAnUnreadableEpicShard(t *testing.T) {
+	t.Parallel()
+	_, cloneA, _ := setupClones(t)
+	a := openBoard(t, cloneA)
+	e, err := a.EpicAdd("box", EpicAddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad, err := a.EpicAdd("bad", EpicAddOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cloneA, DirName, "bodies", e.ID+".md"), []byte("# edited by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cloneA, DirName, core.EpicPath(bad.ID)), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: []string{e.ID}})
+	if fe := core.AsError(err); fe == nil || fe.Subject == e.ID || len(fe.Candidates) > 0 || strings.Contains(fe.Msg, "-b names") {
+		t.Fatalf("-b %s over an unreadable epic shard = %+v; want the read error", e.ID, err)
+	}
+	if p.Committed {
+		t.Errorf("progress = %+v; want nothing committed", p)
 	}
 }
 

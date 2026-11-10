@@ -361,8 +361,8 @@ func (s *syncRun) autocommit(opts SyncOpts) error {
 	}
 	// A -b id that names no task or epic is refused before anything is
 	// committed (it was silently ignored: the operator read "pushed" and the
-	// body they meant stayed pending). The candidates are the bodies this sync
-	// would otherwise leave pending.
+	// body they meant stayed pending). The candidates are the modified bodies,
+	// the ones the operator could have meant.
 	if len(opts.Bodies) > 0 {
 		if err := a.guardBodyIDs(s.spec, changes, opts.Bodies); err != nil {
 			return err
@@ -602,8 +602,9 @@ func (s *syncRun) resolveRebaseStop(before map[string]bool, stop error) error {
 // committed the body and then lost its push runs with the same -b. A body no
 // record owns (lint's orphan-body) is refused even when it is dirty: it is to
 // be filed or removed, not published as it stands. Validation (exit 2): the
-// flag is wrong, not the board. Candidates are the ids whose bodies are dirty
-// and would be left pending without a -b.
+// flag is wrong, not the board. Candidates are the ids whose tracked bodies
+// are modified, the ones furrow wrote included: the ones the operator could
+// have meant.
 func (a *App) guardBodyIDs(spec string, changes []gitrepo.Change, ids []string) error {
 	idx, err := a.load()
 	if err != nil {

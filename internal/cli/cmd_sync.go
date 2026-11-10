@@ -192,7 +192,7 @@ func newSyncCmd() *cobra.Command {
 			"                                up by autocommit, not sync) — `git push -u`\n" +
 			"  body-conflict-marker (exit 2) a body to commit still carries conflict markers\n" +
 			"  validation (exit 2)           -b names no task or epic on the board;\n" +
-			"                                candidates lists the bodies left pending\n\n" +
+			"                                candidates lists the modified bodies\n\n" +
 			"Your OWN dirty files are autostashed for the rebase. If git cannot put them\n" +
 			"back (its re-apply conflicts with what was pulled), it keeps them in the stash,\n" +
 			"warns only on stderr, and exits 0 — so sync probes the stash itself and fails\n" +

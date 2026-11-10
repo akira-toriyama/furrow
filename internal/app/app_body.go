@@ -307,10 +307,10 @@ func prependedBody(body, text string) string {
 }
 
 // markBodyTouched records that this process created, modified, or deleted the
-// body of task id — the set AutoCommitFlush passes as SyncOpts.Bodies so
-// autocommit commits the command's OWN body edits even when the file is already
-// tracked. Cheap by design so every body write can call it unconditionally,
-// whether or not autocommit is on.
+// body of id, a task's or an epic's — the set AutoCommitFlush passes as
+// SyncOpts.Bodies so autocommit commits the command's OWN body edits even when
+// the file is already tracked. Cheap by design so every body write can call it
+// unconditionally, whether or not autocommit is on.
 func (a *App) markBodyTouched(id string) {
 	if a.bodiesTouched == nil {
 		a.bodiesTouched = map[string]bool{}
@@ -318,9 +318,9 @@ func (a *App) markBodyTouched(id string) {
 	a.bodiesTouched[id] = true
 }
 
-// saveBody persists a task's body through the store AND records the id as
-// touched. It is the app-layer funnel for every HOT-store body write; the
-// archive substore's bodies land as machine-written archive/ paths (outside
+// saveBody persists a task's or an epic's body through the store AND records
+// the id as touched. It is the app-layer funnel for every HOT-store body write;
+// the archive substore's bodies land as machine-written archive/ paths (outside
 // bodies/) and so need no tracking.
 func (a *App) saveBody(id, body string) error {
 	if err := a.Store.SaveBody(id, body); err != nil {
@@ -343,10 +343,10 @@ func (a *App) saveBodies(bodies map[string]string) error {
 	return nil
 }
 
-// deleteBody removes a task's body through the store AND records the id as
-// touched, so an archive's hot-side body deletion rides in the SAME autocommit
-// as the archive/ copy it was moved to — rather than being classified as a
-// tracked-dirty pending body and left out of the commit.
+// deleteBody removes a task's or an epic's body through the store AND records
+// the id as touched, so an archive's hot-side body deletion rides in the SAME
+// autocommit as the archive/ copy it was moved to — rather than being
+// classified as a tracked-dirty pending body and left out of the commit.
 func (a *App) deleteBody(id string) error {
 	if err := a.Store.DeleteBody(id); err != nil {
 		return err
