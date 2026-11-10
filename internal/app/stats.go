@@ -142,8 +142,8 @@ func (a *App) Stats(o QueryOpts) (Stats, error) {
 // tasks are scanned from the already-loaded index; the archive store is
 // unioned when one can exist (file-backed), with the query recompiled against
 // the archive's own index and body loader so `-q` terms read the right bodies.
-// Ids never collide across the two stores (archive moves a shard, it does not
-// copy it).
+// An id in both stores — an interrupted move, or two tasks under one id — is
+// lint's duplicate-id error; the window then lists it once per store.
 func (a *App) statsWindow(o QueryOpts, idx, arcIdx *core.Index, arcBody func(string) (string, error)) (*StatsWindow, error) {
 	scope := o
 	scope.Since, scope.Until = nil, nil

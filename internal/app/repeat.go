@@ -100,10 +100,11 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 		return &RepeatReport{Completed: true, Skipped: skipped}, nil, nil
 	}
 
-	// `reserved` carries the ids the SAME batch already handed out. uniqueID only
-	// consults the index, and a pre-pass plans every occurrence before any of them
-	// is inserted — so without this, two occurrences in one batch could draw the
-	// same id, which both stores then refuse to save.
+	// `reserved` carries the ids the SAME batch already handed out. The draw
+	// (uniqueIDExcluding) consults only stored ids — the index and archive/ — and
+	// a pre-pass plans every occurrence before any of them is inserted, so
+	// without this, two occurrences in one batch could draw the same id, which
+	// both stores then refuse to save.
 	id, err := a.uniqueIDExcluding(idx, reserved)
 	if err != nil {
 		return nil, nil, err

@@ -56,7 +56,11 @@ func newArchiveCmd() *cobra.Command {
 			"name the dependents in the same call once they are done, or drop the edge\n" +
 			"with `furrow dep <dependent> <id> --rm`. Either store refusing its write —\n" +
 			"an older layout (kind schema-upgrade-required) or a duplicate id\n" +
-			"(validation) — refuses the whole call before anything moves.\n\n" +
+			"(validation) — refuses the whole call before anything moves, and so does\n" +
+			"an id archive/ already holds as a DIFFERENT task (validation: give one of\n" +
+			"them its own id by hand). The same task there is a move an interruption\n" +
+			"left half done, and the call finishes it with the hot copy. The preview\n" +
+			"reads the hot store alone, so these refusals come with --yes.\n\n" +
 			"The age sweep INHERITS THE BOARD SCOPE, like every read: with no -r it folds\n" +
 			"only the aged done of the repo your ls/next/search are already scoped to. An\n" +
 			"explicit -r (repeatable) swaps that scope; -r '' sweeps the whole board, and\n" +

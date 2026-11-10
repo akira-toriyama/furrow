@@ -105,8 +105,9 @@ promoted method would silently empty every sibling field).
 ids (`t-k3m9p`) are **frozen**: never reused, never renumbered. They are
 **random** (prefix + a random Crockford-base32 suffix, `[ids].width` chars),
 generated locally with no shared counter, so concurrent `furrow add` from
-separate worktrees won't collide (the app retries on the rare in-store clash;
-`lint` flags any duplicate; both stores REFUSE to Save an index carrying one).
+separate worktrees won't collide (the app retries on the rare clash with a hot
+or archived id; `lint` flags any duplicate, across the board and `archive/`
+too; both store implementations REFUSE to Save an index carrying one).
 Legacy numeric ids (`t-0042`) stay valid. Order within a lane is the sparse
 integer `priority` (10-step); only an exhausted gap respaces the lane, reported
 in the envelope's `renumbered` without advancing the neighbours' `updated`.

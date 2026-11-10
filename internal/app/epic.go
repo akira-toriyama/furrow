@@ -1123,7 +1123,9 @@ func (a *App) mutateEpicLoaded(e *core.Epic, alwaysStamp bool, fn func(*core.Epi
 }
 
 // uniqueEpicID draws a fresh id and retries on the (astronomically rare) clash
-// with one already in the store — the epic twin of uniqueID.
+// with one already in the store — the epic twin of uniqueIDExcluding, minus its
+// archive/ probe: no command moves a box between the stores (archive/epics/
+// holds only what the v6 upgrade filed there), so no move can lose one.
 func (a *App) uniqueEpicID(epics []core.Epic) (string, error) {
 	taken := make(map[string]bool, len(epics))
 	for i := range epics {

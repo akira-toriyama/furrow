@@ -13,7 +13,8 @@ const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz"
 // of a task id — RandomID prepends the configured prefix. This is what makes
 // concurrent `furrow add` from separate operators collision-resistant without
 // any shared counter; the app additionally retries on the (astronomically rare)
-// in-store collision. n must be positive; a non-positive n is treated as 1.
+// clash with an id on the board or retired to archive/. n must be positive; a
+// non-positive n is treated as 1.
 func randomIDSuffix(n int, rd io.Reader) (string, error) {
 	if n <= 0 {
 		n = 1

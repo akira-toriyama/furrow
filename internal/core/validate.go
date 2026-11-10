@@ -75,6 +75,19 @@ func CheckUniqueIDs(idx *Index) error {
 		plural, strings.Join(dups, ", "))
 }
 
+// SameTask reports whether a and b, found under one id in the hot store and in
+// archive/, are copies of ONE task — what an archive or unarchive stopped
+// between its two writes leaves — rather than two tasks sharing an id, which a
+// mint that consulted only the hot index once produced (t-erd6). The identity is
+// the creation instant: the write that mints the id stamps it once and nothing
+// rewrites it, so an edit made to one copy after the interruption does not split
+// the pair, while a reused id belongs to a task created at another instant. A
+// copy without the stamp (a hand-made shard) proves nothing and compares
+// different, so the caller refuses instead of guessing.
+func SameTask(a, b *Task) bool {
+	return !a.Created.IsZero() && a.Created.Equal(b.Created)
+}
+
 // Validate runs the in-memory consistency rules that need only the Index plus
 // the configured lane order and id pattern. The filesystem-level check (the
 // index<->body 1:1 mapping) lives in the app layer, which has the store; it
