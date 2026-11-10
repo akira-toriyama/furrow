@@ -851,6 +851,10 @@ func (a *App) archivedIDs() ([]string, error) {
 // brought back. The keys get the hot store's unknown-shard-key, file named
 // under archive/: upgrade sweeps this store and reports what it kept here, so
 // a lint blind to it left the one tool that prunes them unpointed (t-c6nn).
+// Shard integrity gets the hot store's duplicate-id and shard-misnamed, file
+// named under archive/: every move between the stores refuses a duplicate in
+// either (raiseMoveRefusals), and that refusal sends the operator here to
+// find the extra shard (t-paax).
 func (a *App) lintArchive() ([]core.Problem, error) {
 	if a.Dir == "" {
 		return nil, nil
@@ -865,14 +869,28 @@ func (a *App) lintArchive() ([]core.Problem, error) {
 			ps = append(ps, p)
 		}
 	}
+	seen := map[string]int{}
 	for i := range arcIdx.Tasks {
 		t := &arcIdx.Tasks[i]
+		seen[t.ID]++
+		if seen[t.ID] == 2 { // report each duplicate id once, as the hot rule does
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "duplicate-id", ID: t.ID, Msg: fmt.Sprintf("duplicate id in archive/: %s", t.ID)})
+		}
 		parked(t.ID, "task shard archive/"+core.TaskPath(t.ID), t.ExtraKeys())
 		if t.Status == a.Cfg.DoneLane {
 			continue
 		}
 		ps = append(ps, core.Problem{Severity: core.SevError, Code: "archived-not-done", ID: t.ID,
 			Msg: fmt.Sprintf("is in archive/ but in lane %q — an archive and a reopen crossed in a sync; `furrow unarchive %s` brings it back to the board, or `furrow unarchive %s` then `furrow done %s` if it is finished", t.Status, t.ID, t.ID, t.ID)})
+	}
+	stems, err := arc.ListTaskIDs()
+	if err != nil {
+		return nil, err
+	}
+	for _, stem := range stems {
+		if seen[stem] == 0 {
+			ps = append(ps, core.Problem{Severity: core.SevError, Code: "shard-misnamed", ID: stem, Msg: fmt.Sprintf("task shard archive/%s's filename does not match the id it carries", core.TaskPath(stem))})
+		}
 	}
 	epics, err := arc.LoadEpics()
 	if err != nil {

@@ -119,7 +119,7 @@ func (a *App) Tidy(o TidyOpts) (*TidyReport, error) {
 		return rep, nil
 	}
 
-	// A refusal has to be total (archiveMove's rule). The hot store is written
+	// A refusal has to be total (raiseMoveRefusals' rule). The hot store is written
 	// first, so its own refusals fire before a byte lands; another store's —
 	// its write gate, and Save's duplicate-id check when its index is rewritten
 	// — are raised HERE, or one would fail the run after the hot prune landed.
