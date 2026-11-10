@@ -167,9 +167,7 @@ func TestSyncRefusesABodyIDThatNamesNoTask(t *testing.T) {
 // same way, so -b names it the same way: refusing its id left --all-bodies,
 // which sweeps a co-located operator's WIP, as the only way to publish it
 // (t-8k4t). The epic is closed, as the retired repo's box whose record first
-// hit this was. A body no task or epic owns (lint's orphan-body) is named by
-// its file the same way, modified or new. The task body nobody named stays
-// pending.
+// hit this was. The task body nobody named stays pending.
 func TestSyncBodyNamesAnEpic(t *testing.T) {
 	t.Parallel()
 	_, cloneA, cloneB := setupClones(t)
@@ -185,45 +183,39 @@ func TestSyncBodyNamesAnEpic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bodies := filepath.Join(cloneA, DirName, "bodies")
-	if err := os.WriteFile(filepath.Join(bodies, "notes.md"), []byte("# notes\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	const edited = "# edited by hand\n"
-	for _, id := range []string{e.ID, x.ID, "notes", "draft"} {
-		if err := os.WriteFile(filepath.Join(bodies, id+".md"), []byte(edited), 0o644); err != nil {
+	for _, id := range []string{e.ID, x.ID} {
+		if err := os.WriteFile(filepath.Join(cloneA, DirName, "bodies", id+".md"), []byte(edited), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	named := []string{e.ID, "notes", "draft"}
-	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: named})
+	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: []string{e.ID}})
 	if err != nil {
-		t.Fatalf("-b %v = %v (progress %+v); want every named body published", named, err, p)
+		t.Fatalf("-b %s = %v (progress %+v); want the epic body published", e.ID, err, p)
 	}
-	if !slices.Equal(p.CommittedBodies, []string{"draft", e.ID, "notes"}) || !slices.Equal(p.PendingBodies, []string{x.ID}) || !p.Pushed {
-		t.Errorf("progress = %+v; want %v committed and pushed, %s left pending", p, named, x.ID)
+	if !slices.Equal(p.CommittedBodies, []string{e.ID}) || !slices.Equal(p.PendingBodies, []string{x.ID}) || !p.Pushed {
+		t.Errorf("progress = %+v; want %s committed and pushed, %s left pending", p, e.ID, x.ID)
 	}
 	if _, err := openBoard(t, cloneB).Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range named {
-		if got, err := os.ReadFile(filepath.Join(cloneB, DirName, "bodies", id+".md")); err != nil || string(got) != edited {
-			t.Errorf("the other clone reads %s as %q (%v); want the edit", id, got, err)
-		}
+	if got, err := os.ReadFile(filepath.Join(cloneB, DirName, "bodies", e.ID+".md")); err != nil || string(got) != edited {
+		t.Errorf("the other clone reads %q (%v); want the edited epic body", got, err)
 	}
 }
 
-// The guard refuses only an id that names neither a task nor a body file. An
-// id it accepts must not end the check before a later typo, and a body is
-// named by its exact file stem: an epic's title, an id prefix or another case
-// would commit nothing and leave the meant body pending, the silent ignore the
-// guard exists to stop. The candidates are the dirty bodies a sync would leave
-// behind, so a new body, committed anyway, is not one.
-func TestSyncBodyRefusesOnlyAnIDThatNamesNothing(t *testing.T) {
+// The guard takes a task or epic id exactly. An id it accepts must not end the
+// check before a later typo, and a title, an id prefix or another case is
+// refused: partitionSync matches -b against bodies/<id>.md by name, so a
+// resolved ref would commit nothing and leave the meant body pending, the
+// silent ignore the guard exists to stop. A body no record owns is refused
+// too. The candidates are the dirty bodies a sync would leave behind, so a
+// new body, committed anyway, is not one.
+func TestSyncBodyRefusesAnIDThatNamesNoTaskOrEpic(t *testing.T) {
 	t.Parallel()
 	_, cloneA, _ := setupClones(t)
 	a := openBoard(t, cloneA)
@@ -235,39 +227,41 @@ func TestSyncBodyRefusesOnlyAnIDThatNamesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bodies := filepath.Join(cloneA, DirName, "bodies")
-	if err := os.WriteFile(filepath.Join(bodies, "notes.md"), []byte("# notes\n"), 0o644); err != nil {
+	y, err := a.Add("y", AddOpts{})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	for name, body := range map[string]string{"notes.md": "# notes\n\nedited by hand\n", "draft.md": "# draft\n"} {
+	bodies := filepath.Join(cloneA, DirName, "bodies")
+	for name, body := range map[string]string{x.ID + ".md": "# x\n\nedited by hand\n", "draft.md": "# draft\n"} {
 		if err := os.WriteFile(filepath.Join(bodies, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	prefix, upper := e.ID[:len(e.ID)-1], strings.ToUpper(e.ID)
-	ids := []string{x.ID, e.ID, "notes", "box", prefix, upper}
+	refused := []string{"box", e.ID[:len(e.ID)-1], strings.ToUpper(e.ID), y.ID[:len(y.ID)-1], strings.ToUpper(y.ID), "draft"}
+	ids := append([]string{y.ID, e.ID}, refused...)
 	p, err := openBoard(t, cloneA).Sync(context.Background(), SyncOpts{Bodies: ids})
 	fe := core.AsError(err)
-	if fe == nil || fe.Kind != core.KindValidation || fe.Subject != "box" || !strings.Contains(fe.Msg, prefix+", "+upper) {
-		t.Fatalf("-b %v = %+v; want a validation refusal naming box, %s and %s", ids, err, prefix, upper)
+	if fe == nil || fe.Kind != core.KindValidation || fe.Subject != "box" || !strings.Contains(fe.Msg, strings.Join(refused, ", ")+" — ") {
+		t.Fatalf("-b %v = %+v; want a validation refusal naming exactly %v", ids, err, refused)
 	}
-	if !slices.Equal(fe.Candidates, []string{"notes"}) {
-		t.Errorf("candidates = %v; want the one body left pending, notes", fe.Candidates)
+	if !slices.Equal(fe.Candidates, []string{x.ID}) {
+		t.Errorf("candidates = %v; want the one body left pending, %s", fe.Candidates, x.ID)
 	}
 	if p.Committed || p.Pushed {
 		t.Errorf("progress = %+v; want nothing committed", p)
 	}
 }
 
-// Whether a named body is dirty does not decide the guard. A sync that
-// committed it and then lost the push (retryable) is recovered by re-running
-// the same command, and by then the body is clean: a guard that took a body
-// no record owns only while dirty refused that retry as a validation error and
-// left the commit unpushed.
+// A task or epic id is accepted whatever its body's git state. A sync that
+// committed the bodies and then lost the push (retryable) is recovered by
+// re-running the same command, and by then the bodies are clean: a guard that
+// keyed on the dirty set refused that retry as a validation error and left the
+// commit unpushed. The rejecting pre-receive hook reads to sync as a lost push
+// race (sync-push-rejected).
 func TestSyncBodyRetryAfterALostPushNamesTheSameBodies(t *testing.T) {
 	t.Parallel()
 	git, cloneA, _ := setupClones(t)
@@ -276,15 +270,15 @@ func TestSyncBodyRetryAfterALostPushNamesTheSameBodies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	notes := filepath.Join(cloneA, DirName, "bodies", "notes.md")
-	if err := os.WriteFile(notes, []byte("# notes\n"), 0o644); err != nil {
+	x, err := a.Add("x", AddOpts{})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.Sync(context.Background(), SyncOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{notes, filepath.Join(cloneA, DirName, "bodies", e.ID+".md")} {
-		if err := os.WriteFile(f, []byte("# edited by hand\n"), 0o644); err != nil {
+	for _, id := range []string{e.ID, x.ID} {
+		if err := os.WriteFile(filepath.Join(cloneA, DirName, "bodies", id+".md"), []byte("# edited by hand\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -302,7 +296,7 @@ func TestSyncBodyRetryAfterALostPushNamesTheSameBodies(t *testing.T) {
 	}
 	gittest.RunGit(t, git, origin, "config", "core.hooksPath", hooks)
 
-	opts := SyncOpts{Bodies: []string{e.ID, "notes"}}
+	opts := SyncOpts{Bodies: []string{e.ID, x.ID}}
 	p, err := openBoard(t, cloneA).Sync(context.Background(), opts)
 	if fe := core.AsError(err); fe == nil || !fe.Retryable || !p.Committed || p.Pushed {
 		t.Fatalf("first sync = %+v (progress %+v); want a retryable failure after the commit", err, p)
