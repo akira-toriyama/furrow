@@ -395,10 +395,20 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 	// the followers landed is the one window left; the reverse moves are
 	// applied best-effort so a re-run does not shift them twice.
 	followersSaved := false
+	// A rename's heading sync is the last write before the box: after both
+	// guards and the followers, so a refusal of any of them leaves the body's
+	// heading where the title still is. The box save failing after it is the
+	// one window left, and the old body is put back best-effort — under
+	// renameHeading's rule a heading left ahead of its title would read as
+	// hand-written to every later rename.
+	var boxID, titleWas, titleNow, bodyWas string
+	headingSynced := false
 	before, after, err := a.mutateEpicStamping(ref, false, func(e *core.Epic) error {
+		boxID, titleWas = e.ID, e.Title
 		if err := applyEpicFields(e, o, epicFieldRefs{successor: successor, epics: epics, universe: universe, addRepos: addRepos}); err != nil {
 			return err
 		}
+		titleNow = e.Title
 		p, err := a.applyEpicAnchor(idx, e, o)
 		if err != nil {
 			return err
@@ -406,17 +416,34 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 		plan = p
 		return nil
 	}, func() error {
-		if plan == nil || len(plan.Moves) == 0 {
+		if plan != nil && len(plan.Moves) > 0 {
+			applyAnchorMoves(idx, plan, a.Clock.Now())
+			if err := a.saveIndex(idx); err != nil {
+				return err
+			}
+			followersSaved = true
+		}
+		if titleNow == titleWas {
 			return nil
 		}
-		applyAnchorMoves(idx, plan, a.Clock.Now())
-		if err := a.saveIndex(idx); err != nil {
+		body, err := a.Store.LoadBody(boxID)
+		if err != nil {
 			return err
 		}
-		followersSaved = true
+		next, changed := renameHeading(body, titleWas, titleNow)
+		if !changed {
+			return nil
+		}
+		if err := a.saveBody(boxID, next); err != nil {
+			return err
+		}
+		bodyWas, headingSynced = body, true
 		return nil
 	})
 	if err != nil {
+		if headingSynced {
+			_ = a.saveBody(boxID, bodyWas)
+		}
 		if followersSaved {
 			revertAnchorMoves(idx, plan)
 			_ = a.saveIndex(idx)
@@ -424,6 +451,32 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 		return nil, nil, nil, err
 	}
 	return before, after, plan, nil
+}
+
+// renameHeading carries a box's rename into its body: the leading H1 becomes
+// `# <to>` only while it still reads `# <from>`, the line `epic add` seeds.
+// Everything else is left as it stands — a heading that says something other
+// than the title (a short name over a long title is common on a real board), a
+// body with no leading H1, an empty one.
+//
+// This is deliberately NOT retitleHeading, which rewrites a task's leading H1
+// whatever it says. A task's heading is its title's second home; a box's body
+// is a document somebody wrote, and overwriting its heading on every rename
+// would cost the hand-written ones. The match is exact (no trimming), on
+// LF-delimited markdown like retitleHeading.
+func renameHeading(body, from, to string) (string, bool) {
+	lines := strings.Split(body, "\n")
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		if ln != "# "+from {
+			return body, false
+		}
+		lines[i] = "# " + to
+		return strings.Join(lines, "\n"), true
+	}
+	return body, false
 }
 
 // epicFieldRefs is what EpicSet resolved before the mutate — against the whole
