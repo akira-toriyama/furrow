@@ -103,7 +103,7 @@ func (a *App) Lint(extra ...core.Problem) ([]core.Problem, error) {
 // lintIn is Lint over a snapshot the caller already holds.
 func (a *App) lintIn(idx *core.Index, epics []core.Epic, extra ...core.Problem) ([]core.Problem, error) {
 	ps := a.lintIndex(idx, epics)
-	arcPs, err := a.lintArchive()
+	arcPs, err := a.lintArchive(idx)
 	if err != nil {
 		return nil, err
 	}
@@ -442,8 +442,9 @@ func (a *App) lintRecordKeys() ([]core.Problem, error) {
 
 // lintStoreShape checks {tasks/, epics/} <-> bodies/ 1:1 + shard filename/id
 // integrity — all by directory enumeration. Sharding makes a duplicate filename
-// impossible; a duplicate id can only appear as two shards carrying the same id
-// field, which the fold (Load) surfaces to core.Validate as a "duplicate id".
+// impossible within a store; a duplicate id can only appear as two shards
+// carrying the same id field, which the fold (Load) surfaces to core.Validate
+// as a "duplicate id". The same id in both stores is lintArchive's.
 // It returns the live task and epic id sets and the body id list so the
 // body-content scan reuses them instead of re-listing.
 func (a *App) lintStoreShape(idx *core.Index, epics []core.Epic) ([]core.Problem, map[string]bool, map[string]bool, []string, error) {
@@ -854,8 +855,14 @@ func (a *App) archivedIDs() ([]string, error) {
 // Shard integrity gets the hot store's duplicate-id and shard-misnamed, file
 // named under archive/: every move between the stores refuses a duplicate in
 // either (raiseMoveRefusals), and that refusal sends the operator here to
-// find the extra shard (t-paax).
-func (a *App) lintArchive() ([]core.Problem, error) {
+// find the extra shard (t-paax). duplicate-id also spans the two stores
+// against the hot index idx: each index alone is unique there, so no Save
+// refuses it, and before the mint consulted archive/ a new task could take a
+// retired id unseen (t-erd6). The message tells the two states apart, since
+// their ways out differ: two tasks under one id need a hand repair, which
+// archive and unarchive refuse until it is made (refuseIDClash); one task in
+// both is an interrupted move, which re-running either command finishes.
+func (a *App) lintArchive(idx *core.Index) ([]core.Problem, error) {
 	if a.Dir == "" {
 		return nil, nil
 	}
@@ -869,6 +876,10 @@ func (a *App) lintArchive() ([]core.Problem, error) {
 			ps = append(ps, p)
 		}
 	}
+	hot := make(map[string]*core.Task, len(idx.Tasks))
+	for i := range idx.Tasks {
+		hot[idx.Tasks[i].ID] = &idx.Tasks[i]
+	}
 	seen := map[string]int{}
 	for i := range arcIdx.Tasks {
 		t := &arcIdx.Tasks[i]
@@ -876,12 +887,18 @@ func (a *App) lintArchive() ([]core.Problem, error) {
 		if seen[t.ID] == 2 { // report each duplicate id once, as the hot rule does
 			ps = append(ps, core.Problem{Severity: core.SevError, Code: "duplicate-id", ID: t.ID, Msg: fmt.Sprintf("duplicate id in archive/: %s", t.ID)})
 		}
+		if h := hot[t.ID]; h != nil && seen[t.ID] == 1 {
+			ps = append(ps, crossStoreDuplicate(h, t))
+		}
 		parked(t.ID, "task shard archive/"+core.TaskPath(t.ID), t.ExtraKeys())
 		if t.Status == a.Cfg.DoneLane {
 			continue
 		}
-		ps = append(ps, core.Problem{Severity: core.SevError, Code: "archived-not-done", ID: t.ID,
-			Msg: fmt.Sprintf("is in archive/ but in lane %q — an archive and a reopen crossed in a sync; `furrow unarchive %s` brings it back to the board, or `furrow unarchive %s` then `furrow done %s` if it is finished", t.Status, t.ID, t.ID, t.ID)})
+		msg := fmt.Sprintf("is in archive/ but in lane %q — an archive and a reopen crossed in a sync; `furrow unarchive %s` brings it back to the board, or `furrow unarchive %s` then `furrow done %s` if it is finished", t.Status, t.ID, t.ID, t.ID)
+		if h := hot[t.ID]; h != nil && !core.SameTask(h, t) { // unarchive refuses it until then (refuseIDClash)
+			msg = fmt.Sprintf("is in archive/ but in lane %q, and the board holds a different task under the id — repair the duplicate-id first, then unarchive the open task under the id it keeps", t.Status)
+		}
+		ps = append(ps, core.Problem{Severity: core.SevError, Code: "archived-not-done", ID: t.ID, Msg: msg})
 	}
 	stems, err := arc.ListTaskIDs()
 	if err != nil {
@@ -912,6 +929,16 @@ func (a *App) lintArchive() ([]core.Problem, error) {
 	}
 	parked("archive", "archive/meta.json", meta.ExtraKeys())
 	return ps, nil
+}
+
+// crossStoreDuplicate is lint's duplicate-id for an id the hot store (h) and
+// archive/ (arc) each hold once, worded for which of the two states it is.
+func crossStoreDuplicate(h, arc *core.Task) core.Problem {
+	msg := fmt.Sprintf("duplicate id across the hot board and archive/: %s is %q on the board and %q in archive/, two different tasks — archive and unarchive refuse it until one of them gets its own id by hand", h.ID, h.Title, arc.Title)
+	if core.SameTask(h, arc) {
+		msg = fmt.Sprintf("duplicate id across the hot board and archive/: %s is one task in both — an archive or unarchive stopped between its two writes; `furrow unarchive %s` finishes it on the board, or `furrow archive %s --yes` in archive/ (done tasks only)", h.ID, h.ID, h.ID)
+	}
+	return core.Problem{Severity: core.SevError, Code: "duplicate-id", ID: h.ID, Msg: msg}
 }
 
 // unknownKeyProblem is the one wording for the four machine-written file kinds

@@ -46,7 +46,9 @@ func containsAny(have, want []string) bool {
 // Archive moves done tasks older than olderThanDays into .furrow/archive/
 // (its own tasks/ shards + meta.json + bodies/, a sibling sharded store),
 // keeping the hot store light. With dryRun it only reports what it would move.
-// Returns the affected tasks.
+// Returns the affected tasks. A selected id that archive/ already holds is
+// archiveMove's to judge: it finishes an interrupted move or refuses the
+// whole sweep.
 //
 // Requires a file-backed store (a.Dir set) — the archive is a sibling .furrow
 // directory; an in-memory app cannot archive to disk.
@@ -136,7 +138,8 @@ func depHolds(idx *core.Index, leaving map[string]bool) map[string][]string {
 // edges in details.references.deps) — the sweep holds such a task back, but a
 // named id that silently stayed would be a write that did not do what it was
 // asked. There is no force: the result would be a board in lint error.
-// Duplicate ids collapse.
+// An id archive/ already holds finishes an interrupted move or refuses the
+// call (archiveMove). Duplicate ids collapse.
 // dryRun reports without moving. Uses the same destination-before-source move as
 // Archive.
 func (a *App) ArchiveIDs(ids []string, dryRun bool) (*ArchiveReport, error) {
@@ -242,10 +245,27 @@ type UnarchiveReport struct {
 // BEFORE destroying the source: copy every body and in-play asset into the
 // archive and update both in-memory indexes, persist both, and only after BOTH
 // succeed delete the hot bodies and reap the hot assets nothing remaining
-// holds (asset_hold.go). An interrupted run then leaves at worst a harmless
-// duplicate body or asset in archive/ (lint-visible) — it never deletes a hot
-// file while the hot index or a hot body still references it, and a retry
-// converges: the copy is an idempotent overwrite, the reap re-judged.
+// holds (asset_hold.go). It never deletes a hot file while the hot index or a
+// hot body still references it. An interrupted run leaves one of three
+// states: archive/ copies of bodies and assets that no archive/ shard names
+// (stopped before archive/'s index was saved — no lint sees them, and the
+// re-run overwrites them); the task in BOTH indexes (stopped between the two
+// saves — lint's duplicate-id, finished by the re-run); or hot bodies and
+// assets the hot index no longer names (stopped after the hot save — lint's
+// orphan-body warns on the bodies).
+//
+// An id archive/ already holds is that middle state only when it is the same
+// task (core.SameTask). The re-run then writes the hot copy over archive/'s,
+// shard as well as body: the hot copy is the one an edit made after the
+// interruption reached, and keeping archive/'s shard beside the hot body used
+// to mix the two. The body goes with it only while it still holds every line
+// of archive/'s (pickFinishedBody): a blank one — a shard brought back by
+// hand, or kept when resolving a sync conflict, then perhaps given edit's
+// empty placeholder — leaves archive/ its own, and one that lacks archive/'s
+// lines refuses the call (refuseBodyLoss). Under any other task the id is
+// refused before the first write (refuseIDClash). Any move, finished or
+// fresh, also refuses an asset the two sides hold under one name with other
+// bytes (refuseAssetClash).
 func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*ArchiveReport, error) {
 	rep := &ArchiveReport{Tasks: moved, Assets: newAssetTransfer(), Held: []HeldTask{}}
 	if rep.Tasks == nil {
@@ -278,15 +298,50 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 	if err := raiseMoveRefusals(a.Store, idx, arc, arcIdx); err != nil {
 		return nil, err
 	}
+	if err := refuseIDClash(moved, arcIdx, "in archive/", "archived"); err != nil {
+		return nil, err
+	}
+	keepArchived := map[string]bool{} // finished moves whose blank hot body leaves archive/ its own
+	var lossy []string
 	for _, t := range moved {
-		body, err := a.Store.LoadBody(t.ID)
+		if !arcIdx.Has(t.ID) {
+			continue
+		}
+		board, err := a.Store.LoadBody(t.ID)
 		if err != nil {
 			return nil, err
 		}
-		if err := arc.SaveBody(t.ID, body); err != nil {
+		archived, err := arc.LoadBody(t.ID)
+		if err != nil {
 			return nil, err
 		}
-		if !arcIdx.Has(t.ID) { // idempotent: a retry won't double-add
+		useBoard, ok := pickFinishedBody(board, archived)
+		switch {
+		case !ok:
+			lossy = append(lossy, t.ID)
+		case !useBoard:
+			keepArchived[t.ID] = true
+		}
+	}
+	if len(lossy) > 0 {
+		return nil, refuseBodyLoss(lossy, "archived")
+	}
+	if err := refuseAssetClash(a.Store, arc, plan, "archived"); err != nil {
+		return nil, err
+	}
+	for _, t := range moved {
+		if !keepArchived[t.ID] {
+			body, err := a.Store.LoadBody(t.ID)
+			if err != nil {
+				return nil, err
+			}
+			if err := arc.SaveBody(t.ID, body); err != nil {
+				return nil, err
+			}
+		}
+		if held, _ := arcIdx.Find(t.ID); held != nil {
+			*held = t // the same task (refuseIDClash): the hot copy finishes the interrupted move
+		} else {
 			arcIdx.Add(t)
 		}
 		idx.Remove(t.ID)
@@ -327,7 +382,9 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 //
 // The indexes are checked as loaded, not as they will be saved: a duplicate
 // whose first copy is the one leaving would pass Save, and the move would
-// then delete the body the remaining copy still names.
+// then delete the body the remaining copy still names. The one refusal no
+// Save raises — an id each store holds once, as two different tasks — needs
+// the moving set, so it is refuseIDClash's, raised right after.
 func raiseMoveRefusals(hot core.Store, hotIdx *core.Index, arc core.Store, arcIdx *core.Index) error {
 	if err := hot.Writable(); err != nil {
 		return err
@@ -339,6 +396,106 @@ func raiseMoveRefusals(hot core.Store, hotIdx *core.Index, arc core.Store, arcId
 		return err
 	}
 	return core.CheckUniqueIDs(arcIdx)
+}
+
+// refuseIDClash refuses, before a move writes anything, an id the move brings
+// into dest that dest already holds as a DIFFERENT task (core.SameTask). Each
+// index alone is unique, so no Save objects, and the move went on to keep one
+// task's shard beside the other's body and delete the source: archiving the
+// projects board's t-ksee would have lost the newer task's record and the
+// older task's body at exit 0 (t-erd6). Only a hand repair can say which task
+// keeps the id. The same task is an interrupted move, which the caller
+// finishes instead.
+func refuseIDClash(moving []core.Task, dest *core.Index, where, verb string) error {
+	held := make(map[string]*core.Task, len(dest.Tasks))
+	for i := range dest.Tasks {
+		held[dest.Tasks[i].ID] = &dest.Tasks[i]
+	}
+	var clash []string
+	for i := range moving {
+		if d := held[moving[i].ID]; d != nil && !core.SameTask(d, &moving[i]) {
+			clash = append(clash, moving[i].ID)
+		}
+	}
+	if len(clash) == 0 {
+		return nil
+	}
+	slices.Sort(clash)
+	ids, names := "id "+clash[0], "names"
+	if len(clash) > 1 {
+		ids, names = "ids "+strings.Join(clash, ", "), "name"
+	}
+	return core.Validationf(clash[0],
+		"task %s already %s a different task %s — the move would write one over the other, so nothing was %s; repair it by hand (give one of them its own id) — `furrow lint` flags it as duplicate-id",
+		ids, names, where, verb)
+}
+
+// pickFinishedBody chooses whose body a finished move keeps for one task the
+// board and archive/ both hold (core.SameTask): board is the board's body (""
+// when the file is missing), archived archive/'s. The board's copy is the one
+// an edit after the interruption reached, so it wins while it still holds
+// every line of archive/'s (holdsProse). A blank one yields archive/'s: a
+// shard can come back without its body, and edit's empty placeholder is no
+// newer copy. ok=false when the board's body lacks one of archive/'s lines —
+// a note, an attach link or retitle's seeded heading written onto a
+// body-less copy — since keeping either body would drop lines only a hand
+// merge can place.
+func pickFinishedBody(board, archived string) (useBoard, ok bool) {
+	if strings.TrimSpace(board) == "" {
+		return false, true
+	}
+	return true, holdsProse(board, archived)
+}
+
+// holdsProse reports whether board keeps every line of archived: each
+// non-blank line, trailing whitespace aside, appears in board at least as
+// often, wherever it sits — a note or an attach link adds lines, and a
+// reorder only moves them. The one line exempt is archived's title heading,
+// retitleHeading's (the first real line when it is an H1, blank lines and an
+// occurrence's back-link allowed above it): retitle rewrites it, and the
+// shard carries the title. An occurrence's `previous: [[id]]` back-link
+// counts, being its only tie to its series.
+func holdsProse(board, archived string) bool {
+	have := map[string]int{}
+	for _, ln := range strings.Split(board, "\n") {
+		if ln = strings.TrimRight(ln, " \t\r"); strings.TrimSpace(ln) != "" {
+			have[ln]++
+		}
+	}
+	want := strings.Split(archived, "\n")
+	heading := -1
+	for i, ln := range want {
+		if strings.TrimSpace(ln) == "" || bodyLinkLine.MatchString(ln) {
+			continue
+		}
+		if strings.HasPrefix(ln, "# ") {
+			heading = i
+		}
+		break
+	}
+	for i, ln := range want {
+		if ln = strings.TrimRight(ln, " \t\r"); i == heading || strings.TrimSpace(ln) == "" {
+			continue
+		}
+		if have[ln] == 0 {
+			return false
+		}
+		have[ln]--
+	}
+	return true
+}
+
+// refuseBodyLoss is the refusal pickFinishedBody's ok=false raises, before
+// anything is written.
+func refuseBodyLoss(ids []string, verb string) error {
+	slices.Sort(ids)
+	which := "body of " + ids[0] + " lacks lines archive/'s copy has"
+	if len(ids) > 1 {
+		which = "bodies of " + strings.Join(ids, ", ") + " lack lines archive/'s copies have"
+	}
+	return core.Validationf(ids[0],
+		"the board's %s, its title aside — finishing the move would drop them, so nothing was %s; copy them from archive/bodies/<id>.md into the board's (`furrow edit <id>`), or delete them there if they were dropped on purpose, then re-run",
+		which, verb)
 }
 
 func idSet(tasks []core.Task) map[string]bool {
@@ -354,7 +511,7 @@ func idSet(tasks []core.Task) map[string]bool {
 // door (t-yszb: recovery used to mean hand-moving furrow-owned shards between
 // stores, exactly what the docs forbid). All-or-nothing: every id must be in
 // the archive store, or nothing moves — a miss is the batch not-found shape
-// (details.missing), except an id already on the hot board, which is its own
+// (details.missing), except an id only on the hot board, which is its own
 // validation error (there is nothing to restore). Duplicates collapse.
 //
 // A restored task comes back EXACTLY as archived — done lane, Closed stamp,
@@ -363,11 +520,29 @@ func idSet(tasks []core.Task) map[string]bool {
 // Closed on leaving the done lane). Same commit order as archiveMove, with the
 // stores swapped: the DESTINATION (hot) is persisted first — bodies, assets,
 // index — and only then is the archive side updated and its copies deleted, so
-// an interrupted run leaves at worst a harmless duplicate in archive/, never a
-// hot index entry whose body is still trapped in the archive. The asset half
-// is the same rule as the outbound move, read from archive/'s side: every
-// asset a restored task owns or its body shows comes back, and archive/ keeps
-// its copy of any that an archived body still points at (asset_hold.go).
+// an interrupted run never leaves a hot index entry whose body is still
+// trapped in the archive. It leaves one of three states: hot bodies and
+// assets that no hot shard names (stopped before the hot index was saved —
+// lint's orphan-body warns on the bodies, and the re-run overwrites them);
+// the task in BOTH indexes (stopped between the two saves — lint's
+// duplicate-id, finished by the re-run); or archive/ bodies and assets that no
+// archive/ shard names (stopped after archive/'s save — no lint sees them, and
+// no re-run clears them, the id being archived no longer).
+//
+// An id in both indexes is that middle state only when it is the same task
+// (core.SameTask). The re-run keeps the hot copy as it stands — an edit made
+// there since the interruption is the task's newest state — so that copy is
+// the one the session guard judges; the dep check skips it, since the call
+// adds no edge to the board; and only archive/'s copy goes. The hot body is
+// rewritten from archive/'s while it is blank or still holds archive/'s bytes,
+// the ones the interrupted run wrote, and a hot body that lacks one of
+// archive/'s lines refuses the call (pickFinishedBody, refuseBodyLoss). Under
+// any other task the id is refused before the first write (refuseIDClash).
+// Any restore also refuses an asset the two sides hold under one name with
+// other bytes (refuseAssetClash). The asset half is the same rule as the
+// outbound move, read from archive/'s side: every asset a restored task owns
+// or its body shows comes back, and archive/ keeps its copy of any that an
+// archived body still points at (asset_hold.go).
 func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	idx, err := a.load()
 	if err != nil {
@@ -406,6 +581,44 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 			Details: map[string]any{"missing": missing},
 		}
 	}
+	if err := refuseIDClash(moved, idx, "on the hot board", "restored"); err != nil {
+		return nil, err
+	}
+	onBoard := map[string]bool{} // ids whose interrupted move this call finishes
+	var restoring []core.Task
+	for i := range moved {
+		if live, _ := idx.Find(moved[i].ID); live != nil {
+			moved[i] = *live
+			onBoard[live.ID] = true
+			continue
+		}
+		restoring = append(restoring, moved[i])
+	}
+	board := map[string]string{}  // a finished move's hot body, read once
+	useBoard := map[string]bool{} // ... and whether it stays as it stands
+	var lossy []string
+	for _, t := range moved {
+		if !onBoard[t.ID] {
+			continue
+		}
+		hot, err := a.Store.LoadBody(t.ID)
+		if err != nil {
+			return nil, err
+		}
+		archived, err := arc.LoadBody(t.ID)
+		if err != nil {
+			return nil, err
+		}
+		keep, ok := pickFinishedBody(hot, archived)
+		if !ok {
+			lossy = append(lossy, t.ID)
+			continue
+		}
+		board[t.ID], useBoard[t.ID] = hot, keep
+	}
+	if len(lossy) > 0 {
+		return nil, refuseBodyLoss(lossy, "restored")
+	}
 	leaving := idSet(moved)
 	// Guarded like every task write: a restore puts tasks back on the hot
 	// board of the repos they carry, so a session holding one of those repos
@@ -420,8 +633,9 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	// The mirror of ArchiveIDs' depHolds: a restored task whose dependency
 	// stays archived would read as blocked on an id the hot index lacks (lint
 	// dep-missing, the board's pre-push lint refusing the push). Restore them
-	// together, or drop the edge first.
-	if refs := archivedDepsOf(moved, arcIdx, idx, leaving); len(refs.Deps) > 0 {
+	// together, or drop the edge first. A finished move adds no edge to the
+	// board: its hot copy is already there.
+	if refs := archivedDepsOf(restoring, arcIdx, idx, leaving); len(refs.Deps) > 0 {
 		return nil, &core.Error{
 			Code:    core.CodeValidation,
 			Kind:    core.KindReferenced,
@@ -439,6 +653,9 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := refuseAssetClash(arc, a.Store, plan, "restored"); err != nil {
+		return nil, err
+	}
 	for _, t := range moved {
 		body, err := arc.LoadBody(t.ID)
 		if err != nil {
@@ -446,11 +663,16 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 		}
 		// Through saveBody, so the restored body rides the journal: a retry of an
 		// interrupted unarchive finds the hot body already TRACKED, and a plain
-		// sync would otherwise leave it pending (t-gqe6).
-		if err := a.saveBody(t.ID, body); err != nil {
-			return nil, err
+		// sync would otherwise leave it pending (t-gqe6). A finished move writes
+		// the body only while it is blank or still holds archive/'s bytes, the
+		// ones the interrupted run wrote: an edit made since is newer, and a hand
+		// edit is not furrow's to publish.
+		if !onBoard[t.ID] || !useBoard[t.ID] || board[t.ID] == body {
+			if err := a.saveBody(t.ID, body); err != nil {
+				return nil, err
+			}
 		}
-		if !idx.Has(t.ID) { // idempotent: a retry won't double-add
+		if !onBoard[t.ID] {
 			idx.Add(t)
 		}
 		arcIdx.Remove(t.ID)

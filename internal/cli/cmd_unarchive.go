@@ -19,17 +19,25 @@ func newUnarchiveCmd() *cobra.Command {
 			"two stores, which the docs forbid).\n\n" +
 			"All-or-nothing, like every batch mutator: each id must be in the archive\n" +
 			"store, or nothing is restored — a miss exits 1 with every miss in\n" +
-			"details.missing, and an id already on the hot board is exit 2 (nothing to\n" +
+			"details.missing, and an id only on the hot board is exit 2 (nothing to\n" +
 			"restore); a task whose dependency stays archived is exit 2 (kind\n" +
 			"referenced, the edges in details.references.deps) — restore them together\n" +
 			"or drop the edge first, since a restored dependent of an archived id reads\n" +
 			"as blocked and lint raises dep-missing. Guarded like every task write\n" +
 			"(session-busy). Either store refusing its write — an older layout (kind\n" +
 			"schema-upgrade-required) or a duplicate id (validation) — refuses the\n" +
-			"whole call before anything moves. --json is ALWAYS an array of\n" +
-			"{before,after,changed} envelopes, one per id (before is null — the task\n" +
-			"was not on the hot board — and each envelope carries `unarchived: true`);\n" +
-			"--ndjson streams one per line.\n\n" +
+			"whole call before anything moves, and so does an id the hot board already\n" +
+			"holds as a DIFFERENT task (validation: give one of them its own id by\n" +
+			"hand), or an asset both stores hold under one name with other bytes. The\n" +
+			"same task on both sides is a move an interruption left half done: the\n" +
+			"call finishes it and the hot copy stays, edits since included. A blank\n" +
+			"hot body takes archive/'s, and a hot body that lacks one of archive/'s\n" +
+			"lines refuses the call (validation) until they are merged by hand.\n" +
+			"--json is ALWAYS an array of {before,after,changed} envelopes, one per id\n" +
+			"(before is null — the task was not on the hot board, except when the call\n" +
+			"finishes such a move, where before is the hot copy and nothing changed —\n" +
+			"and each envelope carries `unarchived: true`); --ndjson streams one per\n" +
+			"line.\n\n" +
 			"A restored task comes back EXACTLY as it was archived: done lane, closed\n" +
 			"stamp, every field preserved (its body and attached assets travel back\n" +
 			"too; archive/ keeps a copy of any asset an archived body still shows,\n" +

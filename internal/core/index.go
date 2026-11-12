@@ -34,8 +34,9 @@ func (idx *Index) tasksByID() map[string]*Task {
 	return byID
 }
 
-// Add appends a task. The caller is responsible for a unique id (the store's
-// NextID guarantees it); Add does not check, so migrate can bulk-load.
+// Add appends a task. The caller is responsible for a unique id (NextID only
+// draws one; the app's mint checks it against the board and archive/); Add
+// does not check, so migrate can bulk-load.
 func (idx *Index) Add(t Task) {
 	idx.Tasks = append(idx.Tasks, t)
 }

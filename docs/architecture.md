@@ -317,10 +317,15 @@ task, and long markdown never collapses into an escaped JSON string.
 
 `NextID` returns a **random** id (prefix + a Crockford-base32 suffix,
 `[ids].width` chars) from **no shared counter**, so separate worktrees never
-mint the same id; both stores **refuse to `Save`** an index carrying a
-duplicate (`core.CheckUniqueIDs`, whose doc says why reads stay open). Ids are
-**frozen** (never reused or renumbered); legacy numeric ids coexist. The
-clash handling is `fsstore.NextID`'s doc comment.
+mint the same id, and the mint skips an id retired to `archive/` too
+(`App.uniqueIDExcluding`). Both stores **refuse to `Save`** an index carrying a
+duplicate (`core.CheckUniqueIDs`, whose doc says why reads stay open); archive
+and unarchive refuse an id the board and `archive/` hold as two different
+tasks, and finish the move when it is one task an interruption left in both
+(`core.SameTask`), refusing instead where that would drop a line of
+`archive/`'s body or an asset. Ids are **frozen** (never reused or
+renumbered); legacy numeric ids coexist. The clash handling is
+`fsstore.NextID`'s doc comment.
 
 ### memstore
 

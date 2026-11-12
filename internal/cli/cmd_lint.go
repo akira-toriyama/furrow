@@ -18,8 +18,9 @@ func newLintCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lint",
 		Short: "Check index<->body consistency, lanes, deps, links, assets, and config",
-		Long: "Validate the store: id shape and uniqueness, status lanes, body path, the\n" +
-			"index<->body 1:1 mapping, dep references and dependency cycles — dep-cycle\n" +
+		Long: "Validate the store: id shape and uniqueness (within each store and across\n" +
+			"the hot board and archive/), status lanes, body path, the index<->body\n" +
+			"1:1 mapping, dep references and dependency cycles — dep-cycle\n" +
 			"(error), a dated task waiting on a dependency promised later than its own\n" +
 			"due (due-inversion, warn), the epic linkage — an open task filed under no\n" +
 			"box once the board has any (epic-required, error), under a missing box\n" +

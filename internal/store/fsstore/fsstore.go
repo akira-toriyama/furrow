@@ -7,10 +7,12 @@ package fsstore
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
@@ -637,6 +639,25 @@ func (s *Store) BodyExists(id string) bool {
 	return err == nil
 }
 
+// HasTaskShard reports whether tasks/<id>.json is on disk: a filename probe
+// with no parse and no read gate, so a corrupt shard, a newer layout, or a
+// store path that is not a directory cannot fail it. Only a stat the OS
+// refuses does (a permission): the probe guards an id, and a guard that cannot
+// look must not guess. It answers the mint's "is this id retired to
+// archive/?" (App.uniqueIDExcluding); a misnamed shard is invisible to it, and
+// lint's shard-misnamed and duplicate-id cover that case.
+func (s *Store) HasTaskShard(id string) (bool, error) {
+	_, err := os.Stat(s.taskPath(id))
+	switch {
+	case err == nil:
+		return true, nil
+	case os.IsNotExist(err), errors.Is(err, syscall.ENOTDIR): // no directory, so no shard under it
+		return false, nil
+	default:
+		return false, core.Internalf(id, "stat task shard: %v", err)
+	}
+}
+
 // SaveAsset copies data into bodies/assets/<id>-<sanitized name>, picking a
 // collision-free basename so an existing asset is never overwritten, and returns
 // the final basename. The write is atomic (temp + rename), mirroring SaveBody.
@@ -781,9 +802,9 @@ func (s *Store) listStems(dir, ext string) ([]string, error) {
 // NextID returns a fresh random id: the configured prefix plus a random
 // Crockford-base32 suffix (idLen chars), e.g. "t-k3m9p". There is no shared
 // counter, so concurrent `furrow add` from separate operators/worktrees won't
-// collide; the app verifies the id isn't already in the index, and `furrow lint`
-// flags any duplicate as a backstop. Existing numeric ids (t-0042) stay frozen
-// and coexist.
+// collide; the app verifies the id is neither in the index nor retired to
+// archive/, and `furrow lint` flags any duplicate, within a store or across the
+// two, as a backstop. Existing numeric ids (t-0042) stay frozen and coexist.
 func (s *Store) NextID() (string, error) {
 	return core.RandomID(s.idPrefix, s.idLen, rand.Reader)
 }

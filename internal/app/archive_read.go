@@ -20,6 +20,24 @@ func (a *App) archiveStore() (*fsstore.Store, error) {
 	return fsstore.New(filepath.Join(a.Dir, "archive"), a.Cfg.Lanes, a.Cfg.IDPrefix, a.Cfg.EpicIDPrefix, a.Cfg.IDWidth), nil
 }
 
+// isRetiredID reports whether archive/ holds a task shard named id — the
+// mint's one archive read, a stat per draw rather than a parse, so a corrupt
+// shard, a newer layout, or an archive/ that is not a directory cannot stop an
+// add (lint and the moves report that store; an add never needed to read it).
+// An archive/ the process may not search (stat through) still fails the add
+// (fsstore.HasTaskShard). An in-memory app has no archive, so nothing is
+// retired there.
+func (a *App) isRetiredID(id string) (bool, error) {
+	if a.Dir == "" {
+		return false, nil
+	}
+	arc, err := a.archiveStore()
+	if err != nil {
+		return false, err
+	}
+	return arc.HasTaskShard(id)
+}
+
 // archiveLoad is the ONE path that reads the archive index: open the sibling
 // store, load it and canonicalize it like the hot index (core.Canonicalize),
 // so every archived read — ls/show/search --archived, the retired-id probes,

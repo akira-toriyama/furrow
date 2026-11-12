@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"slices"
 	"sort"
 	"strings"
@@ -165,6 +166,49 @@ func copyAssets(src, dst assetSide, p *assetPlan) ([]string, error) {
 		copied = append(copied, name)
 	}
 	return copied, nil
+}
+
+// refuseAssetClash refuses any move, finished or fresh, before it writes
+// anything when an in-play asset already sits in dst under its name with
+// other bytes. Names are unique within a store (attach never overwrites) and
+// an asset held on both sides is one file twice, which is what makes
+// copyAssets' overwrite idempotent; a pair with other bytes is a clash the
+// copy would settle by writing one file over the other. It arises when a task
+// is on both sides — attach on the board's copy checks only the board's
+// assets, so it can reuse a name archive/ still holds — or when a file was
+// replaced by hand.
+func refuseAssetClash(src, dst assetSide, p *assetPlan, verb string) error {
+	var clash []string
+	for _, name := range p.inPlay {
+		have, err := dst.LoadAsset(name)
+		if fe := core.AsError(err); fe != nil && fe.Code == core.CodeNotFound {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		want, err := src.LoadAsset(name)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(have, want) {
+			clash = append(clash, name)
+		}
+	}
+	if len(clash) == 0 {
+		return nil
+	}
+	paths := make([]string, len(clash))
+	for i, name := range clash {
+		paths[i] = core.AssetPath(name)
+	}
+	differ := "differs"
+	if len(clash) > 1 {
+		differ = "differ"
+	}
+	return core.Validationf(clash[0],
+		"%s %s between the board and archive/ under one name — the move would write one over the other, so nothing was %s; rename one of them by hand (and the link that shows it), then re-run",
+		strings.Join(paths, ", "), differ, verb)
 }
 
 // reapAssets applies the plan's outcome to the source: deletes what nothing

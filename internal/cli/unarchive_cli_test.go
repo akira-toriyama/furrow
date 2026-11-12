@@ -75,6 +75,56 @@ func TestUnarchiveGuards(t *testing.T) {
 	}
 }
 
+// An unarchive that finishes an interrupted move — the same task already on
+// the hot board, retitled there since — keeps the hot copy as it stands, so
+// its envelope is not the fresh-restore shape the help leads with: before is
+// that copy and nothing changed. archive/'s copy is gone, and lint sees the id
+// in one store.
+func TestUnarchiveFinishingAnInterruptedMoveChangesNothing(t *testing.T) {
+	initStore(t)
+	id := archiveOne(t, "half moved")
+	dir := os.Getenv(app.EnvDir)
+	for _, f := range []string{core.TaskPath(id), core.BodyPath(id)} {
+		b, err := os.ReadFile(filepath.Join(dir, "archive", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const retitled = "retitled after the interruption"
+	if out, code := run(t, "retitle", id, retitled); code != 0 {
+		t.Fatalf("retitle: exit %d\n%s", code, out)
+	}
+
+	out, code := run(t, "unarchive", id, "--json")
+	if code != 0 {
+		t.Fatalf("unarchive: exit %d\n%s", code, out)
+	}
+	var envs []struct {
+		Before  *core.Task `json:"before"`
+		After   *core.Task `json:"after"`
+		Changed []string   `json:"changed"`
+	}
+	if err := json.Unmarshal([]byte(out), &envs); err != nil || len(envs) != 1 {
+		t.Fatalf("envelopes = %s (err %v), want a one-element array", out, err)
+	}
+	if e := envs[0]; e.Before == nil || e.After == nil || e.Before.Title != retitled || e.After.Title != retitled || len(e.Changed) != 0 {
+		t.Errorf("envelope = %+v; want before and after both the retitled hot copy, nothing changed", e)
+	}
+	if _, code := run(t, "show", id, "--archived"); code == 0 {
+		t.Errorf("archive/ still holds %s", id)
+	}
+	if out, code := run(t, "lint", "--code", "duplicate-id"); code != 0 {
+		t.Errorf("lint --code duplicate-id: exit %d\n%s", code, out)
+	}
+}
+
 // Every mutator's miss now says "it is archived" with details.archived — the
 // guidance show alone used to give (t-yszb). The enrichment lives on the
 // not-found funnels (app.notFoundTask / app.batchMissingErr), not on each
