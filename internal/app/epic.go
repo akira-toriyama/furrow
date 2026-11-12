@@ -334,11 +334,9 @@ func (a *App) epicDetailIn(idx *core.Index, epics []core.Epic, id string, withBo
 //
 // The third result is the anchor report: nil unless --anchor/--clear-anchor
 // was requested, else what the day change did to the followers (AnchorPlan).
-// A MOVE is two store writes — the box first, then the followers' index — and
-// deliberately in that order: should the second fail, the box already says
-// the new day and the followers still sit on the old one, which the operator
-// repairs with one visible `set -q 'anchor:<epic>' --due-shift ±Nd`; the
-// other order would leave a re-run of the same command moving them twice.
+// A MOVE writes the followers' index and then the box, and a rename writes the
+// body's heading between the two; the order, and what each failure leaves
+// behind, are reasoned where the writes are made, below.
 func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *AnchorPlan, error) {
 	if o.empty() {
 		return nil, nil, nil, core.Validationf(ref, "epic set needs at least one change (%s)", flagNames(o.requested()))
@@ -456,15 +454,23 @@ func (a *App) EpicSet(ref string, o EpicSetOpts) (*core.Epic, *core.Epic, *Ancho
 // renameHeading carries a box's rename into its body: the leading H1 becomes
 // `# <to>` only while it still reads `# <from>`, the line `epic add` seeds.
 // Everything else is left as it stands — a heading that says something other
-// than the title (a short name over a long title is common on a real board), a
-// body with no leading H1, an empty one.
+// than the title, a body with no leading H1, an empty one. Such a heading is
+// usually hand-written (a short name over a long title is common on a real
+// board); it may also be a title that a rename made before this rule left
+// behind, and the two cannot be told apart, so neither is touched.
 //
 // This is deliberately NOT retitleHeading, which rewrites a task's leading H1
 // whatever it says. A task's heading is its title's second home; a box's body
 // is a document somebody wrote, and overwriting its heading on every rename
 // would cost the hand-written ones. The match is exact (no trimming), on
 // LF-delimited markdown like retitleHeading.
+//
+// from == to changes nothing and says so: reporting a rewrite of the same
+// bytes would have the caller save, and so journal, a body it did not edit.
 func renameHeading(body, from, to string) (string, bool) {
+	if from == to {
+		return body, false
+	}
 	lines := strings.Split(body, "\n")
 	for i, ln := range lines {
 		if strings.TrimSpace(ln) == "" {

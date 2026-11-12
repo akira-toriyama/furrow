@@ -17,6 +17,7 @@ func TestEpicSetTitleCarriesTheSeededHeading(t *testing.T) {
 	if err := a.Store.SaveBody(box, "\n# old box\n\nprose\n# old box\n"); err != nil {
 		t.Fatal(err)
 	}
+	a.bodiesTouched = nil // the seed is `epic add`'s write, not the rename's
 	clk.t = clk.t.Add(time.Hour)
 	title := "  new box  "
 	before, after, _, err := a.EpicSet(box, EpicSetOpts{Title: &title})
@@ -31,6 +32,11 @@ func TestEpicSetTitleCarriesTheSeededHeading(t *testing.T) {
 	}
 	if !after.Updated.Equal(clk.Now()) {
 		t.Errorf("updated = %v, want %v", after.Updated, clk.Now())
+	}
+	// Journaled, so the commit that carries the title carries the heading: an
+	// unjournaled body is left pending by a plain `furrow sync` (t-gqe6).
+	if !a.bodiesTouched[box] {
+		t.Errorf("the rewritten body is not journaled: %v", a.bodiesTouched)
 	}
 }
 
@@ -49,6 +55,7 @@ func TestEpicSetTitleLeavesAHandWrittenBody(t *testing.T) {
 			if err := a.Store.SaveBody(box, body); err != nil {
 				t.Fatal(err)
 			}
+			a.bodiesTouched = nil
 			title := "new box"
 			_, after, _, err := a.EpicSet(box, EpicSetOpts{Title: &title})
 			if err != nil {
@@ -60,34 +67,47 @@ func TestEpicSetTitleLeavesAHandWrittenBody(t *testing.T) {
 			if got, _ := a.Store.LoadBody(box); got != body {
 				t.Errorf("body rewritten: %q, want %q", got, body)
 			}
+			if a.bodiesTouched[box] {
+				t.Error("a body the rename left alone was journaled")
+			}
 		})
 	}
 }
 
-// The title the box already holds stays the no-op it was: nothing is written
-// and the clock is kept, whatever the heading says.
-func TestEpicSetSameTitleWritesNothing(t *testing.T) {
+// An edit that renames nothing never opens the body, on a box that still
+// carries its seeded heading: the title it already holds, or another field
+// alone. Opening it would make every `epic set` depend on a readable bodies/,
+// and rewriting the heading with its own bytes would journal the body — so the
+// next plain `furrow sync` would publish whatever uncommitted prose sits in it.
+func TestEpicSetWithoutARenameNeverOpensTheBody(t *testing.T) {
 	a, clk := newAppWith()
-	box := mustEpic(t, a, "old box", EpicAddOpts{})
-	if err := a.Store.SaveBody(box, "# drifted\n"); err != nil {
-		t.Fatal(err)
-	}
-	inner := a.Store
-	rec := &bodySaves{Store: inner}
+	box := mustEpic(t, a, "old box", EpicAddOpts{}) // body seeded "# old box\n"
+	a.bodiesTouched = nil
+	rec := &bodySaves{Store: refusingBodyLoad{a.Store}}
 	a.Store = rec
 	clk.t = clk.t.Add(time.Hour)
+
 	title := "old box"
 	before, after, _, err := a.EpicSet(box, EpicSetOpts{Title: &title})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rec.saved) != 0 {
-		t.Errorf("a same-title set wrote the body: %q", rec.saved)
+		t.Fatalf("the same title read the body: %v", err)
 	}
 	if !after.Updated.Equal(before.Updated) {
 		t.Errorf("a same-title set advanced updated to %v", after.Updated)
 	}
+	goal := "done when it ships"
+	if _, _, _, err := a.EpicSet(box, EpicSetOpts{Goal: &goal}); err != nil {
+		t.Fatalf("a goal edit read the body: %v", err)
+	}
+	if len(rec.saved) != 0 || a.bodiesTouched[box] {
+		t.Errorf("an edit that renamed nothing wrote the body: saved %q, journaled %v", rec.saved, a.bodiesTouched)
+	}
 }
+
+// refusingBodyLoad is the body unreadable (a permission, an I/O error).
+type refusingBodyLoad struct{ Store }
+
+func (refusingBodyLoad) LoadBody(string) (string, error) { return "", errors.New("body unreadable") }
 
 // bodySaves records every body write on its way to the store.
 type bodySaves struct {
@@ -199,6 +219,7 @@ func TestRenameHeading(t *testing.T) {
 		{"h2 is not the heading", "## old\n", "old", "new", "## old\n", false},
 		{"an empty body is not seeded", "", "old", "new", "", false},
 		{"a whitespace body is not seeded", "  \n\n", "old", "new", "  \n\n", false},
+		{"the same title is not a rewrite", "# old\nbody\n", "old", "old", "# old\nbody\n", false},
 		// A task occurrence's back-link is retitleHeading's concern; a box has none.
 		{"a back-link line is prose here", "previous: [[e-abc1]]\n\n# old\n", "old", "new", "previous: [[e-abc1]]\n\n# old\n", false},
 	}
