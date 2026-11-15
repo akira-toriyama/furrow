@@ -56,7 +56,21 @@ func newArchiveCmd() *cobra.Command {
 			"name the dependents in the same call once they are done, or drop the edge\n" +
 			"with `furrow dep <dependent> <id> --rm`. Either store refusing its write —\n" +
 			"an older layout (kind schema-upgrade-required) or a duplicate id\n" +
-			"(validation) — refuses the whole call before anything moves.\n\n" +
+			"(validation) — refuses the whole call before anything moves, and so does\n" +
+			"an id archive/ already holds as a DIFFERENT task (validation: give one of\n" +
+			"them its own id by hand, carrying everything that names it, which the\n" +
+			"error lists). The same task there is a move an interruption\n" +
+			"left half done, and the call finishes it with the hot copy: archive/ keeps\n" +
+			"its own body when the hot one is blank, and the call is refused\n" +
+			"(validation) when the hot body drops a line archive/'s has (its title\n" +
+			"heading aside), until merged by hand. While an id sits in both stores,\n" +
+			"any call carrying an asset it owns is refused (validation) where the two\n" +
+			"copies differ. Two differences git makes are no clash: line endings, in\n" +
+			"a file with no NUL byte and never more than one CR before an LF; and the\n" +
+			"git-lfs pointer a checkout leaves, against the file it names or a copy\n" +
+			"of it whose line endings git converted, when that file is such a file\n" +
+			"and does not mix line endings. The error says how to keep both. The\n" +
+			"preview reads the hot store alone, so these refusals come with --yes.\n\n" +
 			"The age sweep INHERITS THE BOARD SCOPE, like every read: with no -r it folds\n" +
 			"only the aged done of the repo your ls/next/search are already scoped to. An\n" +
 			"explicit -r (repeatable) swaps that scope; -r '' sweeps the whole board, and\n" +

@@ -135,7 +135,8 @@ type Store interface {
 	// NextID returns a fresh, random, collision-resistant id (e.g. "t-k3m9p":
 	// prefix + a random Crockford-base32 suffix). There is no shared counter, so
 	// concurrent adds in separate worktrees won't collide. The caller (app) is
-	// responsible for ensuring the id is not already present in the index.
+	// responsible for ensuring the id is not already present in the index, nor
+	// retired to the archive store, which this port does not see.
 	NextID() (string, error)
 
 	// LoadRepo returns the review record for an owner/repo, or ok=false when the

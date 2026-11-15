@@ -477,7 +477,7 @@ func (s *Store) ListTaskIDs() ([]string, error) { return slices.Sorted(maps.Keys
 
 // NextID returns a fresh id via the configured generator (random by default,
 // matching fsstore). No shared counter, so it is collision-resistant; the app
-// verifies uniqueness against the index.
+// verifies uniqueness against the index (memstore has no archive/ to probe).
 func (s *Store) NextID() (string, error) { return s.nextID() }
 
 func (s *Store) randomID() (string, error) {

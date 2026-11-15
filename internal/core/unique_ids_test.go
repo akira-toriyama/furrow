@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // CheckUniqueIDs guards Save's shards-keyed-by-id invariant: a duplicate would
@@ -53,5 +54,30 @@ func TestCheckUniqueIDs(t *testing.T) {
 	}
 	if strings.Contains(fe.Msg, "t-m") {
 		t.Errorf("message %q must not name the unique id t-m", fe.Msg)
+	}
+}
+
+// SameTask is the identity a move and lint use for an id found in both
+// stores: the creation instant, whatever else differs (an edit or a reopen
+// after an interruption reaches one copy only). A copy without the stamp proves
+// nothing, so even two unstamped copies compare different and the move
+// refuses rather than guess.
+func TestSameTask(t *testing.T) {
+	at := time.Date(2026, 9, 27, 1, 48, 31, 0, time.UTC)
+	for _, c := range []struct {
+		name string
+		a, b Task
+		want bool
+	}{
+		{"one task, edited and reopened since",
+			Task{ID: "t-ksee", Title: "before", Status: "done", Priority: 10, Closed: &at, Created: at, Updated: at},
+			Task{ID: "t-ksee", Title: "after", Status: "backlog", Priority: 20, Epic: "e-aaaa", Labels: []string{"bug"}, Repos: []string{"o/r"}, Deps: []string{"t-aaaa"}, Checklist: []ChecklistItem{{Text: "step"}}, Created: at, Updated: at.Add(time.Hour)},
+			true},
+		{"two tasks under one id", Task{ID: "t-ksee", Created: at}, Task{ID: "t-ksee", Created: at.AddDate(0, -3, 0)}, false},
+		{"neither stamped", Task{ID: "t-ksee"}, Task{ID: "t-ksee"}, false},
+	} {
+		if got := SameTask(&c.a, &c.b); got != c.want {
+			t.Errorf("%s: SameTask = %v, want %v", c.name, got, c.want)
+		}
 	}
 }

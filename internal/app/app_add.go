@@ -138,19 +138,29 @@ func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
 }
 
 // uniqueIDExcluding draws random ids from the store until one is present
-// neither in idx nor in reserved — the ids a caller has already handed out in
+// neither in idx, nor in reserved — the ids a caller has already handed out in
 // this same write but not yet inserted (AddBatch's pre-pass, where the index
 // cannot yet answer for its own batch; addMany appends each created task to
-// idx before the next draw, so a plain batch stays unique through idx alone).
-// Ids are random, so the first draw almost always wins; the cap turns a
-// pathological store into a loud error rather than an infinite loop.
+// idx before the next draw, so a plain batch stays unique through idx alone) —
+// nor in archive/. A retired id is still taken: the board's first collision
+// was a new task drawing one, which lint did not see and whose next archive
+// would have written over the archived task's body (t-erd6). Ids are random,
+// so the first draw almost always wins; the cap turns a pathological store
+// into a loud error rather than an infinite loop.
 func (a *App) uniqueIDExcluding(idx *core.Index, reserved map[string]bool) (string, error) {
 	for i := 0; i < 100; i++ {
 		id, err := a.Store.NextID()
 		if err != nil {
 			return "", err
 		}
-		if !idx.Has(id) && !reserved[id] {
+		if idx.Has(id) || reserved[id] {
+			continue
+		}
+		retired, err := a.isRetiredID(id)
+		if err != nil {
+			return "", err
+		}
+		if !retired {
 			return id, nil
 		}
 	}

@@ -323,8 +323,9 @@ func TestBodyLazyAndExists(t *testing.T) {
 func TestNextIDRandom(t *testing.T) {
 	// Production id shape: prefix + 5 Crockford-base32 chars, and no legacy
 	// counter file. NextID is a *raw* random draw with no internal dedup, so
-	// uniqueness of *persisted* ids is the app layer's job (App.uniqueID retries
-	// on an in-store clash — see internal/app TestAddGeneratesUniqueRandomIDs /
+	// uniqueness of *persisted* ids is the app layer's job
+	// (App.uniqueIDExcluding redraws on a clash with a hot or archived id — see
+	// internal/app TestAddGeneratesUniqueRandomIDs /
 	// TestAddManyGeneratesUniqueIDs), and the byte->alphabet mapping is pinned in
 	// core.TestRandomIDSuffix. This test pins what the *store* owns.
 	s := newStore(t)

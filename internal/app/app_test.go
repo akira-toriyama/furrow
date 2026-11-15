@@ -44,7 +44,7 @@ func TestAddGeneratesUniqueRandomIDs(t *testing.T) {
 			t.Fatalf("id %q does not match the random pattern", tk.ID)
 		}
 		if seen[tk.ID] {
-			t.Fatalf("Add produced a duplicate id: %q (uniqueID retry should prevent this)", tk.ID)
+			t.Fatalf("Add produced a duplicate id: %q (uniqueIDExcluding's redraw should prevent this)", tk.ID)
 		}
 		seen[tk.ID] = true
 	}
@@ -73,7 +73,7 @@ func TestAddManyGeneratesUniqueIDs(t *testing.T) {
 	if len(created) != len(specs) {
 		t.Fatalf("AddMany created %d tasks, want %d", len(created), len(specs))
 	}
-	// every id in one batch must be distinct (uniqueID checks the accumulating index).
+	// every id in one batch must be distinct (uniqueIDExcluding checks the accumulating reserved set).
 	seen := map[string]bool{}
 	for _, tk := range created {
 		if !idRe.MatchString(tk.ID) {

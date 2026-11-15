@@ -19,21 +19,38 @@ func newUnarchiveCmd() *cobra.Command {
 			"two stores, which the docs forbid).\n\n" +
 			"All-or-nothing, like every batch mutator: each id must be in the archive\n" +
 			"store, or nothing is restored — a miss exits 1 with every miss in\n" +
-			"details.missing, and an id already on the hot board is exit 2 (nothing to\n" +
+			"details.missing, and an id only on the hot board is exit 2 (nothing to\n" +
 			"restore); a task whose dependency stays archived is exit 2 (kind\n" +
 			"referenced, the edges in details.references.deps) — restore them together\n" +
 			"or drop the edge first, since a restored dependent of an archived id reads\n" +
-			"as blocked and lint raises dep-missing. Guarded like every task write\n" +
+			"as blocked and lint raises dep-missing; finishing an interrupted move adds\n" +
+			"no edge, so it skips this check. Guarded like every task write\n" +
 			"(session-busy). Either store refusing its write — an older layout (kind\n" +
 			"schema-upgrade-required) or a duplicate id (validation) — refuses the\n" +
-			"whole call before anything moves. --json is ALWAYS an array of\n" +
-			"{before,after,changed} envelopes, one per id (before is null — the task\n" +
-			"was not on the hot board — and each envelope carries `unarchived: true`);\n" +
-			"--ndjson streams one per line.\n\n" +
-			"A restored task comes back EXACTLY as it was archived: done lane, closed\n" +
-			"stamp, every field preserved (its body and attached assets travel back\n" +
-			"too; archive/ keeps a copy of any asset an archived body still shows,\n" +
-			"noted on stderr). Restoring only puts it back on the board — to REOPEN it, follow with\n" +
+			"whole call before anything moves, and so does an id the hot board already\n" +
+			"holds as a DIFFERENT task (validation: give one of them its own id by\n" +
+			"hand, carrying everything that names it, which the error lists). The\n" +
+			"same task on both sides is a move an interruption left half\n" +
+			"done: the call finishes it and the hot copy stays, edits since included.\n" +
+			"A blank hot body takes archive/'s, and the call is refused (validation)\n" +
+			"when the hot body drops a line archive/'s has (its title heading aside),\n" +
+			"until merged by hand. While an id sits in both stores, any call carrying\n" +
+			"an asset it owns is refused (validation) where the two copies differ.\n" +
+			"Two differences git makes are no clash: line endings, in a file with no\n" +
+			"NUL byte and never more than one CR before an LF; and the git-lfs\n" +
+			"pointer a checkout leaves, against the file it names or a copy of it\n" +
+			"whose line endings git converted, when that file is such a file and does\n" +
+			"not mix line endings. The error says how to keep both.\n" +
+			"--json is ALWAYS an array of {before,after,changed} envelopes, one per id\n" +
+			"(before is null — the task was not on the hot board, except when the call\n" +
+			"finishes such a move, where before is the hot copy and nothing changed —\n" +
+			"and each envelope carries `unarchived: true`); --ndjson streams one per\n" +
+			"line.\n\n" +
+			"A task the call restores, not one whose interrupted move it finishes,\n" +
+			"comes back EXACTLY as it was archived: done lane, closed stamp, every\n" +
+			"field preserved (its body and attached assets travel back too; archive/\n" +
+			"keeps a copy of any asset an archived body still shows, noted on\n" +
+			"stderr). Restoring only puts it back on the board — to REOPEN it, follow with\n" +
 			"`furrow move <id> <lane>`, which clears `closed` on leaving the done lane.\n" +
 			"No --yes: restoring destroys nothing (the destructive direction, archive,\n" +
 			"keeps its preview guard).\n\n" +
