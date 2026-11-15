@@ -28,7 +28,8 @@ func newUnarchiveCmd() *cobra.Command {
 			"schema-upgrade-required) or a duplicate id (validation) — refuses the\n" +
 			"whole call before anything moves, and so does an id the hot board already\n" +
 			"holds as a DIFFERENT task (validation: give one of them its own id by\n" +
-			"hand). The same task on both sides is a move an interruption left half\n" +
+			"hand, renaming its `<id>-` assets and the links to them with it). The\n" +
+			"same task on both sides is a move an interruption left half\n" +
 			"done: the call finishes it and the hot copy stays, edits since included.\n" +
 			"A blank hot body takes archive/'s, and the call is refused (validation)\n" +
 			"when the hot body drops a line archive/'s has (its title heading aside),\n" +

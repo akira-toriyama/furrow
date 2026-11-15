@@ -149,10 +149,12 @@ func (p *assetPlan) outcome() (deleted []string, kept []KeptAsset) {
 	return deleted, kept
 }
 
-// copyAssets lands every in-play asset in dst under its exact name — an
-// idempotent overwrite of identical bytes when dst already has it (a retry
-// after an interrupted move, or the copy a still-held asset earned from an
-// earlier move of another holder).
+// copyAssets lands every in-play asset in dst under its exact name. A copy dst
+// already has is the same file — a retry after an interrupted move, or the
+// copy a still-held asset earned from an earlier move of another holder — so
+// the overwrite changes nothing but a hand edit or git's line endings:
+// refuseAssetClash has already refused a pair whose owner id both stores hold
+// with other content.
 func copyAssets(src, dst assetSide, p *assetPlan) ([]string, error) {
 	copied := []string{}
 	for _, name := range p.inPlay {
@@ -168,15 +170,18 @@ func copyAssets(src, dst assetSide, p *assetPlan) ([]string, error) {
 	return copied, nil
 }
 
-// sharedIDs is the set of ids both indexes hold as loaded: a task an
-// interrupted move left in both stores, or two tasks under one id
-// (refuseIDClash tells them apart).
+// sharedIDs maps each id both indexes hold as loaded to whether it is one
+// task (core.SameTask), an interrupted move's, rather than two tasks under
+// one id. Membership is the key: a false value is still a shared id.
 func sharedIDs(hot, arc *core.Index) map[string]bool {
-	inArc := idSet(arc.Tasks)
+	inArc := make(map[string]*core.Task, len(arc.Tasks))
+	for i := range arc.Tasks {
+		inArc[arc.Tasks[i].ID] = &arc.Tasks[i]
+	}
 	shared := map[string]bool{}
 	for i := range hot.Tasks {
-		if inArc[hot.Tasks[i].ID] {
-			shared[hot.Tasks[i].ID] = true
+		if held := inArc[hot.Tasks[i].ID]; held != nil {
+			shared[hot.Tasks[i].ID] = core.SameTask(&hot.Tasks[i], held)
 		}
 	}
 	return shared
@@ -191,7 +196,11 @@ func sharedIDs(hot, arc *core.Index) map[string]bool {
 // as it always did, even one whose copy was replaced by hand. With the owner
 // in both stores, attach on the board's copy can reuse a name archive/ still
 // holds, and any move that carries the file would write one over the other:
-// the owner's own, or that of another task whose body shows it.
+// the owner's own, or that of another task whose body shows it. The way out
+// the refusal names differs: one task keeps both files once the board's copy
+// takes another name, while two tasks under one id need the id repair first,
+// which renames the re-id'd task's files — a repair that left them under the
+// old prefix would take its id out of shared and the guard with it.
 func refuseAssetClash(src, dst assetSide, p *assetPlan, shared map[string]bool, verb string) error {
 	var clash []string
 	for _, name := range p.inPlay {
@@ -217,16 +226,26 @@ func refuseAssetClash(src, dst assetSide, p *assetPlan, shared map[string]bool, 
 		return nil
 	}
 	paths := make([]string, len(clash))
+	var twoTasks []string // owner ids that name two tasks, in clash order
 	for i, name := range clash {
 		paths[i] = core.AssetPath(name)
+		if owner := assetOwnerIn(name, shared); !shared[owner] && !slices.Contains(twoTasks, owner) {
+			twoTasks = append(twoTasks, owner)
+		}
 	}
-	differ := "differs"
+	what := paths[0] + " differs between the board and archive/ under one name — the move would write one copy over the other"
+	how := "rename the board's copy by hand and, in each board body that links it, add a link to the new name beside the old one (a finished move refuses a body that drops a line), then re-run"
 	if len(clash) > 1 {
-		differ = "differ"
+		what = strings.Join(paths, ", ") + " differ between the board and archive/, each under one name — the move would write one copy of each over the other"
+		how = "rename the board's copies by hand and, in each board body that links one, add a link to its new name beside the old one (a finished move refuses a body that drops a line), then re-run"
 	}
-	return core.Validationf(clash[0],
-		"%s %s between the board and archive/ under one name — the move would write one over the other, so nothing was %s; rename the board's copy by hand and, in each board body that links it, add a link to the new name beside the old one (a finished move refuses a body that drops a line), then re-run",
-		strings.Join(paths, ", "), differ, verb)
+	switch {
+	case len(twoTasks) == 1:
+		how = twoTasks[0] + " names two tasks (`furrow lint` flags it as duplicate-id): give one of them its own id by hand, renaming its `<id>-` assets and the links to them with it, then re-run"
+	case len(twoTasks) > 1:
+		how = strings.Join(twoTasks, ", ") + " each name two tasks (`furrow lint` flags them as duplicate-id): give one task under each its own id by hand, renaming its `<id>-` assets and the links to them with it, then re-run"
+	}
+	return core.Validationf(clash[0], "%s, so nothing was %s; %s", what, verb, how)
 }
 
 // sameAsset reports whether two copies of an asset hold one content. Git's

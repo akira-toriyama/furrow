@@ -861,7 +861,9 @@ func (a *App) archivedIDs() ([]string, error) {
 // retired id unseen (t-erd6). The message tells the two states apart, since
 // their ways out differ: two tasks under one id need a hand repair, which
 // archive and unarchive refuse until it is made (refuseIDClash); one task in
-// both is an interrupted move, which re-running either command finishes.
+// both is an interrupted move, which re-running either command finishes, or
+// refuses with the hand merge where the copies diverged since
+// (pickFinishedBody, refuseAssetClash).
 func (a *App) lintArchive(idx *core.Index) ([]core.Problem, error) {
 	if a.Dir == "" {
 		return nil, nil
@@ -934,9 +936,9 @@ func (a *App) lintArchive(idx *core.Index) ([]core.Problem, error) {
 // crossStoreDuplicate is lint's duplicate-id for an id the hot store (h) and
 // archive/ (arc) each hold once, worded for which of the two states it is.
 func crossStoreDuplicate(h, arc *core.Task) core.Problem {
-	msg := fmt.Sprintf("duplicate id across the hot board and archive/: %s is %q on the board and %q in archive/, two different tasks — archive and unarchive refuse it until one of them gets its own id by hand", h.ID, h.Title, arc.Title)
+	msg := fmt.Sprintf("duplicate id across the hot board and archive/: %s is %q on the board and %q in archive/, two different tasks — archive and unarchive refuse it until one of them gets its own id by hand, its `<id>-` assets and the links to them renamed with it", h.ID, h.Title, arc.Title)
 	if core.SameTask(h, arc) {
-		msg = fmt.Sprintf("duplicate id across the hot board and archive/: %s is one task in both — an archive or unarchive stopped between its two writes; `furrow unarchive %s` finishes it on the board, or `furrow archive %s --yes` in archive/ (done tasks only)", h.ID, h.ID, h.ID)
+		msg = fmt.Sprintf("duplicate id across the hot board and archive/: %s is one task in both — an archive or unarchive stopped between its two writes, or a shard copied back by hand; `furrow unarchive %s` finishes it on the board, or `furrow archive %s --yes` in archive/ (done tasks only), and where the two copies' bodies or assets have diverged the move refuses, naming the hand merge", h.ID, h.ID, h.ID)
 	}
 	return core.Problem{Severity: core.SevError, Code: "duplicate-id", ID: h.ID, Msg: msg}
 }

@@ -426,7 +426,7 @@ func refuseIDClash(moving []core.Task, dest *core.Index, where, verb string) err
 		ids, names = "ids "+strings.Join(clash, ", "), "name"
 	}
 	return core.Validationf(clash[0],
-		"task %s already %s a different task %s — the move would write one over the other, so nothing was %s; repair it by hand (give one of them its own id) — `furrow lint` flags it as duplicate-id",
+		"task %s already %s a different task %s — the move would write one over the other, so nothing was %s; repair it by hand (give one of them its own id, renaming its `<id>-` assets and the links to them with it) — `furrow lint` flags it as duplicate-id",
 		ids, names, where, verb)
 }
 
