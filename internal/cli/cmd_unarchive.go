@@ -35,11 +35,12 @@ func newUnarchiveCmd() *cobra.Command {
 			"A blank hot body takes archive/'s, and the call is refused (validation)\n" +
 			"when the hot body drops a line archive/'s has (its title heading aside),\n" +
 			"until merged by hand. While an id sits in both stores, any call carrying\n" +
-			"an asset it owns is refused (validation) where the two copies differ, a\n" +
-			"text file's line endings aside, and the git-lfs pointer a checkout leaves\n" +
-			"for the other copy too, unless git normalized that file's uneven line\n" +
-			"endings (mixed, or more than one CR before an LF) on one side: the error\n" +
-			"says how to keep both.\n" +
+			"an asset it owns is refused (validation) where the two copies differ.\n" +
+			"Two differences git makes are no clash: line endings, in a file with no\n" +
+			"NUL byte and never more than one CR before an LF; and the git-lfs\n" +
+			"pointer a checkout leaves, against the file it names or a copy of it\n" +
+			"whose line endings git converted, when that file is such a file and does\n" +
+			"not mix line endings. The error says how to keep both.\n" +
 			"--json is ALWAYS an array of {before,after,changed} envelopes, one per id\n" +
 			"(before is null — the task was not on the hot board, except when the call\n" +
 			"finishes such a move, where before is the hot copy and nothing changed —\n" +

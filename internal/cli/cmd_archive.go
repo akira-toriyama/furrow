@@ -65,11 +65,12 @@ func newArchiveCmd() *cobra.Command {
 			"(validation) when the hot body drops a line archive/'s has (its title\n" +
 			"heading aside), until merged by hand. While an id sits in both stores,\n" +
 			"any call carrying an asset it owns is refused (validation) where the two\n" +
-			"copies differ, a text file's line endings aside, and the git-lfs pointer\n" +
-			"a checkout leaves for the other copy too, unless git normalized that\n" +
-			"file's uneven line endings (mixed, or more than one CR before an LF) on\n" +
-			"one side: the error says how to keep both. The preview reads the hot\n" +
-			"store alone, so these refusals come with --yes.\n\n" +
+			"copies differ. Two differences git makes are no clash: line endings, in\n" +
+			"a file with no NUL byte and never more than one CR before an LF; and the\n" +
+			"git-lfs pointer a checkout leaves, against the file it names or a copy\n" +
+			"of it whose line endings git converted, when that file is such a file\n" +
+			"and does not mix line endings. The error says how to keep both. The\n" +
+			"preview reads the hot store alone, so these refusals come with --yes.\n\n" +
 			"The age sweep INHERITS THE BOARD SCOPE, like every read: with no -r it folds\n" +
 			"only the aged done of the repo your ls/next/search are already scoped to. An\n" +
 			"explicit -r (repeatable) swaps that scope; -r '' sweeps the whole board, and\n" +

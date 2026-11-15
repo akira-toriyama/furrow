@@ -24,9 +24,10 @@ func (a *App) archiveStore() (*fsstore.Store, error) {
 // mint's one archive read, a stat per draw rather than a parse, so a corrupt
 // shard, a newer layout, or an archive/ that is not a directory cannot stop an
 // add (lint and the moves report that store; an add never needed to read it).
-// An archive/ the process may not search (stat through) still fails the add
-// (fsstore.HasTaskShard). An in-memory app has no archive, so nothing is
-// retired there.
+// An archive/ the process may not search (stat through) still fails every
+// mint (fsstore.HasTaskShard): an add, a batch, an import, and the close of a
+// repeating task, which mints its successor before it writes anything. An
+// in-memory app has no archive, so nothing is retired there.
 func (a *App) isRetiredID(id string) (bool, error) {
 	if a.Dir == "" {
 		return false, nil

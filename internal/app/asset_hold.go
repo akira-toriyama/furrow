@@ -312,7 +312,9 @@ func clashRefusal(clash []string, shared map[string]bool, verb string) error {
 // CRLF and leave furrow's write of the other with LF, so a copy with no NUL
 // byte — text, not an image — is compared with CRLF folded to LF; the fold
 // does not read git's config, so where git converts nothing the move may
-// still change a file's line endings. And a checkout without the file can
+// still change a file's line endings. Two conversions it does not undo
+// leave a clash: git's explicit text attribute shortens a run of CRs before
+// an LF to one, and converts a file with a NUL byte as well. And a checkout without the file can
 // leave one copy the git-lfs pointer for the file the other holds (pointerOf),
 // which copyAssets never writes over that file.
 func sameAsset(a, b []byte) bool {
@@ -361,7 +363,8 @@ func foldCRLF(b []byte) []byte {
 // LF then expanded to CRLF. That undoes git's normalization only where every
 // line ends in one LF or one CRLF: a file with uneven line endings — mixed, or
 // more than one CR before an LF — that git normalized on one side is not
-// recognized, and the bytes decide. The
+// recognized, and the bytes decide; so is a file with a NUL byte, compared as
+// it is, though git's explicit text attribute converts it too. The
 // variants are hashed as they stream (lineSum), never built: data is the
 // other copy of what may be a large file, and the pointer's size line rules
 // out a variant before any hashing.

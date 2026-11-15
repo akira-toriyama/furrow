@@ -935,7 +935,9 @@ func (a *App) lintArchive(idx *core.Index) ([]core.Problem, error) {
 }
 
 // crossStoreDuplicate is lint's duplicate-id for an id the hot store (h) and
-// archive/ (arc) each hold once, worded for which of the two states it is.
+// archive/ (arc) both hold — the first archive/ copy when archive/ holds the id
+// twice, which lint reports on its own row — worded for which of the two
+// states it is.
 func crossStoreDuplicate(h, arc *core.Task) core.Problem {
 	msg := fmt.Sprintf("duplicate id across the hot board and archive/: %s is %q on the board and %q in archive/, two different tasks — archive and unarchive refuse it until it is repaired: %s", h.ID, h.Title, arc.Title, reIDRepair)
 	if core.SameTask(h, arc) {
