@@ -861,10 +861,10 @@ func (a *App) archivedIDs() ([]string, error) {
 // retired id unseen (t-erd6). The message tells the two states apart, since
 // their ways out differ: two tasks under one id need a hand repair, which
 // archive and unarchive refuse until it is made (refuseIDClash); one task in
-// both is an interrupted move, which re-running either command finishes — or
-// refuses, naming the hand merge, while the board's body lacks a line of
-// archive/'s or an asset the id owns differs between the two
-// (pickFinishedBody, refuseAssetClash).
+// both is an interrupted move, which re-running either command finishes, or
+// refuses with the hand merge in the cases their help names (pickFinishedBody,
+// refuseAssetClash) — the help states that rule, so this finding points at it
+// rather than restating it.
 func (a *App) lintArchive(idx *core.Index) ([]core.Problem, error) {
 	if a.Dir == "" {
 		return nil, nil
@@ -939,7 +939,7 @@ func (a *App) lintArchive(idx *core.Index) ([]core.Problem, error) {
 func crossStoreDuplicate(h, arc *core.Task) core.Problem {
 	msg := fmt.Sprintf("duplicate id across the hot board and archive/: %s is %q on the board and %q in archive/, two different tasks — archive and unarchive refuse it until it is repaired: %s", h.ID, h.Title, arc.Title, reIDRepair)
 	if core.SameTask(h, arc) {
-		msg = fmt.Sprintf("duplicate id across the hot board and archive/: %s is one task in both — an archive or unarchive stopped between its two writes, or a shard copied back by hand; `furrow unarchive %s` finishes it on the board, or `furrow archive %s --yes` in archive/ (done tasks only), each refusing instead, naming the hand merge, while the board's body lacks a line of archive/'s (its title aside) or an asset the id owns holds other bytes on each side", h.ID, h.ID, h.ID)
+		msg = fmt.Sprintf("duplicate id across the hot board and archive/: %s is one task in both — an archive or unarchive stopped between its two writes, or a shard copied back by hand; `furrow unarchive %s` finishes it on the board, or `furrow archive %s --yes` in archive/ (done tasks only); either refuses instead, naming the hand merge, in the cases `furrow unarchive --help` names", h.ID, h.ID, h.ID)
 	}
 	return core.Problem{Severity: core.SevError, Code: "duplicate-id", ID: h.ID, Msg: msg}
 }

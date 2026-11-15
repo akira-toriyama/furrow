@@ -398,8 +398,9 @@ func raiseMoveRefusals(hot core.Store, hotIdx *core.Index, arc core.Store, arcId
 	return core.CheckUniqueIDs(arcIdx)
 }
 
-// reIDRepair is the one hand repair for two tasks under one id, which every
-// refusal and lint finding that meets them asks for. Each thing it lists is a
+// reIDRepair is the one hand repair for two tasks under one id, which the
+// refusals and lint's duplicate-id that meet them ask for (archived-not-done
+// points at the latter). Each thing it lists is a
 // way a shorter repair failed: a reference left on the old id silently names
 // the other task (no check sees it, the id still exists), `<id>-` assets left
 // under the old prefix take the id out of both stores while two files keep one
@@ -430,13 +431,13 @@ func refuseIDClash(moving []core.Task, dest *core.Index, where, verb string) err
 		return nil
 	}
 	slices.Sort(clash)
-	ids, names, repair := "id "+clash[0], "names", reIDRepair
+	ids, names, repair, it := "id "+clash[0], "names", reIDRepair, "it"
 	if len(clash) > 1 {
-		ids, names, repair = "ids "+strings.Join(clash, ", "), "name", "for each, "+reIDRepair
+		ids, names, repair, it = "ids "+strings.Join(clash, ", "), "name", "for each, "+reIDRepair, "them"
 	}
 	return core.Validationf(clash[0],
-		"task %s already %s a different task %s — the move would write one over the other, so nothing was %s; %s — `furrow lint` flags it as duplicate-id",
-		ids, names, where, verb, repair)
+		"task %s already %s a different task %s — the move would write one over the other, so nothing was %s; %s — `furrow lint` flags %s as duplicate-id",
+		ids, names, where, verb, repair, it)
 }
 
 // pickFinishedBody chooses whose body a finished move keeps for one task the

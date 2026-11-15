@@ -1,6 +1,7 @@
 package app
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -205,7 +206,11 @@ func TestMoveRefusesADifferentTaskUnderTheID(t *testing.T) {
 				_, err = b.a.Unarchive([]string{moving})
 			}
 			fe := core.AsError(err)
-			if fe == nil || fe.Kind != core.KindValidation || fe.Subject != moving || !strings.Contains(fe.Msg, "duplicate-id") || !strings.Contains(fe.Msg, reIDRepair) {
+			where := "different task in archive/"
+			if verb == "unarchive" {
+				where = "different task on the hot board"
+			}
+			if fe == nil || fe.Kind != core.KindValidation || fe.Subject != moving || !strings.Contains(fe.Msg, where) || !strings.Contains(fe.Msg, "duplicate-id") || !strings.Contains(fe.Msg, reIDRepair) {
 				t.Fatalf("%s %s = %v; want a validation refusal naming it, the repair with its assets, and lint's duplicate-id", verb, moving, err)
 			}
 			if after := boardBytes(t, b.a.Dir); !maps.Equal(before, after) {
@@ -326,8 +331,8 @@ func TestUnarchiveRetryJournalsTheRemnantBody(t *testing.T) {
 // duplicate-id spans the two stores (t-erd6), worded for the state, since the
 // ways out differ: two tasks under one id need a hand repair that renames the
 // re-id'd task's assets too, and one task in both is an interrupted move that
-// either command finishes, or refuses until a hand merge while the board's
-// body lacks one of archive/'s lines or an owned asset differs.
+// either command finishes, or refuses until a hand merge in the cases the
+// move's help names, which the finding points at.
 func TestLintFlagsAnIDInBothStores(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -337,7 +342,7 @@ func TestLintFlagsAnIDInBothStores(t *testing.T) {
 		{"two tasks", []string{"two different tasks", "refuse it until it is repaired: " + reIDRepair}, func(t *testing.T, arc plantable, id string) (core.Task, string) {
 			return impostor(findIn(t, arc, id)), "# another task\n"
 		}},
-		{"one task", []string{"stopped between its two writes", "each refusing instead, naming the hand merge, while the board's body lacks a line of archive/'s (its title aside) or an asset the id owns holds other bytes on each side"}, func(t *testing.T, arc plantable, id string) (core.Task, string) {
+		{"one task", []string{"stopped between its two writes", "either refuses instead, naming the hand merge, in the cases `furrow unarchive --help` names"}, func(t *testing.T, arc plantable, id string) (core.Task, string) {
 			return findIn(t, arc, id), "# thing\n"
 		}},
 	} {
@@ -719,10 +724,14 @@ func TestFinishedMoveKeepsArchivesProse(t *testing.T) {
 // A finished move's copy of an asset the task owns can meet a different file
 // under its name: attach on the board's copy of a task in both stores checks
 // only the board's assets, so it can reuse a name archive/ still holds. Both
-// moves refuse that before writing. A difference git's line-ending
-// conversion alone makes is no clash for a text file; a binary one is
-// compared byte for byte.
+// moves refuse that before writing. A difference git itself does not see is
+// no clash: a text file's line endings, or a git-lfs pointer one copy is left
+// as for the file the other holds. Otherwise a binary is compared byte for
+// byte.
 func TestMoveRefusesAnAssetClash(t *testing.T) {
+	lfsPointer := func(content string) string {
+		return fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%x\nsize %d\n", sha256.Sum256([]byte(content)), len(content))
+	}
 	for _, c := range []struct {
 		name            string
 		archived, board string
@@ -731,6 +740,8 @@ func TestMoveRefusesAnAssetClash(t *testing.T) {
 		{"other content", "the archived bytes", "bytes attached on the board since", true},
 		{"text whose line endings alone differ", "line one\nline two\n", "line one\r\nline two\r\n", false},
 		{"binary whose line endings alone differ", "\x00\x01line\n", "\x00\x01line\r\n", true},
+		{"a git-lfs pointer for the board's file", lfsPointer("\x00PNG board"), "\x00PNG board", false},
+		{"a git-lfs pointer for another file of that size", lfsPointer("\x00PNG other"), "\x00PNG board", true},
 	} {
 		for _, verb := range []string{"archive", "unarchive"} {
 			t.Run(c.name+"/"+verb, func(t *testing.T) {
@@ -801,6 +812,9 @@ func TestMoveRefusesAClashWhileTheOwnerIsInBothStores(t *testing.T) {
 		{"a finished archive of a viewer", "archive", "both", false},
 		{"a finished unarchive of a viewer", "unarchive", "both", false},
 		{"a fresh unarchive of a viewer under an id that names two tasks", "unarchive", "archive", true},
+		{"a fresh archive of a viewer under an id that names two tasks", "archive", "board", true},
+		{"a finished archive of a viewer under an id that names two tasks", "archive", "both", true},
+		{"a finished unarchive of a viewer under an id that names two tasks", "unarchive", "both", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			a := newFSApp(t)
@@ -1033,8 +1047,9 @@ func TestAssetClashAdviceLetsTheReRunKeepBoth(t *testing.T) {
 }
 
 // The asset-clash refusal's advice per owner kind, worded once per owner id,
-// each kind naming its own files when one call meets both: an advice that left
-// one kind out would refuse the re-run again with the other.
+// both when one call meets both kinds — the one-task advice then naming its
+// files: an advice that left one kind out would refuse the re-run again with
+// the other.
 func TestClashRefusalAdvice(t *testing.T) {
 	const one, two, other = "t-aaaaa", "t-bbbbb", "t-ccccc"
 	shared := map[string]bool{one: true, two: false, other: false}
@@ -1098,7 +1113,7 @@ func TestIDRepairWording(t *testing.T) {
 	held := []core.Task{{ID: "t-aaaaa", Created: now}, {ID: "t-bbbbb", Created: now}}
 	moving := []core.Task{{ID: "t-bbbbb", Created: now.Add(time.Hour)}, {ID: "t-aaaaa", Created: now.Add(time.Hour)}}
 	fe := core.AsError(refuseIDClash(moving, &core.Index{Tasks: held}, "in archive/", "archived"))
-	want := "task ids t-aaaaa, t-bbbbb already name a different task in archive/ — the move would write one over the other, so nothing was archived; for each, " + reIDRepair + " — `furrow lint` flags it as duplicate-id"
+	want := "task ids t-aaaaa, t-bbbbb already name a different task in archive/ — the move would write one over the other, so nothing was archived; for each, " + reIDRepair + " — `furrow lint` flags them as duplicate-id"
 	if fe == nil || fe.Kind != core.KindValidation || fe.Subject != "t-aaaaa" || fe.Msg != want {
 		t.Errorf("refuseIDClash = %v;\nwant %q", fe, want)
 	}

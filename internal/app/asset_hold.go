@@ -2,8 +2,11 @@ package app
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/akira-toriyama/furrow/v10/internal/core"
@@ -234,9 +237,9 @@ func refuseAssetClash(src, dst assetSide, p *assetPlan, shared map[string]bool, 
 
 // clashRefusal words refuseAssetClash's refusal for the clashing names: the
 // one-task way out for a name whose owner is one task in both stores, the id
-// repair for one whose owner id names two tasks, and both, each naming its
-// files, when one call meets both — a refusal that gave one would refuse the
-// re-run again with the other.
+// repair for one whose owner id names two tasks, and both when one call meets
+// both — the one-task advice then naming its files, the id repair its id — a
+// refusal that gave one would refuse the re-run again with the other.
 func clashRefusal(clash []string, shared map[string]bool, verb string) error {
 	paths := make([]string, len(clash))
 	var single []string   // paths whose owner is one task in both stores
@@ -274,13 +277,14 @@ func clashRefusal(clash []string, shared map[string]bool, verb string) error {
 	return core.Validationf(clash[0], "%s, so nothing was %s; %s, then re-run", what, verb, strings.Join(how, "; and "))
 }
 
-// sameAsset reports whether two copies of an asset hold one content. Git's
-// line-ending conversion (core.autocrlf) can check one copy out with CRLF and
-// leave furrow's write of the other with LF, a difference git itself does not
-// see, so a copy with no NUL byte — text, not an image — is compared with CRLF
-// folded to LF.
+// sameAsset reports whether two copies of an asset hold one content, as git
+// sees it. Git's line-ending conversion (core.autocrlf) can check one copy out
+// with CRLF and leave furrow's write of the other with LF, so a copy with no
+// NUL byte — text, not an image — is compared with CRLF folded to LF. A
+// partial git-lfs checkout can leave one copy its pointer file while the
+// other holds the file it names, one blob to git (pointsTo).
 func sameAsset(a, b []byte) bool {
-	if bytes.Equal(a, b) {
+	if bytes.Equal(a, b) || pointsTo(a, b) || pointsTo(b, a) {
 		return true
 	}
 	if bytes.IndexByte(a, 0) >= 0 || bytes.IndexByte(b, 0) >= 0 {
@@ -288,6 +292,36 @@ func sameAsset(a, b []byte) bool {
 	}
 	crlf, lf := []byte("\r\n"), []byte("\n")
 	return bytes.Equal(bytes.ReplaceAll(a, crlf, lf), bytes.ReplaceAll(b, crlf, lf))
+}
+
+// pointsTo reports whether ptr is a git-lfs pointer file (spec v1) naming
+// exactly data: its sha256 oid and its size. The spec caps a pointer under
+// 1024 bytes; anything else is no pointer, so the bytes decide.
+func pointsTo(ptr, data []byte) bool {
+	if len(ptr) >= 1024 {
+		return false
+	}
+	lines := strings.Split(strings.TrimSuffix(strings.ReplaceAll(string(ptr), "\r\n", "\n"), "\n"), "\n")
+	if lines[0] != "version https://git-lfs.github.com/spec/v1" {
+		return false
+	}
+	oid, size := "", int64(-1)
+	for _, ln := range lines[1:] {
+		key, val, _ := strings.Cut(ln, " ")
+		switch key {
+		case "oid":
+			oid, _ = strings.CutPrefix(val, "sha256:")
+		case "size":
+			if n, err := strconv.ParseInt(val, 10, 64); err == nil {
+				size = n
+			}
+		}
+	}
+	if size != int64(len(data)) {
+		return false
+	}
+	sum := sha256.Sum256(data)
+	return oid == hex.EncodeToString(sum[:])
 }
 
 // reapAssets applies the plan's outcome to the source: deletes what nothing
