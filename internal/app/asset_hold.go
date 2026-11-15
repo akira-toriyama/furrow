@@ -155,13 +155,17 @@ func (p *assetPlan) outcome() (deleted []string, kept []KeptAsset) {
 // copyAssets lands every in-play asset in dst under its exact name. A copy dst
 // already has is the same file — a retry after an interrupted move, or the
 // copy a still-held asset earned from an earlier move of another holder — so
-// the overwrite changes nothing but a hand edit or git's line endings:
-// refuseAssetClash has already refused a pair whose owner id both stores hold
-// with other content. One route still writes over a different file: an owner
-// in both stores whose board copy re-attached under a name archive/ holds,
-// then removed with rm while another body keeps the file, leaves that name to
-// an owner in one store (kept by t-erd6; attach skipping the names archive/
-// holds would close it at the source).
+// the overwrite changes nothing but a hand edit or a text file's line
+// endings: refuseAssetClash has already refused a pair whose owner id both
+// stores hold with other content. One route still writes over a different
+// file: an owner in both stores whose board copy re-attached under a name
+// archive/ holds, then removed with rm while another body keeps the file,
+// leaves that name to an owner in one store (kept by t-erd6; attach skipping
+// the names archive/ holds would close it at the source). One write is never
+// made: a source copy that is only the git-lfs pointer for the file dst holds
+// (lfsPointerFor) leaves dst's file in place, since writing it would swap the
+// file for its pointer — a different blob wherever dst's path is not
+// LFS-tracked, and a working tree without the bytes where it is.
 func copyAssets(src, dst assetSide, p *assetPlan) ([]string, error) {
 	copied := []string{}
 	for _, name := range p.inPlay {
@@ -169,12 +173,35 @@ func copyAssets(src, dst assetSide, p *assetPlan) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := dst.SaveAssetRaw(name, data); err != nil {
+		keep, err := lfsPointerFor(dst, name, data)
+		if err != nil {
 			return nil, err
+		}
+		if !keep {
+			if err := dst.SaveAssetRaw(name, data); err != nil {
+				return nil, err
+			}
 		}
 		copied = append(copied, name)
 	}
 	return copied, nil
+}
+
+// lfsPointerFor reports whether data is only the git-lfs pointer for the file
+// dst already holds under name. dst is read only when data has a pointer's
+// shape, so a move of real files costs no second read.
+func lfsPointerFor(dst assetSide, name string, data []byte) (bool, error) {
+	if len(data) >= 1024 || !bytes.HasPrefix(data, []byte(lfsPointerVersion)) {
+		return false, nil
+	}
+	have, err := dst.LoadAsset(name)
+	if fe := core.AsError(err); fe != nil && fe.Code == core.CodeNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return pointsTo(data, have), nil
 }
 
 // sharedIDs maps each id both indexes hold as loaded to whether it is one
@@ -277,12 +304,15 @@ func clashRefusal(clash []string, shared map[string]bool, verb string) error {
 	return core.Validationf(clash[0], "%s, so nothing was %s; %s, then re-run", what, verb, strings.Join(how, "; and "))
 }
 
-// sameAsset reports whether two copies of an asset hold one content, as git
-// sees it. Git's line-ending conversion (core.autocrlf) can check one copy out
-// with CRLF and leave furrow's write of the other with LF, so a copy with no
-// NUL byte — text, not an image — is compared with CRLF folded to LF. A
-// partial git-lfs checkout can leave one copy its pointer file while the
-// other holds the file it names, one blob to git (pointsTo).
+// sameAsset reports whether two copies of an asset count as one content for
+// the clash check: byte for byte, but for two differences furrow did not make.
+// Git's line-ending conversion (core.autocrlf) can check one copy out with
+// CRLF and leave furrow's write of the other with LF, so a copy with no NUL
+// byte — text, not an image — is compared with CRLF folded to LF; the fold
+// does not read git's config, so where git converts nothing the move may
+// still change a file's line endings. And a partial git-lfs checkout can
+// leave one copy the pointer for the file the other holds (pointsTo), which
+// copyAssets never writes over that file.
 func sameAsset(a, b []byte) bool {
 	if bytes.Equal(a, b) || pointsTo(a, b) || pointsTo(b, a) {
 		return true
@@ -294,34 +324,21 @@ func sameAsset(a, b []byte) bool {
 	return bytes.Equal(bytes.ReplaceAll(a, crlf, lf), bytes.ReplaceAll(b, crlf, lf))
 }
 
-// pointsTo reports whether ptr is a git-lfs pointer file (spec v1) naming
-// exactly data: its sha256 oid and its size. The spec caps a pointer under
-// 1024 bytes; anything else is no pointer, so the bytes decide.
+// lfsPointerVersion opens every git-lfs pointer file (spec v1).
+const lfsPointerVersion = "version https://git-lfs.github.com/spec/v1\n"
+
+// pointsTo reports whether ptr is exactly the pointer git-lfs writes for data
+// — the version line, then data's sha256 oid and size, the bytes a partial
+// checkout leaves in the working tree and `git lfs pointer --file` prints.
+// Any other bytes are no pointer for data: git-lfs rejects a malformed one
+// and stores a non-canonical one as content, a different blob.
 func pointsTo(ptr, data []byte) bool {
-	if len(ptr) >= 1024 {
-		return false
-	}
-	lines := strings.Split(strings.TrimSuffix(strings.ReplaceAll(string(ptr), "\r\n", "\n"), "\n"), "\n")
-	if lines[0] != "version https://git-lfs.github.com/spec/v1" {
-		return false
-	}
-	oid, size := "", int64(-1)
-	for _, ln := range lines[1:] {
-		key, val, _ := strings.Cut(ln, " ")
-		switch key {
-		case "oid":
-			oid, _ = strings.CutPrefix(val, "sha256:")
-		case "size":
-			if n, err := strconv.ParseInt(val, 10, 64); err == nil {
-				size = n
-			}
-		}
-	}
-	if size != int64(len(data)) {
+	size := "size " + strconv.Itoa(len(data)) + "\n"
+	if len(ptr) >= 1024 || !bytes.HasPrefix(ptr, []byte(lfsPointerVersion)) || !bytes.HasSuffix(ptr, []byte(size)) {
 		return false
 	}
 	sum := sha256.Sum256(data)
-	return oid == hex.EncodeToString(sum[:])
+	return string(ptr) == lfsPointerVersion+"oid sha256:"+hex.EncodeToString(sum[:])+"\n"+size
 }
 
 // reapAssets applies the plan's outcome to the source: deletes what nothing

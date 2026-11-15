@@ -724,11 +724,13 @@ func TestFinishedMoveKeepsArchivesProse(t *testing.T) {
 // A finished move's copy of an asset the task owns can meet a different file
 // under its name: attach on the board's copy of a task in both stores checks
 // only the board's assets, so it can reuse a name archive/ still holds. Both
-// moves refuse that before writing. A difference git itself does not see is
-// no clash: a text file's line endings, or a git-lfs pointer one copy is left
-// as for the file the other holds. Otherwise a binary is compared byte for
-// byte.
+// moves refuse that before writing. Two differences furrow did not make are
+// no clash: a text file's line endings, and the git-lfs pointer a partial
+// checkout leaves for the file the other copy holds — in git-lfs's own bytes
+// only. A move then lands the file, never its pointer, whichever side holds
+// which. Otherwise a binary is compared byte for byte.
 func TestMoveRefusesAnAssetClash(t *testing.T) {
+	const file = "\x00PNG board"
 	lfsPointer := func(content string) string {
 		return fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%x\nsize %d\n", sha256.Sum256([]byte(content)), len(content))
 	}
@@ -736,12 +738,15 @@ func TestMoveRefusesAnAssetClash(t *testing.T) {
 		name            string
 		archived, board string
 		refused         bool
+		kept            string // what the destination holds after either move; "" = the source's copy
 	}{
-		{"other content", "the archived bytes", "bytes attached on the board since", true},
-		{"text whose line endings alone differ", "line one\nline two\n", "line one\r\nline two\r\n", false},
-		{"binary whose line endings alone differ", "\x00\x01line\n", "\x00\x01line\r\n", true},
-		{"a git-lfs pointer for the board's file", lfsPointer("\x00PNG board"), "\x00PNG board", false},
-		{"a git-lfs pointer for another file of that size", lfsPointer("\x00PNG other"), "\x00PNG board", true},
+		{"other content", "the archived bytes", "bytes attached on the board since", true, ""},
+		{"text whose line endings alone differ", "line one\nline two\n", "line one\r\nline two\r\n", false, ""},
+		{"binary whose line endings alone differ", "\x00\x01line\n", "\x00\x01line\r\n", true, ""},
+		{"archive/'s copy a git-lfs pointer for the board's file", lfsPointer(file), file, false, file},
+		{"the board's copy a git-lfs pointer for archive/'s file", file, lfsPointer(file), false, file},
+		{"a git-lfs pointer for another file of that size", lfsPointer("\x00PNG other"), file, true, ""},
+		{"a pointer for the file in other bytes than git-lfs writes", strings.ReplaceAll(lfsPointer(file), "\n", "\r\n"), file, true, ""},
 	} {
 		for _, verb := range []string{"archive", "unarchive"} {
 			t.Run(c.name+"/"+verb, func(t *testing.T) {
@@ -778,7 +783,18 @@ func TestMoveRefusesAnAssetClash(t *testing.T) {
 				}
 				if !c.refused {
 					if err != nil {
-						t.Fatalf("%s = %v; a line-ending difference in a text asset is no clash", verb, err)
+						t.Fatalf("%s = %v; %s is no clash", verb, err, c.name)
+					}
+					var dst assetSide = arc
+					want := c.board
+					if verb == "unarchive" {
+						dst, want = a.Store, c.archived
+					}
+					if c.kept != "" {
+						want = c.kept
+					}
+					if got, err := dst.LoadAsset(att.Name); err != nil || string(got) != want {
+						t.Errorf("destination's %s = %q (%v); want %q", att.Name, got, err, want)
 					}
 					return
 				}
@@ -1369,6 +1385,83 @@ func TestFinishedMoveCopiesAHeldAssetAsBefore(t *testing.T) {
 				t.Errorf("destination's %s = %q (%v); want the moving side's %q", att.Name, got, err, replaced)
 			}
 		})
+	}
+}
+
+// A move never writes a git-lfs pointer over the file it names, fresh moves
+// included: a partial checkout can leave the moving side's copy the pointer
+// while the other store holds the file for a body there, and the write would
+// swap the file for its pointer — a different blob wherever that path is not
+// LFS-tracked. The base wrote it. A pointer for another file, or one the
+// destination has no file for, lands as the base landed it.
+func TestMoveNeverWritesAGitLFSPointerOverItsFile(t *testing.T) {
+	const file, other = "\x00PNG the real bytes", "\x00PNG other bytes!!"
+	pointer := func(content string) string {
+		return fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%x\nsize %d\n", sha256.Sum256([]byte(content)), len(content))
+	}
+	for _, c := range []struct {
+		name   string
+		held   bool   // the destination holds a copy of the file for a body there
+		moving string // the moving side's copy, left by a partial checkout
+		want   string // the destination's copy after the move
+	}{
+		{"the pointer for the destination's file", true, pointer(file), file},
+		{"a pointer for another file", true, pointer(other), pointer(other)},
+		{"a pointer the destination has no file for", false, pointer(file), pointer(file)},
+	} {
+		for _, verb := range []string{"archive", "unarchive"} {
+			t.Run(c.name+"/"+verb, func(t *testing.T) {
+				a := newFSApp(t)
+				owner, err := a.Add("owner", AddOpts{Status: "done"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				att, err := a.Attach(owner.ID, "pic.png", []byte(file))
+				if err != nil {
+					t.Fatal(err)
+				}
+				viewer, err := a.Add("viewer", AddOpts{Status: "done"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if c.held {
+					if err := a.Store.SaveBody(viewer.ID, "# viewer\n\n![pic]("+core.AssetRef(att.Name)+")\n"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				arc, err := a.archiveStore()
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Where held, one store keeps the owner's file for the viewer's
+				// body and the other takes a copy; the moving side's copy is
+				// then what a partial checkout left.
+				first, src, dst := viewer.ID, assetSide(a.Store), assetSide(arc)
+				if verb == "unarchive" {
+					first, src, dst = owner.ID, arc, a.Store
+				}
+				if verb == "unarchive" || c.held {
+					if _, err := a.ArchiveIDs([]string{first}, false); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := src.SaveAssetRaw(att.Name, []byte(c.moving)); err != nil {
+					t.Fatal(err)
+				}
+
+				if verb == "archive" {
+					_, err = a.ArchiveIDs([]string{owner.ID}, false)
+				} else {
+					_, err = a.Unarchive([]string{owner.ID})
+				}
+				if err != nil {
+					t.Fatalf("a fresh %s of %s: %v", verb, owner.ID, err)
+				}
+				if got, err := dst.LoadAsset(att.Name); err != nil || string(got) != c.want {
+					t.Errorf("destination's %s = %q (%v); want %q", att.Name, got, err, c.want)
+				}
+			})
+		}
 	}
 }
 

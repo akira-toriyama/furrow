@@ -69,7 +69,7 @@ func TestSameTask(t *testing.T) {
 		a, b Task
 		want bool
 	}{
-		{"one task, edited since", Task{ID: "t-ksee", Title: "before", Created: at}, Task{ID: "t-ksee", Title: "after", Created: at}, true},
+		{"one task, retitled and reopened since", Task{ID: "t-ksee", Title: "before", Status: "done", Closed: &at, Created: at, Updated: at}, Task{ID: "t-ksee", Title: "after", Status: "backlog", Created: at, Updated: at.Add(time.Hour)}, true},
 		{"two tasks under one id", Task{ID: "t-ksee", Created: at}, Task{ID: "t-ksee", Created: at.AddDate(0, -3, 0)}, false},
 		{"neither stamped", Task{ID: "t-ksee"}, Task{ID: "t-ksee"}, false},
 	} {

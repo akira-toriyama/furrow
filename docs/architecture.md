@@ -324,9 +324,9 @@ and unarchive refuse an id the board and `archive/` hold as two different
 tasks, and finish the move when it is one task an interruption left in both
 (`core.SameTask`), refusing instead where that would drop a line of
 `archive/`'s body, its title heading aside; while an id sits in both, any
-move carrying an asset it owns refuses where the two copies differ as git
-sees them. Ids are **frozen** (never reused or renumbered); legacy numeric
-ids coexist. The clash handling is
+move carrying an asset it owns refuses where the two copies differ, a text
+file's line endings and a git-lfs pointer for the other copy aside. Ids are
+**frozen** (never reused or renumbered); legacy numeric ids coexist. The clash handling is
 `fsstore.NextID`'s doc comment.
 
 ### memstore
@@ -385,7 +385,8 @@ The invariants the funnel keeps, beyond what each verb's `--help` promises:
   boxes), so they never nest.
 - **Assets move by one rule** (`asset_hold.go`, shared by archive / unarchive /
   rm): a store loses a file only when nothing remaining there holds it — no
-  remaining body shows it, no remaining entity owns it. Planned before any
+  remaining body shows it, no remaining entity owns it — and a move never
+  writes a git-lfs pointer over the file it names. Planned before any
   write, applied after both indexes are durable, so a run stopped between the
   two saves is finished by its re-run; the move docs name the leftovers of
   the other stops, some of which nothing clears.
