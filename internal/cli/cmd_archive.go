@@ -58,8 +58,8 @@ func newArchiveCmd() *cobra.Command {
 			"an older layout (kind schema-upgrade-required) or a duplicate id\n" +
 			"(validation) — refuses the whole call before anything moves, and so does\n" +
 			"an id archive/ already holds as a DIFFERENT task (validation: give one of\n" +
-			"them its own id by hand, renaming its `<id>-` assets and the links to\n" +
-			"them with it). The same task there is a move an interruption\n" +
+			"them its own id by hand, carrying everything that names it, which the\n" +
+			"error lists). The same task there is a move an interruption\n" +
 			"left half done, and the call finishes it with the hot copy: archive/ keeps\n" +
 			"its own body when the hot one is blank, and the call is refused\n" +
 			"(validation) when the hot body drops a line archive/'s has (its title\n" +

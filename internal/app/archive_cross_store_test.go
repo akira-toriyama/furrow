@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/akira-toriyama/furrow/v10/internal/core"
+	"github.com/akira-toriyama/furrow/v10/internal/store/fsstore"
 )
 
 // scriptedIDs is a store whose NextID hands out ids in the given order, so a
@@ -204,7 +205,7 @@ func TestMoveRefusesADifferentTaskUnderTheID(t *testing.T) {
 				_, err = b.a.Unarchive([]string{moving})
 			}
 			fe := core.AsError(err)
-			if fe == nil || fe.Kind != core.KindValidation || fe.Subject != moving || !strings.Contains(fe.Msg, "duplicate-id") || !strings.Contains(fe.Msg, "renaming its `<id>-` assets and the links to them") {
+			if fe == nil || fe.Kind != core.KindValidation || fe.Subject != moving || !strings.Contains(fe.Msg, "duplicate-id") || !strings.Contains(fe.Msg, reIDRepair) {
 				t.Fatalf("%s %s = %v; want a validation refusal naming it, the repair with its assets, and lint's duplicate-id", verb, moving, err)
 			}
 			if after := boardBytes(t, b.a.Dir); !maps.Equal(before, after) {
@@ -325,18 +326,18 @@ func TestUnarchiveRetryJournalsTheRemnantBody(t *testing.T) {
 // duplicate-id spans the two stores (t-erd6), worded for the state, since the
 // ways out differ: two tasks under one id need a hand repair that renames the
 // re-id'd task's assets too, and one task in both is an interrupted move that
-// either command finishes, or refuses until a hand merge where the copies
-// diverged.
+// either command finishes, or refuses until a hand merge while the board's
+// body lacks one of archive/'s lines or an owned asset differs.
 func TestLintFlagsAnIDInBothStores(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		want []string
 		hot  func(t *testing.T, arc plantable, id string) (core.Task, string)
 	}{
-		{"two tasks", []string{"two different tasks", "its `<id>-` assets and the links to them renamed with it"}, func(t *testing.T, arc plantable, id string) (core.Task, string) {
+		{"two tasks", []string{"two different tasks", "refuse it until it is repaired: " + reIDRepair}, func(t *testing.T, arc plantable, id string) (core.Task, string) {
 			return impostor(findIn(t, arc, id)), "# another task\n"
 		}},
-		{"one task", []string{"stopped between its two writes", "the move refuses, naming the hand merge"}, func(t *testing.T, arc plantable, id string) (core.Task, string) {
+		{"one task", []string{"stopped between its two writes", "each refusing instead, naming the hand merge, while the board's body lacks a line of archive/'s (its title aside) or an asset the id owns holds other bytes on each side"}, func(t *testing.T, arc plantable, id string) (core.Task, string) {
 			return findIn(t, arc, id), "# thing\n"
 		}},
 	} {
@@ -860,7 +861,7 @@ func TestMoveRefusesAClashWhileTheOwnerIsInBothStores(t *testing.T) {
 			}
 			advice := "add a link to the new name beside the old one"
 			if c.twoTasks {
-				advice = owner.ID + " names two tasks (`furrow lint` flags it as duplicate-id): give one of them its own id by hand, renaming its `<id>-` assets"
+				advice = owner.ID + " names two tasks (`furrow lint` flags it as duplicate-id): " + reIDRepair
 			}
 			fe := core.AsError(err)
 			if fe == nil || fe.Kind != core.KindValidation || fe.Subject != att.Name || !strings.Contains(fe.Msg, advice) {
@@ -1031,12 +1032,217 @@ func TestAssetClashAdviceLetsTheReRunKeepBoth(t *testing.T) {
 	}
 }
 
+// The asset-clash refusal's advice per owner kind, worded once per owner id,
+// each kind naming its own files when one call meets both: an advice that left
+// one kind out would refuse the re-run again with the other.
+func TestClashRefusalAdvice(t *testing.T) {
+	const one, two, other = "t-aaaaa", "t-bbbbb", "t-ccccc"
+	shared := map[string]bool{one: true, two: false, other: false}
+	oneTask := "rename the board's copy by hand and, in each board body that links it, add a link to the new name beside the old one"
+	for _, c := range []struct {
+		name   string
+		clash  []string
+		want   []string
+		reject []string
+	}{
+		{"one file of one task", []string{one + "-a.png"},
+			[]string{"bodies/assets/" + one + "-a.png differs between the board and archive/ under one name", "; " + oneTask + " (a finished move refuses a body that drops a line), then re-run"},
+			[]string{"names two tasks", "for bodies/assets/"}},
+		{"two files of one task", []string{one + "-a.png", one + "-b.png"},
+			[]string{"differ between the board and archive/, each under one name", "rename the board's copies by hand and, in each board body that links one, add a link to its new name beside the old one"},
+			[]string{"names two tasks"}},
+		{"two files under an id that names two tasks", []string{two + "-a.png", two + "-b.png"},
+			[]string{"; " + two + " names two tasks (`furrow lint` flags it as duplicate-id): " + reIDRepair + ", then re-run"},
+			[]string{"each name two tasks", "rename the board's cop"}},
+		{"two ids that name two tasks", []string{two + "-a.png", other + "-a.png"},
+			[]string{"; " + two + ", " + other + " each name two tasks (`furrow lint` flags them as duplicate-id): for each, " + reIDRepair},
+			[]string{"rename the board's cop"}},
+		{"one task and two tasks in one call", []string{one + "-a.png", two + "-a.png"},
+			[]string{"; for bodies/assets/" + one + "-a.png, " + oneTask, "; and " + two + " names two tasks (`furrow lint` flags it as duplicate-id): " + reIDRepair + ", then re-run"},
+			nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fe := core.AsError(clashRefusal(c.clash, shared, "restored"))
+			if fe == nil || fe.Kind != core.KindValidation || fe.Subject != c.clash[0] || !strings.Contains(fe.Msg, "so nothing was restored") {
+				t.Fatalf("clashRefusal = %v; want a validation refusal about %s", fe, c.clash[0])
+			}
+			for _, w := range c.want {
+				if !strings.Contains(fe.Msg, w) {
+					t.Errorf("message lacks %q:\n%s", w, fe.Msg)
+				}
+			}
+			for _, r := range c.reject {
+				if strings.Contains(fe.Msg, r) {
+					t.Errorf("message has %q:\n%s", r, fe.Msg)
+				}
+			}
+		})
+	}
+}
+
+// The id repair names everything a re-id has to carry; each part is a way a
+// shorter repair failed (reIDRepair's doc), so the wording itself is pinned.
+// Several clashing ids get it once, for each.
+func TestIDRepairWording(t *testing.T) {
+	for _, w := range []string{
+		"give one of them its own id by hand, carrying everything that names it:",
+		"its shard, body and `<id>-` assets",
+		"every dep, `[[id]]` link and asset link that means it",
+		"in both copies of a task that sits in both stores",
+	} {
+		if !strings.Contains(reIDRepair, w) {
+			t.Errorf("reIDRepair lacks %q", w)
+		}
+	}
+	now := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	held := []core.Task{{ID: "t-aaaaa", Created: now}, {ID: "t-bbbbb", Created: now}}
+	moving := []core.Task{{ID: "t-bbbbb", Created: now.Add(time.Hour)}, {ID: "t-aaaaa", Created: now.Add(time.Hour)}}
+	fe := core.AsError(refuseIDClash(moving, &core.Index{Tasks: held}, "in archive/", "archived"))
+	want := "task ids t-aaaaa, t-bbbbb already name a different task in archive/ — the move would write one over the other, so nothing was archived; for each, " + reIDRepair + " — `furrow lint` flags it as duplicate-id"
+	if fe == nil || fe.Kind != core.KindValidation || fe.Subject != "t-aaaaa" || fe.Msg != want {
+		t.Errorf("refuseIDClash = %v;\nwant %q", fe, want)
+	}
+}
+
+// The body-loss refusal is worded for one id or several.
+func TestBodyLossRefusalWording(t *testing.T) {
+	for _, c := range []struct {
+		ids  []string
+		want string
+	}{
+		{[]string{"t-aaaaa"}, "the board's body of t-aaaaa lacks lines archive/'s copy has, its title aside — "},
+		{[]string{"t-bbbbb", "t-aaaaa"}, "the board's bodies of t-aaaaa, t-bbbbb lack lines archive/'s copies have, their titles aside — "},
+	} {
+		if fe := core.AsError(refuseBodyLoss(c.ids, "archived")); fe == nil || !strings.Contains(fe.Msg, c.want) {
+			t.Errorf("refuseBodyLoss(%v) = %v; want it to say %q", c.ids, fe, c.want)
+		}
+	}
+}
+
+// reIDArchived does the repair reIDRepair asks for, on archive/'s side: the
+// task under old takes the id next, carrying its shard, body and old- assets,
+// and every archive/ body's link to them or to [[old]].
+func reIDArchived(t *testing.T, arc *fsstore.Store, old, next string) {
+	t.Helper()
+	idx, err := arc.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk, _ := idx.Find(old)
+	if tk == nil {
+		t.Fatalf("%s is not in archive/", old)
+	}
+	tk.ID = next
+	if err := arc.Save(idx); err != nil {
+		t.Fatal(err)
+	}
+	body, err := arc.LoadBody(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := arc.SaveBody(next, body); err != nil {
+		t.Fatal(err)
+	}
+	if err := arc.DeleteBody(old); err != nil {
+		t.Fatal(err)
+	}
+	assets, err := arc.ListAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, as := range assets {
+		if !strings.HasPrefix(as.Name, old+"-") {
+			continue
+		}
+		data, err := arc.LoadAsset(as.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := arc.SaveAssetRaw(next+strings.TrimPrefix(as.Name, old), data); err != nil {
+			t.Fatal(err)
+		}
+		if err := arc.DeleteAsset(as.Name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids, err := arc.ListBodyIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		b, err := arc.LoadBody(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if nb := strings.NewReplacer("assets/"+old+"-", "assets/"+next+"-", "[["+old+"]]", "[["+next+"]]").Replace(b); nb != b {
+			if err := arc.SaveBody(id, nb); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// Under an id that names two tasks, the repair the refusal asks for keeps
+// both files: once archive/'s task carries its own id, its file goes with it,
+// the guard has nothing left to refuse, and the viewer's restore brings that
+// file back under the new name beside the board task's own.
+func TestTwoTaskAdviceLetsTheReRunKeepBoth(t *testing.T) {
+	a := newFSApp(t)
+	owner, err := a.Add("owner", AddOpts{Status: "done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	att, err := a.Attach(owner.ID, "pic.png", []byte("PNG\x00the archived task's"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := a.Add("viewer", AddOpts{Status: "done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Store.SaveBody(viewer.ID, "# viewer\n\n![pic]("+core.AssetRef(att.Name)+") of [["+owner.ID+"]]\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ArchiveIDs([]string{owner.ID, viewer.ID}, false); err != nil {
+		t.Fatal(err)
+	}
+	arc, err := a.archiveStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plantShard(t, a.Store, impostor(findIn(t, arc, owner.ID)))
+	if again, err := a.Attach(owner.ID, "pic.png", []byte("PNG\x00the board task's")); err != nil || again.Name != att.Name {
+		t.Fatalf("attach = %+v, %v; want it to reuse %s", again, err, att.Name)
+	}
+	if _, err := a.Unarchive([]string{viewer.ID}); !strings.Contains(fmt.Sprint(err), reIDRepair) {
+		t.Fatalf("unarchive = %v; want the refusal asking for the id repair", err)
+	}
+
+	const next = "t-zzzz9"
+	reIDArchived(t, arc, owner.ID, next)
+	if dup := problemsWithCode(mustLint(t, a), "duplicate-id"); len(dup) != 0 {
+		t.Fatalf("duplicate-id after the repair = %+v", dup)
+	}
+	if _, err := a.Unarchive([]string{viewer.ID}); err != nil {
+		t.Fatalf("the re-run after the repair: %v", err)
+	}
+	moved := next + strings.TrimPrefix(att.Name, owner.ID)
+	for file, want := range map[string]string{att.Name: "PNG\x00the board task's", moved: "PNG\x00the archived task's"} {
+		if got, err := a.Store.LoadAsset(file); err != nil || string(got) != want {
+			t.Errorf("the board's %s = %q (%v); want %q", file, got, err, want)
+		}
+	}
+	if body, err := a.Store.LoadBody(viewer.ID); err != nil || !strings.Contains(body, core.AssetRef(moved)) || !strings.Contains(body, "[["+next+"]]") {
+		t.Errorf("the viewer's body = %q (%v); want its links on %s", body, err, next)
+	}
+}
+
 // An asset only the source holds is no clash, so a finished move copies it
 // across: one attached on the board's copy since, or one left behind when the
 // shard and body were copied back by hand.
 //
 // bite-exempt: the base copied it too; it pins the asset check's pass over a
-// destination that lacks the file, which no other test reaches.
+// destination that lacks the file.
 func TestFinishedMoveCopiesAnAssetOnlyTheSourceHolds(t *testing.T) {
 	for _, verb := range []string{"archive", "unarchive"} {
 		t.Run(verb, func(t *testing.T) {

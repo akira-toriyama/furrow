@@ -23,12 +23,13 @@ func newUnarchiveCmd() *cobra.Command {
 			"restore); a task whose dependency stays archived is exit 2 (kind\n" +
 			"referenced, the edges in details.references.deps) — restore them together\n" +
 			"or drop the edge first, since a restored dependent of an archived id reads\n" +
-			"as blocked and lint raises dep-missing. Guarded like every task write\n" +
+			"as blocked and lint raises dep-missing; finishing an interrupted move adds\n" +
+			"no edge, so it skips this check. Guarded like every task write\n" +
 			"(session-busy). Either store refusing its write — an older layout (kind\n" +
 			"schema-upgrade-required) or a duplicate id (validation) — refuses the\n" +
 			"whole call before anything moves, and so does an id the hot board already\n" +
 			"holds as a DIFFERENT task (validation: give one of them its own id by\n" +
-			"hand, renaming its `<id>-` assets and the links to them with it). The\n" +
+			"hand, carrying everything that names it, which the error lists). The\n" +
 			"same task on both sides is a move an interruption left half\n" +
 			"done: the call finishes it and the hot copy stays, edits since included.\n" +
 			"A blank hot body takes archive/'s, and the call is refused (validation)\n" +

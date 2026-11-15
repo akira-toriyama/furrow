@@ -398,6 +398,15 @@ func raiseMoveRefusals(hot core.Store, hotIdx *core.Index, arc core.Store, arcId
 	return core.CheckUniqueIDs(arcIdx)
 }
 
+// reIDRepair is the one hand repair for two tasks under one id, which every
+// refusal and lint finding that meets them asks for. Each thing it lists is a
+// way a shorter repair failed: a reference left on the old id silently names
+// the other task (no check sees it, the id still exists), `<id>-` assets left
+// under the old prefix take the id out of both stores while two files keep one
+// name (refuseAssetClash then stands down), and a body edited in one copy of a
+// task that sits in both stores trips the body rule on the re-run.
+const reIDRepair = "give one of them its own id by hand, carrying everything that names it: its shard, body and `<id>-` assets, and every dep, `[[id]]` link and asset link that means it, in both copies of a task that sits in both stores"
+
 // refuseIDClash refuses, before a move writes anything, an id the move brings
 // into dest that dest already holds as a DIFFERENT task (core.SameTask). Each
 // index alone is unique, so no Save objects, and the move went on to keep one
@@ -421,13 +430,13 @@ func refuseIDClash(moving []core.Task, dest *core.Index, where, verb string) err
 		return nil
 	}
 	slices.Sort(clash)
-	ids, names := "id "+clash[0], "names"
+	ids, names, repair := "id "+clash[0], "names", reIDRepair
 	if len(clash) > 1 {
-		ids, names = "ids "+strings.Join(clash, ", "), "name"
+		ids, names, repair = "ids "+strings.Join(clash, ", "), "name", "for each, "+reIDRepair
 	}
 	return core.Validationf(clash[0],
-		"task %s already %s a different task %s — the move would write one over the other, so nothing was %s; repair it by hand (give one of them its own id, renaming its `<id>-` assets and the links to them with it) — `furrow lint` flags it as duplicate-id",
-		ids, names, where, verb)
+		"task %s already %s a different task %s — the move would write one over the other, so nothing was %s; %s — `furrow lint` flags it as duplicate-id",
+		ids, names, where, verb, repair)
 }
 
 // pickFinishedBody chooses whose body a finished move keeps for one task the
@@ -489,12 +498,12 @@ func holdsProse(board, archived string) bool {
 // anything is written.
 func refuseBodyLoss(ids []string, verb string) error {
 	slices.Sort(ids)
-	which := "body of " + ids[0] + " lacks lines archive/'s copy has"
+	which := "body of " + ids[0] + " lacks lines archive/'s copy has, its title aside"
 	if len(ids) > 1 {
-		which = "bodies of " + strings.Join(ids, ", ") + " lack lines archive/'s copies have"
+		which = "bodies of " + strings.Join(ids, ", ") + " lack lines archive/'s copies have, their titles aside"
 	}
 	return core.Validationf(ids[0],
-		"the board's %s, its title aside — finishing the move would drop them, so nothing was %s; copy them from archive/bodies/<id>.md into the board's (`furrow edit <id>`), or delete them there if they were dropped on purpose, then re-run",
+		"the board's %s — finishing the move would drop them, so nothing was %s; copy them from archive/bodies/<id>.md into the board's (`furrow edit <id>`), or delete them there if they were dropped on purpose, then re-run",
 		which, verb)
 }
 

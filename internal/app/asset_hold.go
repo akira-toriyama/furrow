@@ -154,7 +154,11 @@ func (p *assetPlan) outcome() (deleted []string, kept []KeptAsset) {
 // copy a still-held asset earned from an earlier move of another holder — so
 // the overwrite changes nothing but a hand edit or git's line endings:
 // refuseAssetClash has already refused a pair whose owner id both stores hold
-// with other content.
+// with other content. One route still writes over a different file: an owner
+// in both stores whose board copy re-attached under a name archive/ holds,
+// then removed with rm while another body keeps the file, leaves that name to
+// an owner in one store (kept by t-erd6; attach skipping the names archive/
+// holds would close it at the source).
 func copyAssets(src, dst assetSide, p *assetPlan) ([]string, error) {
 	copied := []string{}
 	for _, name := range p.inPlay {
@@ -191,16 +195,16 @@ func sharedIDs(hot, arc *core.Index) map[string]bool {
 // asset whose owner (its "<id>-" prefix) is in shared, the ids both stores
 // hold, already sits in dst with other content. Attach is a name's only
 // writer, and it runs on the board, never reusing a name the board has: while
-// the owner is in one store, an asset on both sides is one file twice, and
-// copyAssets' overwrite is idempotent — a move keeps overwriting such a pair
-// as it always did, even one whose copy was replaced by hand. With the owner
-// in both stores, attach on the board's copy can reuse a name archive/ still
-// holds, and any move that carries the file would write one over the other:
-// the owner's own, or that of another task whose body shows it. The way out
-// the refusal names differs: one task keeps both files once the board's copy
-// takes another name, while two tasks under one id need the id repair first,
-// which renames the re-id'd task's files — a repair that left them under the
-// old prefix would take its id out of shared and the guard with it.
+// the owner is in one store, an asset on both sides is one file twice — bar a
+// hand edit and the one route copyAssets names — and a move keeps overwriting
+// such a pair as it always did. With the owner in both stores, attach on the
+// board's copy can reuse a name archive/ still holds, and any move that
+// carries the file would write one over the other: the owner's own, or that
+// of another task whose body shows it. The way out the refusal names differs:
+// one task keeps both files once the board's copy takes another name, while
+// two tasks under one id need the id repair first, which renames the re-id'd
+// task's files — a repair that left them under the old prefix would take its
+// id out of shared and the guard with it.
 func refuseAssetClash(src, dst assetSide, p *assetPlan, shared map[string]bool, verb string) error {
 	var clash []string
 	for _, name := range p.inPlay {
@@ -225,27 +229,49 @@ func refuseAssetClash(src, dst assetSide, p *assetPlan, shared map[string]bool, 
 	if len(clash) == 0 {
 		return nil
 	}
+	return clashRefusal(clash, shared, verb)
+}
+
+// clashRefusal words refuseAssetClash's refusal for the clashing names: the
+// one-task way out for a name whose owner is one task in both stores, the id
+// repair for one whose owner id names two tasks, and both, each naming its
+// files, when one call meets both — a refusal that gave one would refuse the
+// re-run again with the other.
+func clashRefusal(clash []string, shared map[string]bool, verb string) error {
 	paths := make([]string, len(clash))
+	var single []string   // paths whose owner is one task in both stores
 	var twoTasks []string // owner ids that name two tasks, in clash order
 	for i, name := range clash {
 		paths[i] = core.AssetPath(name)
-		if owner := assetOwnerIn(name, shared); !shared[owner] && !slices.Contains(twoTasks, owner) {
+		switch owner := assetOwnerIn(name, shared); {
+		case shared[owner]:
+			single = append(single, paths[i])
+		case !slices.Contains(twoTasks, owner):
 			twoTasks = append(twoTasks, owner)
 		}
 	}
 	what := paths[0] + " differs between the board and archive/ under one name — the move would write one copy over the other"
-	how := "rename the board's copy by hand and, in each board body that links it, add a link to the new name beside the old one (a finished move refuses a body that drops a line), then re-run"
 	if len(clash) > 1 {
 		what = strings.Join(paths, ", ") + " differ between the board and archive/, each under one name — the move would write one copy of each over the other"
-		how = "rename the board's copies by hand and, in each board body that links one, add a link to its new name beside the old one (a finished move refuses a body that drops a line), then re-run"
+	}
+	var how []string
+	if len(single) > 0 {
+		h := "rename the board's copy by hand and, in each board body that links it, add a link to the new name beside the old one (a finished move refuses a body that drops a line)"
+		if len(single) > 1 {
+			h = "rename the board's copies by hand and, in each board body that links one, add a link to its new name beside the old one (a finished move refuses a body that drops a line)"
+		}
+		if len(twoTasks) > 0 {
+			h = "for " + strings.Join(single, ", ") + ", " + h
+		}
+		how = append(how, h)
 	}
 	switch {
 	case len(twoTasks) == 1:
-		how = twoTasks[0] + " names two tasks (`furrow lint` flags it as duplicate-id): give one of them its own id by hand, renaming its `<id>-` assets and the links to them with it, then re-run"
+		how = append(how, twoTasks[0]+" names two tasks (`furrow lint` flags it as duplicate-id): "+reIDRepair)
 	case len(twoTasks) > 1:
-		how = strings.Join(twoTasks, ", ") + " each name two tasks (`furrow lint` flags them as duplicate-id): give one task under each its own id by hand, renaming its `<id>-` assets and the links to them with it, then re-run"
+		how = append(how, strings.Join(twoTasks, ", ")+" each name two tasks (`furrow lint` flags them as duplicate-id): for each, "+reIDRepair)
 	}
-	return core.Validationf(clash[0], "%s, so nothing was %s; %s", what, verb, how)
+	return core.Validationf(clash[0], "%s, so nothing was %s; %s, then re-run", what, verb, strings.Join(how, "; and "))
 }
 
 // sameAsset reports whether two copies of an asset hold one content. Git's
