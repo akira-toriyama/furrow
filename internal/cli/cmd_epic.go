@@ -272,6 +272,12 @@ func newEpicSetCmd() *cobra.Command {
 		Use:   "set <epic>",
 		Short: "Edit an epic's title, goal, meta, labels, repos, anchor day, successor, or its standing/pinned declarations",
 		Long: "Edit a box's metadata.\n\n" +
+			"--title renames the box, and the body's leading `# ` heading follows\n" +
+			"while it still reads the old title (the line `epic add` seeds). Any other\n" +
+			"heading is left alone — hand-written, or a title an older rename left\n" +
+			"behind; furrow cannot tell them apart, so fix a stale one in the body\n" +
+			"(`furrow edit <epic>`) — as is a body with no leading heading. A task's\n" +
+			"`retitle` differs: it rewrites the heading whatever it says.\n\n" +
 			"--anchor YYYY-MM-DD sets or MOVES the box's calendar day — the one date\n" +
 			"its derived dates count back from (an event, a release, a deadline).\n" +
 			"Tasks whose due follows it carry `anchor: <this epic>` (`furrow set\n" +
@@ -423,7 +429,7 @@ func newEpicSetCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&title, "title", "", "rename the epic")
+	cmd.Flags().StringVar(&title, "title", "", "rename the epic (the body's leading heading follows while it still reads the old title)")
 	cmd.Flags().StringVar(&goal, "goal", "", "set the closing condition (\"\" clears it)")
 	cmd.Flags().StringArrayVar(&meta, "meta", nil, "set a free-form key=value (repeatable)")
 	cmd.Flags().StringArrayVar(&rmMeta, "rm-meta", nil, "remove a meta key (repeatable)")
