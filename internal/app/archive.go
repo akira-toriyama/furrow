@@ -262,9 +262,10 @@ type UnarchiveReport struct {
 // of archive/'s (pickFinishedBody): a blank one — a shard brought back by
 // hand, or kept when resolving a sync conflict, then perhaps given edit's
 // empty placeholder — leaves archive/ its own, and one that lacks archive/'s
-// lines refuses the call (refuseBodyLoss), as does an asset the task owns
-// that the two sides hold with other content (refuseAssetClash). Under any
-// other task the id is refused before the first write (refuseIDClash).
+// lines refuses the call (refuseBodyLoss). Under any other task the id is
+// refused before the first write (refuseIDClash). Whatever the call moves, an
+// asset it carries whose owner id sits in both stores refuses the call where
+// the two copies differ (refuseAssetClash).
 func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*ArchiveReport, error) {
 	rep := &ArchiveReport{Tasks: moved, Assets: newAssetTransfer(), Held: []HeldTask{}}
 	if rep.Tasks == nil {
@@ -300,14 +301,12 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 	if err := refuseIDClash(moved, arcIdx, "in archive/", "archived"); err != nil {
 		return nil, err
 	}
-	finished := map[string]bool{}     // ids archive/ already holds: the same task (refuseIDClash)
 	keepArchived := map[string]bool{} // finished moves whose blank hot body leaves archive/ its own
 	var lossy []string
 	for _, t := range moved {
-		if !arcIdx.Has(t.ID) {
+		if !arcIdx.Has(t.ID) { // a fresh move; an id archive/ holds is the same task (refuseIDClash)
 			continue
 		}
-		finished[t.ID] = true
 		board, err := a.Store.LoadBody(t.ID)
 		if err != nil {
 			return nil, err
@@ -327,7 +326,7 @@ func (a *App) archiveMove(idx *core.Index, moved []core.Task, dryRun bool) (*Arc
 	if len(lossy) > 0 {
 		return nil, refuseBodyLoss(lossy, "archived")
 	}
-	if err := refuseAssetClash(a.Store, arc, plan, finished, "archived"); err != nil {
+	if err := refuseAssetClash(a.Store, arc, plan, sharedIDs(idx, arcIdx), "archived"); err != nil {
 		return nil, err
 	}
 	for _, t := range moved {
@@ -515,8 +514,9 @@ func idSet(tasks []core.Task) map[string]bool {
 // (details.missing), except an id only on the hot board, which is its own
 // validation error (there is nothing to restore). Duplicates collapse.
 //
-// A restored task comes back EXACTLY as archived — done lane, Closed stamp,
-// every field byte-preserved: restoring answers "put it back on the board",
+// A task the call restores comes back EXACTLY as archived — done lane, Closed
+// stamp, every field byte-preserved (one whose interrupted move it finishes
+// keeps its hot copy, below): restoring answers "put it back on the board",
 // and reopening is `furrow move <id> <lane>`'s job (which already clears
 // Closed on leaving the done lane). Same commit order as archiveMove, with the
 // stores swapped: the DESTINATION (hot) is persisted first — bodies, assets,
@@ -537,13 +537,13 @@ func idSet(tasks []core.Task) map[string]bool {
 // adds no edge to the board; and only archive/'s copy goes. The hot body is
 // rewritten from archive/'s while it is blank or still holds archive/'s bytes,
 // the ones the interrupted run wrote, and a hot body that lacks one of
-// archive/'s lines refuses the call (pickFinishedBody, refuseBodyLoss), as
-// does an asset the task owns that the two sides hold with other content
-// (refuseAssetClash). Under any other task the id is refused before the first
-// write (refuseIDClash). The asset half is the same rule as the outbound move,
-// read from archive/'s side: every asset a restored task owns or its body
-// shows comes back, and archive/ keeps its copy of any that an archived body
-// still points at (asset_hold.go).
+// archive/'s lines refuses the call (pickFinishedBody, refuseBodyLoss). Under
+// any other task the id is refused before the first write (refuseIDClash).
+// The asset half is the same rule as the outbound move, read from archive/'s
+// side: every asset a restored task owns or its body shows comes back,
+// archive/ keeps its copy of any that an archived body still points at
+// (asset_hold.go), and one whose owner id sits in both stores refuses the
+// call where the two copies differ (refuseAssetClash).
 func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	idx, err := a.load()
 	if err != nil {
@@ -654,7 +654,7 @@ func (a *App) Unarchive(ids []string) (*UnarchiveReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseAssetClash(arc, a.Store, plan, onBoard, "restored"); err != nil {
+	if err := refuseAssetClash(arc, a.Store, plan, sharedIDs(idx, arcIdx), "restored"); err != nil {
 		return nil, err
 	}
 	for _, t := range moved {

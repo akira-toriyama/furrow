@@ -774,54 +774,216 @@ func TestMoveRefusesAnAssetClash(t *testing.T) {
 	}
 }
 
-// The check covers the files the finished task owns, the ones attach can
-// reuse a name for. An asset its body shows but another task owns is a copy
-// that task's store holds, and the move writes over it as it always did.
-func TestFinishedMoveChecksOnlyItsOwnAssets(t *testing.T) {
-	a := newFSApp(t)
-	owner, err := a.Add("owner", AddOpts{Status: "done"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	att, err := a.Attach(owner.ID, "pic.png", []byte("the first bytes"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	viewer, err := a.Add("viewer", AddOpts{Status: "done"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := a.Store.SaveBody(viewer.ID, "# viewer\n\n![pic]("+core.AssetRef(att.Name)+")\n"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.ArchiveIDs([]string{viewer.ID}, false); err != nil {
-		t.Fatal(err)
-	}
-	arc, err := a.archiveStore()
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := arc.LoadBody(viewer.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plant(t, a.Store, findIn(t, arc, viewer.ID), body) // the viewer's interrupted move
-	const replaced = "bytes replaced by hand"
-	if err := a.Store.SaveAssetRaw(att.Name, []byte(replaced)); err != nil {
-		t.Fatal(err)
-	}
+// While an id sits in both stores its name can hold two files, so the check
+// follows the owner, not the call: a move of another task whose body shows
+// the file would write one over the other just the same, fresh or finished,
+// and so would one under an id that names two tasks. The refusal says which
+// copy to rename, so that a finished move of the owner then keeps both.
+func TestMoveRefusesAClashWhileTheOwnerIsInBothStores(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		verb     string
+		viewerOn string // where the viewer sits before the call: "board", "archive" or "both"
+		twoTasks bool   // the board's task under the owner's id is another task
+	}{
+		{"a fresh archive of a viewer", "archive", "board", false},
+		{"a fresh unarchive of a viewer", "unarchive", "archive", false},
+		{"a finished archive of a viewer", "archive", "both", false},
+		{"a finished unarchive of a viewer", "unarchive", "both", false},
+		{"a fresh unarchive of a viewer under an id that names two tasks", "unarchive", "archive", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a := newFSApp(t)
+			owner, err := a.Add("owner", AddOpts{Status: "done"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			att, err := a.Attach(owner.ID, "pic.png", []byte("PNG\x00the archived bytes"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			viewer, err := a.Add("viewer", AddOpts{Status: "done"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := a.Store.SaveBody(viewer.ID, "# viewer\n\n![pic]("+core.AssetRef(att.Name)+")\n"); err != nil {
+				t.Fatal(err)
+			}
+			retire := []string{owner.ID, viewer.ID}
+			if c.viewerOn == "board" {
+				retire = retire[:1]
+			}
+			if _, err := a.ArchiveIDs(retire, false); err != nil {
+				t.Fatal(err)
+			}
+			arc, err := a.archiveStore()
+			if err != nil {
+				t.Fatal(err)
+			}
+			back := findIn(t, arc, owner.ID) // the owner's shard, brought back by hand
+			if c.twoTasks {
+				back = impostor(back)
+			}
+			plantShard(t, a.Store, back)
+			if c.viewerOn == "both" {
+				body, err := arc.LoadBody(viewer.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				plant(t, a.Store, findIn(t, arc, viewer.ID), body)
+			}
+			const since = "PNG\x00bytes attached on the board since"
+			if c.viewerOn == "board" {
+				// The board kept its copy for the viewer, so attach would pick a
+				// new name: the board's copy is replaced by hand instead.
+				if err := a.Store.SaveAssetRaw(att.Name, []byte(since)); err != nil {
+					t.Fatal(err)
+				}
+			} else if again, err := a.Attach(owner.ID, "pic.png", []byte(since)); err != nil || again.Name != att.Name {
+				t.Fatalf("attach = %+v, %v; want it to reuse %s, the name archive/ holds", again, err, att.Name)
+			}
+			before := boardBytes(t, a.Dir)
 
-	if _, err := a.ArchiveIDs([]string{viewer.ID}, false); err != nil {
-		t.Fatalf("the viewer owns no asset that could clash: %v", err)
+			if c.verb == "archive" {
+				_, err = a.ArchiveIDs([]string{viewer.ID}, false)
+			} else {
+				_, err = a.Unarchive([]string{viewer.ID})
+			}
+			fe := core.AsError(err)
+			if fe == nil || fe.Kind != core.KindValidation || fe.Subject != att.Name || !strings.Contains(fe.Msg, "rename the board's copy") {
+				t.Fatalf("%s = %v; want the validation refusal about %s that says which copy to rename", c.verb, err, att.Name)
+			}
+			if !maps.Equal(before, boardBytes(t, a.Dir)) {
+				t.Errorf("the refused %s changed the board", c.verb)
+			}
+		})
 	}
-	if got, err := arc.LoadAsset(att.Name); err != nil || string(got) != replaced {
-		t.Errorf("archive/'s %s = %q (%v); want the board's %q", att.Name, got, err, replaced)
+}
+
+// An asset only the source holds is no clash, so a finished move copies it
+// across: one attached on the board's copy since, or one left behind when the
+// shard and body were copied back by hand.
+//
+// bite-exempt: the base copied it too; it pins the asset check's pass over a
+// destination that lacks the file, which no other test reaches.
+func TestFinishedMoveCopiesAnAssetOnlyTheSourceHolds(t *testing.T) {
+	for _, verb := range []string{"archive", "unarchive"} {
+		t.Run(verb, func(t *testing.T) {
+			a := newFSApp(t)
+			tk, err := a.Add("pictured", AddOpts{Status: "done"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, name := "the archived bytes", ""
+			if verb == "unarchive" {
+				att, err := a.Attach(tk.ID, "shot.png", []byte(want))
+				if err != nil {
+					t.Fatal(err)
+				}
+				name = att.Name
+			}
+			if _, err := a.ArchiveIDs([]string{tk.ID}, false); err != nil {
+				t.Fatal(err)
+			}
+			arc, err := a.archiveStore()
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := arc.LoadBody(tk.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plant(t, a.Store, findIn(t, arc, tk.ID), body) // copied back by hand, the assets left behind
+			var dst assetSide = a.Store
+			if verb == "archive" {
+				want, dst = "bytes attached on the board since", arc
+				att, err := a.Attach(tk.ID, "shot.png", []byte(want))
+				if err != nil {
+					t.Fatal(err)
+				}
+				name = att.Name
+			}
+
+			if verb == "archive" {
+				_, err = a.ArchiveIDs([]string{tk.ID}, false)
+			} else {
+				_, err = a.Unarchive([]string{tk.ID})
+			}
+			if err != nil {
+				t.Fatalf("a finished %s of %s: %v", verb, tk.ID, err)
+			}
+			if got, err := dst.LoadAsset(name); err != nil || string(got) != want {
+				t.Errorf("destination's %s = %q (%v); want %q", name, got, err, want)
+			}
+		})
+	}
+}
+
+// A finished move of a task whose body shows another task's file writes over
+// the destination's copy as a fresh move does, while that owner sits in one
+// store: the pair is one file twice, whatever a hand did to one copy.
+//
+// bite-exempt: it pins the base's behavior, which the asset check briefly
+// refused on every move.
+func TestFinishedMoveCopiesAHeldAssetAsBefore(t *testing.T) {
+	for _, verb := range []string{"archive", "unarchive"} {
+		t.Run(verb, func(t *testing.T) {
+			a := newFSApp(t)
+			owner, err := a.Add("owner", AddOpts{Status: "done"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			att, err := a.Attach(owner.ID, "pic.png", []byte("the first bytes"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			viewer, err := a.Add("viewer", AddOpts{Status: "done"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := a.Store.SaveBody(viewer.ID, "# viewer\n\n![pic]("+core.AssetRef(att.Name)+")\n"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := a.ArchiveIDs([]string{viewer.ID}, false); err != nil {
+				t.Fatal(err)
+			}
+			arc, err := a.archiveStore()
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := arc.LoadBody(viewer.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plant(t, a.Store, findIn(t, arc, viewer.ID), body) // the viewer's interrupted move
+			var src, dst assetSide = a.Store, arc
+			if verb == "unarchive" {
+				src, dst = arc, a.Store
+			}
+			const replaced = "bytes replaced by hand"
+			if err := src.SaveAssetRaw(att.Name, []byte(replaced)); err != nil {
+				t.Fatal(err)
+			}
+
+			if verb == "archive" {
+				_, err = a.ArchiveIDs([]string{viewer.ID}, false)
+			} else {
+				_, err = a.Unarchive([]string{viewer.ID})
+			}
+			if err != nil {
+				t.Fatalf("the owner sits in one store, so nothing can clash: %v", err)
+			}
+			if got, err := dst.LoadAsset(att.Name); err != nil || string(got) != replaced {
+				t.Errorf("destination's %s = %q (%v); want the moving side's %q", att.Name, got, err, replaced)
+			}
+		})
 	}
 }
 
 // A fresh move meets an asset already in the destination only as the copy
 // another body there holds, and keeps writing over it as it always did, even
-// when one side's file was replaced by hand: the check is the finished move's.
+// when one side's file was replaced by hand: its owner sits in one store, so
+// the pair is one file twice.
 //
 // bite-exempt: it pins the base's behavior, which the asset check briefly
 // refused on every move.
@@ -955,6 +1117,10 @@ func TestFinishedBodyRule(t *testing.T) {
 		{"no heading, so every line counts", "line two\n", "line one\nline two\n", false},
 		{"an H1 that is not the first line counts", "intro\n", "intro\n# Section\n", false},
 		{"an H1 below the title counts", "# prosy\n\nship it\n", "# prosy\n\n# Decision\nship it\n", false},
+		{"a ## first line is no title", "line\n", "## Context\nline\n", false},
+		{"a # with no space is no title", "line\n", "#123 follow-up\nline\n", false},
+		{"an indented line is another line", "# prosy\n\n- item\n", "# prosy\n\n  - item\n", false},
+		{"an indent on the board's side is another line too", "# prosy\n\n  - item\n", "# prosy\n\n- item\n", false},
 		{"a heading-only archive/ body", "anything at all\n", "# prosy\n", true},
 	} {
 		if got := holdsProse(c.board, c.archived); got != c.holds {

@@ -323,8 +323,9 @@ duplicate (`core.CheckUniqueIDs`, whose doc says why reads stay open); archive
 and unarchive refuse an id the board and `archive/` hold as two different
 tasks, and finish the move when it is one task an interruption left in both
 (`core.SameTask`), refusing instead where that would drop a line of
-`archive/`'s body or an asset. Ids are **frozen** (never reused or
-renumbered); legacy numeric ids coexist. The clash handling is
+`archive/`'s body; while an id sits in both, any move carrying an asset it
+owns refuses where the two copies differ. Ids are **frozen** (never reused
+or renumbered); legacy numeric ids coexist. The clash handling is
 `fsstore.NextID`'s doc comment.
 
 ### memstore

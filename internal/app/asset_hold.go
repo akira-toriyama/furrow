@@ -168,22 +168,34 @@ func copyAssets(src, dst assetSide, p *assetPlan) ([]string, error) {
 	return copied, nil
 }
 
-// refuseAssetClash refuses a finished move before it writes anything when an
-// in-play asset that a finished task owns (its "<id>-" prefix, finished being
-// the ids the move finds on both sides) already sits in dst with other
-// content. Names are unique within a store (attach never overwrites), so an
-// asset on both sides is one file twice and copyAssets' overwrite is
-// idempotent — except for a task on both sides: attach on the board's copy
-// checks only the board's assets, so it can reuse a name archive/ still holds,
-// and the copy would write one file over the other. A fresh move keeps
-// overwriting as it always did: its pairs are copies another body holds.
-func refuseAssetClash(src, dst assetSide, p *assetPlan, finished map[string]bool, verb string) error {
-	if len(finished) == 0 {
-		return nil
+// sharedIDs is the set of ids both indexes hold as loaded: a task an
+// interrupted move left in both stores, or two tasks under one id
+// (refuseIDClash tells them apart).
+func sharedIDs(hot, arc *core.Index) map[string]bool {
+	inArc := idSet(arc.Tasks)
+	shared := map[string]bool{}
+	for i := range hot.Tasks {
+		if inArc[hot.Tasks[i].ID] {
+			shared[hot.Tasks[i].ID] = true
+		}
 	}
+	return shared
+}
+
+// refuseAssetClash refuses a move before it writes anything when an in-play
+// asset whose owner (its "<id>-" prefix) is in shared, the ids both stores
+// hold, already sits in dst with other content. Attach is a name's only
+// writer, and it runs on the board, never reusing a name the board has: while
+// the owner is in one store, an asset on both sides is one file twice, and
+// copyAssets' overwrite is idempotent — a move keeps overwriting such a pair
+// as it always did, even one whose copy was replaced by hand. With the owner
+// in both stores, attach on the board's copy can reuse a name archive/ still
+// holds, and any move that carries the file would write one over the other:
+// the owner's own, or that of another task whose body shows it.
+func refuseAssetClash(src, dst assetSide, p *assetPlan, shared map[string]bool, verb string) error {
 	var clash []string
 	for _, name := range p.inPlay {
-		if assetOwnerIn(name, finished) == "" {
+		if assetOwnerIn(name, shared) == "" {
 			continue
 		}
 		have, err := dst.LoadAsset(name)
@@ -213,7 +225,7 @@ func refuseAssetClash(src, dst assetSide, p *assetPlan, finished map[string]bool
 		differ = "differ"
 	}
 	return core.Validationf(clash[0],
-		"%s %s between the board and archive/ under one name — the move would write one over the other, so nothing was %s; rename one of them by hand (and the link that shows it), then re-run",
+		"%s %s between the board and archive/ under one name — the move would write one over the other, so nothing was %s; rename the board's copy by hand and, in each board body that links it, add a link to the new name beside the old one (a finished move refuses a body that drops a line), then re-run",
 		strings.Join(paths, ", "), differ, verb)
 }
 

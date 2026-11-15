@@ -32,17 +32,19 @@ func newUnarchiveCmd() *cobra.Command {
 			"done: the call finishes it and the hot copy stays, edits since included.\n" +
 			"A blank hot body takes archive/'s, and the call is refused (validation)\n" +
 			"when the hot body drops a line archive/'s has (its title heading aside),\n" +
-			"or when an asset the task owns differs between the two stores, until\n" +
-			"merged by hand.\n" +
+			"until merged by hand. While an id sits in both stores, any call carrying\n" +
+			"an asset it owns is refused (validation) where the two copies differ, a\n" +
+			"text file's line endings aside: the error says how to keep both.\n" +
 			"--json is ALWAYS an array of {before,after,changed} envelopes, one per id\n" +
 			"(before is null — the task was not on the hot board, except when the call\n" +
 			"finishes such a move, where before is the hot copy and nothing changed —\n" +
 			"and each envelope carries `unarchived: true`); --ndjson streams one per\n" +
 			"line.\n\n" +
-			"A restored task comes back EXACTLY as it was archived: done lane, closed\n" +
-			"stamp, every field preserved (its body and attached assets travel back\n" +
-			"too; archive/ keeps a copy of any asset an archived body still shows,\n" +
-			"noted on stderr). Restoring only puts it back on the board — to REOPEN it, follow with\n" +
+			"A task the call restores, not one whose interrupted move it finishes,\n" +
+			"comes back EXACTLY as it was archived: done lane, closed stamp, every\n" +
+			"field preserved (its body and attached assets travel back too; archive/\n" +
+			"keeps a copy of any asset an archived body still shows, noted on\n" +
+			"stderr). Restoring only puts it back on the board — to REOPEN it, follow with\n" +
 			"`furrow move <id> <lane>`, which clears `closed` on leaving the done lane.\n" +
 			"No --yes: restoring destroys nothing (the destructive direction, archive,\n" +
 			"keeps its preview guard).\n\n" +
