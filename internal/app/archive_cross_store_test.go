@@ -527,8 +527,12 @@ func TestMintProbeSurvivesABrokenArchive(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = os.Chmod(tasks, 0o755) })
 		a.Store = &scriptedIDs{Store: a.Store, ids: []string{tk.ID, fresh}}
-		if got, err := a.Add("new", AddOpts{}); err == nil {
+		got, err := a.Add("new", AddOpts{})
+		if err == nil {
 			t.Fatalf("add minted %s; a probe that cannot look must fail the add, not guess", got.ID)
+		}
+		if fe := core.AsError(err); fe == nil || fe.Kind != core.KindInternal || fe.Subject != "archive" {
+			t.Errorf("add = %v; want an internal error about the archive store, not about a discarded candidate id", err)
 		}
 	})
 	t.Run("archive/ is a file", func(t *testing.T) {
@@ -703,50 +707,174 @@ func TestFinishedMoveKeepsArchivesProse(t *testing.T) {
 	}
 }
 
-// An asset the board and archive/ hold under one name with other bytes is a
-// clash the copy would settle by writing one over the other: attach on the
-// board's copy of a task in both stores checks only the board's assets, so it
-// can reuse a name archive/ still holds. Both moves refuse it before writing.
+// A finished move's copy of an asset the task owns can meet a different file
+// under its name: attach on the board's copy of a task in both stores checks
+// only the board's assets, so it can reuse a name archive/ still holds. Both
+// moves refuse that before writing. A difference git's line-ending
+// conversion alone makes is no clash for a text file; a binary one is
+// compared byte for byte.
 func TestMoveRefusesAnAssetClash(t *testing.T) {
+	for _, c := range []struct {
+		name            string
+		archived, board string
+		refused         bool
+	}{
+		{"other content", "the archived bytes", "bytes attached on the board since", true},
+		{"text whose line endings alone differ", "line one\nline two\n", "line one\r\nline two\r\n", false},
+		{"binary whose line endings alone differ", "\x00\x01line\n", "\x00\x01line\r\n", true},
+	} {
+		for _, verb := range []string{"archive", "unarchive"} {
+			t.Run(c.name+"/"+verb, func(t *testing.T) {
+				a := newFSApp(t)
+				tk, err := a.Add("pictured", AddOpts{Status: "done"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				att, err := a.Attach(tk.ID, "shot.png", []byte(c.archived))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := a.ArchiveIDs([]string{tk.ID}, false); err != nil {
+					t.Fatal(err)
+				}
+				arc, err := a.archiveStore()
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := arc.LoadBody(tk.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				plant(t, a.Store, findIn(t, arc, tk.ID), body)
+				if err := a.Store.SaveAssetRaw(att.Name, []byte(c.board)); err != nil {
+					t.Fatal(err)
+				}
+				before := boardBytes(t, a.Dir)
+
+				if verb == "archive" {
+					_, err = a.ArchiveIDs([]string{tk.ID}, false)
+				} else {
+					_, err = a.Unarchive([]string{tk.ID})
+				}
+				if !c.refused {
+					if err != nil {
+						t.Fatalf("%s = %v; a line-ending difference in a text asset is no clash", verb, err)
+					}
+					return
+				}
+				fe := core.AsError(err)
+				if fe == nil || fe.Kind != core.KindValidation || fe.Subject != att.Name || !strings.Contains(fe.Msg, core.AssetPath(att.Name)) {
+					t.Fatalf("%s = %v; want the validation refusal about %s naming %s", verb, err, att.Name, core.AssetPath(att.Name))
+				}
+				if !maps.Equal(before, boardBytes(t, a.Dir)) {
+					t.Errorf("the refused %s changed the board", verb)
+				}
+			})
+		}
+	}
+}
+
+// The check covers the files the finished task owns, the ones attach can
+// reuse a name for. An asset its body shows but another task owns is a copy
+// that task's store holds, and the move writes over it as it always did.
+func TestFinishedMoveChecksOnlyItsOwnAssets(t *testing.T) {
+	a := newFSApp(t)
+	owner, err := a.Add("owner", AddOpts{Status: "done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	att, err := a.Attach(owner.ID, "pic.png", []byte("the first bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := a.Add("viewer", AddOpts{Status: "done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Store.SaveBody(viewer.ID, "# viewer\n\n![pic]("+core.AssetRef(att.Name)+")\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ArchiveIDs([]string{viewer.ID}, false); err != nil {
+		t.Fatal(err)
+	}
+	arc, err := a.archiveStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := arc.LoadBody(viewer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plant(t, a.Store, findIn(t, arc, viewer.ID), body) // the viewer's interrupted move
+	const replaced = "bytes replaced by hand"
+	if err := a.Store.SaveAssetRaw(att.Name, []byte(replaced)); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := a.ArchiveIDs([]string{viewer.ID}, false); err != nil {
+		t.Fatalf("the viewer owns no asset that could clash: %v", err)
+	}
+	if got, err := arc.LoadAsset(att.Name); err != nil || string(got) != replaced {
+		t.Errorf("archive/'s %s = %q (%v); want the board's %q", att.Name, got, err, replaced)
+	}
+}
+
+// A fresh move meets an asset already in the destination only as the copy
+// another body there holds, and keeps writing over it as it always did, even
+// when one side's file was replaced by hand: the check is the finished move's.
+//
+// bite-exempt: it pins the base's behavior, which the asset check briefly
+// refused on every move.
+func TestFreshMoveCopiesAHeldAssetAsBefore(t *testing.T) {
 	for _, verb := range []string{"archive", "unarchive"} {
 		t.Run(verb, func(t *testing.T) {
 			a := newFSApp(t)
-			tk, err := a.Add("pictured", AddOpts{Status: "done"})
+			owner, err := a.Add("owner", AddOpts{Status: "done"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			att, err := a.Attach(tk.ID, "shot.png", []byte("the archived bytes"))
+			att, err := a.Attach(owner.ID, "shot.png", []byte("the first bytes"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := a.ArchiveIDs([]string{tk.ID}, false); err != nil {
+			viewer, err := a.Add("viewer", AddOpts{Status: "done"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := a.Store.SaveBody(viewer.ID, "# viewer\n\n![shot]("+core.AssetRef(att.Name)+")\n"); err != nil {
 				t.Fatal(err)
 			}
 			arc, err := a.archiveStore()
 			if err != nil {
 				t.Fatal(err)
 			}
-			body, err := arc.LoadBody(tk.ID)
-			if err != nil {
+			// One store keeps the owner's file for the viewer's body; the other
+			// takes a copy. Then the moving side's copy is replaced by hand.
+			first, moving := viewer.ID, owner.ID
+			var src assetSide = a.Store
+			if verb == "unarchive" {
+				first, src = owner.ID, arc
+			}
+			if _, err := a.ArchiveIDs([]string{first}, false); err != nil {
 				t.Fatal(err)
 			}
-			plant(t, a.Store, findIn(t, arc, tk.ID), body)
-			if err := a.Store.SaveAssetRaw(att.Name, []byte("bytes attached on the board since")); err != nil {
+			const replaced = "bytes replaced by hand"
+			if err := src.SaveAssetRaw(att.Name, []byte(replaced)); err != nil {
 				t.Fatal(err)
 			}
-			before := boardBytes(t, a.Dir)
 
+			var dst assetSide = arc
 			if verb == "archive" {
-				_, err = a.ArchiveIDs([]string{tk.ID}, false)
+				_, err = a.ArchiveIDs([]string{moving}, false)
 			} else {
-				_, err = a.Unarchive([]string{tk.ID})
+				dst = a.Store
+				_, err = a.Unarchive([]string{moving})
 			}
-			fe := core.AsError(err)
-			if fe == nil || fe.Kind != core.KindValidation || fe.Subject != att.Name || !strings.Contains(fe.Msg, core.AssetPath(att.Name)) {
-				t.Fatalf("%s = %v; want the validation refusal about %s naming %s", verb, err, att.Name, core.AssetPath(att.Name))
+			if err != nil {
+				t.Fatalf("a fresh %s of %s: %v", verb, moving, err)
 			}
-			if !maps.Equal(before, boardBytes(t, a.Dir)) {
-				t.Errorf("the refused %s changed the board", verb)
+			if got, err := dst.LoadAsset(att.Name); err != nil || string(got) != replaced {
+				t.Errorf("destination's %s = %q (%v); want the moving side's %q", att.Name, got, err, replaced)
 			}
 		})
 	}
@@ -816,6 +944,7 @@ func TestFinishedBodyRule(t *testing.T) {
 	}{
 		{"the same prose", prose, prose, true},
 		{"CRLF and trailing spaces", "# prosy\r\n\r\nline one  \r\nline two\t\r\n", prose, true},
+		{"CRLF and trailing spaces on archive/'s side", prose, "# prosy\r\n\r\nline one  \r\nline two\t\r\n", true},
 		{"a reorder", "# prosy\n\nline two\nline one\n", prose, true},
 		{"a note and an attach link added", "# prosy\n\n- a later note\n\nline one\nline two\n![shot](assets/t-x-shot.png)\n", prose, true},
 		{"a retitle", "# renamed\n\nline one\nline two\n", prose, true},
@@ -824,6 +953,8 @@ func TestFinishedBodyRule(t *testing.T) {
 		{"a repeated line held once", "# prosy\n\n- same\n", "# prosy\n\n- same\n- same\n", false},
 		{"a dropped line", "# prosy\n\nline one\n", prose, false},
 		{"no heading, so every line counts", "line two\n", "line one\nline two\n", false},
+		{"an H1 that is not the first line counts", "intro\n", "intro\n# Section\n", false},
+		{"an H1 below the title counts", "# prosy\n\nship it\n", "# prosy\n\n# Decision\nship it\n", false},
 		{"a heading-only archive/ body", "anything at all\n", "# prosy\n", true},
 	} {
 		if got := holdsProse(c.board, c.archived); got != c.holds {

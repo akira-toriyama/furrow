@@ -168,18 +168,24 @@ func copyAssets(src, dst assetSide, p *assetPlan) ([]string, error) {
 	return copied, nil
 }
 
-// refuseAssetClash refuses any move, finished or fresh, before it writes
-// anything when an in-play asset already sits in dst under its name with
-// other bytes. Names are unique within a store (attach never overwrites) and
-// an asset held on both sides is one file twice, which is what makes
-// copyAssets' overwrite idempotent; a pair with other bytes is a clash the
-// copy would settle by writing one file over the other. It arises when a task
-// is on both sides — attach on the board's copy checks only the board's
-// assets, so it can reuse a name archive/ still holds — or when a file was
-// replaced by hand.
-func refuseAssetClash(src, dst assetSide, p *assetPlan, verb string) error {
+// refuseAssetClash refuses a finished move before it writes anything when an
+// in-play asset that a finished task owns (its "<id>-" prefix, finished being
+// the ids the move finds on both sides) already sits in dst with other
+// content. Names are unique within a store (attach never overwrites), so an
+// asset on both sides is one file twice and copyAssets' overwrite is
+// idempotent — except for a task on both sides: attach on the board's copy
+// checks only the board's assets, so it can reuse a name archive/ still holds,
+// and the copy would write one file over the other. A fresh move keeps
+// overwriting as it always did: its pairs are copies another body holds.
+func refuseAssetClash(src, dst assetSide, p *assetPlan, finished map[string]bool, verb string) error {
+	if len(finished) == 0 {
+		return nil
+	}
 	var clash []string
 	for _, name := range p.inPlay {
+		if assetOwnerIn(name, finished) == "" {
+			continue
+		}
 		have, err := dst.LoadAsset(name)
 		if fe := core.AsError(err); fe != nil && fe.Code == core.CodeNotFound {
 			continue
@@ -191,7 +197,7 @@ func refuseAssetClash(src, dst assetSide, p *assetPlan, verb string) error {
 		if err != nil {
 			return err
 		}
-		if !bytes.Equal(have, want) {
+		if !sameAsset(have, want) {
 			clash = append(clash, name)
 		}
 	}
@@ -209,6 +215,22 @@ func refuseAssetClash(src, dst assetSide, p *assetPlan, verb string) error {
 	return core.Validationf(clash[0],
 		"%s %s between the board and archive/ under one name — the move would write one over the other, so nothing was %s; rename one of them by hand (and the link that shows it), then re-run",
 		strings.Join(paths, ", "), differ, verb)
+}
+
+// sameAsset reports whether two copies of an asset hold one content. Git's
+// line-ending conversion (core.autocrlf) can check one copy out with CRLF and
+// leave furrow's write of the other with LF, a difference git itself does not
+// see, so a copy with no NUL byte — text, not an image — is compared with CRLF
+// folded to LF.
+func sameAsset(a, b []byte) bool {
+	if bytes.Equal(a, b) {
+		return true
+	}
+	if bytes.IndexByte(a, 0) >= 0 || bytes.IndexByte(b, 0) >= 0 {
+		return false
+	}
+	crlf, lf := []byte("\r\n"), []byte("\n")
+	return bytes.Equal(bytes.ReplaceAll(a, crlf, lf), bytes.ReplaceAll(b, crlf, lf))
 }
 
 // reapAssets applies the plan's outcome to the source: deletes what nothing

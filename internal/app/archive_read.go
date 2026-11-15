@@ -35,7 +35,11 @@ func (a *App) isRetiredID(id string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return arc.HasTaskShard(id)
+	retired, err := arc.HasTaskShard(id)
+	if err != nil { // the drawn id is a discarded candidate, so the failure's subject is the store
+		return false, core.Internalf("archive", "cannot check archive/ for retired ids, so no new id was minted: %v", err)
+	}
+	return retired, nil
 }
 
 // archiveLoad is the ONE path that reads the archive index: open the sibling

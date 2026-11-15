@@ -384,8 +384,9 @@ The invariants the funnel keeps, beyond what each verb's `--help` promises:
 - **Assets move by one rule** (`asset_hold.go`, shared by archive / unarchive /
   rm): a store loses a file only when nothing remaining there holds it — no
   remaining body shows it, no remaining entity owns it. Planned before any
-  write, applied after both indexes are durable, so an interrupted run
-  converges on retry.
+  write, applied after both indexes are durable, so a run stopped between the
+  two saves is finished by its re-run; the move docs name the leftovers of
+  the other stops, some of which nothing clears.
 - **`[[id]]` links have one definition** (`internal/core/links.go`), read by
   both `show --backlinks` and `lint`'s dangling-link check, so the two can never
   drift; a bare id is not a link and a `[[id]]` inside code is inert.
