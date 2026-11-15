@@ -37,7 +37,8 @@ func newUnarchiveCmd() *cobra.Command {
 			"until merged by hand. While an id sits in both stores, any call carrying\n" +
 			"an asset it owns is refused (validation) where the two copies differ, a\n" +
 			"text file's line endings and the git-lfs pointer a checkout leaves for\n" +
-			"the other copy aside: the error says how to keep both.\n" +
+			"the other copy aside (but for a file with mixed line endings that git\n" +
+			"normalized on one side): the error says how to keep both.\n" +
 			"--json is ALWAYS an array of {before,after,changed} envelopes, one per id\n" +
 			"(before is null — the task was not on the hot board, except when the call\n" +
 			"finishes such a move, where before is the hot copy and nothing changed —\n" +

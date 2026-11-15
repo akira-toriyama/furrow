@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -751,6 +752,8 @@ func TestMoveRefusesAnAssetClash(t *testing.T) {
 		{"a git-lfs pointer for the text file the board checks out with CRLF", lfsPointer("a log\nline two\n"), "a log\r\nline two\r\n", false, "a log\r\nline two\r\n"},
 		{"a git-lfs pointer for CRLF text the board's copy git normalized to LF", lfsPointer("a log\r\nline two\r\n"), "a log\nline two\n", false, "a log\nline two\n"},
 		{"pointer-like text in another shape than git-lfs writes", lfsPointer(file) + "note a stray line\n", file, true, ""},
+		{"a git-lfs pointer for a binary that differs only by a CR", lfsPointer("\x00a\r\nb"), "\x00a\nb", true, ""},
+		{"a git-lfs pointer for a binary that differs only by a missing CR", lfsPointer("\x00a\nb"), "\x00a\r\nb", true, ""},
 	} {
 		for _, verb := range []string{"archive", "unarchive"} {
 			t.Run(c.name+"/"+verb, func(t *testing.T) {
@@ -1450,6 +1453,7 @@ func TestMoveNeverWritesAGitLFSPointerOverItsFile(t *testing.T) {
 		{"the pointer for CRLF text the destination's copy git normalized to LF", textCRLF, true, text, pointer(textCRLF), text},
 		{"a pointer for another file of that size", file, true, "", pointer(other), pointer(other)},
 		{"a pointer for another binary that differs only in line endings", "\x00a\r\nb", true, "", pointer("\x00a\nb"), pointer("\x00a\nb")},
+		{"a pointer for another binary that differs only by an LF expanded", "\x00a\nb", true, "", pointer("\x00a\r\nb"), pointer("\x00a\r\nb")},
 		{"a pointer the destination has no file for", file, false, "", pointer(file), pointer(file)},
 	} {
 		for _, verb := range []string{"archive", "unarchive"} {
@@ -1516,11 +1520,38 @@ func TestMoveNeverWritesAGitLFSPointerOverItsFile(t *testing.T) {
 					t.Errorf("destination's %s = %q (%v); want %q", att.Name, got, err, c.want)
 				}
 				// The file is in the destination either way: the report lists it
-				// as landed, the source lets its copy go, and the preview agrees.
+				// as landed, and the source lets its copy go.
 				if !slices.Equal(assets.Copied, []string{att.Name}) || !slices.Equal(assets.Deleted, []string{att.Name}) {
 					t.Errorf("assets = %+v; want %s copied and deleted from the source", assets, att.Name)
 				}
 			})
+		}
+	}
+}
+
+// lineSum hashes what foldCRLF, and the LF-to-CRLF expansion after it, would
+// build, without building it — a CR before an LF dropped, a lone CR kept, a
+// last line without an LF written as it is — and pointerOf's size gate counts
+// the same bytes.
+func TestLineSumMatchesTheFoldedBytes(t *testing.T) {
+	for _, data := range []string{"", "a", "a\n", "a\r\n", "a\r\r\n", "\r\n\r\n", "a\rb\n", "last\r", "mixed\r\nline\nend"} {
+		folded := foldCRLF([]byte(data))
+		expanded := bytes.ReplaceAll(folded, []byte("\n"), []byte("\r\n"))
+		for _, c := range []struct {
+			crlf bool
+			want []byte
+			size int
+		}{
+			{false, folded, len(data) - bytes.Count([]byte(data), []byte("\r\n"))},
+			{true, expanded, len(data) - bytes.Count([]byte(data), []byte("\r\n")) + bytes.Count([]byte(data), []byte("\n"))},
+		} {
+			sum := sha256.Sum256(c.want)
+			if got := lineSum([]byte(data), c.crlf); !bytes.Equal(got, sum[:]) {
+				t.Errorf("lineSum(%q, %v) is not the sha256 of %q", data, c.crlf, c.want)
+			}
+			if c.size != len(c.want) {
+				t.Errorf("%q: the size gate counts %d bytes, the variant has %d", data, c.size, len(c.want))
+			}
 		}
 	}
 }

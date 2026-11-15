@@ -66,7 +66,8 @@ func newArchiveCmd() *cobra.Command {
 			"heading aside), until merged by hand. While an id sits in both stores,\n" +
 			"any call carrying an asset it owns is refused (validation) where the two\n" +
 			"copies differ, a text file's line endings and the git-lfs pointer a\n" +
-			"checkout leaves for the other copy aside: the error says how to keep\n" +
+			"checkout leaves for the other copy aside (but for a file with mixed line\n" +
+			"endings that git normalized on one side): the error says how to keep\n" +
 			"both. The preview reads the hot store alone, so these refusals come with\n" +
 			"--yes.\n\n" +
 			"The age sweep INHERITS THE BOARD SCOPE, like every read: with no -r it folds\n" +

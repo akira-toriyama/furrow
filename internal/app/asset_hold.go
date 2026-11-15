@@ -338,7 +338,10 @@ func foldCRLF(b []byte) []byte {
 // pointer committed there as content can come out with CRLF. So ptr is tried
 // with CRLF folded, against data as it is, with CRLF folded, and with every
 // LF then expanded to CRLF. A file with mixed line endings that git
-// normalized on one side is not recognized, and the bytes decide.
+// normalized on one side is not recognized, and the bytes decide. The
+// variants are hashed as they stream (lineSum), never built: data is the
+// other copy of what may be a large file, and the pointer's size line rules
+// out a variant before any hashing.
 func pointerOf(ptr, data []byte) bool {
 	if len(ptr) >= 1024 {
 		return false
@@ -350,8 +353,30 @@ func pointerOf(ptr, data []byte) bool {
 	if bytes.IndexByte(data, 0) >= 0 {
 		return false
 	}
-	lf := foldCRLF(data)
-	return pointsTo(p, lf) || pointsTo(p, bytes.ReplaceAll(lf, []byte("\n"), []byte("\r\n")))
+	folded := len(data) - bytes.Count(data, []byte("\r\n"))
+	return pointerNames(p, folded, func() []byte { return lineSum(data, false) }) ||
+		pointerNames(p, folded+bytes.Count(data, []byte("\n")), func() []byte { return lineSum(data, true) })
+}
+
+// lineSum is the sha256 of data with every CRLF folded to LF and, with crlf,
+// every LF then written as CRLF — what foldCRLF, and the expansion after it,
+// would build, hashed line by line instead.
+func lineSum(data []byte, crlf bool) []byte {
+	eol := []byte("\n")
+	if crlf {
+		eol = []byte("\r\n")
+	}
+	h := sha256.New()
+	for {
+		i := bytes.IndexByte(data, '\n')
+		if i < 0 {
+			h.Write(data)
+			return h.Sum(nil)
+		}
+		h.Write(bytes.TrimSuffix(data[:i], []byte("\r")))
+		h.Write(eol)
+		data = data[i+1:]
+	}
 }
 
 // lfsPointerVersion opens every git-lfs pointer file (spec v1).
@@ -367,12 +392,21 @@ const lfsPointerVersion = "version https://git-lfs.github.com/spec/v1\n"
 // file, and malformed text as content, so it is no pointer here and the bytes
 // decide.
 func pointsTo(ptr, data []byte) bool {
-	size := "size " + strconv.Itoa(len(data)) + "\n"
-	if len(ptr) >= 1024 || !bytes.HasPrefix(ptr, []byte(lfsPointerVersion)) || !bytes.HasSuffix(ptr, []byte(size)) {
+	return pointerNames(ptr, len(data), func() []byte {
+		sum := sha256.Sum256(data)
+		return sum[:]
+	})
+}
+
+// pointerNames reports whether ptr is the pointer git-lfs writes for content
+// of size bytes whose sha256 sum returns; sum runs only once ptr's shape and
+// size line match.
+func pointerNames(ptr []byte, size int, sum func() []byte) bool {
+	tail := "size " + strconv.Itoa(size) + "\n"
+	if len(ptr) >= 1024 || !bytes.HasPrefix(ptr, []byte(lfsPointerVersion)) || !bytes.HasSuffix(ptr, []byte(tail)) {
 		return false
 	}
-	sum := sha256.Sum256(data)
-	return string(ptr) == lfsPointerVersion+"oid sha256:"+hex.EncodeToString(sum[:])+"\n"+size
+	return string(ptr) == lfsPointerVersion+"oid sha256:"+hex.EncodeToString(sum())+"\n"+tail
 }
 
 // reapAssets applies the plan's outcome to the source: deletes what nothing

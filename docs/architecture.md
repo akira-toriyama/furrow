@@ -326,7 +326,8 @@ in both (`core.SameTask`), refusing instead where that would drop a line of
 `archive/`'s body, its title heading aside; while an id sits in both, any move
 carrying an asset it owns refuses where the two copies differ, a text file's
 line endings and the git-lfs pointer a checkout leaves for the other copy
-aside. Ids are **frozen** (never reused or renumbered); legacy numeric ids
+aside (but for a file with mixed line endings that git normalized on one
+side). Ids are **frozen** (never reused or renumbered); legacy numeric ids
 coexist. The clash handling is `fsstore.NextID`'s doc comment.
 
 ### memstore
@@ -386,10 +387,11 @@ The invariants the funnel keeps, beyond what each verb's `--help` promises:
 - **Assets move by one rule** (`asset_hold.go`, shared by archive / unarchive /
   rm): a store loses a file only when nothing remaining there holds it — no
   remaining body shows it, no remaining entity owns it — and a move never
-  writes the git-lfs pointer a checkout leaves over the file it names. Planned
-  before any write, applied after both indexes are durable, so a run stopped
-  between the two saves is finished by its re-run; the move docs name the
-  leftovers of the other stops, some of which nothing clears.
+  writes the git-lfs pointer a checkout leaves over the file it names (bar a
+  file with mixed line endings that git normalized). Planned before any
+  write, applied after both indexes are durable, so a run stopped between the
+  two saves is finished by its re-run; the move docs name the leftovers of the
+  other stops, some of which nothing clears.
 - **`[[id]]` links have one definition** (`internal/core/links.go`), read by
   both `show --backlinks` and `lint`'s dangling-link check, so the two can never
   drift; a bare id is not a link and a `[[id]]` inside code is inert.
