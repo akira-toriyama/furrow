@@ -162,10 +162,10 @@ func (p *assetPlan) outcome() (deleted []string, kept []KeptAsset) {
 // archive/ holds, then removed with rm while another body keeps the file,
 // leaves that name to an owner in one store (kept by t-erd6; attach skipping
 // the names archive/ holds would close it at the source). One write is never
-// made: a source copy that is only the git-lfs pointer for the file dst holds
-// (lfsPointerFor) leaves dst's file in place, since writing it would swap the
-// file for its pointer — a different blob wherever dst's path is not
-// LFS-tracked, and a working tree without the bytes where it is.
+// made: a source copy that is only the git-lfs pointer for the file dst holds,
+// line endings aside (lfsPointerFor), leaves dst's file in place, since writing
+// it would swap the file for its pointer — a different blob wherever dst's
+// path is not LFS-tracked, and a working tree without the bytes where it is.
 func copyAssets(src, dst assetSide, p *assetPlan) ([]string, error) {
 	copied := []string{}
 	for _, name := range p.inPlay {
@@ -188,10 +188,10 @@ func copyAssets(src, dst assetSide, p *assetPlan) ([]string, error) {
 }
 
 // lfsPointerFor reports whether data is only the git-lfs pointer for the file
-// dst already holds under name. dst is read only when data has a pointer's
-// shape, so a move of real files costs no second read.
+// dst already holds under name (pointerOf). dst is read only when data has a
+// pointer's shape, so a move of real files costs no second read.
 func lfsPointerFor(dst assetSide, name string, data []byte) (bool, error) {
-	if len(data) >= 1024 || !bytes.HasPrefix(data, []byte(lfsPointerVersion)) {
+	if len(data) >= 1024 || !bytes.HasPrefix(foldCRLF(data), []byte(lfsPointerVersion)) {
 		return false, nil
 	}
 	have, err := dst.LoadAsset(name)
@@ -201,7 +201,7 @@ func lfsPointerFor(dst assetSide, name string, data []byte) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return pointsTo(data, have), nil
+	return pointerOf(data, have), nil
 }
 
 // sharedIDs maps each id both indexes hold as loaded to whether it is one
@@ -227,7 +227,8 @@ func sharedIDs(hot, arc *core.Index) map[string]bool {
 // writer, and it runs on the board, never reusing a name the board has: while
 // the owner is in one store, an asset on both sides is one file twice — bar a
 // hand edit and the one route copyAssets names — and a move keeps overwriting
-// such a pair as it always did. With the owner in both stores, attach on the
+// such a pair as it always did, but for the git-lfs pointer copyAssets never
+// writes over its file. With the owner in both stores, attach on the
 // board's copy can reuse a name archive/ still holds, and any move that
 // carries the file would write one over the other: the owner's own, or that
 // of another task whose body shows it. The way out the refusal names differs:
@@ -286,9 +287,9 @@ func clashRefusal(clash []string, shared map[string]bool, verb string) error {
 	}
 	var how []string
 	if len(single) > 0 {
-		h := "rename the board's copy by hand and, in each board body that links it, add a link to the new name beside the old one (a finished move refuses a body that drops a line)"
+		h := "rename the board's copy by hand and point each board link to it at the new name, keeping the old link beside it in the body of a task that sits in both stores (a finished move refuses a body that drops a line)"
 		if len(single) > 1 {
-			h = "rename the board's copies by hand and, in each board body that links one, add a link to its new name beside the old one (a finished move refuses a body that drops a line)"
+			h = "rename the board's copies by hand and point each board link to one at its new name, keeping the old link beside it in the body of a task that sits in both stores (a finished move refuses a body that drops a line)"
 		}
 		if len(twoTasks) > 0 {
 			h = "for " + strings.Join(single, ", ") + ", " + h
@@ -310,28 +311,50 @@ func clashRefusal(clash []string, shared map[string]bool, verb string) error {
 // CRLF and leave furrow's write of the other with LF, so a copy with no NUL
 // byte — text, not an image — is compared with CRLF folded to LF; the fold
 // does not read git's config, so where git converts nothing the move may
-// still change a file's line endings. And a partial git-lfs checkout can
-// leave one copy the pointer for the file the other holds (pointsTo), which
-// copyAssets never writes over that file.
+// still change a file's line endings. And a checkout without the file can
+// leave one copy the git-lfs pointer for the file the other holds (pointerOf),
+// which copyAssets never writes over that file.
 func sameAsset(a, b []byte) bool {
-	if bytes.Equal(a, b) || pointsTo(a, b) || pointsTo(b, a) {
+	if bytes.Equal(a, b) || pointerOf(a, b) || pointerOf(b, a) {
 		return true
 	}
 	if bytes.IndexByte(a, 0) >= 0 || bytes.IndexByte(b, 0) >= 0 {
 		return false
 	}
-	crlf, lf := []byte("\r\n"), []byte("\n")
-	return bytes.Equal(bytes.ReplaceAll(a, crlf, lf), bytes.ReplaceAll(b, crlf, lf))
+	return bytes.Equal(foldCRLF(a), foldCRLF(b))
+}
+
+// foldCRLF is b with every CRLF folded to LF.
+func foldCRLF(b []byte) []byte {
+	return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
+}
+
+// pointerOf reports whether ptr is the git-lfs pointer for data (pointsTo),
+// line endings aside: where git converts line endings (core.autocrlf) at a
+// path git-lfs does not track, a pointer committed there as content, or the
+// text file a pointer names, is checked out with CRLF.
+func pointerOf(ptr, data []byte) bool {
+	if len(ptr) >= 1024 {
+		return false
+	}
+	p := foldCRLF(ptr)
+	if pointsTo(p, data) {
+		return true
+	}
+	return bytes.IndexByte(data, 0) < 0 && bytes.Contains(data, []byte("\r\n")) && pointsTo(p, foldCRLF(data))
 }
 
 // lfsPointerVersion opens every git-lfs pointer file (spec v1).
 const lfsPointerVersion = "version https://git-lfs.github.com/spec/v1\n"
 
-// pointsTo reports whether ptr is exactly the pointer git-lfs writes for data
-// — the version line, then data's sha256 oid and size, the bytes a partial
-// checkout leaves in the working tree and `git lfs pointer --file` prints.
-// Any other bytes are no pointer for data: git-lfs rejects a malformed one
-// and stores a non-canonical one as content, a different blob.
+// pointsTo reports whether ptr is exactly the pointer git-lfs writes for data:
+// the version line, then data's sha256 oid and its size — the bytes every
+// checkout without the file leaves in the working tree (re-encoding even a
+// non-canonical pointer blob) and `git lfs pointer --file` prints. Other
+// pointer-like text was written by hand or by another tool: git-lfs stores a
+// valid non-canonical pointer verbatim, a different blob it still smudges to
+// the file, and malformed text as content, so it is no pointer here and the
+// bytes decide.
 func pointsTo(ptr, data []byte) bool {
 	size := "size " + strconv.Itoa(len(data)) + "\n"
 	if len(ptr) >= 1024 || !bytes.HasPrefix(ptr, []byte(lfsPointerVersion)) || !bytes.HasSuffix(ptr, []byte(size)) {

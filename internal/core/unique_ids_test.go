@@ -58,8 +58,8 @@ func TestCheckUniqueIDs(t *testing.T) {
 }
 
 // SameTask is the identity a move and lint use for an id found in both
-// stores: the creation instant, whatever else differs (an edit after an
-// interruption reaches one copy only). A copy without the stamp proves
+// stores: the creation instant, whatever else differs (an edit or a reopen
+// after an interruption reaches one copy only). A copy without the stamp proves
 // nothing, so even two unstamped copies compare different and the move
 // refuses rather than guess.
 func TestSameTask(t *testing.T) {
@@ -69,7 +69,10 @@ func TestSameTask(t *testing.T) {
 		a, b Task
 		want bool
 	}{
-		{"one task, retitled and reopened since", Task{ID: "t-ksee", Title: "before", Status: "done", Closed: &at, Created: at, Updated: at}, Task{ID: "t-ksee", Title: "after", Status: "backlog", Created: at, Updated: at.Add(time.Hour)}, true},
+		{"one task, edited and reopened since",
+			Task{ID: "t-ksee", Title: "before", Status: "done", Priority: 10, Closed: &at, Created: at, Updated: at},
+			Task{ID: "t-ksee", Title: "after", Status: "backlog", Priority: 20, Epic: "e-aaaa", Labels: []string{"bug"}, Repos: []string{"o/r"}, Deps: []string{"t-aaaa"}, Checklist: []ChecklistItem{{Text: "step"}}, Created: at, Updated: at.Add(time.Hour)},
+			true},
 		{"two tasks under one id", Task{ID: "t-ksee", Created: at}, Task{ID: "t-ksee", Created: at.AddDate(0, -3, 0)}, false},
 		{"neither stamped", Task{ID: "t-ksee"}, Task{ID: "t-ksee"}, false},
 	} {

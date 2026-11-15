@@ -725,10 +725,10 @@ func TestFinishedMoveKeepsArchivesProse(t *testing.T) {
 // under its name: attach on the board's copy of a task in both stores checks
 // only the board's assets, so it can reuse a name archive/ still holds. Both
 // moves refuse that before writing. Two differences furrow did not make are
-// no clash: a text file's line endings, and the git-lfs pointer a partial
-// checkout leaves for the file the other copy holds — in git-lfs's own bytes
-// only. A move then lands the file, never its pointer, whichever side holds
-// which. Otherwise a binary is compared byte for byte.
+// no clash: a text file's line endings, and the git-lfs pointer a checkout
+// leaves for the file the other copy holds — git-lfs's own bytes, line
+// endings aside on either. A move then lands the file, never its pointer,
+// whichever side holds which. Otherwise a binary is compared byte for byte.
 func TestMoveRefusesAnAssetClash(t *testing.T) {
 	const file = "\x00PNG board"
 	lfsPointer := func(content string) string {
@@ -746,7 +746,9 @@ func TestMoveRefusesAnAssetClash(t *testing.T) {
 		{"archive/'s copy a git-lfs pointer for the board's file", lfsPointer(file), file, false, file},
 		{"the board's copy a git-lfs pointer for archive/'s file", file, lfsPointer(file), false, file},
 		{"a git-lfs pointer for another file of that size", lfsPointer("\x00PNG other"), file, true, ""},
-		{"a pointer for the file in other bytes than git-lfs writes", strings.ReplaceAll(lfsPointer(file), "\n", "\r\n"), file, true, ""},
+		{"a git-lfs pointer checked out with CRLF", strings.ReplaceAll(lfsPointer(file), "\n", "\r\n"), file, false, file},
+		{"a git-lfs pointer for the text file the board checks out with CRLF", lfsPointer("a log\nline two\n"), "a log\r\nline two\r\n", false, "a log\r\nline two\r\n"},
+		{"pointer-like text in another shape than git-lfs writes", lfsPointer(file) + "note a stray line\n", file, true, ""},
 	} {
 		for _, verb := range []string{"archive", "unarchive"} {
 			t.Run(c.name+"/"+verb, func(t *testing.T) {
@@ -889,7 +891,7 @@ func TestMoveRefusesAClashWhileTheOwnerIsInBothStores(t *testing.T) {
 			} else {
 				_, err = a.Unarchive([]string{viewer.ID})
 			}
-			advice := "add a link to the new name beside the old one"
+			advice := "point each board link to it at the new name, keeping the old link beside it in the body of a task that sits in both stores"
 			if c.twoTasks {
 				advice = owner.ID + " names two tasks (`furrow lint` flags it as duplicate-id): " + reIDRepair
 			}
@@ -905,11 +907,20 @@ func TestMoveRefusesAClashWhileTheOwnerIsInBothStores(t *testing.T) {
 }
 
 // followClashAdvice does what the asset-clash refusal says for one task in
-// both stores: give the board's copy of each name another name, and beside
-// each board link to the old name add one to the new. It returns the new
-// names.
+// both stores: give the board's copy of each name another name, and point
+// each board link to the old name at the new one — keeping the old link
+// beside it in the body of a task that sits in both stores. It returns the
+// new names.
 func followClashAdvice(t *testing.T, a *App, names []string) map[string]string {
 	t.Helper()
+	arc, err := a.archiveStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	arcIdx, err := arc.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	renamed := map[string]string{}
 	for _, name := range names {
 		data, err := a.Store.LoadAsset(name)
@@ -936,8 +947,12 @@ func followClashAdvice(t *testing.T, a *App, names []string) map[string]string {
 		}
 		added := body
 		for _, name := range names {
-			if strings.Contains(body, core.AssetRef(name)) {
+			switch {
+			case !strings.Contains(body, core.AssetRef(name)):
+			case arcIdx.Has(id):
 				added = strings.TrimRight(added, "\n") + "\n![renamed](" + core.AssetRef(renamed[name]) + ")\n"
+			default:
+				added = strings.ReplaceAll(added, core.AssetRef(name), core.AssetRef(renamed[name]))
 			}
 		}
 		if added != body {
@@ -950,9 +965,9 @@ func followClashAdvice(t *testing.T, a *App, names []string) map[string]string {
 }
 
 // The refusal's way out takes one step, whichever move meets the clash:
-// after followClashAdvice the re-run passes and the destination holds both
-// files, each under its own name. A viewer's archive then meets a board link
-// to the old name with no file behind it, which it has nothing to carry for.
+// after followClashAdvice the re-run passes, the destination holds both
+// files, each under its own name, and no board body is left linking a file
+// the board lacks.
 func TestAssetClashAdviceLetsTheReRunKeepBoth(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -1036,9 +1051,9 @@ func TestAssetClashAdviceLetsTheReRunKeepBoth(t *testing.T) {
 
 			err = move()
 			fe := core.AsError(err)
-			advice := "rename the board's copy by hand and, in each board body that links it, add a link to the new name beside the old one"
+			advice := "rename the board's copy by hand and point each board link to it at the new name, keeping the old link beside it in the body of a task that sits in both stores"
 			if c.files > 1 {
-				advice = "rename the board's copies by hand and, in each board body that links one, add a link to its new name beside the old one"
+				advice = "rename the board's copies by hand and point each board link to one at its new name, keeping the old link beside it in the body of a task that sits in both stores"
 			}
 			if fe == nil || fe.Kind != core.KindValidation || !strings.Contains(fe.Msg, advice) {
 				t.Fatalf("%s = %v; want the validation refusal advising %q", c.verb, err, advice)
@@ -1046,6 +1061,9 @@ func TestAssetClashAdviceLetsTheReRunKeepBoth(t *testing.T) {
 			renamed := followClashAdvice(t, a, names)
 			if err := move(); err != nil {
 				t.Fatalf("the re-run after the advice: %v", err)
+			}
+			if missing := problemsWithCode(mustLint(t, a), "asset-missing"); len(missing) != 0 {
+				t.Errorf("asset-missing after the advice: %+v", missing)
 			}
 			var dst assetSide = arc
 			if c.verb == "unarchive" {
@@ -1069,7 +1087,7 @@ func TestAssetClashAdviceLetsTheReRunKeepBoth(t *testing.T) {
 func TestClashRefusalAdvice(t *testing.T) {
 	const one, two, other = "t-aaaaa", "t-bbbbb", "t-ccccc"
 	shared := map[string]bool{one: true, two: false, other: false}
-	oneTask := "rename the board's copy by hand and, in each board body that links it, add a link to the new name beside the old one"
+	oneTask := "rename the board's copy by hand and point each board link to it at the new name, keeping the old link beside it in the body of a task that sits in both stores"
 	for _, c := range []struct {
 		name   string
 		clash  []string
@@ -1080,7 +1098,7 @@ func TestClashRefusalAdvice(t *testing.T) {
 			[]string{"bodies/assets/" + one + "-a.png differs between the board and archive/ under one name", "; " + oneTask + " (a finished move refuses a body that drops a line), then re-run"},
 			[]string{"names two tasks", "for bodies/assets/"}},
 		{"two files of one task", []string{one + "-a.png", one + "-b.png"},
-			[]string{"differ between the board and archive/, each under one name", "rename the board's copies by hand and, in each board body that links one, add a link to its new name beside the old one"},
+			[]string{"differ between the board and archive/, each under one name", "rename the board's copies by hand and point each board link to one at its new name, keeping the old link beside it in the body of a task that sits in both stores"},
 			[]string{"names two tasks"}},
 		{"two files under an id that names two tasks", []string{two + "-a.png", two + "-b.png"},
 			[]string{"; " + two + " names two tasks (`furrow lint` flags it as duplicate-id): " + reIDRepair + ", then re-run"},
@@ -1329,7 +1347,8 @@ func TestFinishedMoveCopiesAnAssetOnlyTheSourceHolds(t *testing.T) {
 
 // A finished move of a task whose body shows another task's file writes over
 // the destination's copy as a fresh move does, while that owner sits in one
-// store: the pair is one file twice, whatever a hand did to one copy.
+// store: the pair is one file twice, whatever a hand did to one copy, bar the
+// git-lfs pointer copyAssets never writes over its file.
 //
 // bite-exempt: it pins the base's behavior, which the asset check briefly
 // refused on every move.
@@ -1395,19 +1414,25 @@ func TestFinishedMoveCopiesAHeldAssetAsBefore(t *testing.T) {
 // LFS-tracked. The base wrote it. A pointer for another file, or one the
 // destination has no file for, lands as the base landed it.
 func TestMoveNeverWritesAGitLFSPointerOverItsFile(t *testing.T) {
-	const file, other = "\x00PNG the real bytes", "\x00PNG other bytes!!"
+	const file, other = "\x00PNG the real bytes", "\x00PNG other bytes!!!"
+	const text, textCRLF = "a log\nline two\n", "a log\r\nline two\r\n"
 	pointer := func(content string) string {
 		return fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%x\nsize %d\n", sha256.Sum256([]byte(content)), len(content))
 	}
 	for _, c := range []struct {
-		name   string
-		held   bool   // the destination holds a copy of the file for a body there
-		moving string // the moving side's copy, left by a partial checkout
-		want   string // the destination's copy after the move
+		name     string
+		attached string // the file the owner attached
+		held     bool   // the destination holds a copy of it for a body there
+		dstAs    string // the destination's copy as checked out; "" = as written
+		moving   string // the moving side's copy, left by a checkout
+		want     string // the destination's copy after the move
 	}{
-		{"the pointer for the destination's file", true, pointer(file), file},
-		{"a pointer for another file", true, pointer(other), pointer(other)},
-		{"a pointer the destination has no file for", false, pointer(file), pointer(file)},
+		{"the pointer for the destination's file", file, true, "", pointer(file), file},
+		{"the pointer checked out with CRLF", file, true, "", strings.ReplaceAll(pointer(file), "\n", "\r\n"), file},
+		{"the pointer for a text file the destination checks out with CRLF", text, true, textCRLF, pointer(text), textCRLF},
+		{"a pointer for another file of that size", file, true, "", pointer(other), pointer(other)},
+		{"a pointer for another binary that differs only in line endings", "\x00a\r\nb", true, "", pointer("\x00a\nb"), pointer("\x00a\nb")},
+		{"a pointer the destination has no file for", file, false, "", pointer(file), pointer(file)},
 	} {
 		for _, verb := range []string{"archive", "unarchive"} {
 			t.Run(c.name+"/"+verb, func(t *testing.T) {
@@ -1416,7 +1441,7 @@ func TestMoveNeverWritesAGitLFSPointerOverItsFile(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				att, err := a.Attach(owner.ID, "pic.png", []byte(file))
+				att, err := a.Attach(owner.ID, "pic.png", []byte(c.attached))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1448,11 +1473,23 @@ func TestMoveNeverWritesAGitLFSPointerOverItsFile(t *testing.T) {
 				if err := src.SaveAssetRaw(att.Name, []byte(c.moving)); err != nil {
 					t.Fatal(err)
 				}
+				if c.dstAs != "" {
+					if err := dst.SaveAssetRaw(att.Name, []byte(c.dstAs)); err != nil {
+						t.Fatal(err)
+					}
+				}
 
+				var assets AssetTransfer
 				if verb == "archive" {
-					_, err = a.ArchiveIDs([]string{owner.ID}, false)
+					var rep *ArchiveReport
+					if rep, err = a.ArchiveIDs([]string{owner.ID}, false); rep != nil {
+						assets = rep.Assets
+					}
 				} else {
-					_, err = a.Unarchive([]string{owner.ID})
+					var rep *UnarchiveReport
+					if rep, err = a.Unarchive([]string{owner.ID}); rep != nil {
+						assets = rep.Assets
+					}
 				}
 				if err != nil {
 					t.Fatalf("a fresh %s of %s: %v", verb, owner.ID, err)
@@ -1460,15 +1497,52 @@ func TestMoveNeverWritesAGitLFSPointerOverItsFile(t *testing.T) {
 				if got, err := dst.LoadAsset(att.Name); err != nil || string(got) != c.want {
 					t.Errorf("destination's %s = %q (%v); want %q", att.Name, got, err, c.want)
 				}
+				// The file is in the destination either way: the report lists it
+				// as landed, the source lets its copy go, and the preview agrees.
+				if !slices.Equal(assets.Copied, []string{att.Name}) || !slices.Equal(assets.Deleted, []string{att.Name}) {
+					t.Errorf("assets = %+v; want %s copied and deleted from the source", assets, att.Name)
+				}
 			})
 		}
+	}
+}
+
+// A leaving body's link to a file the source does not have carries nothing:
+// the move goes through, and the link is lint's asset-missing as before.
+//
+// bite-exempt: it pins the base's behavior (planAssets' on-disk guard), which
+// the asset-clash advice's re-run no longer crosses.
+func TestMoveCarriesNoLinkTheSourceCannotServe(t *testing.T) {
+	for _, verb := range []string{"archive", "unarchive"} {
+		t.Run(verb, func(t *testing.T) {
+			a := newFSApp(t)
+			tk, err := a.Add("linked", AddOpts{Status: "done"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := a.Store.SaveBody(tk.ID, "# linked\n\n![gone]("+core.AssetRef(tk.ID+"-gone.png")+")\n"); err != nil {
+				t.Fatal(err)
+			}
+			if verb == "unarchive" {
+				if _, err := a.ArchiveIDs([]string{tk.ID}, false); err != nil {
+					t.Fatal(err)
+				}
+				_, err = a.Unarchive([]string{tk.ID})
+			} else {
+				_, err = a.ArchiveIDs([]string{tk.ID}, false)
+			}
+			if err != nil {
+				t.Fatalf("%s of a body that links a missing file: %v", verb, err)
+			}
+		})
 	}
 }
 
 // A fresh move meets an asset already in the destination only as the copy
 // another body there holds, and keeps writing over it as it always did, even
 // when one side's file was replaced by hand: its owner sits in one store, so
-// the pair is one file twice.
+// the pair is one file twice. The one write it no longer makes, a git-lfs
+// pointer over its file, is TestMoveNeverWritesAGitLFSPointerOverItsFile's.
 //
 // bite-exempt: it pins the base's behavior, which the asset check briefly
 // refused on every move.
