@@ -1529,29 +1529,82 @@ func TestMoveNeverWritesAGitLFSPointerOverItsFile(t *testing.T) {
 	}
 }
 
-// lineSum hashes what foldCRLF, and the LF-to-CRLF expansion after it, would
-// build, without building it — a CR before an LF dropped, a lone CR kept, a
-// last line without an LF written as it is — and pointerOf's size gate counts
-// the same bytes.
-func TestLineSumMatchesTheFoldedBytes(t *testing.T) {
-	for _, data := range []string{"", "a", "a\n", "a\r\n", "a\r\r\n", "\r\n\r\n", "a\rb\n", "last\r", "mixed\r\nline\nend"} {
+// The line-ending variants are hashed and compared without being built, and
+// each stands in for exactly the bytes foldCRLF, and the LF-to-CRLF expansion
+// after it, would build — checked over every short string of "a", CR and LF,
+// so lone CRs, CR runs before an LF and a last line without one are all met.
+// pointerOf's size gate must let each variant's pointer through, and
+// equalFolded must agree with comparing folded copies.
+func TestLineEndingVariantsMatchTheBuiltBytes(t *testing.T) {
+	var all []string
+	var grow func(string)
+	grow = func(s string) {
+		all = append(all, s)
+		if len(s) < 6 {
+			for _, c := range []string{"a", "\r", "\n"} {
+				grow(s + c)
+			}
+		}
+	}
+	grow("")
+	for _, data := range all {
 		folded := foldCRLF([]byte(data))
 		expanded := bytes.ReplaceAll(folded, []byte("\n"), []byte("\r\n"))
 		for _, c := range []struct {
 			crlf bool
 			want []byte
-			size int
-		}{
-			{false, folded, len(data) - bytes.Count([]byte(data), []byte("\r\n"))},
-			{true, expanded, len(data) - bytes.Count([]byte(data), []byte("\r\n")) + bytes.Count([]byte(data), []byte("\n"))},
-		} {
+		}{{false, folded}, {true, expanded}} {
 			sum := sha256.Sum256(c.want)
 			if got := lineSum([]byte(data), c.crlf); !bytes.Equal(got, sum[:]) {
-				t.Errorf("lineSum(%q, %v) is not the sha256 of %q", data, c.crlf, c.want)
+				t.Fatalf("lineSum(%q, %v) is not the sha256 of %q", data, c.crlf, c.want)
 			}
-			if c.size != len(c.want) {
-				t.Errorf("%q: the size gate counts %d bytes, the variant has %d", data, c.size, len(c.want))
+			ptr := fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%x\nsize %d\n", sum, len(c.want))
+			if !pointerOf([]byte(ptr), []byte(data)) {
+				t.Fatalf("pointerOf misses the pointer for %q against %q", c.want, data)
 			}
+		}
+	}
+	for _, a := range all {
+		for _, b := range all {
+			if len(a) > 4 || len(b) > 4 {
+				continue
+			}
+			if got, want := equalFolded([]byte(a), []byte(b)), bytes.Equal(foldCRLF([]byte(a)), foldCRLF([]byte(b))); got != want {
+				t.Fatalf("equalFolded(%q, %q) = %v, want %v", a, b, got, want)
+			}
+		}
+	}
+}
+
+// The pointer and line-ending checks read a large copy without building a
+// second one: a check that copied it would cost a large asset its size again
+// in the middle of a move. Not parallel, so the counts are the check's own.
+func TestLargeAssetChecksBuildNoCopy(t *testing.T) {
+	big := bytes.Repeat([]byte("a line of a large text asset\r\n"), 1<<18)
+	lf := foldCRLF(big)
+	pointerFor := func(content []byte) []byte {
+		return []byte(fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%x\nsize %d\n", sha256.Sum256(content), len(content)))
+	}
+	named, other := pointerFor(big), pointerFor(append([]byte("x"), big[1:]...))
+	for _, c := range []struct {
+		name string
+		run  func() bool
+		want bool
+	}{
+		{"the pointer for a CRLF file against its LF copy", func() bool { return pointerOf(named, lf) }, true},
+		{"the pointer for another file of that size", func() bool { return pointerOf(other, lf) }, false},
+		{"copies that differ only in line endings", func() bool { return sameAsset(big, lf) }, true},
+	} {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		got := c.run()
+		runtime.ReadMemStats(&after)
+		if got != c.want {
+			t.Errorf("%s = %v, want %v", c.name, got, c.want)
+		}
+		if n := after.TotalAlloc - before.TotalAlloc; n > uint64(len(big))/2 {
+			t.Errorf("%s allocated %d bytes for a %d-byte file", c.name, n, len(big))
 		}
 	}
 }

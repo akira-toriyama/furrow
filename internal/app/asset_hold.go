@@ -322,7 +322,28 @@ func sameAsset(a, b []byte) bool {
 	if bytes.IndexByte(a, 0) >= 0 || bytes.IndexByte(b, 0) >= 0 {
 		return false
 	}
-	return bytes.Equal(foldCRLF(a), foldCRLF(b))
+	return equalFolded(a, b)
+}
+
+// equalFolded reports whether a and b are equal with every CRLF folded to LF,
+// as foldCRLF would fold them, without building either folded copy: the clash
+// check already holds both copies of what may be a large file.
+func equalFolded(a, b []byte) bool {
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		if a[i] == '\r' && i+1 < len(a) && a[i+1] == '\n' {
+			i++
+		}
+		if b[j] == '\r' && j+1 < len(b) && b[j+1] == '\n' {
+			j++
+		}
+		if a[i] != b[j] {
+			return false
+		}
+		i++
+		j++
+	}
+	return i == len(a) && j == len(b)
 }
 
 // foldCRLF is b with every CRLF folded to LF.
@@ -337,8 +358,10 @@ func foldCRLF(b []byte) []byte {
 // where the pointer names LF, or normalized to LF where it names CRLF, and a
 // pointer committed there as content can come out with CRLF. So ptr is tried
 // with CRLF folded, against data as it is, with CRLF folded, and with every
-// LF then expanded to CRLF. A file with mixed line endings that git
-// normalized on one side is not recognized, and the bytes decide. The
+// LF then expanded to CRLF. That undoes git's normalization only where every
+// line ends in one LF or one CRLF: a file with uneven line endings — mixed, or
+// more than one CR before an LF — that git normalized on one side is not
+// recognized, and the bytes decide. The
 // variants are hashed as they stream (lineSum), never built: data is the
 // other copy of what may be a large file, and the pointer's size line rules
 // out a variant before any hashing.
