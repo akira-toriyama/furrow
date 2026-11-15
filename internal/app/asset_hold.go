@@ -155,9 +155,10 @@ func (p *assetPlan) outcome() (deleted []string, kept []KeptAsset) {
 // copyAssets lands every in-play asset in dst under its exact name. A copy dst
 // already has is the same file — a retry after an interrupted move, or the
 // copy a still-held asset earned from an earlier move of another holder — so
-// the overwrite changes nothing but a hand edit or a text file's line
-// endings: refuseAssetClash has already refused a pair whose owner id both
-// stores hold with other content. One route still writes over a different
+// the overwrite changes nothing but a hand edit, a text file's line endings,
+// or a git-lfs pointer a checkout left in dst, which the file replaces:
+// refuseAssetClash has already refused a pair whose owner id both stores hold
+// with other content. One route still writes over a different
 // file: an owner in both stores whose board copy re-attached under a name
 // archive/ holds, then removed with rm while another body keeps the file,
 // leaves that name to an owner in one store (kept by t-erd6; attach skipping
@@ -330,9 +331,14 @@ func foldCRLF(b []byte) []byte {
 }
 
 // pointerOf reports whether ptr is the git-lfs pointer for data (pointsTo),
-// line endings aside: where git converts line endings (core.autocrlf) at a
-// path git-lfs does not track, a pointer committed there as content, or the
-// text file a pointer names, is checked out with CRLF.
+// line endings aside. git-lfs keeps a file's bytes as written (-text), while
+// at a path git-lfs does not track, core.autocrlf or a text attribute
+// converts a copy: the text file a pointer names can sit there with CRLF
+// where the pointer names LF, or normalized to LF where it names CRLF, and a
+// pointer committed there as content can come out with CRLF. So ptr is tried
+// with CRLF folded, against data as it is, with CRLF folded, and with every
+// LF then expanded to CRLF. A file with mixed line endings that git
+// normalized on one side is not recognized, and the bytes decide.
 func pointerOf(ptr, data []byte) bool {
 	if len(ptr) >= 1024 {
 		return false
@@ -341,20 +347,25 @@ func pointerOf(ptr, data []byte) bool {
 	if pointsTo(p, data) {
 		return true
 	}
-	return bytes.IndexByte(data, 0) < 0 && bytes.Contains(data, []byte("\r\n")) && pointsTo(p, foldCRLF(data))
+	if bytes.IndexByte(data, 0) >= 0 {
+		return false
+	}
+	lf := foldCRLF(data)
+	return pointsTo(p, lf) || pointsTo(p, bytes.ReplaceAll(lf, []byte("\n"), []byte("\r\n")))
 }
 
 // lfsPointerVersion opens every git-lfs pointer file (spec v1).
 const lfsPointerVersion = "version https://git-lfs.github.com/spec/v1\n"
 
 // pointsTo reports whether ptr is exactly the pointer git-lfs writes for data:
-// the version line, then data's sha256 oid and its size — the bytes every
-// checkout without the file leaves in the working tree (re-encoding even a
-// non-canonical pointer blob) and `git lfs pointer --file` prints. Other
-// pointer-like text was written by hand or by another tool: git-lfs stores a
-// valid non-canonical pointer verbatim, a different blob it still smudges to
-// the file, and malformed text as content, so it is no pointer here and the
-// bytes decide.
+// the version line, then data's sha256 oid and its size — the bytes a
+// checkout through git-lfs leaves in the working tree without the file
+// (re-encoding even a non-canonical pointer blob) and `git lfs pointer
+// --file` prints. Other pointer-like text was written by hand, by another
+// tool, or left by a checkout without git-lfs: git-lfs stores a valid
+// non-canonical pointer verbatim, a different blob it still smudges to the
+// file, and malformed text as content, so it is no pointer here and the bytes
+// decide.
 func pointsTo(ptr, data []byte) bool {
 	size := "size " + strconv.Itoa(len(data)) + "\n"
 	if len(ptr) >= 1024 || !bytes.HasPrefix(ptr, []byte(lfsPointerVersion)) || !bytes.HasSuffix(ptr, []byte(size)) {

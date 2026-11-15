@@ -727,8 +727,9 @@ func TestFinishedMoveKeepsArchivesProse(t *testing.T) {
 // moves refuse that before writing. Two differences furrow did not make are
 // no clash: a text file's line endings, and the git-lfs pointer a checkout
 // leaves for the file the other copy holds — git-lfs's own bytes, line
-// endings aside on either. A move then lands the file, never its pointer,
-// whichever side holds which. Otherwise a binary is compared byte for byte.
+// endings aside on either side and in either direction. A move then lands
+// the file, never its pointer, whichever side holds which. Otherwise a binary
+// is compared byte for byte.
 func TestMoveRefusesAnAssetClash(t *testing.T) {
 	const file = "\x00PNG board"
 	lfsPointer := func(content string) string {
@@ -748,6 +749,7 @@ func TestMoveRefusesAnAssetClash(t *testing.T) {
 		{"a git-lfs pointer for another file of that size", lfsPointer("\x00PNG other"), file, true, ""},
 		{"a git-lfs pointer checked out with CRLF", strings.ReplaceAll(lfsPointer(file), "\n", "\r\n"), file, false, file},
 		{"a git-lfs pointer for the text file the board checks out with CRLF", lfsPointer("a log\nline two\n"), "a log\r\nline two\r\n", false, "a log\r\nline two\r\n"},
+		{"a git-lfs pointer for CRLF text the board's copy git normalized to LF", lfsPointer("a log\r\nline two\r\n"), "a log\nline two\n", false, "a log\nline two\n"},
 		{"pointer-like text in another shape than git-lfs writes", lfsPointer(file) + "note a stray line\n", file, true, ""},
 	} {
 		for _, verb := range []string{"archive", "unarchive"} {
@@ -966,20 +968,26 @@ func followClashAdvice(t *testing.T, a *App, names []string) map[string]string {
 
 // The refusal's way out takes one step, whichever move meets the clash:
 // after followClashAdvice the re-run passes, the destination holds both
-// files, each under its own name, and no board body is left linking a file
-// the board lacks.
+// files, each under its own name, and no board body that stays — a watcher
+// only the board holds among them, whose link the advice moves to the new
+// name — is left linking a file the board lacks. (The owner's own board body,
+// in both stores, keeps its old link for the body rule; a viewer's fresh
+// archive can leave that one dangling until the owner's move is finished,
+// which lint's duplicate-id asks for anyway.)
 func TestAssetClashAdviceLetsTheReRunKeepBoth(t *testing.T) {
 	for _, c := range []struct {
-		name   string
-		verb   string
-		viewer bool // a viewer moves, not the owner
-		files  int  // clashing files the owner holds
+		name    string
+		verb    string
+		viewer  bool // a viewer moves, not the owner
+		files   int  // clashing files the owner holds
+		watcher bool // a task only the board holds links the file and stays
 	}{
-		{"a finished archive of the owner", "archive", false, 1},
-		{"a finished unarchive of the owner", "unarchive", false, 1},
-		{"a finished archive of the owner with two clashing files", "archive", false, 2},
-		{"a fresh archive of a viewer", "archive", true, 1},
-		{"a fresh unarchive of a viewer", "unarchive", true, 1},
+		{"a finished archive of the owner", "archive", false, 1, false},
+		{"a finished unarchive of the owner", "unarchive", false, 1, false},
+		{"a finished archive of the owner with two clashing files", "archive", false, 2, false},
+		{"a fresh archive of a viewer", "archive", true, 1, false},
+		{"a fresh unarchive of a viewer", "unarchive", true, 1, false},
+		{"a finished archive of the owner a watcher on the board shows", "archive", false, 1, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			a := newFSApp(t)
@@ -1001,6 +1009,15 @@ func TestAssetClashAdviceLetsTheReRunKeepBoth(t *testing.T) {
 			}
 			if c.viewer {
 				if err := a.Store.SaveBody(viewer.ID, "# viewer\n\n![f]("+core.AssetRef(names[0])+")\n"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if c.watcher {
+				watcher, err := a.Add("watcher", AddOpts{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := a.Store.SaveBody(watcher.ID, "# watcher\n\n![f]("+core.AssetRef(names[0])+")\n"); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -1027,8 +1044,8 @@ func TestAssetClashAdviceLetsTheReRunKeepBoth(t *testing.T) {
 			}
 			for i, name := range names {
 				since := []byte(fmt.Sprintf("PNG\x00board %d", i))
-				if c.viewer && c.verb == "archive" {
-					// The board kept its copy for the viewer: replaced by hand.
+				if (c.viewer && c.verb == "archive") || c.watcher {
+					// The board kept its copy for the body there: replaced by hand.
 					if err := a.Store.SaveAssetRaw(name, since); err != nil {
 						t.Fatal(err)
 					}
@@ -1430,6 +1447,7 @@ func TestMoveNeverWritesAGitLFSPointerOverItsFile(t *testing.T) {
 		{"the pointer for the destination's file", file, true, "", pointer(file), file},
 		{"the pointer checked out with CRLF", file, true, "", strings.ReplaceAll(pointer(file), "\n", "\r\n"), file},
 		{"the pointer for a text file the destination checks out with CRLF", text, true, textCRLF, pointer(text), textCRLF},
+		{"the pointer for CRLF text the destination's copy git normalized to LF", textCRLF, true, text, pointer(textCRLF), text},
 		{"a pointer for another file of that size", file, true, "", pointer(other), pointer(other)},
 		{"a pointer for another binary that differs only in line endings", "\x00a\r\nb", true, "", pointer("\x00a\nb"), pointer("\x00a\nb")},
 		{"a pointer the destination has no file for", file, false, "", pointer(file), pointer(file)},
@@ -1507,11 +1525,11 @@ func TestMoveNeverWritesAGitLFSPointerOverItsFile(t *testing.T) {
 	}
 }
 
-// A leaving body's link to a file the source does not have carries nothing:
-// the move goes through, and the link is lint's asset-missing as before.
+// A leaving body's link to a file the source does not have carries nothing,
+// and the move goes through.
 //
-// bite-exempt: it pins the base's behavior (planAssets' on-disk guard), which
-// the asset-clash advice's re-run no longer crosses.
+// bite-exempt: it pins the base's behavior, planAssets' on-disk guard, on its
+// own; the asset-clash advice's re-runs cross the guard only in some cases.
 func TestMoveCarriesNoLinkTheSourceCannotServe(t *testing.T) {
 	for _, verb := range []string{"archive", "unarchive"} {
 		t.Run(verb, func(t *testing.T) {
