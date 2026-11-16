@@ -157,11 +157,11 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 		}
 		staleEpics, err := t.Store.StaleEpicShards()
 		if err != nil {
-			return nil, err
+			return nil, a.inStore(t, err)
 		}
 		staleRepos, err := t.Store.StaleRepoShards()
 		if err != nil {
-			return nil, err
+			return nil, a.inStore(t, err)
 		}
 		pend = append(pend, pendingUpgrade{sv: t, idx: idx, plans: plans, staleEpics: staleEpics, staleRepos: staleRepos})
 	}
@@ -214,9 +214,9 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Last: the version is already stamped, so a re-run after a failure
-		// is a no-op. A failure here costs only shards still in the old shape,
-		// where one before the body migration would strand that too.
+		// Last: this store's version is already stamped, so a re-run after a
+		// failure skips it. A failure here costs only shards still in the old
+		// shape, where one before the body migration would strand that too.
 		if err := resaveStaleShards(p.sv.Store, p.staleEpics, p.staleRepos); err != nil {
 			return nil, err
 		}
@@ -225,6 +225,15 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 		rep.Applied = true
 	}
 	return rep, nil
+}
+
+// inStore completes a store-relative shard path in err for the archive store
+// (`archive/epics/…`, lint's spelling); the hot store's is already whole.
+func (a *App) inStore(t storeVersion, err error) error {
+	if ce := core.AsError(err); ce != nil && t.Path != a.Dir {
+		return ce.WithPrefixf("archive/")
+	}
+	return err
 }
 
 // resaveStaleShards puts every listed epic and repo shard through today's

@@ -548,9 +548,8 @@ func (s *Store) DeleteEpic(id string) error {
 	return nil
 }
 
-// ListEpicIDs returns the ids of all epic shards (epics/<id>.json), sorted, for
-// the shard-filename/id integrity lint — the epics/ twin of ListTaskIDs. A
-// missing epics/ dir yields nil, not an error.
+// ListEpicIDs returns the filename stems of epics/<id>.json, sorted — the
+// epics/ twin of ListTaskIDs. A missing epics/ dir yields nil, not an error.
 func (s *Store) ListEpicIDs() ([]string, error) {
 	return s.listStems(s.epicsDir(), ".json")
 }
@@ -607,9 +606,10 @@ func staleShards(dir, kind string, canon func(stem string, b []byte) (name strin
 		}
 		name, data, err := canon(strings.TrimSuffix(e.Name(), ".json"), b)
 		if err != nil {
-			// Name the file: the caller refuses a flag day on this, and a
-			// store can hold hundreds of shards across two directories.
-			where := filepath.Join(filepath.Base(filepath.Dir(dir)), kind, e.Name())
+			// Name the file, store-relative as lint does (core.EpicPath): the
+			// caller refuses a flag day on this, and which store it is only
+			// the caller knows.
+			where := kind + "/" + e.Name()
 			if ce := core.AsError(err); ce != nil {
 				return nil, ce.WithPrefixf("%s: ", where)
 			}

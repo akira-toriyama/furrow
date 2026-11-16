@@ -80,8 +80,8 @@ func TestStaleEpicShards(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unparsable epic shard must fail the listing")
 	}
-	if want := filepath.Join(".furrow", "epics", "e-torn.json"); !strings.Contains(err.Error(), want) {
-		t.Errorf("the error must name the shard (%s): %v", want, err)
+	if want := "epics/e-torn.json: "; !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("the error must lead with the store-relative shard path (%s): %v", want, err)
 	}
 	if ce := core.AsError(err); ce == nil || ce.Kind != core.KindValidation {
 		t.Errorf("a parse failure stays a validation error: %+v", ce)
@@ -112,5 +112,14 @@ func TestStaleRepoShards(t *testing.T) {
 	}
 	if want := []string{"o/old"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("stale = %v, want %v", got, want)
+	}
+
+	writeShard(t, filepath.Join(root, "repos", "o__torn.json"), "{")
+	_, err = s.StaleRepoShards()
+	if err == nil {
+		t.Fatal("an unparsable repo shard must fail the listing")
+	}
+	if want := "repos/o__torn.json: "; !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("the error must lead with the store-relative shard path (%s): %v", want, err)
 	}
 }

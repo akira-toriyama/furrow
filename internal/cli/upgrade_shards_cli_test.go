@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v10/internal/app"
@@ -191,5 +192,47 @@ func TestUpgradeRewritesOldEpicAndRepoShards(t *testing.T) {
 	}
 	if string(shown.Deps) != "[]" {
 		t.Errorf("epic show: deps = %s, want []", shown.Deps)
+	}
+}
+
+// A shard that does not parse stops the flag day before the first write, in
+// whichever store it sits, and the refusal names the file from the board root.
+func TestUpgradeRefusesATornShardAndNamesIt(t *testing.T) {
+	for _, tc := range []struct{ file, want string }{
+		{filepath.Join("epics", "e-torn.json"), "epics/e-torn.json: "},
+		{filepath.Join("archive", "epics", "e-torn.json"), "archive/epics/e-torn.json: "},
+		{filepath.Join("repos", "o__torn.json"), "repos/o__torn.json: "},
+	} {
+		initStore(t)
+		root := os.Getenv(app.EnvDir)
+		done := addTask(t, "to be archived", "-s", "done")
+		mustRun(t, "archive", done, "--yes")
+		torn := filepath.Join(root, tc.file)
+		if err := os.MkdirAll(filepath.Dir(torn), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(torn, []byte("{"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		behind := []byte("{\n  \"schema_version\": " + strconv.Itoa(core.SchemaVersion-1) + "\n}\n")
+		metas := []string{filepath.Join(root, "meta.json"), filepath.Join(root, "archive", "meta.json")}
+		for _, meta := range metas {
+			if err := os.WriteFile(meta, behind, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		fe, _ := runErr(t, "upgrade", "--yes")
+		if fe == nil || fe.Kind != core.KindValidation {
+			t.Fatalf("%s: err = %+v, want a validation refusal", tc.file, fe)
+		}
+		if !strings.HasPrefix(fe.Msg, tc.want) {
+			t.Errorf("%s: message must lead with %q: %s", tc.file, tc.want, fe.Msg)
+		}
+		for _, meta := range metas {
+			if b, _ := os.ReadFile(meta); string(b) != string(behind) {
+				t.Errorf("%s: the refusal still raised %s:\n%s", tc.file, meta, b)
+			}
+		}
 	}
 }

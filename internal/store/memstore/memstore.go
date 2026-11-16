@@ -336,9 +336,8 @@ func (s *Store) SaveEpic(e *core.Epic) error {
 }
 
 // ListEpicIDs returns every epic id, sorted — the in-memory twin of listing
-// epics/<id>.json filenames. Identical to the ids in LoadEpics here (memory has
-// no filename that can disagree with its content), which is exactly why the
-// integrity lint it feeds can only ever fire against fsstore.
+// epics/<id>.json filenames. Identical to the ids in LoadEpics here: memory has
+// no filename that can disagree with its content.
 func (s *Store) ListEpicIDs() ([]string, error) {
 	if len(s.epics) == 0 {
 		return nil, nil

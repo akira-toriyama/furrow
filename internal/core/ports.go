@@ -169,8 +169,9 @@ type Store interface {
 	// box's body and any member's `epic` field are the app's to settle first —
 	// a store cannot know what still points at the box.
 	DeleteEpic(id string) error
-	// ListEpicIDs returns the ids of all epic shards (epics/<id>.json), for the
-	// shard-filename/id integrity lint — the epics/ twin of ListTaskIDs.
+	// ListEpicIDs returns the filename stems of epics/<id>.json — the epics/
+	// twin of ListTaskIDs. No lint compares them with the ids the shards carry
+	// (shard-misnamed is the task shards' check only).
 	ListEpicIDs() ([]string, error)
 	// StaleEpicShards and StaleRepoShards name the epics (by id) and the repo
 	// records (by owner/repo) whose stored shard is not the bytes MarshalEpic /
