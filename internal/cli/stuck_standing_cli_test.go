@@ -9,9 +9,7 @@ import (
 // Two boxes of the same shape — one open member, none actionable — differing
 // only in the standing declaration. Every read that says "stuck" must agree
 // with revisit about both: the plain box is stuck everywhere, the standing one
-// nowhere. Before t-zskk only revisit knew the exemption, so epic ls / epic
-// show / show <epic> / ls --tree / brief's pinned band flagged the standing
-// box that revisit stayed silent about.
+// nowhere.
 func TestCLIStandingBoxIsStuckInNoRead(t *testing.T) {
 	initStore(t)
 	plain := addEpic(t, "plain box")
@@ -132,6 +130,33 @@ func TestCLIStandingBoxIsStuckInNoRead(t *testing.T) {
 		}
 		if got, want := strings.Contains(out, "⚠ stuck"), id == plain; got != want {
 			t.Errorf("epic show %s: stuck marker present = %v, want %v:\n%s", id, got, want, out)
+		}
+	}
+}
+
+// The exemption is about the flag, not about explaining an empty read: a
+// standing box that is the active focus hands `next` nothing just the same, so
+// the note that says why still prints — without calling the box stuck.
+func TestCLINextExplainsAnEmptyStandingFocus(t *testing.T) {
+	for _, standing := range []bool{false, true} {
+		initStore(t)
+		box := addEpic(t, "the focus", "-r", "o/r")
+		addTask(t, "not yet ready", "-s", "backlog", "-e", box, "-r", "o/r")
+		if standing {
+			mustRun(t, "epic", "set", box, "--standing")
+		}
+		mustRun(t, "epic", "activate", box)
+
+		_, stderr, code := runSplit(t, "next", "-r", "o/r")
+		if code != 0 {
+			t.Fatalf("standing=%v: next exit %d:\n%s", standing, code, stderr)
+		}
+		want := "note: focus " + box + ` "the focus" is stuck — it has open tasks but none are actionable`
+		if standing {
+			want = "note: focus " + box + ` "the focus" has open tasks but none are actionable`
+		}
+		if !strings.Contains(stderr, want) {
+			t.Errorf("standing=%v: next must say why the focus is empty; want %q in:\n%s", standing, want, stderr)
 		}
 	}
 }

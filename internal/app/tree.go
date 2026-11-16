@@ -244,12 +244,16 @@ func (s epicStats) progress() Progress { return Progress{Done: s.Done, Total: s.
 // resting state.
 //
 // The ONE definition: revisit's epic_stuck and every `stuck` a read prints
-// (epic ls / epic show / ls --tree, text and JSON) come from here. Before
-// t-zskk only revisit knew the standing exemption, so 9 standing boxes on the
-// central board read `⚠ stuck` beside a revisit that said nothing.
-func (s epicStats) stuck(e *core.Epic) bool {
-	return !e.Standing && s.Open > 0 && s.Actionable == 0
-}
+// (epic ls / epic show / ls --tree / brief, text and JSON) come from here, so
+// the signal and the flag cannot disagree about a box.
+func (s epicStats) stuck(e *core.Epic) bool { return !e.Standing && s.noneActionable() }
+
+// noneActionable is the state under stuck, whatever the box declares: open
+// members, not one of them actionable. `next` explains its empty focus from
+// this, not from stuck — a standing box that is the active focus hands out
+// nothing just the same, and the exemption is about nagging, not about why
+// the read came back empty.
+func (s epicStats) noneActionable() bool { return s.Open > 0 && s.Actionable == 0 }
 
 // waiting is the EpicWait for a box; nil when the box has open (non-terminal)
 // work — then it is not merely waiting — or no future-due parked member.

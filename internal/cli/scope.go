@@ -75,9 +75,11 @@ func labelDidYouMean(cmd *cobra.Command, a *app.App, o app.QueryOpts, n int) err
 //   - scope engaged, nothing active: the empty result is deliberate ("no box
 //     open"), not "nothing to do" — name the fix, since this is the one state
 //     where next's contract differs from the classic board.
-//   - an active epic is STUCK (open members, none actionable): next structurally
+//   - an active epic has open members and none actionable: next structurally
 //     cannot show why it skipped the focus (it just returns rescue tasks or
-//     nothing), so it says so — unblocking the box is the day's move.
+//     nothing), so it says so — unblocking the box is the day's move. A
+//     standing focus gets the note too, minus the word "stuck" its flag never
+//     carries.
 //   - the scope left actionable tasks out (members of other boxes): one line
 //     with the count and the escape (--all-epics). The focus is next's
 //     definition, not a filter, but the root contract — a read never narrows
@@ -118,10 +120,15 @@ func hintEpicScope(a *app.App, o app.QueryOpts, tasks []core.Task) {
 		return
 	}
 	for _, it := range items {
-		if scope.Active[it.Epic.ID] && it.Stuck {
-			fmt.Fprintf(errOut, "note: focus %s %q is stuck — it has open tasks but none are actionable; `furrow ls -e %s --blocked` shows what is in the way\n",
-				it.Epic.ID, it.Epic.Title, it.Epic.ID)
+		if !scope.Active[it.Epic.ID] || !it.NoneActionable {
+			continue
 		}
+		state := "is stuck — it has"
+		if !it.Stuck {
+			state = "has"
+		}
+		fmt.Fprintf(errOut, "note: focus %s %q %s open tasks but none are actionable; `furrow ls -e %s --blocked` shows what is in the way\n",
+			it.Epic.ID, it.Epic.Title, state, it.Epic.ID)
 	}
 }
 
