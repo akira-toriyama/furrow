@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,10 +73,18 @@ func TestStaleEpicShards(t *testing.T) {
 		t.Errorf("StaleEpicShards wrote the shard:\n%s", b)
 	}
 
-	// A shard that does not parse fails the call, as it fails LoadEpics.
+	// A shard that does not parse fails the call, as it fails LoadEpics, and
+	// the error says which file.
 	writeShard(t, filepath.Join(root, "epics", "e-torn.json"), "{")
-	if _, err := s.StaleEpicShards(); err == nil {
-		t.Error("an unparsable epic shard must fail the listing")
+	_, err = s.StaleEpicShards()
+	if err == nil {
+		t.Fatal("an unparsable epic shard must fail the listing")
+	}
+	if want := filepath.Join(".furrow", "epics", "e-torn.json"); !strings.Contains(err.Error(), want) {
+		t.Errorf("the error must name the shard (%s): %v", want, err)
+	}
+	if ce := core.AsError(err); ce == nil || ce.Kind != core.KindValidation {
+		t.Errorf("a parse failure stays a validation error: %+v", ce)
 	}
 }
 

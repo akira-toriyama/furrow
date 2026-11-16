@@ -210,11 +210,14 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 		if err := p.sv.Store.Save(p.idx); err != nil {
 			return nil, err
 		}
-		if err := resaveStaleShards(p.sv.Store, p.staleEpics, p.staleRepos); err != nil {
-			return nil, err
-		}
 		n, err := a.migrateBodiesApply(p.sv.Store, p.plans, conv, ch.DroppedDeps)
 		if err != nil {
+			return nil, err
+		}
+		// Last: the version is already stamped, so a re-run after a failure
+		// is a no-op. A failure here costs only shards still in the old shape,
+		// where one before the body migration would strand that too.
+		if err := resaveStaleShards(p.sv.Store, p.staleEpics, p.staleRepos); err != nil {
 			return nil, err
 		}
 		st.LinksRewritten = n

@@ -607,7 +607,13 @@ func staleShards(dir, kind string, canon func(stem string, b []byte) (name strin
 		}
 		name, data, err := canon(strings.TrimSuffix(e.Name(), ".json"), b)
 		if err != nil {
-			return nil, err
+			// Name the file: the caller refuses a flag day on this, and a
+			// store can hold hundreds of shards across two directories.
+			where := filepath.Join(filepath.Base(filepath.Dir(dir)), kind, e.Name())
+			if ce := core.AsError(err); ce != nil {
+				return nil, ce.WithPrefixf("%s: ", where)
+			}
+			return nil, core.Internalf(kind, "%s: %v", where, err)
 		}
 		if name != "" && !bytes.Equal(b, data) {
 			stale = append(stale, name)

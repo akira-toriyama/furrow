@@ -180,8 +180,9 @@ type Store interface {
 	// by a write to that very record, so `furrow upgrade` asks here — once for
 	// its preview's count, once for the set its apply re-saves. Read-only and
 	// sorted. A shard whose filename and content disagree about its identity is
-	// left out (re-saving it would write a second file; lint names it). A store
-	// that keeps records rather than bytes has none.
+	// left out: re-saving it would write a second file, and no lint names that
+	// state for an epic or repo shard, so it stays as found. A store that keeps
+	// records rather than bytes has none.
 	StaleEpicShards() ([]string, error)
 	StaleRepoShards() ([]string, error)
 	// NextEpicID returns a fresh, random, collision-resistant epic id (e.g.
