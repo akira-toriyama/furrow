@@ -336,9 +336,8 @@ func (s *Store) SaveEpic(e *core.Epic) error {
 }
 
 // ListEpicIDs returns every epic id, sorted — the in-memory twin of listing
-// epics/<id>.json filenames. Identical to the ids in LoadEpics here (memory has
-// no filename that can disagree with its content), which is exactly why the
-// integrity lint it feeds can only ever fire against fsstore.
+// epics/<id>.json filenames. Identical to the ids in LoadEpics here: memory has
+// no filename that can disagree with its content.
 func (s *Store) ListEpicIDs() ([]string, error) {
 	if len(s.epics) == 0 {
 		return nil, nil
@@ -350,6 +349,12 @@ func (s *Store) ListEpicIDs() ([]string, error) {
 	sort.Strings(ids)
 	return ids, nil
 }
+
+// StaleEpicShards and StaleRepoShards are always empty here: SaveEpic and
+// SaveRepo keep the record the marshaller round-trips to, so there are no
+// stored bytes that could differ from it.
+func (s *Store) StaleEpicShards() ([]string, error) { return nil, nil }
+func (s *Store) StaleRepoShards() ([]string, error) { return nil, nil }
 
 // NextEpicID returns a fresh random epic id — the epic prefix plus the same
 // random suffix NextID uses.

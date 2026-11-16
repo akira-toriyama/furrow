@@ -21,6 +21,13 @@ type UpgradeStore struct {
 	From  int    `json:"from"`  // the layout it declares now (0 = unstamped)
 	To    int    `json:"to"`    // the layout it will declare after
 	Tasks int    `json:"tasks"` // task shards after the migration (what Save re-serializes)
+	// EpicsRewritten and ReposRewritten count the epics/ and repos/ shards
+	// whose bytes were not the current marshaller's (Store.StaleEpicShards) and
+	// are re-saved: the same number in preview and apply. Always present; 0
+	// when every such shard was already in today's shape. A v6 hop's newly
+	// created epics are Epics below, not counted here.
+	EpicsRewritten int `json:"epics_rewritten"`
+	ReposRewritten int `json:"repos_rewritten"`
 
 	// Epics lists each `type:"epic"` task and the epic it becomes — the same
 	// rows in preview and apply, because the new id is DERIVED from the old
@@ -61,6 +68,9 @@ type pendingUpgrade struct {
 	sv    storeVersion
 	idx   *core.Index
 	plans []core.V6Epic
+	// The epics/ and repos/ shards to re-save. Listed in pass 1 so a shard
+	// that does not parse refuses the upgrade before the first write.
+	staleEpics, staleRepos []string
 }
 
 // Upgrade raises the board's on-disk layout version to the one this binary
@@ -74,6 +84,10 @@ type pendingUpgrade struct {
 // layout can read it). The ordering that keeps that safe — release furrow, bump
 // every caller's pin, THEN upgrade — is a human's to run; furrow cannot see the
 // fleet's pins, so it previews by default and states the checklist.
+//
+// Every hop re-serializes ALL three shard kinds, not tasks alone: Save rewrites
+// the task shards, resaveStaleShards the epics/ and repos/ ones an older layout
+// wrote (a hop that makes a key required is otherwise honoured by tasks only).
 //
 // Crossing v6 is not just a re-stamp: the retired v5 `type`/`parent` keys —
 // parked in extras, since this binary has no such fields — are converted
@@ -141,7 +155,15 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 			conv[p.TaskID] = p.Epic.ID
 			derived[p.Epic.ID] = p.TaskID
 		}
-		pend = append(pend, pendingUpgrade{sv: t, idx: idx, plans: plans})
+		staleEpics, err := t.Store.StaleEpicShards()
+		if err != nil {
+			return nil, a.inStore(t, err)
+		}
+		staleRepos, err := t.Store.StaleRepoShards()
+		if err != nil {
+			return nil, a.inStore(t, err)
+		}
+		pend = append(pend, pendingUpgrade{sv: t, idx: idx, plans: plans, staleEpics: staleEpics, staleRepos: staleRepos})
 	}
 
 	// Pass 2: rewrite each store with the whole board's conversion map.
@@ -159,6 +181,7 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 		ch := core.ApplyV6(p.idx, conv)
 		st.Rehomed, st.Kept, st.DroppedDeps = ch.Rehomed, ch.Kept, ch.DroppedDeps
 		st.Tasks = len(p.idx.Tasks)
+		st.EpicsRewritten, st.ReposRewritten = len(p.staleEpics), len(p.staleRepos)
 
 		if !apply {
 			n, err := a.countLinkRewrites(p.sv.Store, conv)
@@ -191,11 +214,60 @@ func (a *App) Upgrade(apply bool) (*UpgradeReport, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Last: this store's version is already stamped, so a re-run after a
+		// failure skips it. A failure here costs only shards still in the old
+		// shape, where one before the body migration would strand that too.
+		if err := resaveStaleShards(p.sv.Store, p.staleEpics, p.staleRepos); err != nil {
+			return nil, err
+		}
 		st.LinksRewritten = n
 		rep.Stores = append(rep.Stores, st)
 		rep.Applied = true
 	}
 	return rep, nil
+}
+
+// inStore completes a store-relative shard path in err for the archive store
+// (`archive/epics/…`, lint's spelling); the hot store's is already whole.
+func (a *App) inStore(t storeVersion, err error) error {
+	if ce := core.AsError(err); ce != nil && t.Path != a.Dir {
+		return ce.WithPrefixf("archive/")
+	}
+	return err
+}
+
+// resaveStaleShards puts every listed epic and repo shard through today's
+// marshaller. Save does this for tasks on any write (it rewrites a shard whose
+// bytes moved from the canonical form); an epic or repo shard is written only
+// by an edit to that record, so without this pass a box made before a key
+// became required keeps lacking it across every upgrade and reads back as
+// `"deps": null`. A record gone since the listing is skipped.
+func resaveStaleShards(s Store, epics, repos []string) error {
+	for _, id := range epics {
+		e, ok, err := s.LoadEpic(id)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		if err := s.SaveEpic(e); err != nil {
+			return err
+		}
+	}
+	for _, name := range repos {
+		rec, ok, err := s.LoadRepo(name)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		if err := s.SaveRepo(rec); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrationEpicID derives the epic id a converted task keeps: the epic prefix

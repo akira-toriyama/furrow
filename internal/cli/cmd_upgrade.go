@@ -22,8 +22,11 @@ func newUpgradeCmd() *cobra.Command {
 		Use:   "upgrade",
 		Short: "Raise the board's on-disk layout to this furrow's schema (flag day; preview unless --yes)",
 		Long: "Raise .furrow/meta.json's schema_version — and the archive store's, if there\n" +
-			"is one — to the layout this binary writes, re-serializing every shard through\n" +
-			"the current marshaller. This is the ONLY thing that moves a board's version:\n" +
+			"is one — to the layout this binary writes, re-serializing every task, epic\n" +
+			"and repo shard through the current marshaller (a shard an older layout\n" +
+			"wrote gains the keys that have since become required; --json counts them\n" +
+			"per store as epics_rewritten / repos_rewritten). This is the ONLY thing\n" +
+			"that moves a board's version:\n" +
 			"an ordinary write never does (it refuses with schema-upgrade-required, exit 2),\n" +
 			"so a flag day can never again happen as the side effect of a sync.\n\n" +
 			"It is a FLAG DAY. Afterwards, no older furrow can write this board — including\n" +
@@ -69,7 +72,10 @@ func printUpgradeHuman(rep *app.UpgradeReport, standalone bool) {
 		if s.From == 0 {
 			from = "unstamped"
 		}
-		fmt.Fprintf(out, "%s\n  schema: %s -> v%d (%d shard(s) re-serialized)\n", s.Path, from, s.To, s.Tasks)
+		fmt.Fprintf(out, "%s\n  schema: %s -> v%d (%d task shard(s) re-serialized)\n", s.Path, from, s.To, s.Tasks)
+		if s.EpicsRewritten > 0 || s.ReposRewritten > 0 {
+			fmt.Fprintf(out, "  older shapes: %d epic shard(s), %d repo shard(s) rewritten in today's shape\n", s.EpicsRewritten, s.ReposRewritten)
+		}
 		for _, c := range s.Epics {
 			state := "open"
 			if c.Closed {
