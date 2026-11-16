@@ -172,6 +172,18 @@ type Store interface {
 	// ListEpicIDs returns the ids of all epic shards (epics/<id>.json), for the
 	// shard-filename/id integrity lint — the epics/ twin of ListTaskIDs.
 	ListEpicIDs() ([]string, error)
+	// StaleEpicShards and StaleRepoShards name the epics (by id) and the repo
+	// records (by owner/repo) whose stored shard is not the bytes MarshalEpic /
+	// MarshalRepo writes for the record it decodes to: an older layout's shape
+	// (a key that has since become required is absent), or a hand edit. A task
+	// shard in that state is rewritten by ANY Save; an epic or repo shard only
+	// by a write to that very record, so `furrow upgrade` asks here — once for
+	// its preview's count, once for the set its apply re-saves. Read-only and
+	// sorted. A shard whose filename and content disagree about its identity is
+	// left out (re-saving it would write a second file; lint names it). A store
+	// that keeps records rather than bytes has none.
+	StaleEpicShards() ([]string, error)
+	StaleRepoShards() ([]string, error)
 	// NextEpicID returns a fresh, random, collision-resistant epic id (e.g.
 	// "e-k3m9"): the epic prefix plus the same random Crockford-base32 suffix
 	// NextID uses. Separate from NextID because the PREFIX is what tells an id's

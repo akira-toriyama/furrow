@@ -241,7 +241,8 @@ passthrough's (above).
 `App.Upgrade` ([`internal/app/upgrade.go`](../internal/app/upgrade.go)) is the
 only caller of `SetBoardVersion`; its comments, `UpgradeReport` and
 `furrow upgrade --help` carry the contract (preview unless `--yes`, both
-stores, idempotent, no downgrade). It is a **flag day** whose order furrow
+stores, every task, epic and repo shard re-serialized, idempotent, no
+downgrade). It is a **flag day** whose order furrow
 cannot enforce, because it cannot see the fleet's pins; README's
 [layout-gate section](../README.md#the-layout-version-gates-writes-and-only-furrow-upgrade-raises-it)
 states that order. `sync-task-status.yml` pre-flights

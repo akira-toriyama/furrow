@@ -351,6 +351,12 @@ func (s *Store) ListEpicIDs() ([]string, error) {
 	return ids, nil
 }
 
+// StaleEpicShards and StaleRepoShards are always empty here: SaveEpic and
+// SaveRepo keep the record the marshaller round-trips to, so there are no
+// stored bytes that could differ from it.
+func (s *Store) StaleEpicShards() ([]string, error) { return nil, nil }
+func (s *Store) StaleRepoShards() ([]string, error) { return nil, nil }
+
 // NextEpicID returns a fresh random epic id — the epic prefix plus the same
 // random suffix NextID uses.
 func (s *Store) NextEpicID() (string, error) {

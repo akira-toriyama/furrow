@@ -555,6 +555,68 @@ func (s *Store) ListEpicIDs() ([]string, error) {
 	return s.listStems(s.epicsDir(), ".json")
 }
 
+// StaleEpicShards names the epics whose shard differs from what MarshalEpic
+// writes for it (core.Store has the contract). A shard that does not parse
+// fails the call, as it fails LoadEpics.
+func (s *Store) StaleEpicShards() ([]string, error) {
+	return staleShards(s.epicsDir(), "epics", func(stem string, b []byte) (string, []byte, error) {
+		e, err := core.UnmarshalEpic(b)
+		if err != nil || e.ID != stem {
+			return "", nil, err
+		}
+		data, err := core.MarshalEpic(e)
+		return e.ID, data, err
+	})
+}
+
+// StaleRepoShards is StaleEpicShards for repos/, naming each record by its
+// owner/repo.
+func (s *Store) StaleRepoShards() ([]string, error) {
+	return staleShards(s.reposDir(), "repos", func(stem string, b []byte) (string, []byte, error) {
+		rec, err := core.UnmarshalRepo(b)
+		if err != nil || core.RepoStem(rec.Repo) != stem {
+			return "", nil, err
+		}
+		data, err := core.MarshalRepo(rec)
+		return rec.Repo, data, err
+	})
+}
+
+// staleShards walks dir's *.json shards and returns the name of each whose
+// bytes differ from canon's. canon decodes a shard and re-encodes it, giving
+// the record's name and canonical bytes; an empty name skips the shard (its
+// filename stem is not the one its content would be saved under). A missing
+// dir has no shards.
+func staleShards(dir, kind string, canon func(stem string, b []byte) (name string, data []byte, err error)) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, core.Internalf(kind, "read %s/: %v", kind, err)
+	}
+	var stale []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		// #nosec G304 -- a store-internal shard path, not attacker-supplied.
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, core.Internalf(kind, "read %s shard %s: %v", kind, e.Name(), err)
+		}
+		name, data, err := canon(strings.TrimSuffix(e.Name(), ".json"), b)
+		if err != nil {
+			return nil, err
+		}
+		if name != "" && !bytes.Equal(b, data) {
+			stale = append(stale, name)
+		}
+	}
+	sort.Strings(stale)
+	return stale, nil
+}
+
 // NextEpicID returns a fresh random epic id: the configured epic prefix plus a
 // random Crockford-base32 suffix, e.g. "e-k3m9". Same collision-resistance
 // argument as NextID (no shared counter); the app verifies the id isn't already
