@@ -20,6 +20,10 @@ type EpicItem struct {
 	Epic     core.Epic
 	Progress Progress
 	Stuck    bool
+	// NoneActionable is Stuck without the standing exemption (epicStats): open
+	// members, none actionable. Not rendered as a flag; `next`'s focus note
+	// reads it.
+	NoneActionable bool
 	// OpenDeps are the epic's deps still open (openEpicDeps) — the unsatisfied
 	// "open after" edges, resolved here so a row can say what it waits on
 	// without a second read. Empty for a box whose deps are all closed.
@@ -240,8 +244,9 @@ func (a *App) epicListIn(epics []core.Epic, idx *core.Index, o EpicQueryOpts) []
 			continue
 		}
 		st := stats[e.ID]
-		out = append(out, EpicItem{Epic: e, Progress: st.progress(), Stuck: st.stuck(),
-			OpenDeps: openEpicDeps(&e, epics), Waiting: st.waiting()})
+		out = append(out, EpicItem{Epic: e, Progress: st.progress(), Stuck: st.stuck(&e),
+			NoneActionable: st.noneActionable(),
+			OpenDeps:       openEpicDeps(&e, epics), Waiting: st.waiting()})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		ri, rj := epicRank(out[i].Epic), epicRank(out[j].Epic)
@@ -320,7 +325,7 @@ func (a *App) epicDetailIn(idx *core.Index, epics []core.Epic, id string, withBo
 	return &EpicDetail{
 		Epic:      *e,
 		Progress:  st.progress(),
-		Stuck:     st.stuck(),
+		Stuck:     st.stuck(e),
 		Waiting:   st.waiting(),
 		Deps:      deps,
 		Successor: successor,

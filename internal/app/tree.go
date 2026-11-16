@@ -48,9 +48,10 @@ type TreeGroup struct {
 	// filter that hides some members cannot under-count the box. Nil for the
 	// unfiled group (a count of "not in a box" is not progress toward anything).
 	Progress *Progress
-	// Stuck marks an epic with open members but NO actionable one — org-mode's
-	// stuck project. It is the state `next` cannot show you (it would just return
-	// empty), which is exactly why the group carries it.
+	// Stuck marks a non-standing epic with open members but NO actionable one —
+	// org-mode's stuck project (epicStats.stuck). It is the state `next` cannot
+	// show you (it would just return empty), which is exactly why the group
+	// carries it.
 	Stuck bool
 	Tasks []TreeNode
 }
@@ -132,7 +133,7 @@ func (a *App) Tree(o QueryOpts, rootID string) ([]TreeGroup, error) {
 			Epic:     e,
 			Active:   e.Active,
 			Progress: &p,
-			Stuck:    st.stuck(),
+			Stuck:    st.stuck(e),
 			Tasks:    a.treeNodes(idx, members[e.ID], doneIDs),
 		})
 	}
@@ -238,8 +239,21 @@ func (s epicStats) progress() Progress { return Progress{Done: s.Done, Total: s.
 //
 // An epic with NO members is not stuck: declaring the box before filling it is a
 // legitimate first step, and nagging about it would train the reader to ignore
-// the signal.
-func (s epicStats) stuck() bool { return s.Open > 0 && s.Actionable == 0 }
+// the signal. Nor is a STANDING box: open members with none actionable
+// (deposits awaiting triage, an `upstream` box whose members all wait) is its
+// resting state.
+//
+// The ONE definition: revisit's epic_stuck and every `stuck` a read prints
+// (epic ls / epic show / ls --tree / brief, text and JSON) come from here, so
+// the signal and the flag cannot disagree about a box.
+func (s epicStats) stuck(e *core.Epic) bool { return !e.Standing && s.noneActionable() }
+
+// noneActionable is the state under stuck, whatever the box declares: open
+// members, not one of them actionable. `next` explains its empty focus from
+// this, not from stuck — a standing box that is the active focus hands out
+// nothing just the same, and the exemption is about nagging, not about why
+// the read came back empty.
+func (s epicStats) noneActionable() bool { return s.Open > 0 && s.Actionable == 0 }
 
 // waiting is the EpicWait for a box; nil when the box has open (non-terminal)
 // work — then it is not merely waiting — or no future-due parked member.
