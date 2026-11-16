@@ -327,7 +327,8 @@ func newEpicSetCmd() *cobra.Command {
 			"a reference.\n\n" +
 			"--standing and --pinned (v7) are the two PERMANENT-\n" +
 			"channel declarations: a standing box is exempt from the lifecycle nags\n" +
-			"(revisit's epic_all_done / epic_dep_done / epic_stuck) and instead\n" +
+			"(revisit's epic_all_done / epic_dep_done / epic_stuck, and the `stuck`\n" +
+			"flag epic ls / epic show / ls --tree print) and instead\n" +
 			"carries the review cadence — once `furrow review <epic-ref>` has stamped\n" +
 			"it, epic_review_due fires when that review outlives [review]'s staleness\n" +
 			"threshold (v9) — and a pinned\n" +

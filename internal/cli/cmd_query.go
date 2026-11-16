@@ -55,7 +55,7 @@ func newLsCmd() *cobra.Command {
 			"amputate members from a box it did show). Each group carries the epic's\n" +
 			"member progress ({done,total}, counted over the FULL board so a filter\n" +
 			"can't under-count the box) and a stuck flag (open members but no\n" +
-			"actionable one). --json nests tasks under their group and adds\n" +
+			"actionable one; never set on a standing box). --json nests tasks under their group and adds\n" +
 			"`actionable` + `blocked_by` to each node; --ndjson streams one whole\n" +
 			"group per line.\n\n" +
 			"--archived lists the archive store INSTEAD of the hot board, and either\n" +

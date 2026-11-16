@@ -47,7 +47,7 @@ func (a *App) epicReasons(e *core.Epic, st epicStats, epics []core.Epic, now tim
 	}
 	var out []core.RevisitReason
 
-	total, open, actionable := st.Total, st.Open, st.Actionable
+	total, open := st.Total, st.Open
 	switch {
 	case total == 0:
 		// A freshly declared box. Nothing to say.
@@ -68,14 +68,11 @@ func (a *App) epicReasons(e *core.Epic, st epicStats, epics []core.Epic, now tim
 			out = append(out, core.RevisitReason{Code: core.RevisitEpicAllDone,
 				Detail: fmt.Sprintf("all %d members done — consider closing", total)})
 		}
-	case actionable == 0:
-		// The same exemption: deposits sitting non-actionable (a requests box
-		// full of untriaged backlog) is a standing channel's OTHER healthy
-		// resting state, so stuck too would be a permanent false nag there.
-		if !e.Standing {
-			out = append(out, core.RevisitReason{Code: core.RevisitEpicStuck,
-				Detail: fmt.Sprintf("%d open members but none actionable", open)})
-		}
+	case st.stuck(e):
+		// epicStats.stuck carries the standing exemption, so this signal and
+		// the `stuck` flag the reads print can never disagree about a box.
+		out = append(out, core.RevisitReason{Code: core.RevisitEpicStuck,
+			Detail: fmt.Sprintf("%d open members but none actionable", open)})
 	}
 
 	// A standing box also has no "turn to open" — it is always on — so the

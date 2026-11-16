@@ -240,7 +240,7 @@ func (a *App) epicListIn(epics []core.Epic, idx *core.Index, o EpicQueryOpts) []
 			continue
 		}
 		st := stats[e.ID]
-		out = append(out, EpicItem{Epic: e, Progress: st.progress(), Stuck: st.stuck(),
+		out = append(out, EpicItem{Epic: e, Progress: st.progress(), Stuck: st.stuck(&e),
 			OpenDeps: openEpicDeps(&e, epics), Waiting: st.waiting()})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -320,7 +320,7 @@ func (a *App) epicDetailIn(idx *core.Index, epics []core.Epic, id string, withBo
 	return &EpicDetail{
 		Epic:      *e,
 		Progress:  st.progress(),
-		Stuck:     st.stuck(),
+		Stuck:     st.stuck(e),
 		Waiting:   st.waiting(),
 		Deps:      deps,
 		Successor: successor,
