@@ -211,3 +211,11 @@ commits on the wrong branch). **Each operator/session works in its own `git
 worktree` (`git worktree add ../furrow-<topic> -b <branch> origin/main`) or a
 separate clone — never share one checkout for concurrent git.** Commit + push
 often and `git pull --rebase` before pushing.
+
+**Trial (board task t-hpgv; t-8zhd ends it): worktrunk's `wt` replaces the raw
+`git worktree add` above.** Create with `git fetch origin && wt switch --create
+<branch> --base origin/main --path ../furrow-<topic> --no-cd --format=json`
+(stdout carries `path`; without `--base` the branch starts from the local,
+stale `main`), and drop it after the merge with `git fetch origin && wt remove
+<branch> --foreground --format=json`, reading `branch_outcome`. Never `wt merge`
+or `wt step commit`. Note each use, good or bad: `furrow note t-hpgv "<date> …"`.
