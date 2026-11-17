@@ -68,10 +68,10 @@ func newSetCmd() *cobra.Command {
 			"to the occurrence its `repeat` names. An absolute --due that leaves a\n" +
 			"repeating task's due where its series never lands (another clock, a day\n" +
 			"the rule does not name) says so the same way: only this occurrence moved,\n" +
-			"what a close now hands back, and the --due + --repeat write that moves the\n" +
-			"series instead. An offset (+1d, --due-shift) stays silent — a delta can\n" +
-			"only mean this occurrence — and so does a date the series lands on. An\n" +
-			"empty --due '' is exit 2, never a silent clear (--clear-due is the clear).\n\n" +
+			"and what a close now hands back. An offset (+1d, --due-shift) stays silent\n" +
+			"— a delta can only mean this occurrence — and so does a date the series\n" +
+			"lands on. An empty --due '' is exit 2, never a silent clear (--clear-due is\n" +
+			"the clear).\n\n" +
 			"Several ids apply the SAME edits to all of them in ONE all-or-nothing\n" +
 			"write (bulk triage): a miss sets NOTHING and exits 1 with every miss in\n" +
 			"details.missing, and --json is ALWAYS an array of envelopes, one per id\n" +
