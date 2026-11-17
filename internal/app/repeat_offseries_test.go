@@ -97,7 +97,16 @@ func TestSetSaysWhenAnAbsoluteDueLeavesTheSeries(t *testing.T) {
 			due:  "2026-11-18", rule: "daily until 2026-11-19",
 			opts: dueOnly("2026-11-19T08:00"),
 			want: []string{"a close now completes it (the rule has no later occurrence)"},
-			not:  []string{"mints the next one", "COUNT"},
+			not:  []string{"mints the next one", "COUNT", "--repeat"},
+		},
+		{
+			// The close still mints tonight's, but bound from 08:00 the rule
+			// has nothing after its first date, and the bind door refuses it.
+			name: "a rule the bind would refuse from the new date is not printed as the remedy",
+			due:  "2026-11-18T21:00", rule: "daily until 2026-11-20",
+			opts: dueOnly("2026-11-20T08:00"),
+			want: []string{"a close now mints the next one for 2026-11-20 21:00 +09:00"},
+			not:  []string{"--repeat"},
 		},
 		{
 			name: "a zoneless datetime spelled with a space is quoted in the remedy",

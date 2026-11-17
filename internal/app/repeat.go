@@ -482,7 +482,8 @@ func (a *App) SetRepeatWarnings(t *core.Task, o SetOpts) []string {
 // command and are told why instead: a rule that names its own days and does
 // not land on this one (binding it here would leave this date outside it, the
 // off-lattice case), and — as a clause on the command — a COUNT, which starts
-// over from the new anchor.
+// over from the new anchor. A rule the bind door would refuse from this date
+// (recur.Bindable) gets no command: the one printed here was an exit 2.
 func (a *App) offSeriesNote(t *core.Task, spelling string) string {
 	if t.Repeat == "" || t.RepeatAnchor == nil || t.Due == nil {
 		return ""
@@ -516,19 +517,21 @@ func (a *App) offSeriesNote(t *core.Task, spelling string) string {
 	if strings.ContainsAny(due, " \t") {
 		due = "'" + due + "'"
 	}
-	var remedy string
+	note := fmt.Sprintf("%s repeats, and --due alone moves THIS occurrence only — the series stands where it was: %s",
+		t.ID, follows)
 	if _, off := recur.OffLattice(t.Repeat, *t.Due, loc); off {
-		remedy = fmt.Sprintf("to move the series, bind a rule that lands on this date in the same write (`furrow set %s --due %s --repeat <rule>`) — the one it carries, %s, does not",
+		return note + fmt.Sprintf("; to move the series, bind a rule that lands on this date in the same write (`furrow set %s --due %s --repeat <rule>`) — the one it carries, %s, does not",
 			t.ID, due, t.Repeat)
-	} else {
-		remedy = fmt.Sprintf("to move the series here instead, bind the rule again in the same write: `furrow set %s --due %s --repeat '%s'`",
-			t.ID, due, t.Repeat)
-		if recur.Counted(t.Repeat) {
-			remedy += " (its COUNT starts over from that date)"
-		}
 	}
-	return fmt.Sprintf("%s repeats, and --due alone moves THIS occurrence only — the series stands where it was: %s; %s",
-		t.ID, follows, remedy)
+	if recur.Bindable(t.Repeat, *t.Due, loc) != nil {
+		return note
+	}
+	note += fmt.Sprintf("; to move the series here instead, bind the rule again in the same write: `furrow set %s --due %s --repeat '%s'`",
+		t.ID, due, t.Repeat)
+	if recur.Counted(t.Repeat) {
+		note += " (its COUNT starts over from that date)"
+	}
+	return note
 }
 
 // skipNote words the skip by the PERIOD that lacks the day, because the remedy
