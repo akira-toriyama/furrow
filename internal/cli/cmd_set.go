@@ -65,8 +65,13 @@ func newSetCmd() *cobra.Command {
 			"is not a date the rule lands on, says so: a stderr note, and the same\n" +
 			"messages in the envelope's `repeat_warnings` (absent when there are none) —\n" +
 			"on the CLOSED task's when the write also closes it, since the rule passes\n" +
-			"to the occurrence its `repeat` names. An empty --due '' is exit 2, never a\n" +
-			"silent clear (--clear-due is the clear).\n\n" +
+			"to the occurrence its `repeat` names. An absolute --due that leaves a\n" +
+			"repeating task's due where its series never lands (another clock, a day\n" +
+			"the rule does not name) says so the same way: only this occurrence moved,\n" +
+			"what a close now hands back, and the --due + --repeat write that moves the\n" +
+			"series instead. An offset (+1d, --due-shift) stays silent — a delta can\n" +
+			"only mean this occurrence — and so does a date the series lands on. An\n" +
+			"empty --due '' is exit 2, never a silent clear (--clear-due is the clear).\n\n" +
 			"Several ids apply the SAME edits to all of them in ONE all-or-nothing\n" +
 			"write (bulk triage): a miss sets NOTHING and exits 1 with every miss in\n" +
 			"details.missing, and --json is ALWAYS an array of envelopes, one per id\n" +
@@ -431,9 +436,7 @@ func setApply(cmd *cobra.Command, a *app.App, ids []string, o app.SetOpts) error
 			}
 		}
 		rs.collect(ts, reps)
-		if cmd.Flags().Changed("repeat") {
-			rs.bind(a, ts)
-		}
+		rs.warn(a, ts, o)
 		closed = ts
 		return ts, nil
 	}
@@ -447,7 +450,7 @@ func setApply(cmd *cobra.Command, a *app.App, ids []string, o app.SetOpts) error
 	// `set -s done` closes like `done` does, so it owes the same receipt:
 	// without it the occurrence it just minted is invisible until a later
 	// read, and a machine could not tell it from a task that never repeated.
-	rs.noteBound(closed)
+	rs.noteWarned(closed)
 	rs.print(a, closed)
 	return nil
 }

@@ -431,6 +431,106 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 	return out
 }
 
+// SetRepeatWarnings is what a `set` owes about the series it touched, and
+// nothing when there is nothing to say — which is nearly every write. t is the
+// task as the write LEFT it, so a write that also closed it (the rule handed
+// on) or dropped the rule has no series left to speak about.
+//
+// A write that BOUND a rule owes the bind-time notes (RepeatWarnings). A write
+// that only re-dated a repeating task owes one more, when two facts hold: the
+// `--due` was an absolute date, and the series does not land on it.
+//
+// `--due` alone moves THIS occurrence and never the series — the snooze must
+// not re-lattice every occurrence after it — so such a write does exactly what
+// the help says. It also reads, to the operator who typed a clock onto a
+// whole-day chore, as though the series now runs at that clock: the row says
+// `due … 11:00  repeats`, the next close hands back 23:59, and by then it
+// looks like a defect (t-6n5v was nearly filed as one). The moment to say so
+// is the write, while re-anchoring is still the same command plus one flag.
+//
+// The offsets stay silent. `+1d` and `--due-shift` are deltas, and nobody
+// defines a series with a delta; a note on every snooze would be noise on the
+// one remedy `due-overdue` prints. An absolute date the series lands on is
+// silent too: skipping to next week's own slot leaves nothing to misread.
+func (a *App) SetRepeatWarnings(t *core.Task, o SetOpts) []string {
+	if o.Repeat != nil {
+		return a.RepeatWarnings(t)
+	}
+	if o.Due == nil || o.ClearDue {
+		return nil
+	}
+	if w := a.offSeriesNote(t, *o.Due); w != "" {
+		return []string{w}
+	}
+	return nil
+}
+
+// offSeriesNote is the one sentence a re-dated occurrence owes when the write
+// left its due where the series never lands: that only this occurrence moved,
+// what a close will hand back, and the write that moves the series instead.
+// "" when there is nothing to say (see SetRepeatWarnings for the cases).
+//
+// The date it names is what a close NOW would mint — the same window a close
+// and a dry run ask about (repeatWindow) — because that is the fact the
+// operator has to see to disbelieve: the clock they typed is not on it.
+//
+// The remedy is spelled out in full, stored rule included. The shard keeps the
+// compiled RRULE and not the spelling the operator typed, so "bind it again"
+// without the line sends them to `show` to copy one; and `--repeat` alone is
+// not the same write — it anchors on the due the task carries, which after a
+// snooze is not a date anyone chose. Two cases cannot be handed a ready-made
+// command and are told why instead: a rule that names its own days and does
+// not land on this one (binding it here would leave this date outside it, the
+// off-lattice case), and — as a clause on the command — a COUNT, which starts
+// over from the new anchor.
+func (a *App) offSeriesNote(t *core.Task, spelling string) string {
+	if t.Repeat == "" || t.RepeatAnchor == nil || t.Due == nil {
+		return ""
+	}
+	spelling = strings.TrimSpace(spelling)
+	if _, relative := parseRelativeOffset(spelling); relative {
+		return ""
+	}
+	// The anchor is where a bind starts the series, on the rule's lattice or
+	// off it: a due still standing there has not been moved off anything.
+	if t.Due.Equal(*t.RepeatAnchor) {
+		return ""
+	}
+	loc := a.loc()
+	// An unreadable rule is `lint`'s finding (repeat-invalid), not this note's.
+	if lands, err := recur.Lands(t.Repeat, *t.RepeatAnchor, *t.Due, loc); err != nil || lands {
+		return ""
+	}
+	after, _, _ := a.repeatWindow(t, a.Clock.Now())
+	next, more, err := recur.Next(t.Repeat, *t.RepeatAnchor, after, loc)
+	if err != nil {
+		return ""
+	}
+	follows := "a close now completes it (the rule has no later occurrence)"
+	if more {
+		follows = "a close now mints the next one for " + next.In(loc).Format(core.TimeLayout)
+	}
+	// A zoneless datetime may be spelled with a space; nothing else an absolute
+	// due can carry needs quoting.
+	due := spelling
+	if strings.ContainsAny(due, " \t") {
+		due = "'" + due + "'"
+	}
+	var remedy string
+	if _, off := recur.OffLattice(t.Repeat, *t.Due, loc); off {
+		remedy = fmt.Sprintf("to move the series, bind a rule that lands on this date in the same write (`furrow set %s --due %s --repeat <rule>`) — the one it carries, %s, does not",
+			t.ID, due, t.Repeat)
+	} else {
+		remedy = fmt.Sprintf("to move the series here instead, bind the rule again in the same write: `furrow set %s --due %s --repeat '%s'`",
+			t.ID, due, t.Repeat)
+		if recur.Counted(t.Repeat) {
+			remedy += " (its COUNT starts over from that date)"
+		}
+	}
+	return fmt.Sprintf("%s repeats, and --due alone moves THIS occurrence only — the series stands where it was: %s; %s",
+		t.ID, follows, remedy)
+}
+
 // skipNote words the skip by the PERIOD that lacks the day, because the remedy
 // differs: a month that lacks day 31 is answered by `on last`, a year that
 // lacks February 29 is not — `on last` is a monthly spelling, and the rule that
