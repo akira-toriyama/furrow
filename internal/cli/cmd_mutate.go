@@ -1131,9 +1131,10 @@ func newRepoCmd() *cobra.Command {
 }
 
 // seriesReports carries the per-task repeat facts a write produced — the
-// reports a close made, and the bind-time notes of a rule it bound — from the
-// mutate closure out to where they render: each task's JSON envelope
-// (annotate), the human summary (print) and the stderr notes (noteBound).
+// reports a close made, and the notes the write owes about a series it touched
+// — from the mutate closure out to where they render: each task's JSON
+// envelope (annotate), the human summary (print) and the stderr notes
+// (noteWarned).
 type seriesReports struct {
 	byID  map[string]*app.RepeatReport
 	warns map[string][]string
@@ -1143,34 +1144,38 @@ func newSeriesReports() *seriesReports {
 	return &seriesReports{byID: map[string]*app.RepeatReport{}, warns: map[string][]string{}}
 }
 
-// bind records what a rule this write just bound will do that was almost
-// certainly not asked for (a skipped month, an anchor off the rule's lattice),
-// keyed by the RETURNED task's id. Call it after collect, and only on an actual
-// bind: re-printing it on every unrelated edit of a repeating task taught the
-// reader to ignore it.
-func (s *seriesReports) bind(a *app.App, tasks []*core.Task) {
+// warn records what this write did to a series that was almost certainly not
+// asked for — a rule it bound that skips a month or stands off its own anchor,
+// a due it moved to where the series never lands — keyed by the RETURNED
+// task's id. Call it after collect. WHICH writes owe a note is the app's to say
+// (SetRepeatWarnings reads the edit): re-printing one on every unrelated edit
+// of a repeating task taught the reader to ignore it.
+func (s *seriesReports) warn(a *app.App, tasks []*core.Task, o app.SetOpts) {
 	for _, t := range tasks {
 		subject := t
 		// A write that BINDS a rule and CLOSES in one go hands the rule straight
 		// to the occurrence, so the returned task carries none — follow it, or the
 		// note is silent exactly when a rule was just bound. The occurrence has no
 		// envelope of its own in this write's output, so its notes ride the
-		// closed task's, beside the `repeat` receipt that names it.
-		if subject.Repeat == "" {
+		// closed task's, beside the `repeat` receipt that names it. Only a bind
+		// is followed: a close that merely re-dated (`-s done --due <date>`)
+		// moved the occurrence it settled, and the one it minted was dated by
+		// the rule — there is nothing about that one for this write to say.
+		if subject.Repeat == "" && o.Repeat != nil {
 			if r := s.byID[t.ID]; r != nil && r.Created != nil {
 				if succ, _, err := a.Get(*r.Created); err == nil {
 					subject = succ
 				}
 			}
 		}
-		if ws := a.RepeatWarnings(subject); len(ws) > 0 {
+		if ws := a.SetRepeatWarnings(subject, o); len(ws) > 0 {
 			s.warns[t.ID] = ws
 		}
 	}
 }
 
-// noteBound says each bound rule's notes on stderr, once per distinct note.
-func (s *seriesReports) noteBound(tasks []*core.Task) {
+// noteWarned says each task's series notes on stderr, once per distinct note.
+func (s *seriesReports) noteWarned(tasks []*core.Task) {
 	lists := make([][]string, 0, len(tasks))
 	for _, t := range tasks {
 		lists = append(lists, s.warns[t.ID])

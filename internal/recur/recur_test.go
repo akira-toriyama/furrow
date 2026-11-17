@@ -878,3 +878,131 @@ func TestValidRefusesAZeroCount(t *testing.T) {
 		t.Errorf("Valid(COUNT=3) = %v; want ok", err)
 	}
 }
+
+// Lands is "is this one of the dates the series hands out", asked by a write
+// that re-dated an occurrence to tell a move ALONG the series from a move off
+// it. The clock is half of a date here: a whole-day series does not land on
+// 11:00 of a day it lands on, which is the case the question exists for.
+func TestLandsTellsASeriesDateFromOneBesideIt(t *testing.T) {
+	const weekdays = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+	wed := time.Date(2026, 11, 18, 23, 59, 59, 0, jst) // a Wednesday
+	dec15 := time.Date(2026, 12, 15, 23, 59, 59, 0, jst)
+	cases := []struct {
+		name   string
+		line   string
+		anchor time.Time
+		at     time.Time
+		want   bool
+	}{
+		{"the next slot of the rule", weekdays, wed, time.Date(2026, 11, 19, 23, 59, 59, 0, jst), true},
+		{"the same day at another clock", weekdays, wed, time.Date(2026, 11, 18, 11, 0, 0, 0, jst), false},
+		{"a day the rule does not name", weekdays, wed, time.Date(2026, 11, 21, 23, 59, 59, 0, jst), false},
+		{"a bare monthly keeps the anchor's day", "FREQ=MONTHLY", dec15, time.Date(2027, 1, 15, 23, 59, 59, 0, jst), true},
+		{"and no other day of the month", "FREQ=MONTHLY", dec15, time.Date(2027, 1, 20, 23, 59, 59, 0, jst), false},
+		{"an anchor on the lattice is the first of them", "FREQ=DAILY", wed, wed, true},
+		{"an anchor off it is not one at all", "FREQ=WEEKLY;BYDAY=MO", wed, wed, false},
+		{"nothing lands before the anchor", "FREQ=DAILY", wed, wed.AddDate(0, 0, -1), false},
+		{"the last date of a COUNT", "FREQ=DAILY;COUNT=3", wed, wed.AddDate(0, 0, 2), true},
+		{"the date after a COUNT is spent", "FREQ=DAILY;COUNT=3", wed, wed.AddDate(0, 0, 3), false},
+		// The shard stores UTC; the calendar is the parameter, not the zone the
+		// instants happen to carry.
+		{"stored instants are read in the calendar", weekdays, wed.UTC(), time.Date(2026, 11, 19, 23, 59, 59, 0, jst).UTC(), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := Lands(c.line, c.anchor, c.at, jst)
+			if err != nil {
+				t.Fatalf("Lands(%q): %v", c.line, err)
+			}
+			if got != c.want {
+				t.Errorf("Lands(%q from %s, %s) = %v, want %v", c.line, c.anchor.Format(time.RFC3339), c.at.Format(time.RFC3339), got, c.want)
+			}
+		})
+	}
+
+	// An unreadable rule is an error, never "does not land": the caller's note
+	// would otherwise speak for a series the expander cannot read.
+	if _, err := Lands("FREQ=NONSENSE", wed, wed, jst); err == nil {
+		t.Error("Lands on an unparseable rule returned no error")
+	}
+}
+
+// Whatever a close hands out lands — including the dates a zone's gap
+// displaced, which sit at a wall clock the rule never named. Looked up in the
+// library's own lattice, the occurrence a close minted on a spring-forward day
+// would read as moved off the series by hand; the walk caught the direction a
+// lookup through Next misses too (Santiago's gap swallows midnight, and a
+// 00:30 occurrence lands at 01:30, LATER than its lattice point).
+func TestEveryDateNextHandsOutLands(t *testing.T) {
+	for _, zone := range []string{"America/New_York", "America/Santiago", "America/Nuuk", "Europe/London"} {
+		loc, err := time.LoadLocation(zone)
+		if err != nil {
+			t.Logf("no tzdata for %s: %v", zone, err)
+			continue
+		}
+		for _, clock := range [][3]int{{0, 30, 0}, {2, 30, 0}, {23, 30, 0}, {23, 59, 59}} {
+			anchor := time.Date(2026, 1, 1, clock[0], clock[1], clock[2], 0, loc)
+			cur := anchor
+			for i := 0; i < 500; i++ {
+				next, ok, err := Next("FREQ=DAILY", anchor, cur, loc)
+				if err != nil || !ok {
+					t.Fatalf("%s %v step %d: Next ok=%v err=%v", zone, clock, i, ok, err)
+				}
+				if lands, err := Lands("FREQ=DAILY", anchor, next, loc); err != nil || !lands {
+					t.Fatalf("%s: the occurrence %s (a daily series at %02d:%02d:%02d) does not land on its own series (err=%v)",
+						zone, next.Format(time.RFC3339), clock[0], clock[1], clock[2], err)
+				}
+				cur = next
+			}
+		}
+	}
+}
+
+// In the hour a zone repeats, both passes of 01:30 are the series' 01:30 — the
+// frame's own ordering, in which the repeated hour compares equal. An instant
+// comparison called the second pass "off the series", and the note built on it
+// told an operator to re-bind a rule at the clock it already names.
+func TestBothPassesOfARepeatedHourLand(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("no tzdata for America/New_York: %v", err)
+	}
+	// New York falls back at 02:00 on 2026-11-01, so 01:30 happens twice.
+	anchor := time.Date(2026, 10, 30, 1, 30, 0, 0, ny)
+	first := time.Date(2026, 11, 1, 5, 30, 0, 0, time.UTC)  // 01:30 EDT
+	second := time.Date(2026, 11, 1, 6, 30, 0, 0, time.UTC) // 01:30 EST
+	for name, at := range map[string]time.Time{"the first pass": first, "the second pass": second} {
+		if got := at.In(ny).Format("15:04"); got != "01:30" {
+			t.Fatalf("%s reads %s in New York, want 01:30 — the fixture is wrong", name, got)
+		}
+		if lands, err := Lands("FREQ=DAILY", anchor, at, ny); err != nil || !lands {
+			t.Errorf("%s of 01:30 does not land on a daily 01:30 series (err=%v)", name, err)
+		}
+	}
+	// An hour that is not the series' clock still does not, on that day or any.
+	if lands, _ := Lands("FREQ=DAILY", anchor, time.Date(2026, 11, 1, 7, 30, 0, 0, time.UTC), ny); lands {
+		t.Error("02:30 landed on a daily 01:30 series")
+	}
+}
+
+// A COUNT is measured from the anchor, an UNTIL is a date: only the first
+// starts over when a rule is bound again, so only it earns the sentence.
+func TestCountedNamesOnlyTheTerminatorARebindRestarts(t *testing.T) {
+	for line, want := range map[string]bool{
+		"FREQ=DAILY;COUNT=3":                true,
+		"FREQ=WEEKLY;COUNT=10;BYDAY=MO":     true,
+		"FREQ=DAILY;UNTIL=20261202T145959Z": false,
+		"FREQ=DAILY":                        false,
+	} {
+		if got := Counted(line); got != want {
+			t.Errorf("Counted(%q) = %v, want %v", line, got, want)
+		}
+	}
+	line, err := Compile("daily for 3 times", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Counted(line) {
+		t.Errorf("Counted(%q) = false for a compiled `for 3 times`", line)
+	}
+}

@@ -762,6 +762,56 @@ func OffLattice(line string, anchor time.Time, loc *time.Location) (first time.T
 	return zoned(next, loc), true
 }
 
+// Lands reports whether t is one of the dates the series hands out: an
+// occurrence of the rule, expanded from anchor in the calendar loc.
+//
+// It answers for the SERIES, never for the anchor. An anchor the rule does not
+// land on (OffLattice) is the occurrence a bind starts from and still not one
+// of the rule's dates, so a caller for whom the anchor counts compares against
+// it first.
+//
+// A date is what a lattice point reads back as in the calendar (zoned), not
+// the point itself: where a zone's gap displaced an occurrence, the instant a
+// close handed out sits at a wall clock the rule never named, and it lands all
+// the same. So the lattice points around t are each read back and compared,
+// rather than t being looked up in the frame — two days either way, which
+// outruns any displacement a calendar has made (the widest gap on record is
+// the day Pacific/Apia skipped).
+//
+// The comparison is of WALL CLOCKS, the ordering the frame itself uses: in the
+// hour a zone repeats, both passes of 01:30 are the series' 01:30, and calling
+// the second one off the series would send an operator to re-bind a rule at
+// the clock it already names. t is read at the whole second, the resolution a
+// shard holds.
+func Lands(line string, anchor, t time.Time, loc *time.Location) (bool, error) {
+	loc = calendar(loc)
+	r, err := build(line, anchor, loc)
+	if err != nil {
+		return false, err
+	}
+	const reach = 48 * time.Hour
+	bare := naked(t.Truncate(time.Second), loc)
+	for cur := bare.Add(-reach); ; {
+		next := r.After(cur, false)
+		if next.IsZero() || next.After(bare.Add(reach)) {
+			return false, nil
+		}
+		if naked(zoned(next, loc), loc).Equal(bare) {
+			return true, nil
+		}
+		cur = next
+	}
+}
+
+// Counted reports whether a COUNT bounds the rule. It is the one terminator
+// measured FROM the anchor — an UNTIL is a date and stays where it is — so
+// binding a counted rule again starts the count over, and a caller that
+// suggests a rebind owes that sentence.
+func Counted(line string) bool {
+	_, ok := namedCount(line)
+	return ok
+}
+
 // selectsNoDay reports a rule that picks no day for itself in any spelling, so
 // the anchor's day stands in for it.
 func selectsNoDay(opt *rrule.ROption) bool {
