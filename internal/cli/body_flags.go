@@ -90,12 +90,23 @@ func readBodyFile(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", core.Validationf("", "--body-file was given an empty value; pass a path, or drop the flag")
 	}
+	s, err := readFileArg(path)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(s) == "" {
+		return "", core.Validationf("", "--body-file: %q is empty; a file named as the body must carry one", path)
+	}
+	return s, nil
+}
+
+// readFileArg reads the file a --body-file path names, whatever it holds. A
+// path that does not resolve is the operator's input: exit 2, not an internal
+// failure (t-xypx). Whether an empty file is an answer is the caller's rule.
+func readFileArg(path string) (string, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- the path is the caller's own --body-file argument, read once and never written
 	if err != nil {
 		return "", core.Validationf("", "--body-file: %v", err)
-	}
-	if strings.TrimSpace(string(data)) == "" {
-		return "", core.Validationf("", "--body-file: %q is empty; a file named as the body must carry one", path)
 	}
 	return string(data), nil
 }

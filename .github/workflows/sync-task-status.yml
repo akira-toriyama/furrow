@@ -293,9 +293,9 @@ jobs:
           # The report, not the exit code, says which failure this is: codes 1
           # and 2 mean both. WITH a report the failure is per-directive — the
           # valid directives are applied, and the steps below publish them,
-          # comment and warn on a green job. WITHOUT one, apply itself failed
-          # (board load, IO, a held session): not the footer's doing and
-          # nothing a PR author can fix, so the job goes red.
+          # comment and warn on a green job. WITHOUT one, apply failed before
+          # it could answer for any directive (no board, a load or IO
+          # failure): the footer did not cause it, so the job goes red.
           if [ "$code" -ne 0 ] && ! jq -e '.outcomes | type == "array"' "$RUNNER_TEMP/apply.json" >/dev/null 2>&1; then
             echo "::error title=furrow apply failed::furrow apply exited ${code} without a per-directive report, so this is not a footer problem: nothing was published to the board. Its error envelope is in this step's log."
             exit "$code"

@@ -98,9 +98,12 @@ func newApplyCmd() *cobra.Command {
 // flag is empty or "-" (the `-`=stdin convention every --body-file shares).
 func readBodyText(cmd *cobra.Command, path string) (string, error) {
 	if path != "" && path != "-" {
-		// The same reader add/edit use: a path that does not resolve is the
-		// operator's input, exit 2, not an internal failure (t-xypx).
-		return readBodyFile(path)
+		// Not readBodyFile: that one refuses a file with no text, because add
+		// and edit were promised a body. This text is a PR description, and an
+		// empty one names no directive — the empty report stdin already gets.
+		// The refusal reached here with the shared reader, and a PR with no
+		// description failed sync-task-status.yml's job on it (t-264j).
+		return readFileArg(path)
 	}
 	b, err := io.ReadAll(cmd.InOrStdin())
 	if err != nil {

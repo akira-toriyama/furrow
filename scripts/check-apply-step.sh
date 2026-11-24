@@ -11,6 +11,8 @@
 #   - a report with a failed directive → the step succeeds and hands the code
 #     and the report on, with the valid directive applied;
 #   - no report at all → the step fails with apply's exit code.
+# And the one input every PR can send that is neither: a PR with no
+# description is an empty report, code 0.
 #
 # Usage: FURROW_BIN=/path/to/furrow sh scripts/check-apply-step.sh
 set -eu
@@ -34,14 +36,22 @@ export XDG_CONFIG_HOME="$work/xdg"
 unset CLAUDECODE
 
 # The step's `run: |` block scalar: every line under it, down to the first
-# non-blank line indented less than the block.
+# non-blank line indented less than the block. Exit 3 when the step names a
+# `shell:` — run_step below starts the script as the runner's DEFAULT shell.
+rc=0
 awk '
   /^      - name: Apply SetStatus-task directives$/ { step = 1; next }
-  step && !run && /^      - / { exit }
-  step && !run && /^        run: \|$/ { run = 1; next }
-  run && !/^          / && !/^[[:space:]]*$/ { exit }
+  step && /^      - / { exit }
+  step && /^        shell:/ { shell = 1 }
+  step && /^        run: \|$/ { run = 1; next }
+  run && !/^          / && !/^[[:space:]]*$/ { run = 0 }
   run { sub(/^          /, ""); print }
-' "$wf" > "$work/step.sh"
+  END { exit shell ? 3 : 0 }
+' "$wf" > "$work/step.sh" || rc=$?
+if [ "$rc" -eq 3 ]; then
+  echo "✖ the Apply step in $wf now sets shell: — this guard runs its script as \`bash -e\`, the default it had; run it the way the step declares" >&2
+  exit 1
+fi
 grep -q 'furrow apply' "$work/step.sh" || {
   echo "✖ could not extract the Apply step's run block from $wf — the step was renamed or reshaped; update the awk above" >&2
   exit 1
@@ -81,7 +91,16 @@ grep -qx 'code=1' "$work/out" || die "the Apply step did not hand on code=1 for 
 grep -q '"id": "t-nosuchtask"' "$work/out" || die "the Apply step's report output does not carry the failed directive"
 grep -qF 'guard#1' "$work/board/.furrow/bodies/$id.md" || die "the valid directive beside a failed one was not applied"
 
-run_step "$work/empty" "SetStatus-task: $id in-progress"
-[ "$rc" -ne 0 ] || die "furrow apply failed without a report (no board here) and the Apply step still succeeded"
+run_step "$work/board" ""
+[ "$rc" -eq 0 ] || die "a PR with no description ended the Apply step with exit $rc"
+grep -qx 'code=0' "$work/out" || die "the Apply step did not hand on code=0 for a PR with no description"
 
-echo "  the Apply step keeps a failed directive non-blocking and fails on a report-less apply"
+# The report-less fixture is a directory with no board; what apply itself
+# exits with there is the code the step must fail with.
+want=0
+( cd "$work/empty" && "$BIN" apply --on open --json </dev/null >/dev/null 2>&1 ) || want=$?
+[ "$want" -ne 0 ] || { echo "✖ furrow apply no longer fails in a directory with no board — this guard needs another report-less failure" >&2; exit 1; }
+run_step "$work/empty" "SetStatus-task: $id in-progress"
+[ "$rc" -eq "$want" ] || die "furrow apply failed without a report (no board here, exit $want) and the Apply step exited $rc"
+
+echo "  the Apply step keeps a failed directive non-blocking, takes an empty PR body, and fails on a report-less apply"
