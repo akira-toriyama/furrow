@@ -108,6 +108,8 @@ func TestRevisitBoxSignalsFollowWhatNextReads(t *testing.T) {
 	mustActivate(t, a, activeDone)
 	closed := box("closed", "o/e", "backlog")
 	mustEpicDone(t, a, closed)
+	activeLive := box("active live", "o/f", "ready", "icebox")
+	mustActivate(t, a, activeLive)
 
 	items, err := a.RevisitEpics(QueryOpts{}, 0)
 	if err != nil {
@@ -129,14 +131,14 @@ func TestRevisitBoxSignalsFollowWhatNextReads(t *testing.T) {
 			t.Errorf("%s: reasons = %q, want %q", id, got[id], w)
 		}
 	}
-	for _, id := range []string{parkedLeftover, closed} {
+	for _, id := range []string{parkedLeftover, closed, activeLive} {
 		if got[id] != "" {
 			t.Errorf("%s must raise no box signal, got %q", id, got[id])
 		}
 	}
 
 	// The flag every read prints comes from the same definition.
-	for id, wantStuck := range map[string]bool{activeLeftover: true, pinned: true, activeDone: false, parkedLeftover: false} {
+	for id, wantStuck := range map[string]bool{activeLeftover: true, pinned: true, activeDone: false, parkedLeftover: false, activeLive: false} {
 		if row := rowOf(t, a, id); row.Stuck != wantStuck {
 			t.Errorf("%s: epic ls stuck = %v, want %v", row.Epic.Title, row.Stuck, wantStuck)
 		}

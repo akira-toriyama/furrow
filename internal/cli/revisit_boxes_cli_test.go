@@ -25,8 +25,9 @@ func TestCLIRevisitBoxesListsFlaggedEpics(t *testing.T) {
 	stuck := addEpic(t, "a box with nothing actionable", "-r", "o/r")
 	addTask(t, "parked member", "-s", "backlog", "-e", stuck, "-r", "o/r")
 	mustRun(t, "epic", "activate", stuck)
-	quiet := addEpic(t, "a box that is fine")
-	addTask(t, "ready member", "-s", "ready", "-e", quiet)
+	quiet := addEpic(t, "a box that is fine", "-r", "o/q")
+	addTask(t, "ready member", "-s", "ready", "-e", quiet, "-r", "o/q")
+	mustRun(t, "epic", "activate", quiet)
 	parked := addEpic(t, "a box waiting its turn")
 	addTask(t, "not started", "-s", "backlog", "-e", parked)
 

@@ -141,8 +141,11 @@ func TestTreeStuck(t *testing.T) {
 	parked := mustEpic(t, a, "parked box", EpicAddOpts{Repos: []string{"o/p"}})
 	mustAdd(t, a, "blocked member", AddOpts{Epic: parked, Status: "ready", Deps: []string{gate.ID}})
 
-	live := mustEpic(t, a, "live box", EpicAddOpts{})
+	// Active too: without that, "not read by next" alone would explain the
+	// missing flag and the actionable member would be untested.
+	live := mustEpic(t, a, "live box", EpicAddOpts{Repos: []string{"o/l"}})
 	mustAdd(t, a, "ready member", AddOpts{Epic: live, Status: "ready"})
+	mustActivate(t, a, live)
 
 	empty := mustEpic(t, a, "empty box", EpicAddOpts{})
 
@@ -157,7 +160,7 @@ func TestTreeStuck(t *testing.T) {
 		t.Error("the same box, not read by next, must NOT be stuck — it is waiting its turn")
 	}
 	if g := findGroup(groups, live); g == nil || g.Stuck {
-		t.Error("a box with an actionable member must NOT be stuck")
+		t.Error("an active box with an actionable member must NOT be stuck")
 	}
 	if g := findGroup(groups, empty); g == nil || g.Stuck {
 		t.Error("an empty box must NOT be stuck — declaring it before filling it is legitimate")

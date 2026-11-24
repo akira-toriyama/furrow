@@ -291,7 +291,7 @@ func (s epicStats) waiting() *EpicWait {
 // name to a meaning, and the board's own due policy already says which parked
 // lanes carry a date that counts. A parked member with NO due (or an arrived
 // one) never makes a box wait — nobody could say what it waits for, which is
-// exactly the box epic_all_done should still nag about.
+// exactly the box that is stuck when next reads it.
 type EpicWait struct {
 	Until time.Time `json:"until"`
 	Task  string    `json:"task"`
