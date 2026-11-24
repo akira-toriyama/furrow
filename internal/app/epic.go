@@ -20,9 +20,9 @@ type EpicItem struct {
 	Epic     core.Epic
 	Progress Progress
 	Stuck    bool
-	// NoneActionable is Stuck without the standing exemption (epicStats): open
-	// members, none actionable. Not rendered as a flag; `next`'s focus note
-	// reads it.
+	// NoneActionable is open members with none actionable, whatever the box
+	// declares (epicStats.noneActionable). Not rendered as a flag; `next`'s
+	// focus note reads it.
 	NoneActionable bool
 	// OpenDeps are the epic's deps still open (openEpicDeps) — the unsatisfied
 	// "open after" edges, resolved here so a row can say what it waits on
@@ -41,7 +41,10 @@ type EpicDetail struct {
 	Epic     core.Epic
 	Progress Progress
 	Stuck    bool
-	Waiting  *EpicWait
+	// Open counts the members in a non-terminal lane. It tells stuck's two
+	// shapes apart for the text render; no JSON view carries it.
+	Open    int
+	Waiting *EpicWait
 	// Deps are the epic's dep edges resolved to id+title+state (EpicRef), so
 	// `epic show` can print what this box waits on without a second read; the
 	// raw id set rides in Epic.Deps.
@@ -326,6 +329,7 @@ func (a *App) epicDetailIn(idx *core.Index, epics []core.Epic, id string, withBo
 		Epic:      *e,
 		Progress:  st.progress(),
 		Stuck:     st.stuck(e),
+		Open:      st.Open,
 		Waiting:   st.waiting(),
 		Deps:      deps,
 		Successor: successor,

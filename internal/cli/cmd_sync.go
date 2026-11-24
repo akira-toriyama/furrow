@@ -57,8 +57,11 @@ func revisitLine(sum app.RevisitSummary, scope string) string {
 		return ""
 	}
 	var lines []string
-	if len(sum.DepDone) > 0 || len(sum.Stale) > 0 {
-		lines = append(lines, fmt.Sprintf("revisit: %d dep_done, %d stale (%s) — furrow revisit", len(sum.DepDone), len(sum.Stale), scope))
+	// dep_done is counted in the summary (and its JSON) but not on this line: it
+	// stays on a task until the task closes, however often the task was
+	// re-judged, so its count never fell to zero and the line never went quiet.
+	if len(sum.Stale) > 0 {
+		lines = append(lines, fmt.Sprintf("revisit: %d stale (%s) — furrow revisit", len(sum.Stale), scope))
 	}
 	if b := boxCountsLine(sum); b != "" {
 		lines = append(lines, fmt.Sprintf("%s (%s) — furrow revisit --boxes", b, scope))
@@ -216,9 +219,11 @@ func newSyncCmd() *cobra.Command {
 			"archived / unarchived / removed / updated, with the old and new lane or epic on the moves\n" +
 			"— and prints as one \"incoming:\" line, so the CI that closed your in-progress\n" +
 			"task surfaces in the sync that pulled it, not on a later re-read. After a successful sync it also reports a\n" +
-			"revisit summary (repo-scoped counts of tasks with a done dependency or gone\n" +
-			"stale — `furrow revisit` lists them; of boxes with a signal, on a `boxes:`\n" +
-			"line — `furrow revisit --boxes` lists them; plus any repos whose human\n" +
+			"revisit summary (repo-scoped counts of the tasks gone stale, the members\n" +
+			"of a box waiting its turn left out — `furrow revisit` lists them all; of\n" +
+			"boxes with a signal, on a `boxes:` line — `furrow revisit --boxes` lists them;\n" +
+			"the JSON also carries `dep_done`, tasks with a done dependency, which the\n" +
+			"human line leaves out; plus any repos whose human\n" +
 			"review is older than [review].stale_after_days\n" +
 			"— a human runs `furrow review <repo>`, an agent sweep uses --by agent) so\n" +
 			"freshly-pulled staleness surfaces in the loop;\n" +

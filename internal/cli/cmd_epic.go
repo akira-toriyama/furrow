@@ -229,8 +229,8 @@ func newEpicShowCmd() *cobra.Command {
 			"the same switch `furrow show <epic-id> --no-body` honors.\n\n" +
 			"A box with no non-terminal member left and a parked member whose due is\n" +
 			"still ahead is WAITING: it prints `⏳ waiting until <due> (<task>)` for the\n" +
-			"earliest such due (`waiting: {until, task}` in --json), and revisit's\n" +
-			"epic_all_done stays quiet while it waits.",
+			"earliest such due (`waiting: {until, task}` in --json), and it is not\n" +
+			"stuck while it waits (`furrow revisit --help` has the stuck rule).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := openApp()

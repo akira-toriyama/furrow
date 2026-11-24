@@ -128,17 +128,24 @@ func TestTreeProgressIgnoresTheReadFilter(t *testing.T) {
 	}
 }
 
-// A box with open members but not one actionable is stuck — the state `next`
-// structurally cannot show (it would just return empty, which reads as "nothing
-// to do" rather than "everything here is blocked").
+// A box `next` reads with open members but not one actionable is stuck — the
+// state next structurally cannot show (it would just return empty, which reads
+// as "nothing to do" rather than "everything here is blocked"). The same shape
+// in a box next does not read is a box waiting its turn.
 func TestTreeStuck(t *testing.T) {
 	a := newApp()
-	stuck := mustEpic(t, a, "stuck box", EpicAddOpts{})
 	gate := mustAdd(t, a, "gate", AddOpts{Status: "backlog"}) // backlog is not a next lane
+	stuck := mustEpic(t, a, "stuck box", EpicAddOpts{Repos: []string{"o/s"}})
 	mustAdd(t, a, "blocked member", AddOpts{Epic: stuck, Status: "ready", Deps: []string{gate.ID}})
+	mustActivate(t, a, stuck)
+	parked := mustEpic(t, a, "parked box", EpicAddOpts{Repos: []string{"o/p"}})
+	mustAdd(t, a, "blocked member", AddOpts{Epic: parked, Status: "ready", Deps: []string{gate.ID}})
 
-	live := mustEpic(t, a, "live box", EpicAddOpts{})
+	// Active too: without that, "not read by next" alone would explain the
+	// missing flag and the actionable member would be untested.
+	live := mustEpic(t, a, "live box", EpicAddOpts{Repos: []string{"o/l"}})
 	mustAdd(t, a, "ready member", AddOpts{Epic: live, Status: "ready"})
+	mustActivate(t, a, live)
 
 	empty := mustEpic(t, a, "empty box", EpicAddOpts{})
 
@@ -147,10 +154,13 @@ func TestTreeStuck(t *testing.T) {
 		t.Fatal(err)
 	}
 	if g := findGroup(groups, stuck); g == nil || !g.Stuck {
-		t.Error("a box whose only open member is blocked must be stuck")
+		t.Error("an active box whose only open member is blocked must be stuck")
+	}
+	if g := findGroup(groups, parked); g == nil || g.Stuck {
+		t.Error("the same box, not read by next, must NOT be stuck — it is waiting its turn")
 	}
 	if g := findGroup(groups, live); g == nil || g.Stuck {
-		t.Error("a box with an actionable member must NOT be stuck")
+		t.Error("an active box with an actionable member must NOT be stuck")
 	}
 	if g := findGroup(groups, empty); g == nil || g.Stuck {
 		t.Error("an empty box must NOT be stuck — declaring it before filling it is legitimate")

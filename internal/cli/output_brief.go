@@ -189,8 +189,9 @@ func printBrief(a *app.App, b *app.BriefData, scope string) {
 	// The same split as sync's nudge (revisitLine): the task counts (plus the
 	// repo review clock) on the `revisit:` line, the box counts on their own
 	// `boxes:` line — what `furrow revisit --boxes` lists. brief's lines carry
-	// no command pointer; sync's do.
-	fmt.Fprintf(out, "revisit: %d dep_done, %d stale", len(b.Revisit.DepDone), len(b.Revisit.Stale))
+	// no command pointer; sync's do. dep_done is left off the line for
+	// revisitLine's reason.
+	fmt.Fprintf(out, "revisit: %d stale", len(b.Revisit.Stale))
 	if n := len(b.Revisit.Unreviewed); n > 0 {
 		fmt.Fprintf(out, ", %d unreviewed", n)
 	}

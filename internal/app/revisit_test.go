@@ -36,8 +36,11 @@ func TestRevisitEpicSignals(t *testing.T) {
 	}
 	allDone := mustEpic(t, a, "box all done", EpicAddOpts{})
 	mk("done member", AddOpts{Epic: allDone, Status: "done"})
-	stuck := mustEpic(t, a, "box stuck", EpicAddOpts{})
+	stuck := mustEpic(t, a, "box stuck", EpicAddOpts{Repos: []string{"o/s"}})
 	mk("backlog member", AddOpts{Epic: stuck, Status: "backlog"}) // open, but backlog is not a next lane
+	mustActivate(t, a, stuck)
+	parked := mustEpic(t, a, "box parked", EpicAddOpts{Repos: []string{"o/p"}})
+	mk("backlog member", AddOpts{Epic: parked, Status: "backlog"})
 	empty := mustEpic(t, a, "box empty", EpicAddOpts{})
 
 	sum, err := a.RevisitSummary(QueryOpts{}, 0)
@@ -58,6 +61,9 @@ func TestRevisitEpicSignals(t *testing.T) {
 	if !has(sum.EpicStuck, stuck) || has(sum.EpicAllDone, stuck) {
 		t.Errorf("stuck box: want epic_stuck only; done=%v stuck=%v", sum.EpicAllDone, sum.EpicStuck)
 	}
+	if has(sum.EpicAllDone, parked) || has(sum.EpicStuck, parked) {
+		t.Errorf("a box next does not read must get NEITHER signal — it is waiting its turn; done=%v stuck=%v", sum.EpicAllDone, sum.EpicStuck)
+	}
 	if has(sum.EpicAllDone, empty) || has(sum.EpicStuck, empty) {
 		t.Error("an empty box (zero members) must get NEITHER signal — declaring it first is legitimate")
 	}
@@ -76,8 +82,116 @@ func TestRevisitEpicSignals(t *testing.T) {
 	if !has(sum.EpicStale, active) {
 		t.Errorf("an active box untouched for 60d must be epic_stale; got %v", sum.EpicStale)
 	}
-	if has(sum.EpicStale, stuck) {
+	if has(sum.EpicStale, parked) {
 		t.Errorf("a NON-active box must never be epic_stale (parked is not forgotten); got %v", sum.EpicStale)
+	}
+}
+
+// epic_all_done means every member is in the done lane, and epic_stuck means a
+// box `next` reads hands out nothing. Members parked outside the done lane are
+// neither: they make a box next reads stuck, and leave any other box quiet.
+func TestRevisitBoxSignalsFollowWhatNextReads(t *testing.T) {
+	a := newApp()
+	box := func(title, repo string, lanes ...string) string {
+		id := mustEpic(t, a, title, EpicAddOpts{Repos: []string{repo}})
+		for _, lane := range lanes {
+			mustAdd(t, a, title+" "+lane, AddOpts{Epic: id, Status: lane})
+		}
+		return id
+	}
+	activeLeftover := box("active leftover", "o/a", "done", "icebox")
+	mustActivate(t, a, activeLeftover)
+	parkedLeftover := box("parked leftover", "o/b", "done", "icebox")
+	pinned := box("pinned", "o/c", "backlog")
+	setFlag(t, a, pinned, nil, ptr(true))
+	activeDone := box("active done", "o/d", "done", "done")
+	mustActivate(t, a, activeDone)
+	closed := box("closed", "o/e", "backlog")
+	mustEpicDone(t, a, closed)
+	activeLive := box("active live", "o/f", "ready", "icebox")
+	mustActivate(t, a, activeLive)
+
+	items, err := a.RevisitEpics(QueryOpts{}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, it := range items {
+		for _, r := range it.Reasons {
+			got[it.Epic.ID] += r.Code + ": " + r.Detail + "\n"
+		}
+	}
+	want := map[string]string{
+		activeLeftover: "epic_stuck: no open members, and 1 of 2 parked rather than done\n",
+		pinned:         "epic_stuck: 1 open members but none actionable\n",
+		activeDone:     "epic_all_done: all 2 members done — consider closing\n",
+	}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("%s: reasons = %q, want %q", id, got[id], w)
+		}
+	}
+	for _, id := range []string{parkedLeftover, closed, activeLive} {
+		if got[id] != "" {
+			t.Errorf("%s must raise no box signal, got %q", id, got[id])
+		}
+	}
+
+	// The flag every read prints comes from the same definition.
+	for id, wantStuck := range map[string]bool{activeLeftover: true, pinned: true, activeDone: false, parkedLeftover: false, activeLive: false} {
+		if row := rowOf(t, a, id); row.Stuck != wantStuck {
+			t.Errorf("%s: epic ls stuck = %v, want %v", row.Epic.Title, row.Stuck, wantStuck)
+		}
+	}
+	all, err := a.EpicList(EpicQueryOpts{All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range all {
+		if it.Epic.ID == closed && it.Stuck {
+			t.Error("a closed box is not read by next, so it must not be stuck")
+		}
+	}
+}
+
+// The summary's stale count skips the members of a box waiting its turn; the
+// revisit read lists them all the same.
+func TestRevisitSummaryStaleSkipsParkedBoxMembers(t *testing.T) {
+	a, clk := revisitApp()
+	member := func(title, repo string) (box, task string) {
+		box = mustEpic(t, a, title, EpicAddOpts{Repos: []string{repo}})
+		return box, mustAdd(t, a, title+" member", AddOpts{Epic: box, Status: "backlog", Repos: []string{repo}}).ID
+	}
+	_, parkedTask := member("parked", "o/a")
+	active, activeTask := member("active", "o/b")
+	mustActivate(t, a, active)
+	pinned, pinnedTask := member("pinned", "o/c")
+	setFlag(t, a, pinned, nil, ptr(true))
+	standing, standingTask := member("standing", "o/d")
+	setFlag(t, a, standing, ptr(true), nil)
+	closed, closedTask := member("closed", "o/e")
+	mustEpicDone(t, a, closed)
+	unfiled := mustAdd(t, a, "unfiled", AddOpts{Status: "backlog", Repos: []string{"o/f"}}).ID
+	clk.t = clk.t.AddDate(0, 0, 60)
+
+	sum, err := a.RevisitSummary(QueryOpts{}, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{activeTask, pinnedTask, standingTask, closedTask, unfiled}
+	sort.Strings(want)
+	got := slices.Clone(sum.Stale)
+	sort.Strings(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("summary stale = %v, want %v (everything but the parked box's %s)", got, want, parkedTask)
+	}
+
+	items, err := a.Revisit(QueryOpts{}, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if codes := codesByID(items)[parkedTask]; !slices.Contains(codes, "stale") {
+		t.Errorf("revisit must still list the parked box's member as stale, got %v", codes)
 	}
 }
 

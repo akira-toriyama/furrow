@@ -98,10 +98,10 @@ type Epic struct {
 	// Standing declares a PERMANENT box (schema v7): one whose goal is to sit
 	// there — an inbox-like channel (a mandate box), a parking lot. Its whole
 	// effect is to silence the lifecycle nags that assume a box is meant to
-	// finish: revisit's epic_all_done (open 0 is this box's HEALTHY state, not
-	// "consider closing"), epic_dep_done (an always-on box has no "turn to
-	// open"), and epic_stuck (open members none of which are actionable is an
-	// inbox's OTHER resting state — deposits awaiting triage). The review
+	// finish: revisit's epic_all_done (every deposit consumed is this box's
+	// HEALTHY state, not "consider closing"), epic_dep_done (an always-on box
+	// has no "turn to open"), and epic_stuck (handing out nothing while
+	// deposits await triage or sit parked is an inbox's OTHER resting state). The review
 	// cadence (epic_review_due) is its replacement signal, and furrow still
 	// never auto-closes anything.
 	// Which boxes get the flag is an operating convention (the operator's

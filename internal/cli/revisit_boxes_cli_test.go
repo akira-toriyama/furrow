@@ -22,10 +22,14 @@ type revisitBoxRow struct {
 // (ridge decodes it as one), so a box never shows up there.
 func TestCLIRevisitBoxesListsFlaggedEpics(t *testing.T) {
 	initStore(t)
-	stuck := addEpic(t, "a box with nothing actionable")
-	addTask(t, "parked member", "-s", "backlog", "-e", stuck)
-	quiet := addEpic(t, "a box that is fine")
-	addTask(t, "ready member", "-s", "ready", "-e", quiet)
+	stuck := addEpic(t, "a box with nothing actionable", "-r", "o/r")
+	addTask(t, "parked member", "-s", "backlog", "-e", stuck, "-r", "o/r")
+	mustRun(t, "epic", "activate", stuck)
+	quiet := addEpic(t, "a box that is fine", "-r", "o/q")
+	addTask(t, "ready member", "-s", "ready", "-e", quiet, "-r", "o/q")
+	mustRun(t, "epic", "activate", quiet)
+	parked := addEpic(t, "a box waiting its turn")
+	addTask(t, "not started", "-s", "backlog", "-e", parked)
 
 	out, code := run(t, "--json", "revisit", "--boxes")
 	if code != 0 {
@@ -49,7 +53,7 @@ func TestCLIRevisitBoxesListsFlaggedEpics(t *testing.T) {
 	if !strings.Contains(hout, stuck) || !strings.Contains(hout, "← "+core.RevisitEpicStuck+": ") {
 		t.Errorf("the human row should name the box and end with its signal:\n%s", hout)
 	}
-	if strings.Contains(hout, quiet) {
+	if strings.Contains(hout, quiet) || strings.Contains(hout, parked) {
 		t.Errorf("a box with no signal must not be listed:\n%s", hout)
 	}
 

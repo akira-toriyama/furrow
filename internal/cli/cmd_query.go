@@ -54,8 +54,9 @@ func newLsCmd() *cobra.Command {
 			"caps the number of GROUPS (never the tasks: truncating mid-group would\n" +
 			"amputate members from a box it did show). Each group carries the epic's\n" +
 			"member progress ({done,total}, counted over the FULL board so a filter\n" +
-			"can't under-count the box) and a stuck flag (open members but no\n" +
-			"actionable one; never set on a standing box). --json nests tasks under their group and adds\n" +
+			"can't under-count the box) and a stuck flag (the box is one `next` reads,\n" +
+			"holds unfinished members and hands out none — `furrow revisit --help`\n" +
+			"has the rule). --json nests tasks under their group and adds\n" +
 			"`actionable` + `blocked_by` to each node; --ndjson streams one whole\n" +
 			"group per line.\n\n" +
 			"--archived lists the archive store INSTEAD of the hot board, and either\n" +
@@ -578,7 +579,8 @@ func newBriefCmd() *cobra.Command {
 			"blocked_by (started or queued work that plain `next` deliberately hides),\n" +
 			"beside blocked_total, the same count over every OPEN lane, so the band's\n" +
 			"own lane filter never reads as \"nothing on this board is stuck\";\n" +
-			"`revisit` = the summary sync reports ({dep_done, stale, …} id arrays);\n" +
+			"`revisit` = the summary sync reports ({dep_done, stale, …} id arrays; the\n" +
+			"human line counts stale only);\n" +
 			"`drafts` = the repo-less count, board-wide by definition (a draft has no\n" +
 			"repo, so no scope can own it); `lint` = sync's error-count ride-along\n" +
 			"(omitted when clean). Scope with -r/-l like every read; human mode\n" +
@@ -655,6 +657,18 @@ func newRevisitCmd() *cobra.Command {
 			"`revisit` array (an array of boxes, never mixed with task rows: the two\n" +
 			"are different entities). It honors -r, -n and --stale-days (epic_stale)\n" +
 			"and refuses the task-shaped filters -q/-l/-e (exit 2).\n\n" +
+			"The two member signals name a state someone can act on. epic_all_done:\n" +
+			"every member is in the done lane, whether or not the box is active — ask\n" +
+			"for the close. epic_stuck: a box `next` reads (open, and active or pinned)\n" +
+			"holds unfinished members and hands out none — open members with none\n" +
+			"actionable, or no open member while some sit parked outside the done lane.\n" +
+			"It is the `stuck` flag epic ls / epic show / ls --tree / brief print. A box\n" +
+			"that is neither stays quiet: one waiting its turn (open, not active, not\n" +
+			"pinned) is supposed to hold unstarted work, and for the same reason its\n" +
+			"members are left out of the stale count `sync` and `brief` report (this\n" +
+			"read and `-q is:stale` still list them). A standing box raises neither\n" +
+			"signal, nor does a box whose remaining members are parked with a due\n" +
+			"still ahead (`furrow epic show --help`).\n\n" +
 			"-q ANDs a typed query onto the surfaced set — the same language as `ls -q`\n" +
 			"— narrowing WHICH flagged tasks come back (`revisit -q 'label:cli'`); a\n" +
 			"task still needs at least one revisit signal to appear. Within -q,\n" +

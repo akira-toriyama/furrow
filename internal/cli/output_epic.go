@@ -236,7 +236,11 @@ func printEpicDetail(a *app.App, d *app.EpicDetail) {
 	}
 	fmt.Fprintf(out, "progress: %d/%d\n", d.Progress.Done, d.Progress.Total)
 	if d.Stuck {
-		fmt.Fprintln(out, "          ⚠ stuck — open members but none actionable")
+		if d.Open > 0 {
+			fmt.Fprintln(out, "          ⚠ stuck — open members but none actionable")
+		} else {
+			fmt.Fprintln(out, "          ⚠ stuck — no open members, the rest parked rather than done")
+		}
 	}
 	if d.Waiting != nil {
 		fmt.Fprintf(out, "          %s — open work done, a parked member's due still ahead\n", waitingUntil(a, d.Waiting))
