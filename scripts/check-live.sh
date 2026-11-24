@@ -1,13 +1,13 @@
 #!/bin/sh
 # check-live.sh — every guard that interrogates a BUILT furrow binary: the four
 # schema drift diffs, the two config-template drift diffs, README parity, the
-# generated command table, the docs command-list and vocabulary guards, and the
-# CLI smoke. ONE list, called by BOTH scripts/check.sh and CI (build.yml), so
-# the two can never disagree about what "the guard set" is — they used to be
-# hand-copied twins, and the copies had already drifted twice: CI diffed only 3
-# of the 4 schemas (epic drift shipped green), and CI's smoke had lost the
-# next/done leg and the two 2026-07-13 invariants (fresh init lands writable;
-# upgrade is a no-op on it).
+# generated command table, the docs command-list and vocabulary guards, the
+# sync-task-status Apply step, and the CLI smoke. ONE list, called by BOTH
+# scripts/check.sh and CI (build.yml), so the two can never disagree about what
+# "the guard set" is — they used to be hand-copied twins, and the copies had
+# already drifted twice: CI diffed only 3 of the 4 schemas (epic drift shipped
+# green), and CI's smoke had lost the next/done leg and the two 2026-07-13
+# invariants (fresh init lands writable; upgrade is a no-op on it).
 #
 # Usage: FURROW_BIN=/path/to/furrow sh scripts/check-live.sh
 set -eu
@@ -89,6 +89,9 @@ FURROW_BIN="$BIN" sh scripts/check-docs-commands.sh
 # a green run on the real docs.
 echo "→ docs vocabulary drift guard"
 FURROW_BIN="$BIN" sh scripts/check-docs-vocab.sh
+
+echo "→ sync-task-status Apply step guard (the step's own script under bash -e)"
+FURROW_BIN="$BIN" sh scripts/check-apply-step.sh
 
 echo "→ smoke: version / init / add / ls --json / next / done / lint / board / upgrade / config init|path"
 "$BIN" version >/dev/null

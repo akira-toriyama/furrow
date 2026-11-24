@@ -77,8 +77,9 @@ func newApplyCmd() *cobra.Command {
 			}
 			printApplyResult(a, res, openLane)
 			if code := res.WorstCode(); code != int(core.CodeOK) {
-				// Non-blocking by contract: stdout already carries the full report;
-				// this exit lets the workflow comment + fail the (non-required) job.
+				// Non-blocking by contract: stdout already carries the full report.
+				// sync-task-status.yml tells this exit from a report-less failure
+				// by that report, and comments and warns on a job it keeps green.
 				return &core.Error{Code: core.Code(code), Kind: core.KindForCode(core.Code(code)), Msg: applyErrorSummary(res)}
 			}
 			return nil
@@ -97,9 +98,13 @@ func newApplyCmd() *cobra.Command {
 // flag is empty or "-" (the `-`=stdin convention every --body-file shares).
 func readBodyText(cmd *cobra.Command, path string) (string, error) {
 	if path != "" && path != "-" {
-		// The same reader add/edit use: a path that does not resolve is the
-		// operator's input, exit 2, not an internal failure (t-xypx).
-		return readBodyFile(path)
+		// Not readBodyFile: that one refuses a file with no text, because add
+		// and edit were promised a body. This text is a PR description, and an
+		// empty one names no directive — the empty report stdin already gets.
+		// From v10.0.0 the shared reader brought that refusal here, where
+		// sync-task-status.yml turns it into a red job for a PR that has no
+		// description (t-264j).
+		return readFileArg(path)
 	}
 	b, err := io.ReadAll(cmd.InOrStdin())
 	if err != nil {
