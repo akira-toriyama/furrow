@@ -48,10 +48,9 @@ type TreeGroup struct {
 	// filter that hides some members cannot under-count the box. Nil for the
 	// unfiled group (a count of "not in a box" is not progress toward anything).
 	Progress *Progress
-	// Stuck marks a non-standing epic with open members but NO actionable one —
-	// org-mode's stuck project (epicStats.stuck). It is the state `next` cannot
-	// show you (it would just return empty), which is exactly why the group
-	// carries it.
+	// Stuck is epicStats.stuck: a box `next` reads that holds unfinished members
+	// and hands out none. It is the state `next` cannot show you (it would just
+	// return empty), which is exactly why the group carries it.
 	Stuck bool
 	Tasks []TreeNode
 }
@@ -232,27 +231,45 @@ type epicStats struct {
 // entity instead of a task.
 func (s epicStats) progress() Progress { return Progress{Done: s.Done, Total: s.Total} }
 
-// stuck is the org-mode "stuck project" state for a box: it has open
-// (non-terminal) members but not one of them is actionable. It is the state
-// `furrow next` structurally cannot show — next would simply return empty, and
-// "empty" reads as "nothing to do" rather than "everything here is blocked".
+// nextReads reports whether `furrow next` reads the box: open, and active or
+// pinned — nextScopeIn's two sets, without its repo filter.
+func nextReads(e *core.Epic) bool { return e.IsOpen() && (e.Active || e.Pinned) }
+
+// parkedBox reports a box waiting its turn: open, not read by `next`, and not
+// a standing channel. Its members are SUPPOSED to sit unstarted and untouched,
+// so the signals that mean "act on this box now" skip it and them.
+func parkedBox(e *core.Epic) bool { return e.IsOpen() && !nextReads(e) && !e.Standing }
+
+// stuck is the state of a box `furrow next` reads that still holds unfinished
+// members and hands out none of them. It is the state next structurally cannot
+// show — next would simply return empty, and "empty" reads as "nothing to do".
+// Two shapes: open members with none actionable (org-mode's "stuck project"),
+// and no open member at all while some sit parked outside the done lane.
 //
-// An epic with NO members is not stuck: declaring the box before filling it is a
-// legitimate first step, and nagging about it would train the reader to ignore
-// the signal. Nor is a STANDING box: open members with none actionable
-// (deposits awaiting triage, an `upstream` box whose members all wait) is its
-// resting state.
+// Not stuck:
+//   - a box next does not read (nextReads). Work nobody can start yet is what
+//     a parked box is for, and the reader of the flag has no move to make.
+//   - a box with NO members (declaring it before filling it is a legitimate
+//     first step) or with every member in the done lane (epic_all_done's).
+//   - a STANDING box: open members with none actionable (deposits awaiting
+//     triage, an `upstream` box whose members all wait) is its resting state.
+//   - a WAITING box: what remains is parked with a due still ahead, and the
+//     date's own surfaces take over once it arrives.
 //
 // The ONE definition: revisit's epic_stuck and every `stuck` a read prints
 // (epic ls / epic show / ls --tree / brief, text and JSON) come from here, so
 // the signal and the flag cannot disagree about a box.
-func (s epicStats) stuck(e *core.Epic) bool { return !e.Standing && s.noneActionable() }
+func (s epicStats) stuck(e *core.Epic) bool {
+	if !nextReads(e) || e.Standing || s.Total == 0 || s.Done == s.Total {
+		return false
+	}
+	return s.Actionable == 0 && s.waiting() == nil
+}
 
-// noneActionable is the state under stuck, whatever the box declares: open
-// members, not one of them actionable. `next` explains its empty focus from
-// this, not from stuck — a standing box that is the active focus hands out
-// nothing just the same, and the exemption is about nagging, not about why
-// the read came back empty.
+// noneActionable is open members with not one of them actionable, whatever
+// the box declares. `next` explains its empty focus from this, not from stuck
+// — a standing box that is the active focus hands out nothing just the same,
+// and the exemption is about nagging, not about why the read came back empty.
 func (s epicStats) noneActionable() bool { return s.Open > 0 && s.Actionable == 0 }
 
 // waiting is the EpicWait for a box; nil when the box has open (non-terminal)

@@ -6,14 +6,15 @@ import (
 	"testing"
 )
 
-// Two boxes of the same shape — one open member, none actionable — differing
-// only in the standing declaration. Every read that says "stuck" must agree
-// with revisit about both: the plain box is stuck everywhere, the standing one
-// nowhere.
+// Two boxes `next` reads (one active, one pinned) of the same shape — one open
+// member, none actionable — differing in the standing declaration. Every read
+// that says "stuck" must agree with revisit about both: the plain box is stuck
+// everywhere, the standing one nowhere.
 func TestCLIStandingBoxIsStuckInNoRead(t *testing.T) {
 	initStore(t)
-	plain := addEpic(t, "plain box")
-	addTask(t, "parked member", "-s", "backlog", "-e", plain)
+	plain := addEpic(t, "plain box", "-r", "o/r")
+	addTask(t, "parked member", "-s", "backlog", "-e", plain, "-r", "o/r")
+	mustRun(t, "epic", "activate", plain)
 	standing := addEpic(t, "standing box")
 	addTask(t, "awaiting triage", "-s", "backlog", "-e", standing)
 	if out, code := run(t, "epic", "set", standing, "--standing", "--pinned"); code != 0 {

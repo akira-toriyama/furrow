@@ -133,7 +133,7 @@ window — and a cancellation wants all three. The one bit a cancelled close wou
 add (achieved, or not) has no reader here: furrow keeps no velocity, burn-down
 or cycle-time figure for it to feed; `N/M` is how much of a box is settled
 rather than how much was achieved, and the box's own "all N members done" signal
-fires when nothing is open, however each member got there; the box itself is
+fires once every member is in the done lane, whatever each close meant; the box itself is
 two-valued, since `epic done` records no reason either. The bit's one
 behavioural question — whether a cancelled dependency releases what waits on it
 — is one no tracker we compared documents an answer to: Jira, Linear, GitHub

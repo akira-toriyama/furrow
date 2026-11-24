@@ -27,6 +27,14 @@ type EpicRevisitItem struct {
 // the nudge is about opening order, and an empty box whose turn has come is
 // exactly the one you open and then fill.
 //
+// The member signals name a state the reader can act on, and nothing else:
+// all_done is every member in the done lane (ask for the close — whether the
+// box is active or not), stuck is a box `next` reads handing out nothing (ask
+// for a switch). A box that is neither says nothing: members parked outside
+// the done lane are not "done", and a box waiting its turn is not blocked. The
+// two were once read off "no open member" and "open members, none actionable"
+// alone, so a parked box nagged in every session with no move to make.
+//
 // all_done and stuck are mutually exclusive by construction (all-done short
 // circuits), but stale is orthogonal and can accompany either — an active box can
 // be both blocked and forgotten, and that is worth saying twice. A STANDING box
@@ -47,32 +55,23 @@ func (a *App) epicReasons(e *core.Epic, st epicStats, epics []core.Epic, now tim
 	}
 	var out []core.RevisitReason
 
-	total, open := st.Total, st.Open
 	switch {
-	case total == 0:
+	case st.Total == 0:
 		// A freshly declared box. Nothing to say.
-	case open == 0:
-		// A STANDING box (v7) is exempt: open 0 is its healthy resting state (a
-		// drained mandate inbox, a parking lot between deposits), so "consider
-		// closing" would be a permanent false nag — the exact failure mode a
-		// signal cannot recover from.
-		//
-		// So is a box that is WAITING: its remaining members are parked with a
-		// due still ahead ("confirm zero incidents by 10/1"), so "all N members
-		// done" would be false on its face — N counts the parked ones — and
-		// would nag every session until the date. The date's own surfaces
-		// (brief's due band, lint's due-overdue) take over once it arrives; a
-		// parked member with no due earns no such silence, since nobody could
-		// say what the box waits for.
-		if !e.Standing && st.waiting() == nil {
+	case st.Done == st.Total:
+		// A STANDING box (v7) is exempt: every deposit consumed is its healthy
+		// resting state (a drained mandate inbox, a parking lot between
+		// deposits), so "consider closing" would be a permanent false nag — the
+		// exact failure mode a signal cannot recover from.
+		if !e.Standing {
 			out = append(out, core.RevisitReason{Code: core.RevisitEpicAllDone,
-				Detail: fmt.Sprintf("all %d members done — consider closing", total)})
+				Detail: fmt.Sprintf("all %d members done — consider closing", st.Total)})
 		}
 	case st.stuck(e):
-		// epicStats.stuck carries the standing exemption, so this signal and
-		// the `stuck` flag the reads print can never disagree about a box.
-		out = append(out, core.RevisitReason{Code: core.RevisitEpicStuck,
-			Detail: fmt.Sprintf("%d open members but none actionable", open)})
+		// epicStats.stuck carries every exemption (not read by next, standing,
+		// waiting), so this signal and the `stuck` flag the reads print can
+		// never disagree about a box.
+		out = append(out, core.RevisitReason{Code: core.RevisitEpicStuck, Detail: st.stuckDetail()})
 	}
 
 	// A standing box also has no "turn to open" — it is always on — so the
@@ -115,6 +114,14 @@ func (a *App) epicReasons(e *core.Epic, st epicStats, epics []core.Epic, now tim
 		}
 	}
 	return out
+}
+
+// stuckDetail words which of stuck's two shapes the box is in.
+func (s epicStats) stuckDetail() string {
+	if s.Open > 0 {
+		return fmt.Sprintf("%d open members but none actionable", s.Open)
+	}
+	return fmt.Sprintf("no open members, and %d of %d parked rather than done", s.Total-s.Done, s.Total)
 }
 
 // RevisitEpics lists the boxes with at least one signal, in EpicList's order
@@ -241,13 +248,13 @@ type UnreviewedRepo struct {
 // gone stale. Ids/repos are in canonical order.
 type RevisitSummary struct {
 	DepDone    []string         `json:"dep_done,omitempty"`   // task ids with >=1 dependency in the done lane
-	Stale      []string         `json:"stale,omitempty"`      // task ids not updated within staleDays
+	Stale      []string         `json:"stale,omitempty"`      // task ids not updated within staleDays, a parked box's members left out
 	Unreviewed []UnreviewedRepo `json:"unreviewed,omitempty"` // repos past [review].stale_after_days (omitted when none, so the existing JSON shape is unchanged)
 	// The epic keys carry EPIC ids, not task ids — the entities are distinct
 	// and so are their id spaces. omitempty so a board with no boxes keeps a
 	// minimal JSON shape.
-	EpicAllDone   []string `json:"epic_all_done,omitempty"`   // open epic ids whose members are all done
-	EpicStuck     []string `json:"epic_stuck,omitempty"`      // open epic ids with open members but none actionable
+	EpicAllDone   []string `json:"epic_all_done,omitempty"`   // open epic ids whose members are all in the done lane
+	EpicStuck     []string `json:"epic_stuck,omitempty"`      // epic ids `next` reads that hold unfinished members and hand out none
 	EpicStale     []string `json:"epic_stale,omitempty"`      // ACTIVE epic ids untouched for [revisit].stale_days
 	EpicDepDone   []string `json:"epic_dep_done,omitempty"`   // parked epic ids whose deps are all closed — their turn to open
 	EpicReviewDue []string `json:"epic_review_due,omitempty"` // standing epic ids whose last review is past [review].stale_after_days
@@ -268,7 +275,9 @@ func (s RevisitSummary) Empty() bool {
 // repo-less drafts are excluded — the difference from Revisit, which always
 // surfaces drafts as no_repo; a board-wide o (no scope) counts them.
 // staleDays <= 0 disables the stale half (matching core.RevisitReasons).
-// It is purely read-only; it drives the `furrow sync` staleness nudge.
+// The stale half skips a parked box's members (parkedBox), which Revisit
+// still lists: the summary is a nudge, Revisit the read that answers when
+// asked. It is purely read-only; it drives the `furrow sync` staleness nudge.
 func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error) {
 	idx, err := a.load()
 	if err != nil {
@@ -285,12 +294,18 @@ func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error)
 func (a *App) revisitSummaryIn(idx *core.Index, epics []core.Epic, o QueryOpts, staleDays int) (RevisitSummary, error) {
 	doneIDs := a.doneSet(idx)
 	now := a.Clock.Now()
+	byID := core.EpicsByID(epics)
 	sum := RevisitSummary{}
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
 		if a.Cfg.IsTerminal(t.Status) || !o.match(t) {
 			continue
 		}
+		// A parked box's members are meant to sit untouched until the box
+		// opens, the same reason epic_stale reads active boxes only. Revisit
+		// and is:stale still list them: core.IsStale stays the one definition.
+		box := byID[t.Epic]
+		parked := box != nil && parkedBox(box)
 		var depDone, stale bool
 		for _, r := range core.RevisitReasons(*t, now, staleDays, doneIDs) {
 			switch r.Code {
@@ -303,7 +318,7 @@ func (a *App) revisitSummaryIn(idx *core.Index, epics []core.Epic, o QueryOpts, 
 		if depDone {
 			sum.DepDone = append(sum.DepDone, t.ID)
 		}
-		if stale {
+		if stale && !parked {
 			sum.Stale = append(sum.Stale, t.ID)
 		}
 	}

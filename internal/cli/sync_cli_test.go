@@ -38,11 +38,17 @@ func TestSyncOutsideGitPrintsProgressAndExits2(t *testing.T) {
 }
 
 func TestRevisitLineRendering(t *testing.T) {
-	// Non-empty: counts, scope tag, and the call-to-action.
+	// Non-empty: the stale count, scope tag, and the call-to-action. dep_done
+	// is in the summary and stays off the line.
 	got := revisitLine(app.RevisitSummary{DepDone: []string{"t-1", "t-2"}, Stale: []string{"t-3"}}, "furrow")
-	want := "revisit: 2 dep_done, 1 stale (furrow) — furrow revisit"
+	want := "revisit: 1 stale (furrow) — furrow revisit"
 	if got != want {
 		t.Errorf("revisitLine = %q, want %q", got, want)
+	}
+	// dep_done alone prints no line: a count that never falls to zero is not a
+	// nudge.
+	if got := revisitLine(app.RevisitSummary{DepDone: []string{"t-1"}}, "furrow"); got != "" {
+		t.Errorf("dep_done-only revisitLine = %q, want \"\"", got)
 	}
 	// Empty summary renders nothing (clean board stays quiet).
 	if got := revisitLine(app.RevisitSummary{}, "furrow"); got != "" {
@@ -54,13 +60,13 @@ func TestRevisitLineRendering(t *testing.T) {
 	}
 	// Box signals get their own line pointing at the read that lists boxes —
 	// never the task read, which would come back empty (t-3f5t).
-	got = revisitLine(app.RevisitSummary{DepDone: []string{"t-1"}, EpicStuck: []string{"e-1", "e-2"}, EpicAllDone: []string{"e-3"}}, "furrow")
-	want = "revisit: 1 dep_done, 0 stale (furrow) — furrow revisit\nboxes: 1 epic_all_done, 2 epic_stuck (furrow) — furrow revisit --boxes"
+	got = revisitLine(app.RevisitSummary{Stale: []string{"t-1"}, EpicStuck: []string{"e-1", "e-2"}, EpicAllDone: []string{"e-3"}}, "furrow")
+	want = "revisit: 1 stale (furrow) — furrow revisit\nboxes: 1 epic_all_done, 2 epic_stuck (furrow) — furrow revisit --boxes"
 	if got != want {
 		t.Errorf("revisitLine with boxes = %q, want %q", got, want)
 	}
-	// Only box signals: no task line at all (a `0 dep_done, 0 stale` nudge
-	// would point at an empty read).
+	// Only box signals: no task line at all (a `0 stale` nudge would point at
+	// an empty read).
 	got = revisitLine(app.RevisitSummary{EpicReviewDue: []string{"e-9"}}, "board")
 	want = "boxes: 1 epic_review_due (board) — furrow revisit --boxes"
 	if got != want {
@@ -146,7 +152,8 @@ func initGitBoard(t *testing.T) string {
 	return clone
 }
 
-func TestSyncSurfacesRevisitLine(t *testing.T) {
+// dep_done reaches sync's JSON summary and stays off its human `revisit:` line.
+func TestSyncKeepsDepDoneInJSONAndOffTheRevisitLine(t *testing.T) {
 	initGitBoard(t)
 
 	// A done dependency and a ready task depending on it -> one dep_done.
@@ -156,13 +163,12 @@ func TestSyncSurfacesRevisitLine(t *testing.T) {
 	}
 	user := addTask(t, "needs dep", "--dep", dep)
 
-	// Human sync prints the revisit line (board-wide: no auto repo in a test board).
 	hout, hcode := run(t, "sync")
 	if hcode != 0 {
 		t.Fatalf("sync exit %d:\n%s", hcode, hout)
 	}
-	if !strings.Contains(hout, "revisit: 1 dep_done") {
-		t.Errorf("human sync missing revisit line:\n%s", hout)
+	if strings.Contains(hout, "revisit:") || strings.Contains(hout, "dep_done") {
+		t.Errorf("human sync must print no revisit line for dep_done alone:\n%s", hout)
 	}
 
 	jout, jcode := run(t, "--json", "sync")

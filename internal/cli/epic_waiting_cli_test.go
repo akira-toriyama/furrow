@@ -8,7 +8,8 @@ import (
 
 // The waiting state reaches every box surface: epic ls / epic show / brief's
 // focus line, JSON as `waiting: {until, task}` and the human rows as
-// `⏳ waiting until <due> (<task>)` — and revisit's epic_all_done stays quiet.
+// `⏳ waiting until <due> (<task>)` — and revisit raises no member signal on
+// the box, active as it is.
 func TestCLIEpicWaitingUntil(t *testing.T) {
 	initStore(t)
 	run(t, "epic", "add", "feather sku", "-r", "o/r")
@@ -63,7 +64,40 @@ func TestCLIEpicWaitingUntil(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &b); err != nil {
 		t.Fatalf("parse brief --json: %v\n%s", err, out)
 	}
-	if _, ok := b.Revisit["epic_all_done"]; ok {
-		t.Errorf("a waiting box must not raise epic_all_done:\n%s", out)
+	for _, key := range []string{"epic_all_done", "epic_stuck"} {
+		if _, ok := b.Revisit[key]; ok {
+			t.Errorf("a waiting box must not raise %s:\n%s", key, out)
+		}
+	}
+}
+
+// stuck's second shape — a box next reads with no open member left and the
+// rest parked outside the done lane — says so in `epic show` and in revisit's
+// detail, instead of "all N members done".
+func TestCLIStuckOnParkedLeftovers(t *testing.T) {
+	initStore(t)
+	box := addEpic(t, "leftovers", "-r", "o/r")
+	mustRun(t, "done", addTask(t, "shipped", "-s", "ready", "-r", "o/r", "-e", box))
+	addTask(t, "shelved", "-s", "icebox", "-r", "o/r", "-e", box)
+
+	// Not read by next: no signal, no flag.
+	if out := mustRun(t, "revisit", "--boxes"); strings.Contains(out, box) {
+		t.Errorf("a box next does not read must raise no signal:\n%s", out)
+	}
+	if out := mustRun(t, "epic", "show", box, "--no-body"); strings.Contains(out, "⚠ stuck") {
+		t.Errorf("a box next does not read must not be marked stuck:\n%s", out)
+	}
+
+	mustRun(t, "epic", "activate", box)
+	out := mustRun(t, "revisit", "--boxes")
+	if want := "← epic_stuck: no open members, and 1 of 2 parked rather than done"; !strings.Contains(out, want) {
+		t.Errorf("revisit --boxes: want %q in:\n%s", want, out)
+	}
+	if strings.Contains(out, "epic_all_done") {
+		t.Errorf("a member parked outside the done lane is not done:\n%s", out)
+	}
+	out = mustRun(t, "epic", "show", box, "--no-body")
+	if want := "⚠ stuck — no open members, the rest parked rather than done"; !strings.Contains(out, want) {
+		t.Errorf("epic show: want %q in:\n%s", want, out)
 	}
 }

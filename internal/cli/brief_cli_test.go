@@ -84,6 +84,18 @@ func TestCLIBriefHumanAndEmpty(t *testing.T) {
 	if strings.Contains(out, "# ready a") {
 		t.Errorf("human brief must NOT dump bodies (that is --json's payload):\n%s", out)
 	}
+
+	// A done dep reaches the JSON summary and stays off the human line.
+	dep := addTask(t, "the dep", "-s", "ready", "-r", "o/r")
+	mustRun(t, "done", dep)
+	user := addTask(t, "needs the dep", "-s", "ready", "-r", "o/r", "--dep", dep)
+	out = mustRun(t, "brief")
+	if !strings.Contains(out, "revisit: 0 stale\n") || strings.Contains(out, "dep_done") {
+		t.Errorf("human brief's revisit line must count stale only:\n%s", out)
+	}
+	if jout := mustRun(t, "--json", "brief"); !strings.Contains(jout, `"dep_done"`) || !strings.Contains(jout, user) {
+		t.Errorf("brief --json must keep revisit.dep_done:\n%s", jout)
+	}
 }
 
 func TestCLIBriefNDJSONIsOneLine(t *testing.T) {

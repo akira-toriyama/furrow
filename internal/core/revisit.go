@@ -18,8 +18,8 @@ const (
 	// index, so RevisitReasons (pure, per-task) does not compute them — the app
 	// layer does (App.RevisitEpics, read as `furrow revisit --boxes`). They live
 	// here so the `furrow revisit --json` reason vocabulary has one home.
-	RevisitEpicAllDone = "epic_all_done" // an open epic whose members are ALL done — consider closing it
-	RevisitEpicStuck   = "epic_stuck"    // an open epic with open members but not one actionable (standing boxes exempt — that is an inbox's resting state)
+	RevisitEpicAllDone = "epic_all_done" // an open epic whose members are ALL in the done lane — consider closing it
+	RevisitEpicStuck   = "epic_stuck"    // an epic `next` reads that holds unfinished members and hands out none (standing and waiting boxes exempt)
 	// RevisitEpicStale is the ACTIVE-epic-untouched signal. It is measured in DAYS
 	// (the [revisit].stale_days clock every other signal uses), not in sessions:
 	// furrow has no notion of a session, and inventing a second clock so that one

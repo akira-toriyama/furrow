@@ -508,10 +508,11 @@ Every failure is an error envelope: branch on its `kind`, and re-run only when
   markers and your local sync commit survives; `details.paths` and
   `details.fields` name what needs a decision.
 
-A **successful** sync also prints the repo-scoped `revisit` summary — `dep_done`
-and `stale` task ids (`furrow revisit` lists them), the box signals on a
+A **successful** sync also prints the repo-scoped `revisit` summary — the
+`stale` task count (`furrow revisit` lists them), the box signals on a
 `boxes:` line (`furrow revisit --boxes` lists them, see [`revisit`](#command-notes)), and the
-repos whose review clock lapsed (`unreviewed`); `--json` gains a `revisit` key,
+repos whose review clock lapsed (`unreviewed`); `--json` gains a `revisit` key
+(with `dep_done` too, which the human line leaves out),
 each list omitted when empty and the whole key when clean — plus a lint error
 count by code and the `epic activate` records it published: ride-alongs that
 never change sync's exit code.
