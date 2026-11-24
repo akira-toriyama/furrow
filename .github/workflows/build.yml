@@ -108,7 +108,8 @@ jobs:
 
       # Every guard that interrogates the built binary — the four schema drift
       # diffs, both config-template diffs, README parity, the generated command
-      # table, the docs command-list/vocabulary guards, and the full CLI smoke —
+      # table, the docs command-list/vocabulary guards, the sync-task-status
+      # Apply step, and the full CLI smoke —
       # lives in ONE shared script that scripts/check.sh runs verbatim. The two
       # lists were hand-copied twins before, and the copies had drifted: this
       # job diffed only 3 of the 4 schemas (an epic-schema drift shipped green)
