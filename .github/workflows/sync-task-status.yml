@@ -277,21 +277,35 @@ jobs:
           MODE: ${{ steps.gate.outputs.mode }}
           OPEN_LANE: ${{ inputs.open-lane }}
         run: |
+          # The runner starts this script as `bash -e`, and `set -uo pipefail`
+          # leaves that -e on. A bare `furrow apply` that exited non-zero ended
+          # the step on that line: no report in GITHUB_OUTPUT, and the publish,
+          # comment and warning steps below never ran, so one bad footer also
+          # dropped the valid directives beside it (t-264j). The `||` is what
+          # exempts the call. scripts/check-apply-step.sh runs this block.
           set -uo pipefail
-          printf '%s' "$PR_BODY" > /tmp/pr-body.txt
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
+          code=0
           furrow apply --on "$MODE" --ref "$REF" --open-lane "$OPEN_LANE" \
-            --body-file /tmp/pr-body.txt --json > /tmp/apply.json
-          code=$?
-          echo "code=$code" >> "$GITHUB_OUTPUT"
+            --body-file "$RUNNER_TEMP/pr-body.txt" --json > "$RUNNER_TEMP/apply.json" || code=$?
           echo '--- furrow apply report ---'
-          cat /tmp/apply.json || true
+          cat "$RUNNER_TEMP/apply.json"
+          # The report, not the exit code, says which failure this is: codes 1
+          # and 2 mean both. WITH a report the failure is per-directive — the
+          # valid directives are applied, and the steps below publish them,
+          # comment and warn on a green job. WITHOUT one, apply itself failed
+          # (board load, IO, a held session): not the footer's doing and
+          # nothing a PR author can fix, so the job goes red.
+          if [ "$code" -ne 0 ] && ! jq -e '.outcomes | type == "array"' "$RUNNER_TEMP/apply.json" >/dev/null 2>&1; then
+            echo "::error title=furrow apply failed::furrow apply exited ${code} without a per-directive report, so this is not a footer problem: nothing was published to the board. Its error envelope is in this step's log."
+            exit "$code"
+          fi
           {
+            echo "code=$code"
             echo 'report<<FURROW_EOF'
-            cat /tmp/apply.json 2>/dev/null || echo '{}'
+            cat "$RUNNER_TEMP/apply.json"
             echo 'FURROW_EOF'
           } >> "$GITHUB_OUTPUT"
-          # Never fail here: the dedicated step below sets the (non-blocking) job status.
-          exit 0
 
       - name: Commit and push status changes
         id: publish

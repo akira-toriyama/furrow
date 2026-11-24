@@ -77,8 +77,9 @@ func newApplyCmd() *cobra.Command {
 			}
 			printApplyResult(a, res, openLane)
 			if code := res.WorstCode(); code != int(core.CodeOK) {
-				// Non-blocking by contract: stdout already carries the full report;
-				// this exit lets the workflow comment + fail the (non-required) job.
+				// Non-blocking by contract: stdout already carries the full report.
+				// sync-task-status.yml tells this exit from a report-less failure
+				// by that report, and comments and warns on a job it keeps green.
 				return &core.Error{Code: core.Code(code), Kind: core.KindForCode(core.Code(code)), Msg: applyErrorSummary(res)}
 			}
 			return nil
