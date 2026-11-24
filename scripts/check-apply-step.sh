@@ -37,7 +37,8 @@ unset CLAUDECODE
 
 # The step's `run: |` block scalar: every line under it, down to the first
 # non-blank line indented less than the block. Exit 3 when the step names a
-# `shell:` — run_step below starts the script as the runner's DEFAULT shell.
+# `shell:` — run_step below starts the script as the runner's DEFAULT shell,
+# which a workflow- or job-level `defaults:` block would replace as well.
 rc=0
 awk '
   /^      - name: Apply SetStatus-task directives$/ { step = 1; next }
@@ -48,8 +49,8 @@ awk '
   run { sub(/^          /, ""); print }
   END { exit shell ? 3 : 0 }
 ' "$wf" > "$work/step.sh" || rc=$?
-if [ "$rc" -eq 3 ]; then
-  echo "✖ the Apply step in $wf now sets shell: — this guard runs its script as \`bash -e\`, the default it had; run it the way the step declares" >&2
+if [ "$rc" -eq 3 ] || grep -qE '^(    )?defaults:' "$wf"; then
+  echo "✖ $wf now picks the Apply step's shell (a shell: on the step, or a defaults: block) — this guard runs its script as \`bash -e\`, the runner's default; run it the way the workflow declares" >&2
   exit 1
 fi
 grep -q 'furrow apply' "$work/step.sh" || {

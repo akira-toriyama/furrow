@@ -22,8 +22,9 @@ func TestApplyMissingBodyFileIsValidation(t *testing.T) {
 // A PR description with no text names no directive: apply answers a file
 // holding one with the empty report it gives the same text on stdin, not the
 // refusal add and edit give an empty body. sync-task-status.yml hands apply
-// the PR body as a file, so that refusal failed the job of every PR opened
-// without a description (t-264j).
+// the PR body as a file, where that refusal is a red job for a PR opened
+// without a description (t-264j). The file leg puts a directive on stdin, so
+// an apply that read stdin instead of the file reports an outcome.
 func TestApplyEmptyBodyFileIsAnEmptyReport(t *testing.T) {
 	initStore(t)
 	for name, text := range map[string]string{"empty": "", "blank": " \n\n"} {
@@ -35,7 +36,7 @@ func TestApplyEmptyBodyFileIsAnEmptyReport(t *testing.T) {
 			via   string
 			stdin string
 			arg   string
-		}{{"file", "", path}, {"stdin", text, "-"}} {
+		}{{"file", "SetStatus-task: t-nosuchtask done\n", path}, {"stdin", text, "-"}} {
 			fe, stdout, _ := execCLI(t, in.stdin, "--json", "apply", "--on", "open", "--ref", "x#1", "--body-file", in.arg)
 			if fe != nil {
 				t.Fatalf("%s via %s: want exit 0, got %+v", name, in.via, fe)

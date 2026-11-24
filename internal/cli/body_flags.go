@@ -87,9 +87,6 @@ func (b *bodyFlags) text(cmd *cobra.Command, stdinFree bool) (string, error) {
 // like an unreadable one: the caller named a body, and seeding the default
 // heading instead would hide that it never arrived.
 func readBodyFile(path string) (string, error) {
-	if strings.TrimSpace(path) == "" {
-		return "", core.Validationf("", "--body-file was given an empty value; pass a path, or drop the flag")
-	}
 	s, err := readFileArg(path)
 	if err != nil {
 		return "", err
@@ -104,6 +101,9 @@ func readBodyFile(path string) (string, error) {
 // path that does not resolve is the operator's input: exit 2, not an internal
 // failure (t-xypx). Whether an empty file is an answer is the caller's rule.
 func readFileArg(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", core.Validationf("", "--body-file was given an empty value; pass a path, or drop the flag")
+	}
 	data, err := os.ReadFile(path) // #nosec G304 -- the path is the caller's own --body-file argument, read once and never written
 	if err != nil {
 		return "", core.Validationf("", "--body-file: %v", err)

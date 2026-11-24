@@ -101,8 +101,9 @@ func readBodyText(cmd *cobra.Command, path string) (string, error) {
 		// Not readBodyFile: that one refuses a file with no text, because add
 		// and edit were promised a body. This text is a PR description, and an
 		// empty one names no directive — the empty report stdin already gets.
-		// The refusal reached here with the shared reader, and a PR with no
-		// description failed sync-task-status.yml's job on it (t-264j).
+		// From v10.0.0 the shared reader brought that refusal here, where
+		// sync-task-status.yml turns it into a red job for a PR that has no
+		// description (t-264j).
 		return readFileArg(path)
 	}
 	b, err := io.ReadAll(cmd.InOrStdin())
