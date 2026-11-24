@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/akira-toriyama/furrow/v10/internal/core"
@@ -16,6 +17,21 @@ func TestApplyMissingBodyFileIsValidation(t *testing.T) {
 	fe, _, _ := execCLI(t, "", "apply", "--on", "merge", "--body-file", "/nonexistent/pr-body.md")
 	if fe == nil || fe.Kind != core.KindValidation || fe.Code != core.CodeValidation {
 		t.Fatalf("want validation exit 2, got %+v", fe)
+	}
+}
+
+// A blank --body-file path is told so, not handed the OS error for opening
+// it: apply reads its file apart from add and edit, and the check lives in the
+// half the two readers share.
+//
+// bite-exempt: pins the message apply already gave on main; the regression it
+// guards (the OS error) existed only between two commits of the branch that
+// split the reader.
+func TestApplyBlankBodyFilePathSaysSo(t *testing.T) {
+	initStore(t)
+	fe, _, _ := execCLI(t, "", "apply", "--on", "merge", "--body-file", "   ")
+	if fe == nil || fe.Code != core.CodeValidation || !strings.Contains(fe.Msg, "empty value") {
+		t.Fatalf("want validation exit 2 naming the empty value, got %+v", fe)
 	}
 }
 

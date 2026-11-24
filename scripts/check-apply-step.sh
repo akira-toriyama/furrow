@@ -49,8 +49,12 @@ awk '
   run { sub(/^          /, ""); print }
   END { exit shell ? 3 : 0 }
 ' "$wf" > "$work/step.sh" || rc=$?
-if [ "$rc" -eq 3 ] || grep -qE '^(    )?defaults:' "$wf"; then
-  echo "✖ $wf now picks the Apply step's shell (a shell: on the step, or a defaults: block) — this guard runs its script as \`bash -e\`, the runner's default; run it the way the workflow declares" >&2
+if [ "$rc" -eq 3 ]; then
+  echo "✖ the Apply step in $wf now sets shell: — this guard runs its script as \`bash -e\`, the runner's default; run it the way the step declares" >&2
+  exit 1
+fi
+if grep -qE '^(    )?defaults:' "$wf"; then
+  echo "✖ $wf now carries a defaults: block, which can replace the shell the Apply step starts in — this guard assumes the runner's default, \`bash -e\`; read the block, and run the script the way it declares" >&2
   exit 1
 fi
 grep -q 'furrow apply' "$work/step.sh" || {
