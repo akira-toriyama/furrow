@@ -212,10 +212,12 @@ worktree` (`git worktree add ../furrow-<topic> -b <branch> origin/main`) or a
 separate clone — never share one checkout for concurrent git.** Commit + push
 often and `git pull --rebase` before pushing.
 
-**Trial (board task t-hpgv; t-8zhd ends it): worktrunk's `wt` replaces the raw
-`git worktree add` above.** Create with `git fetch origin && wt switch --create
+**Interim, until grove takes over (t-kza9; t-8zhd then removes `wt`):
+worktrunk's `wt` replaces the raw `git worktree add` above.** Create with
+`git fetch origin && wt switch --create
 <branch> --base origin/main --path ../furrow-<topic> --no-cd --format=json`
 (stdout carries `path`; without `--base` the branch starts from the local,
 stale `main`), and drop it after the merge with `git fetch origin && wt remove
 <branch> --foreground --format=json`, reading `branch_outcome`. Never `wt merge`
-or `wt step commit`. Note each use, good or bad: `furrow note t-hpgv "<date> …"`.
+or `wt step commit`. The trial (t-hpgv) ended 2026-11-26 in favour of grove,
+a self-built Go CLI (epic e-xcge).
