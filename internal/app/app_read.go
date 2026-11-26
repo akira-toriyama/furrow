@@ -419,7 +419,9 @@ func (o QueryOpts) match(t *core.Task) bool {
 // draft (repos == []) passes the board scope and any repo filter, so drafts
 // surface (with the no_repo signal) regardless of scope. The explicit filters
 // (Status/Label) still apply — asking for one tag must not return unrelated
-// drafts.
+// drafts. A draft parked in a watched lane ([revisit].watch_lanes) passes the
+// same way, carrying its wait signals rather than no_repo: a task with no repo
+// is in no scope, so a scoped read is the only place it can come back at all.
 func (o QueryOpts) matchRevisit(t *core.Task) bool {
 	if len(t.Repos) > 0 {
 		return o.match(t)

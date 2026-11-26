@@ -515,7 +515,7 @@ complete|modes||CLAUDE.md|^## What this is|^## Build / run
 complete|layouts||CLAUDE.md|^## What this is|^## Build / run
 complete|modes||README.md|^## Two questions, four shapes|^## Quickstart
 complete|layouts||README.md|^## Two questions, four shapes|^## Quickstart
-complete|revisit-codes||internal/app/revisit.go|^// Revisit lists open tasks that may need a fresh judgment|^func \(a \*App\) Revisit\(
+complete|revisit-codes||internal/app/revisit.go|^// Revisit lists the tasks that may need a fresh judgment|^func \(a \*App\) Revisit\(
 complete|revisit-summary-keys||internal/app/revisit.go|^// RevisitSummary tallies the loop-visible signals|^func \(a \*App\) RevisitSummary\(
 complete|query-qualifiers||README.md|^- \*\*qualifiers\*\*|^- \*\*presence\*\*
 complete|query-presence||README.md|^- \*\*presence\*\*|^- \*\*computed flags\*\*

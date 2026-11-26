@@ -21,7 +21,7 @@ import (
 //
 // Tasks in a `skip` lane are left out: there is nothing to reconcile about
 // finished or parked work, so the caller passes the terminal lanes — minus the
-// parked lanes the board asked revisit to keep reading ([revisit].parked_lanes),
+// parked lanes the board asked revisit to keep reading ([revisit].watch_lanes),
 // where a dep closing is the very event the task was parked for. A done dep with no Closed stamp is skipped too —
 // without a timestamp there is no gap to measure (a legacy/hand-edited done task
 // is the only way that arises). Only edges to ids in doneIDs are considered, so

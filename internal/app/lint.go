@@ -248,7 +248,7 @@ func (a *App) lintIndex(idx *core.Index, epics []core.Epic) []core.Problem {
 	// reconcile-on-close — the always-on (hook/CI) twin of the `dep_done` revisit
 	// signal, so an epic whose slice shipped never silently keeps a stale body.
 	// It reads the lanes revisit reads (revisitBlindLanes is the rest): a task
-	// parked in a [revisit].parked_lanes lane until its dep closes is told so
+	// parked in a [revisit].watch_lanes lane until its dep closes is told so
 	// here too.
 	ps = append(ps, core.StaleDepProblems(idx, a.revisitBlindLanes(), doneIDs)...)
 

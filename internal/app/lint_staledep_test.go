@@ -49,9 +49,9 @@ func TestLintNoWarnWhenReconciled(t *testing.T) {
 
 // reconcile-gap reads the lanes revisit reads. A task parked until its dep
 // closes is out of sight by default — and told so once the board names its
-// lane in [revisit].parked_lanes, where the dep closing is the very event the
+// lane in [revisit].watch_lanes, where the dep closing is the very event the
 // task waits for. A parked lane nobody named stays quiet either way.
-func TestLintReconcileGapFollowsRevisitParkedLanes(t *testing.T) {
+func TestLintReconcileGapFollowsRevisitWatchLanes(t *testing.T) {
 	seed := func(a *App) {
 		closed := day(24)
 		seedTask(t, a, core.Task{ID: "t-wait", Status: "waiting", Deps: []string{"t-slice"}, Updated: day(20)}, "# wait\n")

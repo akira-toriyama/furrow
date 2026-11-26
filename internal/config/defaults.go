@@ -120,8 +120,8 @@ type Config struct {
 
 	RevisitStaleDays int // days without update before `revisit` flags stale; 0 disables
 
-	// RevisitParkedLanes are the [revisit].parked_lanes: parked lanes (terminal,
-	// not the done lane) whose tasks revisit keeps reading for the two signals
+	// RevisitWatchLanes are the [revisit].watch_lanes: parked lanes (terminal,
+	// not the done lane) whose tasks revisit keeps watching for the two signals
 	// that say a wait may be over — stale and dep_done — and that lint's
 	// reconcile-gap keeps reading with them. Empty (the default) = every
 	// terminal lane is out of revisit's sight, which is what every board had
@@ -131,7 +131,7 @@ type Config struct {
 	// never binds a lane name to a meaning, and a board that parks into both a
 	// waiting-for lane and a deep freeze wants the first watched and the second
 	// left alone.
-	RevisitParkedLanes map[string]bool
+	RevisitWatchLanes map[string]bool
 
 	// ReviewStaleAfterDays is how many days a repo may go without a human review
 	// before `furrow sync` nudges it as unreviewed; 0 disables the nudge.
@@ -290,10 +290,10 @@ func (c *Config) IsLane(lane string) bool {
 // IsTerminal reports whether tasks in lane are excluded from `next`.
 func (c *Config) IsTerminal(lane string) bool { return c.Terminal[lane] }
 
-// IsRevisitParked reports whether lane is a parked lane revisit keeps reading
-// ([revisit].parked_lanes) — terminal by construction (Load keeps the list to
-// parked lanes).
-func (c *Config) IsRevisitParked(lane string) bool { return c.RevisitParkedLanes[lane] }
+// IsRevisitWatched reports whether lane is a parked lane revisit keeps
+// watching ([revisit].watch_lanes) — terminal by construction (Load keeps the
+// list to parked lanes).
+func (c *Config) IsRevisitWatched(lane string) bool { return c.RevisitWatchLanes[lane] }
 
 // IDPattern is the regexp a frozen id must match: the configured prefix
 // followed by one or more lowercase base32 chars. It is intentionally permissive

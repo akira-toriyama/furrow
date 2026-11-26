@@ -434,9 +434,9 @@ func TestRevisitSummaryUnreviewedHonorsExplicitRepo(t *testing.T) {
 }
 
 // watchWaiting is the board that asked revisit to keep reading its waiting
-// lane ([revisit].parked_lanes = ["waiting"]).
+// lane ([revisit].watch_lanes = ["waiting"]).
 func watchWaiting() appOpt {
-	return withCfg(func(c *config.Config) { c.RevisitParkedLanes = map[string]bool{"waiting": true} })
+	return withCfg(func(c *config.Config) { c.RevisitWatchLanes = map[string]bool{"waiting": true} })
 }
 
 // parkedFixture seeds one task per way a parked task can wait, all last
@@ -449,21 +449,23 @@ func parkedFixture(t *testing.T, a *App) {
 	ahead, arrived := now.AddDate(0, 0, 10), now.AddDate(0, 0, -3)
 	rr := []string{"o/r"}
 	for _, task := range []core.Task{
-		{ID: "t-event", Status: "waiting", Repos: rr, Updated: old},                             // no due, no dep: the task nothing else brings back
-		{ID: "t-noted", Status: "waiting", Repos: rr, Updated: now.AddDate(0, 0, -5)},           // same, but someone looked 5 days ago
-		{ID: "t-dated", Status: "waiting", Repos: rr, Updated: old, Due: &ahead},                // waits on a date still ahead
-		{ID: "t-late", Status: "waiting", Repos: rr, Updated: old, Due: &arrived},               // its date has come
-		{ID: "t-blocked", Status: "waiting", Repos: rr, Updated: old, Deps: []string{"t-open"}}, // waits on a task not yet done
-		{ID: "t-freed", Status: "waiting", Repos: rr, Updated: old, Deps: []string{"t-closed"}}, // the task it waited on closed
-		{ID: "t-frozen", Status: "icebox", Repos: rr, Updated: old, Deps: []string{"t-closed"}}, // a parked lane nobody named
-		{ID: "t-open", Status: "ready", Repos: rr, Value: ptr(1), Effort: ptr(1), Updated: now}, // the open dep
+		{ID: "t-event", Status: "waiting", Repos: rr, Updated: old},                              // no due, no dep: the task nothing else brings back
+		{ID: "t-noted", Status: "waiting", Repos: rr, Updated: now.AddDate(0, 0, -5)},            // same, but someone looked 5 days ago
+		{ID: "t-dated", Status: "waiting", Repos: rr, Updated: old, Due: &ahead},                 // waits on a date still ahead
+		{ID: "t-late", Status: "waiting", Repos: rr, Updated: old, Due: &arrived},                // its date has come
+		{ID: "t-blocked", Status: "waiting", Repos: rr, Updated: old, Deps: []string{"t-open"}},  // waits on a task not yet done
+		{ID: "t-chained", Status: "waiting", Repos: rr, Updated: old, Deps: []string{"t-event"}}, // waits on a task that is itself watched
+		{ID: "t-iced", Status: "waiting", Repos: rr, Updated: old, Deps: []string{"t-frozen"}},   // waits on a task frozen where nobody looks
+		{ID: "t-freed", Status: "waiting", Repos: rr, Updated: old, Deps: []string{"t-closed"}},  // the task it waited on closed
+		{ID: "t-frozen", Status: "icebox", Repos: rr, Updated: old, Deps: []string{"t-closed"}},  // a parked lane nobody named
+		{ID: "t-open", Status: "ready", Repos: rr, Value: ptr(1), Effort: ptr(1), Updated: now},  // the open dep
 		{ID: "t-closed", Status: "done", Repos: rr, Updated: now.AddDate(0, 0, -1), Closed: ptr(now.AddDate(0, 0, -1))},
 	} {
 		seedTask(t, a, task, "# "+task.ID+"\n")
 	}
 }
 
-// A board that never set [revisit].parked_lanes reads as it always did: no
+// A board that never set [revisit].watch_lanes reads as it always did: no
 // terminal-lane task surfaces, in the list or in the summary.
 func TestRevisitSkipsEveryTerminalLaneByDefault(t *testing.T) {
 	a, _ := revisitApp()
@@ -489,7 +491,7 @@ func TestRevisitSkipsEveryTerminalLaneByDefault(t *testing.T) {
 // those: stale for the wait with no clock of its own, dep_done when the task it
 // waited on closes. The estimate signals stay an open task's (every fixture
 // task is unestimated), and the lanes nobody named stay out of sight.
-func TestRevisitReadsNamedParkedLanes(t *testing.T) {
+func TestRevisitReadsWatchedLanes(t *testing.T) {
 	a, _ := newAppWith(at(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)), watchWaiting())
 	parkedFixture(t, a)
 
@@ -501,6 +503,7 @@ func TestRevisitReadsNamedParkedLanes(t *testing.T) {
 		"t-event": {"stale"},
 		"t-late":  {"stale"},
 		"t-freed": {"dep_done", "stale"},
+		"t-iced":  {"stale"}, // its dep will never report back, so it must not hold stale back
 	}
 	if got := codesByID(items); !reflect.DeepEqual(got, want) {
 		t.Errorf("revisit = %v, want %v", got, want)
@@ -510,7 +513,7 @@ func TestRevisitReadsNamedParkedLanes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"t-event", "t-freed", "t-late"}; !sameIDSet(sum.Stale, want) {
+	if want := []string{"t-event", "t-freed", "t-iced", "t-late"}; !sameIDSet(sum.Stale, want) {
 		t.Errorf("summary stale = %v, want %v", sum.Stale, want)
 	}
 	if want := []string{"t-freed"}; !sameIDSet(sum.DepDone, want) {
@@ -546,6 +549,17 @@ func TestRevisitParkedStaleClearsOnANote(t *testing.T) {
 	if stale() {
 		t.Error("a note must clear the stale signal")
 	}
+	// dep_done is not a clock: a note leaves it standing, as on an open task.
+	if _, err := a.AddNote("t-freed", "the dep closed, but the release is still not out"); err != nil {
+		t.Fatal(err)
+	}
+	items, err := a.Revisit(QueryOpts{}, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := codesByID(items)["t-freed"], []string{"dep_done"}; !slices.Equal(got, want) {
+		t.Errorf("after a note the freed task carries %v, want %v", got, want)
+	}
 	clk.t = clk.t.AddDate(0, 0, 29)
 	if stale() {
 		t.Error("the task must stay quiet inside the window")
@@ -561,7 +575,7 @@ func TestRevisitParkedStaleClearsOnANote(t *testing.T) {
 // board that names it gets stale on a dated task there — the date never speaks.
 func TestRevisitParkedDueCountsOnlyWhereDuesAreTracked(t *testing.T) {
 	a, _ := newAppWith(at(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)), withCfg(func(c *config.Config) {
-		c.RevisitParkedLanes = map[string]bool{"waiting": true, "icebox": true}
+		c.RevisitWatchLanes = map[string]bool{"waiting": true, "icebox": true}
 	}))
 	now := a.Clock.Now()
 	old, ahead := now.AddDate(0, 0, -60), now.AddDate(0, 0, 10)
@@ -621,4 +635,52 @@ func sameIDSet(got, want []string) bool {
 	sort.Strings(g)
 	sort.Strings(w)
 	return slices.Equal(g, w)
+}
+
+// A parked draft has no repo, so it is in no scope: revisit lists it under any
+// scope, as it lists every draft, with its wait signal and not no_repo. The
+// scoped summary leaves it out, as it leaves every draft out.
+func TestRevisitListsAWatchedParkedDraftUnderAnyScope(t *testing.T) {
+	a, _ := newAppWith(at(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)), watchWaiting())
+	old := a.Clock.Now().AddDate(0, 0, -60)
+	seedTask(t, a, core.Task{ID: "t-draft", Status: "waiting", Updated: old}, "# d\n")
+	seedTask(t, a, core.Task{ID: "t-other", Status: "waiting", Repos: []string{"o/other"}, Updated: old}, "# o\n")
+
+	scoped := QueryOpts{Repo: "o/x"}
+	items, err := a.Revisit(scoped, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := codesByID(items), (map[string][]string{"t-draft": {"stale"}}); !reflect.DeepEqual(got, want) {
+		t.Errorf("scoped revisit = %v, want %v", got, want)
+	}
+	sum, err := a.RevisitSummary(scoped, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.Stale) != 0 {
+		t.Errorf("scoped summary stale = %v, want none", sum.Stale)
+	}
+}
+
+// is:stale is the age test alone. A watched parked task still waiting on a
+// read dep matches it and carries no stale signal: -q narrows which flagged
+// rows come back, it does not add a signal.
+func TestRevisitQueryIsStaleIsTheAgeTestAlone(t *testing.T) {
+	a, _ := newAppWith(at(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)), watchWaiting())
+	parkedFixture(t, a)
+	seedTask(t, a, core.Task{ID: "t-both", Status: "waiting", Repos: []string{"o/r"},
+		Updated: a.Clock.Now().AddDate(0, 0, -60), Deps: []string{"t-closed", "t-open"}}, "# b\n")
+
+	items, err := a.Revisit(QueryOpts{Query: "is:stale status:waiting"}, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := codesByID(items)
+	if want := []string{"dep_done"}; !slices.Equal(got["t-both"], want) {
+		t.Errorf("t-both = %v, want %v (is:stale matched it; the stale signal is held back)", got["t-both"], want)
+	}
+	if _, ok := got["t-blocked"]; ok {
+		t.Errorf("t-blocked is is:stale but raises no signal, so it must not be listed: %v", got)
+	}
 }

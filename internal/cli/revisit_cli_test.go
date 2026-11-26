@@ -200,10 +200,10 @@ func TestCLIRevisitHumanRowsEndWithSignals(t *testing.T) {
 }
 
 // A waiting task nobody touched reaches no routine read on a board that left
-// [revisit].parked_lanes unset; once the board names the lane, `revisit` lists
+// [revisit].watch_lanes unset; once the board names the lane, `revisit` lists
 // it as stale and `brief` counts it on its revisit line. One `furrow note`
 // answers it. (Aged via a past-clock app over the same store, as above.)
-func TestCLIRevisitReadsParkedLanesFromConfig(t *testing.T) {
+func TestCLIRevisitReadsWatchLanesFromConfig(t *testing.T) {
 	initStore(t)
 	fdir := os.Getenv(app.EnvDir)
 	cfg, _, err := config.Load(filepath.Join(fdir, "config.toml"))
@@ -244,13 +244,30 @@ func TestCLIRevisitReadsParkedLanesFromConfig(t *testing.T) {
 				briefLine = line
 			}
 		}
+		// The JSON agrees with the line: the id is in revisit.stale exactly
+		// when the row is listed.
+		out, code = run(t, "--json", "brief", "-r", "")
+		if code != 0 {
+			t.Fatalf("brief --json exit = %d:\n%s", code, out)
+		}
+		var b struct {
+			Revisit struct {
+				Stale []string `json:"stale"`
+			} `json:"revisit"`
+		}
+		if err := json.Unmarshal([]byte(out), &b); err != nil {
+			t.Fatalf("brief --json: %v\n%s", err, out)
+		}
+		if got := len(b.Revisit.Stale) == 1 && b.Revisit.Stale[0] == old.ID; got != listed {
+			t.Errorf("brief --json revisit.stale = %v, but revisit listed=%v", b.Revisit.Stale, listed)
+		}
 		return listed, briefLine
 	}
 
 	if listed, line := surfaces(); listed || !strings.HasPrefix(line, "revisit: 0 stale") {
-		t.Errorf("with parked_lanes unset the waiting task must stay out: listed=%v, brief %q", listed, line)
+		t.Errorf("with watch_lanes unset the waiting task must stay out: listed=%v, brief %q", listed, line)
 	}
-	if out, code := run(t, "config", "set", "revisit.parked_lanes", "waiting"); code != 0 {
+	if out, code := run(t, "config", "set", "revisit.watch_lanes", "waiting"); code != 0 {
 		t.Fatalf("config set exit = %d:\n%s", code, out)
 	}
 	if listed, line := surfaces(); !listed || !strings.HasPrefix(line, "revisit: 1 stale") {

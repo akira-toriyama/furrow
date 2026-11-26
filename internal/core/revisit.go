@@ -99,24 +99,27 @@ func RevisitReasons(t Task, now time.Time, staleDays int, doneIDs map[string]boo
 }
 
 // ParkedRevisitReasons is RevisitReasons for a task in a parked lane the board
-// asked revisit to keep reading ([revisit].parked_lanes). Such a task is not
+// asked revisit to keep watching ([revisit].watch_lanes). Such a task is not
 // work to weigh, so the draft and estimate signals stay out; what remains are
 // the two that say its wait may be over:
 //
 //   - stale, withheld while the wait has a clock of its own — a due still
 //     ahead (dueCounts: the lane is one [due] tracks, so the date speaks when
-//     it arrives) or a dep not yet done (its close is the dep_done below). A
-//     parked task with neither is the one no other read brings back, and
-//     elapsed time is all that is left to ask "still waiting?" with;
+//     it arrives) or a dep revisit still reads (readIDs: its close is the
+//     dep_done below, and until then the dep is itself in front of the
+//     reader). A parked task with neither is the one no other read brings
+//     back, and elapsed time is all that is left to ask "still waiting?" with;
 //   - dep_done, one per done dep, exactly as for an open task.
 //
-// An unfinished dep is any id outside doneIDs — a dangling edge included, the
-// same reading `blocked_by` gives it (lint's dep-missing is what reports that
-// one). Pure like RevisitReasons: which lanes are read is the caller's job.
-func ParkedRevisitReasons(t Task, now time.Time, staleDays int, doneIDs map[string]bool, dueCounts bool) []RevisitReason {
+// readIDs is the tasks revisit reads: the open ones and those parked in a
+// watched lane, never a done one. A dep outside both sets — frozen in a lane
+// nobody watches, or a dangling edge — will never report back, so it holds
+// nothing back: waiting on it is waiting on nothing the board can see. Pure
+// like RevisitReasons: which lanes are read is the caller's job.
+func ParkedRevisitReasons(t Task, now time.Time, staleDays int, doneIDs, readIDs map[string]bool, dueCounts bool) []RevisitReason {
 	ownClock := dueCounts && t.Due != nil && t.Due.After(now)
 	for _, dep := range t.Deps {
-		if !doneIDs[dep] {
+		if readIDs[dep] {
 			ownClock = true
 		}
 	}

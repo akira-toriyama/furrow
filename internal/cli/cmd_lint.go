@@ -31,7 +31,7 @@ func newLintCmd() *cobra.Command {
 			"record (error; `furrow sync` refuses to commit one, this catches the ones\n" +
 			"already on the board), dangling [[id]] body links (warn), reconcile gaps — an open task whose done\n" +
 			"dependency closed after its last update, or one parked in a\n" +
-			"[revisit].parked_lanes lane (warn), asset hygiene — a body's\n" +
+			"[revisit].watch_lanes lane (warn), asset hygiene — a body's\n" +
 			"asset reference whose file is missing (asset-missing), orphan and\n" +
 			"oversized assets (warn; a task's `refs` entries are verbatim pointers —\n" +
 			"file:line or URL — and are NEVER checked for existence), an outdated board layout —\n" +

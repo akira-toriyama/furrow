@@ -48,8 +48,8 @@ type raw struct {
 		Required *bool `toml:"required"`
 	} `toml:"labels"`
 	Revisit struct {
-		StaleDays   *int     `toml:"stale_days"`
-		ParkedLanes []string `toml:"parked_lanes"`
+		StaleDays  *int     `toml:"stale_days"`
+		WatchLanes []string `toml:"watch_lanes"`
 	} `toml:"revisit"`
 	Review struct {
 		StaleAfterDays *int `toml:"stale_after_days"`
@@ -446,26 +446,26 @@ func fromRaw(r raw) (*Config, []string, error) {
 		}
 	}
 
-	// [revisit].parked_lanes: the parked lanes revisit keeps reading (Config's
-	// RevisitParkedLanes says for what). Kept to lanes that ARE parked — terminal
+	// [revisit].watch_lanes: the parked lanes revisit keeps reading (Config's
+	// RevisitWatchLanes says for what). Kept to lanes that ARE parked — terminal
 	// and not the done lane — so each entry names a lane whose tasks would
 	// otherwise be skipped: an open lane is read already, and a closed task has
 	// nothing left to wait for.
-	if len(r.Revisit.ParkedLanes) > 0 {
+	if len(r.Revisit.WatchLanes) > 0 {
 		var keep []string
-		for _, l := range r.Revisit.ParkedLanes {
+		for _, l := range r.Revisit.WatchLanes {
 			switch {
 			case !slices.Contains(c.Lanes, l):
-				warn = append(warn, fmt.Sprintf("revisit.parked_lanes entry %q is not a lane; ignored", l))
+				warn = append(warn, fmt.Sprintf("revisit.watch_lanes entry %q is not a lane; ignored", l))
 			case l == c.DoneLane:
-				warn = append(warn, fmt.Sprintf("revisit.parked_lanes entry %q is the done lane (a closed task is never revisited); ignored", l))
+				warn = append(warn, fmt.Sprintf("revisit.watch_lanes entry %q is the done lane (a closed task is never revisited); ignored", l))
 			case !c.Terminal[l]:
-				warn = append(warn, fmt.Sprintf("revisit.parked_lanes entry %q is not a terminal lane (revisit already reads it); ignored", l))
+				warn = append(warn, fmt.Sprintf("revisit.watch_lanes entry %q is not a terminal lane (revisit already reads it); ignored", l))
 			default:
 				keep = append(keep, l)
 			}
 		}
-		c.RevisitParkedLanes = setOf(keep)
+		c.RevisitWatchLanes = setOf(keep)
 	}
 
 	// [review].stale_after_days: a "days" knob like revisit.stale_days — 0 is
