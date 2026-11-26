@@ -485,8 +485,9 @@ func (a *App) SetRepeatWarnings(t *core.Task, o SetOpts, was *time.Time) []strin
 // The occurrences passed over are counted from the old due — the slot it
 // stood for — not from where a close now would start: the sentence says what
 // lies between the two dates, and an overdue task moved ahead also loses the
-// lapse a late close would have reported as `skipped`. A deadline is answered by where it belongs, since no
-// write to this task can keep one across occurrences.
+// lapse a late close would have reported as `skipped`. A deadline is answered
+// by where it belongs, since no write to this task can keep one across
+// occurrences.
 //
 // The remedy is spelled out in full, stored rule included. The shard keeps the
 // compiled RRULE and not the spelling the operator typed, so "bind it again"
