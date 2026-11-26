@@ -141,7 +141,13 @@ func TestSetDueFurtherOnTheSeriesSaysTheOccurrencesBetweenAreNeverCreated(t *tes
 	out, code = run(t, "add", "毎日も", "--due", "2099-03-03", "--repeat", "daily")
 	second := addedID(t, out, code)
 
-	stdout, se := mustSplit(t, "set", first, second, "--due", "2099-03-05", "--json")
+	// One id, human mode: the path that has no envelope to pre-read for.
+	_, se := mustSplit(t, "set", first, "--due", "2099-03-04")
+	if !strings.Contains(se, "note: "+first+" repeats, and --due alone moves THIS occurrence only — the occurrence between its old date and this one is never created") {
+		t.Errorf("a single-id set did not count from the due it carried:\n%s", se)
+	}
+
+	stdout, se := mustSplit(t, "set", first, second, "--due", "2099-03-07", "--json")
 	var envs []struct {
 		After struct {
 			ID string `json:"id"`
@@ -157,7 +163,7 @@ func TestSetDueFurtherOnTheSeriesSaysTheOccurrencesBetweenAreNeverCreated(t *tes
 	}
 	for id, between := range map[string]string{
 		first:  "the 2 occurrences between its old date and this one are never created",
-		second: "the occurrence between its old date and this one is never created",
+		second: "the 3 occurrences between its old date and this one are never created",
 	} {
 		if len(got[id]) != 1 || !strings.Contains(got[id][0], between) || !strings.Contains(got[id][0], "belongs on another task's due") {
 			t.Errorf("%s: repeat_warnings = %q, want %q and where a deadline belongs", id, got[id], between)
@@ -167,7 +173,7 @@ func TestSetDueFurtherOnTheSeriesSaysTheOccurrencesBetweenAreNeverCreated(t *tes
 		}
 	}
 
-	stdout, se = mustSplit(t, "set", first, "--due", "2099-03-05", "--json")
+	stdout, se = mustSplit(t, "set", first, "--due", "2099-03-07", "--json")
 	if strings.Contains(se, "never created") || strings.Contains(stdout, "repeat_warnings") {
 		t.Errorf("the same write again spoke about the series:\nstdout: %s\nstderr: %s", stdout, se)
 	}

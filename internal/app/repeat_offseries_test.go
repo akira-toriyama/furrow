@@ -374,3 +374,44 @@ func TestALandingDateFurtherOnLeavesTheOccurrencesBetweenUncreated(t *testing.T)
 		t.Errorf("the board holds %d tasks, want 2 — the closed one and the 2026-11-24 occurrence", n)
 	}
 }
+
+// On a whole-day series a clocked occurrence still stands for its day: a close
+// settles the day, so the slot at that day's end is the one being moved, not
+// one passed. Counting from the clock instead named it "never created" on a
+// move to the very next slot, and one too many after that.
+func TestAClockedOccurrenceOfAWholeDaySeriesPassesNothingOnItsOwnDay(t *testing.T) {
+	cases := []struct {
+		to   string
+		want string // "" = silence
+	}{
+		{to: "2026-11-19"},
+		{to: "2026-11-20", want: "the occurrence between its old date and this one is never created"},
+		{to: "2026-11-20T11:00", want: "the occurrence between its old date and this one is never created"},
+	}
+	for _, c := range cases {
+		t.Run(c.to, func(t *testing.T) {
+			a := newRepeatApp(time.Date(2026, 11, 17, 2, 30, 0, 0, time.UTC))
+			task := mustAddRepeating(t, a, "点検", "2026-11-18", "weekly on mon,tue,wed,thu,fri", AddOpts{})
+			clock := "2026-11-18T11:00"
+			clocked, _, _, err := a.Set(task.ID, SetOpts{Due: &clock})
+			if err != nil {
+				t.Fatal(err)
+			}
+			to := c.to
+			moved, _, _, err := a.Set(task.ID, SetOpts{Due: &to})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ws := a.SetRepeatWarnings(moved, SetOpts{Due: &to}, clocked.Due)
+			if c.want == "" {
+				if len(ws) != 0 {
+					t.Fatalf("the write said %q, want silence", ws)
+				}
+				return
+			}
+			if len(ws) != 1 || !strings.Contains(ws[0], c.want) {
+				t.Fatalf("SetRepeatWarnings = %q, want %q", ws, c.want)
+			}
+		})
+	}
+}

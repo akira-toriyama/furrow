@@ -482,10 +482,10 @@ func (a *App) SetRepeatWarnings(t *core.Task, o SetOpts, was *time.Time) []strin
 // operator has to see to disbelieve: the clock they typed is not on it, and
 // the occurrences before it are not coming.
 //
-// The occurrences passed over are counted from the old due, not from the
-// close window: the sentence says what lies between the two dates, and an
-// overdue task moved ahead also loses the lapse a late close would have
-// reported as `skipped`. A deadline is answered by where it belongs, since no
+// The occurrences passed over are counted from the old due — the slot it
+// stood for — not from where a close now would start: the sentence says what
+// lies between the two dates, and an overdue task moved ahead also loses the
+// lapse a late close would have reported as `skipped`. A deadline is answered by where it belongs, since no
 // write to this task can keep one across occurrences.
 //
 // The remedy is spelled out in full, stored rule included. The shard keeps the
@@ -517,18 +517,24 @@ func (a *App) reDatedNote(t *core.Task, spelling string, was *time.Time) string 
 	if err != nil {
 		return ""
 	}
+	now := a.Clock.Now()
 	passed := 0
 	if was != nil {
-		// Strictly between, so the occurrence that stood at the old due is the
-		// one moved, and a date moved EARLIER passes nothing.
-		if passed, err = recur.CountBetween(t.Repeat, *t.RepeatAnchor, *was, *t.Due, loc); err != nil {
+		// From the lower edge of the old due's close window — the end of its day
+		// on a whole-day series, where a clocked occurrence still stands for that
+		// day's slot — and strictly between: the slot the moved occurrence stood
+		// for is not one it passed, and a date moved EARLIER passes nothing.
+		before := *t
+		before.Due = was
+		_, from, _ := a.repeatWindow(&before, now)
+		if passed, err = recur.CountBetween(t.Repeat, *t.RepeatAnchor, from, *t.Due, loc); err != nil {
 			return ""
 		}
 	}
 	if lands && passed == 0 {
 		return ""
 	}
-	after, _, _ := a.repeatWindow(t, a.Clock.Now())
+	after, _, _ := a.repeatWindow(t, now)
 	next, more, err := recur.Next(t.Repeat, *t.RepeatAnchor, after, loc)
 	if err != nil {
 		return ""

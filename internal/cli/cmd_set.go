@@ -2,7 +2,6 @@ package cli
 
 import (
 	"strings"
-	"time"
 
 	"github.com/akira-toriyama/furrow/v10/internal/app"
 	"github.com/akira-toriyama/furrow/v10/internal/core"
@@ -383,27 +382,6 @@ func setPreviewTail(a *app.App, o app.SetOpts) *previewTail {
 	return composeTails(tails...)
 }
 
-// duesBefore is the due each id carried before the write, keyed by task id,
-// for the one note that needs it (app.SetRepeatWarnings: the occurrences an
-// absolute --due carried a repeating task past). nil when o is not such a
-// write, so every other set reads the board once. The read is its own load,
-// ahead of the write's: a writer landing between the two can only stale a
-// count in a note, never the write.
-func duesBefore(a *app.App, ids []string, o app.SetOpts) (map[string]*time.Time, error) {
-	if o.Due == nil || o.ClearDue || o.Repeat != nil {
-		return nil, nil
-	}
-	items, _, err := a.GetBatch(ids, false)
-	if err != nil {
-		return nil, err
-	}
-	was := make(map[string]*time.Time, len(items))
-	for _, it := range items {
-		was[it.Task.ID] = it.Task.Due
-	}
-	return was, nil
-}
-
 // setApply writes o to every id in one all-or-nothing write and renders the
 // envelopes. One path whatever the arity: a single id still emits a
 // one-element ARRAY (the always-array rule — `set <id>...` has array
@@ -444,11 +422,15 @@ func setApply(cmd *cobra.Command, a *app.App, ids []string, o app.SetOpts) error
 	}
 	var renumbered []core.PriorityChange
 	rs, closed := newSeriesReports(), []*core.Task(nil)
+	// The re-date note counts the occurrences passed from the due each task
+	// carried BEFORE the write, which the shard no longer holds after it — so a
+	// write that can owe that note (app.SetRepeatWarnings's gate) reads the
+	// selection first, and the emitter's own pre-read reuses it.
+	var befores map[string]*core.Task
+	if o.Due != nil && !o.ClearDue && o.Repeat == nil {
+		befores = readBefores(a, ids)
+	}
 	mutate := func() ([]*core.Task, error) {
-		was, err := duesBefore(a, ids, o)
-		if err != nil {
-			return nil, err
-		}
 		var ts []*core.Task
 		var reps []*app.RepeatReport
 		if len(ids) == 1 {
@@ -465,7 +447,7 @@ func setApply(cmd *cobra.Command, a *app.App, ids []string, o app.SetOpts) error
 			}
 		}
 		rs.collect(ts, reps)
-		rs.warn(a, ts, o, was)
+		rs.warn(a, ts, o, befores)
 		closed = ts
 		return ts, nil
 	}
@@ -473,7 +455,7 @@ func setApply(cmd *cobra.Command, a *app.App, ids []string, o app.SetOpts) error
 		extra := mergeExtra(clampExtra(after), respaceExtra(renumbered, after.Status))
 		return mergeExtra(extra, rs.annotate(after))
 	}
-	if err := emitMutationManyTagged(cmd, a, "set", ids, mutate, annotate, dueEcho); err != nil {
+	if err := emitMutationManyTagged(cmd, a, "set", ids, befores, mutate, annotate, dueEcho); err != nil {
 		return err
 	}
 	// `set -s done` closes like `done` does, so it owes the same receipt:
