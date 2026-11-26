@@ -15,7 +15,10 @@ import (
 // a defect — that the series still runs at the end of the day (t-6n5v).
 //
 // So the write says it, when the date was absolute and the series does not
-// land on it. Every row below is one side of that line.
+// land on it — or when it carried this occurrence past others, which are then
+// never created: a date further on reads as a deadline the series keeps, and a
+// close hands back the occurrence after it (t-fq40). Every row below is one
+// side of that line.
 func TestSetSaysWhenAnAbsoluteDueLeavesTheSeries(t *testing.T) {
 	const weekdays = "weekly on mon,tue,wed,thu,fri"
 	done := "done"
@@ -36,7 +39,7 @@ func TestSetSaysWhenAnAbsoluteDueLeavesTheSeries(t *testing.T) {
 				"a close now mints the next one for 2026-11-19 23:59 +09:00",
 				"--due 2026-11-18T11:00 --repeat 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'`",
 			},
-			not: []string{"COUNT", "<rule>"},
+			not: []string{"COUNT", "<rule>", "never created", "deadline"},
 		},
 		{
 			name: "the snooze is a delta, and a delta can only mean this occurrence",
@@ -49,9 +52,41 @@ func TestSetSaysWhenAnAbsoluteDueLeavesTheSeries(t *testing.T) {
 			opts: func(string) SetOpts { s := "+1d"; return SetOpts{DueShift: &s} },
 		},
 		{
-			name: "an absolute date the series lands on has nothing to misread",
+			name: "the next date the series lands on passes nothing and has nothing to misread",
 			due:  "2026-11-18", rule: weekdays,
 			opts: dueOnly("2026-11-19"),
+		},
+		{
+			name: "a date the series lands on further on says the occurrences between are never created",
+			due:  "2026-11-18", rule: weekdays,
+			opts: dueOnly("2026-11-23"), // past Thu 19 and Fri 20
+			want: []string{
+				"moves THIS occurrence only — the 2 occurrences between its old date and this one are never created",
+				"a deadline that has to outlast occurrences belongs on another task's due",
+				"the series stands where it was: a close now mints the next one for 2026-11-24 23:59 +09:00",
+			},
+			// The series lands there: re-anchoring would change nothing.
+			not: []string{"--repeat", "to move the series"},
+		},
+		{
+			name: "one occurrence passed is named in the singular",
+			due:  "2026-11-18", rule: weekdays,
+			opts: dueOnly("2026-11-20"),
+			want: []string{"the occurrence between its old date and this one is never created"},
+		},
+		{
+			// Counted from the old due, not from the close window: a close now
+			// would settle Tue 17 and mint Wed 18 alone, but Fri 13 to Wed 18
+			// lapsed too, and after this write no close reports them skipped.
+			name: "an overdue occurrence moved ahead counts from its old date",
+			due:  "2026-11-12", rule: weekdays,
+			opts: dueOnly("2026-11-19"),
+			want: []string{"the 4 occurrences between its old date and this one"},
+		},
+		{
+			name: "a delta stays silent even when it passes occurrences",
+			due:  "2026-11-18", rule: weekdays,
+			opts: dueOnly("+7d"),
 		},
 		{
 			// The same slot, spelled as the instant the shard stores.
@@ -64,6 +99,7 @@ func TestSetSaysWhenAnAbsoluteDueLeavesTheSeries(t *testing.T) {
 			due:  "2026-11-18", rule: weekdays,
 			opts: dueOnly("2026-11-21"), // a Saturday
 			want: []string{
+				"the 2 occurrences between its old date and this one are never created",
 				"a close now mints the next one for 2026-11-23 23:59 +09:00",
 				"bind a rule that lands on this date",
 				"--due 2026-11-21 --repeat <rule>`",
@@ -161,7 +197,7 @@ func TestSetSaysWhenAnAbsoluteDueLeavesTheSeries(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Set: %v", err)
 			}
-			ws := a.SetRepeatWarnings(after, o)
+			ws := a.SetRepeatWarnings(after, o, task.Due)
 			if c.want == nil {
 				if len(ws) != 0 {
 					t.Fatalf("the write said %q, want silence", ws)
@@ -211,7 +247,7 @@ func TestTheOffSeriesNoteNamesWhatACloseDoesAndTheWriteThatChangesIt(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws := a.SetRepeatWarnings(moved, SetOpts{Due: &clock})
+	ws := a.SetRepeatWarnings(moved, SetOpts{Due: &clock}, task.Due)
 	if len(ws) != 1 || !strings.Contains(ws[0], "next one for 2026-11-19 23:59 +09:00") {
 		t.Fatalf("SetRepeatWarnings = %q, want the note naming 2026-11-19 23:59", ws)
 	}
@@ -233,7 +269,7 @@ func TestTheOffSeriesNoteNamesWhatACloseDoesAndTheWriteThatChangesIt(t *testing.
 	if err != nil {
 		t.Fatalf("the remedy the note prints was refused: %v", err)
 	}
-	if ws := b.SetRepeatWarnings(rebound, remedy); len(ws) != 0 {
+	if ws := b.SetRepeatWarnings(rebound, remedy, task.Due); len(ws) != 0 {
 		t.Errorf("the remedy raised %q", ws)
 	}
 	_, rep, err = b.moveOne(task.ID, b.Cfg.DoneLane)
@@ -261,7 +297,7 @@ func TestRebindingACountedRuleStartsItsCountOver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws := a.SetRepeatWarnings(moved, SetOpts{Due: &clock})
+	ws := a.SetRepeatWarnings(moved, SetOpts{Due: &clock}, rep.Due)
 	if len(ws) != 1 || !strings.Contains(ws[0], "its COUNT starts over from that date") {
 		t.Fatalf("SetRepeatWarnings = %q, want the COUNT clause", ws)
 	}
@@ -289,5 +325,93 @@ func TestRebindingACountedRuleStartsItsCountOver(t *testing.T) {
 	}
 	if closes != 3 {
 		t.Errorf("the rebound `for 3 times` rule took %d closes to spend, want 3 — the count did not start over", closes)
+	}
+}
+
+// The occurrences the note says are never created are the ones the series then
+// lacks: the close hands back the occurrence after the new date, and nothing
+// stands for the dates between. A date moved back again passes nothing.
+func TestALandingDateFurtherOnLeavesTheOccurrencesBetweenUncreated(t *testing.T) {
+	a := newRepeatApp(time.Date(2026, 11, 17, 2, 30, 0, 0, time.UTC))
+	task := mustAddRepeating(t, a, "点検", "2026-11-18", "weekly on mon,tue,wed,thu,fri", AddOpts{})
+	later := "2026-11-23"
+	moved, _, _, err := a.Set(task.ID, SetOpts{Due: &later})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := a.SetRepeatWarnings(moved, SetOpts{Due: &later}, task.Due)
+	if len(ws) != 1 || !strings.Contains(ws[0], "the 2 occurrences between") || !strings.Contains(ws[0], "next one for 2026-11-24 23:59 +09:00") {
+		t.Fatalf("SetRepeatWarnings = %q, want the 2 occurrences passed and 2026-11-24 next", ws)
+	}
+
+	back := "2026-11-19"
+	again, _, _, err := a.Set(task.ID, SetOpts{Due: &back})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws := a.SetRepeatWarnings(again, SetOpts{Due: &back}, moved.Due); len(ws) != 0 {
+		t.Errorf("a date moved back onto the series said %q, want silence", ws)
+	}
+	if _, _, _, err := a.Set(task.ID, SetOpts{Due: &later}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, rep, err := a.moveOne(task.ID, a.Cfg.DoneLane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2026, 11, 24, 14, 59, 59, 0, time.UTC); rep == nil || rep.Due == nil || !rep.Due.Equal(want) {
+		t.Fatalf("the close minted %v, want %s — the date the note named", rep, want)
+	}
+	if rep.Skipped != 0 {
+		t.Errorf("the close reported %d skipped — the occurrences passed were never due to lapse", rep.Skipped)
+	}
+	idx, err := a.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(idx.Tasks); n != 2 {
+		t.Errorf("the board holds %d tasks, want 2 — the closed one and the 2026-11-24 occurrence", n)
+	}
+}
+
+// On a whole-day series a clocked occurrence still stands for its day: a close
+// settles the day, so the slot at that day's end is the one being moved, not
+// one passed. Counting from the clock instead named it "never created" on a
+// move to the very next slot, and one too many after that.
+func TestAClockedOccurrenceOfAWholeDaySeriesPassesNothingOnItsOwnDay(t *testing.T) {
+	cases := []struct {
+		to   string
+		want string // "" = silence
+	}{
+		{to: "2026-11-19"},
+		{to: "2026-11-20", want: "the occurrence between its old date and this one is never created"},
+		{to: "2026-11-20T11:00", want: "the occurrence between its old date and this one is never created"},
+	}
+	for _, c := range cases {
+		t.Run(c.to, func(t *testing.T) {
+			a := newRepeatApp(time.Date(2026, 11, 17, 2, 30, 0, 0, time.UTC))
+			task := mustAddRepeating(t, a, "点検", "2026-11-18", "weekly on mon,tue,wed,thu,fri", AddOpts{})
+			clock := "2026-11-18T11:00"
+			clocked, _, _, err := a.Set(task.ID, SetOpts{Due: &clock})
+			if err != nil {
+				t.Fatal(err)
+			}
+			to := c.to
+			moved, _, _, err := a.Set(task.ID, SetOpts{Due: &to})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ws := a.SetRepeatWarnings(moved, SetOpts{Due: &to}, clocked.Due)
+			if c.want == "" {
+				if len(ws) != 0 {
+					t.Fatalf("the write said %q, want silence", ws)
+				}
+				return
+			}
+			if len(ws) != 1 || !strings.Contains(ws[0], c.want) {
+				t.Fatalf("SetRepeatWarnings = %q, want %q", ws, c.want)
+			}
+		})
 	}
 }

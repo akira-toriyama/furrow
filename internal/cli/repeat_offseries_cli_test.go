@@ -128,3 +128,53 @@ func TestSetDueOffTheSeriesNotesEachRepeatingTask(t *testing.T) {
 		t.Errorf("stderr said it %d times, want once per repeating task:\n%s", n, se)
 	}
 }
+
+// A date the series lands on further on reads as a deadline the series keeps
+// (t-fq40). The count of the occurrences passed needs the due each task carried
+// BEFORE the write — the shard no longer holds it — so two tasks moved to one
+// date in one write each get their own, and the same write again passes
+// nothing and says nothing.
+func TestSetDueFurtherOnTheSeriesSaysTheOccurrencesBetweenAreNeverCreated(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "毎日", "--due", "2099-03-02", "--repeat", "daily")
+	first := addedID(t, out, code)
+	out, code = run(t, "add", "毎日も", "--due", "2099-03-03", "--repeat", "daily")
+	second := addedID(t, out, code)
+
+	// One id, human mode: the path that has no envelope to pre-read for.
+	_, se := mustSplit(t, "set", first, "--due", "2099-03-04")
+	if !strings.Contains(se, "note: "+first+" repeats, and --due alone moves THIS occurrence only — the occurrence between its old date and this one is never created") {
+		t.Errorf("a single-id set did not count from the due it carried:\n%s", se)
+	}
+
+	stdout, se := mustSplit(t, "set", first, second, "--due", "2099-03-07", "--json")
+	var envs []struct {
+		After struct {
+			ID string `json:"id"`
+		} `json:"after"`
+		RepeatWarnings []string `json:"repeat_warnings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &envs); err != nil {
+		t.Fatalf("set --json: %v\n%s", err, stdout)
+	}
+	got := map[string][]string{}
+	for _, e := range envs {
+		got[e.After.ID] = e.RepeatWarnings
+	}
+	for id, between := range map[string]string{
+		first:  "the 2 occurrences between its old date and this one are never created",
+		second: "the 3 occurrences between its old date and this one are never created",
+	} {
+		if len(got[id]) != 1 || !strings.Contains(got[id][0], between) || !strings.Contains(got[id][0], "belongs on another task's due") {
+			t.Errorf("%s: repeat_warnings = %q, want %q and where a deadline belongs", id, got[id], between)
+		}
+		if !strings.Contains(se, "note: "+got[id][0]+"\n") {
+			t.Errorf("%s: stderr did not carry the envelope's note:\n%s", id, se)
+		}
+	}
+
+	stdout, se = mustSplit(t, "set", first, "--due", "2099-03-07", "--json")
+	if strings.Contains(se, "never created") || strings.Contains(stdout, "repeat_warnings") {
+		t.Errorf("the same write again spoke about the series:\nstdout: %s\nstderr: %s", stdout, se)
+	}
+}

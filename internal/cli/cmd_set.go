@@ -67,10 +67,13 @@ func newSetCmd() *cobra.Command {
 			"on the CLOSED task's when the write also closes it, since the rule passes\n" +
 			"to the occurrence its `repeat` names. An absolute --due that leaves a\n" +
 			"repeating task's due where its series never lands (another clock, a day\n" +
-			"the rule does not name) says so the same way: only this occurrence moved,\n" +
-			"and what a close now hands back. An offset (+1d, --due-shift) stays silent\n" +
-			"— a delta can only mean this occurrence — and so does a date the series\n" +
-			"lands on. An empty --due '' is exit 2, never a silent clear (--clear-due is\n" +
+			"the rule does not name), or carries it past other occurrences, says so\n" +
+			"the same way: only this occurrence moved, the occurrences between its old\n" +
+			"date and the new one are never created — so a deadline that has to outlast\n" +
+			"occurrences belongs on another task's due — and what a close now hands\n" +
+			"back. An offset (+1d, --due-shift) stays silent — a delta can only mean\n" +
+			"this occurrence — and so does a date the series lands on with none\n" +
+			"between. An empty --due '' is exit 2, never a silent clear (--clear-due is\n" +
 			"the clear).\n\n" +
 			"Several ids apply the SAME edits to all of them in ONE all-or-nothing\n" +
 			"write (bulk triage): a miss sets NOTHING and exits 1 with every miss in\n" +
@@ -419,6 +422,14 @@ func setApply(cmd *cobra.Command, a *app.App, ids []string, o app.SetOpts) error
 	}
 	var renumbered []core.PriorityChange
 	rs, closed := newSeriesReports(), []*core.Task(nil)
+	// The re-date note counts the occurrences passed from the due each task
+	// carried BEFORE the write, which the shard no longer holds after it — so a
+	// write that can owe that note (app.SetRepeatWarnings's gate) reads the
+	// selection first, and the emitter's own pre-read reuses it.
+	var befores map[string]*core.Task
+	if o.Due != nil && !o.ClearDue && o.Repeat == nil {
+		befores = readBefores(a, ids)
+	}
 	mutate := func() ([]*core.Task, error) {
 		var ts []*core.Task
 		var reps []*app.RepeatReport
@@ -436,7 +447,7 @@ func setApply(cmd *cobra.Command, a *app.App, ids []string, o app.SetOpts) error
 			}
 		}
 		rs.collect(ts, reps)
-		rs.warn(a, ts, o)
+		rs.warn(a, ts, o, befores)
 		closed = ts
 		return ts, nil
 	}
@@ -444,7 +455,7 @@ func setApply(cmd *cobra.Command, a *app.App, ids []string, o app.SetOpts) error
 		extra := mergeExtra(clampExtra(after), respaceExtra(renumbered, after.Status))
 		return mergeExtra(extra, rs.annotate(after))
 	}
-	if err := emitMutationManyTagged(cmd, a, "set", ids, mutate, annotate, dueEcho); err != nil {
+	if err := emitMutationManyTagged(cmd, a, "set", ids, befores, mutate, annotate, dueEcho); err != nil {
 		return err
 	}
 	// `set -s done` closes like `done` does, so it owes the same receipt:

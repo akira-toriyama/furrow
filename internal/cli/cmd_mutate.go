@@ -187,7 +187,23 @@ func emitMutationVerb(cmd *cobra.Command, a *app.App, verb func() string, id str
 // into THAT task's envelope — the batch twin of emitMutationWith's annotate (done --note
 // surfaces `appended` on each, a single-id set its `clamped`/`renumbered`).
 func emitMutationManyWith(cmd *cobra.Command, a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error), annotate func(after *core.Task) map[string]any) error {
-	return emitMutationManyTagged(cmd, a, verb, ids, mutate, annotate, nil)
+	return emitMutationManyTagged(cmd, a, verb, ids, nil, mutate, annotate, nil)
+}
+
+// readBefores is the selection as it stood before a write, keyed by task id.
+// Best effort: a read that fails leaves the map empty, and the write reports
+// the failure in its own order. Its load is the App's first, so it is also the
+// board snapshot the write's lint delta and autocommit compare against (see
+// app.load).
+func readBefores(a *app.App, ids []string) map[string]*core.Task {
+	befores := map[string]*core.Task{}
+	if items, _, err := a.GetBatch(ids, false); err == nil {
+		for i := range items {
+			t := items[i].Task
+			befores[t.ID] = &t
+		}
+	}
+	return befores
 }
 
 // emitMutationManyTagged is emitMutationManyWith with a per-task row tag on the
@@ -196,8 +212,10 @@ func emitMutationManyWith(cmd *cobra.Command, a *app.App, verb string, ids []str
 // calendar, the form every row renders a due in) instead of leaving the caller
 // to `show` it back — seven drill runs computed the resulting dates by hand
 // because nothing echoed them. nil tags nothing; JSON is untouched, its
-// envelopes already carry before/after.
-func emitMutationManyTagged(cmd *cobra.Command, a *app.App, verb string, ids []string, mutate func() ([]*core.Task, error), annotate func(after *core.Task) map[string]any, tag func(*core.Task) string) error {
+// envelopes already carry before/after. befores is a pre-write read the caller
+// already made (readBefores) for its own use; nil reads one here when the
+// envelope or the stale-read guard needs it.
+func emitMutationManyTagged(cmd *cobra.Command, a *app.App, verb string, ids []string, befores map[string]*core.Task, mutate func() ([]*core.Task, error), annotate func(after *core.Task) map[string]any, tag func(*core.Task) string) error {
 	expected, guard, gerr := expectUpdatedArg(cmd, strings.Join(ids, ","))
 	if gerr != nil {
 		return gerr
@@ -207,13 +225,10 @@ func emitMutationManyTagged(cmd *cobra.Command, a *app.App, verb string, ids []s
 		// read of one task, so it cannot ride a several-id batch.
 		return core.Validationf("", "--expect-updated describes one read of one task; it cannot apply to %d ids", len(ids))
 	}
-	befores := map[string]*core.Task{}
-	if guard || jsonMode() {
-		if items, _, err := a.GetBatch(ids, false); err == nil {
-			for i := range items {
-				t := items[i].Task
-				befores[t.ID] = &t
-			}
+	if befores == nil {
+		befores = map[string]*core.Task{}
+		if guard || jsonMode() {
+			befores = readBefores(a, ids)
 		}
 	}
 	after, err := mutate()
@@ -1146,11 +1161,13 @@ func newSeriesReports() *seriesReports {
 
 // warn records what this write did to a series that was almost certainly not
 // asked for — a rule it bound that skips a month or stands off its own anchor,
-// a due it moved to where the series never lands — keyed by the RETURNED
-// task's id. Call it after collect. WHICH writes owe a note is the app's to say
+// a due it moved to where the series never lands or past occurrences that are
+// then never created — keyed by the RETURNED task's id, as befores (the tasks
+// as they stood before the write; nil when not read) is. Call it after
+// collect. WHICH writes owe a note is the app's to say
 // (SetRepeatWarnings reads the edit): re-printing one on every unrelated edit
 // of a repeating task taught the reader to ignore it.
-func (s *seriesReports) warn(a *app.App, tasks []*core.Task, o app.SetOpts) {
+func (s *seriesReports) warn(a *app.App, tasks []*core.Task, o app.SetOpts, befores map[string]*core.Task) {
 	for _, t := range tasks {
 		subject := t
 		// A write that BINDS a rule and CLOSES in one go hands the rule straight
@@ -1168,7 +1185,11 @@ func (s *seriesReports) warn(a *app.App, tasks []*core.Task, o app.SetOpts) {
 				}
 			}
 		}
-		if ws := a.SetRepeatWarnings(subject, o); len(ws) > 0 {
+		var was *time.Time
+		if b := befores[t.ID]; b != nil {
+			was = b.Due
+		}
+		if ws := a.SetRepeatWarnings(subject, o, was); len(ws) > 0 {
 			s.warns[t.ID] = ws
 		}
 	}
