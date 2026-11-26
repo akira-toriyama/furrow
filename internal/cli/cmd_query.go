@@ -638,9 +638,9 @@ func newRevisitCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "revisit",
-		Short: "List open tasks (or, with --boxes, epics) needing re-evaluation (agent re-weighing signal)",
-		Long: "List the open tasks worth a fresh judgment, the read-only counterpart to\n" +
-			"`next`. A task surfaces when it is a draft (no repo), an estimate is unset\n" +
+		Short: "List tasks (or, with --boxes, epics) needing re-evaluation (agent re-weighing signal)",
+		Long: "List the tasks worth a fresh judgment, the read-only counterpart to\n" +
+			"`next`. An open task surfaces when it is a draft (no repo), an estimate is unset\n" +
 			"(value/effort), it has gone stale (no update within [revisit].stale_days),\n" +
 			"or a dependency is already done. Every row ends `← code: detail` (several\n" +
 			"signals joined by `; `) — `dep_done: dep t-xxxx is done` names the ONE dep\n" +
@@ -650,6 +650,17 @@ func newRevisitCmd() *cobra.Command {
 			"Drafts surface regardless of the board scope. An empty result is healthy\n" +
 			"and exits 0. Use --repo to restrict to a repo and --stale-days to override\n" +
 			"the staleness window (0 disables it).\n\n" +
+			"A terminal lane is out of this read: finished or parked work has nothing\n" +
+			"to re-weigh. A parked lane the board names in [revisit].watch_lanes is\n" +
+			"the exception, watched for the two signals that say a wait may be over:\n" +
+			"dep_done, and stale unless the wait has a clock of its own — a due still\n" +
+			"ahead in a lane [due] tracks, or a dependency this read still reads (one\n" +
+			"frozen in a lane it does not watch never reports back, so it holds\n" +
+			"nothing back). Answer a stale one with `furrow note <id> \"still\n" +
+			"waiting\"`: `updated` advances, stale stays off until the next window,\n" +
+			"and the body keeps the record. dep_done stays, as on an open task, until\n" +
+			"the task leaves the lane or the edge is pruned (`furrow tidy\n" +
+			"--done-deps`). `furrow lint`'s reconcile-gap reads the same lanes.\n\n" +
 			"--boxes lists the EPICS with a signal instead — the five box codes\n" +
 			"(epic_all_done, epic_stuck, epic_stale, epic_dep_done, epic_review_due)\n" +
 			"that `sync` and `brief` count — one row per box ending the same\n" +
@@ -665,15 +676,19 @@ func newRevisitCmd() *cobra.Command {
 			"It is the `stuck` flag epic ls / epic show / ls --tree / brief print. A box\n" +
 			"that is neither stays quiet: one waiting its turn (open, not active, not\n" +
 			"pinned) is supposed to hold unstarted work, and for the same reason its\n" +
-			"members are left out of the stale count `sync` and `brief` report (this\n" +
-			"read and `-q is:stale` still list them). A standing box raises neither\n" +
+			"open members are left out of the stale count `sync` and `brief` report\n" +
+			"(this read and `-q is:stale` still list them; a member in a\n" +
+			"[revisit].watch_lanes lane is counted whatever its box is doing — it\n" +
+			"waits on something outside the box). A standing box raises neither\n" +
 			"signal, nor does a box whose remaining members are parked with a due\n" +
 			"still ahead (`furrow epic show --help`).\n\n" +
 			"-q ANDs a typed query onto the surfaced set — the same language as `ls -q`\n" +
 			"— narrowing WHICH flagged tasks come back (`revisit -q 'label:cli'`); a\n" +
 			"task still needs at least one revisit signal to appear. Within -q,\n" +
 			"is:stale uses this call's staleness window (--stale-days included), so the\n" +
-			"flag and the query cannot disagree.",
+			"flag and the query share one threshold. is:stale is the age test alone: a\n" +
+			"watched parked task whose wait has its own clock matches it without\n" +
+			"carrying the stale signal.",
 		Example: "  furrow revisit                 # everything worth a fresh look\n" +
 			"  furrow revisit --json -n5\n" +
 			"  furrow revisit --boxes         # the epics with a signal (stuck, all done, …)\n" +

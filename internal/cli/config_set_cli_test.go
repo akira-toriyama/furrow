@@ -225,3 +225,30 @@ func TestConfigSetWritesNonBareKeysPaddedHeadersAndControlCharacters(t *testing.
 		t.Errorf("the board must still read after those writes: %d\n%s", code, o)
 	}
 }
+
+// TestConfigSetRevisitWatchLanes: the strict writer takes a parked lane and
+// refuses what the reader would clamp away — a lane revisit already reads, and
+// the done lane.
+func TestConfigSetRevisitWatchLanes(t *testing.T) {
+	initStore(t)
+	if out, code := run(t, "config", "set", "revisit.watch_lanes", "waiting"); code != 0 {
+		t.Fatalf("set exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(readBoardConfig(t), "\nwatch_lanes = [\"waiting\"]\n") {
+		t.Errorf("the list must land in [revisit]:\n%s", readBoardConfig(t))
+	}
+	before := readBoardConfig(t)
+	for _, lane := range []string{"done", "backlog", "nope"} {
+		if fe, _ := runErr(t, "config", "set", "revisit.watch_lanes", lane); fe == nil || fe.Code != core.CodeValidation {
+			t.Errorf("watch_lanes = %q must be refused, got %+v", lane, fe)
+		}
+	}
+	// The same guard from the other side: a lane cannot stop being terminal
+	// while watch_lanes still names it.
+	if fe, _ := runErr(t, "config", "set", "lanes.terminal", "done,icebox"); fe == nil || fe.Code != core.CodeValidation {
+		t.Errorf("un-parking a watched lane must be refused, got %+v", fe)
+	}
+	if readBoardConfig(t) != before {
+		t.Error("a refused set must write nothing")
+	}
+}

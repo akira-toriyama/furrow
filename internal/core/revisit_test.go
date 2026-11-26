@@ -139,3 +139,52 @@ func TestRevisitReasonsDepDoneOrder(t *testing.T) {
 		}
 	}
 }
+
+// A task in a parked lane revisit watches raises only the two signals that say
+// its wait may be over, and stale is withheld while the wait has a clock of
+// its own (a due still ahead in a lane that tracks dues, or a dep revisit
+// still reads) — the reads that already bring such a task back. A dep nobody
+// reads is no clock: it would hold the task back for good.
+func TestParkedRevisitReasons(t *testing.T) {
+	now := time.Date(2026, time.June, 29, 12, 0, 0, 0, time.UTC)
+	old := now.AddDate(0, 0, -47)
+	fresh := now.AddDate(0, 0, -1)
+	ahead := now.AddDate(0, 0, 10)
+	arrived := now.AddDate(0, 0, -2)
+	done := map[string]bool{"t-d1": true, "t-d2": true}
+	read := map[string]bool{"t-open": true} // t-frozen and t-gone are in neither set
+
+	cases := []struct {
+		name      string
+		task      Task
+		staleDays int
+		dueCounts bool
+		want      []string
+	}{
+		{"untouched, no due, no dep -> stale", Task{Updated: old}, 30, true, []string{RevisitStale}},
+		{"touched inside the window -> none", Task{Updated: fresh}, 30, true, []string{}},
+		{"no repo and no estimates are an open task's signals", Task{Updated: fresh}, 30, true, []string{}},
+		{"a due still ahead is the wait's own clock", Task{Updated: old, Due: &ahead}, 30, true, []string{}},
+		{"a due ahead in a lane [due] ignores never speaks, so stale does", Task{Updated: old, Due: &ahead}, 30, false, []string{RevisitStale}},
+		{"an arrived due no longer holds stale back", Task{Updated: old, Due: &arrived}, 30, true, []string{RevisitStale}},
+		{"a dep revisit still reads is the wait's own clock", Task{Updated: old, Deps: []string{"t-open"}}, 30, true, []string{}},
+		{"a dep frozen out of revisit's sight holds nothing back", Task{Updated: old, Deps: []string{"t-frozen"}}, 30, true, []string{RevisitStale}},
+		{"neither does a dangling one", Task{Updated: old, Deps: []string{"t-gone"}}, 30, true, []string{RevisitStale}},
+		{"one read dep is enough to wait on", Task{Updated: old, Deps: []string{"t-frozen", "t-open"}}, 30, true, []string{}},
+		{"a dep that closed -> stale and dep_done", Task{Updated: old, Deps: []string{"t-d1"}}, 30, true, []string{RevisitStale, RevisitDepDone}},
+		{"one dep closed, one not -> dep_done only", Task{Updated: old, Deps: []string{"t-d1", "t-open"}}, 30, true, []string{RevisitDepDone}},
+		{"dep_done does not wait for the stale window", Task{Updated: fresh, Deps: []string{"t-d1", "t-d2"}}, 30, true, []string{RevisitDepDone, RevisitDepDone}},
+		{"stale_days 0 disables stale, not dep_done", Task{Updated: old, Deps: []string{"t-d1"}}, 0, true, []string{RevisitDepDone}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rs := ParkedRevisitReasons(c.task, now, c.staleDays, done, read, c.dueCounts)
+			if rs == nil {
+				t.Fatal("reasons must be [] not nil, like RevisitReasons")
+			}
+			if got := codesOf(rs); !slices.Equal(got, c.want) {
+				t.Errorf("codes = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

@@ -180,13 +180,15 @@ type RevisitItem struct {
 	Reasons []core.RevisitReason
 }
 
-// Revisit lists open tasks that may need a fresh judgment, in canonical order.
+// Revisit lists the tasks that may need a fresh judgment, in canonical order.
 // It is purely read-only. A task surfaces when it has at least one signal —
 // no_repo, value_unset, effort_unset, stale, or dep_done. The five EPIC signals
 // (epic_all_done, epic_stuck, epic_stale, epic_dep_done, epic_review_due) are
 // about a box rather than a task and are reported separately by RevisitEpics. Terminal-lane tasks
 // (done/icebox/waiting) are skipped — there is nothing to re-evaluate about
-// parked or finished work. The query's filters restrict the result like
+// parked or finished work — except in a parked lane the board named in
+// [revisit].watch_lanes, whose tasks keep the two signals that say a wait may
+// be over (revisitReads, core.ParkedRevisitReasons). The query's filters restrict the result like
 // List/Next, with one carve-out: a draft (repos == []) bypasses the board
 // scope and any repo filter, so open drafts surface (as no_repo) regardless of
 // scope. staleDays of 0 disables the stale signal (the rest still fire).
@@ -204,16 +206,18 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	env := a.revisitEnvFor(idx, now, staleDays, doneIDs)
 	var out []RevisitItem
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if a.Cfg.IsTerminal(t.Status) {
+		read, parked := a.revisitReads(t)
+		if !read {
 			continue
 		}
 		if !o.matchRevisit(t) {
 			continue
 		}
-		reasons := core.RevisitReasons(*t, now, staleDays, doneIDs)
+		reasons := env.reasons(t, parked)
 		if len(reasons) == 0 {
 			continue
 		}
@@ -234,6 +238,68 @@ func (a *App) Revisit(o QueryOpts, staleDays int) ([]RevisitItem, error) {
 	return out, nil
 }
 
+// revisitReads reports whether revisit reads t at all, and whether it reads it
+// as PARKED. An open (non-terminal) task is read in full. A task in a terminal
+// lane is out of sight unless the board named that lane in
+// [revisit].watch_lanes — then it is watched for the wait signals only. The ONE
+// eligibility test: the list, the summary `sync` and `brief` print, and lint's
+// reconcile-gap (revisitBlindLanes) all draw the line here.
+func (a *App) revisitReads(t *core.Task) (read, parked bool) {
+	if !a.Cfg.IsTerminal(t.Status) {
+		return true, false
+	}
+	return a.Cfg.IsRevisitWatched(t.Status), true
+}
+
+// revisitBlindLanes is the lanes revisitReads turns away, as the set
+// core.StaleDepProblems skips: every terminal lane the board did not name in
+// [revisit].watch_lanes.
+func (a *App) revisitBlindLanes() map[string]bool {
+	blind := make(map[string]bool, len(a.Cfg.Terminal))
+	for l, on := range a.Cfg.Terminal {
+		if on && !a.Cfg.IsRevisitWatched(l) {
+			blind[l] = true
+		}
+	}
+	return blind
+}
+
+// revisitEnv is what one revisit pass knows about the board around a task.
+type revisitEnv struct {
+	now       time.Time
+	staleDays int
+	doneIDs   map[string]bool // tasks in the done lane
+	readIDs   map[string]bool // tasks revisitReads lets through; nil when no lane is watched
+	dueSkip   map[string]bool // dueSkipLanes: lanes where an arriving due raises nothing
+}
+
+// revisitEnvFor builds the pass's view once. readIDs is only ever consulted
+// for a parked task, and none is read on a board with no watched lane — so
+// that board, every board before the key existed, pays for no extra pass.
+func (a *App) revisitEnvFor(idx *core.Index, now time.Time, staleDays int, doneIDs map[string]bool) revisitEnv {
+	env := revisitEnv{now: now, staleDays: staleDays, doneIDs: doneIDs, dueSkip: a.dueSkipLanes()}
+	if len(a.Cfg.RevisitWatchLanes) > 0 {
+		env.readIDs = make(map[string]bool, len(idx.Tasks))
+		for i := range idx.Tasks {
+			if read, _ := a.revisitReads(&idx.Tasks[i]); read {
+				env.readIDs[idx.Tasks[i].ID] = true
+			}
+		}
+	}
+	return env
+}
+
+// reasons is the signals for a task revisitReads let through: an open task's
+// full set, or a parked task's two. A due only counts as the parked task's own
+// clock in a lane where its arrival raises something (dueSkip), and a dep only
+// while revisit reads it (readIDs).
+func (e revisitEnv) reasons(t *core.Task, parked bool) []core.RevisitReason {
+	if parked {
+		return core.ParkedRevisitReasons(*t, e.now, e.staleDays, e.doneIDs, e.readIDs, !e.dueSkip[t.Status])
+	}
+	return core.RevisitReasons(*t, e.now, e.staleDays, e.doneIDs)
+}
+
 // UnreviewedRepo is one repo whose last human review is older than the
 // [review].stale_after_days threshold — the per-repo half of the staleness
 // nudge. Days is whole days since that review, so an agent can rank the backlog.
@@ -248,7 +314,7 @@ type UnreviewedRepo struct {
 // gone stale. Ids/repos are in canonical order.
 type RevisitSummary struct {
 	DepDone    []string         `json:"dep_done,omitempty"`   // task ids with >=1 dependency in the done lane
-	Stale      []string         `json:"stale,omitempty"`      // task ids not updated within staleDays, a parked box's members left out
+	Stale      []string         `json:"stale,omitempty"`      // task ids not updated within staleDays, a parked box's open members left out
 	Unreviewed []UnreviewedRepo `json:"unreviewed,omitempty"` // repos past [review].stale_after_days (omitted when none, so the existing JSON shape is unchanged)
 	// The epic keys carry EPIC ids, not task ids — the entities are distinct
 	// and so are their id spaces. omitempty so a board with no boxes keeps a
@@ -267,15 +333,16 @@ func (s RevisitSummary) Empty() bool {
 		len(s.EpicDepDone) == 0 && len(s.EpicReviewDue) == 0
 }
 
-// RevisitSummary tallies the loop-visible signals over the open (non-terminal)
-// tasks passing o.match — dep_done and stale — plus the five epic signals
+// RevisitSummary tallies the loop-visible signals over the tasks revisit reads
+// (revisitReads: the open ones, plus those in a [revisit].watch_lanes lane)
+// passing o.match — dep_done and stale — plus the five epic signals
 // (epic_all_done, epic_stuck, epic_stale, epic_dep_done, epic_review_due),
 // plus the repo-level unreviewed clock (unreviewedRepos, which is not a task
 // signal at all). With a scope set (ScopeRepo/Repo),
 // repo-less drafts are excluded — the difference from Revisit, which always
 // surfaces drafts as no_repo; a board-wide o (no scope) counts them.
 // staleDays <= 0 disables the stale half (matching core.RevisitReasons).
-// The stale half skips a parked box's members (parkedBox), which Revisit
+// The stale half skips a parked box's OPEN members (parkedBox), which Revisit
 // still lists: the summary is a nudge, Revisit the read that answers when
 // asked. It is purely read-only; it drives the `furrow sync` staleness nudge.
 func (a *App) RevisitSummary(o QueryOpts, staleDays int) (RevisitSummary, error) {
@@ -296,18 +363,25 @@ func (a *App) revisitSummaryIn(idx *core.Index, epics []core.Epic, o QueryOpts, 
 	now := a.Clock.Now()
 	byID := core.EpicsByID(epics)
 	sum := RevisitSummary{}
+	env := a.revisitEnvFor(idx, now, staleDays, doneIDs)
 	for i := range idx.Tasks {
 		t := &idx.Tasks[i]
-		if a.Cfg.IsTerminal(t.Status) || !o.match(t) {
+		read, parked := a.revisitReads(t)
+		if !read || !o.match(t) {
 			continue
 		}
 		// A parked box's members are meant to sit untouched until the box
 		// opens, the same reason epic_stale reads active boxes only. Revisit
 		// and is:stale still list them: core.IsStale stays the one definition.
+		// That is unstarted work waiting for the box's turn. A member in a
+		// parked LANE revisit reads waits on something outside the box, and the
+		// box's turn says nothing about it — it is counted whatever its box is
+		// doing, or the last waiting member of a box nobody reopens is exactly
+		// the task this read would lose.
 		box := byID[t.Epic]
-		parked := box != nil && parkedBox(box)
+		boxWaitsItsTurn := !parked && box != nil && parkedBox(box)
 		var depDone, stale bool
-		for _, r := range core.RevisitReasons(*t, now, staleDays, doneIDs) {
+		for _, r := range env.reasons(t, parked) {
 			switch r.Code {
 			case core.RevisitDepDone:
 				depDone = true
@@ -318,7 +392,7 @@ func (a *App) revisitSummaryIn(idx *core.Index, epics []core.Epic, o QueryOpts, 
 		if depDone {
 			sum.DepDone = append(sum.DepDone, t.ID)
 		}
-		if stale && !parked {
+		if stale && !boxWaitsItsTurn {
 			sum.Stale = append(sum.Stale, t.ID)
 		}
 	}

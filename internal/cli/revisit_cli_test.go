@@ -198,3 +198,85 @@ func TestCLIRevisitHumanRowsEndWithSignals(t *testing.T) {
 		t.Errorf("a task with no signal must not surface (%s):\n%s", other, out)
 	}
 }
+
+// A waiting task nobody touched reaches no routine read on a board that left
+// [revisit].watch_lanes unset; once the board names the lane, `revisit` lists
+// it as stale and `brief` counts it on its revisit line. One `furrow note`
+// answers it. (Aged via a past-clock app over the same store, as above.)
+func TestCLIRevisitReadsWatchLanesFromConfig(t *testing.T) {
+	initStore(t)
+	fdir := os.Getenv(app.EnvDir)
+	cfg, _, err := config.Load(filepath.Join(fdir, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := fsstore.New(fdir, cfg.Lanes, cfg.IDPrefix, cfg.EpicIDPrefix, cfg.IDWidth)
+	aged := app.NewWithStore(st, cfg, pastClock{t: time.Now().AddDate(0, 0, -45)})
+	old, err := aged.Add("check once the upstream fix ships", app.AddOpts{Status: "waiting", Repos: []string{"o/r"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces := func() (listed bool, briefLine string) {
+		t.Helper()
+		out, code := run(t, "--json", "revisit", "-r", "")
+		if code != 0 {
+			t.Fatalf("revisit exit = %d:\n%s", code, out)
+		}
+		var rows []revisitRow
+		if err := json.Unmarshal([]byte(out), &rows); err != nil {
+			t.Fatalf("revisit --json: %v\n%s", err, out)
+		}
+		for _, r := range rows {
+			if r.ID != old.ID {
+				continue
+			}
+			if len(r.Revisit) != 1 || r.Revisit[0].Code != core.RevisitStale {
+				t.Errorf("a parked task with no due and no dep carries stale alone, got %+v", r.Revisit)
+			}
+			listed = true
+		}
+		out, code = run(t, "brief", "-r", "")
+		if code != 0 {
+			t.Fatalf("brief exit = %d:\n%s", code, out)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(line, "revisit: ") {
+				briefLine = line
+			}
+		}
+		// The JSON agrees with the line: the id is in revisit.stale exactly
+		// when the row is listed.
+		out, code = run(t, "--json", "brief", "-r", "")
+		if code != 0 {
+			t.Fatalf("brief --json exit = %d:\n%s", code, out)
+		}
+		var b struct {
+			Revisit struct {
+				Stale []string `json:"stale"`
+			} `json:"revisit"`
+		}
+		if err := json.Unmarshal([]byte(out), &b); err != nil {
+			t.Fatalf("brief --json: %v\n%s", err, out)
+		}
+		if got := len(b.Revisit.Stale) == 1 && b.Revisit.Stale[0] == old.ID; got != listed {
+			t.Errorf("brief --json revisit.stale = %v, but revisit listed=%v", b.Revisit.Stale, listed)
+		}
+		return listed, briefLine
+	}
+
+	if listed, line := surfaces(); listed || !strings.HasPrefix(line, "revisit: 0 stale") {
+		t.Errorf("with watch_lanes unset the waiting task must stay out: listed=%v, brief %q", listed, line)
+	}
+	if out, code := run(t, "config", "set", "revisit.watch_lanes", "waiting"); code != 0 {
+		t.Fatalf("config set exit = %d:\n%s", code, out)
+	}
+	if listed, line := surfaces(); !listed || !strings.HasPrefix(line, "revisit: 1 stale") {
+		t.Errorf("with the lane named the waiting task must surface: listed=%v, brief %q", listed, line)
+	}
+	if out, code := run(t, "note", old.ID, "still waiting — the fix is not out"); code != 0 {
+		t.Fatalf("note exit = %d:\n%s", code, out)
+	}
+	if listed, line := surfaces(); listed || !strings.HasPrefix(line, "revisit: 0 stale") {
+		t.Errorf("a note must answer the stale signal: listed=%v, brief %q", listed, line)
+	}
+}
