@@ -243,11 +243,14 @@ func (a *App) lintIndex(idx *core.Index, epics []core.Epic) []core.Problem {
 		ps = append(ps, a.lintTaskShard(t)...)
 	}
 	ps = append(ps, a.lintRepoLabels(idx)...)
-	// Reconcile gaps (warn): a non-terminal task whose done dependency closed
+	// Reconcile gaps (warn): a task revisit reads whose done dependency closed
 	// after the task was last touched. This is the structural backstop for
 	// reconcile-on-close — the always-on (hook/CI) twin of the `dep_done` revisit
 	// signal, so an epic whose slice shipped never silently keeps a stale body.
-	ps = append(ps, core.StaleDepProblems(idx, a.Cfg.Terminal, doneIDs)...)
+	// It reads the lanes revisit reads (revisitBlindLanes is the rest): a task
+	// parked in a [revisit].parked_lanes lane until its dep closes is told so
+	// here too.
+	ps = append(ps, core.StaleDepProblems(idx, a.revisitBlindLanes(), doneIDs)...)
 
 	// ready-blocked (ERROR): a task sitting in an actionable ([next].lanes) lane
 	// with an unsatisfied dep — `furrow next` will never hand it out, so its lane

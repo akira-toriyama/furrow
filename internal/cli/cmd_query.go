@@ -650,6 +650,14 @@ func newRevisitCmd() *cobra.Command {
 			"Drafts surface regardless of the board scope. An empty result is healthy\n" +
 			"and exits 0. Use --repo to restrict to a repo and --stale-days to override\n" +
 			"the staleness window (0 disables it).\n\n" +
+			"A terminal lane is out of this read: finished or parked work has nothing\n" +
+			"to re-weigh. A parked lane the board names in [revisit].parked_lanes is\n" +
+			"the exception, read for the two signals that say a wait may be over:\n" +
+			"dep_done, and stale unless the wait has a clock of its own (a due still\n" +
+			"ahead in a lane [due] tracks, or a dependency not yet done). Answer a\n" +
+			"stale one with `furrow note <id> \"still waiting\"`: `updated` advances,\n" +
+			"the task goes quiet until the next window, and its body keeps the record.\n" +
+			"`furrow lint`'s reconcile-gap reads the same lanes.\n\n" +
 			"--boxes lists the EPICS with a signal instead — the five box codes\n" +
 			"(epic_all_done, epic_stuck, epic_stale, epic_dep_done, epic_review_due)\n" +
 			"that `sync` and `brief` count — one row per box ending the same\n" +
@@ -665,8 +673,10 @@ func newRevisitCmd() *cobra.Command {
 			"It is the `stuck` flag epic ls / epic show / ls --tree / brief print. A box\n" +
 			"that is neither stays quiet: one waiting its turn (open, not active, not\n" +
 			"pinned) is supposed to hold unstarted work, and for the same reason its\n" +
-			"members are left out of the stale count `sync` and `brief` report (this\n" +
-			"read and `-q is:stale` still list them). A standing box raises neither\n" +
+			"open members are left out of the stale count `sync` and `brief` report\n" +
+			"(this read and `-q is:stale` still list them; a member in a\n" +
+			"[revisit].parked_lanes lane is counted whatever its box is doing — it\n" +
+			"waits on something outside the box). A standing box raises neither\n" +
 			"signal, nor does a box whose remaining members are parked with a due\n" +
 			"still ahead (`furrow epic show --help`).\n\n" +
 			"-q ANDs a typed query onto the surfaced set — the same language as `ls -q`\n" +

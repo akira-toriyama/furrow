@@ -138,6 +138,16 @@ older_than_days = 30
 # stale. 0 disables the stale signal (the other revisit signals still fire).
 stale_days = 30
 
+# Parked lanes (terminal, not the done lane) revisit keeps reading; unset, it
+# skips every terminal lane. A task in a lane named here raises the two signals
+# that say its wait may be over: dep_done when a dependency closes, and stale
+# once nobody has touched it for stale_days — unless the wait has a clock of
+# its own (a due still ahead in a lane [due] tracks, or a dependency not yet
+# done). Answer a stale one with `furrow note <id> "still waiting"`: it
+# advances `updated`, so the task goes quiet until the next window and its body
+# keeps the record. `furrow lint`'s reconcile-gap reads the same lanes.
+# parked_lanes = ["waiting"]
+
 [review]
 # Days a repo may go without a human `furrow review <repo>` before
 # `furrow sync` nudges it as unreviewed (on the revisit line), AND days a

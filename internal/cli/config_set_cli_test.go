@@ -225,3 +225,25 @@ func TestConfigSetWritesNonBareKeysPaddedHeadersAndControlCharacters(t *testing.
 		t.Errorf("the board must still read after those writes: %d\n%s", code, o)
 	}
 }
+
+// TestConfigSetRevisitParkedLanes: the strict writer takes a parked lane and
+// refuses what the reader would clamp away — a lane revisit already reads, and
+// the done lane.
+func TestConfigSetRevisitParkedLanes(t *testing.T) {
+	initStore(t)
+	if out, code := run(t, "config", "set", "revisit.parked_lanes", "waiting"); code != 0 {
+		t.Fatalf("set exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(readBoardConfig(t), "\nparked_lanes = [\"waiting\"]\n") {
+		t.Errorf("the list must land in [revisit]:\n%s", readBoardConfig(t))
+	}
+	before := readBoardConfig(t)
+	for _, lane := range []string{"done", "backlog", "nope"} {
+		if fe, _ := runErr(t, "config", "set", "revisit.parked_lanes", lane); fe == nil || fe.Code != core.CodeValidation {
+			t.Errorf("parked_lanes = %q must be refused, got %+v", lane, fe)
+		}
+	}
+	if readBoardConfig(t) != before {
+		t.Error("a refused set must write nothing")
+	}
+}
