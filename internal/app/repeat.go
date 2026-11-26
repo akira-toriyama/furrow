@@ -434,45 +434,59 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 // SetRepeatWarnings is what a `set` owes about the series it touched, and
 // nothing when there is nothing to say — which is nearly every write. t is the
 // task as the write LEFT it, so a write that also closed it (the rule handed
-// on) or dropped the rule has no series left to speak about.
+// on) or dropped the rule has no series left to speak about; was is the due it
+// carried BEFORE the write (nil when unknown), the one fact the shard no longer
+// holds.
 //
 // A write that BOUND a rule owes the bind-time notes (RepeatWarnings). A write
-// that only re-dated a repeating task owes one more, when two facts hold: the
-// `--due` was an absolute date, and the series does not land on it.
+// that only re-dated a repeating task owes one more, when the `--due` was an
+// absolute date and either the series does not land on it or it carried this
+// occurrence past others.
 //
 // `--due` alone moves THIS occurrence and never the series — the snooze must
 // not re-lattice every occurrence after it — so such a write does exactly what
-// the help says. It also reads, to the operator who typed a clock onto a
-// whole-day chore, as though the series now runs at that clock: the row says
+// the help says. It is also misread two ways. A clock typed onto a whole-day
+// chore reads as though the series now runs at that clock: the row says
 // `due … 11:00  repeats`, the next close hands back 23:59, and by then it
-// looks like a defect (t-6n5v was nearly filed as one). The moment to say so
-// is the write, while re-anchoring is still the same command plus one flag.
+// looks like a defect (t-6n5v was nearly filed as one). And a date further on
+// reads as a deadline the series keeps: the occurrences between are never
+// created, a close hands back the one after the new date, and the date is gone
+// with it (t-fq40). The moment to say so is the write.
 //
 // The offsets stay silent. `+1d` and `--due-shift` are deltas, and nobody
-// defines a series with a delta; a note on every snooze would be noise on the
-// one remedy `due-overdue` prints. An absolute date the series lands on is
-// silent too: skipping to next week's own slot leaves nothing to misread.
-func (a *App) SetRepeatWarnings(t *core.Task, o SetOpts) []string {
+// defines a series or a deadline with a delta; a note on every snooze would be
+// noise on the one remedy `due-overdue` prints. So does a date the series
+// lands on with nothing between: moving to the next slot leaves nothing to
+// misread.
+func (a *App) SetRepeatWarnings(t *core.Task, o SetOpts, was *time.Time) []string {
 	if o.Repeat != nil {
 		return a.RepeatWarnings(t)
 	}
 	if o.Due == nil || o.ClearDue {
 		return nil
 	}
-	if w := a.offSeriesNote(t, *o.Due); w != "" {
+	if w := a.reDatedNote(t, *o.Due, was); w != "" {
 		return []string{w}
 	}
 	return nil
 }
 
-// offSeriesNote is the one sentence a re-dated occurrence owes when the write
-// left its due where the series never lands: that only this occurrence moved,
-// what a close will hand back, and the write that moves the series instead.
-// "" when there is nothing to say (see SetRepeatWarnings for the cases).
+// reDatedNote is the one sentence a re-dated occurrence owes: that only this
+// occurrence moved, the occurrences it was carried past (none are created),
+// what a close will hand back, and — when the series never lands on the new
+// date — the write that moves the series instead. "" when there is nothing to
+// say (see SetRepeatWarnings for the cases).
 //
 // The date it names is what a close NOW would mint — the same window a close
 // and a dry run ask about (repeatWindow) — because that is the fact the
-// operator has to see to disbelieve: the clock they typed is not on it.
+// operator has to see to disbelieve: the clock they typed is not on it, and
+// the occurrences before it are not coming.
+//
+// The occurrences passed over are counted from the old due, not from the
+// close window: the sentence says what lies between the two dates, and an
+// overdue task moved ahead also loses the lapse a late close would have
+// reported as `skipped`. A deadline is answered by where it belongs, since no
+// write to this task can keep one across occurrences.
 //
 // The remedy is spelled out in full, stored rule included. The shard keeps the
 // compiled RRULE and not the spelling the operator typed, so "bind it again"
@@ -484,7 +498,7 @@ func (a *App) SetRepeatWarnings(t *core.Task, o SetOpts) []string {
 // off-lattice case), and — as a clause on the command — a COUNT, which starts
 // over from the new anchor. A rule the bind door would refuse from this date
 // (recur.Bindable) gets no command: the one printed here was an exit 2.
-func (a *App) offSeriesNote(t *core.Task, spelling string) string {
+func (a *App) reDatedNote(t *core.Task, spelling string, was *time.Time) string {
 	if t.Repeat == "" || t.RepeatAnchor == nil || t.Due == nil {
 		return ""
 	}
@@ -499,7 +513,19 @@ func (a *App) offSeriesNote(t *core.Task, spelling string) string {
 	}
 	loc := a.loc()
 	// An unreadable rule is `lint`'s finding (repeat-invalid), not this note's.
-	if lands, err := recur.Lands(t.Repeat, *t.RepeatAnchor, *t.Due, loc); err != nil || lands {
+	lands, err := recur.Lands(t.Repeat, *t.RepeatAnchor, *t.Due, loc)
+	if err != nil {
+		return ""
+	}
+	passed := 0
+	if was != nil {
+		// Strictly between, so the occurrence that stood at the old due is the
+		// one moved, and a date moved EARLIER passes nothing.
+		if passed, err = recur.CountBetween(t.Repeat, *t.RepeatAnchor, *was, *t.Due, loc); err != nil {
+			return ""
+		}
+	}
+	if lands && passed == 0 {
 		return ""
 	}
 	after, _, _ := a.repeatWindow(t, a.Clock.Now())
@@ -507,9 +533,21 @@ func (a *App) offSeriesNote(t *core.Task, spelling string) string {
 	if err != nil {
 		return ""
 	}
+	note := t.ID + " repeats, and --due alone moves THIS occurrence only — "
+	if passed > 0 {
+		between := fmt.Sprintf("the %d occurrences between its old date and this one are", passed)
+		if passed == 1 {
+			between = "the occurrence between its old date and this one is"
+		}
+		note += between + " never created, so a deadline that has to outlast occurrences belongs on another task's due; "
+	}
 	follows := "a close now completes it (the rule has no later occurrence)"
 	if more {
 		follows = "a close now mints the next one for " + next.In(loc).Format(core.TimeLayout)
+	}
+	note += "the series stands where it was: " + follows
+	if lands {
+		return note
 	}
 	// A zoneless datetime may be spelled with a space; nothing else an absolute
 	// due can carry needs quoting.
@@ -517,8 +555,6 @@ func (a *App) offSeriesNote(t *core.Task, spelling string) string {
 	if strings.ContainsAny(due, " \t") {
 		due = "'" + due + "'"
 	}
-	note := fmt.Sprintf("%s repeats, and --due alone moves THIS occurrence only — the series stands where it was: %s",
-		t.ID, follows)
 	if _, off := recur.OffLattice(t.Repeat, *t.Due, loc); off {
 		return note + fmt.Sprintf("; to move the series, bind a rule that lands on this date in the same write (`furrow set %s --due %s --repeat <rule>`) — the one it carries, %s, does not",
 			t.ID, due, t.Repeat)

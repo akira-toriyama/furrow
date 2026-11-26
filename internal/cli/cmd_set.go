@@ -2,6 +2,7 @@ package cli
 
 import (
 	"strings"
+	"time"
 
 	"github.com/akira-toriyama/furrow/v10/internal/app"
 	"github.com/akira-toriyama/furrow/v10/internal/core"
@@ -67,10 +68,13 @@ func newSetCmd() *cobra.Command {
 			"on the CLOSED task's when the write also closes it, since the rule passes\n" +
 			"to the occurrence its `repeat` names. An absolute --due that leaves a\n" +
 			"repeating task's due where its series never lands (another clock, a day\n" +
-			"the rule does not name) says so the same way: only this occurrence moved,\n" +
-			"and what a close now hands back. An offset (+1d, --due-shift) stays silent\n" +
-			"— a delta can only mean this occurrence — and so does a date the series\n" +
-			"lands on. An empty --due '' is exit 2, never a silent clear (--clear-due is\n" +
+			"the rule does not name), or carries it past other occurrences, says so\n" +
+			"the same way: only this occurrence moved, the occurrences between its old\n" +
+			"date and the new one are never created — so a deadline that has to outlast\n" +
+			"occurrences belongs on another task's due — and what a close now hands\n" +
+			"back. An offset (+1d, --due-shift) stays silent — a delta can only mean\n" +
+			"this occurrence — and so does a date the series lands on with none\n" +
+			"between. An empty --due '' is exit 2, never a silent clear (--clear-due is\n" +
 			"the clear).\n\n" +
 			"Several ids apply the SAME edits to all of them in ONE all-or-nothing\n" +
 			"write (bulk triage): a miss sets NOTHING and exits 1 with every miss in\n" +
@@ -379,6 +383,27 @@ func setPreviewTail(a *app.App, o app.SetOpts) *previewTail {
 	return composeTails(tails...)
 }
 
+// duesBefore is the due each id carried before the write, keyed by task id,
+// for the one note that needs it (app.SetRepeatWarnings: the occurrences an
+// absolute --due carried a repeating task past). nil when o is not such a
+// write, so every other set reads the board once. The read is its own load,
+// ahead of the write's: a writer landing between the two can only stale a
+// count in a note, never the write.
+func duesBefore(a *app.App, ids []string, o app.SetOpts) (map[string]*time.Time, error) {
+	if o.Due == nil || o.ClearDue || o.Repeat != nil {
+		return nil, nil
+	}
+	items, _, err := a.GetBatch(ids, false)
+	if err != nil {
+		return nil, err
+	}
+	was := make(map[string]*time.Time, len(items))
+	for _, it := range items {
+		was[it.Task.ID] = it.Task.Due
+	}
+	return was, nil
+}
+
 // setApply writes o to every id in one all-or-nothing write and renders the
 // envelopes. One path whatever the arity: a single id still emits a
 // one-element ARRAY (the always-array rule — `set <id>...` has array
@@ -420,6 +445,10 @@ func setApply(cmd *cobra.Command, a *app.App, ids []string, o app.SetOpts) error
 	var renumbered []core.PriorityChange
 	rs, closed := newSeriesReports(), []*core.Task(nil)
 	mutate := func() ([]*core.Task, error) {
+		was, err := duesBefore(a, ids, o)
+		if err != nil {
+			return nil, err
+		}
 		var ts []*core.Task
 		var reps []*app.RepeatReport
 		if len(ids) == 1 {
@@ -436,7 +465,7 @@ func setApply(cmd *cobra.Command, a *app.App, ids []string, o app.SetOpts) error
 			}
 		}
 		rs.collect(ts, reps)
-		rs.warn(a, ts, o)
+		rs.warn(a, ts, o, was)
 		closed = ts
 		return ts, nil
 	}

@@ -1146,11 +1146,13 @@ func newSeriesReports() *seriesReports {
 
 // warn records what this write did to a series that was almost certainly not
 // asked for — a rule it bound that skips a month or stands off its own anchor,
-// a due it moved to where the series never lands — keyed by the RETURNED
-// task's id. Call it after collect. WHICH writes owe a note is the app's to say
+// a due it moved to where the series never lands or past occurrences that are
+// then never created — keyed by the RETURNED task's id, as was (the dues the
+// tasks carried before the write) is. Call it after collect. WHICH writes owe a
+// note is the app's to say
 // (SetRepeatWarnings reads the edit): re-printing one on every unrelated edit
 // of a repeating task taught the reader to ignore it.
-func (s *seriesReports) warn(a *app.App, tasks []*core.Task, o app.SetOpts) {
+func (s *seriesReports) warn(a *app.App, tasks []*core.Task, o app.SetOpts, was map[string]*time.Time) {
 	for _, t := range tasks {
 		subject := t
 		// A write that BINDS a rule and CLOSES in one go hands the rule straight
@@ -1168,7 +1170,7 @@ func (s *seriesReports) warn(a *app.App, tasks []*core.Task, o app.SetOpts) {
 				}
 			}
 		}
-		if ws := a.SetRepeatWarnings(subject, o); len(ws) > 0 {
+		if ws := a.SetRepeatWarnings(subject, o, was[t.ID]); len(ws) > 0 {
 			s.warns[t.ID] = ws
 		}
 	}
