@@ -685,3 +685,25 @@ func TestCLISetDueShiftPreview(t *testing.T) {
 		t.Errorf("the undated task must stay undated:\n%s", out)
 	}
 }
+
+// The overdue remedy offered `--clear-due` to a repeating task, which refuses
+// it (a series needs its due), and the refusal sent the operator to two writes
+// (t-3r8b). Both name the one write that works now, and it works.
+func TestCLIOverdueRepeatingTaskNamesTheClearThatWorks(t *testing.T) {
+	freezeClock(t)
+	initStore(t)
+	id := addTask(t, "water the plants", "--due", dayOffset(t, -3), "--repeat", "weekly")
+
+	out, _ := run(t, "lint", "--code", "due-overdue")
+	if !strings.Contains(out, id) || !strings.Contains(out, "end the series (`--clear-repeat --clear-due`)") || strings.Contains(out, "drop it (`--clear-due`)") {
+		t.Fatalf("lint should name the clear a series takes:\n%s", out)
+	}
+	fe, _ := runErr(t, "set", id, "--clear-due")
+	if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "`furrow set "+id+" --clear-repeat --clear-due`") {
+		t.Fatalf("--clear-due alone = %+v, want exit 2 naming the one-write remedy", fe)
+	}
+	mustRun(t, "set", id, "--clear-repeat", "--clear-due")
+	if out, _ = run(t, "lint", "--code", "due-overdue"); strings.Contains(out, id) {
+		t.Errorf("the remedy left %s overdue:\n%s", id, out)
+	}
+}
