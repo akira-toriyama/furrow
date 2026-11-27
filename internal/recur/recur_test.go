@@ -380,8 +380,8 @@ func TestValidRejectsAStoredRuleThatStoppedParsing(t *testing.T) {
 
 // Compile refuses a sub-daily rule at the door, but a shard furrow did not
 // write can carry one — and it makes every close of that task expand a
-// pathological number of occurrences. What Compile refuses, Valid reports, so
-// `furrow lint` can see it.
+// pathological number of occurrences. Valid reports it too, so `furrow lint`
+// can see it.
 func TestValidReportsWhatCompileRefuses(t *testing.T) {
 	anchor := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	if _, err := Compile("FREQ=MINUTELY", nil); err == nil {
@@ -432,8 +432,8 @@ func TestDtstartIsRefusedAtBothDoors(t *testing.T) {
 			t.Errorf("Valid(%q) accepted a stored DTSTART — lint would never see it", spec)
 		}
 	}
-	// Valid reads the DTSTART off the LINE, never off build()'s result: build
-	// assigns the anchor to Dtstart, so a check there refuses everything.
+	// The refusal reads the DTSTART off the parsed LINE, before build assigns
+	// the anchor to Dtstart — a check after that refuses everything.
 	if err := Valid("FREQ=DAILY", anchor, time.UTC); err != nil {
 		t.Errorf("a plain stored rule was reported invalid: %v", err)
 	}
@@ -876,6 +876,40 @@ func TestValidRefusesAZeroCount(t *testing.T) {
 	}
 	if err := Valid("FREQ=DAILY;COUNT=3", anchor, nil); err != nil {
 		t.Errorf("Valid(COUNT=3) = %v; want ok", err)
+	}
+}
+
+// Valid's refusals used to live in Valid alone, so lint called these stored
+// rules errors while Next and CountBetween expanded them for the close — which
+// handed the rule on to a new occurrence (t-4qy8). Every expansion refuses the
+// four shapes the bind door turns away now (sub-daily, DTSTART, an INTERVAL
+// past the cap, a COUNT below one), whitespace around the line included: the
+// library trims it, and a COUNT=0 behind it was read as no COUNT at all.
+func TestEveryExpansionRefusesTheBindDoorsFourShapes(t *testing.T) {
+	anchor := time.Date(2026, 12, 1, 23, 59, 59, 0, jst)
+	after := anchor.Add(time.Hour)
+	for _, line := range []string{
+		"FREQ=HOURLY",
+		"FREQ=DAILY;BYHOUR=1,2,3",
+		"FREQ=DAILY;DTSTART=20200101T000000Z",
+		"FREQ=DAILY;COUNT=0",
+		"FREQ=DAILY;COUNT=0 ",
+		"FREQ=DAILY;COUNT=0\n",
+		" RRULE:COUNT=0;FREQ=DAILY",
+		"FREQ=DAILY;INTERVAL=20000",
+	} {
+		if _, _, err := Next(line, anchor, after, jst); err == nil {
+			t.Errorf("Next(%q) expanded one of the bind door's four shapes", line)
+		}
+		if _, err := CountBetween(line, anchor, anchor, after.AddDate(0, 1, 0), jst); err == nil {
+			t.Errorf("CountBetween(%q) expanded one of the bind door's four shapes", line)
+		}
+		if _, err := Lands(line, anchor, after, jst); err == nil {
+			t.Errorf("Lands(%q) expanded one of the bind door's four shapes", line)
+		}
+		if err := Valid(line, anchor, jst); err == nil {
+			t.Errorf("Valid(%q) = nil, want the refusal lint reports", line)
+		}
 	}
 }
 

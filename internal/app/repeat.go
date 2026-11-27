@@ -90,11 +90,11 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	// too, since a late close is exactly what runs a bounded series out.
 	skipped, err := recur.CountBetween(rule, anchorUTC, lo, hi, a.loc())
 	if err != nil {
-		return nil, nil, core.Validationf(t.ID, "%v", err)
+		return nil, nil, unexpandableRule(t.ID, err)
 	}
 	next, ok, err := recur.Next(rule, anchorUTC, after, a.loc())
 	if err != nil {
-		return nil, nil, core.Validationf(t.ID, "%v", err)
+		return nil, nil, unexpandableRule(t.ID, err)
 	}
 	if !ok {
 		return &RepeatReport{Completed: true, Skipped: skipped}, nil, nil
@@ -144,6 +144,14 @@ func (a *App) planRepeat(idx *core.Index, t *core.Task, was, lane string, now ti
 	// instead, so one copy serves the whole series.
 	return &RepeatReport{Created: &id, Due: &due, Skipped: skipped},
 		&pendingOccurrence{task: occurrence, body: occurrenceBody(body, t.ID)}, nil
+}
+
+// unexpandableRule is the close's refusal of a stored rule the expander turns
+// away (recur.Valid's whole class, which lint reports as repeat-invalid). It
+// carries the remedy the no-due and no-anchor refusals carry: the task keeps
+// its due, so a rebind needs only the rule.
+func unexpandableRule(id string, err error) error {
+	return core.Validationf(id, "%v; rebind it with `furrow set %s --repeat <rule>`, or drop it with `furrow set %s --clear-repeat`", err, id, id)
 }
 
 // repeatWindow is what a close settles and what it jumped: the instant the
