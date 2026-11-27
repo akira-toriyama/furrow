@@ -945,3 +945,30 @@ func TestAddRepeatJSONCarriesTheBindWarnings(t *testing.T) {
 		t.Errorf("add --batch --json: want the note on the off-lattice line only:\n%s", stdout)
 	}
 }
+
+// An UNTIL before the due got the text a series of one gets — "no occurrence
+// after the first one" — so nothing showed the until was the problem (t-ny6w).
+// add and set name it now; a rule that really has one occurrence, and a rule
+// refused for another reason, keep their own text.
+func TestAnUntilBeforeTheDueIsNamedAsTheCause(t *testing.T) {
+	initStore(t)
+	mustRun(t, "config", "set", "due.timezone", "Asia/Tokyo")
+	for _, c := range []struct{ rule, want, not string }{
+		{"daily until 2026-01-01", "the rule ends (until 2026-01-01", "no occurrence after the first one"},
+		{"daily until 2026-12-31", "the rule ends (until 2026-12-31", "no occurrence after the first one"},
+		{"FREQ=DAILY;UNTIL=20260101T000000Z", "the rule ends (until 2026-01-01", "no occurrence after the first one"},
+		{"daily until 2027-01-04", "no occurrence after the first one", "before the series starts"},
+		{"weekly until 2027-01-08", "no occurrence after the first one", "before the series starts"},
+		{"FREQ=DAILY;INTERVAL=20000;UNTIL=20260101T000000Z", "interval", "before the series starts"},
+	} {
+		fe, _ := runErr(t, "add", "x", "--due", "2027-01-04", "--repeat", c.rule)
+		if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, c.want) || strings.Contains(fe.Msg, c.not) {
+			t.Errorf("add --repeat %q = %+v, want exit 2 saying %q and not %q", c.rule, fe, c.want, c.not)
+		}
+	}
+	id := addTask(t, "y", "--due", "2027-01-04")
+	fe, _ := runErr(t, "set", id, "--repeat", "daily until 2026-01-01")
+	if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "before the series starts (its due, 2027-01-04") {
+		t.Errorf("set --repeat with an until before the due = %+v, want exit 2 naming both dates", fe)
+	}
+}

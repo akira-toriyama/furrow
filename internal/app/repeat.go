@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -367,6 +368,16 @@ func (a *App) bindRepeat(subject string, t *core.Task, spec string) error {
 		return core.Validationf(subject, "--repeat needs a --due: the date of the FIRST occurrence is what the rule counts from")
 	}
 	if err := recur.Bindable(line, *t.Due, a.loc()); err != nil {
+		// An UNTIL before the due ends the series before it starts, and "no
+		// occurrence after the first one" reads exactly like a series of one, so
+		// the cause is named (t-ny6w). Any other refusal keeps its own text, and
+		// so does an UNTIL on the due's own day: whole-day untils and dues both
+		// bind 23:59:59, so that one compares equal, and it IS a series of one.
+		if until, ok := recur.Until(line); ok && errors.Is(err, recur.ErrNothingLeft) && until.Before(*t.Due) {
+			loc := a.loc()
+			return core.Validationf(subject, "the rule ends (until %s) before the series starts (its due, %s), so it has nothing to repeat — the until has to fall after the due",
+				until.In(loc).Format(core.TimeLayout), t.Due.In(loc).Format(core.TimeLayout))
+		}
 		return core.Validationf(subject, "%v", err)
 	}
 	t.Repeat = line
