@@ -470,9 +470,14 @@ func TestSetAnchorUndatedBoxComesAfterEveryRow(t *testing.T) {
 			t.Errorf("set %v --due-shift +30d --anchor <undated box>: want the shift's own refusal, got %v", ids, fe)
 		}
 		fe, _ = runErr(t, append(append([]string{"set"}, ids...), "--add-repo", "nosuchrepo", "--anchor", box)...)
-		if fe == nil || fe.Kind == core.KindValidation && strings.Contains(fe.Msg, "has no anchor yet") {
+		if fe == nil || fe.Kind != core.KindRepoUnknown {
 			t.Errorf("set %v --add-repo nosuchrepo --anchor <undated box>: want the repo's own refusal, got %v", ids, fe)
 		}
+	}
+	// The selection form is the same write: a row's own refusal the preview
+	// cannot mark (an unknown repo) still comes before the box under --yes.
+	if fe, _ := runErr(t, "set", "-q", "label:edge", "--add-repo", "nosuchrepo", "--anchor", box, "--yes"); fe == nil || fe.Kind != core.KindRepoUnknown {
+		t.Errorf("set -q … --add-repo nosuchrepo --anchor <undated box> --yes: want the repo's own refusal, got %v", fe)
 	}
 	// The preview marks the row, and --yes refuses on that row, not the box.
 	if out, code := run(t, "set", "-q", "label:edge", "--due-shift", "+30d", "--anchor", box); code != 0 || !strings.Contains(out, far) {
@@ -488,7 +493,7 @@ func TestSetAnchorUndatedBoxComesAfterEveryRow(t *testing.T) {
 	if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "has no anchor yet") {
 		t.Errorf("a bulk set with every row clean should refuse the box, got %v", fe)
 	}
-	if fe, _ = runErr(t, "set", "-q", "label:nosuchlabel", "--due", "2026-12-20", "--anchor", box, "--yes"); fe == nil || fe.Code != 2 {
+	if fe, _ = runErr(t, "set", "-q", "label:nosuchlabel", "--due", "2026-12-20", "--anchor", box, "--yes"); fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "has no anchor yet") {
 		t.Errorf("an empty --yes selection should still refuse the undated box, got %v", fe)
 	}
 	for _, id := range []string{far, near} {

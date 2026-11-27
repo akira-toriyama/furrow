@@ -292,8 +292,8 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, *Rep
 	// a `-s done` mints goes in through the post hook — inserting moves the
 	// index's backing array, so it must wait until every task pointer is dead.
 	// The anchor box's missing day is refused there too, first: after
-	// not-found, both guards and every refusal of the task's own, the way
-	// SetMany refuses it after its loop (resolveAnchorRef).
+	// not-found, both session guards and every refusal of the task's own, the
+	// way SetMany refuses it after its loop (resolveAnchorRef).
 	saved, err := a.mutateInPostAt(idx, id, now, func(*core.Task) error {
 		renumbered, occurrence, report, err = a.applySet(idx, id, o, due, anchor, epic, now, nil)
 		return err
@@ -511,9 +511,9 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 			return nil, nil, err
 		}
 	}
-	// After the loop: every refusal of a task's own and both guards come first,
-	// the box's day being another object's write (resolveAnchorRef). Nothing
-	// has been saved yet.
+	// After the loop: every refusal of a task's own and its session guard come
+	// first, the box's day being another object's write (resolveAnchorRef).
+	// Nothing has been saved yet.
 	if anchor != "" && !dated {
 		return nil, nil, undatedBoxErr(anchor)
 	}
@@ -800,8 +800,8 @@ func (a *App) resolveEpicOpt(o SetOpts) (*string, error) {
 
 // resolveAnchor binds a set's `--anchor` reference to the epic id it names,
 // once per call, and reports whether that box carries a day
-// (resolveAnchorRef's rules: the caller refuses an undated box last). "" when
-// the call sets none.
+// (resolveAnchorRef's rules: the caller refuses an undated box after the
+// task's own refusals). "" when the call sets none.
 func (a *App) resolveAnchor(o SetOpts) (id string, dated bool, err error) {
 	if o.Anchor == nil {
 		return "", false, nil

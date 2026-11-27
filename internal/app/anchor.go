@@ -218,11 +218,11 @@ func revertAnchorMoves(idx *core.Index, plan *AnchorPlan) {
 //
 // An undated box is NOT refused here: its remedy is a write to another object
 // (the box), so the callers refuse it (undatedBoxErr) after the refusals of
-// the task's own — a set after every one of them and both session guards,
-// right before the write (Set's post hook, SetMany after its loop); an add
-// after the spec's missing due and repeat rule (validateAddSpec). Refused
-// first, it sent the operator to date the box only for the retry to refuse on
-// the task.
+// the task's own — a set after every one of them and its session guard, right
+// before the write (Set's post hook, SetMany after its loop); a selection's
+// preview after the rows it marks refused (VetAnchorDay); an add after the
+// spec's missing due and repeat rule (validateAddSpec). Refused first, it sent
+// the operator to date the box only for the retry to refuse on the task.
 func (a *App) resolveAnchorRef(ref string, epics []core.Epic) (id string, dated bool, err error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
