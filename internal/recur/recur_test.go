@@ -958,6 +958,107 @@ func TestEveryDateNextHandsOutLands(t *testing.T) {
 	}
 }
 
+// zonedAfter is the answer Next owes: the first lattice point that READS BACK
+// strictly after `after` in the calendar, found by walking the whole series
+// from its anchor rather than from `after`.
+func zonedAfter(t *testing.T, line string, anchor, after time.Time, loc *time.Location) (time.Time, bool) {
+	t.Helper()
+	r, err := build(line, anchor, loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := r.Iterator()
+	for {
+		p, ok := next()
+		if !ok {
+			return time.Time{}, false
+		}
+		if z := zoned(p, loc); z.After(after) {
+			return z, true
+		}
+	}
+}
+
+// A gap day's lattice point can read back LATER than the clock the rule
+// names — London's 01:30 is 02:30 BST, Santiago's 00:30 is 01:30 — and a walk
+// that started at `after` stepped over it: a close between the gap's end and
+// the moved point lost that occurrence, a week of a weekly rule and a month of
+// a monthly one, and no `skipped` counted it (t-5w8g). Every minute across the
+// gap day gets the oracle's answer. New York and Nuuk read a gap point back
+// EARLIER, which never lost one; they stay in as the other direction.
+func TestNextNeverStepsOverAPointAGapMovedPastAfter(t *testing.T) {
+	cases := []struct {
+		zone  string
+		day   [3]int // the gap day, local
+		clock [3]int // a clock the gap skips
+		rules []string
+	}{
+		{"America/Santiago", [3]int{2026, 9, 6}, [3]int{0, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY", "FREQ=MONTHLY;BYMONTHDAY=6"}},
+		{"America/Havana", [3]int{2026, 3, 8}, [3]int{0, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"Atlantic/Azores", [3]int{2027, 3, 28}, [3]int{0, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"Europe/London", [3]int{2027, 3, 28}, [3]int{1, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"Europe/Berlin", [3]int{2027, 3, 28}, [3]int{2, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY;BYDAY=SU"}},
+		{"Australia/Lord_Howe", [3]int{2027, 10, 3}, [3]int{2, 15, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"America/New_York", [3]int{2027, 3, 14}, [3]int{2, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"America/Nuuk", [3]int{2027, 3, 27}, [3]int{23, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"America/Nuuk", [3]int{2027, 3, 27}, [3]int{23, 59, 59}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+	}
+	for _, c := range cases {
+		loc, err := time.LoadLocation(c.zone)
+		if err != nil {
+			t.Logf("no tzdata for %s: %v", c.zone, err)
+			continue
+		}
+		for _, line := range c.rules {
+			// A month before for the monthly rule, a week before otherwise: either
+			// way the gap day is on the lattice.
+			anchor := time.Date(c.day[0], time.Month(c.day[1]), c.day[2]-7, c.clock[0], c.clock[1], c.clock[2], 0, loc)
+			if strings.HasPrefix(line, "FREQ=MONTHLY") {
+				anchor = time.Date(c.day[0], time.Month(c.day[1])-1, c.day[2], c.clock[0], c.clock[1], c.clock[2], 0, loc)
+			}
+			noon := time.Date(c.day[0], time.Month(c.day[1]), c.day[2], 12, 0, 0, 0, loc)
+			wrong, first := 0, ""
+			for after := noon.Add(-24 * time.Hour); after.Before(noon.Add(24 * time.Hour)); after = after.Add(time.Minute) {
+				got, ok, err := Next(line, anchor, after, loc)
+				if err != nil {
+					t.Fatalf("%s %s: Next: %v", c.zone, line, err)
+				}
+				want, wok := zonedAfter(t, line, anchor, after, loc)
+				if ok != wok || !got.Equal(want) {
+					if wrong == 0 {
+						first = fmt.Sprintf("after %s: Next = %s, want %s", after.Format(time.RFC3339), got.Format(time.RFC3339), want.Format(time.RFC3339))
+					}
+					wrong++
+				}
+			}
+			if wrong > 0 {
+				t.Errorf("%s %s at %02d:%02d:%02d: %d minute(s) across the gap day get the wrong occurrence; first: %s",
+					c.zone, line, c.clock[0], c.clock[1], c.clock[2], wrong, first)
+			}
+		}
+	}
+}
+
+// The case the finding was filed on: a Santiago daily 00:30 series, whose
+// 2026-09-06 occurrence exists only at 01:30, closed at 01:10 that morning.
+func TestNextHandsOutTheOccurrenceAMidnightGapMoved(t *testing.T) {
+	scl, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Skipf("no tzdata for America/Santiago: %v", err)
+	}
+	anchor := time.Date(2026, 8, 30, 0, 30, 0, 0, scl)
+	after := time.Date(2026, 9, 6, 1, 10, 0, 0, scl)
+	for _, line := range []string{"FREQ=DAILY", "FREQ=WEEKLY"} {
+		got, ok, err := Next(line, anchor, after, scl)
+		if err != nil || !ok {
+			t.Fatalf("%s: Next ok=%v err=%v", line, ok, err)
+		}
+		if want := "2026-09-06T01:30:00-03:00"; got.Format(time.RFC3339) != want {
+			t.Errorf("%s: Next = %s, want %s — the occurrence the gap moved past the close", line, got.Format(time.RFC3339), want)
+		}
+	}
+}
+
 // In the hour a zone repeats, both passes of 01:30 are the series' 01:30 — the
 // frame's own ordering, in which the repeated hour compares equal. An instant
 // comparison called the second pass "off the series", and the note built on it
