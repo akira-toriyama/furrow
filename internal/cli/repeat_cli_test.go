@@ -949,8 +949,10 @@ func TestAddRepeatJSONCarriesTheBindWarnings(t *testing.T) {
 // An UNTIL before the due got the text a series of one gets — "no occurrence
 // after the first one" — so nothing showed the until was the problem (t-ny6w).
 // add and set name it now, both stamps in the board calendar; an until on the
-// due's own day (any clock, a raw DATE, the due's own printed minute) is a
-// series of one and keeps that text, as does a rule refused for another reason.
+// due's own board day is a series of one and keeps that text, as does a rule
+// refused for another reason. A raw DATE until is read where the expander reads
+// it, at UTC midnight: the due's own date in Tokyo, the evening before in New
+// York.
 func TestAnUntilBeforeTheDueIsNamedAsTheCause(t *testing.T) {
 	initStore(t)
 	mustRun(t, "config", "set", "due.timezone", "Asia/Tokyo")
@@ -961,6 +963,7 @@ func TestAnUntilBeforeTheDueIsNamedAsTheCause(t *testing.T) {
 		{"daily until 2027-01-04", "no occurrence after the first one", "before the series starts"},
 		{"daily until 2027-01-04T23:59", "no occurrence after the first one", "before the series starts"},
 		{"daily until 2027-01-04T12:00", "no occurrence after the first one", "before the series starts"},
+		{"daily until 2027-01-04T08:00", "no occurrence after the first one", "before the series starts"}, // 2027-01-03 in UTC
 		{"FREQ=DAILY;UNTIL=20270104", "no occurrence after the first one", "before the series starts"},
 		{"weekly until 2027-01-08", "no occurrence after the first one", "before the series starts"},
 		{"FREQ=DAILY;INTERVAL=20000;UNTIL=20260101T000000Z", "interval", "before the series starts"},
@@ -974,5 +977,11 @@ func TestAnUntilBeforeTheDueIsNamedAsTheCause(t *testing.T) {
 	fe, _ := runErr(t, "set", id, "--repeat", "daily until 2026-01-01")
 	if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "before the series starts (its due, 2027-01-04 23:59 +09:00)") {
 		t.Errorf("set --repeat with an until before the due = %+v, want exit 2 naming both dates", fe)
+	}
+
+	mustRun(t, "config", "set", "due.timezone", "America/New_York")
+	fe, _ = runErr(t, "add", "z", "--due", "2027-01-04", "--repeat", "FREQ=DAILY;UNTIL=20270104")
+	if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "the rule ends (until 2027-01-03 19:00 -05:00) before the series starts (its due, 2027-01-04 23:59 -05:00)") {
+		t.Errorf("a raw DATE until in New York = %+v, want it named at the UTC midnight the expander reads", fe)
 	}
 }

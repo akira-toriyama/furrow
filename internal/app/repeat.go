@@ -371,10 +371,13 @@ func (a *App) bindRepeat(subject string, t *core.Task, spec string) error {
 		// An UNTIL on a day before the due's ends the series before it starts,
 		// and "no occurrence after the first one" reads exactly like a series of
 		// one, so the cause is named (t-ny6w). It is judged by DAY in the board
-		// calendar, not by instant: an until on the due's own day — at any clock,
-		// as a raw DATE value, or the very stamp furrow prints for the due — is a
-		// series of one, and an instant compare there named an until "before" a
-		// due printed at the same minute. Any other refusal keeps its own text.
+		// calendar, not by instant: an until on the due's own day — at any clock
+		// that day has, or the very stamp furrow prints for the due — is a series
+		// of one, and an instant compare there named an until "before" a due
+		// printed at the same minute. The day is the one the expander reads: a raw
+		// DATE or floating UNTIL parses as UTC midnight (rrule-go), which west of
+		// UTC is the previous evening, and the stamp says so. Any other refusal
+		// keeps its own text.
 		loc := a.loc()
 		day := func(x time.Time) time.Time {
 			y, m, d := x.In(loc).Date()
