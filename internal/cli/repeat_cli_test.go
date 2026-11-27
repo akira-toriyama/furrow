@@ -2,8 +2,13 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/v10/internal/app"
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // addedID reads the id out of `add`'s human line, refusing rather than panicking
@@ -313,6 +318,39 @@ func TestApplyDryRunSaysItWouldCreateTheNextOccurrence(t *testing.T) {
 	}
 	if !strings.Contains(out, "would also create the next occurrence") {
 		t.Errorf("the preview reported a close as a plain lane move:\n%s", out)
+	}
+}
+
+// A preview promises only what the apply does. A stored rule the close refuses
+// (a hand-edited FREQ=HOURLY) got "would also create the next occurrence"
+// while lint called it an error (t-4qy8); the close is exit 2 now, so the
+// preview has nothing to promise.
+func TestApplyDryRunPromisesNothingForARuleTheCloseRefuses(t *testing.T) {
+	initStore(t)
+	out, code := run(t, "add", "x", "--due", "2026-10-01", "--repeat", "weekly")
+	id := addedID(t, out, code)
+	path := filepath.Join(os.Getenv(app.EnvDir), "tasks", id+".json")
+	raw, err := os.ReadFile(path) // #nosec G304 -- a path this test just created
+	if err != nil {
+		t.Fatal(err)
+	}
+	planted := strings.Replace(string(raw), `"repeat": "FREQ=WEEKLY"`, `"repeat": "FREQ=HOURLY"`, 1)
+	if planted == string(raw) {
+		t.Fatalf("no weekly rule to replace in the shard:\n%s", raw)
+	}
+	if err := os.WriteFile(path, []byte(planted), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, code = runIn(t, "SetStatus-task: "+id+" done\n", "apply", "--on", "merge", "--dry-run")
+	if code != 0 {
+		t.Fatalf("apply exit %d: %s", code, out)
+	}
+	if strings.Contains(out, "would also create") {
+		t.Errorf("the preview promised an occurrence the close refuses to mint:\n%s", out)
+	}
+	if fe, _ := runErr(t, "done", id); fe == nil || fe.Kind != core.KindValidation || !strings.Contains(fe.Msg, "--clear-repeat") {
+		t.Errorf("done = %+v, want the validation refusal naming the remedy", fe)
 	}
 }
 

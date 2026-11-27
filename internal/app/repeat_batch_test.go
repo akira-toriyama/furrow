@@ -200,6 +200,54 @@ func TestSetRefusesARuleOnAnAlreadyClosedTask(t *testing.T) {
 	}
 }
 
+// A rule Compile refuses still reaches a shard by a hand-edit, a merge or a
+// foreign writer, and lint called it an error while the close expanded it
+// anyway — handing FREQ=HOURLY on to an occurrence due one hour later
+// (t-4qy8). The close refuses it the way it refuses a rule with no due: a
+// validation error naming the remedy, nothing written, the rule in place.
+func TestACloseRefusesAStoredRuleCompileRefuses(t *testing.T) {
+	for _, rule := range []string{
+		"FREQ=HOURLY",
+		"FREQ=DAILY;DTSTART=20200101T000000Z",
+		"FREQ=DAILY;COUNT=0",
+		"FREQ=DAILY;INTERVAL=20000",
+	} {
+		t.Run(rule, func(t *testing.T) {
+			a := newRepeatApp(time.Date(2026, 3, 2, 3, 0, 0, 0, time.UTC))
+			task := mustAddRepeating(t, a, "x", "2026-03-01", "daily", AddOpts{})
+			handEditRepeat(t, a, task.ID, rule, task.RepeatAnchor)
+
+			_, err := a.Done(task.ID)
+			fe := core.AsError(err)
+			if fe == nil || fe.Kind != core.KindValidation {
+				t.Fatalf("Done = %v, want a validation refusal", err)
+			}
+			if !strings.Contains(fe.Msg, "`furrow set "+task.ID+" --repeat <rule>`") || !strings.Contains(fe.Msg, "`furrow set "+task.ID+" --clear-repeat`") {
+				t.Errorf("refusal %q names no remedy", fe.Msg)
+			}
+			tasks, err := a.List(QueryOpts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(tasks) != 1 {
+				t.Fatalf("%d tasks after a refused close, want the original 1", len(tasks))
+			}
+			if tasks[0].Status == a.Cfg.DoneLane || tasks[0].Repeat != rule {
+				t.Errorf("task = {status %q, repeat %q}, want it open and still carrying %q", tasks[0].Status, tasks[0].Repeat, rule)
+			}
+
+			ps, err := a.Lint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := problemsWithCode(ps, "repeat-invalid")
+			if len(got) != 1 || !strings.Contains(got[0].Msg, "a close refuses this task") {
+				t.Errorf("repeat-invalid = %+v, want one finding saying the close refuses the task", got)
+			}
+		})
+	}
+}
+
 // A rule with no due has no occurrence to advance from; without this guard the
 // search falls back to the wall clock and re-mints what was just closed.
 func TestARuleWithNoDueIsRefusedAndLinted(t *testing.T) {
