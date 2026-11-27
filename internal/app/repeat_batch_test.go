@@ -200,12 +200,13 @@ func TestSetRefusesARuleOnAnAlreadyClosedTask(t *testing.T) {
 	}
 }
 
-// A rule the bind door refuses still reaches a shard by a hand-edit, a merge
-// or another furrow version, and lint called it an error while the close
-// expanded it anyway — handing FREQ=HOURLY on to an occurrence due one hour
-// later (t-4qy8). The close refuses it the way it refuses a rule with no due:
-// a validation error naming the remedy, nothing written, the rule in place.
-func TestACloseRefusesAStoredRuleTheBindDoorRefuses(t *testing.T) {
+// The bind door's four refused shapes still reach a shard by a hand-edit, a
+// merge or another furrow version, and lint called one an error while the
+// close expanded it anyway — handing FREQ=HOURLY on to an occurrence due one
+// hour later (t-4qy8). The close refuses each the way it refuses a rule with
+// no due: a validation error naming the remedy, nothing written, the rule in
+// place.
+func TestACloseRefusesTheBindDoorsFourShapes(t *testing.T) {
 	for _, rule := range []string{
 		"FREQ=HOURLY",
 		"FREQ=DAILY;DTSTART=20200101T000000Z",

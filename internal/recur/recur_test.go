@@ -380,8 +380,8 @@ func TestValidRejectsAStoredRuleThatStoppedParsing(t *testing.T) {
 
 // Compile refuses a sub-daily rule at the door, but a shard furrow did not
 // write can carry one — and it makes every close of that task expand a
-// pathological number of occurrences. What Compile refuses, Valid reports, so
-// `furrow lint` can see it.
+// pathological number of occurrences. Valid reports it too, so `furrow lint`
+// can see it.
 func TestValidReportsWhatCompileRefuses(t *testing.T) {
 	anchor := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	if _, err := Compile("FREQ=MINUTELY", nil); err == nil {
@@ -881,10 +881,11 @@ func TestValidRefusesAZeroCount(t *testing.T) {
 
 // Valid's refusals used to live in Valid alone, so lint called these stored
 // rules errors while Next and CountBetween expanded them for the close — which
-// handed the rule on to a new occurrence (t-4qy8). Every expansion refuses
-// what the bind door refuses now, trailing whitespace included: the library
-// trims it, and a COUNT=0 behind it was read as no COUNT at all.
-func TestEveryExpansionRefusesWhatTheBindDoorRefuses(t *testing.T) {
+// handed the rule on to a new occurrence (t-4qy8). Every expansion refuses the
+// four shapes the bind door turns away now (sub-daily, DTSTART, an INTERVAL
+// past the cap, a COUNT below one), whitespace around the line included: the
+// library trims it, and a COUNT=0 behind it was read as no COUNT at all.
+func TestEveryExpansionRefusesTheBindDoorsFourShapes(t *testing.T) {
 	anchor := time.Date(2026, 12, 1, 23, 59, 59, 0, jst)
 	after := anchor.Add(time.Hour)
 	for _, line := range []string{
@@ -894,16 +895,17 @@ func TestEveryExpansionRefusesWhatTheBindDoorRefuses(t *testing.T) {
 		"FREQ=DAILY;COUNT=0",
 		"FREQ=DAILY;COUNT=0 ",
 		"FREQ=DAILY;COUNT=0\n",
+		" RRULE:COUNT=0;FREQ=DAILY",
 		"FREQ=DAILY;INTERVAL=20000",
 	} {
 		if _, _, err := Next(line, anchor, after, jst); err == nil {
-			t.Errorf("Next(%q) expanded a rule the bind door refuses", line)
+			t.Errorf("Next(%q) expanded one of the bind door's four shapes", line)
 		}
 		if _, err := CountBetween(line, anchor, anchor, after.AddDate(0, 1, 0), jst); err == nil {
-			t.Errorf("CountBetween(%q) expanded a rule the bind door refuses", line)
+			t.Errorf("CountBetween(%q) expanded one of the bind door's four shapes", line)
 		}
 		if _, err := Lands(line, anchor, after, jst); err == nil {
-			t.Errorf("Lands(%q) expanded a rule the bind door refuses", line)
+			t.Errorf("Lands(%q) expanded one of the bind door's four shapes", line)
 		}
 		if err := Valid(line, anchor, jst); err == nil {
 			t.Errorf("Valid(%q) = nil, want the refusal lint reports", line)
