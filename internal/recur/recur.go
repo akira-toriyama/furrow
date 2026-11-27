@@ -17,6 +17,7 @@
 package recur
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -492,6 +493,12 @@ func CountBetween(line string, anchor, lo, hi time.Time, loc *time.Location) (in
 	return n, nil
 }
 
+// ErrNothingLeft is Bindable's refusal of a rule that is accepted and still has
+// no occurrence after the anchor. It names no cause, because several end there
+// — a COUNT of one, an UNTIL inside the first period, an UNTIL before the
+// anchor — and a caller that can tell them apart (Until) words the one it sees.
+var ErrNothingLeft = errors.New("that rule has no occurrence after the first one — it would end the series on the very next close")
+
 // Bindable reports whether a rule will ever fire again from this anchor. A rule
 // that parses, is accepted, and then produces NOTHING is the worst of both — the
 // shard says the task recurs and the first close ends the series without anyone
@@ -502,7 +509,7 @@ func Bindable(line string, anchor time.Time, loc *time.Location) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("that rule has no occurrence after the first one — it would end the series on the very next close")
+		return ErrNothingLeft
 	}
 	return nil
 }
@@ -829,6 +836,17 @@ const reach = 48 * time.Hour
 func Counted(line string) bool {
 	_, ok := namedCount(line)
 	return ok
+}
+
+// Until is the UNTIL a stored rule carries, and whether it carries one: the
+// other terminator a caller words a message from (Counted is the first). A line
+// that does not parse carries none.
+func Until(line string) (time.Time, bool) {
+	opt, err := parseStored(line)
+	if err != nil || opt.Until.IsZero() {
+		return time.Time{}, false
+	}
+	return opt.Until, true
 }
 
 // selectsNoDay reports a rule that picks no day for itself in any spelling, so

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -367,6 +368,25 @@ func (a *App) bindRepeat(subject string, t *core.Task, spec string) error {
 		return core.Validationf(subject, "--repeat needs a --due: the date of the FIRST occurrence is what the rule counts from")
 	}
 	if err := recur.Bindable(line, *t.Due, a.loc()); err != nil {
+		// An UNTIL on a day before the due's ends the series before it starts,
+		// and "no occurrence after the first one" reads exactly like a series of
+		// one, so the cause is named (t-ny6w). It is judged by DAY in the board
+		// calendar, not by instant: an until on the due's own day — at any clock
+		// that day has, or the very stamp furrow prints for the due — is a series
+		// of one, and an instant compare there named an until "before" a due
+		// printed at the same minute. The day is the one the expander reads: a raw
+		// DATE or floating UNTIL parses as UTC midnight (rrule-go), which west of
+		// UTC is the previous evening, and the stamp says so. Any other refusal
+		// keeps its own text.
+		loc := a.loc()
+		day := func(x time.Time) time.Time {
+			y, m, d := x.In(loc).Date()
+			return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+		}
+		if until, ok := recur.Until(line); ok && errors.Is(err, recur.ErrNothingLeft) && day(until).Before(day(*t.Due)) {
+			return core.Validationf(subject, "the rule ends (until %s) before the series starts (its due, %s), so it has nothing to repeat — the until has to fall after the due",
+				until.In(loc).Format(core.TimeLayout), t.Due.In(loc).Format(core.TimeLayout))
+		}
 		return core.Validationf(subject, "%v", err)
 	}
 	t.Repeat = line

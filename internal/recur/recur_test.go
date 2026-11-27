@@ -1,6 +1,7 @@
 package recur
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -456,6 +457,36 @@ func TestBindableRejectsARuleWithNothingLeft(t *testing.T) {
 	}
 	if err := Bindable("FREQ=DAILY;COUNT=2", anchor, jst); err != nil {
 		t.Errorf("a rule with one more occurrence was refused: %v", err)
+	}
+}
+
+// Until hands app the terminator a refusal is worded from, as Counted does for
+// a COUNT: an UNTIL before the due is a different cause than a series of one,
+// and only the line can tell the two apart (t-ny6w).
+func TestUntilReadsTheStoredTerminator(t *testing.T) {
+	want := time.Date(2026, 1, 1, 14, 59, 59, 0, time.UTC)
+	compiled, err := Compile("daily until 2026-01-01", func(string) (time.Time, error) { return want, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		line string
+		ok   bool
+	}{
+		{compiled, true},
+		{"FREQ=WEEKLY;UNTIL=20260101T145959Z", true},
+		{"FREQ=DAILY", false},
+		{"FREQ=DAILY;COUNT=3", false},
+		{"FREQ=BOGUS", false},
+	} {
+		got, ok := Until(c.line)
+		if ok != c.ok || (ok && !got.Equal(want)) {
+			t.Errorf("Until(%q) = (%s, %v), want (%s, %v)", c.line, got, ok, want, c.ok)
+		}
+	}
+	// The refusal it words names no cause of its own.
+	if err := Bindable("FREQ=DAILY;UNTIL=20260101T145959Z", time.Date(2027, 1, 4, 23, 59, 59, 0, jst), jst); !errors.Is(err, ErrNothingLeft) {
+		t.Errorf("Bindable(an UNTIL before the anchor) = %v, want ErrNothingLeft", err)
 	}
 }
 
