@@ -948,16 +948,20 @@ func TestAddRepeatJSONCarriesTheBindWarnings(t *testing.T) {
 
 // An UNTIL before the due got the text a series of one gets — "no occurrence
 // after the first one" — so nothing showed the until was the problem (t-ny6w).
-// add and set name it now; a rule that really has one occurrence, and a rule
-// refused for another reason, keep their own text.
+// add and set name it now, both stamps in the board calendar; an until on the
+// due's own day (any clock, a raw DATE, the due's own printed minute) is a
+// series of one and keeps that text, as does a rule refused for another reason.
 func TestAnUntilBeforeTheDueIsNamedAsTheCause(t *testing.T) {
 	initStore(t)
 	mustRun(t, "config", "set", "due.timezone", "Asia/Tokyo")
 	for _, c := range []struct{ rule, want, not string }{
-		{"daily until 2026-01-01", "the rule ends (until 2026-01-01", "no occurrence after the first one"},
-		{"daily until 2026-12-31", "the rule ends (until 2026-12-31", "no occurrence after the first one"},
-		{"FREQ=DAILY;UNTIL=20260101T000000Z", "the rule ends (until 2026-01-01", "no occurrence after the first one"},
+		{"daily until 2026-01-01", "the rule ends (until 2026-01-01 23:59 +09:00) before the series starts (its due, 2027-01-04 23:59 +09:00)", "no occurrence after the first one"},
+		{"daily until 2026-12-31", "the rule ends (until 2026-12-31 23:59 +09:00)", "no occurrence after the first one"},
+		{"FREQ=DAILY;UNTIL=20260101T000000Z", "the rule ends (until 2026-01-01 09:00 +09:00)", "no occurrence after the first one"},
 		{"daily until 2027-01-04", "no occurrence after the first one", "before the series starts"},
+		{"daily until 2027-01-04T23:59", "no occurrence after the first one", "before the series starts"},
+		{"daily until 2027-01-04T12:00", "no occurrence after the first one", "before the series starts"},
+		{"FREQ=DAILY;UNTIL=20270104", "no occurrence after the first one", "before the series starts"},
 		{"weekly until 2027-01-08", "no occurrence after the first one", "before the series starts"},
 		{"FREQ=DAILY;INTERVAL=20000;UNTIL=20260101T000000Z", "interval", "before the series starts"},
 	} {
@@ -968,7 +972,7 @@ func TestAnUntilBeforeTheDueIsNamedAsTheCause(t *testing.T) {
 	}
 	id := addTask(t, "y", "--due", "2027-01-04")
 	fe, _ := runErr(t, "set", id, "--repeat", "daily until 2026-01-01")
-	if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "before the series starts (its due, 2027-01-04") {
+	if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "before the series starts (its due, 2027-01-04 23:59 +09:00)") {
 		t.Errorf("set --repeat with an until before the due = %+v, want exit 2 naming both dates", fe)
 	}
 }
