@@ -489,8 +489,8 @@ func Bindable(line string, anchor time.Time, loc *time.Location) error {
 
 // Valid reports whether a stored rule can be expanded at all: everything build
 // refuses, which is a line that stopped parsing (a hand-edited shard, or one
-// written by a furrow that knows a spelling this one does not) and everything
-// Compile refuses at the door. `furrow lint` uses it to name, before anyone
+// written by a furrow that knows a spelling this one does not) and the four
+// shapes the bind door turns away. `furrow lint` uses it to name, before anyone
 // closes it, the task every close path refuses.
 func Valid(line string, anchor time.Time, loc *time.Location) error {
 	_, err := build(line, anchor, loc)
@@ -514,10 +514,13 @@ func parseStored(line string) (*rrule.ROption, error) {
 }
 
 // build is the one door every expansion of a STORED rule passes, so it refuses
-// what Compile refuses: a shard furrow did not write (a hand-edit, a merge, a
-// foreign writer) can carry any of it, and a close that expanded it anyway
-// handed the rule on to a new occurrence — a sub-daily one after one hour, a
-// SECONDLY one after counting millions of skipped occurrences (t-4qy8).
+// the four shapes the bind door (Compile, then Bindable) turns away: a
+// sub-daily rule, a DTSTART, an INTERVAL past maxInterval and a COUNT of zero.
+// A shard can carry any of them without passing that door — a hand-edit, a
+// merge, another furrow version (v6 capped no INTERVAL) — and a close that
+// expanded one anyway handed the rule on to a new occurrence: a sub-daily one
+// after one hour, a SECONDLY one after counting millions of skipped
+// occurrences (t-4qy8).
 func build(line string, anchor time.Time, loc *time.Location) (*rrule.RRule, error) {
 	loc = calendar(loc)
 	opt, err := parseStored(line)
@@ -536,8 +539,9 @@ func build(line string, anchor time.Time, loc *time.Location) (*rrule.RRule, err
 		return nil, fmt.Errorf("stored recurrence rule %q: the interval must be at most %d", line, maxInterval)
 	}
 	// A COUNT=0 term is invisible on the parsed option (the zero means "no
-	// COUNT"); Compile reads it off the text, and so must the stored-line check.
-	if n, ok := namedCount(strings.ToUpper(strings.TrimPrefix(line, "RRULE:"))); ok && n < 1 {
+	// COUNT"); Compile reads it off the text, and so must the stored-line check
+	// — trimmed as the library trims it, or a trailing newline hid the term.
+	if n, ok := namedCount(strings.ToUpper(strings.TrimPrefix(strings.TrimSpace(line), "RRULE:"))); ok && n < 1 {
 		return nil, fmt.Errorf("stored recurrence rule %q: a count must be a positive whole number, got %d", line, n)
 	}
 	// The anchor IS the series start: a DTSTART the line carries is overwritten,

@@ -321,10 +321,11 @@ func TestApplyDryRunSaysItWouldCreateTheNextOccurrence(t *testing.T) {
 	}
 }
 
-// A preview promises only what the apply does. A stored rule the close refuses
-// (a hand-edited FREQ=HOURLY) got "would also create the next occurrence"
-// while lint called it an error (t-4qy8); the close is exit 2 now, so the
-// preview has nothing to promise.
+// A preview must not promise an occurrence the close refuses to mint. A stored
+// rule the close refuses (a hand-edited FREQ=HOURLY) got "would also create
+// the next occurrence" while lint called it an error (t-4qy8). The lane move
+// itself is still previewed, as for a rule with no due: the dry run does not
+// replay the close's refusals, so its exit is not asserted here.
 func TestApplyDryRunPromisesNothingForARuleTheCloseRefuses(t *testing.T) {
 	initStore(t)
 	out, code := run(t, "add", "x", "--due", "2026-10-01", "--repeat", "weekly")
@@ -342,9 +343,9 @@ func TestApplyDryRunPromisesNothingForARuleTheCloseRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, code = runIn(t, "SetStatus-task: "+id+" done\n", "apply", "--on", "merge", "--dry-run")
-	if code != 0 {
-		t.Fatalf("apply exit %d: %s", code, out)
+	out, _ = runIn(t, "SetStatus-task: "+id+" done\n", "apply", "--on", "merge", "--dry-run")
+	if !strings.Contains(out, id) {
+		t.Fatalf("the dry run previewed nothing for %s:\n%s", id, out)
 	}
 	if strings.Contains(out, "would also create") {
 		t.Errorf("the preview promised an occurrence the close refuses to mint:\n%s", out)

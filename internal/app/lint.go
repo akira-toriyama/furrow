@@ -335,9 +335,10 @@ func (a *App) lintTaskShard(t *core.Task) []core.Problem {
 	}
 	// A rule furrow cannot expand stalls the series: every close path refuses
 	// the task (no due, no anchor, or a rule the expander turns away) while the
-	// shard still claims it recurs. Only a hand-edit or a newer furrow's
-	// spelling can produce one, which is exactly why nothing but this check
-	// names it before a close does.
+	// shard still claims it recurs. Only a shard that bypassed the bind door can
+	// carry one — a hand-edit, a merge, another furrow version (a newer one's
+	// spelling, v6's uncapped INTERVAL) — which is exactly why nothing but this
+	// check names it before a close does.
 	if t.Repeat != "" {
 		if t.Due == nil {
 			ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
