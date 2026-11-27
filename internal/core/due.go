@@ -88,7 +88,9 @@ func formatDue(t *Task, loc *time.Location) string {
 // rare here, so a warning would sit in the noise and the check would rot. The
 // escape hatch is not silence but the date itself — push it (`furrow set <id>
 // --due +1d`) or clear it (`--clear-due`), both of which say something true
-// about the promise.
+// about the promise. A repeating task cannot drop its date and keep its rule
+// (`--clear-due` alone is exit 2: e-j658 decision F), so its remedy names the
+// clear that works, ending the series in the same write.
 //
 // skipLanes are the lanes where a date raises nothing: the done lane (the promise
 // is settled) plus the configured parked lanes ([due].ignore_lanes, "icebox" by
@@ -110,13 +112,17 @@ func DueProblems(idx *Index, now time.Time, loc *time.Location, skipLanes, termi
 		}
 		switch DueStateOf(t, now, loc) {
 		case DueOverdue:
+			drop := "drop it (`--clear-due`)"
+			if t.Repeat != "" {
+				drop = "end the series (`--clear-repeat --clear-due`)"
+			}
 			msg := fmt.Sprintf(
-				"due %s has passed — do it, close it (`furrow done %s`), or push the date (`furrow set %s --due +1d`) / drop it (`--clear-due`)",
-				formatDue(t, loc), t.ID, t.ID)
+				"due %s has passed — do it, close it (`furrow done %s`), or push the date (`furrow set %s --due +1d`) / %s",
+				formatDue(t, loc), t.ID, t.ID, drop)
 			if terminal[t.Status] {
 				msg = fmt.Sprintf(
-					"due %s has passed while the task is parked in %q, where the date is a reminder rather than work to do — chase or escalate, close it (`furrow done %s`), or push the date (`furrow set %s --due +1d`) / drop it (`--clear-due`)",
-					formatDue(t, loc), t.Status, t.ID, t.ID)
+					"due %s has passed while the task is parked in %q, where the date is a reminder rather than work to do — chase or escalate, close it (`furrow done %s`), or push the date (`furrow set %s --due +1d`) / %s",
+					formatDue(t, loc), t.Status, t.ID, t.ID, drop)
 			}
 			out = append(out, Problem{SevError, "due-overdue", t.ID, msg})
 		case DueToday:

@@ -124,6 +124,35 @@ func TestDueProblems(t *testing.T) {
 	}
 }
 
+// A repeating task cannot drop its date and keep its rule — `--clear-due`
+// alone is exit 2 — yet the overdue remedy offered exactly that (t-3r8b). Its
+// clear ends the series in the same write instead, in an open lane and a
+// terminal one; a task that does not repeat keeps "drop it".
+func TestDueOverdueRemedyForARepeatingTaskEndsTheSeries(t *testing.T) {
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, jst).UTC()
+	past := time.Date(2026, 8, 2, 23, 59, 59, 0, jst).UTC()
+	idx := &Index{Tasks: []Task{
+		{ID: "t-rep01", Status: "ready", Due: &past, Repeat: "FREQ=WEEKLY", RepeatAnchor: &past},
+		{ID: "t-rep02", Status: "waiting", Due: &past, Repeat: "FREQ=WEEKLY", RepeatAnchor: &past},
+		{ID: "t-one01", Status: "ready", Due: &past},
+		{ID: "t-one02", Status: "waiting", Due: &past},
+	}}
+	terminal := map[string]bool{"done": true, "waiting": true}
+	ps := DueProblems(idx, now, jst, map[string]bool{"done": true}, terminal)
+	if len(ps) != 4 {
+		t.Fatalf("got %d problems, want 4: %+v", len(ps), ps)
+	}
+	for _, p := range ps {
+		ends := strings.Contains(p.Msg, "end the series (`--clear-repeat --clear-due`)")
+		drops := strings.Contains(p.Msg, "drop it (`--clear-due`)")
+		if repeating := strings.HasPrefix(p.ID, "t-rep"); repeating && (!ends || drops) {
+			t.Errorf("%s repeats; remedy %q should end the series, never drop the date alone", p.ID, p.Msg)
+		} else if !repeating && (ends || !drops) {
+			t.Errorf("%s does not repeat; remedy %q should drop the date", p.ID, p.Msg)
+		}
+	}
+}
+
 // An empty skip set means "report everywhere" — the [due].ignore_lanes = []
 // spelling. Nothing is exempt except by naming it.
 func TestDueProblemsWithNoSkippedLanes(t *testing.T) {

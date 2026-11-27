@@ -718,9 +718,10 @@ func (a *App) applySetSeries(t *core.Task, o SetOpts, anchor string) error {
 	}
 	// A repeating task's anchor is its due: dropping the date would leave the
 	// rule with nothing to expand from, so furrow refuses rather than silently
-	// ending the series or inventing a start.
+	// ending the series or inventing a start. The check reads the END state, so
+	// the remedy is one write — "drop the rule first" sent the operator to two.
 	if t.Repeat != "" && t.Due == nil {
-		return core.Validationf(id, "task %s repeats, so it must keep a due date — drop the rule first with `furrow set %s --clear-repeat`", id, id)
+		return core.Validationf(id, "task %s repeats, so it must keep a due date — to end the series, drop the rule in the same write: `furrow set %s --clear-repeat --clear-due`", id, id)
 	}
 	switch {
 	case o.ClearAnchor:
