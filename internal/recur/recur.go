@@ -435,7 +435,7 @@ func Next(line string, anchor, after time.Time, loc *time.Location) (time.Time, 
 	//
 	// So the walk starts one reach early, and a point is handed out only when
 	// its reading is later than `after` both as an instant and as a wall clock.
-	// A displaced point is later on both counts. The wall clock is for the hour
+	// A point a gap moved later passes both tests. The wall clock is for the hour
 	// a zone repeats: its two passes are one occurrence (see naked), and an east
 	// zone reads that occurrence at its SECOND pass, so with the instant alone a
 	// close at the first pass — the due it settles, London's 01:30 BST — saw the
