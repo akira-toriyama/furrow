@@ -427,7 +427,8 @@ func (a *App) compileRepeat(subject, spec string) (string, error) {
 //   - A day of the month past 28 is answered by RFC 5545 with a SKIP of the
 //     period that lacks it: `monthly on 31` lands 7 times a year, and a rule
 //     landing on February 29 lands once in four. The leap-day one needs the
-//     note most — its feedback loop is four years long.
+//     note most — its feedback loop is four years long. A 5th weekday is the
+//     same skip: `monthly on 5th fri` lands 4 or 5 times a year.
 //   - An anchor the rule does not land on stands OUTSIDE the series
 //     (recur.OffLattice), so a `for n times` rule hands out n occurrences AFTER
 //     it — one task more than the count reads like.
@@ -616,6 +617,9 @@ func (a *App) reDatedNote(t *core.Task, spelling string, was *time.Time) string 
 // lacks February 29 is not — `on last` is a monthly spelling, and the rule that
 // lands every year is February's last day, which any frequency can name.
 func skipNote(line string, anchor time.Time, skip recur.Skip, loc *time.Location) string {
+	if skip.Nth != 0 {
+		return weekdaySkipNote(line, anchor, skip, loc)
+	}
 	if skip.Period == recur.Years {
 		return fmt.Sprintf("February 29 exists only in leap years, so the rule skips the years without one (RFC 5545)%s; anchoring on February 28, or naming February's last day (`BYMONTH=2;BYMONTHDAY=-1`), lands every year", nextOccurrenceClause(line, anchor, loc))
 	}
@@ -625,7 +629,32 @@ func skipNote(line string, anchor time.Time, skip recur.Skip, loc *time.Location
 	return fmt.Sprintf("day %d does not exist in every month, so the rule skips those months (RFC 5545); anchoring on the last day instead (`… on last`) always lands", skip.Day)
 }
 
-// nextOccurrenceClause names the date the leap-day note is about, because a
+// weekdaySkipNote is skipNote for a ±5th weekday. The remedy is the weekday
+// every month has at the same end: the last one for a 5th, and the first for a
+// fifth-to-last, which in a month that has five IS the first.
+func weekdaySkipNote(line string, anchor time.Time, skip recur.Skip, loc *time.Location) string {
+	day := skip.Weekday.String()
+	// The short grammar's weekday names (`fri`) and RRULE's codes (`FR`) are the
+	// English name's first three and first two letters.
+	short, code := strings.ToLower(day[:3]), strings.ToUpper(day[:2])
+	if skip.Period == recur.Years {
+		month := skip.Month.String()
+		if skip.Nth > 0 {
+			return fmt.Sprintf("%s has a 5th %s only in some years, so the rule skips the years without one (RFC 5545)%s; naming its last %s instead (`… on last %s`, or `BYDAY=-1%s` in a raw line) always lands",
+				month, day, nextOccurrenceClause(line, anchor, loc), day, short, code)
+		}
+		return fmt.Sprintf("%s has a fifth-to-last %s only in some years (it is the first %s of a %s that has five), so the rule skips the years without one (RFC 5545)%s; naming its first %s instead (`… on 1st %s`, or `BYDAY=+1%s` in a raw line) always lands",
+			month, day, day, month, nextOccurrenceClause(line, anchor, loc), day, short, code)
+	}
+	if skip.Nth > 0 {
+		return fmt.Sprintf("a 5th %s exists in only 4 or 5 months a year, so the rule skips the months without one (RFC 5545); naming the last %s instead (`… on last %s`) always lands",
+			day, day, short)
+	}
+	return fmt.Sprintf("a fifth-to-last %s exists in only 4 or 5 months a year (it is the first %s of a month that has five), so the rule skips the months without one (RFC 5545); naming the first %s instead (`… on 1st %s`) always lands",
+		day, day, day, short)
+}
+
+// nextOccurrenceClause names the date a skipped-years note is about, because a
 // four-year gap is the kind of thing an operator has to SEE to disbelieve —
 // `every 3 years` from 2028-02-29 next lands in 2040. Empty when the rule
 // cannot say (a stored rule the expander refuses): a note missing its date

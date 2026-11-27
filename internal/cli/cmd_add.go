@@ -80,10 +80,11 @@ func newAddCmd() *cobra.Command {
 			"anchor need not land on the rule: an off-lattice one is a live occurrence\n" +
 			"OUTSIDE the series (`--due <a Friday> --repeat 'weekly on mon for 3 times'`\n" +
 			"is four tasks), and a stderr note names the rule's own first date. A day\n" +
-			"past 28 SKIPS the months that lack it (`monthly on last` always lands) and\n" +
-			"February 29 skips the years that lack one; both say so at bind time, and\n" +
-			"--json carries the same messages in `repeat_warnings` beside the created\n" +
-			"task (absent when there are none). Only a close advances a series — see\n" +
+			"past 28 SKIPS the months that lack it (`monthly on last` always lands), as\n" +
+			"does a 5th weekday (`monthly on last fri` always lands), and February 29\n" +
+			"skips the years that lack one; each says so at bind time, and --json\n" +
+			"carries the same messages in `repeat_warnings` beside the created task\n" +
+			"(absent when there are none). Only a close advances a series — see\n" +
 			"`furrow done --help`.",
 		Example: "  furrow add \"Wire up the config loader\"\n" +
 			"  furrow add \"Fix flaky sync test\" -s ready -l bug --value 4 --effort 2\n" +

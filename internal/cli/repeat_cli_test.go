@@ -159,6 +159,63 @@ func TestAddWarnsAboutALeapDayRule(t *testing.T) {
 	}
 }
 
+// A 5th weekday is the same RFC 5545 skip as day 31 — `monthly on 5th fri`
+// lands 4 or 5 times a year — and it bound with no note at all, while `monthly
+// on 31` said so. 2027-01-29 is January's 5th Friday.
+func TestAddWarnsAboutAFifthWeekday(t *testing.T) {
+	initStore(t)
+	// skipNote is the note naming RFC 5545; an off-lattice anchor adds its own.
+	add := func(title, rule string) (skipNote, stderr, stdout string) {
+		t.Helper()
+		stdout, se, code := runSplit(t, "add", title, "--due", "2027-01-29", "--repeat", rule, "--json")
+		if code != 0 {
+			t.Fatalf("add --repeat %q exit %d: %s%s", rule, code, stdout, se)
+		}
+		var created struct {
+			RepeatWarnings []string `json:"repeat_warnings"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &created); err != nil {
+			t.Fatalf("add --json: %v\n%s", err, stdout)
+		}
+		for _, w := range created.RepeatWarnings {
+			if strings.Contains(w, "RFC 5545") {
+				return w, se, stdout
+			}
+		}
+		return "", se, stdout
+	}
+
+	w, se, stdout := add("第5金曜", "monthly on 5th fri")
+	if !strings.HasPrefix(w, "a 5th Friday exists in only 4 or 5 months a year, so the rule skips the months without one") ||
+		!strings.HasSuffix(w, "(`… on last fri`) always lands") {
+		t.Errorf("`monthly on 5th fri` did not carry the skipped-months note in repeat_warnings:\n%s", stdout)
+	}
+	if w == "" || !strings.Contains(se, "note: "+w+"\n") {
+		t.Errorf("want the same note as `note: <it>` on stderr:\njson: %q\nstderr: %s", w, se)
+	}
+
+	if w, _, stdout = add("最後から5番目", "FREQ=MONTHLY;BYDAY=-5FR"); !strings.HasPrefix(w, "a fifth-to-last Friday exists in only 4 or 5 months a year") ||
+		!strings.HasSuffix(w, "(`… on 1st fri`) always lands") {
+		t.Errorf("a fifth-to-last Friday was not given its own note and the first-Friday remedy:\n%s", stdout)
+	}
+
+	// Confined to one month of the year, the rule skips YEARS, and the note
+	// names the month and the date it next lands on.
+	if w, _, stdout = add("1月の第5金曜", "FREQ=YEARLY;BYMONTH=1;BYDAY=+5FR"); !strings.HasPrefix(w, "January has a 5th Friday only in some years, so the rule skips the years without one") ||
+		!strings.Contains(w, "the next occurrence is 2031-01-31") ||
+		!strings.HasSuffix(w, "(`… on last fri`, or `BYDAY=-1FR` in a raw line) always lands") {
+		t.Errorf("a 5th Friday of January alone did not carry the skipped-years note:\n%s", stdout)
+	}
+	if w, _, stdout = add("1月の最後から5番目", "FREQ=YEARLY;BYMONTH=1;BYDAY=-5FR"); !strings.HasPrefix(w, "January has a fifth-to-last Friday only in some years") ||
+		!strings.HasSuffix(w, "(`… on 1st fri`, or `BYDAY=+1FR` in a raw line) always lands") {
+		t.Errorf("a fifth-to-last Friday of January alone did not carry its skipped-years note:\n%s", stdout)
+	}
+
+	if _, _, stdout = add("最終金曜", "monthly on last fri"); strings.Contains(stdout, "repeat_warnings") {
+		t.Errorf("`monthly on last fri` always lands; it must not be warned about:\n%s", stdout)
+	}
+}
+
 func TestRepeatRefusalsAreExitTwo(t *testing.T) {
 	initStore(t)
 	cases := []struct {

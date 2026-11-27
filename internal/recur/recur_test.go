@@ -811,6 +811,85 @@ func TestByMonthCannotNameAMonthTheLatticeMisses(t *testing.T) {
 	}
 }
 
+// A ±5th weekday is the same RFC 5545 skip as day 31: `monthly on 5th fri`
+// lands 4 or 5 times a year (measured: anchored 2027-01-29, the next is
+// 2027-04-30), and it bound with no note while `monthly on 31` said so. Only
+// the shapes that mean "the month's 5th" are reported — a mixed list, a 5th of
+// the YEAR and a 5th of a set that every month fills all land every period.
+func TestAFifthWeekdaySkips(t *testing.T) {
+	jan29 := time.Date(2027, 1, 29, 23, 59, 59, 0, jst) // the 5th Friday of January
+	mar15 := time.Date(2027, 3, 15, 23, 59, 59, 0, jst)
+	for _, c := range []struct {
+		name   string
+		spec   string
+		anchor time.Time
+		want   Skip // the zero Skip means: say nothing
+		years  bool // for a silent case: the period every occurrence lands in
+	}{
+		{"monthly on 5th fri", "monthly on 5th fri", jan29, Skip{Period: Months, Nth: 5, Weekday: time.Friday}, false},
+		{"a raw fifth-to-last Friday", "FREQ=MONTHLY;BYDAY=-5FR", jan29, Skip{Period: Months, Nth: -5, Weekday: time.Friday}, false},
+		{"the 5th of the month's Fridays", "FREQ=MONTHLY;BYDAY=FR;BYSETPOS=5", jan29, Skip{Period: Months, Nth: 5, Weekday: time.Friday}, false},
+		{"every 2 months on 5th fri", "every 2 months on 5th fri", jan29, Skip{Period: Months, Nth: 5, Weekday: time.Friday}, false},
+		{"a yearly rule confined to January", "FREQ=YEARLY;BYMONTH=1;BYDAY=+5FR", jan29, Skip{Period: Years, Nth: 5, Weekday: time.Friday, Month: time.January}, false},
+		// The month is the rule's, not the anchor's: anchored off the lattice in
+		// March, the rule still fires in January alone.
+		{"the same rule anchored in March", "FREQ=YEARLY;BYMONTH=1;BYDAY=+5FR", mar15, Skip{Period: Years, Nth: 5, Weekday: time.Friday, Month: time.January}, false},
+		{"monthly on 4th fri", "monthly on 4th fri", jan29, Skip{}, false},
+		{"monthly on last fri", "monthly on last fri", jan29, Skip{}, false},
+		{"the 5th Friday of the year", "FREQ=YEARLY;BYDAY=+5FR", jan29, Skip{}, true},
+		{"the 5th weekday of the month", "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=5", jan29, Skip{}, false},
+		// Where a 5th Friday exists it is the last, so every month has one of the two.
+		{"a 5th or last Friday", "FREQ=MONTHLY;BYDAY=+5FR,-1FR", jan29, Skip{}, false},
+		// A YEARLY BYSETPOS counts across every month BYMONTH names, so with two
+		// of them a 5th Friday always exists.
+		{"the 5th Friday of January and April together", "FREQ=YEARLY;BYMONTH=1,4;BYDAY=FR;BYSETPOS=5", jan29, Skip{}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			line, err := Compile(c.spec, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			skip, ok := Skips(line, c.anchor, jst)
+			if !ok {
+				skip = Skip{}
+			}
+			if skip != c.want {
+				t.Errorf("Skips(%q anchored %s) = (%+v, %v), want %+v",
+					line, c.anchor.Format("2006-01-02"), skip, ok, c.want)
+			}
+			if c.want == (Skip{}) {
+				assertLandsEveryPeriod(t, line, c.anchor, c.years)
+			}
+		})
+	}
+}
+
+// assertLandsEveryPeriod walks the series and fails unless each occurrence
+// falls in the month (or year) after the one before it — the fact a silent
+// Skips is claiming about a weekday rule, whose day of the month moves.
+func assertLandsEveryPeriod(t *testing.T, line string, anchor time.Time, years bool) {
+	t.Helper()
+	period := func(d time.Time) int {
+		d = d.In(jst)
+		if years {
+			return d.Year()
+		}
+		return d.Year()*12 + int(d.Month()) - 1
+	}
+	cur := anchor
+	for i := 0; i < 12; i++ {
+		next, ok, err := Next(line, anchor, cur, jst)
+		if err != nil || !ok {
+			t.Fatalf("Next(%q) after %s: ok=%v err=%v", line, cur.Format("2006-01-02"), ok, err)
+		}
+		if gap := period(next) - period(cur); gap != 1 {
+			t.Fatalf("occurrence %d of %q is %s, %d periods after %s — it does not land every period, so silence is wrong",
+				i, line, next.Format("2006-01-02"), gap, cur.Format("2006-01-02"))
+		}
+		cur = next
+	}
+}
+
 // COUNT=0 is the one count the parsed option cannot hold: it is spelled with
 // the same zero as "no terminator", so it passed every check and the term was
 // dropped on the way to disk — a bounded rule stored as an endless one, at exit

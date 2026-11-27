@@ -667,9 +667,10 @@ func calendar(loc *time.Location) *time.Location {
 	return loc
 }
 
-// Period is what a rule SKIPS when the day of the month it lands on does not
-// exist there: the months that lack that day, or — for February 29 alone — the
-// years that lack one.
+// Period is what a rule SKIPS when the day it lands on does not exist there:
+// the months that lack that day, or — when the rule fires in a single month of
+// the year, as February 29 or a 5th weekday of January does — the years that
+// lack one.
 type Period int
 
 const (
@@ -677,18 +678,25 @@ const (
 	Years
 )
 
-// Skip is one rule's day-of-month problem: the day it names, and the period
-// that day is missing from.
+// Skip is one rule's missing-day problem: the day it names, and the period that
+// day is missing from. A day-of-month skip sets Day and leaves Nth, Weekday and
+// Month zero; a weekday skip sets Nth (5 or -5) and Weekday, and Month when the
+// Period is Years. Nth is what tells the two apart: Weekday's zero is Sunday.
 type Skip struct {
-	Day    int
-	Period Period
+	Day     int
+	Period  Period
+	Nth     int
+	Weekday time.Weekday
+	Month   time.Month
 }
 
-// Skips reports whether a rule names a day of the month that some periods do
-// not have — the 29/30/31 case RFC 5545 answers by SKIPPING the period instead
-// of clamping into it. The caller says so once, at bind time: the operator who
-// typed `monthly on 31` usually meant `monthly on last`, and the one who
-// anchored a yearly rule on February 29 would otherwise find out in four years.
+// Skips reports whether a rule names a day that some periods do not have — a
+// day of the month past 28, or a ±5th weekday of the month — which RFC 5545
+// answers by SKIPPING the period instead of clamping into it. The caller says
+// so once, at bind time: the operator who typed `monthly on 31` usually meant
+// `monthly on last`, the one who typed `monthly on 5th fri` gets 4 or 5
+// occurrences a year, and the one who anchored a yearly rule on February 29
+// would otherwise find out in four years.
 //
 // Which period is skipped follows the rule's SHAPE, not its FREQ. `yearly`
 // anchored on January 31 names its month as part of the rule and lands every
@@ -710,7 +718,7 @@ func Skips(line string, anchor time.Time, loc *time.Location) (Skip, bool) {
 	anchor = anchor.In(calendar(loc))
 	day, ok := namedDay(opt, anchor)
 	if !ok {
-		return Skip{}, false
+		return weekdaySkip(opt, anchor)
 	}
 	var lacking, landing int
 	for _, m := range firingMonths(opt, anchor) {
@@ -730,6 +738,65 @@ func Skips(line string, anchor time.Time, loc *time.Location) (Skip, bool) {
 	default:
 		return Skip{Day: day, Period: Months}, true
 	}
+}
+
+// weekdaySkip is Skips' answer for a rule that names no day past 28: a ±5th
+// weekday (fifthWeekday) always skips, the years when the rule fires in one
+// month of the year and the months otherwise.
+//
+// A YEARLY rule's months are its BYMONTH, not firingMonths: freqMonths narrows a
+// YEARLY rule without a BYMONTHDAY to the ANCHOR's month, which for `BYMONTH=1`
+// anchored in March is a month the rule never fires in.
+func weekdaySkip(opt *rrule.ROption, anchor time.Time) (Skip, bool) {
+	nth, weekday, ok := fifthWeekday(opt)
+	if !ok {
+		return Skip{}, false
+	}
+	months := opt.Bymonth
+	if opt.Freq == rrule.MONTHLY {
+		months = firingMonths(opt, anchor)
+	}
+	switch len(months) {
+	case 0:
+		return Skip{}, false
+	case 1:
+		return Skip{Period: Years, Nth: nth, Weekday: weekday, Month: time.Month(months[0])}, true
+	default:
+		return Skip{Period: Months, Nth: nth, Weekday: weekday}, true
+	}
+}
+
+// fifthWeekday reports a rule that lands on the 5th or the fifth-to-last of one
+// weekday of the month. Every month has at least four of each weekday, and none
+// has a fifth of one every year, so such a rule always skips.
+//
+// Only the shapes that mean exactly that qualify, under MONTHLY or a YEARLY
+// rule narrowed by BYMONTH: one BYDAY entry numbered ±5, or BYSETPOS [5] or
+// [-5] over one un-numbered BYDAY entry. A mixed list lands every month
+// (`BYDAY=+5FR,-1FR`: where a 5th Friday exists it is the last), and a YEARLY
+// rule without BYMONTH counts the weekday across the year, which always has a
+// 5th. A YEARLY BYSETPOS picks from the whole year's set, so it means a
+// month's 5th only when BYMONTH names one month:
+// `FREQ=YEARLY;BYMONTH=1,4;BYDAY=FR;BYSETPOS=5` lands every year.
+func fifthWeekday(opt *rrule.ROption) (nth int, weekday time.Weekday, ok bool) {
+	if len(opt.Byweekday) != 1 {
+		return 0, 0, false
+	}
+	if opt.Freq != rrule.MONTHLY && (opt.Freq != rrule.YEARLY || len(opt.Bymonth) == 0) {
+		return 0, 0, false
+	}
+	w := opt.Byweekday[0]
+	switch n := w.N(); {
+	case n == 5 || n == -5:
+		nth = n
+	case n == 0 && len(opt.Bysetpos) == 1 && (opt.Bysetpos[0] == 5 || opt.Bysetpos[0] == -5) &&
+		(opt.Freq == rrule.MONTHLY || len(opt.Bymonth) == 1):
+		nth = opt.Bysetpos[0]
+	default:
+		return 0, 0, false
+	}
+	// rrule-go numbers the weekdays from Monday (0) to Sunday (6).
+	return nth, time.Weekday((w.Day() + 1) % 7), true
 }
 
 // namedDay is the day of the month a rule lands on, reported only when it is
