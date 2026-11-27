@@ -958,9 +958,9 @@ func TestEveryDateNextHandsOutLands(t *testing.T) {
 	}
 }
 
-// zonedAfter is the answer Next owes: the first lattice point that READS BACK
-// strictly after `after` in the calendar, found by walking the whole series
-// from its anchor rather than from `after`.
+// zonedAfter is the answer Next owes: the first lattice point whose reading in
+// the calendar is later than `after` as an instant and as a wall clock, found
+// by walking the whole series from its anchor rather than from `after`.
 func zonedAfter(t *testing.T, line string, anchor, after time.Time, loc *time.Location) (time.Time, bool) {
 	t.Helper()
 	r, err := build(line, anchor, loc)
@@ -973,22 +973,21 @@ func zonedAfter(t *testing.T, line string, anchor, after time.Time, loc *time.Lo
 		if !ok {
 			return time.Time{}, false
 		}
-		if z := zoned(p, loc); z.After(after) {
+		if z := zoned(p, loc); z.After(after) && naked(z, loc).After(naked(after, loc)) {
 			return z, true
 		}
 	}
 }
 
-// On the days a zone changes its offset a lattice point can read back LATER
-// than a close whose frame clock is past it — a gap moves London's 01:30 to
-// 02:30 BST and Santiago's 00:30 to 01:30, and on London's fall-back night the
-// repeated 01:30 is the GMT pass, still ahead of a close at 01:40 BST — and a
-// walk that started at naked(after) stepped over it: the close lost that
-// occurrence, a week of a weekly rule and a month of a monthly one, and no
-// `skipped` counted it (t-5w8g). Every minute across each such day gets the
-// oracle's answer. The west zones read a gap point back EARLIER and take the
-// first pass of a repeated hour, which never lost one; they stay in as the
-// other direction.
+// On the day a zone skips the rule's clock, a gap can move the lattice point
+// LATER than a close whose frame clock is already past it — London's 01:30 to
+// 02:30 BST, Santiago's 00:30 to 01:30 — and a walk that started at
+// naked(after) stepped over it: the close lost that occurrence, a week of a
+// weekly rule and a month of a monthly one, and no `skipped` counted it
+// (t-5w8g). Every minute across each such day gets the oracle's answer. New
+// York and Nuuk read a gap point back EARLIER, which never lost one, and the
+// fall-back nights hold the early walk to the repeated hour's one occurrence;
+// those rows agree with the old walk and stay in as the other direction.
 func TestNextAgreesWithTheCalendarAcrossEveryOffsetChange(t *testing.T) {
 	cases := []struct {
 		zone  string
@@ -1046,6 +1045,38 @@ func TestNextAgreesWithTheCalendarAcrossEveryOffsetChange(t *testing.T) {
 					c.zone, line, c.clock[0], c.clock[1], c.clock[2], wrong, first)
 			}
 		}
+	}
+}
+
+// The early walk must not hand back the occurrence a close settles in the hour
+// a zone repeats. London reads its fall-back night's 01:30 at the GMT pass, so
+// a due at the BST pass is that one occurrence, settled; with the instant
+// alone, the close minted it again as 01:30 GMT — a duplicate, a COUNT=1 rule
+// bindable, a COUNT of n handing out n+1 (t-5w8g review).
+//
+// bite-exempt: pins the old walk's behaviour, which the early start broke
+func TestNextNeverHandsBackTheRepeatedHourItSettled(t *testing.T) {
+	lon, err := time.LoadLocation("Europe/London")
+	if err != nil {
+		t.Skipf("no tzdata for Europe/London: %v", err)
+	}
+	due := time.Date(2027, 10, 31, 0, 30, 0, 0, time.UTC) // 01:30 BST, the first pass
+	if got := due.In(lon).Format("15:04 MST"); got != "01:30 BST" {
+		t.Fatalf("the fixture reads %s in London, want 01:30 BST", got)
+	}
+	for line, want := range map[string]string{
+		"FREQ=DAILY":  "2027-11-01T01:30:00Z",
+		"FREQ=WEEKLY": "2027-11-07T01:30:00Z",
+	} {
+		for _, late := range []time.Duration{0, 10 * time.Minute} {
+			got, ok, err := Next(line, due, due.Add(late), lon)
+			if err != nil || !ok || got.Format(time.RFC3339) != want {
+				t.Errorf("%s closed %s after its 01:30 BST due: Next = %s (ok=%v, err=%v), want %s", line, late, got.Format(time.RFC3339), ok, err, want)
+			}
+		}
+	}
+	if err := Bindable("FREQ=DAILY;COUNT=1", due, lon); err == nil {
+		t.Error("a COUNT=1 rule anchored at the first pass was bindable: its one occurrence was counted twice")
 	}
 }
 
