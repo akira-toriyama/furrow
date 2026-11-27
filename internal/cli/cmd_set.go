@@ -317,6 +317,15 @@ func setSelect(cmd *cobra.Command, a *app.App, sel *writeSelector, o app.SetOpts
 	if err != nil {
 		return nil, false, err
 	}
+	// The anchor box's missing day is judged after the rows, and only when no
+	// row is refused: --yes reports a refused row before the box (SetMany), so
+	// the preview shows those rows at exit 0 instead. It precedes the empty
+	// selection's exit 0 as well, so a selection of nothing still exits 2.
+	if len(refusedRows(tail, tasks)) == 0 {
+		if err := a.VetAnchorDay(o); err != nil {
+			return nil, false, err
+		}
+	}
 	if !sel.yes {
 		emitSelectPreview(a, "set", tasks, tail)
 		return nil, true, nil

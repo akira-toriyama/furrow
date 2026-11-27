@@ -188,10 +188,11 @@ type SetOpts struct {
 	Repeat      *string
 	ClearRepeat bool
 	// Anchor is the raw `--anchor` reference: the box whose day this task's
-	// due follows (resolveAnchorRef — the box must exist and carry a day). It
-	// needs a due on the task (in this write or already there) and refuses a
-	// repeat rule; ClearAnchor drops the pointer and wins. ClearDue drops the
-	// pointer too: a due that is gone has nothing left to follow.
+	// due follows (resolveAnchorRef — the box must exist and carry a day, the
+	// day judged last). It needs a due on the task (in this write or already
+	// there) and refuses a repeat rule; ClearAnchor drops the pointer and wins.
+	// ClearDue drops the pointer too: a due that is gone has nothing left to
+	// follow.
 	Anchor      *string
 	ClearAnchor bool
 }
@@ -271,7 +272,7 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, *Rep
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	anchor, err := a.resolveAnchor(o)
+	anchor, dated, err := a.resolveAnchor(o)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -290,7 +291,7 @@ func (a *App) Set(id string, o SetOpts) (*core.Task, []core.PriorityChange, *Rep
 	// a `-s done` mints goes in through the post hook — inserting moves the
 	// index's backing array, so it must wait until every task pointer is dead.
 	saved, err := a.mutateInPostAt(idx, id, now, func(*core.Task) error {
-		renumbered, occurrence, report, err = a.applySet(idx, id, o, due, anchor, epic, now, nil)
+		renumbered, occurrence, report, err = a.applySet(idx, id, o, due, anchor, dated, epic, now, nil)
 		return err
 	}, func(idx *core.Index) error {
 		return a.flushOccurrences(idx, []*pendingOccurrence{occurrence})
@@ -368,7 +369,8 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 // rule, the flag combinations — so a selection's preview can refuse up front
 // exactly what --yes would refuse. The index-bound refusals (an undated row
 // under --due-shift, a repeating row under --anchor, a follower under
-// --repeat) are the preview tails' to mark per row.
+// --repeat) are the preview tails' to mark per row. The anchor box's missing
+// day is neither: SetMany judges it after the rows, so it is VetAnchorDay's.
 func (a *App) VetSet(o SetOpts) error {
 	if err := a.validateSetOpts("", o); err != nil {
 		return err
@@ -376,13 +378,29 @@ func (a *App) VetSet(o SetOpts) error {
 	if _, err := a.resolveDue(o); err != nil {
 		return err
 	}
-	if _, err := a.resolveAnchor(o); err != nil {
+	if _, _, err := a.resolveAnchor(o); err != nil {
 		return err
 	}
 	if o.Repeat != nil {
 		if _, err := a.compileRepeat("", *o.Repeat); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// VetAnchorDay is the refusal VetSet leaves out: `--anchor` naming a box with
+// no day (undatedBoxErr). A selection asks it once the rows are resolved, and
+// only when the preview refuses none of them — a refused row is what --yes
+// reports first (SetMany's scans), so the preview must show those rows rather
+// than the box.
+func (a *App) VetAnchorDay(o SetOpts) error {
+	id, dated, err := a.resolveAnchor(o)
+	if err != nil {
+		return err
+	}
+	if id != "" && !dated {
+		return undatedBoxErr(id)
 	}
 	return nil
 }
@@ -404,7 +422,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 	if err != nil {
 		return nil, nil, err
 	}
-	anchor, err := a.resolveAnchor(o)
+	anchor, dated, err := a.resolveAnchor(o)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -469,6 +487,11 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 			return nil, nil, anchoredRepeatErr(followers, len(order))
 		}
 	}
+	if anchor != "" && !dated {
+		// After every scan above: their refusals are this write's to cure, the
+		// box's day is another object's (resolveAnchorRef).
+		return nil, nil, undatedBoxErr(anchor)
+	}
 	now := a.Clock.Now() // the batch's one instant: the lane stamps and the updated stamps
 	var occurrences []*pendingOccurrence
 	reports := map[string]*RepeatReport{}
@@ -476,7 +499,7 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 	for _, id := range order {
 		t, _ := idx.Find(id)
 		reposBefore := append([]string(nil), t.Repos...)
-		_, succ, rep, serr := a.applySet(idx, id, o, due, anchor, epic, now, reservedIDs)
+		_, succ, rep, serr := a.applySet(idx, id, o, due, anchor, dated, epic, now, reservedIDs)
 		if serr != nil {
 			return nil, nil, serr
 		}
@@ -501,12 +524,12 @@ func (a *App) SetMany(ids []string, o SetOpts) ([]*core.Task, []*RepeatReport, e
 // applySet mutates one task in an ALREADY-LOADED index and returns any respace
 // the relative placement caused. It saves nothing: the caller owns the write, so
 // a batch is one Save. id must already resolve. anchor is the resolved epic id
-// a `--anchor` names ("" when the write does not set one) and epic the
-// resolved `-e` (nil = untouched, "" = unfile), both resolved once by the
-// caller (resolveAnchor, resolveEpicOpt) so a batch cannot fan out into N epic
-// reads; now is the write's one instant (the lane's closed stamp and the
-// caller's updated stamp carry it alike).
-func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, anchor string, epic *string, now time.Time, reserved map[string]bool) ([]core.PriorityChange, *pendingOccurrence, *RepeatReport, error) {
+// a `--anchor` names ("" when the write does not set one), dated whether that
+// box carries a day, and epic the resolved `-e` (nil = untouched, "" =
+// unfile), all resolved once by the caller (resolveAnchor, resolveEpicOpt) so
+// a batch cannot fan out into N epic reads; now is the write's one instant
+// (the lane's closed stamp and the caller's updated stamp carry it alike).
+func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, anchor string, dated bool, epic *string, now time.Time, reserved map[string]bool) ([]core.PriorityChange, *pendingOccurrence, *RepeatReport, error) {
 	t, _ := idx.Find(id)
 	before, err := core.MarshalTask(t)
 	if err != nil {
@@ -569,7 +592,7 @@ func (a *App) applySet(idx *core.Index, id string, o SetOpts, due *time.Time, an
 	if err := a.applySetDue(t, o, due); err != nil {
 		return nil, nil, nil, err
 	}
-	if err := a.applySetSeries(t, o, anchor); err != nil {
+	if err := a.applySetSeries(t, o, anchor, dated); err != nil {
 		return nil, nil, nil, err
 	}
 	if epic != nil {
@@ -705,7 +728,7 @@ func (a *App) applySetDue(t *core.Task, o SetOpts, due *time.Time) error {
 // applySetSeries is the repeat-and-anchor half of applySet: the rule and the
 // pointer land, then the END state is judged, so every ordering of the flags
 // in one write is refused or accepted the same way.
-func (a *App) applySetSeries(t *core.Task, o SetOpts, anchor string) error {
+func (a *App) applySetSeries(t *core.Task, o SetOpts, anchor string, dated bool) error {
 	id := t.ID
 	switch {
 	case o.ClearRepeat:
@@ -745,12 +768,16 @@ func (a *App) applySetSeries(t *core.Task, o SetOpts, anchor string) error {
 		}
 		return repeatingAnchorErr([]string{id}, 1)
 	}
+	// Last, after the follower invariants: the box's missing day is another
+	// object's write (resolveAnchorRef). This is single-id Set's refusal, made
+	// after mutateInPostAt has answered not-found and the session guard;
+	// SetMany refuses it after its scans, so for a batch it is the backstop.
+	if anchor != "" && !dated {
+		return undatedBoxErr(anchor)
+	}
 	return nil
 }
 
-// resolveAnchor binds a set's `--anchor` reference to the epic id it names,
-// once per call (resolveAnchorRef's rules: the box exists and carries a day).
-// "" when the call sets none.
 // resolveEpicOpt resolves a `-e` once for a whole write: nil when the write
 // does not touch the box, a pointer to "" for `-e ”` (unfile), else the
 // resolved id. validateSetOpts already refused a ref that does not resolve.
@@ -769,13 +796,17 @@ func (a *App) resolveEpicOpt(o SetOpts) (*string, error) {
 	return &id, nil
 }
 
-func (a *App) resolveAnchor(o SetOpts) (string, error) {
+// resolveAnchor binds a set's `--anchor` reference to the epic id it names,
+// once per call, and reports whether that box carries a day
+// (resolveAnchorRef's rules: the caller refuses an undated box last). "" when
+// the call sets none.
+func (a *App) resolveAnchor(o SetOpts) (id string, dated bool, err error) {
 	if o.Anchor == nil {
-		return "", nil
+		return "", false, nil
 	}
 	epics, err := a.Store.LoadEpics()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	return a.resolveAnchorRef(*o.Anchor, epics)
 }

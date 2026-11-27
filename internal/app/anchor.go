@@ -212,30 +212,39 @@ func revertAnchorMoves(idx *core.Index, plan *AnchorPlan) {
 }
 
 // resolveAnchorRef resolves a task-side `--anchor` value: the box it names,
-// which must exist and already carry a day — a task cannot follow a day the
-// box has not declared, and declaring it first is one command. A value that
-// parses as a calendar day is the likeliest slip (the two --anchor flags take
-// different things), so that miss says where the day goes.
-func (a *App) resolveAnchorRef(ref string, epics []core.Epic) (string, error) {
+// which must exist, and whether it already carries a day (dated). A value
+// that parses as a calendar day is the likeliest slip (the two --anchor flags
+// take different things), so that miss says where the day goes.
+//
+// An undated box is NOT refused here: its remedy is a write to another object
+// (the box), so every caller refuses it (undatedBoxErr) only after each
+// refusal this write could cure or that rules the request out — the task's
+// own not-found, a missing due, a repeat rule. Refused first, it sent the
+// operator to date the box only for the retry to refuse on the task.
+func (a *App) resolveAnchorRef(ref string, epics []core.Epic) (id string, dated bool, err error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return "", core.Validationf("", "--anchor needs an epic (the box whose day this due follows); use --clear-anchor to remove one")
+		return "", false, core.Validationf("", "--anchor needs an epic (the box whose day this due follows); use --clear-anchor to remove one")
 	}
-	id, err := a.resolveEpicIn(ref, epics)
+	id, err = a.resolveEpicIn(ref, epics)
 	if err != nil {
 		if _, perr := core.ParseAnchor(ref); perr == nil {
-			return "", core.Validationf("", "--anchor on a task names the BOX whose day the due follows (an epic id or ref), not the day itself — the day lives on the box: `furrow epic set <epic> --anchor %s`, then `--anchor <epic>` here", ref)
+			return "", false, core.Validationf("", "--anchor on a task names the BOX whose day the due follows (an epic id or ref), not the day itself — the day lives on the box: `furrow epic set <epic> --anchor %s`, then `--anchor <epic>` here", ref)
 		}
-		return "", err
+		return "", false, err
 	}
 	e := findEpic(epics, id)
 	if e == nil {
-		return "", core.NotFound(id)
+		return "", false, core.NotFound(id)
 	}
-	if e.Anchor == "" {
-		return "", core.Validationf("", "epic %s has no anchor yet — give the box its day first: `furrow epic set %s --anchor <%s>`", id, id, core.AnchorSpelling)
-	}
-	return id, nil
+	return id, e.Anchor != "", nil
+}
+
+// undatedBoxErr is `--anchor` naming a box that has no day yet: a task cannot
+// follow a day the box has not declared, and declaring it is one command.
+// Judged last (see resolveAnchorRef).
+func undatedBoxErr(id string) *core.Error {
+	return core.Validationf("", "epic %s has no anchor yet — give the box its day first: `furrow epic set %s --anchor <%s>`", id, id, core.AnchorSpelling)
 }
 
 // undatedAnchorErr is `--anchor` on a task that carries no due: a pointer
