@@ -46,20 +46,20 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 		{
 			name: "add --stdin --status",
 			call: func(a *App) error {
-				_, err := a.AddMany([]AddSpec{{Title: "bulk", AddOpts: AddOpts{Status: "ghots"}}})
+				_, err := a.AddMany([]AddSpec{{Title: "bulk", AddOpts: AddOpts{Status: "ghots"}, Line: 1}}, "--stdin")
 				return err
 			},
 			want:  lanes,
-			inMsg: `spec 0 ("bulk")`,
+			inMsg: `--stdin line 1 ("bulk")`,
 		},
 		{
 			name: "add --stdin -e",
 			call: func(a *App) error {
-				_, err := a.AddMany([]AddSpec{{Title: "bulk", AddOpts: AddOpts{Epic: "no-such-box"}}})
+				_, err := a.AddMany([]AddSpec{{Title: "bulk", AddOpts: AddOpts{Epic: "no-such-box"}, Line: 1}}, "--stdin")
 				return err
 			},
 			wantFn: seedEpic,
-			inMsg:  `spec 0 ("bulk")`,
+			inMsg:  `--stdin line 1 ("bulk")`,
 		},
 		{
 			name: "set -e",
@@ -115,7 +115,7 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 				t.Errorf("candidates = %v, want %v — an agent branches on this array", fe.Candidates, want)
 			}
 			if tc.inMsg != "" && !strings.Contains(fe.Msg, tc.inMsg) {
-				t.Errorf("message %q lost the spec context %q — a bulk failure must say which input", fe.Msg, tc.inMsg)
+				t.Errorf("message %q lost the context saying which line failed (%q) — a bulk failure must say which input", fe.Msg, tc.inMsg)
 			}
 		})
 	}
@@ -125,12 +125,12 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 // mutate the shared value the next iteration reads.
 func TestWithPrefixfCopiesAndKeepsCandidates(t *testing.T) {
 	base := &core.Error{Code: core.CodeValidation, Kind: core.KindUnknownLane, Subject: "t-1", Msg: "unknown lane", Candidates: []string{"inbox"}}
-	got := base.WithPrefixf("spec %d (%q): ", 2, "title")
+	got := base.WithPrefixf("--stdin line %d (%q): ", 2, "title")
 
 	if base.Msg != "unknown lane" {
 		t.Errorf("WithPrefixf mutated the receiver: %q", base.Msg)
 	}
-	if got.Msg != `spec 2 ("title"): unknown lane` {
+	if got.Msg != `--stdin line 2 ("title"): unknown lane` {
 		t.Errorf("Msg = %q", got.Msg)
 	}
 	if got.Code != base.Code || got.Kind != base.Kind || got.Subject != base.Subject || !slices.Equal(got.Candidates, base.Candidates) {

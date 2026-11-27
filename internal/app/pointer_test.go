@@ -268,7 +268,7 @@ func TestAddMany_PointerUnionsDefaultRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := a.AddMany([]AddSpec{{Title: "x"}, {Title: "y"}})
+	created, err := a.AddMany([]AddSpec{{Title: "x"}, {Title: "y"}}, "--stdin")
 	if err != nil {
 		t.Fatalf("AddMany: %v", err)
 	}
