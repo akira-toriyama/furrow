@@ -772,8 +772,13 @@ func weekdaySkip(opt *rrule.ROption, anchor time.Time) (Skip, bool) {
 //
 // Only the shapes that mean exactly that qualify, under MONTHLY or a YEARLY
 // rule narrowed by BYMONTH: one BYDAY entry numbered ±5, or BYSETPOS [5] or
-// [-5] over one un-numbered BYDAY entry. A mixed list lands every month
-// (`BYDAY=+5FR,-1FR`: where a 5th Friday exists it is the last), and a YEARLY
+// [-5] over one un-numbered BYDAY entry — every 5th-weekday short spelling is
+// one of them. A longer list stays silent by choice, though only some land
+// every month: one that pairs the ±5 entry with a weekday every month has
+// does (`BYDAY=+5FR,-1FR`: where a 5th Friday exists it is the last), while
+// ±5 entries alone (`+5MO,+5FR`) or a ±5 entry beside its own un-numbered
+// weekday (`+5FR,FR`, which the library reads as the 5th Friday) skip — raw
+// lines only, and telling them apart would take expanding the rule. A YEARLY
 // rule without BYMONTH counts the weekday across the year, which always has a
 // 5th. A YEARLY BYSETPOS picks from the whole year's set, so it means a
 // month's 5th only when BYMONTH names one month:

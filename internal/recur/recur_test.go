@@ -830,7 +830,12 @@ func TestAFifthWeekdaySkips(t *testing.T) {
 		{"a raw fifth-to-last Friday", "FREQ=MONTHLY;BYDAY=-5FR", jan29, Skip{Period: Months, Nth: -5, Weekday: time.Friday}, false},
 		{"the 5th of the month's Fridays", "FREQ=MONTHLY;BYDAY=FR;BYSETPOS=5", jan29, Skip{Period: Months, Nth: 5, Weekday: time.Friday}, false},
 		{"every 2 months on 5th fri", "every 2 months on 5th fri", jan29, Skip{Period: Months, Nth: 5, Weekday: time.Friday}, false},
+		{"the fifth-to-last by position", "FREQ=MONTHLY;BYDAY=FR;BYSETPOS=-5", jan29, Skip{Period: Months, Nth: -5, Weekday: time.Friday}, false},
 		{"a yearly rule confined to January", "FREQ=YEARLY;BYMONTH=1;BYDAY=+5FR", jan29, Skip{Period: Years, Nth: 5, Weekday: time.Friday, Month: time.January}, false},
+		// A MONTHLY rule that fires in one month of the year skips years too: the
+		// one Years shape the short grammar reaches, and a raw BYMONTH.
+		{"every 12 months on 5th fri", "every 12 months on 5th fri", jan29, Skip{Period: Years, Nth: 5, Weekday: time.Friday, Month: time.January}, false},
+		{"a monthly rule confined to June", "FREQ=MONTHLY;BYMONTH=6;BYDAY=+5SA", jan29, Skip{Period: Years, Nth: 5, Weekday: time.Saturday, Month: time.June}, false},
 		// The month is the rule's, not the anchor's: anchored off the lattice in
 		// March, the rule still fires in January alone.
 		{"the same rule anchored in March", "FREQ=YEARLY;BYMONTH=1;BYDAY=+5FR", mar15, Skip{Period: Years, Nth: 5, Weekday: time.Friday, Month: time.January}, false},
