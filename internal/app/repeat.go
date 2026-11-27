@@ -453,8 +453,14 @@ func (a *App) RepeatWarnings(t *core.Task) []string {
 		out = append(out, skipNote(t.Repeat, anchor, skip, a.loc()))
 	}
 	if first, ok := recur.OffLattice(t.Repeat, anchor, a.loc()); ok {
-		out = append(out, fmt.Sprintf("the anchor %s is not a date this rule lands on, so it is one occurrence OUTSIDE the series and `for n times` hands out n MORE after it; the rule's own first date is %s, and anchoring there folds it in",
-			anchor.Format(core.TimeLayout), first.Format(core.TimeLayout)))
+		at, own := anchor.Format(core.TimeLayout), first.Format(core.TimeLayout)
+		if n, counted := recur.Count(t.Repeat); counted {
+			out = append(out, fmt.Sprintf("the anchor %s is not a date this rule lands on, so it is one occurrence OUTSIDE the series and the rule's count of %d hands out %d MORE after it; the rule's own first date is %s, and anchoring there folds it in",
+				at, n, n, own))
+		} else {
+			out = append(out, fmt.Sprintf("the anchor %s is not a date this rule lands on, so it is one occurrence OUTSIDE the series; the rule's own first date is %s, and anchoring there folds it in",
+				at, own))
+		}
 	}
 	return out
 }
@@ -599,7 +605,7 @@ func (a *App) reDatedNote(t *core.Task, spelling string, was *time.Time) string 
 	}
 	note += fmt.Sprintf("; to move the series here instead, bind the rule again in the same write: `furrow set %s --due %s --repeat '%s'`",
 		t.ID, due, t.Repeat)
-	if recur.Counted(t.Repeat) {
+	if _, ok := recur.Count(t.Repeat); ok {
 		note += " (its COUNT starts over from that date)"
 	}
 	return note

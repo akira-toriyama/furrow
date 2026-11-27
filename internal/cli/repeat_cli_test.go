@@ -653,6 +653,12 @@ func TestBindingAnOffLatticeAnchorSaysSo(t *testing.T) {
 	if !strings.Contains(se, "not a date this rule lands on") {
 		t.Errorf("`set --repeat` bound an off-lattice anchor silently:\n%s", se)
 	}
+	// This rule carries no COUNT, so there is no n for the anchor to add to.
+	for _, clause := range []string{"MORE", "for n times"} {
+		if strings.Contains(se, clause) {
+			t.Errorf("the note for a rule with no COUNT says %q:\n%s", clause, se)
+		}
+	}
 }
 
 // The LAST occurrence of a bounded series carries its rule like every other

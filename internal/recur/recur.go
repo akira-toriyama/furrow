@@ -71,6 +71,14 @@ func namedCount(raw string) (int, bool) {
 	return n, true
 }
 
+// storedRaw is a stored line in the spelling namedCount reads: trimmed and
+// stripped of its RRULE: prefix as the library strips them (whitespace around
+// the line otherwise hid the term), then upper-cased. build and Count both
+// read through it, so they cannot disagree about whether a line is counted.
+func storedRaw(line string) string {
+	return strings.ToUpper(strings.TrimPrefix(strings.TrimSpace(line), "RRULE:"))
+}
+
 // The two terminator introducers, matched case-insensitively on the ORIGINAL
 // spelling so every index is a valid byte offset into it.
 var (
@@ -568,10 +576,8 @@ func build(line string, anchor time.Time, loc *time.Location) (*rrule.RRule, err
 		return nil, fmt.Errorf("stored recurrence rule %q: the interval must be at most %d", line, maxInterval)
 	}
 	// A COUNT=0 term is invisible on the parsed option (the zero means "no
-	// COUNT"); Compile reads it off the text, and so must the stored-line check
-	// — trimmed as the library trims it, or whitespace around the line hid the
-	// term.
-	if n, ok := namedCount(strings.ToUpper(strings.TrimPrefix(strings.TrimSpace(line), "RRULE:"))); ok && n < 1 {
+	// COUNT"); Compile reads it off the text, and so must the stored-line check.
+	if n, ok := namedCount(storedRaw(line)); ok && n < 1 {
 		return nil, fmt.Errorf("stored recurrence rule %q: a count must be a positive whole number, got %d", line, n)
 	}
 	// The anchor IS the series start: a DTSTART the line carries is overwritten,
@@ -829,17 +835,17 @@ func Lands(line string, anchor, t time.Time, loc *time.Location) (bool, error) {
 // Pacific/Apia skipped, +24h.
 const reach = 48 * time.Hour
 
-// Counted reports whether a COUNT bounds the rule. It is the one terminator
-// measured FROM the anchor — an UNTIL is a date and stays where it is — so
-// binding a counted rule again starts the count over, and a caller that
-// suggests a rebind owes that sentence.
-func Counted(line string) bool {
-	_, ok := namedCount(line)
-	return ok
+// Count is the COUNT a stored rule carries, and whether it carries one, read
+// off the line as build's refusal reads it (storedRaw). It is the one
+// terminator measured FROM the anchor — an UNTIL is a date and stays where it
+// is — so binding a counted rule again starts the count over, and a caller
+// that suggests a rebind owes that sentence.
+func Count(line string) (int, bool) {
+	return namedCount(storedRaw(line))
 }
 
 // Until is the UNTIL a stored rule carries, and whether it carries one: the
-// other terminator a caller words a message from (Counted is the first). A line
+// other terminator a caller words a message from (Count is the first). A line
 // that does not parse carries none.
 func Until(line string) (time.Time, bool) {
 	opt, err := parseStored(line)

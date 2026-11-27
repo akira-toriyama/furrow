@@ -460,7 +460,7 @@ func TestBindableRejectsARuleWithNothingLeft(t *testing.T) {
 	}
 }
 
-// Until hands app the terminator a refusal is worded from, as Counted does for
+// Until hands app the terminator a refusal is worded from, as Count does for
 // a COUNT: an UNTIL before the due is a different cause than a series of one,
 // and only the line can tell the two apart (t-ny6w).
 func TestUntilReadsTheStoredTerminator(t *testing.T) {
@@ -1193,23 +1193,30 @@ func TestBothPassesOfARepeatedHourLand(t *testing.T) {
 }
 
 // A COUNT is measured from the anchor, an UNTIL is a date: only the first
-// starts over when a rule is bound again, so only it earns the sentence.
-func TestCountedNamesOnlyTheTerminatorARebindRestarts(t *testing.T) {
-	for line, want := range map[string]bool{
-		"FREQ=DAILY;COUNT=3":                true,
-		"FREQ=WEEKLY;COUNT=10;BYDAY=MO":     true,
-		"FREQ=DAILY;UNTIL=20261202T145959Z": false,
-		"FREQ=DAILY":                        false,
+// starts over when a rule is bound again, so only it earns the sentence. The n
+// is read as build reads it, so a padded, RRULE:-prefixed line the library
+// expands with its COUNT is not called uncounted.
+func TestCountNamesOnlyTheTerminatorARebindRestarts(t *testing.T) {
+	for _, c := range []struct {
+		line string
+		n    int
+		ok   bool
+	}{
+		{"FREQ=DAILY;COUNT=3", 3, true},
+		{"FREQ=WEEKLY;COUNT=10;BYDAY=MO", 10, true},
+		{" RRULE:COUNT=4;FREQ=DAILY ", 4, true},
+		{"FREQ=DAILY;UNTIL=20261202T145959Z", 0, false},
+		{"FREQ=DAILY", 0, false},
 	} {
-		if got := Counted(line); got != want {
-			t.Errorf("Counted(%q) = %v, want %v", line, got, want)
+		if n, ok := Count(c.line); n != c.n || ok != c.ok {
+			t.Errorf("Count(%q) = (%d, %v), want (%d, %v)", c.line, n, ok, c.n, c.ok)
 		}
 	}
 	line, err := Compile("daily for 3 times", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !Counted(line) {
-		t.Errorf("Counted(%q) = false for a compiled `for 3 times`", line)
+	if n, ok := Count(line); n != 3 || !ok {
+		t.Errorf("Count(%q) = (%d, %v) for a compiled `for 3 times`, want (3, true)", line, n, ok)
 	}
 }
