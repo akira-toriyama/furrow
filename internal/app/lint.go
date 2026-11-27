@@ -333,10 +333,12 @@ func (a *App) lintTaskShard(t *core.Task) []core.Problem {
 				Msg: "is in the done lane but still carries the repeat rule its close should have handed to the next occurrence, so reopening and closing it would mint a second one — drop the rule with `furrow set " + t.ID + " --clear-repeat` if the next occurrence already exists, or reopen this task (`furrow move " + t.ID + " " + a.Cfg.DefaultLane + "`) if it is the live occurrence"})
 		}
 	}
-	// A rule furrow cannot expand ends the series in SILENCE: the close would
-	// refuse (no anchor) or hand out nothing, with the shard still claiming
-	// the task recurs. Only a hand-edit or a newer furrow's spelling can
-	// produce one, which is exactly why nothing else would catch it.
+	// A rule furrow cannot expand stalls the series: every close path refuses
+	// the task (no due, no anchor, or a rule the expander turns away) while the
+	// shard still claims it recurs. Only a shard that bypassed the bind door can
+	// carry one — a hand-edit, a merge, another furrow version (a newer one's
+	// spelling, v6's uncapped INTERVAL) — which is exactly why nothing but this
+	// check names it before a close does.
 	if t.Repeat != "" {
 		if t.Due == nil {
 			ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
@@ -346,7 +348,7 @@ func (a *App) lintTaskShard(t *core.Task) []core.Problem {
 				Msg: "carries a repeat rule with no repeat_anchor, so the series has no start to expand from — rebind with `furrow set " + t.ID + " --repeat <rule> --due <date>` or drop it with `--clear-repeat`"})
 		} else if err := recur.Valid(t.Repeat, *t.RepeatAnchor, a.loc()); err != nil {
 			ps = append(ps, core.Problem{Severity: core.SevError, Code: "repeat-invalid", ID: t.ID,
-				Msg: err.Error() + " — closing this task would advance nothing; rebind with `furrow set " + t.ID + " --repeat <rule>` or drop it with `--clear-repeat`"})
+				Msg: err.Error() + " — a close refuses this task until the rule is rebound or dropped; rebind with `furrow set " + t.ID + " --repeat <rule>` or drop it with `--clear-repeat`"})
 		}
 	} else if t.RepeatAnchor != nil {
 		// The published shard schema says the anchor is "Present iff repeat is",

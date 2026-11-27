@@ -497,9 +497,6 @@ func CountBetween(line string, anchor, lo, hi time.Time, loc *time.Location) (in
 // shard says the task recurs and the first close ends the series without anyone
 // having asked for that.
 func Bindable(line string, anchor time.Time, loc *time.Location) error {
-	if err := Valid(line, anchor, loc); err != nil {
-		return err
-	}
 	_, ok, err := Next(line, anchor, anchor, loc)
 	if err != nil {
 		return err
@@ -510,40 +507,15 @@ func Bindable(line string, anchor time.Time, loc *time.Location) error {
 	return nil
 }
 
-// Valid reports whether a stored rule still parses. `furrow lint` uses it: a
-// rule that stopped parsing (a hand-edited shard, or one written by a furrow
-// that knows a spelling this one does not) would end the series silently.
+// Valid reports whether a stored rule can be expanded at all: everything build
+// refuses, which is a line that stopped parsing (a hand-edited shard, or one
+// written by a furrow that knows a spelling this one does not) or that the
+// library cannot use, and the four shapes the bind door turns away. `furrow
+// lint` uses it to name, before anyone closes it, the task every close path
+// refuses.
 func Valid(line string, anchor time.Time, loc *time.Location) error {
-	loc = calendar(loc)
-	// The refusals read the PARSED LINE, never the built rule: build() assigns
-	// the anchor over Dtstart, so a DTSTART check on the built rule would refuse
-	// every rule on the board.
-	opt, err := parseStored(line)
-	if err != nil {
-		return err
-	}
-	// The compile door refuses a sub-daily rule and a DTSTART, but a shard furrow
-	// did not write can carry either — the first makes every close of that task
-	// expand a pathological number of occurrences, the second stores a start
-	// furrow ignores. What Compile refuses, Valid reports.
-	if err := refuseSubDaily(opt); err != nil {
-		return fmt.Errorf("stored recurrence rule %q: %v", line, err)
-	}
-	if err := refuseDtstart(opt); err != nil {
-		return fmt.Errorf("stored recurrence rule %q: %v", line, err)
-	}
-	if opt.Interval > maxInterval {
-		return fmt.Errorf("stored recurrence rule %q: the interval must be at most %d", line, maxInterval)
-	}
-	// A COUNT=0 term is invisible on the parsed option (the zero means "no
-	// COUNT"); Compile reads it off the text, and so must the stored-line check.
-	if n, ok := namedCount(strings.ToUpper(strings.TrimPrefix(line, "RRULE:"))); ok && n < 1 {
-		return fmt.Errorf("stored recurrence rule %q: a count must be a positive whole number, got %d", line, n)
-	}
-	if _, err := buildFrom(opt, anchor, line, loc); err != nil {
-		return err
-	}
-	return nil
+	_, err := build(line, anchor, loc)
+	return err
 }
 
 // maxInterval is the ceiling on a rule's INTERVAL, in the short spelling and a
@@ -562,22 +534,43 @@ func parseStored(line string) (*rrule.ROption, error) {
 	return opt, nil
 }
 
+// build is the one door every expansion of a STORED rule passes, so it refuses
+// the four shapes the bind door (Compile, then Bindable) turns away: a
+// sub-daily rule, a DTSTART, an INTERVAL past maxInterval and a COUNT below
+// one.
+// A shard can carry any of them without passing that door — a hand-edit, a
+// merge, another furrow version (v6 capped no INTERVAL) — and a close that
+// expanded one anyway handed the rule on to a new occurrence: a sub-daily one
+// after one hour, a SECONDLY one after counting millions of skipped
+// occurrences (t-4qy8).
 func build(line string, anchor time.Time, loc *time.Location) (*rrule.RRule, error) {
+	loc = calendar(loc)
 	opt, err := parseStored(line)
 	if err != nil {
 		return nil, err
 	}
-	return buildFrom(opt, anchor, line, loc)
-}
-
-// buildFrom is build's half that does not parse, so Valid can run its refusals
-// on the parsed line and still report the same "not usable" error; line is
-// carried for that message alone.
-func buildFrom(opt *rrule.ROption, anchor time.Time, line string, loc *time.Location) (*rrule.RRule, error) {
+	// The refusals read the PARSED LINE, before the anchor is assigned over
+	// Dtstart below — a DTSTART check after it would refuse every rule.
+	if err := refuseSubDaily(opt); err != nil {
+		return nil, fmt.Errorf("stored recurrence rule %q: %v", line, err)
+	}
+	if err := refuseDtstart(opt); err != nil {
+		return nil, fmt.Errorf("stored recurrence rule %q: %v", line, err)
+	}
+	if opt.Interval > maxInterval {
+		return nil, fmt.Errorf("stored recurrence rule %q: the interval must be at most %d", line, maxInterval)
+	}
+	// A COUNT=0 term is invisible on the parsed option (the zero means "no
+	// COUNT"); Compile reads it off the text, and so must the stored-line check
+	// — trimmed as the library trims it, or whitespace around the line hid the
+	// term.
+	if n, ok := namedCount(strings.ToUpper(strings.TrimPrefix(strings.TrimSpace(line), "RRULE:"))); ok && n < 1 {
+		return nil, fmt.Errorf("stored recurrence rule %q: a count must be a positive whole number, got %d", line, n)
+	}
 	// The anchor IS the series start: a DTSTART the line carries is overwritten,
-	// never honoured, which is why both doors (Compile, Valid) refuse one. It
-	// enters the library in the gap-free frame, so every occurrence comes back in
-	// that frame too.
+	// never honoured, which is why Compile and the refusal above turn one away.
+	// It enters the library in the gap-free frame, so every occurrence comes back
+	// in that frame too.
 	opt.Dtstart = naked(anchor, loc)
 	if !opt.Until.IsZero() {
 		// UNTIL is stored as a true instant and the library compares it against
