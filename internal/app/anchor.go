@@ -217,10 +217,12 @@ func revertAnchorMoves(idx *core.Index, plan *AnchorPlan) {
 // take different things), so that miss says where the day goes.
 //
 // An undated box is NOT refused here: its remedy is a write to another object
-// (the box), so every caller refuses it (undatedBoxErr) only after each
-// refusal this write could cure or that rules the request out — the task's
-// own not-found, a missing due, a repeat rule. Refused first, it sent the
-// operator to date the box only for the retry to refuse on the task.
+// (the box), so the callers refuse it (undatedBoxErr) after the refusals of
+// the task's own — a set after every one of them and both session guards,
+// right before the write (Set's post hook, SetMany after its loop); an add
+// after the spec's missing due and repeat rule (validateAddSpec). Refused
+// first, it sent the operator to date the box only for the retry to refuse on
+// the task.
 func (a *App) resolveAnchorRef(ref string, epics []core.Epic) (id string, dated bool, err error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -242,7 +244,7 @@ func (a *App) resolveAnchorRef(ref string, epics []core.Epic) (id string, dated 
 
 // undatedBoxErr is `--anchor` naming a box that has no day yet: a task cannot
 // follow a day the box has not declared, and declaring it is one command.
-// Judged last (see resolveAnchorRef).
+// Judged after the task's own refusals (see resolveAnchorRef).
 func undatedBoxErr(id string) *core.Error {
 	return core.Validationf("", "epic %s has no anchor yet — give the box its day first: `furrow epic set %s --anchor <%s>`", id, id, core.AnchorSpelling)
 }
