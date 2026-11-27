@@ -203,14 +203,7 @@ func emitSelectPreview(a *app.App, action string, tasks []core.Task, tail *previ
 	if tasks == nil {
 		tasks = []core.Task{} // array shape, never null
 	}
-	var refused []string
-	if tail != nil && tail.refused != nil {
-		for i := range tasks {
-			if tail.refused(&tasks[i]) {
-				refused = append(refused, tasks[i].ID)
-			}
-		}
-	}
+	refused := refusedRows(tail, tasks)
 	if jsonMode() {
 		obj := map[string]any{"dry_run": true, "tasks": tasks}
 		if len(refused) > 0 {
@@ -254,6 +247,20 @@ func emitSelectPreview(a *app.App, action string, tasks []core.Task, tail *previ
 	case len(tasks) > 0:
 		fmt.Fprintln(out, "re-run with --yes to apply")
 	}
+}
+
+// refusedRows is the ids of the rows tail refuses, in selection order; nil
+// when it refuses none (or there is no tail).
+func refusedRows(tail *previewTail, tasks []core.Task) []string {
+	var refused []string
+	if tail != nil && tail.refused != nil {
+		for i := range tasks {
+			if tail.refused(&tasks[i]) {
+				refused = append(refused, tasks[i].ID)
+			}
+		}
+	}
+	return refused
 }
 
 // emitEmptySelection reports an applied selection that matched nothing: exit 0

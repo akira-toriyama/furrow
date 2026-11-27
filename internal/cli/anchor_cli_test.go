@@ -2,8 +2,11 @@ package cli
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/akira-toriyama/furrow/v10/internal/core"
 )
 
 // anchorBoard seeds the reschedule drill in miniature: a box with a day, a
@@ -334,5 +337,168 @@ func TestAnchorBatchAndRm(t *testing.T) {
 	mustRun(t, "epic", "rm", other, "--force", "--yes")
 	if show := mustRun(t, "show", mover, "--no-body"); strings.Contains(show, "anchor:") || !strings.Contains(show, "due:      2026-11-30") {
 		t.Errorf("--force must unpoint the follower and keep its due:\n%s", show)
+	}
+}
+
+// detailIDs is a refusal's details.<key> as the ids it names.
+func detailIDs(fe *core.Error, key string) []string {
+	d, _ := fe.Details.(map[string]any)
+	ids, _ := d[key].([]string)
+	return ids
+}
+
+// taskAnchor is the box a task's due follows, as the shard holds it.
+func taskAnchor(t *testing.T, id string) string {
+	t.Helper()
+	var tasks []struct {
+		Anchor string `json:"anchor"`
+	}
+	if out := mustRun(t, "--json", "show", id); json.Unmarshal([]byte(out), &tasks) != nil || len(tasks) != 1 {
+		t.Fatalf("show --json %s:\n%s", id, out)
+	}
+	return tasks[0].Anchor
+}
+
+// An undated box is the one --anchor refusal whose remedy is a write to
+// another object, so a set reports it after every refusal of the task's own:
+// its not-found, its missing due, its repeat rule. Reported first, it sent the
+// operator to date the box, and the retry then refused on the task (t-91gm).
+func TestSetAnchorUndatedBoxComesLast(t *testing.T) {
+	freezeClock(t)
+	initStore(t)
+	box := addEpicWithAnchor(t, "no day", "")
+	repeating := addTask(t, "weekly", "-e", box, "--due", "2026-10-05", "--repeat", "weekly")
+	plain := addTask(t, "plain", "-e", box, "--due", "2026-10-06")
+	plain2 := addTask(t, "plain two", "-e", box, "--due", "2026-10-07")
+	undated := addTask(t, "undated", "-e", box)
+
+	for _, ids := range [][]string{{repeating}, {repeating, plain}} {
+		fe, _ := runErr(t, append(append([]string{"set"}, ids...), "--anchor", box)...)
+		if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "--clear-repeat") {
+			t.Fatalf("set %v --anchor <undated box> must refuse the repeat first: %v", ids, fe)
+		}
+		if got := detailIDs(fe, "repeating"); !slices.Equal(got, []string{repeating}) {
+			t.Errorf("set %v: details.repeating = %v, want [%s]", ids, fe.Details, repeating)
+		}
+		for _, id := range ids {
+			if a := taskAnchor(t, id); a != "" {
+				t.Errorf("set %v refused but %s now follows %q", ids, id, a)
+			}
+		}
+	}
+	fe, _ := runErr(t, "set", undated, "--anchor", box)
+	if fe == nil || fe.Code != 2 || !slices.Equal(detailIDs(fe, "undated"), []string{undated}) {
+		t.Errorf("an undated task must be refused for its due first: %v", fe)
+	}
+	fe, _ = runErr(t, "set", "t-zzzzz", "--anchor", box)
+	if fe == nil || fe.Code != 1 || fe.Kind != core.KindNotFound {
+		t.Errorf("a missing task must be not-found before the box: %v", fe)
+	}
+
+	// The control: once the task side holds (or this write cures it), the
+	// box's missing day is what is left, on both paths.
+	for _, args := range [][]string{
+		{plain},
+		{plain, plain2},
+		{repeating, "--clear-repeat"},
+		{undated, "--due", "2026-11-20"},
+	} {
+		fe, _ := runErr(t, append(append([]string{"set"}, args...), "--anchor", box)...)
+		if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "epic "+box+" has no anchor yet") {
+			t.Errorf("set %v --anchor <undated box>: %v", args, fe)
+		}
+	}
+}
+
+// add and a --batch line share the order: the spec's own due and repeat
+// refusals first, the box's missing day last.
+func TestAddAnchorUndatedBoxComesLast(t *testing.T) {
+	initStore(t)
+	box := addEpicWithAnchor(t, "no day", "")
+	if fe, _ := runErr(t, "add", "x", "-e", box, "--anchor", box); fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "--anchor needs a --due") {
+		t.Errorf("add --anchor without --due: %v", fe)
+	}
+	line := `{"title": "batch", "due": "2026-11-10", "repeat": "weekly", "anchor": "` + box + `"}` + "\n"
+	if fe, _ := runErrIn(t, line, "add", "--batch", "-", "-e", box); fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "cannot ride together") {
+		t.Errorf("a batch line with anchor+repeat+due: %v", fe)
+	}
+	if fe, _ := runErr(t, "add", "x", "-e", box, "--due", "2026-11-10", "--anchor", box); fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "epic "+box+" has no anchor yet") {
+		t.Errorf("add --due --anchor <undated box>: %v", fe)
+	}
+}
+
+// A -q preview shows the rows --yes would refuse (exit 0) before it says the
+// box has no day; with no refused row, and on an empty selection, the box is
+// the refusal (exit 2).
+func TestSetSelectAnchorUndatedBoxPreviewsRefusedRows(t *testing.T) {
+	freezeClock(t)
+	initStore(t)
+	box := addEpicWithAnchor(t, "no day", "")
+	repeating := addTask(t, "weekly", "-e", box, "--due", "2026-10-05", "--repeat", "weekly")
+	addTask(t, "plain", "-e", box, "--due", "2026-10-06")
+
+	out, code := run(t, "set", "-q", "has:repeat", "-r", "", "--anchor", box)
+	if code != 0 || !strings.Contains(out, "would set 0 of 1") || !strings.Contains(out, repeating+"  [inbox] weekly  due 2026-10-05 23:59  follows its own rule — refused") {
+		t.Errorf("preview exit %d must mark the repeating row:\n%s", code, out)
+	}
+	fe, _ := runErr(t, "set", "-q", "has:repeat", "-r", "", "--anchor", box, "--yes")
+	if fe == nil || fe.Code != 2 || !slices.Equal(detailIDs(fe, "repeating"), []string{repeating}) {
+		t.Errorf("--yes must refuse the row the preview marked: %v", fe)
+	}
+	for _, q := range []string{"no:repeat", "has:anchor"} {
+		if fe, _ := runErr(t, "set", "-q", q, "-r", "", "--anchor", box); fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "epic "+box+" has no anchor yet") {
+			t.Errorf("set -q %s --anchor <undated box>: %v", q, fe)
+		}
+	}
+}
+
+// One id or several, the box's missing day comes after every refusal of a
+// task's own — including the per-row ones a bulk set judges inside its loop
+// (a --due-shift past year 9999, an unknown --add-repo). Judged before that
+// loop, a bulk set reported the box while one id reported the row, and a
+// selection previewed the row as refused while --yes refused on the box.
+func TestSetAnchorUndatedBoxComesAfterEveryRow(t *testing.T) {
+	freezeClock(t)
+	initStore(t)
+	box := addEpicWithAnchor(t, "no day", "")
+	far := addTask(t, "far", "-e", box, "--due", "9999-12-25", "-l", "edge")
+	near := addTask(t, "near", "-e", box, "--due", "2026-12-10", "-l", "edge")
+
+	for _, ids := range [][]string{{far}, {far, near}} {
+		fe, _ := runErr(t, append(append([]string{"set"}, ids...), "--due-shift", "+30d", "--anchor", box)...)
+		if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "year 10000") {
+			t.Errorf("set %v --due-shift +30d --anchor <undated box>: want the shift's own refusal, got %v", ids, fe)
+		}
+		fe, _ = runErr(t, append(append([]string{"set"}, ids...), "--add-repo", "nosuchrepo", "--anchor", box)...)
+		if fe == nil || fe.Kind != core.KindRepoUnknown {
+			t.Errorf("set %v --add-repo nosuchrepo --anchor <undated box>: want the repo's own refusal, got %v", ids, fe)
+		}
+	}
+	// The selection form is the same write: a row's own refusal the preview
+	// cannot mark (an unknown repo) still comes before the box under --yes.
+	if fe, _ := runErr(t, "set", "-q", "label:edge", "--add-repo", "nosuchrepo", "--anchor", box, "--yes"); fe == nil || fe.Kind != core.KindRepoUnknown {
+		t.Errorf("set -q … --add-repo nosuchrepo --anchor <undated box> --yes: want the repo's own refusal, got %v", fe)
+	}
+	// The preview marks the row, and --yes refuses on that row, not the box.
+	if out, code := run(t, "set", "-q", "label:edge", "--due-shift", "+30d", "--anchor", box); code != 0 || !strings.Contains(out, far) {
+		t.Errorf("the preview should show the refused row at exit 0, got exit %d:\n%s", code, out)
+	}
+	fe, _ := runErr(t, "set", "-q", "label:edge", "--due-shift", "+30d", "--anchor", box, "--yes")
+	if fe == nil || !strings.Contains(fe.Msg, "year 10000") {
+		t.Errorf("--yes should refuse on the row the preview marked, got %v", fe)
+	}
+	// With nothing refused on the task side, the box is what is left, for a
+	// bulk set too, and for a selection that matches nothing.
+	fe, _ = runErr(t, "set", far, near, "--due", "2026-12-20", "--anchor", box)
+	if fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "has no anchor yet") {
+		t.Errorf("a bulk set with every row clean should refuse the box, got %v", fe)
+	}
+	if fe, _ = runErr(t, "set", "-q", "label:nosuchlabel", "--due", "2026-12-20", "--anchor", box, "--yes"); fe == nil || fe.Code != 2 || !strings.Contains(fe.Msg, "has no anchor yet") {
+		t.Errorf("an empty --yes selection should still refuse the undated box, got %v", fe)
+	}
+	for _, id := range []string{far, near} {
+		if a := taskAnchor(t, id); a != "" {
+			t.Errorf("%s follows %q after refused writes", id, a)
+		}
 	}
 }

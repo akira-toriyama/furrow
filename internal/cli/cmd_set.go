@@ -87,7 +87,8 @@ func newSetCmd() *cobra.Command {
 			"rows the apply would refuse under `refused`, and with --due-shift each\n" +
 			"landing under `moves` {id, from, to}; a flag the apply would refuse on its\n" +
 			"own, like a box or rule that does not resolve, is exit 2 before any\n" +
-			"preview), applies\n" +
+			"preview — except an --anchor box with no day yet, which the apply judges\n" +
+			"after every row, so a row the preview marks refused shows first), applies\n" +
 			"as the same single all-or-nothing write, matches-nothing is exit 0 with a\n" +
 			"stderr note, and it refuses to combine with ids, --expect-updated, or the\n" +
 			"position flags (a position places ONE task) — the full contract is\n" +
@@ -316,6 +317,17 @@ func setSelect(cmd *cobra.Command, a *app.App, sel *writeSelector, o app.SetOpts
 	tasks, err := sel.resolve(cmd, a)
 	if err != nil {
 		return nil, false, err
+	}
+	// The anchor box's missing day is judged after the rows. --yes over a
+	// non-empty selection leaves it to the apply, which refuses the box after
+	// every row's own refusal (Set's post hook, SetMany after its loop) exactly
+	// as the id form does. The preview asks it only when no row is marked
+	// refused, so a marked row shows at exit 0 instead of the box; and a
+	// selection of nothing, which reaches no apply, still exits 2 on it.
+	if len(refusedRows(tail, tasks)) == 0 && (!sel.yes || len(tasks) == 0) {
+		if err := a.VetAnchorDay(o); err != nil {
+			return nil, false, err
+		}
 	}
 	if !sel.yes {
 		emitSelectPreview(a, "set", tasks, tail)

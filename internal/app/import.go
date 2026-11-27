@@ -325,14 +325,16 @@ func (a *App) validateAddSpec(b *addBatch, i int, s *AddSpec, prefixed bool) err
 	}
 	// The anchor pointer resolves against the epic set read once for the
 	// batch, and its two invariants (a due to follow with, no repeat rule)
-	// are judged here so a bad spec fails before the first body hits disk.
+	// are judged here so a bad spec fails before the first body hits disk —
+	// both before the box's missing day, which this write cannot cure
+	// (resolveAnchorRef).
 	if s.Anchor != "" {
 		if b.epics == nil {
 			if b.epics, err = a.Store.LoadEpics(); err != nil {
 				return err
 			}
 		}
-		resolved, err := a.resolveAnchorRef(s.Anchor, b.epics)
+		resolved, dated, err := a.resolveAnchorRef(s.Anchor, b.epics)
 		if err != nil {
 			return specf(err)
 		}
@@ -341,6 +343,9 @@ func (a *App) validateAddSpec(b *addBatch, i int, s *AddSpec, prefixed bool) err
 		}
 		if s.Repeat != "" {
 			return specf(core.Validationf("", "a repeating task follows its own repeat_anchor, not a box's day; --anchor and --repeat cannot ride together"))
+		}
+		if !dated {
+			return specf(undatedBoxErr(resolved))
 		}
 		s.Anchor = resolved
 	}

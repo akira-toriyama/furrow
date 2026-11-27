@@ -76,8 +76,9 @@ type AddOpts struct {
 	// this task's own Due — which is therefore required alongside it.
 	Repeat string
 	// Anchor is the raw `--anchor` reference: the box whose day this task's due
-	// follows, resolved by resolveAnchorRef (the box exists and carries a day).
-	// It needs a Due and refuses Repeat, exactly as `set --anchor` does.
+	// follows, resolved by resolveAnchorRef (the box exists and carries a day,
+	// the day judged after the spec's missing due and repeat rule). It needs a
+	// Due and refuses Repeat, exactly as `set --anchor` does.
 	Anchor string
 	// Checklist seeds checklist items at creation: `--check` texts arrive
 	// unticked (UncheckedItems), and only a batch line may seed a ticked one
