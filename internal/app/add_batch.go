@@ -23,6 +23,9 @@ type BatchSpec struct {
 // is left verbatim for lint's dangling-link check to judge as usual.
 var keyLink = regexp.MustCompile(`\[\[([^\[\]]+)\]\]`)
 
+// batchSource is the input AddBatch's errors point into (specErr).
+const batchSource = "--batch"
+
 // AddBatch creates the specs in ONE write, with intra-batch references
 // resolved: a dep may name a batch key instead of an existing id, and a
 // [[key]] in a title, body, or checklist item becomes [[id]]. Ids are minted
@@ -48,13 +51,13 @@ func (a *App) AddBatch(specs []BatchSpec) ([]core.Task, []string, error) {
 			continue
 		}
 		if strings.ContainsAny(k, "[]") || strings.TrimSpace(k) != k {
-			return nil, nil, core.Validationf("", "spec %d (%q): key %q may not contain brackets or surrounding whitespace", i, s.Title, k)
+			return nil, nil, specErr(batchSource, i, &s.AddSpec, core.Validationf("", "key %q may not contain brackets or surrounding whitespace", k))
 		}
 		if j, dup := byKey[k]; dup {
-			return nil, nil, core.Validationf("", "spec %d (%q): key %q is already used by spec %d (%q)", i, s.Title, k, j, specs[j].Title)
+			return nil, nil, specErr(batchSource, i, &s.AddSpec, core.Validationf("", "key %q is already used by %s (%q)", k, specCoord(j, specs[j].Line), specs[j].Title))
 		}
 		if idx.Has(k) {
-			return nil, nil, core.Validationf("", "spec %d (%q): key %q is an existing task id — pick a key that is not an id", i, s.Title, k)
+			return nil, nil, specErr(batchSource, i, &s.AddSpec, core.Validationf("", "key %q is an existing task id — pick a key that is not an id", k))
 		}
 		byKey[k] = i
 	}
@@ -92,10 +95,10 @@ func (a *App) AddBatch(specs []BatchSpec) ([]core.Task, []string, error) {
 			default:
 				id, ok := idOfKey(d)
 				if !ok {
-					return nil, nil, core.Validationf("", "spec %d (%q): dependency %q is neither an existing task id nor a key in this batch", i, s.Title, d)
+					return nil, nil, specErr(batchSource, i, &s.AddSpec, core.Validationf("", "dependency %q is neither an existing task id nor a key in this batch", d))
 				}
 				if id == ids[i] {
-					return nil, nil, core.Validationf("", "spec %d (%q): a task cannot depend on itself (key %q)", i, s.Title, d)
+					return nil, nil, specErr(batchSource, i, &s.AddSpec, core.Validationf("", "a task cannot depend on itself (key %q)", d))
 				}
 				spec.Deps = append(spec.Deps, id)
 				edges[i] = append(edges[i], byKey[d])
@@ -128,7 +131,7 @@ func (a *App) AddBatch(specs []BatchSpec) ([]core.Task, []string, error) {
 		}
 		return nil, nil, core.Validationf("", "dependency cycle inside the batch: %s", strings.Join(names, " -> "))
 	}
-	created, err := a.addMany(out, true)
+	created, err := a.addMany(out, batchSource)
 	if err != nil {
 		return nil, nil, err
 	}

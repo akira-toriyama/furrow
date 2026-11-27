@@ -130,7 +130,7 @@ func TestDueRejectedBeforeWrite(t *testing.T) {
 	if _, err := a.AddMany([]AddSpec{
 		{Title: "ok", AddOpts: AddOpts{Due: "2026-08-04"}},
 		{Title: "bad", AddOpts: AddOpts{Due: "someday"}},
-	}); err == nil {
+	}, "--stdin"); err == nil {
 		t.Error("a bulk add with one bad due should have failed")
 	}
 	all, _ := a.List(QueryOpts{})

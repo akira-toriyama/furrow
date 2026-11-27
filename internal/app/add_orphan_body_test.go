@@ -11,7 +11,8 @@ import (
 
 // A batch add whose later spec is refused writes NOTHING — not the earlier
 // specs' bodies, which a per-spec saveBody used to leave behind as orphans the
-// next sync published (t-t2fv). The refusal names the spec.
+// next sync published (t-t2fv). The refusal names the spec: a source with no
+// lines (migrate) by its 1-based position.
 func TestAddManyRefusedSpecWritesNoBody(t *testing.T) {
 	cfg := config.Default()
 	st := newStore(cfg)
@@ -19,11 +20,11 @@ func TestAddManyRefusedSpecWritesNoBody(t *testing.T) {
 	_, err := a.AddMany([]AddSpec{
 		{Title: "one"},
 		{Title: "two", AddOpts: AddOpts{Repeat: "daily"}}, // a repeat needs a due
-	})
+	}, "migrate")
 	if err == nil {
 		t.Fatal("a repeat with no due must be refused")
 	}
-	if !strings.Contains(err.Error(), "spec 1") {
+	if !strings.Contains(err.Error(), `migrate task 2 ("two"): `) {
 		t.Fatalf("the refusal must name the spec: %v", err)
 	}
 	ids, _ := st.ListBodyIDs()

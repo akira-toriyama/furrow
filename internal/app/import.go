@@ -88,40 +88,31 @@ type AddSpec struct {
 	// batch can reference itself before the write); "" lets addMany mint one.
 	// Internal: no front-end may choose an id.
 	ID string
+	// Line is the spec's 1-based physical line in its source input, blank
+	// lines counted (the coordinate that source's own parse errors print), or
+	// 0 when the source has no lines; specAt then falls back to the position.
+	Line int
 }
 
 // AddMany creates several tasks and saves the index ONCE, so a migrate import is
 // a single atomic write rather than N. Bodies are written first (an interrupted
 // import leaves at worst orphan body files, which `furrow lint` reports). All
 // lanes are validated up front so a bad spec fails before anything is written.
-func (a *App) AddMany(specs []AddSpec) ([]core.Task, error) {
-	return a.addMany(specs, true)
+// source names the input a failing spec's error points into ("--stdin",
+// "migrate"); see specAt.
+func (a *App) AddMany(specs []AddSpec, source string) ([]core.Task, error) {
+	return a.addMany(specs, source)
 }
 
 // addMany is the ONE implementation of the task-creation rule — single Add is a
 // one-element call of this (t-dk6w), so the bulk-vs-single divergence class
 // add_parity_test.go records (t-adx9: --value/--effort dropped; t-ek9y: --type
 // dropped; --check dropped; an unfolded title) is structurally impossible: a
-// rule added here exists on both paths by construction. prefixed controls the
-// "spec %d (%q): " error prefix — the bulk callers keep it (a failing spec must
-// be nameable in a batch), single Add drops it (its errors keep the classic
-// single-task wording).
-// specErr prefixes a batch spec's error with WHICH spec failed (prefixed
-// callers only). A closed-vocabulary gate must reuse the SAME constructor
-// single Add uses and only prefix its message: rebuilding it with Validationf
-// would drop Candidates (the bulk-vs-single divergence class of t-adx9/t-ek9y,
-// in the error shape instead of the write).
-func specErr(prefixed bool, i int, title string, err error) error {
-	if !prefixed {
-		return err
-	}
-	if fe := core.AsError(err); fe != nil {
-		return fe.WithPrefixf("spec %d (%q): ", i, title)
-	}
-	return err
-}
-
-func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
+// rule added here exists on both paths by construction. source names the bulk
+// input in the error prefix ("--batch", "--stdin", "migrate") — a failing spec
+// must be nameable in a batch; single Add passes "" and its errors keep the
+// classic single-task wording.
+func (a *App) addMany(specs []AddSpec, source string) ([]core.Task, error) {
 	if len(specs) == 0 {
 		return nil, nil
 	}
@@ -133,7 +124,7 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 	// Validate every spec (and resolve every ref) before writing anything, so a
 	// bad spec fails before the first body hits disk.
 	for i := range specs {
-		if err := a.validateAddSpec(b, i, &specs[i], prefixed); err != nil {
+		if err := a.validateAddSpec(b, i, &specs[i], source); err != nil {
 			return nil, err
 		}
 	}
@@ -155,7 +146,7 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 	// t-t2fv), while the error said nothing was written.
 	bodies := make(map[string]string, len(specs))
 	for i := range specs {
-		t, body, err := a.composeAddTask(b, i, &specs[i], prefixed)
+		t, body, err := a.composeAddTask(b, i, &specs[i], source)
 		if err != nil {
 			return nil, err
 		}
@@ -191,6 +182,37 @@ func (a *App) addMany(specs []AddSpec, prefixed bool) ([]core.Task, error) {
 		created = append(created, *t)
 	}
 	return created, nil
+}
+
+// specAt names spec i of source in the coordinate the caller can find it by:
+// "<source> line N" when the spec carries its physical line, else
+// "<source> task N" with N its 1-based position.
+func specAt(source string, i, line int) string {
+	return source + " " + specCoord(i, line)
+}
+
+// specCoord is specAt without the source, for a cross-reference inside the
+// same input.
+func specCoord(i, line int) string {
+	if line > 0 {
+		return fmt.Sprintf("line %d", line)
+	}
+	return fmt.Sprintf("task %d", i+1)
+}
+
+// specErr prefixes a bulk spec's error with WHICH spec failed (a non-empty
+// source only). A closed-vocabulary gate must reuse the SAME constructor
+// single Add uses and only prefix its message: rebuilding it with Validationf
+// would drop Candidates (the bulk-vs-single divergence class of t-adx9/t-ek9y,
+// in the error shape instead of the write).
+func specErr(source string, i int, s *AddSpec, err error) error {
+	if source == "" {
+		return err
+	}
+	if fe := core.AsError(err); fe != nil {
+		return fe.WithPrefixf("%s (%q): ", specAt(source, i, s.Line), s.Title)
+	}
+	return err
 }
 
 // addBatch is the state one addMany call shares across its specs: the index
@@ -232,7 +254,7 @@ func (a *App) newAddBatch(idx *core.Index, specs []AddSpec) *addBatch {
 // single Add's error precedence — the bulk-vs-single divergence class
 // add_parity_test.go records (t-adx9: --value/--effort dropped; t-ek9y:
 // --type dropped) is structurally impossible because Add IS a one-spec call.
-func (a *App) validateAddSpec(b *addBatch, i int, s *AddSpec, prefixed bool) error {
+func (a *App) validateAddSpec(b *addBatch, i int, s *AddSpec, source string) error {
 	// Union the board's literal label tag into the spec up front, so the
 	// LabelsRequired check below and the created task both see it.
 	s.Labels = a.withDefaultLabel(s.Labels)
@@ -251,10 +273,10 @@ func (a *App) validateAddSpec(b *addBatch, i int, s *AddSpec, prefixed bool) err
 	// to exit 2 with no did-you-mean list while `add -s ghots` had one — the
 	// bulk-vs-single divergence class of t-adx9/t-ek9y, in the error shape
 	// instead of the write.
-	specf := func(err error) error { return specErr(prefixed, i, s.Title, err) }
+	specf := func(err error) error { return specErr(source, i, s, err) }
 	if s.Title == "" {
-		if prefixed {
-			return core.Validationf("", "spec %d has an empty title", i)
+		if source != "" {
+			return core.Validationf("", "%s has an empty title", specAt(source, i, s.Line))
 		}
 		return core.Validationf("", "title must not be empty")
 	}
@@ -355,8 +377,8 @@ func (a *App) validateAddSpec(b *addBatch, i int, s *AddSpec, prefixed bool) err
 // composeAddTask is addMany's construction pass on a VALIDATED spec: the task
 // as it will be written (id minted here unless pre-minted) and its body (the
 // spec's verbatim, or the seeded "# <title>" heading). Nothing is saved.
-func (a *App) composeAddTask(b *addBatch, i int, s *AddSpec, prefixed bool) (core.Task, string, error) {
-	specf := func(err error) error { return specErr(prefixed, i, s.Title, err) }
+func (a *App) composeAddTask(b *addBatch, i int, s *AddSpec, source string) (core.Task, string, error) {
+	specf := func(err error) error { return specErr(source, i, s, err) }
 	lane := s.Status
 	if lane == "" {
 		lane = a.Cfg.DefaultLane

@@ -27,7 +27,7 @@ func TestBlankValuesAreRejectedEverywhere(t *testing.T) {
 		{"add --dep", func(a *App, _ string) error { _, err := a.Add("x", AddOpts{Deps: []string{""}}); return err }},
 		{"add -r", func(a *App, _ string) error { _, err := a.Add("x", AddOpts{Repos: []string{""}}); return err }},
 		{"add --stdin -l", func(a *App, _ string) error {
-			_, err := a.AddMany([]AddSpec{{Title: "bulk", AddOpts: AddOpts{Labels: []string{""}}}})
+			_, err := a.AddMany([]AddSpec{{Title: "bulk", AddOpts: AddOpts{Labels: []string{""}}}}, "--stdin")
 			return err
 		}},
 		{"label --add", func(a *App, id string) error { _, err := a.Relabel(id, []string{"bug", ""}, nil); return err }},

@@ -96,7 +96,7 @@ func TestGlobal_AddManyUnionsBoardRepo(t *testing.T) {
 	created, err := a.AddMany([]AddSpec{
 		{Title: "x"},
 		{Title: "y", AddOpts: AddOpts{Draft: true}},
-	})
+	}, "--stdin")
 	if err != nil {
 		t.Fatalf("AddMany: %v", err)
 	}
