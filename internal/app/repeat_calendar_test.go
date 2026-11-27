@@ -209,6 +209,18 @@ func TestRepeatWarningsSayTheAnchorIsOffTheLattice(t *testing.T) {
 	if !strings.Contains(ws[0], "2026-09-21 23:59 +09:00") {
 		t.Errorf("note does not name the rule's own first date in the board's calendar: %q", ws[0])
 	}
+	// The rule carries no COUNT, so there is no n for the anchor to add to.
+	for _, clause := range []string{"MORE", "for n times"} {
+		if strings.Contains(ws[0], clause) {
+			t.Errorf("the note for a rule with no COUNT says %q: %q", clause, ws[0])
+		}
+	}
+
+	counted := mustAddRepeating(t, a, "金曜起点 3 回", "2026-09-18", "weekly on mon for 3 times", AddOpts{})
+	ws = a.RepeatWarnings(counted)
+	if len(ws) != 1 || !strings.Contains(ws[0], "count of 3 hands out 3 MORE") {
+		t.Errorf("RepeatWarnings = %q, want the off-lattice note naming the count of 3", ws)
+	}
 
 	on := mustAddRepeating(t, a, "月曜起点", "2026-09-21", "weekly on mon", AddOpts{})
 	if ws := a.RepeatWarnings(on); len(ws) != 0 {
