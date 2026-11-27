@@ -377,7 +377,8 @@ func (a *App) validateSetOpts(id string, o SetOpts) error {
 // exactly what --yes would refuse. The index-bound refusals (an undated row
 // under --due-shift, a repeating row under --anchor, a follower under
 // --repeat) are the preview tails' to mark per row. The anchor box's missing
-// day is neither: SetMany judges it after the rows, so it is VetAnchorDay's.
+// day is neither: the apply judges it after every row (Set's post hook,
+// SetMany after its loop), and a selection's preview asks VetAnchorDay.
 func (a *App) VetSet(o SetOpts) error {
 	if err := a.validateSetOpts("", o); err != nil {
 		return err
@@ -397,10 +398,10 @@ func (a *App) VetSet(o SetOpts) error {
 }
 
 // VetAnchorDay is the refusal VetSet leaves out: `--anchor` naming a box with
-// no day (undatedBoxErr). A selection asks it once the rows are resolved, and
-// only when the preview refuses none of them — the apply judges the box after
-// every row (Set's post hook, SetMany after its loop), so a refused row is
-// what --yes reports first and the preview must show it rather than the box.
+// no day (undatedBoxErr). A selection's preview asks it once the rows are
+// resolved and only when none is marked refused (a marked row shows instead
+// of the box), and so does an empty --yes selection, which reaches no apply;
+// --yes over rows leaves the box to Set and SetMany, after every row.
 func (a *App) VetAnchorDay(o SetOpts) error {
 	id, dated, err := a.resolveAnchor(o)
 	if err != nil {

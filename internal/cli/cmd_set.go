@@ -322,7 +322,7 @@ func setSelect(cmd *cobra.Command, a *app.App, sel *writeSelector, o app.SetOpts
 	// non-empty selection leaves it to the apply, which refuses the box after
 	// every row's own refusal (Set's post hook, SetMany after its loop) exactly
 	// as the id form does. The preview asks it only when no row is marked
-	// refused, so a marked row shows at exit 0 as --yes would report it; and a
+	// refused, so a marked row shows at exit 0 instead of the box; and a
 	// selection of nothing, which reaches no apply, still exits 2 on it.
 	if len(refusedRows(tail, tasks)) == 0 && (!sel.yes || len(tasks) == 0) {
 		if err := a.VetAnchorDay(o); err != nil {
