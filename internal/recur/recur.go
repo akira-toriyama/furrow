@@ -416,20 +416,40 @@ func Next(line string, anchor, after time.Time, loc *time.Location) (time.Time, 
 		return time.Time{}, false, err
 	}
 	// "Strictly after" is decided in the CALENDAR, which is where `after` was
-	// measured — not in the gap-free frame the library expands in. The two frames
-	// agree on every day but one: where the zone skips the wall clock a rule
-	// lands on, zoned() clamps the occurrence onto that day's last instant, which
-	// reads back as an EARLIER wall clock than the lattice point it came from.
-	// Compared in the frame, such an occurrence still looked ahead of a close
-	// that had just settled it, so the close handed back the very day it closed —
-	// and a weekly series stood on one date forever, every close minting a
-	// occurrence due the same evening.
-	for cur := naked(after, loc); ; {
+	// measured — not in the gap-free frame the library expands in. On the day a
+	// zone skips the rule's clock, zoned() reads the lattice point back by the
+	// gap's width, in either direction.
+	//
+	//   - EARLIER (America/New_York's skipped 02:30 reads 01:30 EST,
+	//     America/Nuuk's 23:30 reads 22:30). Compared in the frame, such an
+	//     occurrence still looked ahead of a close that had just settled it, so
+	//     the close handed back the very day it closed — a weekly series stood
+	//     on one date forever (t-js5f).
+	//   - LATER (Europe/London's skipped 01:30 reads 02:30 BST, and Berlin,
+	//     Sydney, Auckland and Lord_Howe likewise; America/Santiago's 00:30
+	//     reads 01:30 where the gap swallows midnight, and Azores and Havana
+	//     likewise). A walk that started AT naked(after) stepped over a point
+	//     moved past `after`, so a close inside the gap's width lost that
+	//     occurrence — a week of a weekly rule, a month of a monthly one — and
+	//     no `skipped` counted it (t-5w8g).
+	//
+	// So the walk starts one reach early, and a point is handed out only when
+	// its reading is later than `after` both as an instant and as a wall clock.
+	// A point a gap moved later passes both tests. The wall clock is for the hour
+	// a zone repeats: its two passes are one occurrence (see naked), and an east
+	// zone reads that occurrence at its SECOND pass, so with the instant alone a
+	// close at the first pass — the due it settles, London's 01:30 BST — saw the
+	// occurrence still ahead and handed it back as 01:30 GMT. The first point
+	// that qualifies is the earliest: a rule fires at most once a day at the
+	// anchor's clock (sub-daily rules are refused), and zoned moves a point by
+	// at most one gap.
+	bare := naked(after, loc)
+	for cur := bare.Add(-reach); ; {
 		next := r.After(cur, false)
 		if next.IsZero() {
 			return time.Time{}, false, nil
 		}
-		if z := zoned(next, loc); z.After(after) {
+		if z := zoned(next, loc); z.After(after) && naked(z, loc).After(bare) {
 			return z, true, nil
 		}
 		cur = next
@@ -782,7 +802,6 @@ func Lands(line string, anchor, t time.Time, loc *time.Location) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	const reach = 48 * time.Hour
 	bare := naked(t.Truncate(time.Second), loc)
 	for cur := bare.Add(-reach); ; {
 		next := r.After(cur, false)
@@ -795,6 +814,13 @@ func Lands(line string, anchor, t time.Time, loc *time.Location) (bool, error) {
 		cur = next
 	}
 }
+
+// reach is how far from an instant a walk over the lattice looks — Next starts
+// that far before `after`, Lands looks that far either side of t — so it reads
+// back every point a zone's gap displaced across that instant. Two days
+// outruns any displacement zoned makes: the widest gap on record is the day
+// Pacific/Apia skipped, +24h.
+const reach = 48 * time.Hour
 
 // Counted reports whether a COUNT bounds the rule. It is the one terminator
 // measured FROM the anchor — an UNTIL is a date and stays where it is — so
