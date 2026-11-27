@@ -73,7 +73,7 @@ func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 			if err != nil {
 				t.Fatalf("single add: %v", err)
 			}
-			bulk, err := newApp().AddMany([]AddSpec{{Title: tc.title, AddOpts: tc.opts}})
+			bulk, err := newApp().AddMany([]AddSpec{{Title: tc.title, AddOpts: tc.opts}}, "--stdin")
 			if err != nil {
 				t.Fatalf("bulk add: %v", err)
 			}
@@ -123,7 +123,7 @@ func TestAddSingleAndBulkStoreTheSameFields(t *testing.T) {
 // `ls` output and a fabricated line into the markdown.
 func TestAddManyFoldsTitleIntoShardAndBody(t *testing.T) {
 	a := newApp()
-	created, err := a.AddMany([]AddSpec{{Title: "esc\x1b[31m and \u2028break"}})
+	created, err := a.AddMany([]AddSpec{{Title: "esc\x1b[31m and \u2028break"}}, "--stdin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestAddManyFoldsTitleIntoShardAndBody(t *testing.T) {
 // A title that is ONLY control characters folds to empty, so it must be
 // rejected as an empty title rather than stored as a blank-looking task.
 func TestAddManyRejectsControlOnlyTitle(t *testing.T) {
-	if _, err := newApp().AddMany([]AddSpec{{Title: "\x1b\t\r"}}); err == nil {
+	if _, err := newApp().AddMany([]AddSpec{{Title: "\x1b\t\r"}}, "--stdin"); err == nil {
 		t.Error("a title that folds to empty must be rejected, like single add")
 	}
 }

@@ -149,7 +149,7 @@ func applyMigrate(cmd *cobra.Command, a *app.App, res migrate.Result, labels []s
 			},
 		})
 	}
-	created, err := a.AddMany(specs)
+	created, err := a.AddMany(specs, "migrate")
 	if err != nil {
 		return err
 	}

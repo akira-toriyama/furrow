@@ -51,7 +51,7 @@ func TestAddBodyDashRejectsStdinFlag(t *testing.T) {
 
 // TestAddStdinErrorsKeepCandidates: a bulk add's closed-vocabulary failure must
 // reach the caller in the SAME shape as the single-item one — exit 2 WITH the
-// vocabulary in `candidates` — plus the spec context saying which line failed.
+// vocabulary in `candidates` — plus the context saying which line failed.
 // It used to rebuild the message by hand, so `add --stdin -s ghots` gave an
 // agent a bare sentence to regex while `add -s ghots` handed it the array.
 func TestAddStdinErrorsKeepCandidates(t *testing.T) {
@@ -77,8 +77,8 @@ func TestAddStdinErrorsKeepCandidates(t *testing.T) {
 			if len(fe.Candidates) == 0 {
 				t.Errorf("%v must carry the vocabulary in candidates, got %+v", tc.args, fe)
 			}
-			if !strings.Contains(fe.Msg, `spec 0 ("bulk title")`) {
-				t.Errorf("%v must name the failing spec, got %q", tc.args, fe.Msg)
+			if !strings.Contains(fe.Msg, `--stdin line 1 ("bulk title")`) {
+				t.Errorf("%v must name the failing line, got %q", tc.args, fe.Msg)
 			}
 		})
 	}

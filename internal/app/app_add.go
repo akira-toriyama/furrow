@@ -128,10 +128,10 @@ func (o AddOpts) requireNonBlankValues(id string) error {
 // implementation (t-dk6w: Add and AddMany used to duplicate every step of it,
 // and every recorded divergence — t-adx9, t-ek9y, the dropped --check,
 // the unfolded title — was one path forgetting a step the other had). Errors
-// keep the classic single-task wording (no "spec 0" prefix). Returns the
-// created task.
+// keep the classic single-task wording (no source prefix: source ""). Returns
+// the created task.
 func (a *App) Add(title string, o AddOpts) (*core.Task, error) {
-	created, err := a.addMany([]AddSpec{{Title: title, AddOpts: o}}, false)
+	created, err := a.addMany([]AddSpec{{Title: title, AddOpts: o}}, "")
 	if err != nil {
 		return nil, err
 	}

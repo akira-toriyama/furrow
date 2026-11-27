@@ -58,7 +58,8 @@ func TestAddBatchRefusesBadReferences(t *testing.T) {
 		specs []BatchSpec
 		want  string
 	}{
-		{"duplicate key", []BatchSpec{{Key: "x", AddSpec: AddSpec{Title: "a"}}, {Key: "x", AddSpec: AddSpec{Title: "b"}}}, "already used"},
+		// No Line on either spec: both coordinates fall back to the position.
+		{"duplicate key", []BatchSpec{{Key: "x", AddSpec: AddSpec{Title: "a"}}, {Key: "x", AddSpec: AddSpec{Title: "b"}}}, `--batch task 2 ("b"): key "x" is already used by task 1 ("a")`},
 		{"key shadows an id", []BatchSpec{{Key: existing.ID, AddSpec: AddSpec{Title: "a"}}}, "existing task id"},
 		{"unknown dep", []BatchSpec{{AddSpec: AddSpec{Title: "a", AddOpts: AddOpts{Deps: []string{"nope"}}}}}, "neither an existing task id nor a key"},
 		{"self dep", []BatchSpec{{Key: "a", AddSpec: AddSpec{Title: "a", AddOpts: AddOpts{Deps: []string{"a"}}}}}, "depend on itself"},

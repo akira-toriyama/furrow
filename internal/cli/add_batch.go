@@ -178,7 +178,7 @@ func parseBatch(r io.Reader, shared app.AddOpts) ([]app.BatchSpec, error) {
 		if strings.TrimSpace(l.Title) == "" {
 			return nil, core.Validationf("", "--batch line %d: title is required", lineNo)
 		}
-		specs = append(specs, app.BatchSpec{Key: l.Key, AddSpec: app.AddSpec{Title: l.Title, AddOpts: l.merge(shared)}})
+		specs = append(specs, app.BatchSpec{Key: l.Key, AddSpec: app.AddSpec{Title: l.Title, AddOpts: l.merge(shared), Line: lineNo}})
 	}
 	if err := sc.Err(); err != nil {
 		if errors.Is(err, bufio.ErrTooLong) {

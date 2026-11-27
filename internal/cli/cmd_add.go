@@ -222,12 +222,15 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 	var specs []app.AddSpec
 	sc := bufio.NewScanner(cmd.InOrStdin())
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // tolerate long title lines
+	// Physical lines, blank ones counted: the line a validation error names.
+	lineNo := 0
 	for sc.Scan() {
+		lineNo++
 		title := strings.TrimSpace(sc.Text())
 		if title == "" {
 			continue
 		}
-		specs = append(specs, app.AddSpec{Title: title, AddOpts: opts})
+		specs = append(specs, app.AddSpec{Title: title, AddOpts: opts, Line: lineNo})
 	}
 	if err := sc.Err(); err != nil {
 		return core.Internalf("", "reading stdin: %v", err)
@@ -235,7 +238,7 @@ func addFromStdin(cmd *cobra.Command, a *app.App, opts app.AddOpts) error {
 	if len(specs) == 0 {
 		return core.Validationf("", "no task titles on stdin")
 	}
-	created, err := a.AddMany(specs)
+	created, err := a.AddMany(specs, "--stdin")
 	if err != nil {
 		return err
 	}

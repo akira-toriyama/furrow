@@ -66,7 +66,7 @@ func TestAddManyGeneratesUniqueIDs(t *testing.T) {
 	for i := range specs {
 		specs[i] = AddSpec{Title: "batch", AddOpts: AddOpts{Status: "ready"}}
 	}
-	created, err := a.AddMany(specs)
+	created, err := a.AddMany(specs, "--stdin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestAddManyMatchesSingleAdd(t *testing.T) {
 		{Title: "alpha", AddOpts: AddOpts{Value: ptr(3), Effort: ptr(2)}},
 		{Title: "beta", AddOpts: AddOpts{Value: ptr(4), Effort: ptr(1)}},
 	}
-	created, err := a.AddMany(specs)
+	created, err := a.AddMany(specs, "--stdin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestAddManyCarriesAndResolvesEpic(t *testing.T) {
 		// resolution test rather than an assignment test.
 		{Title: "filed", AddOpts: AddOpts{Epic: "travel"}},
 		{Title: "unfiled", AddOpts: AddOpts{}},
-	})
+	}, "--stdin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestAddManyCarriesAndResolvesEpic(t *testing.T) {
 		t.Errorf("persisted epic diverges from a read: got %q, want %q", got.Epic, box)
 	}
 	// An unknown epic fails the whole batch up front (exit 2), like single Add.
-	if _, err := a.AddMany([]AddSpec{{Title: "bad", AddOpts: AddOpts{Epic: "no-such-box"}}}); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, err := a.AddMany([]AddSpec{{Title: "bad", AddOpts: AddOpts{Epic: "no-such-box"}}}, "--stdin"); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("AddMany with an unknown epic should be a validation error, got %v", err)
 	}
 }
@@ -229,7 +229,7 @@ func TestAddStampsClosedWhenBornInDoneLane(t *testing.T) {
 // same zombie the single path was fixed for.
 func TestAddManyStampsClosedInDoneLane(t *testing.T) {
 	a := newApp()
-	created, err := a.AddMany([]AddSpec{{Title: "bulk done", AddOpts: AddOpts{Status: "done"}}})
+	created, err := a.AddMany([]AddSpec{{Title: "bulk done", AddOpts: AddOpts{Status: "done"}}}, "--stdin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,10 +259,10 @@ func TestAddRejectsDanglingDepAndEpic(t *testing.T) {
 // dangling epic.
 func TestAddManyRejectsDanglingDep(t *testing.T) {
 	a := newApp()
-	if _, err := a.AddMany([]AddSpec{{Title: "x", AddOpts: AddOpts{Deps: []string{"t-ghost"}}}}); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, err := a.AddMany([]AddSpec{{Title: "x", AddOpts: AddOpts{Deps: []string{"t-ghost"}}}}, "--stdin"); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("AddMany with a dangling dep should be a validation error, got %v", err)
 	}
-	if _, err := a.AddMany([]AddSpec{{Title: "y", AddOpts: AddOpts{Epic: "e-nosuch"}}}); core.ExitCode(err) != int(core.CodeValidation) {
+	if _, err := a.AddMany([]AddSpec{{Title: "y", AddOpts: AddOpts{Epic: "e-nosuch"}}}, "--stdin"); core.ExitCode(err) != int(core.CodeValidation) {
 		t.Errorf("AddMany with a dangling epic should be a validation error, got %v", err)
 	}
 }

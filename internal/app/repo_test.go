@@ -254,7 +254,7 @@ func TestAddManyAttachesRepos(t *testing.T) {
 	created, err := a.AddMany([]AddSpec{
 		{Title: "alpha", AddOpts: AddOpts{Repos: []string{"furrow"}}},
 		{Title: "beta", AddOpts: AddOpts{Repos: []string{"furrow"}}},
-	})
+	}, "--stdin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestAddManyAttachesRepos(t *testing.T) {
 		}
 	}
 	// a draft-with-repo spec fails before anything is written.
-	if _, err := a.AddMany([]AddSpec{{Title: "x", AddOpts: AddOpts{Draft: true, Repos: []string{"a/b"}}}}); err == nil {
+	if _, err := a.AddMany([]AddSpec{{Title: "x", AddOpts: AddOpts{Draft: true, Repos: []string{"a/b"}}}}, "--stdin"); err == nil {
 		t.Error("AddMany should reject Draft+Repos")
 	}
 }
