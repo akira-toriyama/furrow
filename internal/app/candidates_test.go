@@ -115,7 +115,7 @@ func TestClosedVocabularyGatesCarryCandidates(t *testing.T) {
 				t.Errorf("candidates = %v, want %v — an agent branches on this array", fe.Candidates, want)
 			}
 			if tc.inMsg != "" && !strings.Contains(fe.Msg, tc.inMsg) {
-				t.Errorf("message %q lost the spec context %q — a bulk failure must say which input", fe.Msg, tc.inMsg)
+				t.Errorf("message %q lost the context saying which line failed (%q) — a bulk failure must say which input", fe.Msg, tc.inMsg)
 			}
 		})
 	}

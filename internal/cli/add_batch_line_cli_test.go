@@ -36,6 +36,18 @@ func TestCLIBulkAddErrorsNamePhysicalLine(t *testing.T) {
 			args:  []string{"add", "--stdin", "-s", "ghots"},
 			want:  `--stdin line 2 ("alpha"): unknown lane`,
 		},
+		{
+			name:  "--batch empty title after a blank line",
+			stdin: "\n" + `{"title":"\u0007"}` + "\n",
+			args:  []string{"add", "--batch", "-"},
+			want:  `--batch line 2 has an empty title`,
+		},
+		{
+			name:  "--stdin empty title after a blank line",
+			stdin: "ok\n\n\x1b\n",
+			args:  []string{"add", "--stdin"},
+			want:  `--stdin line 3 has an empty title`,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

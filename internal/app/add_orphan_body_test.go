@@ -11,8 +11,8 @@ import (
 
 // A batch add whose later spec is refused writes NOTHING — not the earlier
 // specs' bodies, which a per-spec saveBody used to leave behind as orphans the
-// next sync published (t-t2fv). The refusal names the spec: a source with no
-// lines (migrate) by its 1-based position.
+// next sync published (t-t2fv). The refusal names the spec: a caller that
+// tracks no line (migrate) by its 1-based position.
 func TestAddManyRefusedSpecWritesNoBody(t *testing.T) {
 	cfg := config.Default()
 	st := newStore(cfg)

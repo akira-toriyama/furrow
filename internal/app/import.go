@@ -89,8 +89,9 @@ type AddSpec struct {
 	// Internal: no front-end may choose an id.
 	ID string
 	// Line is the spec's 1-based physical line in its source input, blank
-	// lines counted (the coordinate that source's own parse errors print), or
-	// 0 when the source has no lines; specAt then falls back to the position.
+	// lines counted (for --batch, the coordinate its own parse errors print),
+	// or 0 when the caller tracks no line (migrate); specAt then falls back to
+	// the position.
 	Line int
 }
 
