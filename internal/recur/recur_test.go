@@ -979,18 +979,21 @@ func zonedAfter(t *testing.T, line string, anchor, after time.Time, loc *time.Lo
 	}
 }
 
-// A gap day's lattice point can read back LATER than the clock the rule
-// names — London's 01:30 is 02:30 BST, Santiago's 00:30 is 01:30 — and a walk
-// that started at `after` stepped over it: a close between the gap's end and
-// the moved point lost that occurrence, a week of a weekly rule and a month of
-// a monthly one, and no `skipped` counted it (t-5w8g). Every minute across the
-// gap day gets the oracle's answer. New York and Nuuk read a gap point back
-// EARLIER, which never lost one; they stay in as the other direction.
-func TestNextNeverStepsOverAPointAGapMovedPastAfter(t *testing.T) {
+// On the days a zone changes its offset a lattice point can read back LATER
+// than a close whose frame clock is past it — a gap moves London's 01:30 to
+// 02:30 BST and Santiago's 00:30 to 01:30, and on London's fall-back night the
+// repeated 01:30 is the GMT pass, still ahead of a close at 01:40 BST — and a
+// walk that started at naked(after) stepped over it: the close lost that
+// occurrence, a week of a weekly rule and a month of a monthly one, and no
+// `skipped` counted it (t-5w8g). Every minute across each such day gets the
+// oracle's answer. The west zones read a gap point back EARLIER and take the
+// first pass of a repeated hour, which never lost one; they stay in as the
+// other direction.
+func TestNextAgreesWithTheCalendarAcrossEveryOffsetChange(t *testing.T) {
 	cases := []struct {
 		zone  string
-		day   [3]int // the gap day, local
-		clock [3]int // a clock the gap skips
+		day   [3]int // the day the offset changes, local
+		clock [3]int // a clock the change skips or repeats
 		rules []string
 	}{
 		{"America/Santiago", [3]int{2026, 9, 6}, [3]int{0, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY", "FREQ=MONTHLY;BYMONTHDAY=6"}},
@@ -1002,6 +1005,13 @@ func TestNextNeverStepsOverAPointAGapMovedPastAfter(t *testing.T) {
 		{"America/New_York", [3]int{2027, 3, 14}, [3]int{2, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
 		{"America/Nuuk", [3]int{2027, 3, 27}, [3]int{23, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
 		{"America/Nuuk", [3]int{2027, 3, 27}, [3]int{23, 59, 59}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		// Fall-back nights: the clock happens twice.
+		{"Europe/London", [3]int{2027, 10, 31}, [3]int{1, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"Europe/Berlin", [3]int{2027, 10, 31}, [3]int{2, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"Australia/Lord_Howe", [3]int{2027, 4, 4}, [3]int{1, 45, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"America/New_York", [3]int{2027, 11, 7}, [3]int{1, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"America/Santiago", [3]int{2027, 4, 3}, [3]int{23, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
+		{"America/Nuuk", [3]int{2027, 10, 30}, [3]int{23, 30, 0}, []string{"FREQ=DAILY", "FREQ=WEEKLY"}},
 	}
 	for _, c := range cases {
 		loc, err := time.LoadLocation(c.zone)
@@ -1032,7 +1042,7 @@ func TestNextNeverStepsOverAPointAGapMovedPastAfter(t *testing.T) {
 				}
 			}
 			if wrong > 0 {
-				t.Errorf("%s %s at %02d:%02d:%02d: %d minute(s) across the gap day get the wrong occurrence; first: %s",
+				t.Errorf("%s %s at %02d:%02d:%02d: %d minute(s) across the day get the wrong occurrence; first: %s",
 					c.zone, line, c.clock[0], c.clock[1], c.clock[2], wrong, first)
 			}
 		}

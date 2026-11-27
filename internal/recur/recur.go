@@ -417,22 +417,25 @@ func Next(line string, anchor, after time.Time, loc *time.Location) (time.Time, 
 	}
 	// "Strictly after" is decided in the CALENDAR, which is where `after` was
 	// measured — not in the gap-free frame the library expands in. The two frames
-	// agree on every day but one: where the zone skips the wall clock a rule
-	// lands on, zoned() reads the lattice point back at another clock, in either
-	// direction.
+	// disagree on the days a zone changes its offset, in both directions.
 	//
-	//   - EARLIER, onto that day's last instant before the gap (America/Nuuk,
-	//     America/New_York). Compared in the frame, such an occurrence still
-	//     looked ahead of a close that had just settled it, so the close handed
-	//     back the very day it closed — a weekly series stood on one date
-	//     forever (t-js5f).
-	//   - LATER, by the gap's width: in the zones east of Greenwich where
-	//     time.Date resolves a skipped clock forward (Europe/London 01:30 reads
-	//     02:30; Berlin, Sydney, Auckland, Lord_Howe), and in the zones whose
-	//     gap swallows midnight (America/Santiago 00:30 reads 01:30, Azores).
-	//     A walk that started AT `after` stepped over a point moved past it, so
-	//     a close inside that window lost the occurrence — a week of a weekly
-	//     rule, a month of a monthly one — and no `skipped` counted it (t-5w8g).
+	//   - A point can read back EARLIER: where the zone skips the rule's clock,
+	//     zoned() clamps it onto that day's last instant before the gap
+	//     (America/Nuuk, America/New_York). Compared in the frame, such an
+	//     occurrence still looked ahead of a close that had just settled it, so
+	//     the close handed back the very day it closed — a weekly series stood
+	//     on one date forever (t-js5f).
+	//   - A point can read back LATER than `after` while its frame clock sits
+	//     before naked(after): by the gap's width where time.Date resolves a
+	//     skipped clock forward (Europe/London 01:30 reads 02:30; Berlin,
+	//     Sydney, Auckland, Lord_Howe) or the gap swallows midnight
+	//     (America/Santiago 00:30 reads 01:30, Azores, Havana); and in the hour
+	//     those east zones repeat, where time.Date takes the SECOND pass
+	//     (London's 01:30 on its fall-back night is 01:30 GMT, still ahead of a
+	//     close at 01:40 BST). A walk that started AT naked(after) stepped over
+	//     that point, so a close inside the window lost the occurrence — a week
+	//     of a weekly rule, a month of a monthly one — and no `skipped` counted
+	//     it (t-5w8g).
 	//
 	// So the walk starts one reach early in the frame and returns the first
 	// point that reads back after `after`, which is the earliest: a rule fires
